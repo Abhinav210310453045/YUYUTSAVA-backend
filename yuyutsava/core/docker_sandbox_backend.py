@@ -34,10 +34,7 @@ def _host_path_for_docker(p: Path) -> str:
 
 
 class DockerSandboxBackend(BaseSandbox):
-    """``SandboxBackendProtocol`` backed by ``docker run`` + ``docker exec``.
-
-    The container must include ``python3`` and ``grep`` (see ``tutorials/docker_sandbox/Dockerfile``).
-    """
+    """``SandboxBackendProtocol`` backed by ``docker run`` + ``docker exec``."""
 
     def __init__(
         self,
@@ -379,7 +376,7 @@ def pull_virtual_paths_to_host(
     virtual_paths: list[str],
     host_dir: Path,
 ) -> list[Path]:
-    """Copy files out of the container via ``download_files`` into ``host_dir`` (mirrors virtual path layout)."""
+    """Copy files out of the container via ``download_files`` into ``host_dir``."""
     root = host_dir.resolve()
     root.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []

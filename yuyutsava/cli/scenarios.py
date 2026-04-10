@@ -1,8 +1,8 @@
 """
-Built-in prompts for the Deep Agents tutorial (filesystem + ``execute``).
+Built-in prompts for YUYUTSAVA (filesystem + ``execute``).
 
 Paths assume ``-w`` is the repo root and ``LocalShellBackend`` uses virtual paths
-(e.g. ``/tutorials/workspace_playground/README.txt``).
+(e.g. ``/yuyutsava/workspace/README.txt``).
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ SCENARIOS: tuple[Scenario, ...] = (
         id="read_then_summarize",
         title="read_file then summarize",
         prompt=(
-            "Use read_file on /tutorials/workspace_playground/README.txt "
+            "Use read_file on /yuyutsava/workspace/README.txt "
             "(virtual path under the agent workspace). Summarize it in two short sentences."
         ),
     ),
@@ -38,7 +38,7 @@ SCENARIOS: tuple[Scenario, ...] = (
         id="write_artifact",
         title="write_file artifact",
         prompt=(
-            "Use write_file to create /tutorials/workspace_playground/from_agent.txt with exactly three lines: "
+            "Use write_file to create /yuyutsava/workspace/from_agent.txt with exactly three lines: "
             "(1) mention read_file, write_file, and execute, "
             "(2) one sentence on read_file, (3) one sentence on execute. Confirm the path."
         ),
@@ -48,8 +48,8 @@ SCENARIOS: tuple[Scenario, ...] = (
         title="execute + read_file + write_file",
         prompt=(
             "1) Use execute to echo 'step1'. "
-            "2) read_file /tutorials/workspace_playground/README.txt "
-            "3) write_file /tutorials/workspace_playground/loop_result.txt with the first line of that README "
+            "2) read_file /yuyutsava/workspace/README.txt "
+            "3) write_file /yuyutsava/workspace/loop_result.txt with the first line of that README "
             "plus a line 'done'. One-sentence summary for the user."
         ),
     ),

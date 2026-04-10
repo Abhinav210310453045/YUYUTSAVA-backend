@@ -20,13 +20,13 @@ from deepagents.backends import LocalShellBackend
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.graph.state import CompiledStateGraph
 
-from tutorials.shared.config import TutorialLlmSettings
-from tutorials.shared.docker_sandbox_backend import DockerSandboxBackend
-from tutorials.shared.groq_chat import groq_chat_model
+from yuyutsava.core.config import LlmSettings
+from yuyutsava.core.docker_sandbox_backend import DockerSandboxBackend
+from yuyutsava.core.llm import chat_model
 
 
 @dataclass
-class TutorialAgentBundle:
+class AgentBundle:
     """Compiled Deep Agent graph plus optional Docker resources to tear down."""
 
     agent: CompiledStateGraph
@@ -38,11 +38,11 @@ class TutorialAgentBundle:
 
 
 def builtin_tools_reference_json() -> str:
-    """Static reference for ``goog --print-tools`` (names match Deep Agents middleware)."""
+    """Static reference for ``yuyutsava --print-tools`` (names match Deep Agents middleware)."""
     doc = [
         {
             "tool": "read_file",
-            "note": "Read text/binary via FilesystemBackend; use virtual paths under workspace (e.g. /tutorials/foo.txt).",
+            "note": "Read text/binary via FilesystemBackend; use virtual paths under workspace (e.g. /yuyutsava/foo.txt).",
         },
         {
             "tool": "write_file",
@@ -60,15 +60,15 @@ def builtin_tools_reference_json() -> str:
     return json.dumps(doc, indent=2)
 
 
-def _tutorial_system_prompt(workspace_root: Path) -> str:
+def _local_system_prompt(workspace_root: Path) -> str:
     root = workspace_root.resolve()
     return f"""\
-Tutorial workspace (real disk + local shell via Deep Agents backend):
+YUYUTSAVA workspace (real disk + local shell):
 Root: {root}
 
 - File tools (``read_file``, ``write_file``, ``edit_file``, ``ls``, ``glob``, ``grep``) use this root. \
-With ``virtual_mode=True``, paths are virtual and anchored here (e.g. ``/tutorials/workspace_playground/README.txt``).
-- For shell, use the built-in **execute** tool (not a custom bash tool). Commands run on your host with cwd at the root above; \
+With ``virtual_mode=True``, paths are virtual and anchored here (e.g. ``/yuyutsava/workspace/README.txt``).
+- For shell, use the built-in **execute** tool. Commands run on your host with cwd at the root above; \
 they are not sandboxed — use only in trusted environments.
 
 Complete the user's task; be concise."""
@@ -84,10 +84,10 @@ def _docker_system_prompt(workspace_root: Path, export_host: Path | None) -> str
             "Write deliverables you want isolated there under paths like ``/output/report.txt``."
         )
     return f"""\
-Tutorial workspace runs inside a **Docker** container (isolated from your host shell).
+YUYUTSAVA workspace runs inside a **Docker** container (isolated from your host shell).
 
 - The host directory **{root}** is mounted at **/workspace** in the container. \
-Virtual paths like ``/tutorials/foo.txt`` refer to files under that mount (same layout as the local tutorial).{extra}
+Virtual paths like ``/yuyutsava/foo.txt`` refer to files under that mount.{extra}
 - Use the built-in **execute** tool for shell commands; they run **inside the container**, not on your host.
 - Python 3 is available for file-tool internals; prefer **execute** for ad-hoc shell.
 
@@ -108,18 +108,18 @@ def _local_shell_backend_factory(workspace_root: Path, bash_timeout_sec: int):
     return factory
 
 
-def build_tutorial_deep_agent(
+def build_agent(
     workspace_root: Path,
-    settings: TutorialLlmSettings,
+    settings: LlmSettings,
     *,
     bash_timeout_sec: int = 120,
     execution_mode: Literal["local", "docker"] = "local",
     docker_image: str = "deepagent-sandbox:local",
     docker_export_dir: Path | None = None,
     docker_network: Literal["bridge", "none"] = "bridge",
-) -> TutorialAgentBundle:
+) -> AgentBundle:
     """Build a Deep Agent; ``local`` uses ``LocalShellBackend``, ``docker`` uses ``DockerSandboxBackend``."""
-    model = groq_chat_model(settings)
+    model = chat_model(settings)
     if execution_mode == "docker":
         export = docker_export_dir.resolve() if docker_export_dir else None
         docker_backend = DockerSandboxBackend(
@@ -135,16 +135,16 @@ def build_tutorial_deep_agent(
             system_prompt=_docker_system_prompt(workspace_root, docker_export_dir),
             debug=False,
         )
-        return TutorialAgentBundle(agent=graph, docker_backend=docker_backend)
+        return AgentBundle(agent=graph, docker_backend=docker_backend)
 
     backend = _local_shell_backend_factory(workspace_root, bash_timeout_sec)
     graph = create_deep_agent(
         model=model,
         backend=backend,
-        system_prompt=_tutorial_system_prompt(workspace_root),
+        system_prompt=_local_system_prompt(workspace_root),
         debug=False,
     )
-    return TutorialAgentBundle(agent=graph, docker_backend=None)
+    return AgentBundle(agent=graph, docker_backend=None)
 
 
 _STATE_GRAPH_PNG_PATTERN = re.compile(r"^State_Graph_v(\d+)\.png$", re.IGNORECASE)
@@ -165,7 +165,7 @@ def next_state_graph_version(output_dir: Path) -> int:
     return best + 1
 
 
-def export_deep_agent_state_graph_png(
+def export_agent_state_graph_png(
     agent: CompiledStateGraph,
     output_dir: Path,
     *,
@@ -173,12 +173,7 @@ def export_deep_agent_state_graph_png(
 ) -> Path:
     """Render the compiled LangGraph to PNG via Mermaid (default: Mermaid.Ink API).
 
-    Uses the same graph object returned by ``build_tutorial_deep_agent``; any change there
-    (e.g. sub-agents) is reflected on the next export. ``xray=True`` expands nested graphs
-    when present.
-
-    Requires network access unless you switch ``draw_mermaid_png`` to a non-API method
-    in LangChain's graph API.
+    Requires network access unless you switch ``draw_mermaid_png`` to a non-API method.
     """
     out = output_dir.resolve()
     out.mkdir(parents=True, exist_ok=True)
@@ -228,7 +223,7 @@ def _print_token_usage(m: Any, stream: Any) -> None:
             print(f"Tokens: {' | '.join(parts)}", file=stream)
 
 
-def invoke_tutorial_agent(
+def invoke_agent(
     agent: CompiledStateGraph,
     task: str,
     *,
