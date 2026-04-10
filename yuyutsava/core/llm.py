@@ -11,10 +11,10 @@ from typing import Any
 
 from langchain_openai import ChatOpenAI
 
-from tutorials.shared.config import TutorialLlmSettings
+from yuyutsava.core.config import LlmSettings
 
 
-def groq_chat_model(settings: TutorialLlmSettings, *, temperature: float = 0.1) -> ChatOpenAI:
+def chat_model(settings: LlmSettings, *, temperature: float = 0.1) -> ChatOpenAI:
     """Return a chat model for tool calling (Groq, OpenRouter, or any matching settings)."""
     kwargs: dict[str, Any] = {
         "api_key": settings.api_key,

@@ -1,5 +1,5 @@
 """
-Load LLM settings from environment for tutorials (Groq or OpenRouter).
+Load LLM settings from environment (Groq or OpenRouter).
 
 Both providers expose an OpenAI-compatible HTTP API:
 
@@ -18,7 +18,7 @@ GROQ_OPENAI_BASE_URL = "https://api.groq.com/openai/v1"
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 
-class TutorialLlmSettings(Protocol):
+class LlmSettings(Protocol):
     """Structural type for ``ChatOpenAI``-compatible provider configs."""
 
     api_key: str
@@ -77,7 +77,7 @@ class OpenRouterSettings:
         return cls(api_key=key, base_url=base, model=model, default_headers=dh)
 
 
-def tutorial_llm_settings_from_env() -> TutorialLlmSettings:
+def llm_settings_from_env() -> LlmSettings:
     """Pick provider via ``LLM_PROVIDER`` (``groq`` or ``openrouter``; default ``groq``)."""
     provider = os.environ.get("LLM_PROVIDER", "groq").strip().lower()
     if provider == "openrouter":
