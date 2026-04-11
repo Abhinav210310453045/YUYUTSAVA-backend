@@ -19,7 +19,7 @@ v2.0 expands it into a **full-stack, client-accessible agent platform** with:
 - **Durable execution** so agent runs can survive crashes and resume from the last checkpoint
 - A **modular folder structure** — nothing tightly coupled; every concern in its own module
 
-The core CLI (`yuyutsava`) and the `Backend/yuyutsava/` package are **not changed**. Everything new lives in separate top-level modules.
+The core CLI (`yuyutsava`) and the `yuyutsava/` package are **not changed**. Everything new lives in separate top-level modules.
 
 ---
 
@@ -49,8 +49,9 @@ The core CLI (`yuyutsava`) and the `Backend/yuyutsava/` package are **not change
 └──────┬──────────┘                 └───────────────────────────┘
        │
 ┌──────▼──────────────────────────────────────────────────────────┐
-│                   Backend/yuyutsava/  (unchanged)               │
-│   engine.py  ·  cli.py  ·  core/  ·  docker_sandbox/           │
+│                   yuyutsava/  (unchanged — v1.0 core)           │
+│   core/engine.py  ·  cli/cli.py  ·  core/config.py             │
+│   docker_sandbox/  ·  workspace/                                │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -58,17 +59,22 @@ The core CLI (`yuyutsava`) and the `Backend/yuyutsava/` package are **not change
 
 ## 3. Repository Folder Structure
 
-Everything new is at the root `/YUYUTSAVA/` level, peer to `Backend/`.
+Everything new lives at the root of `YUYUTSAVA-backend/`, peer to the existing `yuyutsava/` package.
 
 ```
-YUYUTSAVA/
+YUYUTSAVA-backend/
 │
-├── Backend/                        ← UNCHANGED (v1.0 CLI)
-│   └── yuyutsava/
-│       ├── core/engine.py
-│       ├── core/config.py
-│       ├── cli/cli.py
-│       └── ...
+├── yuyutsava/                      ← UNCHANGED (v1.0 CLI core)
+│   ├── core/
+│   │   ├── engine.py
+│   │   ├── config.py
+│   │   ├── llm.py
+│   │   └── docker_sandbox_backend.py
+│   ├── cli/
+│   │   ├── cli.py
+│   │   └── scenarios.py
+│   ├── docker_sandbox/             ← Dockerfile for sandboxed execution
+│   └── workspace/                  ← Agent working directory
 │
 ├── api-gateway/                    ← NEW: REST + WebSocket server
 │   ├── pyproject.toml
@@ -93,7 +99,7 @@ YUYUTSAVA/
 │   ├── .env.example
 │   └── src/
 │       ├── worker.py               ← Main async worker loop
-│       ├── invoker.py              ← Wraps Backend/yuyutsava engine
+│       ├── invoker.py              ← Wraps yuyutsava/core/engine.py
 │       ├── durable.py              ← Checkpoint + resume logic
 │       └── events.py               ← SSE/WebSocket event emitter
 │
@@ -111,8 +117,12 @@ YUYUTSAVA/
 │   ├── docker-compose.yml          ← All services: api, worker, redis, postgres
 │   └── .env.example
 │
-├── frontend/                       ← EXISTING (OAuth demo, to be evolved)
+├── playground/                     ← Experiments and prototypes
+├── diagrams/                       ← Architecture diagrams
+│   └── State_Graph_v1.png
 │
+├── pyproject.toml                  ← Root package (v1.0)
+├── Architecture.md
 └── YUYUTSAVA_V2_PLAN.md            ← This file
 ```
 
@@ -166,9 +176,8 @@ YUYUTSAVA/
 ```python
 # task-runner/src/invoker.py
 
-import sys
-sys.path.insert(0, "/path/to/Backend")   # or installed as package
-
+# yuyutsava is installed as a package from the root pyproject.toml
+# (pip install -e . or uv pip install -e .)
 from yuyutsava.core.engine import build_agent
 from yuyutsava.core.config import llm_settings_from_env
 
@@ -474,7 +483,7 @@ services:
     env_file: .env
     depends_on: [redis, postgres]
     volumes:
-      - ../Backend:/app/Backend   # mount existing YUYUTSAVA CLI
+      - ../yuyutsava:/app/yuyutsava   # mount existing YUYUTSAVA core
 
 volumes:
   redis_data:
@@ -498,7 +507,7 @@ Tasks:
    - `GET /sessions/{id}/tasks/{task_id}/stream` → SSE stream
 2. Create `task-runner/` with a simple `asyncio` worker
    - Consume from asyncio queue (no Redis yet)
-   - Call `build_agent()` from `Backend/yuyutsava/core/engine.py`
+   - Call `build_agent()` from `yuyutsava/core/engine.py`
    - Use LangGraph `MemorySaver` (in-memory checkpointer) for now
 3. Set up `infra/docker-compose.yml` with just the API + worker containers
 4. Verify: Submit a task via `curl`, watch it stream back
@@ -589,15 +598,17 @@ Tasks:
 | Event streaming | Redis Pub/Sub → SSE | Decoupled worker/API; no direct socket needed |
 | Local infra | Docker Compose | Matches existing Docker sandbox pattern in v1.0 |
 | Package manager | `uv` | Already used in Backend |
-| Agent core | Unchanged `Backend/yuyutsava/` | No breaking changes to v1.0 |
+| Agent core | Unchanged `yuyutsava/` | No breaking changes to v1.0 |
 
 ---
 
 ## 8. What Does NOT Change
 
-- `Backend/yuyutsava/core/engine.py` — no modifications
-- `Backend/yuyutsava/cli/cli.py` — no modifications  
-- `Backend/yuyutsava/core/config.py` — no modifications
+- `yuyutsava/core/engine.py` — no modifications
+- `yuyutsava/cli/cli.py` — no modifications  
+- `yuyutsava/core/config.py` — no modifications
+- `yuyutsava/core/llm.py` — no modifications
+- `yuyutsava/docker_sandbox/` — no modifications
 - The CLI `yuyutsava` command continues to work as before
 - `DeepAgents` middleware stack — used as-is; `CompositeBackend`, `MemoryMiddleware`, `SummarizationMiddleware` are composed not rewritten
 
@@ -617,8 +628,8 @@ The v2.0 modules are **wrappers and extensions**, not replacements.
 
 ## 10. First Steps Right Now
 
-1. `cd /Users/abhinav0087/Desktop/YUYUTSAVA`
+1. `cd /Users/abhinav0087/Desktop/YUYUTSAVA-backend`
 2. `mkdir api-gateway task-runner memory-service infra`
 3. Start with Phase 1: `api-gateway/src/main.py` + `task-runner/src/worker.py`
-4. Install `langgraph-checkpoint-redis` and `langgraph-checkpoint-postgres` in the new modules (not in Backend/)
+4. Install `langgraph-checkpoint-redis` and `langgraph-checkpoint-postgres` in the new modules (not in root `yuyutsava/`)
 5. Keep all new code on branch `yuyutsava_v2.0`
