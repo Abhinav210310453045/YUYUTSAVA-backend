@@ -6,6 +6,7 @@ with ``docker run -v``; use ``download_files`` / ``upload_files`` or bind mounts
 
 from __future__ import annotations
 
+import logging
 import os
 import shlex
 import subprocess
@@ -13,6 +14,8 @@ import tempfile
 import uuid
 from pathlib import Path
 from typing import Literal
+
+_slog = logging.getLogger("yuyutsava.sandbox")
 
 from deepagents.backends.protocol import (
     EditResult,
@@ -166,6 +169,7 @@ class DockerSandboxBackend(BaseSandbox):
             msg = "docker run returned empty container id"
             raise RuntimeError(msg)
         self._container_id = cid
+        _slog.info("[SANDBOX LOG] Container started  id=%s  image=%s", cid[:12], self._image)
 
     @property
     def id(self) -> str:
@@ -183,6 +187,7 @@ class DockerSandboxBackend(BaseSandbox):
         cid = self._container_id
         if not cid:
             return
+        _slog.info("[SANDBOX LOG] Stopping container  id=%s", cid[:12])
         try:
             subprocess.run(  # noqa: S603
                 self._docker_cmd("rm", "-f", cid),
@@ -193,6 +198,7 @@ class DockerSandboxBackend(BaseSandbox):
             )
         finally:
             self._container_id = None
+            _slog.info("[SANDBOX LOG] Container removed")
 
     def __enter__(self) -> DockerSandboxBackend:
         return self
@@ -213,6 +219,7 @@ class DockerSandboxBackend(BaseSandbox):
                 truncated=False,
             )
         cid = self.container_id
+        _slog.info("[SANDBOX LOG] execute  cmd=%s", command[:120].replace("\n", " "))
         effective_timeout = timeout if timeout is not None else self._default_timeout
         if effective_timeout <= 0:
             msg = f"timeout must be positive, got {effective_timeout}"
@@ -237,6 +244,7 @@ class DockerSandboxBackend(BaseSandbox):
                 env=os.environ.copy(),
             )
         except subprocess.TimeoutExpired:
+            _slog.warning("[SANDBOX LOG] execute TIMEOUT after %ds", effective_timeout)
             if timeout is not None:
                 msg = (
                     f"Error: Command timed out after {effective_timeout} seconds "
@@ -249,6 +257,7 @@ class DockerSandboxBackend(BaseSandbox):
                 )
             return ExecuteResponse(output=msg, exit_code=124, truncated=False)
         except Exception as e:  # noqa: BLE001
+            _slog.error("[SANDBOX LOG] execute ERROR  %s: %s", type(e).__name__, e)
             return ExecuteResponse(
                 output=f"Error executing command ({type(e).__name__}): {e}",
                 exit_code=1,
@@ -272,6 +281,9 @@ class DockerSandboxBackend(BaseSandbox):
 
         if proc.returncode != 0:
             output = f"{output.rstrip()}\n\nExit code: {proc.returncode}"
+            _slog.warning("[SANDBOX LOG] execute exit_code=%d", proc.returncode)
+        else:
+            _slog.info("[SANDBOX LOG] execute exit_code=0  output_len=%d", len(output))
 
         return ExecuteResponse(
             output=output,
@@ -281,6 +293,7 @@ class DockerSandboxBackend(BaseSandbox):
 
     def upload_files(self, files: list[tuple[str, bytes]]) -> list[FileUploadResponse]:
         cid = self.container_id
+        _slog.info("[SANDBOX LOG] upload_files  count=%d", len(files))
         results: list[FileUploadResponse] = []
         for path, data in files:
             if not path.startswith("/"):
@@ -328,6 +341,7 @@ class DockerSandboxBackend(BaseSandbox):
 
     def download_files(self, paths: list[str]) -> list[FileDownloadResponse]:
         cid = self.container_id
+        _slog.info("[SANDBOX LOG] download_files  paths=%s", paths)
         results: list[FileDownloadResponse] = []
         for path in paths:
             if not path.startswith("/"):

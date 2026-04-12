@@ -25,6 +25,7 @@ from yuyutsava.core.engine import (
     builtin_tools_reference_json,
     export_agent_state_graph_png,
     invoke_agent,
+    setup_logging,
 )
 from yuyutsava.core.docker_sandbox_backend import pull_virtual_paths_to_host
 
@@ -176,6 +177,7 @@ def main(argv: list[str] | None = None) -> int:
         load_dotenv()
 
     args = _build_parser().parse_args(argv)
+    setup_logging(verbose=args.verbose)
 
     if args.list_scenarios:
         sys.stdout.write(format_scenario_list())
