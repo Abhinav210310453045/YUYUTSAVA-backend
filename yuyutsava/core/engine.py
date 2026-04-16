@@ -21,7 +21,7 @@ from deepagents.backends import LocalShellBackend
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
 from langgraph.graph.state import CompiledStateGraph
 
-from yuyutsava.core.config import LlmSettings
+from yuyutsava.core.config import DockerSettings, LlmSettings
 from yuyutsava.core.docker_sandbox_backend import DockerSandboxBackend
 from yuyutsava.core.llm import chat_model
 
@@ -192,25 +192,27 @@ def build_agent(
     *,
     bash_timeout_sec: int = 120,
     execution_mode: Literal["local", "docker"] = "local",
-    docker_image: str = "deepagent-sandbox:local",
-    docker_export_dir: Path | None = None,
-    docker_network: Literal["bridge", "none"] = "bridge",
+    docker_settings: DockerSettings | None = None,
 ) -> AgentBundle:
     """Build a Deep Agent; ``local`` uses ``LocalShellBackend``, ``docker`` uses ``DockerSandboxBackend``."""
     model = chat_model(settings)
     if execution_mode == "docker":
-        export = docker_export_dir.resolve() if docker_export_dir else None
+        docker_cfg = docker_settings or DockerSettings()
+        export = docker_cfg.export_dir.resolve() if docker_cfg.export_dir else None
         docker_backend = DockerSandboxBackend(
-            image=docker_image,
+            image=docker_cfg.image,
             workspace_host=workspace_root.resolve(),
             export_host=export,
-            network=docker_network,
+            network=docker_cfg.network,
             timeout=bash_timeout_sec,
+            memory=docker_cfg.memory,
+            cpus=docker_cfg.cpus,
+            pids_limit=docker_cfg.pids_limit,
         )
         graph = create_deep_agent(
             model=model,
             backend=docker_backend,
-            system_prompt=_docker_system_prompt(workspace_root, docker_export_dir),
+            system_prompt=_docker_system_prompt(workspace_root, docker_cfg.export_dir),
             debug=False,
         )
         return AgentBundle(agent=graph, docker_backend=docker_backend)
