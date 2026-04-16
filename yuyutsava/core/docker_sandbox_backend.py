@@ -50,6 +50,9 @@ class DockerSandboxBackend(BaseSandbox):
         network: Literal["bridge", "none"] = "bridge",
         timeout: int = DEFAULT_DOCKER_TIMEOUT,
         max_output_bytes: int = DEFAULT_MAX_OUTPUT_BYTES,
+        memory: str = "512m",
+        cpus: str = "1.0",
+        pids_limit: int = 100,
     ) -> None:
         if timeout <= 0:
             msg = f"timeout must be positive, got {timeout}"
@@ -62,6 +65,9 @@ class DockerSandboxBackend(BaseSandbox):
         self._network = network
         self._default_timeout = timeout
         self._max_output_bytes = max_output_bytes
+        self._memory = memory
+        self._cpus = cpus
+        self._pids_limit = pids_limit
         self._container_id: str | None = None
         self._sandbox_id = f"docker-{uuid.uuid4().hex[:12]}"
         self._start_container()
@@ -144,6 +150,11 @@ class DockerSandboxBackend(BaseSandbox):
             self._container_workdir,
             "--network",
             self._network,
+            "--memory", self._memory,
+            "--cpus", self._cpus,
+            "--pids-limit", str(self._pids_limit),
+            "--read-only",
+            "--security-opt", "no-new-privileges",
             self._image,
             "sleep",
             "infinity",

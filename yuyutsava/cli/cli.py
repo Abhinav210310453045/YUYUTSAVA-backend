@@ -8,10 +8,10 @@ and ``LocalShellBackend``, then invokes the graph.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import os
 import sys
 from pathlib import Path
-from typing import Literal, cast
 
 try:
     from dotenv import load_dotenv
@@ -19,7 +19,7 @@ except ImportError:
     load_dotenv = None  # type: ignore[assignment, misc]
 
 from yuyutsava.cli.scenarios import format_scenario_list, get_scenario
-from yuyutsava.core.config import llm_settings_from_env
+from yuyutsava.core.config import DockerSettings, llm_settings_from_env
 from yuyutsava.core.engine import (
     build_agent,
     builtin_tools_reference_json,
@@ -129,6 +129,25 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Docker network mode (default: YUYUTSAVA_DOCKER_NETWORK or bridge).",
     )
     p.add_argument(
+        "--docker-memory",
+        default=None,
+        metavar="MEM",
+        help="Container memory limit (default: YUYUTSAVA_DOCKER_MEMORY or 512m). E.g. 1g, 256m.",
+    )
+    p.add_argument(
+        "--docker-cpus",
+        default=None,
+        metavar="CPUS",
+        help="Container CPU limit (default: YUYUTSAVA_DOCKER_CPUS or 1.0). E.g. 2.0.",
+    )
+    p.add_argument(
+        "--docker-pids-limit",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Container max process count (default: YUYUTSAVA_DOCKER_PIDS_LIMIT or 100).",
+    )
+    p.add_argument(
         "--docker-pull-paths",
         default="",
         metavar="PATHS",
@@ -147,24 +166,22 @@ def _resolved_execution_mode(args: argparse.Namespace) -> str:
     return env if env in ("local", "docker") else "local"
 
 
-def _docker_image_arg(args: argparse.Namespace) -> str:
+def _docker_settings_from_args(args: argparse.Namespace) -> DockerSettings:
+    """Load DockerSettings from .env, then apply any CLI flag overrides on top."""
+    cfg = DockerSettings.from_env()
     if args.docker_image:
-        return args.docker_image
-    return os.environ.get("YUYUTSAVA_DOCKER_IMAGE", "deepagent-sandbox:local").strip() or "deepagent-sandbox:local"
-
-
-def _docker_export_dir_arg(args: argparse.Namespace) -> Path | None:
-    if args.docker_export_dir is not None:
-        return args.docker_export_dir
-    raw = os.environ.get("YUYUTSAVA_DOCKER_EXPORT_DIR", "").strip()
-    return Path(raw) if raw else None
-
-
-def _docker_network_arg(args: argparse.Namespace) -> str:
+        cfg = dataclasses.replace(cfg, image=args.docker_image)
     if args.docker_network is not None:
-        return args.docker_network
-    env = os.environ.get("YUYUTSAVA_DOCKER_NETWORK", "bridge").strip().lower()
-    return env if env in ("bridge", "none") else "bridge"
+        cfg = dataclasses.replace(cfg, network=args.docker_network)
+    if args.docker_memory:
+        cfg = dataclasses.replace(cfg, memory=args.docker_memory)
+    if args.docker_cpus:
+        cfg = dataclasses.replace(cfg, cpus=args.docker_cpus)
+    if args.docker_pids_limit is not None:
+        cfg = dataclasses.replace(cfg, pids_limit=args.docker_pids_limit)
+    if args.docker_export_dir is not None:
+        cfg = dataclasses.replace(cfg, export_dir=args.docker_export_dir)
+    return cfg
 
 
 def _parse_pull_paths(s: str) -> list[str]:
@@ -242,16 +259,14 @@ def main(argv: list[str] | None = None) -> int:
     settings = llm_settings_from_env()
     workspace = args.workspace.resolve()
     execution = _resolved_execution_mode(args)
-    docker_export = _docker_export_dir_arg(args) if execution == "docker" else None
+    docker_cfg = _docker_settings_from_args(args)
 
     bundle = build_agent(
         workspace,
         settings,
         bash_timeout_sec=args.bash_timeout,
         execution_mode=execution,
-        docker_image=_docker_image_arg(args),
-        docker_export_dir=docker_export,
-        docker_network=cast(Literal["bridge", "none"], _docker_network_arg(args)),
+        docker_settings=docker_cfg,
     )
     try:
         final = invoke_agent(
@@ -269,8 +284,8 @@ def main(argv: list[str] | None = None) -> int:
                 )
             else:
                 dest = (
-                    (docker_export / "_pulled").resolve()
-                    if docker_export is not None
+                    (docker_cfg.export_dir / "_pulled").resolve()
+                    if docker_cfg.export_dir is not None
                     else (workspace / "_docker_pull").resolve()
                 )
                 written = pull_virtual_paths_to_host(bundle.docker_backend, pulls, dest)

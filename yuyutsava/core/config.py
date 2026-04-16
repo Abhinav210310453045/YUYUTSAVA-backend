@@ -1,5 +1,5 @@
 """
-Load LLM settings from environment (Groq or OpenRouter).
+Load LLM and Docker settings from environment (Groq or OpenRouter).
 
 Both providers expose an OpenAI-compatible HTTP API:
 
@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Protocol
+from pathlib import Path
+from typing import Literal, Protocol
 
 
 GROQ_OPENAI_BASE_URL = "https://api.groq.com/openai/v1"
@@ -75,6 +76,52 @@ class OpenRouterSettings:
             headers["X-OpenRouter-Title"] = title
         dh = headers if headers else None
         return cls(api_key=key, base_url=base, model=model, default_headers=dh)
+
+
+@dataclass(frozen=True)
+class DockerSettings:
+    """Docker sandbox configuration — belongs to the agent layer, not the CLI.
+
+    Any invocation path (CLI, REST API, task runner) can call ``DockerSettings.from_env()``
+    to get a fully configured instance without touching CLI code.  The CLI then applies
+    flag overrides on top using ``dataclasses.replace()``.
+    """
+
+    image: str = "deepagent-sandbox:local"
+    network: Literal["bridge", "none"] = "bridge"
+    memory: str = "512m"
+    cpus: str = "1.0"
+    pids_limit: int = 100
+    export_dir: Path | None = None
+
+    @classmethod
+    def from_env(cls) -> DockerSettings:
+        """Build a ``DockerSettings`` instance from environment variables."""
+        image = os.environ.get("YUYUTSAVA_DOCKER_IMAGE", "").strip() or "deepagent-sandbox:local"
+
+        network_raw = os.environ.get("YUYUTSAVA_DOCKER_NETWORK", "bridge").strip().lower()
+        network: Literal["bridge", "none"] = network_raw if network_raw in ("bridge", "none") else "bridge"  # type: ignore[assignment]
+
+        memory = os.environ.get("YUYUTSAVA_DOCKER_MEMORY", "").strip() or "512m"
+        cpus = os.environ.get("YUYUTSAVA_DOCKER_CPUS", "").strip() or "1.0"
+
+        raw_pids = os.environ.get("YUYUTSAVA_DOCKER_PIDS_LIMIT", "").strip()
+        try:
+            pids_limit = int(raw_pids) if raw_pids else 100
+        except ValueError:
+            pids_limit = 100
+
+        raw_export = os.environ.get("YUYUTSAVA_DOCKER_EXPORT_DIR", "").strip()
+        export_dir = Path(raw_export) if raw_export else None
+
+        return cls(
+            image=image,
+            network=network,
+            memory=memory,
+            cpus=cpus,
+            pids_limit=pids_limit,
+            export_dir=export_dir,
+        )
 
 
 def llm_settings_from_env() -> LlmSettings:
