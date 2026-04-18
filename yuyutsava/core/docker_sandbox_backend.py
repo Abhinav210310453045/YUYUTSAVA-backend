@@ -6,6 +6,7 @@ with ``docker run -v``; use ``download_files`` / ``upload_files`` or bind mounts
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import shlex
@@ -299,6 +300,98 @@ class DockerSandboxBackend(BaseSandbox):
         return ExecuteResponse(
             output=output,
             exit_code=proc.returncode,
+            truncated=truncated,
+        )
+
+    async def aexecute(
+        self,
+        command: str,
+        *,
+        timeout: int | None = None,
+    ) -> ExecuteResponse:
+        """True async execute via asyncio.create_subprocess_exec() — does not block the event loop."""
+        if not command or not isinstance(command, str):
+            return ExecuteResponse(
+                output="Error: Command must be a non-empty string.",
+                exit_code=1,
+                truncated=False,
+            )
+
+        cid = self.container_id
+        effective_timeout = timeout if timeout is not None else self._default_timeout
+        if effective_timeout <= 0:
+            msg = f"timeout must be positive, got {effective_timeout}"
+            raise ValueError(msg)
+
+        _slog.info("[SANDBOX LOG] aexecute  cmd=%s", command[:120].replace("\n", " "))
+
+        exec_argv = [
+            "docker", "exec", "-i",
+            "-w", self._container_workdir,
+            cid, "sh", "-s",
+        ]
+
+        proc: asyncio.subprocess.Process | None = None
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *exec_argv,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                proc.communicate(command.encode()),
+                timeout=effective_timeout,
+            )
+        except asyncio.TimeoutError:
+            if proc is not None:
+                try:
+                    proc.kill()
+                    await proc.wait()
+                except ProcessLookupError:
+                    pass
+            _slog.warning("[SANDBOX LOG] aexecute TIMEOUT after %ds", effective_timeout)
+            msg = (
+                f"Error: Command timed out after {effective_timeout} seconds. "
+                "For long-running commands, re-run using the timeout parameter."
+            )
+            return ExecuteResponse(output=msg, exit_code=124, truncated=False)
+        except Exception as e:  # noqa: BLE001
+            _slog.error("[SANDBOX LOG] aexecute ERROR  %s: %s", type(e).__name__, e)
+            return ExecuteResponse(
+                output=f"Error executing command ({type(e).__name__}): {e}",
+                exit_code=1,
+                truncated=False,
+            )
+
+        stdout = stdout_bytes.decode(errors="replace") if stdout_bytes else ""
+        stderr_text = stderr_bytes.decode(errors="replace") if stderr_bytes else ""
+
+        output_parts: list[str] = []
+        if stdout:
+            output_parts.append(stdout)
+        if stderr_text:
+            stderr_lines = stderr_text.strip().split("\n")
+            output_parts.extend(f"[stderr] {line}" for line in stderr_lines)
+
+        output = "\n".join(output_parts) if output_parts else "<no output>"
+
+        truncated = False
+        if len(output) > self._max_output_bytes:
+            output = output[: self._max_output_bytes]
+            output += f"\n\n... Output truncated at {self._max_output_bytes} bytes."
+            truncated = True
+
+        returncode = proc.returncode if proc.returncode is not None else 0
+        if returncode != 0:
+            output = f"{output.rstrip()}\n\nExit code: {returncode}"
+            _slog.warning("[SANDBOX LOG] aexecute exit_code=%d", returncode)
+        else:
+            _slog.info("[SANDBOX LOG] aexecute exit_code=0  output_len=%d", len(output))
+
+        return ExecuteResponse(
+            output=output,
+            exit_code=returncode,
             truncated=truncated,
         )
 

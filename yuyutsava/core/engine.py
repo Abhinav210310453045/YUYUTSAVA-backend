@@ -8,10 +8,12 @@ on the host per deepagents (see ``deepagents.backends.LocalShellBackend``).
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
 import sys
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -19,11 +21,14 @@ from typing import Any, Literal
 from deepagents import create_deep_agent
 from deepagents.backends import LocalShellBackend
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.state import CompiledStateGraph
+from langgraph.types import Command
 
 from yuyutsava.core.config import DockerSettings, LlmSettings
 from yuyutsava.core.docker_sandbox_backend import DockerSandboxBackend
 from yuyutsava.core.llm import chat_model
+from yuyutsava.core.permission_middleware import PermissionMiddleware
 
 # ---------------------------------------------------------------------------
 # Logging setup
@@ -193,9 +198,19 @@ def build_agent(
     bash_timeout_sec: int = 120,
     execution_mode: Literal["local", "docker"] = "local",
     docker_settings: DockerSettings | None = None,
+    permission_check: bool = True,
 ) -> AgentBundle:
-    """Build a Deep Agent; ``local`` uses ``LocalShellBackend``, ``docker`` uses ``DockerSandboxBackend``."""
+    """Build a Deep Agent; ``local`` uses ``LocalShellBackend``, ``docker`` uses ``DockerSandboxBackend``.
+
+    Args:
+        permission_check: When ``True`` (default), attaches ``PermissionMiddleware`` so
+            the agent pauses and asks the user before running dangerous shell commands.
+            Pass ``False`` to disable (e.g. in automated / non-interactive pipelines).
+    """
     model = chat_model(settings)
+    checkpointer = MemorySaver()
+    middleware = [PermissionMiddleware()] if permission_check else []
+
     if execution_mode == "docker":
         docker_cfg = docker_settings or DockerSettings()
         export = docker_cfg.export_dir.resolve() if docker_cfg.export_dir else None
@@ -213,6 +228,8 @@ def build_agent(
             model=model,
             backend=docker_backend,
             system_prompt=_docker_system_prompt(workspace_root, docker_cfg.export_dir),
+            checkpointer=checkpointer,
+            middleware=middleware,
             debug=False,
         )
         return AgentBundle(agent=graph, docker_backend=docker_backend)
@@ -222,6 +239,8 @@ def build_agent(
         model=model,
         backend=backend,
         system_prompt=_local_system_prompt(workspace_root),
+        checkpointer=checkpointer,
+        middleware=middleware,
         debug=False,
     )
     return AgentBundle(agent=graph, docker_backend=None)
@@ -320,154 +339,182 @@ def _print_token_usage(m: Any, stream: Any) -> None:
 _SEP = "━" * 60
 
 
-def stream_agent(
+async def _prompt_permission(interrupt_value: Any) -> str:
+    """Print the permission request and read user decision from stdin (non-blocking)."""
+    if isinstance(interrupt_value, dict):
+        command: str = interrupt_value.get("command", "<unknown>")
+        reason: str = interrupt_value.get("reason", "Potentially dangerous operation")
+    else:
+        command = str(interrupt_value)
+        reason = "Potentially dangerous operation"
+
+    print(f"\n\033[33m{_SEP}\033[0m", file=sys.stderr)
+    print("\033[33m🛑  PERMISSION REQUEST\033[0m", file=sys.stderr)
+    print(f"\033[33m{_SEP}\033[0m", file=sys.stderr)
+    print(f"  Command : {command}", file=sys.stderr)
+    print(f"  Reason  : {reason}", file=sys.stderr)
+    print(f"\033[33m{_SEP}\033[0m", file=sys.stderr)
+
+    # asyncio.to_thread so blocking stdin doesn't stall the event loop
+    answer: str = await asyncio.to_thread(input, "  Allow? [y/N]: ")
+    decision = "approve" if answer.strip().lower() in ("y", "yes") else "reject"
+
+    if decision == "approve":
+        print("\033[32m  ✅  Approved — running command\033[0m\n", file=sys.stderr)
+    else:
+        print("\033[31m  🚫  Rejected — command will not run\033[0m\n", file=sys.stderr)
+
+    return decision
+
+
+async def astream_agent(
     agent: CompiledStateGraph,
     task: str,
     *,
+    thread_id: str | None = None,
     recursion_limit: int = 200,
 ) -> str:
     """
-    Run the agent with real-time streaming.
+    Run the agent with real-time async streaming.
 
     - LLM tokens are printed to stderr as they arrive (no buffering).
     - Tool calls and results are logged at INFO level with clear labels.
-    - Returns the final assistant text (same contract as ``invoke_agent``).
+    - Handles ``interrupt()`` events from ``PermissionMiddleware``: pauses,
+      asks the user on stdin, then resumes the graph with approve/reject.
+    - Returns the final assistant text.
     """
-    cfg: dict[str, Any] = {"recursion_limit": recursion_limit}
+    cfg: dict[str, Any] = {
+        "recursion_limit": recursion_limit,
+        "configurable": {"thread_id": thread_id or str(uuid.uuid4())},
+    }
 
     logger.info(_SEP)
-    logger.info("YUYUTSAVA  starting task")
+    logger.info("YUYUTSAVA  starting task  thread_id=%s", cfg["configurable"]["thread_id"])
     logger.info(_SEP)
     logger.info("Task: %s", task)
     logger.info(_SEP)
 
-    # We stream with two modes at once:
-    #   "messages" → yields (mode, (chunk, metadata)) — LLM tokens as they arrive
-    #   "updates"  → yields (mode, {"node": state_delta}) — tool calls / results
-    stream = agent.stream(
-        {"messages": [HumanMessage(content=task)]},
-        config=cfg,
-        stream_mode=["messages", "updates"],
-    )
-
     final_messages: list[Any] = []
-    _in_ai_stream = False          # are we mid-stream of an AI response?
-    _current_tool_name: str = ""   # last tool being called
+    # First call uses the task message; subsequent calls (after interrupt) use Command(resume=...)
+    current_input: Any = {"messages": [HumanMessage(content=task)]}
 
-    for event in stream:
-        # With multiple stream_mode values, events are (mode, data) tuples
-        if not isinstance(event, tuple) or len(event) != 2:
-            continue
-        mode, data = event
+    while True:
+        _in_ai_stream = False
+        interrupted_value: Any = None
 
-        # ── messages mode: streaming LLM tokens ────────────────────────────
-        if mode == "messages":
-            chunk, _meta = data
-            # AI text token
-            if isinstance(chunk, AIMessageChunk):
-                text = ""
-                if isinstance(chunk.content, str):
-                    text = chunk.content
-                elif isinstance(chunk.content, list):
-                    for block in chunk.content:
-                        if isinstance(block, dict) and block.get("type") == "text":
-                            text += str(block.get("text", ""))
+        # We stream with two modes at once:
+        #   "messages" → yields (mode, (chunk, metadata)) — LLM tokens as they arrive
+        #   "updates"  → yields (mode, {"node": state_delta}) — tool calls / results
+        async for event in agent.astream(
+            current_input,
+            config=cfg,
+            stream_mode=["messages", "updates"],
+        ):
+            # With multiple stream_mode values, events are (mode, data) tuples
+            if not isinstance(event, tuple) or len(event) != 2:
+                continue
+            mode, data = event
 
-                if text:
-                    if not _in_ai_stream:
-                        # Print header before first token of this response
-                        print(f"\n\033[36m{'─' * 60}\033[0m", file=sys.stderr)
-                        print("\033[36m🤖  AI (streaming)\033[0m", file=sys.stderr)
-                        print(f"\033[36m{'─' * 60}\033[0m", file=sys.stderr)
-                        _in_ai_stream = True
-                    # Print token immediately, no newline
-                    print(text, end="", flush=True, file=sys.stderr)
-
-                # Tool call chunks — show which tool is being invoked
-                if chunk.tool_calls:
-                    if _in_ai_stream:
-                        print("\n", file=sys.stderr)  # end the streaming line
-                        _in_ai_stream = False
-                    for tc in chunk.tool_calls:
-                        name = tc.get("name", "") if isinstance(tc, dict) else getattr(tc, "name", "")
-                        if name and name != _current_tool_name:
-                            _current_tool_name = name
-                            logger.info("")
-                            logger.info("\033[33m🔧  TOOL CALL → %s\033[0m", name)
-
-                # Partial tool_call_chunks (streaming the args)
-                if getattr(chunk, "tool_call_chunks", None):
-                    for tcc in chunk.tool_call_chunks:
-                        name = tcc.get("name", "") if isinstance(tcc, dict) else getattr(tcc, "name", "")
-                        if name and name != _current_tool_name:
-                            _current_tool_name = name
-                            logger.info("")
-                            logger.info("\033[33m🔧  TOOL CALL → %s\033[0m", name)
-
-            # Tool result coming back
-            elif isinstance(chunk, ToolMessage):
+            # ── interrupt detection (updates mode) ─────────────────────────
+            if mode == "updates" and isinstance(data, dict) and "__interrupt__" in data:
                 if _in_ai_stream:
                     print("\n", file=sys.stderr)
                     _in_ai_stream = False
-                tn = getattr(chunk, "name", "tool") or "tool"
-                body = chunk.content if isinstance(chunk.content, str) else str(chunk.content)
-                preview = body if len(body) <= 400 else body[:400] + " … [truncated]"
-                logger.info("")
-                logger.info("\033[32m✅  TOOL RESULT ← %s\033[0m", tn)
-                logger.info("    %s", preview.replace("\n", "\n    "))
+                interrupts = data["__interrupt__"]
+                if interrupts:
+                    iv = interrupts[0]
+                    interrupted_value = iv.value if hasattr(iv, "value") else iv
+                continue  # let any other events in this batch process normally
 
-        # ── updates mode: full state delta after each node ─────────────────
-        elif mode == "updates":
-            if _in_ai_stream:
-                print("\n", file=sys.stderr)
-                _in_ai_stream = False
+            # ── messages mode: streaming LLM tokens ────────────────────────
+            if mode == "messages":
+                chunk, _meta = data
+                if isinstance(chunk, AIMessageChunk):
+                    text = ""
+                    if isinstance(chunk.content, str):
+                        text = chunk.content
+                    elif isinstance(chunk.content, list):
+                        for block in chunk.content:
+                            if isinstance(block, dict) and block.get("type") == "text":
+                                text += str(block.get("text", ""))
 
-            if not isinstance(data, dict):
-                continue
+                    if text:
+                        if not _in_ai_stream:
+                            print(f"\n\033[36m{'─' * 60}\033[0m", file=sys.stderr)
+                            print("\033[36m🤖  AI (streaming)\033[0m", file=sys.stderr)
+                            print(f"\033[36m{'─' * 60}\033[0m", file=sys.stderr)
+                            _in_ai_stream = True
+                        print(text, end="", flush=True, file=sys.stderr)
 
-            for node_name, node_data in data.items():
-                if not isinstance(node_data, dict):
+                    # Close the AI stream line if a tool call is starting
+                    if chunk.tool_calls or getattr(chunk, "tool_call_chunks", None):
+                        if _in_ai_stream:
+                            print("\n", file=sys.stderr)
+                            _in_ai_stream = False
+
+                elif isinstance(chunk, ToolMessage):
+                    if _in_ai_stream:
+                        print("\n", file=sys.stderr)
+                        _in_ai_stream = False
+
+            # ── updates mode: full state delta after each node ──────────────
+            elif mode == "updates":
+                if _in_ai_stream:
+                    print("\n", file=sys.stderr)
+                    _in_ai_stream = False
+
+                if not isinstance(data, dict):
                     continue
-                msgs = node_data.get("messages", [])
-                if not isinstance(msgs, list):
-                    continue
 
-                for m in msgs:
-                    final_messages.append(m)
+                for _node_name, node_data in data.items():
+                    if not isinstance(node_data, dict):
+                        continue
+                    msgs = node_data.get("messages", [])
+                    if not isinstance(msgs, list):
+                        continue
 
-                    if isinstance(m, AIMessage):
-                        # Log token usage if present
-                        usage = getattr(m, "usage_metadata", None)
-                        if usage:
-                            parts_u: list[str] = []
-                            for k in ("input_tokens", "output_tokens", "total_tokens"):
-                                v = usage.get(k) if isinstance(usage, dict) else getattr(usage, k, None)
-                                if v is not None:
-                                    parts_u.append(f"{k.replace('_tokens', '')}: {v}")
-                            if parts_u:
-                                logger.debug("    Tokens  %s", " | ".join(parts_u))
+                    for m in msgs:
+                        final_messages.append(m)
 
-                        # Full tool call args (from the completed message)
-                        if m.tool_calls:
-                            for tc in m.tool_calls:
-                                name = tc.get("name", "?") if isinstance(tc, dict) else getattr(tc, "name", "?")
-                                args = tc.get("args", {}) if isinstance(tc, dict) else getattr(tc, "args", {})
-                                args_str = json.dumps(args, indent=4) if isinstance(args, dict) else str(args)
-                                logger.info("")
-                                logger.info("\033[33m🔧  TOOL CALL → %s\033[0m", name)
-                                logger.info("    Input:\n%s", _indent(args_str, 4))
+                        if isinstance(m, AIMessage):
+                            usage = getattr(m, "usage_metadata", None)
+                            if usage:
+                                parts_u: list[str] = []
+                                for k in ("input_tokens", "output_tokens", "total_tokens"):
+                                    v = usage.get(k) if isinstance(usage, dict) else getattr(usage, k, None)
+                                    if v is not None:
+                                        parts_u.append(f"{k.replace('_tokens', '')}: {v}")
+                                if parts_u:
+                                    logger.debug("    Tokens  %s", " | ".join(parts_u))
 
-                    elif isinstance(m, ToolMessage):
-                        tn = getattr(m, "name", "tool") or "tool"
-                        body = m.content if isinstance(m.content, str) else str(m.content)
-                        preview = body if len(body) <= 600 else body[:600] + "\n    … [truncated]"
-                        logger.info("")
-                        logger.info("\033[32m✅  TOOL RESULT ← %s\033[0m", tn)
-                        logger.info("    %s", preview.replace("\n", "\n    "))
+                            if m.tool_calls:
+                                for tc in m.tool_calls:
+                                    name = tc.get("name", "?") if isinstance(tc, dict) else getattr(tc, "name", "?")
+                                    args = tc.get("args", {}) if isinstance(tc, dict) else getattr(tc, "args", {})
+                                    args_str = json.dumps(args, indent=4) if isinstance(args, dict) else str(args)
+                                    logger.info("")
+                                    logger.info("\033[33m🔧  TOOL CALL → %s\033[0m", name)
+                                    logger.info("    Input:\n%s", _indent(args_str, 4))
 
-    # Make sure we end the streaming line cleanly
-    if _in_ai_stream:
-        print("\n", file=sys.stderr)
+                        elif isinstance(m, ToolMessage):
+                            tn = getattr(m, "name", "tool") or "tool"
+                            body = m.content if isinstance(m.content, str) else str(m.content)
+                            preview = body if len(body) <= 600 else body[:600] + "\n    … [truncated]"
+                            logger.info("")
+                            logger.info("\033[32m✅  TOOL RESULT ← %s\033[0m", tn)
+                            logger.info("    %s", preview.replace("\n", "\n    "))
+
+        # End of this stream pass — close any dangling AI output line
+        if _in_ai_stream:
+            print("\n", file=sys.stderr)
+
+        # No interrupt → done
+        if interrupted_value is None:
+            break
+
+        # Ask the user, then resume the graph
+        decision = await _prompt_permission(interrupted_value)
+        current_input = Command(resume=decision)
 
     logger.info("")
     logger.info(_SEP)
@@ -482,20 +529,3 @@ def _indent(text: str, spaces: int) -> str:
     return "\n".join(pad + line for line in text.splitlines())
 
 
-# ---------------------------------------------------------------------------
-# Legacy invoke_agent (kept for compatibility; wraps stream_agent)
-# ---------------------------------------------------------------------------
-
-
-def invoke_agent(
-    agent: CompiledStateGraph,
-    task: str,
-    *,
-    verbose: bool = False,  # noqa: ARG001 — kept for API compatibility; streaming is always on
-    recursion_limit: int = 200,
-) -> str:
-    """
-    Backward-compatible wrapper.  ``verbose`` is now ignored — streaming is
-    always active via ``stream_agent``.
-    """
-    return stream_agent(agent, task, recursion_limit=recursion_limit)

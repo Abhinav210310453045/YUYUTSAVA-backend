@@ -10,8 +10,8 @@ from yuyutsava.core.config import (
 )
 from yuyutsava.core.engine import (
     AgentBundle,
+    astream_agent,
     build_agent,
-    invoke_agent,
 )
 from yuyutsava.core.docker_sandbox_backend import (
     DockerSandboxBackend,
@@ -24,8 +24,8 @@ __all__ = [
     "GroqSettings",
     "LlmSettings",
     "OpenRouterSettings",
+    "astream_agent",
     "build_agent",
-    "invoke_agent",
     "llm_settings_from_env",
     "pull_virtual_paths_to_host",
 ]

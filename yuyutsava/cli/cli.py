@@ -8,9 +8,11 @@ and ``LocalShellBackend``, then invokes the graph.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import dataclasses
 import os
 import sys
+import uuid
 from pathlib import Path
 
 try:
@@ -21,10 +23,10 @@ except ImportError:
 from yuyutsava.cli.scenarios import format_scenario_list, get_scenario
 from yuyutsava.core.config import DockerSettings, llm_settings_from_env
 from yuyutsava.core.engine import (
+    astream_agent,
     build_agent,
     builtin_tools_reference_json,
     export_agent_state_graph_png,
-    invoke_agent,
     setup_logging,
 )
 from yuyutsava.core.docker_sandbox_backend import pull_virtual_paths_to_host
@@ -148,6 +150,15 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Container max process count (default: YUYUTSAVA_DOCKER_PIDS_LIMIT or 100).",
     )
     p.add_argument(
+        "--no-permission-check",
+        action="store_true",
+        default=False,
+        help=(
+            "Disable the permission prompt for dangerous shell commands. "
+            "Use in automated / non-interactive pipelines where stdin is unavailable."
+        ),
+    )
+    p.add_argument(
         "--docker-pull-paths",
         default="",
         metavar="PATHS",
@@ -190,6 +201,11 @@ def _parse_pull_paths(s: str) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Sync entry point required by setuptools console_scripts. Drives async logic."""
+    return asyncio.run(_async_main(argv))
+
+
+async def _async_main(argv: list[str] | None = None) -> int:
     if load_dotenv:
         load_dotenv()
 
@@ -267,12 +283,14 @@ def main(argv: list[str] | None = None) -> int:
         bash_timeout_sec=args.bash_timeout,
         execution_mode=execution,
         docker_settings=docker_cfg,
+        permission_check=not args.no_permission_check,
     )
     try:
-        final = invoke_agent(
+        thread_id = str(uuid.uuid4())
+        final = await astream_agent(
             bundle.agent,
             task,
-            verbose=args.verbose,
+            thread_id=thread_id,
             recursion_limit=args.recursion_limit,
         )
         pulls = _parse_pull_paths(args.docker_pull_paths)
