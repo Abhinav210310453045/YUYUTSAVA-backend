@@ -29,6 +29,8 @@ from yuyutsava.core.config import DockerSettings, LlmSettings
 from yuyutsava.core.docker_sandbox_backend import DockerSandboxBackend
 from yuyutsava.core.llm import chat_model
 from yuyutsava.core.permission_middleware import PermissionMiddleware
+from yuyutsava.agents.task_runner.tools import bind_tools as _bind_task_runner_tools
+from yuyutsava.agents.task_runner.prompts import task_runner_rules_section
 
 # ---------------------------------------------------------------------------
 # Logging setup
@@ -113,56 +115,43 @@ def builtin_tools_reference_json() -> str:
 
 def _local_system_prompt(workspace_root: Path) -> str:
     root = workspace_root.resolve()
+    sandbox = root / "_sandbox"
     return f"""\
-YUYUTSAVA workspace (real disk + local shell):
-Root: {root}
+{task_runner_rules_section(root, sandbox)}
 
-- File tools (``read_file``, ``write_file``, ``edit_file``, ``ls``, ``glob``, ``grep``) use this root. \
-With ``virtual_mode=True``, paths are virtual and anchored here (e.g. ``/yuyutsava/workspace/README.txt``).
-- For shell, use the built-in **execute** tool. Commands run on the real host machine with cwd at \
-the root above; they are NOT sandboxed.
-- **IMPORTANT: Treat {root} as your sandbox boundary. Do NOT read, write, or execute anything \
-outside this directory. Never use system paths like /tmp, /var, /home, /usr, /etc, or any path \
-outside the workspace, unless the user explicitly instructs you to do so.**
+## WORKSPACE CONTEXT
 
-## Data Processing Strategy (confined to workspace)
-For tasks involving structured files (.xlsx, .csv, .json, binary files) or any computation:
-1. Write a self-contained Python script into the workspace: ``{root}/_task.py``
-2. Execute it with the **execute** tool: ``python3 {root}/_task.py``
-3. Capture the printed output as your result
-4. Delete the script after use: ``rm {root}/_task.py``
-Do NOT run multi-step logic as inline shell one-liners — always write a script to the workspace first.
+Root: {root} | Mode: real disk + local shell.
+
+PATH TRANSLATION (critical): ls and glob return virtual paths anchored at Root.
+Before passing any path from ls/glob to tr_* tools, convert it to a real absolute path:
+  virtual `/foo.xlsx`  →  real `{root}/foo.xlsx`
+  virtual `/subdir/bar.py`  →  real `{root}/subdir/bar.py`
+Never pass a virtual path directly to tr_read_file / tr_write_file / tr_delete_file.
 
 Complete the user's task; be concise."""
 
 
 def _docker_system_prompt(workspace_root: Path, export_host: Path | None) -> str:
     root = workspace_root.resolve()
+    sandbox = root / "_sandbox"
     extra = ""
     if export_host is not None:
         exp = export_host.resolve()
-        extra = (
-            f"\n- A second host directory is bind-mounted at **/output** in the container (host: {exp}). "
-            "Write deliverables you want isolated there under paths like ``/output/report.txt``."
-        )
+        extra = f" Output dir: host {exp} → /output in container (write deliverables to /output/...)."
     return f"""\
-YUYUTSAVA workspace runs inside a **Docker sandbox** container (fully isolated from your host shell).
+{task_runner_rules_section(root, sandbox)}
 
-- The host directory **{root}** is mounted at **/workspace** in the container. \
-Virtual paths like ``/yuyutsava/foo.txt`` refer to files under that mount.{extra}
-- Use the built-in **execute** tool for shell commands; they run **inside the sandbox container**, \
-never on the host machine.
-- **IMPORTANT: All work must stay inside /workspace. Do NOT write to or execute from container \
-system directories like /tmp, /etc, /home, /usr, /root, or any path outside /workspace, \
-unless the user explicitly instructs you to do so.**
+## WORKSPACE CONTEXT
 
-## Data Processing Strategy (inside the sandbox)
-For tasks involving structured files (.xlsx, .csv, .json, binary files) or any computation:
-1. Write a self-contained Python script into the sandbox workspace: ``/workspace/_task.py``
-2. Execute it inside the sandbox with the **execute** tool: ``python3 /workspace/_task.py``
-3. Capture the printed output as your result
-4. Delete the script after use: ``rm /workspace/_task.py``
-Do NOT run multi-step logic as inline shell one-liners — always write a script to /workspace first.
+Mode: Docker sandbox (isolated from host shell).
+Mount: host {root} → /workspace.{extra}
+
+PATH TRANSLATION (critical): ls and glob return virtual paths anchored at /workspace.
+Before passing any path from ls/glob to tr_* tools, convert it to a real absolute path:
+  virtual `/foo.xlsx`  →  real `/workspace/foo.xlsx`
+  virtual `/subdir/bar.py`  →  real `/workspace/subdir/bar.py`
+Never pass a virtual path directly to tr_read_file / tr_write_file / tr_delete_file.
 
 Complete the user's task; be concise."""
 
@@ -209,7 +198,7 @@ def build_agent(
     """
     model = chat_model(settings)
     checkpointer = MemorySaver()
-    middleware = [PermissionMiddleware()] if permission_check else []
+    middleware = [PermissionMiddleware(workspace_root=workspace_root.resolve())] if permission_check else []
 
     if execution_mode == "docker":
         docker_cfg = docker_settings or DockerSettings()
@@ -226,6 +215,7 @@ def build_agent(
         )
         graph = create_deep_agent(
             model=model,
+            tools=_bind_task_runner_tools(workspace_root.resolve()),
             backend=docker_backend,
             system_prompt=_docker_system_prompt(workspace_root, docker_cfg.export_dir),
             checkpointer=checkpointer,
@@ -237,6 +227,7 @@ def build_agent(
     backend = _local_shell_backend_factory(workspace_root, bash_timeout_sec)
     graph = create_deep_agent(
         model=model,
+        tools=_bind_task_runner_tools(workspace_root.resolve()),
         backend=backend,
         system_prompt=_local_system_prompt(workspace_root),
         checkpointer=checkpointer,
@@ -340,7 +331,43 @@ _SEP = "━" * 60
 
 
 async def _prompt_permission(interrupt_value: Any) -> str:
-    """Print the permission request and read user decision from stdin (non-blocking)."""
+    """Print the permission request and read user decision from stdin (non-blocking).
+
+    Handles two interrupt shapes:
+      • TaskRunner permission  (type == "task_runner_permission") — magenta prompt
+      • PermissionMiddleware   (type == "permission_request" or legacy shape) — yellow prompt
+    """
+    # ── TaskRunner permission request ──────────────────────────────────────
+    if isinstance(interrupt_value, dict) and interrupt_value.get("type") == "task_runner_permission":
+        operation  = interrupt_value.get("operation", "?").upper()
+        paths      = interrupt_value.get("paths", ["<unknown>"])
+        zone       = interrupt_value.get("zone", "?").upper()
+        reason     = interrupt_value.get("reason", "No reason given")
+        agent_id   = interrupt_value.get("requesting_agent", "unknown-agent")
+        parent     = interrupt_value.get("parent_agent") or ""
+        risk       = interrupt_value.get("risk_level", "?")
+        path_str   = ", ".join(paths) if isinstance(paths, list) else str(paths)
+
+        print(f"\n\033[35m{_SEP}\033[0m", file=sys.stderr)
+        print("\033[35m🔐  TASK RUNNER PERMISSION REQUEST\033[0m", file=sys.stderr)
+        print(f"\033[35m{_SEP}\033[0m", file=sys.stderr)
+        print(f"  Operation : {operation}", file=sys.stderr)
+        print(f"  Path(s)   : {path_str}", file=sys.stderr)
+        print(f"  Zone      : {zone}", file=sys.stderr)
+        print(f"  Agent     : {agent_id}" + (f"  (parent: {parent})" if parent else ""), file=sys.stderr)
+        print(f"  Reason    : {reason}", file=sys.stderr)
+        print(f"  Risk      : {risk}", file=sys.stderr)
+        print(f"\033[35m{_SEP}\033[0m", file=sys.stderr)
+
+        answer: str = await asyncio.to_thread(input, "  Allow? [y/N]: ")
+        decision = "approve" if answer.strip().lower() in ("y", "yes") else "reject"
+        if decision == "approve":
+            print("\033[32m  ✅  Approved\033[0m\n", file=sys.stderr)
+        else:
+            print("\033[31m  🚫  Rejected\033[0m\n", file=sys.stderr)
+        return decision
+
+    # ── PermissionMiddleware request (existing behaviour — unchanged) ───────
     if isinstance(interrupt_value, dict):
         command: str = interrupt_value.get("command", "<unknown>")
         reason: str = interrupt_value.get("reason", "Potentially dangerous operation")
@@ -356,7 +383,7 @@ async def _prompt_permission(interrupt_value: Any) -> str:
     print(f"\033[33m{_SEP}\033[0m", file=sys.stderr)
 
     # asyncio.to_thread so blocking stdin doesn't stall the event loop
-    answer: str = await asyncio.to_thread(input, "  Allow? [y/N]: ")
+    answer = await asyncio.to_thread(input, "  Allow? [y/N]: ")
     decision = "approve" if answer.strip().lower() in ("y", "yes") else "reject"
 
     if decision == "approve":
