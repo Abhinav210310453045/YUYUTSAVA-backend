@@ -1,14 +1,27 @@
 """
-Permission middleware for YUYUTSAVA.
+Permission middleware for YUYUTSAVA — fallback safety layer for raw ``execute`` calls.
 
-Intercepts ``execute`` tool calls, checks them against a list of dangerous
-command patterns, and calls ``interrupt()`` to pause the LangGraph execution
-so the user can approve or reject the command before it runs.
+Two independent checks run on every ``execute`` tool call:
+
+  1. PATH SCOPE CHECK (hard rules, workspace-aware)
+     Extracts absolute paths from the command and classifies each one:
+       • SYSTEM_CRITICAL path  → HARD BLOCK, no user prompt, ever
+       • EXTERNAL path (outside workspace) + destructive command → PROMPT user
+       • PROTECTED subdir (.venv, .git, __pycache__ …) + destructive → PROMPT user
+
+  2. PATTERN CHECK (regex, context-free)
+     Catches dangerous command shapes regardless of path:
+       • rm -rf, sudo, kill -9, find -delete, curl | bash, etc.
+       • Enriches reason with protected-dir names when relevant.
+
+Checks run in this order: scope check first (stronger), then pattern check.
+The first match that requires user input calls ``interrupt()``.
 """
 
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import Any
 
 from langchain_core.messages import ToolMessage
@@ -16,10 +29,13 @@ from langchain.agents.middleware.types import AgentMiddleware
 from langgraph.types import interrupt
 
 # ---------------------------------------------------------------------------
-# Dangerous-command detection
+# Dangerous-command pattern detection (pattern check)
 # ---------------------------------------------------------------------------
 
 _DANGEROUS_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    # find-based deletion (added previously)
+    (re.compile(r"\bfind\b.*-delete\b", re.IGNORECASE), "find -delete (bulk file deletion)"),
+    (re.compile(r"\bfind\b.*-exec\s+(rm|unlink)\b", re.IGNORECASE), "find -exec rm/unlink (bulk file deletion)"),
     # Recursive / forced deletion
     (re.compile(r"\brm\s+.*-[^\s]*r", re.IGNORECASE), "Recursive file deletion"),
     (re.compile(r"\brm\s+.*-[^\s]*f", re.IGNORECASE), "Forced file deletion"),
@@ -49,12 +65,155 @@ _DANGEROUS_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r">\s*/(bin|sbin|lib)/"), "Write to system binary directory"),
 ]
 
+# Protected subdirectories inside the workspace — deletion/modification triggers a prompt
+_PROTECTED_SUBDIRS: frozenset[str] = frozenset({
+    ".venv", ".git", "node_modules", "__pycache__",
+    ".tox", ".mypy_cache", ".pytest_cache",
+})
+
+_PROTECTED_SUBDIR_RE: re.Pattern[str] = re.compile(
+    r"(?:^|[\s/])(" + "|".join(re.escape(d) for d in sorted(_PROTECTED_SUBDIRS)) + r")(?:/|[\s;|]|$)",
+    re.IGNORECASE,
+)
+
+def _affected_protected_subdirs(command: str) -> list[str]:
+    found: set[str] = set()
+    for m in _PROTECTED_SUBDIR_RE.finditer(command):
+        found.add(m.group(1).lower())
+    return sorted(found)
+
 
 def classify_command(command: str) -> str | None:
-    """Return a human-readable reason if *command* matches a dangerous pattern, else ``None``."""
+    """Return a human-readable reason if *command* matches a dangerous pattern, else ``None``.
+
+    When a match is found and the command references protected subdirectories,
+    the reason is enriched with their names.
+    """
     for pattern, reason in _DANGEROUS_PATTERNS:
         if pattern.search(command):
+            protected = _affected_protected_subdirs(command)
+            if protected:
+                return f"{reason} — affects protected directories: {', '.join(protected)}"
             return reason
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Path scope check (hard rules)
+# ---------------------------------------------------------------------------
+
+# Absolute paths extracted from shell commands — matches /something that is
+# not inside a flag like --flag or is not a redirect target already caught above.
+_ABS_PATH_RE: re.Pattern[str] = re.compile(
+    r"""(?:^|[\s=,;'"`(])(/(?:[^\s'"`|;&)<>\\]+))""",
+    re.MULTILINE,
+)
+
+# System-critical prefixes — hard block, no user prompt
+_SYSTEM_CRITICAL_PREFIXES: tuple[str, ...] = (
+    "/etc", "/sys", "/proc", "/dev", "/boot",
+    "/root", "/usr/bin", "/usr/sbin", "/var/log",
+)
+
+# Commands that modify or delete filesystem state
+_DESTRUCTIVE_COMMAND_RE: re.Pattern[str] = re.compile(
+    r"\b(rm|rmdir|unlink|shred|truncate|mv|dd|mkfs|chmod|chown)\b"
+    r"|\bfind\b.*(-delete|-exec\s+(rm|unlink))"
+    r"|>\s*/",   # redirect overwrite to an absolute path
+    re.IGNORECASE,
+)
+
+
+def _extract_absolute_paths(command: str) -> list[str]:
+    """Extract candidate absolute paths from a shell command string."""
+    return [m.group(1) for m in _ABS_PATH_RE.finditer(command)]
+
+
+def _resolve(path: str) -> str:
+    """Canonicalize a path without requiring it to exist."""
+    import os
+    return os.path.normpath(os.path.realpath(os.path.abspath(path)))
+
+
+def _is_system_critical(canonical: str) -> bool:
+    """Return True if the canonical path is inside a system-critical directory."""
+    for prefix in _SYSTEM_CRITICAL_PREFIXES:
+        # also resolve the prefix itself (handles macOS /etc → /private/etc)
+        resolved_prefix = _resolve(prefix)
+        if canonical == resolved_prefix or canonical.startswith(resolved_prefix + "/"):
+            return True
+        if canonical == prefix or canonical.startswith(prefix + "/"):
+            return True
+    return False
+
+
+def _is_outside_workspace(canonical: str, workspace: str) -> bool:
+    """Return True if the canonical path is outside the workspace root."""
+    try:
+        Path(canonical).relative_to(workspace)
+        return False
+    except ValueError:
+        return True
+
+
+def scope_check(
+    command: str,
+    workspace_root: Path,
+) -> tuple[str, bool] | None:
+    """
+    Check whether *command* accesses paths outside its allowed scope.
+
+    Returns a ``(reason, hard_block)`` tuple when a violation is found:
+      • ``hard_block=True``  → return [BLOCKED] immediately, no user prompt
+      • ``hard_block=False`` → pause and ask the user via ``interrupt()``
+
+    Returns ``None`` when no scope violation is detected.
+
+    Rules (evaluated in order — first match wins):
+      1. Any path in SYSTEM_CRITICAL          → hard block (always)
+      2. Any path OUTSIDE workspace           → prompt user (external scope)
+      3. Destructive command + protected dir  → prompt user (protected subdir)
+    """
+    ws = str(workspace_root.resolve())
+    paths = _extract_absolute_paths(command)
+
+    for raw in paths:
+        canonical = _resolve(raw)
+
+        # Rule 1 — system-critical: hard block, no question asked
+        if _is_system_critical(canonical):
+            return (
+                f"Command accesses system-critical path '{raw}' "
+                f"({canonical}). This is always blocked.",
+                True,  # hard_block
+            )
+
+    is_destructive = bool(_DESTRUCTIVE_COMMAND_RE.search(command))
+
+    for raw in paths:
+        canonical = _resolve(raw)
+
+        # Rule 2 — outside workspace: prompt user
+        if _is_outside_workspace(canonical, ws):
+            action_desc = "modify/delete" if is_destructive else "access"
+            return (
+                f"Command attempts to {action_desc} a path outside the workspace: "
+                f"'{raw}' (resolved: {canonical}). "
+                f"Workspace boundary: {ws}",
+                False,  # prompt, not hard block
+            )
+
+    # Rule 3 — destructive command touching protected subdirs inside workspace
+    if is_destructive:
+        protected = _affected_protected_subdirs(command)
+        if protected:
+            dirs_str = ", ".join(protected)
+            return (
+                f"Destructive command affects protected directories inside the workspace: "
+                f"{dirs_str}. These directories should not be modified by agents.",
+                False,  # prompt user
+            )
+
     return None
 
 
@@ -67,15 +226,21 @@ class PermissionMiddleware(AgentMiddleware):  # type: ignore[misc]
     """
     Async-only middleware that intercepts the ``execute`` tool call.
 
-    If the command matches a dangerous pattern, ``interrupt()`` is called to
-    pause the LangGraph graph and surface a permission request to the caller.
-    The caller must resume with ``Command(resume="approve")`` or
-    ``Command(resume="reject")``.
+    Acts as the fallback safety layer when the LLM calls ``execute`` directly
+    instead of routing through the TaskRunnerAgent tr_* tools.
 
-    If approved (or not dangerous), the tool runs normally.
-    If rejected, a ``ToolMessage`` with a ``[BLOCKED]`` body is returned
-    without executing the command.
+    Two checks run in sequence:
+      1. Scope check  — path-based hard rules (workspace boundary + system-critical)
+      2. Pattern check — regex detection of dangerous command shapes
+
+    For each check:
+      • Hard block  → return [BLOCKED] ToolMessage immediately, no user prompt
+      • Soft block  → call ``interrupt()`` and wait for user approval via stdin
+      • No match    → pass through to the next check or allow execution
     """
+
+    def __init__(self, workspace_root: Path | None = None) -> None:
+        self.workspace_root = workspace_root.resolve() if workspace_root else None
 
     async def awrap_tool_call(
         self,
@@ -87,23 +252,61 @@ class PermissionMiddleware(AgentMiddleware):  # type: ignore[misc]
         if tool_name == "execute":
             args: dict[str, Any] = request.tool_call.get("args", {})
             command: str = args.get("command", "") if isinstance(args, dict) else ""
-            reason = classify_command(command)
+            tool_call_id: str = request.tool_call.get("id", "") or ""
 
-            if reason:
-                decision: str = interrupt(
+            # ── Check 1: Path scope (hard rules) ─────────────────────────
+            if self.workspace_root is not None:
+                violation = scope_check(command, self.workspace_root)
+                if violation is not None:
+                    scope_reason, hard_block = violation
+
+                    if hard_block:
+                        # System-critical path: block immediately, no user prompt
+                        return ToolMessage(
+                            content=(
+                                f"[BLOCKED] Access denied — system-critical path.\n"
+                                f"Command : {command}\n"
+                                f"Reason  : {scope_reason}"
+                            ),
+                            tool_call_id=tool_call_id,
+                            name=tool_name,
+                        )
+
+                    # Out-of-workspace or protected dir: ask user
+                    decision: str = interrupt(
+                        {
+                            "type": "permission_request",
+                            "command": command,
+                            "reason": scope_reason,
+                        }
+                    )
+                    if decision != "approve":
+                        return ToolMessage(
+                            content=(
+                                f"[BLOCKED] User denied permission.\n"
+                                f"Command : {command}\n"
+                                f"Reason  : {scope_reason}"
+                            ),
+                            tool_call_id=tool_call_id,
+                            name=tool_name,
+                        )
+
+            # ── Check 2: Dangerous-command patterns (regex) ───────────────
+            pattern_reason = classify_command(command)
+            if pattern_reason:
+                decision = interrupt(
                     {
                         "type": "permission_request",
                         "command": command,
-                        "reason": reason,
+                        "reason": pattern_reason,
                     }
                 )
                 if decision != "approve":
-                    tool_call_id: str = request.tool_call.get("id", "") or ""
                     return ToolMessage(
                         content=(
                             f"[BLOCKED] User denied permission to run this command.\n"
                             f"Command : {command}\n"
-                            f"Reason  : {reason}"
+                            f"Reason  : {pattern_reason}"
                         ),
                         tool_call_id=tool_call_id,
                         name=tool_name,
