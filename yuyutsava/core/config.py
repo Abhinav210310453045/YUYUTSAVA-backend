@@ -22,9 +22,12 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 class LlmSettings(Protocol):
     """Structural type for ``ChatOpenAI``-compatible provider configs."""
 
-    api_key: str
-    base_url: str
-    model: str
+    @property
+    def api_key(self) -> str: ...
+    @property
+    def base_url(self) -> str: ...
+    @property
+    def model(self) -> str: ...
 
 
 @dataclass(frozen=True)
@@ -124,13 +127,53 @@ class DockerSettings:
         )
 
 
+@dataclass(frozen=True)
+class LocalSettings:
+    """Local (non-Docker) sandbox and output directory configuration."""
+
+    sandbox_dir: Path | None = None
+    output_dir: Path | None = None
+
+    @classmethod
+    def from_env(cls) -> LocalSettings:
+        raw_sandbox = os.environ.get("YUYUTSAVA_SANDBOX_DIR", "").strip()
+        raw_output  = os.environ.get("YUYUTSAVA_OUTPUT_DIR",  "").strip()
+        return cls(
+            sandbox_dir=Path(raw_sandbox) if raw_sandbox else None,
+            output_dir=Path(raw_output)   if raw_output  else None,
+        )
+
+
+@dataclass(frozen=True)
+class AnthropicSettings:
+    """Anthropic API provider (enables prompt caching via AnthropicPromptCachingMiddleware)."""
+
+    api_key: str
+    base_url: str = "https://api.anthropic.com"
+    model: str = "claude-haiku-4-5-20251001"
+
+    @classmethod
+    def from_env(cls) -> AnthropicSettings:
+        key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+        if not key:
+            raise RuntimeError(
+                "Set ANTHROPIC_API_KEY in the environment. "
+                "See https://console.anthropic.com/"
+            )
+        default_model = "claude-haiku-4-5-20251001"
+        model = os.environ.get("ANTHROPIC_MODEL", default_model).strip() or default_model
+        return cls(api_key=key, model=model)
+
+
 def llm_settings_from_env() -> LlmSettings:
-    """Pick provider via ``LLM_PROVIDER`` (``groq`` or ``openrouter``; default ``groq``)."""
+    """Pick provider via ``LLM_PROVIDER`` (``groq``, ``openrouter``, or ``anthropic``; default ``groq``)."""
     provider = os.environ.get("LLM_PROVIDER", "groq").strip().lower()
     if provider == "openrouter":
         return OpenRouterSettings.from_env()
     if provider == "groq":
         return GroqSettings.from_env()
+    if provider == "anthropic":
+        return AnthropicSettings.from_env()
     raise RuntimeError(
-        f"Unknown LLM_PROVIDER={provider!r}; use 'groq' or 'openrouter'."
+        f"Unknown LLM_PROVIDER={provider!r}; use 'groq', 'openrouter', or 'anthropic'."
     )

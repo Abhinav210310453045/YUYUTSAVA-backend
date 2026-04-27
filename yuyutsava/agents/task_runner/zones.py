@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from yuyutsava.agents.task_runner.types import FilesystemZone
+from yuyutsava.models.operations import FilesystemZone
 
 # ---------------------------------------------------------------------------
 # System-critical path prefixes — always denied, checked first

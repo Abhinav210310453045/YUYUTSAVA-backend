@@ -13,6 +13,7 @@ import dataclasses
 import os
 import sys
 import uuid
+from typing import Literal
 from pathlib import Path
 
 try:
@@ -21,8 +22,9 @@ except ImportError:
     load_dotenv = None  # type: ignore[assignment, misc]
 
 from yuyutsava.cli.scenarios import format_scenario_list, get_scenario
-from yuyutsava.core.config import DockerSettings, llm_settings_from_env
+from yuyutsava.core.config import DockerSettings, LocalSettings, llm_settings_from_env
 from yuyutsava.core.engine import (
+    _cleanup_local_sandbox,
     astream_agent,
     build_agent,
     builtin_tools_reference_json,
@@ -167,14 +169,34 @@ def _build_parser() -> argparse.ArgumentParser:
             "docker cp into <export-dir>/_pulled or <workspace>/_docker_pull."
         ),
     )
+    p.add_argument(
+        "--sandbox-dir",
+        type=Path,
+        default=None,
+        metavar="DIR",
+        help=(
+            "Local sandbox directory for temporary work (default: YUYUTSAVA_SANDBOX_DIR "
+            "or <workspace>/_sandbox). Deleted after each run."
+        ),
+    )
+    p.add_argument(
+        "--output-dir",
+        type=Path,
+        default=None,
+        metavar="DIR",
+        help=(
+            "Directory where the agent writes output files (default: YUYUTSAVA_OUTPUT_DIR "
+            "or <workspace>/_output)."
+        ),
+    )
     return p
 
 
-def _resolved_execution_mode(args: argparse.Namespace) -> str:
+def _resolved_execution_mode(args: argparse.Namespace) -> Literal["local", "docker"]:
     if args.execution is not None:
         return args.execution
     env = os.environ.get("YUYUTSAVA_EXECUTION", "local").strip().lower()
-    return env if env in ("local", "docker") else "local"
+    return "docker" if env == "docker" else "local"
 
 
 def _docker_settings_from_args(args: argparse.Namespace) -> DockerSettings:
@@ -192,6 +214,16 @@ def _docker_settings_from_args(args: argparse.Namespace) -> DockerSettings:
         cfg = dataclasses.replace(cfg, pids_limit=args.docker_pids_limit)
     if args.docker_export_dir is not None:
         cfg = dataclasses.replace(cfg, export_dir=args.docker_export_dir)
+    return cfg
+
+
+def _local_settings_from_args(args: argparse.Namespace) -> LocalSettings:
+    """Load LocalSettings from .env, then apply CLI flag overrides."""
+    cfg = LocalSettings.from_env()
+    if args.sandbox_dir is not None:
+        cfg = dataclasses.replace(cfg, sandbox_dir=args.sandbox_dir)
+    if args.output_dir is not None:
+        cfg = dataclasses.replace(cfg, output_dir=args.output_dir)
     return cfg
 
 
@@ -276,6 +308,7 @@ async def _async_main(argv: list[str] | None = None) -> int:
     workspace = args.workspace.resolve()
     execution = _resolved_execution_mode(args)
     docker_cfg = _docker_settings_from_args(args)
+    local_cfg = _local_settings_from_args(args)
 
     bundle = build_agent(
         workspace,
@@ -283,6 +316,7 @@ async def _async_main(argv: list[str] | None = None) -> int:
         bash_timeout_sec=args.bash_timeout,
         execution_mode=execution,
         docker_settings=docker_cfg,
+        local_settings=local_cfg,
         permission_check=not args.no_permission_check,
     )
     try:
@@ -309,6 +343,8 @@ async def _async_main(argv: list[str] | None = None) -> int:
                 written = pull_virtual_paths_to_host(bundle.docker_backend, pulls, dest)
                 if args.verbose and written:
                     print(f"Docker pull wrote: {written}", file=sys.stderr)
+        if execution == "local" and bundle.sandbox_root is not None:
+            _cleanup_local_sandbox(workspace, bundle.sandbox_root)
         if final.strip() and not args.verbose:
             print(final.strip())
     finally:
