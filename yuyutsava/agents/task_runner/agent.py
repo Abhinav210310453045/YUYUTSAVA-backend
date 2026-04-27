@@ -29,14 +29,15 @@ from yuyutsava.agents.task_runner.permissions import (
     get_alternatives,
     get_risk_level,
 )
-from yuyutsava.agents.task_runner.types import (
+from yuyutsava.agents.task_runner.zones import classify_zone
+from yuyutsava.models.operations import (
     FilesystemZone,
     OperationRequest,
     OperationResponse,
     OperationType,
     PermissionAction,
 )
-from yuyutsava.agents.task_runner.zones import classify_zone
+from yuyutsava.models.results import DeleteResult, ReadResult, ShellResult, WriteResult
 
 logger = logging.getLogger("yuyutsava.task_runner")
 
@@ -63,9 +64,13 @@ class TaskRunnerAgent:
         self,
         workspace_root: Path,
         sandbox_subdir: str = "_sandbox",
+        sandbox_root: Path | None = None,
     ) -> None:
         self.workspace_root: Path = workspace_root.resolve()
-        self.sandbox_root: Path = (self.workspace_root / sandbox_subdir).resolve()
+        self.sandbox_root: Path = (
+            sandbox_root.resolve() if sandbox_root is not None
+            else (self.workspace_root / sandbox_subdir).resolve()
+        )
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -130,7 +135,7 @@ class TaskRunnerAgent:
         # 4. PROMPT — ask the user via LangGraph interrupt()
         if action == PermissionAction.PROMPT:
             payload = build_interrupt_payload(request, zone)
-            decision: str = interrupt(payload)
+            decision: str = interrupt(payload.to_interrupt_dict())
 
             if decision != "approve":
                 error_msg = (
@@ -184,29 +189,39 @@ class TaskRunnerAgent:
     # Execution dispatch
     # ------------------------------------------------------------------
 
-    async def _execute(self, request: OperationRequest):
-        """Dispatch to the appropriate executor function based on operation type."""
+    async def _execute(
+        self, request: OperationRequest
+    ) -> ShellResult | WriteResult | DeleteResult | ReadResult:
+        """Dispatch to the appropriate executor and return a typed result model."""
         path = Path(request.paths[0])
         ctx = request.additional_context or {}
 
         match request.operation:
             case OperationType.READ:
-                return await _exec.execute_read(path)
+                content = await _exec.execute_read(path)
+                return ReadResult(content=content)
 
             case OperationType.WRITE | OperationType.CREATE:
-                content = ctx.get("content", "")
+                content = str(ctx.get("content", ""))
                 await _exec.execute_write(path, content)
-                return {"written_to": str(path)}
+                return WriteResult(written_to=str(path))
 
             case OperationType.DELETE:
                 await _exec.execute_delete(path)
-                return {"deleted": str(path)}
+                return DeleteResult(deleted=str(path))
 
             case OperationType.EXECUTE:
-                command = ctx.get("command", "")
-                timeout = int(ctx.get("timeout", 120))
-                cwd = Path(ctx.get("cwd", str(self.sandbox_root)))
-                return await _exec.execute_run(command, cwd, timeout)
+                command = str(ctx.get("command", ""))
+                _timeout = ctx.get("timeout", 120)
+                timeout = int(_timeout) if isinstance(_timeout, (int, float, str)) else 120
+                _cwd = ctx.get("cwd")
+                cwd = Path(str(_cwd)) if _cwd is not None else self.sandbox_root
+                raw = await _exec.execute_run(command, cwd, timeout)
+                return ShellResult(
+                    stdout=raw["stdout"],
+                    stderr=raw["stderr"],
+                    exit_code=raw["exit_code"],
+                )
 
             case _:
                 raise NotImplementedError(

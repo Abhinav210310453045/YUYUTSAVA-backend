@@ -12,6 +12,7 @@ import asyncio
 import json
 import logging
 import re
+import shutil
 import sys
 import uuid
 from dataclasses import dataclass
@@ -21,16 +22,23 @@ from typing import Any, Literal
 from deepagents import create_deep_agent
 from deepagents.backends import LocalShellBackend
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
+from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 
-from yuyutsava.core.config import DockerSettings, LlmSettings
+from yuyutsava.core.config import DockerSettings, LocalSettings, LlmSettings
 from yuyutsava.core.docker_sandbox_backend import DockerSandboxBackend
 from yuyutsava.core.llm import chat_model
 from yuyutsava.core.permission_middleware import PermissionMiddleware
+from yuyutsava.core.tool_filter_middleware import ToolFilterMiddleware
 from yuyutsava.agents.task_runner.tools import bind_tools as _bind_task_runner_tools
 from yuyutsava.agents.task_runner.prompts import task_runner_rules_section
+from yuyutsava.models.interrupts import (
+    PermissionRequestInterrupt,
+    TaskRunnerPermissionInterrupt,
+    UserQuestionInterrupt,
+)
 
 # ---------------------------------------------------------------------------
 # Logging setup
@@ -79,6 +87,8 @@ class AgentBundle:
 
     agent: CompiledStateGraph
     docker_backend: DockerSandboxBackend | None = None
+    sandbox_root: Path | None = None
+    output_dir: Path | None = None
 
     def close(self) -> None:
         if self.docker_backend is not None:
@@ -113,15 +123,21 @@ def builtin_tools_reference_json() -> str:
 # ---------------------------------------------------------------------------
 
 
-def _local_system_prompt(workspace_root: Path) -> str:
+def _local_system_prompt(
+    workspace_root: Path,
+    sandbox_root: Path | None = None,
+    output_dir: Path | None = None,
+) -> str:
     root = workspace_root.resolve()
-    sandbox = root / "_sandbox"
+    sb = sandbox_root.resolve() if sandbox_root is not None else root / "_sandbox"
+    out = output_dir.resolve() if output_dir is not None else root / "_output"
     return f"""\
-{task_runner_rules_section(root, sandbox)}
+{task_runner_rules_section(root, sb, out)}
 
 ## WORKSPACE CONTEXT
 
 Root: {root} | Mode: real disk + local shell.
+Output dir: {out} — write all deliverables here, not to the sandbox.
 
 PATH TRANSLATION (critical): ls and glob return virtual paths anchored at Root.
 Before passing any path from ls/glob to tr_* tools, convert it to a real absolute path:
@@ -187,6 +203,7 @@ def build_agent(
     bash_timeout_sec: int = 120,
     execution_mode: Literal["local", "docker"] = "local",
     docker_settings: DockerSettings | None = None,
+    local_settings: LocalSettings | None = None,
     permission_check: bool = True,
 ) -> AgentBundle:
     """Build a Deep Agent; ``local`` uses ``LocalShellBackend``, ``docker`` uses ``DockerSandboxBackend``.
@@ -198,14 +215,21 @@ def build_agent(
     """
     model = chat_model(settings)
     checkpointer = MemorySaver()
-    middleware = [PermissionMiddleware(workspace_root=workspace_root.resolve())] if permission_check else []
+    middleware = [ToolFilterMiddleware()]
+    if permission_check:
+        middleware.append(PermissionMiddleware(workspace_root=workspace_root.resolve()))
+
+    loc = local_settings or LocalSettings()
+    ws = workspace_root.resolve()
+    sandbox_root = (loc.sandbox_dir.resolve() if loc.sandbox_dir else ws / "_sandbox")
+    output_dir   = (loc.output_dir.resolve()  if loc.output_dir  else ws / "_output")
 
     if execution_mode == "docker":
         docker_cfg = docker_settings or DockerSettings()
         export = docker_cfg.export_dir.resolve() if docker_cfg.export_dir else None
         docker_backend = DockerSandboxBackend(
             image=docker_cfg.image,
-            workspace_host=workspace_root.resolve(),
+            workspace_host=ws,
             export_host=export,
             network=docker_cfg.network,
             timeout=bash_timeout_sec,
@@ -215,7 +239,7 @@ def build_agent(
         )
         graph = create_deep_agent(
             model=model,
-            tools=_bind_task_runner_tools(workspace_root.resolve()),
+            tools=_bind_task_runner_tools(ws),
             backend=docker_backend,
             system_prompt=_docker_system_prompt(workspace_root, docker_cfg.export_dir),
             checkpointer=checkpointer,
@@ -227,14 +251,14 @@ def build_agent(
     backend = _local_shell_backend_factory(workspace_root, bash_timeout_sec)
     graph = create_deep_agent(
         model=model,
-        tools=_bind_task_runner_tools(workspace_root.resolve()),
+        tools=_bind_task_runner_tools(ws, sandbox_root),
         backend=backend,
-        system_prompt=_local_system_prompt(workspace_root),
+        system_prompt=_local_system_prompt(workspace_root, sandbox_root, output_dir),
         checkpointer=checkpointer,
         middleware=middleware,
         debug=False,
     )
-    return AgentBundle(agent=graph, docker_backend=None)
+    return AgentBundle(agent=graph, docker_backend=None, sandbox_root=sandbox_root, output_dir=output_dir)
 
 
 # ---------------------------------------------------------------------------
@@ -330,36 +354,134 @@ def _print_token_usage(m: Any, stream: Any) -> None:
 _SEP = "━" * 60
 
 
-async def _prompt_permission(interrupt_value: Any) -> str:
-    """Print the permission request and read user decision from stdin (non-blocking).
+# ---------------------------------------------------------------------------
+# Tool result size guard
+# ---------------------------------------------------------------------------
 
-    Handles two interrupt shapes:
-      • TaskRunner permission  (type == "task_runner_permission") — magenta prompt
-      • PermissionMiddleware   (type == "permission_request" or legacy shape) — yellow prompt
+_MAX_TOOL_RESULT_CHARS = 6_000
+
+
+def _summarize_tool_result(content: str, tool_name: str) -> str:
+    """Replace oversized tool results with a structured summary.
+
+    Preserves key metadata fields (paths, exit codes, status) while discarding
+    bulk content (base64, long stdout, binary data) that would overflow the LLM
+    context window.  This mirrors how Claude handles tool output compaction —
+    the model sees a meaningful summary, not a chopped-off string.
     """
-    # ── TaskRunner permission request ──────────────────────────────────────
-    if isinstance(interrupt_value, dict) and interrupt_value.get("type") == "task_runner_permission":
-        operation  = interrupt_value.get("operation", "?").upper()
-        paths      = interrupt_value.get("paths", ["<unknown>"])
-        zone       = interrupt_value.get("zone", "?").upper()
-        reason     = interrupt_value.get("reason", "No reason given")
-        agent_id   = interrupt_value.get("requesting_agent", "unknown-agent")
-        parent     = interrupt_value.get("parent_agent") or ""
-        risk       = interrupt_value.get("risk_level", "?")
-        path_str   = ", ".join(paths) if isinstance(paths, list) else str(paths)
+    if len(content) <= _MAX_TOOL_RESULT_CHARS:
+        return content
+
+    # tr_* tools always return JSON — parse and keep the useful small fields
+    try:
+        data = json.loads(content)
+        result = data.get("result", {})
+        summary: dict[str, Any] = {
+            "status": data.get("status", "unknown"),
+            "zone": data.get("zone", ""),
+            "operation": data.get("operation", ""),
+            "tool": tool_name,
+            "note": (
+                f"[OUTPUT SUPPRESSED — {len(content):,} chars exceeded safe context "
+                f"limit of {_MAX_TOOL_RESULT_CHARS:,}. Binary or large content was "
+                f"produced but not loaded into context. Reference the file path from "
+                f"your TODO list to continue work.]"
+            ),
+        }
+        # Preserve small, actionable fields
+        if isinstance(result, dict):
+            for key in ("written_to", "deleted", "exit_code", "stderr"):
+                if key in result and result[key] is not None:
+                    val = result[key]
+                    # Keep stderr only if it is short enough to be useful
+                    if key == "stderr" and isinstance(val, str) and len(val) > 500:
+                        val = val[:500] + " … [truncated]"
+                    summary[key] = val
+        return json.dumps(summary)
+    except Exception:
+        # Plain-text tool output — keep a small leading excerpt
+        return (
+            content[:2_000]
+            + f"\n\n[OUTPUT SUPPRESSED — {len(content):,} chars total. "
+            "Large or binary output was cut. Write large outputs to a file "
+            "in the sandbox and reference the file path instead of printing inline.]"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Post-task cleanup (local mode only)
+# ---------------------------------------------------------------------------
+
+
+def _cleanup_local_sandbox(workspace_root: Path, sandbox_root: Path) -> None:
+    """Delete sandbox and large_tool_results after a local task completes.
+
+    - sandbox_root: deleted entirely (temp work; output files go to output_dir)
+    - workspace_root/large_tool_results: deleted (deepagents eviction cache)
+    """
+    for target in (sandbox_root, workspace_root / "large_tool_results"):
+        if target.exists():
+            try:
+                shutil.rmtree(target)
+                logger.debug("Cleaned up %s", target)
+            except Exception as exc:
+                logger.warning("Could not remove %s: %s", target, exc)
+
+
+# ---------------------------------------------------------------------------
+# Permission prompt / user question handler
+# ---------------------------------------------------------------------------
+
+
+async def _prompt_permission(interrupt_value: Any) -> str:
+    """Render the interrupt payload to the terminal and collect the user's response.
+
+    Dispatches on the validated interrupt type.  Each branch parses the raw dict
+    into the corresponding typed model so all field access is safe and explicit.
+
+    Returns the user's response string:
+      • "approve" / "reject"  for permission prompts
+      • free-text answer      for user questions
+    """
+    interrupt_type = interrupt_value.get("type", "") if isinstance(interrupt_value, dict) else ""
+
+    # ── tr_ask_user: agent asks a free-text question ───────────────────────
+    if interrupt_type == "user_question":
+        iv = UserQuestionInterrupt.model_validate(interrupt_value)
+
+        print(f"\n\033[36m{_SEP}\033[0m", file=sys.stderr)
+        print("\033[36m💬  AGENT QUESTION\033[0m", file=sys.stderr)
+        print(f"\033[36m{_SEP}\033[0m", file=sys.stderr)
+        print(f"  {iv.question}", file=sys.stderr)
+        if iv.options:
+            print(f"  Options: {' | '.join(iv.options)}", file=sys.stderr)
+        print(f"\033[36m{_SEP}\033[0m", file=sys.stderr)
+
+        answer: str = await asyncio.to_thread(input, "  Your answer: ")
+        response = answer.strip() or "no response"
+        print(f"\033[36m  → {response}\033[0m\n", file=sys.stderr)
+        return response
+
+    # ── TaskRunnerAgent: filesystem operation permission request ───────────
+    if interrupt_type == "task_runner_permission":
+        iv = TaskRunnerPermissionInterrupt.model_validate(interrupt_value)
+        path_str = ", ".join(iv.paths)
 
         print(f"\n\033[35m{_SEP}\033[0m", file=sys.stderr)
         print("\033[35m🔐  TASK RUNNER PERMISSION REQUEST\033[0m", file=sys.stderr)
         print(f"\033[35m{_SEP}\033[0m", file=sys.stderr)
-        print(f"  Operation : {operation}", file=sys.stderr)
+        print(f"  Operation : {iv.operation.upper()}", file=sys.stderr)
         print(f"  Path(s)   : {path_str}", file=sys.stderr)
-        print(f"  Zone      : {zone}", file=sys.stderr)
-        print(f"  Agent     : {agent_id}" + (f"  (parent: {parent})" if parent else ""), file=sys.stderr)
-        print(f"  Reason    : {reason}", file=sys.stderr)
-        print(f"  Risk      : {risk}", file=sys.stderr)
+        print(f"  Zone      : {iv.zone.upper()}", file=sys.stderr)
+        agent_line = f"  Agent     : {iv.requesting_agent}"
+        if iv.parent_agent:
+            agent_line += f"  (parent: {iv.parent_agent})"
+        print(agent_line, file=sys.stderr)
+        print(f"  Reason    : {iv.reason}", file=sys.stderr)
+        print(f"  Risk      : {iv.risk_level}", file=sys.stderr)
         print(f"\033[35m{_SEP}\033[0m", file=sys.stderr)
 
-        answer: str = await asyncio.to_thread(input, "  Allow? [y/N]: ")
+        answer = await asyncio.to_thread(input, "  Allow? [y/N]: ")
         decision = "approve" if answer.strip().lower() in ("y", "yes") else "reject"
         if decision == "approve":
             print("\033[32m  ✅  Approved\033[0m\n", file=sys.stderr)
@@ -367,30 +489,31 @@ async def _prompt_permission(interrupt_value: Any) -> str:
             print("\033[31m  🚫  Rejected\033[0m\n", file=sys.stderr)
         return decision
 
-    # ── PermissionMiddleware request (existing behaviour — unchanged) ───────
+    # ── PermissionMiddleware: raw execute call triggered a pattern check ───
     if isinstance(interrupt_value, dict):
-        command: str = interrupt_value.get("command", "<unknown>")
-        reason: str = interrupt_value.get("reason", "Potentially dangerous operation")
+        iv2 = PermissionRequestInterrupt.model_validate({
+            "command": interrupt_value.get("command", "<unknown>"),
+            "reason":  interrupt_value.get("reason", "Potentially dangerous operation"),
+        })
     else:
-        command = str(interrupt_value)
-        reason = "Potentially dangerous operation"
+        iv2 = PermissionRequestInterrupt(
+            command=str(interrupt_value),
+            reason="Potentially dangerous operation",
+        )
 
     print(f"\n\033[33m{_SEP}\033[0m", file=sys.stderr)
     print("\033[33m🛑  PERMISSION REQUEST\033[0m", file=sys.stderr)
     print(f"\033[33m{_SEP}\033[0m", file=sys.stderr)
-    print(f"  Command : {command}", file=sys.stderr)
-    print(f"  Reason  : {reason}", file=sys.stderr)
+    print(f"  Command : {iv2.command}", file=sys.stderr)
+    print(f"  Reason  : {iv2.reason}", file=sys.stderr)
     print(f"\033[33m{_SEP}\033[0m", file=sys.stderr)
 
-    # asyncio.to_thread so blocking stdin doesn't stall the event loop
     answer = await asyncio.to_thread(input, "  Allow? [y/N]: ")
     decision = "approve" if answer.strip().lower() in ("y", "yes") else "reject"
-
     if decision == "approve":
         print("\033[32m  ✅  Approved — running command\033[0m\n", file=sys.stderr)
     else:
         print("\033[31m  🚫  Rejected — command will not run\033[0m\n", file=sys.stderr)
-
     return decision
 
 
@@ -410,7 +533,7 @@ async def astream_agent(
       asks the user on stdin, then resumes the graph with approve/reject.
     - Returns the final assistant text.
     """
-    cfg: dict[str, Any] = {
+    cfg: RunnableConfig = {
         "recursion_limit": recursion_limit,
         "configurable": {"thread_id": thread_id or str(uuid.uuid4())},
     }
@@ -526,7 +649,12 @@ async def astream_agent(
                         elif isinstance(m, ToolMessage):
                             tn = getattr(m, "name", "tool") or "tool"
                             body = m.content if isinstance(m.content, str) else str(m.content)
-                            preview = body if len(body) <= 600 else body[:600] + "\n    … [truncated]"
+                            # Guard against large results (base64, long stdout, binary)
+                            # overflowing the LLM context on the next call.
+                            safe_body = _summarize_tool_result(body, tn)
+                            if safe_body is not body:
+                                m.content = safe_body
+                            preview = safe_body if len(safe_body) <= 600 else safe_body[:600] + "\n    … [truncated]"
                             logger.info("")
                             logger.info("\033[32m✅  TOOL RESULT ← %s\033[0m", tn)
                             logger.info("    %s", preview.replace("\n", "\n    "))

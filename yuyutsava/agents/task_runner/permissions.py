@@ -7,7 +7,8 @@ The rule table is the single source of truth for all zone/operation decisions.
 
 from __future__ import annotations
 
-from yuyutsava.agents.task_runner.types import (
+from yuyutsava.models.interrupts import TaskRunnerPermissionInterrupt
+from yuyutsava.models.operations import (
     FilesystemZone,
     OperationRequest,
     OperationType,
@@ -137,17 +138,16 @@ def get_alternatives(zone: FilesystemZone, operation: OperationType) -> list[str
 def build_interrupt_payload(
     request: OperationRequest,
     zone: FilesystemZone,
-) -> dict:
-    """Build the structured dict passed to LangGraph's ``interrupt()`` function."""
-    return {
-        "type": "task_runner_permission",
-        "operation": request.operation.value,
-        "paths": request.paths,
-        "zone": zone.value,
-        "reason": request.reason,
-        "requesting_agent": request.requesting_agent,
-        "parent_agent": request.parent_agent,
-        "task_id": request.task_id,
-        "task_description": request.task_description,
-        "risk_level": get_risk_level(zone, request.operation),
-    }
+) -> TaskRunnerPermissionInterrupt:
+    """Build the typed interrupt payload passed to LangGraph's ``interrupt()``."""
+    return TaskRunnerPermissionInterrupt(
+        operation=request.operation.value,
+        paths=request.paths,
+        zone=zone.value,
+        reason=request.reason,
+        requesting_agent=request.requesting_agent,
+        parent_agent=request.parent_agent,
+        task_id=request.task_id,
+        task_description=request.task_description,
+        risk_level=get_risk_level(zone, request.operation),
+    )

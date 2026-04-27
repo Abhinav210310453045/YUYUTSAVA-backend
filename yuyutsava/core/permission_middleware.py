@@ -28,6 +28,8 @@ from langchain_core.messages import ToolMessage
 from langchain.agents.middleware.types import AgentMiddleware
 from langgraph.types import interrupt
 
+from yuyutsava.models.interrupts import PermissionRequestInterrupt
+
 # ---------------------------------------------------------------------------
 # Dangerous-command pattern detection (pattern check)
 # ---------------------------------------------------------------------------
@@ -274,11 +276,9 @@ class PermissionMiddleware(AgentMiddleware):  # type: ignore[misc]
 
                     # Out-of-workspace or protected dir: ask user
                     decision: str = interrupt(
-                        {
-                            "type": "permission_request",
-                            "command": command,
-                            "reason": scope_reason,
-                        }
+                        PermissionRequestInterrupt(
+                            command=command, reason=scope_reason
+                        ).to_interrupt_dict()
                     )
                     if decision != "approve":
                         return ToolMessage(
@@ -295,11 +295,9 @@ class PermissionMiddleware(AgentMiddleware):  # type: ignore[misc]
             pattern_reason = classify_command(command)
             if pattern_reason:
                 decision = interrupt(
-                    {
-                        "type": "permission_request",
-                        "command": command,
-                        "reason": pattern_reason,
-                    }
+                    PermissionRequestInterrupt(
+                        command=command, reason=pattern_reason
+                    ).to_interrupt_dict()
                 )
                 if decision != "approve":
                     return ToolMessage(

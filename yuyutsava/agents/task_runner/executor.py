@@ -38,6 +38,7 @@ async def execute_run(
     Returns a dict with keys: ``stdout``, ``stderr``, ``exit_code``.
     Raises ``asyncio.TimeoutError`` if the command exceeds *timeout* seconds.
     """
+    cwd.mkdir(parents=True, exist_ok=True)
     proc = await asyncio.create_subprocess_shell(
         command,
         stdout=asyncio.subprocess.PIPE,
