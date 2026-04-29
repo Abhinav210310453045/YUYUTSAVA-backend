@@ -5,6 +5,7 @@ Public exports for YUYUTSAVA core: LLM settings, agent builder, and invoke helpe
 from yuyutsava.core.config import (
     GroqSettings,
     LlmSettings,
+    OllamaSettings,
     OpenRouterSettings,
     llm_settings_from_env,
 )
@@ -23,6 +24,7 @@ __all__ = [
     "DockerSandboxBackend",
     "GroqSettings",
     "LlmSettings",
+    "OllamaSettings",
     "OpenRouterSettings",
     "astream_agent",
     "build_agent",

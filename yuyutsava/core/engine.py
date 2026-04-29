@@ -139,11 +139,15 @@ def _local_system_prompt(
 Root: {root} | Mode: real disk + local shell.
 Output dir: {out} — write all deliverables here, not to the sandbox.
 
-PATH TRANSLATION (critical): ls and glob return virtual paths anchored at Root.
-Before passing any path from ls/glob to tr_* tools, convert it to a real absolute path:
+PATH RULES (critical):
+- ls and glob use VIRTUAL paths: `/` is the workspace root, NOT the real filesystem root.
+  - To list workspace root: ls(path="/")
+  - To list a subdirectory: ls(path="/subdir")
+  - NEVER pass a real absolute path like `{root}` to ls or glob — it will return empty.
+- ls and glob RETURN virtual paths. Before passing them to tr_* tools, convert to real paths:
   virtual `/foo.xlsx`  →  real `{root}/foo.xlsx`
   virtual `/subdir/bar.py`  →  real `{root}/subdir/bar.py`
-Never pass a virtual path directly to tr_read_file / tr_write_file / tr_delete_file.
+- Never pass a virtual path directly to tr_read_file / tr_write_file / tr_delete_file.
 
 Complete the user's task; be concise."""
 
@@ -163,11 +167,15 @@ def _docker_system_prompt(workspace_root: Path, export_host: Path | None) -> str
 Mode: Docker sandbox (isolated from host shell).
 Mount: host {root} → /workspace.{extra}
 
-PATH TRANSLATION (critical): ls and glob return virtual paths anchored at /workspace.
-Before passing any path from ls/glob to tr_* tools, convert it to a real absolute path:
+PATH RULES (critical):
+- ls and glob use VIRTUAL paths: `/` is the workspace root (/workspace), NOT the real filesystem root.
+  - To list workspace root: ls(path="/")
+  - To list a subdirectory: ls(path="/subdir")
+  - NEVER pass a real absolute path like `/workspace` to ls or glob — it will return empty.
+- ls and glob RETURN virtual paths. Before passing them to tr_* tools, convert to real paths:
   virtual `/foo.xlsx`  →  real `/workspace/foo.xlsx`
   virtual `/subdir/bar.py`  →  real `/workspace/subdir/bar.py`
-Never pass a virtual path directly to tr_read_file / tr_write_file / tr_delete_file.
+- Never pass a virtual path directly to tr_read_file / tr_write_file / tr_delete_file.
 
 Complete the user's task; be concise."""
 
