@@ -1,10 +1,12 @@
 """
-Load LLM and Docker settings from environment (Groq or OpenRouter).
+Load LLM and Docker settings from environment.
 
-Both providers expose an OpenAI-compatible HTTP API:
+Supported LLM providers (set ``LLM_PROVIDER``):
 
-- Groq: https://console.groq.com/docs/overview
-- OpenRouter: https://openrouter.ai/docs/quickstart
+- Groq:        https://console.groq.com/docs/overview
+- OpenRouter:  https://openrouter.ai/docs/quickstart
+- Anthropic:   https://console.anthropic.com/
+- Ollama:      https://ollama.com/  (local, no API key required)
 """
 
 from __future__ import annotations
@@ -17,6 +19,7 @@ from typing import Literal, Protocol
 
 GROQ_OPENAI_BASE_URL = "https://api.groq.com/openai/v1"
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+OLLAMA_BASE_URL = "http://localhost:11434/v1"
 
 
 class LlmSettings(Protocol):
@@ -165,8 +168,34 @@ class AnthropicSettings:
         return cls(api_key=key, model=model)
 
 
+@dataclass(frozen=True)
+class OllamaSettings:
+    """Ollama local inference server (OpenAI-compatible chat completions).
+
+    Ollama exposes an OpenAI-compatible API at ``http://localhost:11434/v1``.
+    No API key is required; the string ``"ollama"`` is sent as a placeholder
+    because ``ChatOpenAI`` requires a non-empty value.
+
+    See https://ollama.com/
+    """
+
+    api_key: str = "ollama"
+    base_url: str = OLLAMA_BASE_URL
+    model: str = "gemma4:e2b"
+
+    @classmethod
+    def from_env(cls) -> OllamaSettings:
+        base = os.environ.get("OLLAMA_HOST", OLLAMA_BASE_URL).strip() or OLLAMA_BASE_URL
+        base = base.rstrip("/")
+        if not base.endswith("/v1"):
+            base = base + "/v1"
+        default_model = "gemma4:e2b"
+        model = os.environ.get("OLLAMA_MODEL", default_model).strip() or default_model
+        return cls(base_url=base, model=model)
+
+
 def llm_settings_from_env() -> LlmSettings:
-    """Pick provider via ``LLM_PROVIDER`` (``groq``, ``openrouter``, or ``anthropic``; default ``groq``)."""
+    """Pick provider via ``LLM_PROVIDER`` (``groq``, ``openrouter``, ``anthropic``, or ``ollama``; default ``groq``)."""
     provider = os.environ.get("LLM_PROVIDER", "groq").strip().lower()
     if provider == "openrouter":
         return OpenRouterSettings.from_env()
@@ -174,6 +203,8 @@ def llm_settings_from_env() -> LlmSettings:
         return GroqSettings.from_env()
     if provider == "anthropic":
         return AnthropicSettings.from_env()
+    if provider == "ollama":
+        return OllamaSettings.from_env()
     raise RuntimeError(
-        f"Unknown LLM_PROVIDER={provider!r}; use 'groq', 'openrouter', or 'anthropic'."
+        f"Unknown LLM_PROVIDER={provider!r}; use 'groq', 'openrouter', 'anthropic', or 'ollama'."
     )
