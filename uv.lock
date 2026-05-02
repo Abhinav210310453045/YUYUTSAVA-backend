@@ -86,37 +86,6 @@ wheels = [
 ]
 
 [[package]]
-name = "backend"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "deepagents" },
-    { name = "fastapi" },
-    { name = "httpx" },
-    { name = "langchain-openai" },
-    { name = "mcp", extra = ["cli"] },
-    { name = "mcp-swagger-ui" },
-    { name = "python-dotenv" },
-    { name = "requests" },
-    { name = "streamlit" },
-    { name = "uvicorn", extra = ["standard"] },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "deepagents", specifier = ">=0.4.12" },
-    { name = "fastapi", specifier = ">=0.135.1" },
-    { name = "httpx", specifier = ">=0.28.1" },
-    { name = "langchain-openai", specifier = ">=1.1.11" },
-    { name = "mcp", extras = ["cli"], specifier = ">=1.26.0" },
-    { name = "mcp-swagger-ui", specifier = ">=0.1.1" },
-    { name = "python-dotenv", specifier = ">=1.0.1" },
-    { name = "requests", specifier = ">=2.32.5" },
-    { name = "streamlit", specifier = ">=1.56.0" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.32.0" },
-]
-
-[[package]]
 name = "blinker"
 version = "1.9.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2660,6 +2629,37 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/50/55/15a7b8a56590e66ccd374bbfa3f9ffc45b810886c8c3b614e3f90bd2367c/xxhash-3.6.0-pp311-pypy311_pp73-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:881b47fc47e051b37d94d13e7455131054b56749b91b508b0907eb07900d1c13", size = 36251, upload-time = "2025-10-02T14:37:04.44Z" },
     { url = "https://files.pythonhosted.org/packages/62/b2/5ac99a041a29e58e95f907876b04f7067a0242cb85b5f39e726153981503/xxhash-3.6.0-pp311-pypy311_pp73-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:c6dc31591899f5e5666f04cc2e529e69b4072827085c1ef15294d91a004bc1bd", size = 32481, upload-time = "2025-10-02T14:37:05.869Z" },
     { url = "https://files.pythonhosted.org/packages/7b/d9/8d95e906764a386a3d3b596f3c68bb63687dfca806373509f51ce8eea81f/xxhash-3.6.0-pp311-pypy311_pp73-win_amd64.whl", hash = "sha256:15e0dac10eb9309508bfc41f7f9deaa7755c69e35af835db9cb10751adebc35d", size = 31565, upload-time = "2025-10-02T14:37:06.966Z" },
+]
+
+[[package]]
+name = "yuyutsava"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "deepagents" },
+    { name = "fastapi" },
+    { name = "httpx" },
+    { name = "langchain-openai" },
+    { name = "mcp", extra = ["cli"] },
+    { name = "mcp-swagger-ui" },
+    { name = "python-dotenv" },
+    { name = "requests" },
+    { name = "streamlit" },
+    { name = "uvicorn", extra = ["standard"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "deepagents", specifier = ">=0.4.12" },
+    { name = "fastapi", specifier = ">=0.135.1" },
+    { name = "httpx", specifier = ">=0.28.1" },
+    { name = "langchain-openai", specifier = ">=1.1.11" },
+    { name = "mcp", extras = ["cli"], specifier = ">=1.26.0" },
+    { name = "mcp-swagger-ui", specifier = ">=0.1.1" },
+    { name = "python-dotenv", specifier = ">=1.0.1" },
+    { name = "requests", specifier = ">=2.32.5" },
+    { name = "streamlit", specifier = ">=1.56.0" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.32.0" },
 ]
 
 [[package]]
