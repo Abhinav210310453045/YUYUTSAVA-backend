@@ -2,9 +2,11 @@
 yuyutsava.models — canonical schema layer for all structured data in the system.
 
 Sub-modules:
-  operations  — OperationRequest, OperationResponse, and the core enums
-  results     — typed result payloads that replace `result: Any` in OperationResponse
-  interrupts  — typed interrupt payloads passed to LangGraph's interrupt()
+  operations    — OperationRequest, OperationResponse, and the core enums
+  results       — typed result payloads that replace `result: Any` in OperationResponse
+  interrupts    — typed interrupt payloads passed to LangGraph's interrupt()
+  tool_messages — standardized structured messages embedded in tool results
+                  (SuppressedContentNotice, RecoveryHint, and future notice types)
 """
 
 from yuyutsava.models.operations import (
@@ -25,6 +27,13 @@ from yuyutsava.models.interrupts import (
     TaskRunnerPermissionInterrupt,
     UserQuestionInterrupt,
 )
+from yuyutsava.models.tool_messages import (
+    RecoveryHint,
+    SuppressedContentNotice,
+    SuppressedReason,
+    ToolNotice,
+    is_tool_notice,
+)
 
 __all__ = [
     # operations
@@ -42,4 +51,10 @@ __all__ = [
     "PermissionRequestInterrupt",
     "TaskRunnerPermissionInterrupt",
     "UserQuestionInterrupt",
+    # tool_messages
+    "RecoveryHint",
+    "SuppressedContentNotice",
+    "SuppressedReason",
+    "ToolNotice",
+    "is_tool_notice",
 ]

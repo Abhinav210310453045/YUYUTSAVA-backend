@@ -34,6 +34,7 @@ from yuyutsava.core.permission_middleware import PermissionMiddleware
 from yuyutsava.core.tool_filter_middleware import ToolFilterMiddleware
 from yuyutsava.agents.task_runner.tools import bind_tools as _bind_task_runner_tools
 from yuyutsava.agents.task_runner.prompts import task_runner_rules_section
+from yuyutsava.models.tool_messages import SuppressedContentNotice, SuppressedReason
 from yuyutsava.models.interrupts import (
     PermissionRequestInterrupt,
     TaskRunnerPermissionInterrupt,
@@ -366,54 +367,86 @@ _SEP = "━" * 60
 # Tool result size guard
 # ---------------------------------------------------------------------------
 
-_MAX_TOOL_RESULT_CHARS = 6_000
+# Absolute ceiling: results larger than this are never passed to the LLM as-is.
+# tr_read_file results already carry pagination metadata + a SuppressedContentNotice
+# when truncated, so legitimate file reads never hit this unless the single requested
+# chunk is itself enormous.  This backstop catches only true runaway cases:
+# binary blobs accidentally read as text, or pathological stdout.
+_MAX_TOOL_RESULT_CHARS = 100_000
+
+# Per-tool softer limits used when constructing SuppressedContentNotice payloads.
+_MAX_STDOUT_CHARS = 40_000
 
 
-def _summarize_tool_result(content: str, tool_name: str) -> str:
-    """Replace oversized tool results with a structured summary.
+def _guard_tool_result(content: str, tool_name: str) -> str:
+    """Enforce the hard ceiling on tool results entering the LLM context.
 
-    Preserves key metadata fields (paths, exit codes, status) while discarding
-    bulk content (base64, long stdout, binary data) that would overflow the LLM
-    context window.  This mirrors how Claude handles tool output compaction —
-    the model sees a meaningful summary, not a chopped-off string.
+    tr_read_file results are handled at the executor/agent layer — they already
+    embed a SuppressedContentNotice in result.truncation_notice when has_more is
+    True.  This function is the last-resort backstop for anything that still
+    exceeds _MAX_TOOL_RESULT_CHARS after that processing.
+
+    For tr_execute_in_sandbox stdout overflow a SuppressedContentNotice is
+    injected into the result JSON so the LLM gets actionable recovery hints
+    rather than a blind truncation.
+
+    For any other tool a minimal notice replaces the bulk payload.
     """
     if len(content) <= _MAX_TOOL_RESULT_CHARS:
         return content
 
-    # tr_* tools always return JSON — parse and keep the useful small fields
     try:
         data = json.loads(content)
-        result = data.get("result", {})
-        summary: dict[str, Any] = {
-            "status": data.get("status", "unknown"),
-            "zone": data.get("zone", ""),
-            "operation": data.get("operation", ""),
-            "tool": tool_name,
-            "note": (
-                f"[OUTPUT SUPPRESSED — {len(content):,} chars exceeded safe context "
-                f"limit of {_MAX_TOOL_RESULT_CHARS:,}. Binary or large content was "
-                f"produced but not loaded into context. Reference the file path from "
-                f"your TODO list to continue work.]"
+        result = data.get("result") or {}
+
+        # ── tr_execute_in_sandbox: inject notice into result, keep exit_code ──
+        if tool_name in ("tr_execute_in_sandbox", "tr_grep"):
+            command = ""
+            if isinstance(result, dict):
+                command = str(result.get("stdout", ""))[:80]  # best-effort for hint
+
+            notice = SuppressedContentNotice.stdout_too_large(
+                tool=tool_name,
+                command=command,
+                original_size_chars=len(content),
+            )
+            # Preserve exit_code and stderr (small); replace stdout with notice
+            new_result: dict[str, Any] = {
+                "kind": result.get("kind", "shell") if isinstance(result, dict) else "shell",
+                "exit_code": result.get("exit_code") if isinstance(result, dict) else None,
+                "stderr": (result.get("stderr", "") or "")[:2_000] if isinstance(result, dict) else "",
+                "stdout_notice": notice.model_dump(),
+            }
+            data["result"] = new_result
+            return json.dumps(data)
+
+        # ── all other tools: replace entire result with a generic notice ──────
+        notice = SuppressedContentNotice(
+            reason=SuppressedReason.UNKNOWN,
+            original_size_chars=len(content),
+            tool=tool_name,
+            human_message=(
+                f"Tool result was {len(content):,} chars — too large to pass to the LLM. "
+                f"Write large outputs to a file in the sandbox and reference the path."
             ),
-        }
-        # Preserve small, actionable fields
-        if isinstance(result, dict):
-            for key in ("written_to", "deleted", "exit_code", "stderr"):
-                if key in result and result[key] is not None:
-                    val = result[key]
-                    # Keep stderr only if it is short enough to be useful
-                    if key == "stderr" and isinstance(val, str) and len(val) > 500:
-                        val = val[:500] + " … [truncated]"
-                    summary[key] = val
-        return json.dumps(summary)
-    except Exception:
-        # Plain-text tool output — keep a small leading excerpt
-        return (
-            content[:2_000]
-            + f"\n\n[OUTPUT SUPPRESSED — {len(content):,} chars total. "
-            "Large or binary output was cut. Write large outputs to a file "
-            "in the sandbox and reference the file path instead of printing inline.]"
+            recovery=[],
         )
+        data["result"] = notice.model_dump()
+        return json.dumps(data)
+
+    except Exception:
+        # Non-JSON tool output (shouldn't happen for tr_* tools but be safe)
+        notice = SuppressedContentNotice(
+            reason=SuppressedReason.UNKNOWN,
+            original_size_chars=len(content),
+            tool=tool_name,
+            human_message=(
+                f"Tool output was {len(content):,} chars and could not be parsed. "
+                f"Write large outputs to a file and reference the path."
+            ),
+            recovery=[],
+        )
+        return json.dumps({"suppressed": True, "notice": notice.model_dump()})
 
 
 # ---------------------------------------------------------------------------
@@ -657,9 +690,11 @@ async def astream_agent(
                         elif isinstance(m, ToolMessage):
                             tn = getattr(m, "name", "tool") or "tool"
                             body = m.content if isinstance(m.content, str) else str(m.content)
-                            # Guard against large results (base64, long stdout, binary)
-                            # overflowing the LLM context on the next call.
-                            safe_body = _summarize_tool_result(body, tn)
+                            # Last-resort guard: replaces runaway payloads with a
+                            # SuppressedContentNotice before they reach the LLM.
+                            # tr_read_file results are already handled at the executor
+                            # layer; this only fires for pathological cases.
+                            safe_body = _guard_tool_result(body, tn)
                             if safe_body is not body:
                                 m.content = safe_body
                             preview = safe_body if len(safe_body) <= 600 else safe_body[:600] + "\n    … [truncated]"

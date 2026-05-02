@@ -38,6 +38,7 @@ from yuyutsava.models.operations import (
     PermissionAction,
 )
 from yuyutsava.models.results import DeleteResult, ReadResult, ShellResult, WriteResult
+from yuyutsava.models.tool_messages import SuppressedContentNotice
 
 logger = logging.getLogger("yuyutsava.task_runner")
 
@@ -198,8 +199,30 @@ class TaskRunnerAgent:
 
         match request.operation:
             case OperationType.READ:
-                content = await _exec.execute_read(path)
-                return ReadResult(content=content)
+                offset = int(ctx.get("offset", 0))
+                limit  = ctx.get("limit")
+                limit  = int(limit) if limit is not None else None
+                data   = await _exec.execute_read(path, offset=offset, limit=limit)
+
+                notice = None
+                if data["has_more"]:
+                    notice = SuppressedContentNotice.file_too_large(
+                        tool="tr_read_file",
+                        path=str(path),
+                        original_size_chars=len(data["content"]),
+                        total_lines=data["total_lines"],
+                        shown_lines=data["offset"] + data["returned_lines"],
+                    )
+
+                return ReadResult(
+                    content=data["content"],
+                    offset=data["offset"],
+                    limit=limit,
+                    returned_lines=data["returned_lines"],
+                    total_lines=data["total_lines"],
+                    has_more=data["has_more"],
+                    truncation_notice=notice,
+                )
 
             case OperationType.WRITE | OperationType.CREATE:
                 content = str(ctx.get("content", ""))

@@ -14,9 +14,28 @@ TASK_RUNNER_SYSTEM_PROMPT: str = """\
 ## FILE AND SHELL OPERATIONS
 
 Use ONLY these tools for all file/shell operations:
-  tr_read_file · tr_write_file · tr_delete_file · tr_execute_in_sandbox · tr_ask_user
+  tr_read_file · tr_write_file · tr_delete_file · tr_execute_in_sandbox · tr_grep · tr_ask_user
 
-ls, glob, grep are free (read-only). Never call read_file / write_file / edit_file / execute directly.
+ls, glob are free (read-only). Never call read_file / write_file / edit_file / execute directly.
+
+### LARGE FILES — pagination with tr_read_file
+tr_read_file supports offset + limit to read files in chunks:
+  - offset: 0-based line number to start from (default 0).
+  - limit:  max lines to return per call (omit to read to EOF).
+  - result.has_more: True when there are more lines after this chunk.
+  - result.truncation_notice: contains the next offset to use and recovery hints.
+  - result.total_lines: total lines in the file.
+Example — read a large file in 300-line pages:
+  tr_read_file(path="...", offset=0, limit=300)   # first chunk
+  tr_read_file(path="...", offset=300, limit=300) # second chunk, etc.
+
+### SEARCHING FILES — use tr_grep, NOT the built-in grep
+The built-in grep tool only works on virtual paths and returns empty results
+when given real absolute paths. Always use tr_grep for searching:
+  tr_grep(pattern="def create", path="/real/absolute/path/to/file.py", reason="...")
+  tr_grep(pattern="router.post", path="/real/absolute/path/to/dir/", reason="...")
+tr_grep returns matching lines with line numbers so you can target a specific
+offset when calling tr_read_file next.
 
 ## TASK PROTOCOL
 
