@@ -23,7 +23,11 @@ from langchain.agents.middleware.types import (
     ModelResponse,
 )
 
-_SUPPRESS: frozenset[str] = frozenset({"read_file", "write_file", "edit_file", "execute"})
+# Suppress built-in deepagents tools the LLM should never call directly:
+#   read_file / write_file / edit_file / execute  — replaced by tr_* equivalents
+#   grep  — operates on virtual paths only; broken when given real absolute paths.
+#            The LLM should use tr_grep instead, which shells out via the sandbox.
+_SUPPRESS: frozenset[str] = frozenset({"read_file", "write_file", "edit_file", "execute", "grep"})
 
 
 class ToolFilterMiddleware(AgentMiddleware[AgentState, Any, Any]):
