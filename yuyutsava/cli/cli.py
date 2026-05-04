@@ -234,7 +234,12 @@ def _parse_pull_paths(s: str) -> list[str]:
 
 def main(argv: list[str] | None = None) -> int:
     """Sync entry point required by setuptools console_scripts. Drives async logic."""
-    return asyncio.run(_async_main(argv))
+    raw = list(argv) if argv is not None else sys.argv[1:]
+    if raw and raw[0] == "daemon":
+        # Hand off to the always-on daemon. The rest of argv is the daemon's own.
+        from yuyutsava.daemon.main import main as daemon_main
+        return daemon_main(raw[1:])
+    return asyncio.run(_async_main(raw))
 
 
 async def _async_main(argv: list[str] | None = None) -> int:

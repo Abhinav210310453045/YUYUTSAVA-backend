@@ -558,6 +558,126 @@ async def _prompt_permission(interrupt_value: Any) -> str:
     return decision
 
 
+# ---------------------------------------------------------------------------
+# Typed stream events  (consumed by the daemon's channel router)
+# ---------------------------------------------------------------------------
+
+
+from dataclasses import dataclass as _dataclass
+
+
+@_dataclass(frozen=True)
+class StreamEvent:
+    """Structured event yielded by ``astream_agent_iter``.
+
+    ``kind``:
+      - ``token``       data={"text": str}
+      - ``tool_call``   data={"name": str, "args": dict}
+      - ``tool_result`` data={"name": str, "preview": str}
+      - ``log``         data={"text": str}
+      - ``final``       data={"text": str}   (last assistant message)
+    """
+
+    kind: str
+    data: dict
+
+
+async def astream_agent_iter(
+    agent: CompiledStateGraph,
+    task: str,
+    *,
+    thread_id: str | None = None,
+    recursion_limit: int = 200,
+    ask_handler=None,  # async (interrupt_value: dict) -> str
+):
+    """Async generator that yields ``StreamEvent``s instead of printing them.
+
+    The daemon uses this to feed events into the channel router. ``ask_handler``
+    is called whenever the graph emits an ``interrupt`` — the daemon plugs in
+    a function that routes through the web/terminal channel and returns the
+    user's decision string. If ``ask_handler`` is None, interrupts are
+    auto-rejected (suitable for headless / autonomous runs).
+
+    Yields events; the final yielded event is always ``StreamEvent("final", {"text": ...})``.
+    """
+    cfg: RunnableConfig = {
+        "recursion_limit": recursion_limit,
+        "configurable": {"thread_id": thread_id or str(uuid.uuid4())},
+    }
+
+    final_messages: list[Any] = []
+    current_input: Any = {"messages": [HumanMessage(content=task)]}
+
+    while True:
+        interrupted_value: Any = None
+
+        async for event in agent.astream(
+            current_input, config=cfg, stream_mode=["messages", "updates"],
+        ):
+            if not isinstance(event, tuple) or len(event) != 2:
+                continue
+            mode, data = event
+
+            if mode == "updates" and isinstance(data, dict) and "__interrupt__" in data:
+                interrupts = data["__interrupt__"]
+                if interrupts:
+                    iv = interrupts[0]
+                    interrupted_value = iv.value if hasattr(iv, "value") else iv
+                continue
+
+            if mode == "messages":
+                chunk, _meta = data
+                if isinstance(chunk, AIMessageChunk):
+                    text = ""
+                    if isinstance(chunk.content, str):
+                        text = chunk.content
+                    elif isinstance(chunk.content, list):
+                        for block in chunk.content:
+                            if isinstance(block, dict) and block.get("type") == "text":
+                                text += str(block.get("text", ""))
+                    if text:
+                        yield StreamEvent("token", {"text": text})
+
+            elif mode == "updates":
+                if not isinstance(data, dict):
+                    continue
+                for _node_name, node_data in data.items():
+                    if not isinstance(node_data, dict):
+                        continue
+                    msgs = node_data.get("messages", [])
+                    if not isinstance(msgs, list):
+                        continue
+                    for m in msgs:
+                        final_messages.append(m)
+                        if isinstance(m, AIMessage) and m.tool_calls:
+                            for tc in m.tool_calls:
+                                name = tc.get("name", "?") if isinstance(tc, dict) else getattr(tc, "name", "?")
+                                args = tc.get("args", {}) if isinstance(tc, dict) else getattr(tc, "args", {})
+                                yield StreamEvent("tool_call", {"name": name, "args": args})
+                        elif isinstance(m, ToolMessage):
+                            tn = getattr(m, "name", "tool") or "tool"
+                            body = m.content if isinstance(m.content, str) else str(m.content)
+                            safe_body = _guard_tool_result(body, tn)
+                            if safe_body is not body:
+                                m.content = safe_body
+                            preview = safe_body if len(safe_body) <= 600 else safe_body[:600] + " …[truncated]"
+                            yield StreamEvent("tool_result", {"name": tn, "preview": preview})
+
+        if interrupted_value is None:
+            yield StreamEvent("final", {"text": last_assistant_text(final_messages)})
+            return
+
+        if ask_handler is None:
+            decision = "reject"
+        else:
+            try:
+                decision = await ask_handler(interrupted_value)
+            except Exception as exc:
+                yield StreamEvent("log", {"text": f"ask_handler raised: {exc}; rejecting"})
+                decision = "reject"
+        current_input = Command(resume=decision)
+
+
 async def astream_agent(
     agent: CompiledStateGraph,
     task: str,
