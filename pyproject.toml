@@ -14,6 +14,8 @@ dependencies = [
     "deepagents>=0.4.12",
     "langchain-openai>=1.1.11",
     "streamlit>=1.56.0",
+    "watchdog>=4.0.0",
+    "python-ulid>=2.7.0",
 ]
 
 [project.scripts]
