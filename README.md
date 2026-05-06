@@ -181,3 +181,11 @@ yuyutsava --print-tools
 yuyutsava --generate_agent_graph
 yuyutsava --generate_agent_graph --graph-dir ./diagrams
 ```
+
+---
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
+
+Copyright (c) 2026 Abhinav
