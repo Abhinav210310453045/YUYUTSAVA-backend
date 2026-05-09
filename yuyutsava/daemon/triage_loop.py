@@ -27,6 +27,7 @@ from yuyutsava.daemon.channels import (
 )
 from yuyutsava.events.bus import EventBus, EventEnvelope
 from yuyutsava.events.store import ConsentRule, Proposal, Store
+from yuyutsava.skills.registry import SkillRegistry
 
 logger = logging.getLogger("yuyutsava.daemon.triage_loop")
 
@@ -76,6 +77,7 @@ class TriageLoop:
         task_queue: asyncio.Queue[OrchestratorTask],
         proposal_expiry_sec: int,
         max_concurrent: int = 4,
+        skill_registry: SkillRegistry | None = None,
     ) -> None:
         self._bus = bus
         self._store = store
@@ -86,6 +88,7 @@ class TriageLoop:
         self._proposal_expiry_sec = proposal_expiry_sec
         self._sem = asyncio.Semaphore(max_concurrent)
         self._workers: set[asyncio.Task[None]] = set()
+        self._skill_registry = skill_registry
 
     async def run(self, stop_event: asyncio.Event) -> None:
         sub = self._bus.subscribe("**")
@@ -133,8 +136,14 @@ class TriageLoop:
                     await self._auto_approve_path(ev, decision, rule_id=rule["rule_id"])
                     return
 
-                # 2. LLM triage.
-                decision = await self._triage.classify(ev, self._capabilities_block)
+                # 2. LLM triage — include skills index if available.
+                skills_index = (
+                    self._skill_registry.index_block(agent="triage")
+                    if self._skill_registry else ""
+                )
+                decision = await self._triage.classify(
+                    ev, self._capabilities_block, skills_index=skills_index
+                )
 
                 if decision.action == "drop":
                     return

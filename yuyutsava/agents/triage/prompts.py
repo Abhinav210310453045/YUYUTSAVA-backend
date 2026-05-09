@@ -22,12 +22,22 @@ Bias toward "drop". A noisy assistant is worse than a quiet one. Only
 - The proposed action is reversible or trivially correctable.
 - A specialised subagent in the AVAILABLE SUBAGENTS list can do it.
 
+When LEARNED SKILLS are present, use them to improve classification accuracy:
+matching a known skill pattern means you can write a more precise
+proposed_instruction and a better subagent_hint.
+
 Output ONLY the structured decision; do not write prose.
 """
 
 
-def render_event_message(envelope_summary: str, topic: str, hints_json: str,
-                         capabilities_block: str) -> str:
+def render_event_message(
+    envelope_summary: str,
+    topic: str,
+    hints_json: str,
+    capabilities_block: str,
+    skills_index: str = "",
+) -> str:
+    skills_section = f"\nLEARNED SKILLS\n{skills_index}\n" if skills_index else ""
     return f"""\
 EVENT
   topic:   {topic}
@@ -36,6 +46,6 @@ EVENT
 
 AVAILABLE SUBAGENTS
 {capabilities_block}
-
+{skills_section}
 Classify and decide.
 """

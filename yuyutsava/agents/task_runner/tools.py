@@ -299,4 +299,48 @@ def bind_tools(workspace_root: Path, sandbox_root: Path | None = None) -> list[B
         response: str = interrupt(payload)
         return json.dumps({"status": "success", "result": {"response": response}})
 
-    return [tr_read_file, tr_write_file, tr_delete_file, tr_execute_in_sandbox, tr_grep, tr_ask_user]
+    # ------------------------------------------------------------------ #
+    # tr_execute                                                           #
+    # ------------------------------------------------------------------ #
+
+    @tool
+    async def tr_execute(
+        command: str,
+        reason: str,
+        timeout: int = 120,
+    ) -> str:
+        """Run a shell command on the host machine (requires user approval each time).
+
+        Unlike tr_execute_in_sandbox (which runs in an isolated sandbox with no
+        internet), this tool runs in the workspace directory on the real host.
+        It has full network access — use it for curl, wget, API calls, etc.
+
+        Every invocation pauses for user permission before executing. The user
+        sees the command and the reason before deciding to approve or deny.
+
+        Args:
+            command: Shell command to run (e.g. "curl -s https://example.com").
+            reason:  Why you need to run this (shown to user in permission prompt).
+            timeout: Max seconds (default 120).
+        """
+        # Use "/host" as the sentinel path — it is outside workspace and sandbox,
+        # so classify_zone() returns EXTERNAL, and EXTERNAL + EXECUTE = PROMPT.
+        # This forces a user permission check before every execution.
+        request = OperationRequest(
+            request_id=str(uuid.uuid4()),
+            requesting_agent="agent",
+            task_id=str(uuid.uuid4()),
+            task_description=reason,
+            operation=OperationType.EXECUTE,
+            paths=["/host"],
+            reason=reason,
+            additional_context={
+                "command": command,
+                "timeout": timeout,
+                "cwd": str(workspace_root),
+            },
+        )
+        response = await agent.handle(request)
+        return response.model_dump_json()
+
+    return [tr_read_file, tr_write_file, tr_delete_file, tr_execute_in_sandbox, tr_grep, tr_ask_user, tr_execute]

@@ -1,14 +1,20 @@
 """
-Middleware that hides specific built-in tool schemas from the LLM.
+Middleware that hides specific tool schemas from the LLM.
 
-The deepagents FilesystemMiddleware registers read_file, write_file, edit_file,
-and execute alongside our tr_* equivalents.  Sending both sets to the LLM wastes
-~700 tokens per call and risks the model choosing the unguarded versions.
+Two suppression layers:
 
-This middleware intercepts wrap_model_call and strips the named tools from the
-tool list before the request reaches the LLM.  The tools still exist in the
-graph (so their ToolMessage handlers work), but the model never sees their
-schemas and cannot call them.
+1. Named deepagents built-ins (read_file, write_file, edit_file, execute, grep)
+   — replaced by tr_* equivalents; sending both wastes ~700 tokens and risks the
+   model choosing the unguarded versions.
+
+2. Our custom tool prefixes (tr_*, ws_*, sk_*, fo_*, ev_*)
+   — these are injected into the graph for execution but hidden from the LLM's
+   initial view. The agent discovers them on demand via tool_search('tr_*') etc.
+   This is the ToolRegistry lazy-discovery pattern: only tool_search is visible
+   upfront, all others are served on request to save context tokens.
+
+Tools still exist in the graph (ToolMessage handlers work); the model just
+never sees their schemas until it calls tool_search.
 """
 
 from __future__ import annotations
@@ -23,20 +29,30 @@ from langchain.agents.middleware.types import (
     ModelResponse,
 )
 
-# Suppress built-in deepagents tools the LLM should never call directly:
-#   read_file / write_file / edit_file / execute  — replaced by tr_* equivalents
-#   grep  — operates on virtual paths only; broken when given real absolute paths.
-#            The LLM should use tr_grep instead, which shells out via the sandbox.
-_SUPPRESS: frozenset[str] = frozenset({"read_file", "write_file", "edit_file", "execute", "grep"})
+# Exact-name suppression: deepagents built-in tools replaced by tr_* equivalents.
+_SUPPRESS_NAMES: frozenset[str] = frozenset({
+    "read_file", "write_file", "edit_file", "execute", "grep",
+})
+
+# Prefix suppression: all our custom-prefixed tools are hidden from the LLM
+# upfront. The agent calls tool_search('tr_*') / tool_search('ws_*') to
+# discover their schemas on demand.
+_SUPPRESS_PREFIXES: tuple[str, ...] = ("tr_", "ws_", "sk_", "fo_", "ev_")
+
+
+def _should_suppress(name: str) -> bool:
+    if name in _SUPPRESS_NAMES:
+        return True
+    return name.startswith(_SUPPRESS_PREFIXES)
 
 
 class ToolFilterMiddleware(AgentMiddleware[AgentState, Any, Any]):
-    """Strip redundant built-in tool schemas before every LLM call."""
+    """Strip redundant and lazy-discovery tool schemas before every LLM call."""
 
     def _filter(self, request: ModelRequest[Any]) -> ModelRequest[Any]:
         filtered = [
             t for t in request.tools
-            if (t.name if hasattr(t, "name") else t.get("name")) not in _SUPPRESS
+            if not _should_suppress(t.name if hasattr(t, "name") else t.get("name", ""))
         ]
         if len(filtered) == len(request.tools):
             return request

@@ -1,56 +1,54 @@
 """
-Orchestrator agent: small ``create_react_agent`` with three tools.
+Orchestrator agent: ``create_deep_agent`` master with registered subagents.
 
-Critical design choice: NOT a deepagents agent. We replace the heavy
-default DeepAgent prompt with our own ≈300-token routing prompt. Each
-task gets a fresh thread_id; nothing accumulates across events.
+The master uses deepagent's built-in ``task(subagent_type, description)``
+tool to delegate to specialised subagents. Each task gets a fresh thread_id;
+nothing accumulates across events.
 
-The ``dispatch`` tool is the bridge to specialised subagents. It builds the
-target subagent's graph fresh, runs it via ``astream_agent_iter``, pipes
-its stream events into the channel router (so the user sees what the
-subagent is doing), routes its tool-permission interrupts through the
-channel router's ``post_ask``, then returns the subagent's final message
-as a short summary to the orchestrator.
+Subagents are registered at build time via ``BaseSubAgent.as_deepagents_subagent_spec()``.
+Subagent interrupts (tr_* permission prompts) bubble up through the master
+graph and are routed to the user via the daemon's channel router (Full HITL).
 """
 
 from __future__ import annotations
 
-import json
 import logging
-import time
 import uuid
 from dataclasses import dataclass
-from typing import Awaitable, Callable
+from pathlib import Path
 
+from deepagents import create_deep_agent
+from deepagents.backends import LocalShellBackend
 from langchain_core.language_models import BaseChatModel
 from langchain_core.tools import BaseTool, tool
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.state import CompiledStateGraph
-from langgraph.prebuilt import create_react_agent
 
 from yuyutsava.agents.base_sub_agent import BaseSubAgent
 from yuyutsava.agents.orchestrator.capabilities import render_capabilities_block
 from yuyutsava.agents.orchestrator.prompts import render_system_prompt
-from yuyutsava.core.engine import StreamEvent, astream_agent_iter
 from yuyutsava.daemon.budget import BudgetMiddleware
-from yuyutsava.daemon.channels import (
-    AskPrompt, ChannelEvent, ChannelRouter,
-)
+from yuyutsava.daemon.channels import AskPrompt, ChannelRouter
+from yuyutsava.core.tool_filter_middleware import ToolFilterMiddleware
 from yuyutsava.events.store import Store
 from yuyutsava.events.tools import make_recall_tool
+from yuyutsava.skills.registry import SkillRegistry
+from yuyutsava.skills.tools import make_skill_tools
 
 logger = logging.getLogger("yuyutsava.agents.orchestrator")
 
 
 @dataclass
 class OrchestratorDeps:
-    """Bag of dependencies the dispatch/ask_user tools need at call time."""
+    """Bag of dependencies the orchestrator and its tools need at call time."""
 
     subagents: dict[str, BaseSubAgent]
     subagent_model: BaseChatModel
     channels: ChannelRouter
     store: Store
     subagent_token_budget: int
+    skill_registry: SkillRegistry | None = None
+    workspace_root: Path | None = None
 
 
 def build_orchestrator(
@@ -58,135 +56,58 @@ def build_orchestrator(
     model: BaseChatModel,
     deps: OrchestratorDeps,
     budget_tokens: int,
+    skill_registry: SkillRegistry | None = None,
 ) -> CompiledStateGraph:
-    """Build a fresh orchestrator graph. Cheap — call once per OrchestratorTask."""
+    """Build a fresh create_deep_agent orchestrator. Call once per OrchestratorTask."""
     capabilities = render_capabilities_block(list(deps.subagents.values()))
-    system_prompt = render_system_prompt(capabilities)
+    skills_index = skill_registry.index_block(agent="orchestrator") if skill_registry else ""
+    system_prompt = render_system_prompt(capabilities, skills_index=skills_index)
 
-    tools: list[BaseTool] = [
-        _make_dispatch_tool(deps),
+    master_tools: list[BaseTool] = [
         _make_ask_user_tool(deps.channels),
         make_recall_tool(deps.store),
     ]
+    if skill_registry:
+        master_tools.extend(make_skill_tools(skill_registry))
+
+    # Build subagent specs from registered BaseSubAgent instances.
+    # as_deepagents_subagent_spec() already returns {name, description, system_prompt, tools}.
+    # Inject subagent_model, ToolFilterMiddleware (suppresses deepagent built-in fs tools),
+    # and a per-subagent token budget.
+    subagent_specs = []
+    for sa in deps.subagents.values():
+        spec = sa.as_deepagents_subagent_spec()
+        spec["model"] = deps.subagent_model
+        spec["middleware"] = [
+            ToolFilterMiddleware(),
+            BudgetMiddleware(max_input_tokens=deps.subagent_token_budget, role=sa.name),
+        ]
+        subagent_specs.append(spec)
 
     budget = BudgetMiddleware(max_input_tokens=budget_tokens, role="orchestrator")
-    return create_react_agent(
-        model=model,
-        tools=tools,
-        prompt=system_prompt,
-        checkpointer=MemorySaver(),
-        middleware=[budget],
-    )
 
+    # Master backend: LocalShellBackend with virtual_mode so the master can
+    # use ls/glob if needed. ToolFilterMiddleware hides read_file/write_file/
+    # execute/grep from the LLM — subagents do all real filesystem work via tr_*.
+    workspace_root = str(deps.workspace_root.resolve()) if deps.workspace_root else "/"
 
-# ---------------------------------------------------------------------------
-# dispatch tool
-# ---------------------------------------------------------------------------
-
-
-def _make_dispatch_tool(deps: OrchestratorDeps) -> BaseTool:
-    @tool
-    async def dispatch(subagent: str, instruction: str) -> str:
-        """Run a specialised subagent on this event, wait for its summary, return it.
-
-        Pick ``subagent`` from AVAILABLE SUBAGENTS exactly. ``instruction``
-        should be the user-approved proposal text plus any minimal context
-        the subagent needs (typically just the event_id and intent).
-        """
-        sa = deps.subagents.get(subagent)
-        if sa is None:
-            return f"error: unknown subagent {subagent!r}"
-
-        # Fresh per-invocation graph so checkpoints don't leak across tasks.
-        graph = sa.build_react_agent(deps.subagent_model, MemorySaver())
-        thread_id = f"{sa.name}-{uuid.uuid4()}"
-
-        # Subagent interrupts (tr_* permission asks) flow through the channel.
-        async def ask_handler(interrupt_value: dict) -> str:
-            ask = AskPrompt(
-                ask_id=str(uuid.uuid4()),
-                title=_title_for_interrupt(interrupt_value),
-                body=_body_for_interrupt(interrupt_value),
-                options=_options_for_interrupt(interrupt_value),
-                interrupt_value=dict(interrupt_value) if isinstance(interrupt_value, dict) else {},
-            )
-            return await deps.channels.post_ask(ask)
-
-        await deps.channels.post_event(
-            ChannelEvent(kind="timeline",
-                         data={"ts": time.time(),
-                               "line": f"dispatched: {subagent} ← {instruction[:80]}",
-                               "cls": "event-action"})
+    def _backend_factory(_runtime):
+        return LocalShellBackend(
+            root_dir=workspace_root,
+            virtual_mode=True,
+            timeout=10,
+            inherit_env=False,
         )
 
-        final_text = ""
-        async for ev in astream_agent_iter(
-            graph, instruction, thread_id=thread_id, recursion_limit=80,
-            ask_handler=ask_handler,
-        ):
-            await _broadcast_stream(deps.channels, ev)
-            if ev.kind == "final":
-                final_text = ev.data.get("text", "") or ""
-
-        summary = (final_text or "(no summary returned)").strip().splitlines()[0]
-        # Cap to keep the orchestrator's context small.
-        return summary[:500]
-
-    return dispatch
-
-
-def _title_for_interrupt(iv: dict) -> str:
-    if not isinstance(iv, dict):
-        return "Permission request"
-    t = iv.get("type", "")
-    if t == "task_runner_permission":
-        op = (iv.get("operation") or "").upper()
-        return f"Permission: {op}"
-    if t == "user_question":
-        return "Subagent question"
-    return iv.get("title") or "Permission request"
-
-
-def _body_for_interrupt(iv: dict) -> str:
-    if not isinstance(iv, dict):
-        return str(iv)
-    t = iv.get("type", "")
-    if t == "task_runner_permission":
-        paths = iv.get("paths", [])
-        op = iv.get("operation", "?")
-        reason = iv.get("reason", "")
-        risk = iv.get("risk_level", "")
-        zone = iv.get("zone", "")
-        path_str = ", ".join(paths) if isinstance(paths, list) else str(paths)
-        return f"{op} {path_str}\nzone: {zone}  risk: {risk}\n\n{reason}"
-    if t == "user_question":
-        return iv.get("question", "")
-    return iv.get("command") or iv.get("reason") or json.dumps(iv)[:300]
-
-
-def _options_for_interrupt(iv: dict) -> list[str]:
-    if not isinstance(iv, dict):
-        return ["approve", "reject"]
-    t = iv.get("type", "")
-    if t == "user_question":
-        return list(iv.get("options") or [])
-    return ["approve", "reject"]
-
-
-async def _broadcast_stream(channels: ChannelRouter, ev: StreamEvent) -> None:
-    """Convert an engine StreamEvent into a ChannelEvent and broadcast."""
-    if ev.kind == "token":
-        await channels.post_event(ChannelEvent(kind="token", data={"text": ev.data.get("text", "")}))
-    elif ev.kind == "tool_call":
-        await channels.post_event(ChannelEvent(kind="tool_call",
-                                               data={"name": ev.data.get("name", "?"),
-                                                     "args": ev.data.get("args", {})}))
-    elif ev.kind == "tool_result":
-        await channels.post_event(ChannelEvent(kind="tool_result",
-                                               data={"name": ev.data.get("name", "?"),
-                                                     "preview": ev.data.get("preview", "")}))
-    elif ev.kind == "log":
-        await channels.post_event(ChannelEvent(kind="log", data={"text": ev.data.get("text", "")}))
+    return create_deep_agent(
+        model=model,
+        tools=master_tools,
+        backend=_backend_factory,
+        system_prompt=system_prompt,
+        checkpointer=MemorySaver(),
+        middleware=[ToolFilterMiddleware(), budget],
+        subagents=subagent_specs,
+    )
 
 
 # ---------------------------------------------------------------------------

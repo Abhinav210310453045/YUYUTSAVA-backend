@@ -22,7 +22,7 @@ except ImportError:
     load_dotenv = None  # type: ignore[assignment, misc]
 
 from yuyutsava.cli.scenarios import format_scenario_list, get_scenario
-from yuyutsava.core.config import DockerSettings, LocalSettings, llm_settings_from_env
+from yuyutsava.core.config import DockerSettings, LocalSettings, SearchConfig, llm_settings_from_env
 from yuyutsava.core.engine import (
     _cleanup_local_sandbox,
     astream_agent,
@@ -314,6 +314,7 @@ async def _async_main(argv: list[str] | None = None) -> int:
     execution = _resolved_execution_mode(args)
     docker_cfg = _docker_settings_from_args(args)
     local_cfg = _local_settings_from_args(args)
+    search_cfg = SearchConfig.from_env()
 
     bundle = build_agent(
         workspace,
@@ -323,6 +324,7 @@ async def _async_main(argv: list[str] | None = None) -> int:
         docker_settings=docker_cfg,
         local_settings=local_cfg,
         permission_check=not args.no_permission_check,
+        search_config=search_cfg,
     )
     try:
         thread_id = str(uuid.uuid4())

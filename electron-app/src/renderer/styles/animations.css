@@ -1,0 +1,59 @@
+@keyframes neon-pulse {
+  0%, 100% { border-color: rgba(0, 255, 136, 0.15); }
+  50%       { border-color: rgba(0, 255, 136, 0.45); }
+}
+
+@keyframes neon-pulse-amber {
+  0%, 100% { border-color: rgba(251, 191, 36, 0.2); }
+  50%       { border-color: rgba(251, 191, 36, 0.5); }
+}
+
+@keyframes card-enter {
+  from { opacity: 0; transform: translateY(-8px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes card-exit {
+  from { opacity: 1; transform: scale(1); }
+  to   { opacity: 0; transform: scale(0.96); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes scan-line {
+  0%   { transform: translateY(-100%); }
+  100% { transform: translateY(100vh); }
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+
+@keyframes countdown-warn {
+  0%, 100% { color: var(--neon-green); }
+  50%       { color: var(--neon-amber); }
+}
+
+@keyframes countdown-crit {
+  0%, 100% { color: var(--neon-red); }
+  50%       { color: rgba(255, 51, 102, 0.5); }
+}
+
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: var(--glow-green); }
+  50%       { box-shadow: none; }
+}
+
+@keyframes slide-in-right {
+  from { transform: translateX(20px); opacity: 0; }
+  to   { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes typing-cursor {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}

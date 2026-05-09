@@ -34,6 +34,7 @@ from yuyutsava.agents.triage.agent import TriageAgent
 from yuyutsava.core.config import (
     DaemonConfig, EventsConfig, llm_settings_from_env, yuyutsava_home,
 )
+from yuyutsava.skills.registry import SkillRegistry
 from yuyutsava.core.llm import chat_model
 from yuyutsava.daemon.channels import ChannelRouter
 from yuyutsava.daemon.lifecycle import install_signal_handlers
@@ -121,6 +122,19 @@ async def _async_main(argv: list[str] | None = None) -> int:
         events_cfg = EventsConfig.default()
         logger.info("no events_config.json — using built-in default (watching ~/Downloads)")
 
+    # Inject heartbeat_sec into every source's params so sources can sleep
+    # between bursts rather than spinning. Sources ignore unknown params.
+    if daemon_cfg.heartbeat_sec > 0:
+        from yuyutsava.core.config import SourceConfig
+        events_cfg = EventsConfig(sources={
+            name: SourceConfig(
+                name=src.name,
+                enabled=src.enabled,
+                params={**src.params, "heartbeat_sec": daemon_cfg.heartbeat_sec},
+            )
+            for name, src in events_cfg.sources.items()
+        })
+
     # ── store --------------------------------------------------------------
     store = Store()
     await store.start()
@@ -149,15 +163,22 @@ async def _async_main(argv: list[str] | None = None) -> int:
     # ── models ------------------------------------------------------------
     triage_settings = llm_settings_from_env("triage")
     orchestrator_settings = llm_settings_from_env("orchestrator")
-    subagent_settings = llm_settings_from_env("file_organizer")
+    subagent_settings = llm_settings_from_env("subagent")
     triage_model = chat_model(triage_settings, temperature=0.0)
     orchestrator_model = chat_model(orchestrator_settings, temperature=0.0)
     subagent_model = chat_model(subagent_settings, temperature=0.1)
 
+    # ── skills registry ---------------------------------------------------
+    skill_registry = SkillRegistry(home_dir=home / "skills")
+    logger.info("  skills    : %d bundled, scanning personal + workspace",
+                len([s for s in skill_registry.scan() if s.scope == "bundled"]))
+
     # ── subagents ---------------------------------------------------------
     task_runner = TaskRunnerAgent(workspace_root=workspace)
-    file_organizer = FileOrganizerAgent(task_runner, store)
-    subagents = {file_organizer.name: file_organizer}
+    subagent_list = [
+        FileOrganizerAgent(task_runner, store, skill_registry=skill_registry),
+    ]
+    subagents = {sa.name: sa for sa in subagent_list}
     capabilities_block = render_capabilities_block(list(subagents.values()))
 
     # ── triage agent + loop ----------------------------------------------
@@ -169,6 +190,7 @@ async def _async_main(argv: list[str] | None = None) -> int:
         capabilities_block=capabilities_block,
         task_queue=task_queue,
         proposal_expiry_sec=daemon_cfg.proposal_expiry_sec,
+        skill_registry=skill_registry,
     )
 
     orch_deps = OrchestratorDeps(
@@ -177,6 +199,8 @@ async def _async_main(argv: list[str] | None = None) -> int:
         channels=channels,
         store=store,
         subagent_token_budget=daemon_cfg.subagent_token_budget,
+        skill_registry=skill_registry,
+        workspace_root=workspace,
     )
     orch_loop = OrchestratorLoop(
         task_queue=task_queue,
@@ -190,7 +214,7 @@ async def _async_main(argv: list[str] | None = None) -> int:
     # ── web server -------------------------------------------------------
     server_task: asyncio.Task[None] | None = None
     if web_hub is not None:
-        app = make_app(web_hub, host=daemon_cfg.web_host)
+        app = make_app(web_hub, host=daemon_cfg.web_host, skill_registry=skill_registry)
         config = uvicorn.Config(
             app, host=daemon_cfg.web_host, port=daemon_cfg.web_port,
             log_level="warning", access_log=False, lifespan="on",
@@ -204,6 +228,7 @@ async def _async_main(argv: list[str] | None = None) -> int:
     logger.info("YUYUTSAVA daemon ready")
     logger.info("  workspace : %s", workspace)
     logger.info("  home      : %s", home)
+    logger.info("  heartbeat : %ss", daemon_cfg.heartbeat_sec if daemon_cfg.heartbeat_sec > 0 else "disabled")
     logger.info("  triage    : %s / %s", triage_settings.__class__.__name__, triage_settings.model)
     logger.info("  orch      : %s / %s", orchestrator_settings.__class__.__name__, orchestrator_settings.model)
     logger.info("  subagents : %s", ", ".join(subagents.keys()))
