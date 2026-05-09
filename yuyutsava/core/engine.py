@@ -27,13 +27,17 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 
-from yuyutsava.core.config import DockerSettings, LocalSettings, LlmSettings
+from yuyutsava.core.config import DockerSettings, LocalSettings, LlmSettings, SearchConfig
 from yuyutsava.core.docker_sandbox_backend import DockerSandboxBackend
 from yuyutsava.core.llm import chat_model
 from yuyutsava.core.permission_middleware import PermissionMiddleware
 from yuyutsava.core.tool_filter_middleware import ToolFilterMiddleware
+from yuyutsava.core.tool_registry import ToolRegistry
 from yuyutsava.agents.task_runner.tools import bind_tools as _bind_task_runner_tools
 from yuyutsava.agents.task_runner.prompts import task_runner_rules_section
+from yuyutsava.skills.registry import SkillRegistry
+from yuyutsava.skills.tools import make_skill_tools
+from yuyutsava.tools.search import make_search_tools
 from yuyutsava.models.tool_messages import SuppressedContentNotice, SuppressedReason
 from yuyutsava.models.interrupts import (
     PermissionRequestInterrupt,
@@ -124,6 +128,45 @@ def builtin_tools_reference_json() -> str:
 # ---------------------------------------------------------------------------
 
 
+_TOOL_DISCOVERY_SECTION = """\
+## TOOL DISCOVERY
+
+You have access to tool_search to discover available tools on demand.
+ALWAYS call tool_search before using any tool whose schema you don't know yet.
+
+Common patterns:
+  tool_search('tr_*')        → TaskRunner tools (read, write, delete, execute, grep, ask_user)
+  tool_search('ws_*')        → Web search tools (Tavily, Exa — only if API keys configured)
+  tool_search('tr_execute')  → Permission-gated shell with full network/internet access
+  tool_search('sk_*')        → Skills tools (read/write reusable patterns)
+
+Quick tools you can call without loading schemas first:
+  tr_ask_user(question, options) — ask the user a question and get their response.
+    Use this whenever you need clarification, a decision, or confirmation before acting.
+    Call it directly; no need to run tool_search first.
+
+Rules:
+- Start every task by calling tool_search('tr_*') to see what is available.
+- For internet access (curl, API calls, web scraping): use tr_execute (requires user approval)
+  OR ws_tavily_search / ws_exa_search (no approval needed, structured results).
+- Do NOT guess tool parameter schemas — always check via tool_search first.
+- tr_execute_in_sandbox runs WITHOUT network access (isolated sandbox).
+  Use tr_execute for commands that need the internet.
+
+## SKILL REFLECTION (after every completed task)
+
+Before finishing, ask yourself: did this task follow a reusable pattern?
+A pattern is worth saving if it:
+- Combined multiple tools in a non-obvious sequence.
+- Required a specific workaround or approach the next agent wouldn't guess.
+- Could apply to similar future tasks (not one-off or workspace-specific).
+
+If yes: call sk_write_skill(name, description, body) to save it to personal scope.
+Keep the body concise (≤ 150 words): what was done, which tools were used, any gotchas.
+If no clear reusable pattern: skip it — do not save trivial or one-off tasks as skills.
+"""
+
+
 def _local_system_prompt(
     workspace_root: Path,
     sandbox_root: Path | None = None,
@@ -135,6 +178,7 @@ def _local_system_prompt(
     return f"""\
 {task_runner_rules_section(root, sb, out)}
 
+{_TOOL_DISCOVERY_SECTION}
 ## WORKSPACE CONTEXT
 
 Root: {root} | Mode: real disk + local shell.
@@ -163,6 +207,7 @@ def _docker_system_prompt(workspace_root: Path, export_host: Path | None) -> str
     return f"""\
 {task_runner_rules_section(root, sandbox)}
 
+{_TOOL_DISCOVERY_SECTION}
 ## WORKSPACE CONTEXT
 
 Mode: Docker sandbox (isolated from host shell).
@@ -205,6 +250,32 @@ def _local_shell_backend_factory(workspace_root: Path, bash_timeout_sec: int):
 # ---------------------------------------------------------------------------
 
 
+def _build_tool_registry_and_tools(
+    task_runner_tools: list,
+    search_config: SearchConfig | None,
+    skill_registry: SkillRegistry | None,
+) -> tuple[list, Any]:
+    """Build a ToolRegistry and return (startup_tools, registry).
+
+    startup_tools = [tool_search] + all_custom_tools
+    All custom tools go into the graph for execution; only tool_search is
+    visible to the LLM upfront (the ToolFilterMiddleware hides tr_*/ws_* etc.).
+    """
+    search_tools = make_search_tools(search_config) if search_config else []
+    skill_tools = make_skill_tools(skill_registry) if skill_registry else []
+    all_custom_tools = task_runner_tools + search_tools + skill_tools
+
+    registry = ToolRegistry()
+    registry.register_many(all_custom_tools)
+    tool_search = registry.make_tool_search_tool()
+
+    # tool_search first so it appears first in the graph's tool list.
+    # ToolFilterMiddleware hides all tr_* / ws_* / sk_* from the LLM; only
+    # tool_search is visible, driving the lazy-discovery pattern.
+    startup_tools = [tool_search] + all_custom_tools
+    return startup_tools, registry
+
+
 def build_agent(
     workspace_root: Path,
     settings: LlmSettings,
@@ -214,6 +285,7 @@ def build_agent(
     docker_settings: DockerSettings | None = None,
     local_settings: LocalSettings | None = None,
     permission_check: bool = True,
+    search_config: SearchConfig | None = None,
 ) -> AgentBundle:
     """Build a Deep Agent; ``local`` uses ``LocalShellBackend``, ``docker`` uses ``DockerSandboxBackend``.
 
@@ -221,6 +293,9 @@ def build_agent(
         permission_check: When ``True`` (default), attaches ``PermissionMiddleware`` so
             the agent pauses and asks the user before running dangerous shell commands.
             Pass ``False`` to disable (e.g. in automated / non-interactive pipelines).
+        search_config: When provided, ws_* web search tools are added and made
+            discoverable via tool_search('ws_*'). Pass ``SearchConfig.from_env()``
+            to auto-load from TAVILY_API_KEY / EXA_API_KEY env vars.
     """
     model = chat_model(settings)
     checkpointer = MemorySaver()
@@ -232,6 +307,8 @@ def build_agent(
     ws = workspace_root.resolve()
     sandbox_root = (loc.sandbox_dir.resolve() if loc.sandbox_dir else ws / "_sandbox")
     output_dir   = (loc.output_dir.resolve()  if loc.output_dir  else ws / "_output")
+
+    skill_registry = SkillRegistry(workspace_dir=ws)
 
     if execution_mode == "docker":
         docker_cfg = docker_settings or DockerSettings()
@@ -246,9 +323,12 @@ def build_agent(
             cpus=docker_cfg.cpus,
             pids_limit=docker_cfg.pids_limit,
         )
+        startup_tools, _ = _build_tool_registry_and_tools(
+            _bind_task_runner_tools(ws), search_config, skill_registry
+        )
         graph = create_deep_agent(
             model=model,
-            tools=_bind_task_runner_tools(ws),
+            tools=startup_tools,
             backend=docker_backend,
             system_prompt=_docker_system_prompt(workspace_root, docker_cfg.export_dir),
             checkpointer=checkpointer,
@@ -258,9 +338,12 @@ def build_agent(
         return AgentBundle(agent=graph, docker_backend=docker_backend)
 
     backend = _local_shell_backend_factory(workspace_root, bash_timeout_sec)
+    startup_tools, _ = _build_tool_registry_and_tools(
+        _bind_task_runner_tools(ws, sandbox_root), search_config, skill_registry
+    )
     graph = create_deep_agent(
         model=model,
-        tools=_bind_task_runner_tools(ws, sandbox_root),
+        tools=startup_tools,
         backend=backend,
         system_prompt=_local_system_prompt(workspace_root, sandbox_root, output_dir),
         checkpointer=checkpointer,
@@ -610,6 +693,7 @@ async def astream_agent_iter(
 
     while True:
         interrupted_value: Any = None
+        _steps_this_pass = 0
 
         async for event in agent.astream(
             current_input, config=cfg, stream_mode=["messages", "updates"],
@@ -649,6 +733,7 @@ async def astream_agent_iter(
                         continue
                     for m in msgs:
                         final_messages.append(m)
+                        _steps_this_pass += 1
                         if isinstance(m, AIMessage) and m.tool_calls:
                             for tc in m.tool_calls:
                                 name = tc.get("name", "?") if isinstance(tc, dict) else getattr(tc, "name", "?")
@@ -664,7 +749,19 @@ async def astream_agent_iter(
                             yield StreamEvent("tool_result", {"name": tn, "preview": preview})
 
         if interrupted_value is None:
-            yield StreamEvent("final", {"text": last_assistant_text(final_messages)})
+            final_text = last_assistant_text(final_messages)
+            if not final_text and _steps_this_pass == 0:
+                yield StreamEvent("log", {
+                    "text": (
+                        f"⚠️  Agent produced no output — possible recursion limit hit "
+                        f"(limit={recursion_limit}) or graph exited unexpectedly."
+                    )
+                })
+            elif not final_text:
+                yield StreamEvent("log", {
+                    "text": "⚠️  Task ended with no assistant text. Agent may have stopped mid-task."
+                })
+            yield StreamEvent("final", {"text": final_text})
             return
 
         if ask_handler is None:
@@ -712,6 +809,7 @@ async def astream_agent(
     while True:
         _in_ai_stream = False
         interrupted_value: Any = None
+        _steps_this_pass = 0
 
         # We stream with two modes at once:
         #   "messages" → yields (mode, (chunk, metadata)) — LLM tokens as they arrive
@@ -786,6 +884,7 @@ async def astream_agent(
 
                     for m in msgs:
                         final_messages.append(m)
+                        _steps_this_pass += 1
 
                         if isinstance(m, AIMessage):
                             usage = getattr(m, "usage_metadata", None)
@@ -828,18 +927,32 @@ async def astream_agent(
 
         # No interrupt → done
         if interrupted_value is None:
+            if _steps_this_pass == 0 and not final_messages:
+                logger.error(
+                    "⚠️  Agent produced no output — possible recursion limit hit "
+                    "(limit=%d) or graph exited unexpectedly. "
+                    "Try re-running with --recursion-limit <higher value>.",
+                    recursion_limit,
+                )
             break
 
         # Ask the user, then resume the graph
         decision = await _prompt_permission(interrupted_value)
         current_input = Command(resume=decision)
 
+    final_text = last_assistant_text(final_messages)
+    if not final_text:
+        logger.warning(
+            "⚠️  Task ended with no assistant text. The agent may have stopped "
+            "mid-task. Check for budget/recursion limit errors above."
+        )
+
     logger.info("")
     logger.info(_SEP)
     logger.info("YUYUTSAVA  task complete")
     logger.info(_SEP)
 
-    return last_assistant_text(final_messages)
+    return final_text
 
 
 def _indent(text: str, spaces: int) -> str:

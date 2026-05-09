@@ -83,6 +83,8 @@ class FsSource(EventSource):
         roots = [Path(str(r)).expanduser().resolve() for r in roots_raw]
         ignore = tuple(ctx.params.get("ignore") or _DEFAULT_IGNORE)
         coalesce_ms = int(ctx.params.get("coalesce_window_ms", 2000))
+        # heartbeat_sec: idle sleep injected between event bursts. 0 = disabled.
+        heartbeat_sec = int(ctx.params.get("heartbeat_sec", 30))
 
         loop = asyncio.get_running_loop()
         observer = Observer()
@@ -105,7 +107,20 @@ class FsSource(EventSource):
         observer.start()
 
         try:
-            await ctx.cancelled.wait()
+            if heartbeat_sec <= 0:
+                await ctx.cancelled.wait()
+            else:
+                # Poll in heartbeat_sec intervals so the daemon sleeps between
+                # bursts instead of spinning on the event loop.
+                while not ctx.cancelled.is_set():
+                    try:
+                        await asyncio.wait_for(
+                            asyncio.shield(ctx.cancelled.wait()),
+                            timeout=float(heartbeat_sec),
+                        )
+                    except asyncio.TimeoutError:
+                        # Normal heartbeat tick — log only at DEBUG level to avoid noise.
+                        logger.debug("fs source: heartbeat tick (%ds)", heartbeat_sec)
         finally:
             self._observer = None
             try:

@@ -9,6 +9,7 @@ from yuyutsava.agents.file_organizer.prompts import FILE_ORGANIZER_PROMPT
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
 from yuyutsava.events.store import Store
 from yuyutsava.events.tools import make_fetch_event_tool
+from yuyutsava.skills.registry import SkillRegistry
 
 
 class FileOrganizerAgent(BaseSubAgent):
@@ -18,8 +19,13 @@ class FileOrganizerAgent(BaseSubAgent):
         "Use for fs.changed events where the user wants a downloaded file tidied."
     )
 
-    def __init__(self, task_runner: TaskRunnerAgent, store: Store) -> None:
-        super().__init__(task_runner)
+    def __init__(
+        self,
+        task_runner: TaskRunnerAgent,
+        store: Store,
+        skill_registry: SkillRegistry | None = None,
+    ) -> None:
+        super().__init__(task_runner, skill_registry=skill_registry)
         self._store = store
 
     @property

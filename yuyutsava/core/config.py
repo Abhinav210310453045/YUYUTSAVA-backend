@@ -338,6 +338,7 @@ class DaemonConfig:
     orchestrator_token_budget: int = 8000
     subagent_token_budget: int = 30000
     headless: bool = False  # --no-ui semantics
+    heartbeat_sec: int = 30  # idle sleep between event bursts; 0 = no sleep
 
     @classmethod
     def from_env(cls) -> DaemonConfig:
@@ -370,6 +371,12 @@ class DaemonConfig:
         except ValueError:
             sub_budget = 30000
 
+        heartbeat_raw = os.environ.get("YUYUTSAVA_HEARTBEAT_SEC", "").strip()
+        try:
+            heartbeat = int(heartbeat_raw) if heartbeat_raw else 30
+        except ValueError:
+            heartbeat = 30
+
         return cls(
             web_host=host,
             web_port=port,
@@ -377,4 +384,37 @@ class DaemonConfig:
             proposal_expiry_sec=expiry,
             orchestrator_token_budget=orch_budget,
             subagent_token_budget=sub_budget,
+            heartbeat_sec=heartbeat,
         )
+
+
+# ---------------------------------------------------------------------------
+# Search provider config
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class SearchConfig:
+    """API keys for external web search providers (Tavily, Exa).
+
+    Missing keys are not an error — the corresponding ws_* tools are simply
+    absent from make_search_tools() output. No provider configured = no tools.
+    """
+
+    tavily_api_key: str = ""
+    exa_api_key: str = ""
+
+    @classmethod
+    def from_env(cls) -> SearchConfig:
+        """Build from env; missing keys leave the provider unavailable."""
+        return cls(
+            tavily_api_key=_env("TAVILY_API_KEY"),
+            exa_api_key=_env("EXA_API_KEY"),
+        )
+
+    def is_available(self) -> dict[str, bool]:
+        """Return which providers have a configured API key."""
+        return {
+            "tavily": bool(self.tavily_api_key),
+            "exa": bool(self.exa_api_key),
+        }

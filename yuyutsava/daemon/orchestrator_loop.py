@@ -10,17 +10,60 @@ regardless of daemon uptime.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import uuid
 
 from yuyutsava.agents.orchestrator.agent import OrchestratorDeps, build_orchestrator
 from yuyutsava.core.engine import StreamEvent, astream_agent_iter
-from yuyutsava.daemon.channels import ChannelEvent, ChannelRouter
+from yuyutsava.daemon.channels import AskPrompt, ChannelEvent, ChannelRouter
 from yuyutsava.daemon.triage_loop import OrchestratorTask
 from yuyutsava.events.store import Store
 from langchain_core.language_models import BaseChatModel
 
 logger = logging.getLogger("yuyutsava.daemon.orchestrator_loop")
+
+
+# ---------------------------------------------------------------------------
+# Interrupt formatting helpers (used by ask_handler inside _run_task)
+# ---------------------------------------------------------------------------
+
+def _title_for_interrupt(iv: dict) -> str:
+    if not isinstance(iv, dict):
+        return "Permission request"
+    t = iv.get("type", "")
+    if t == "task_runner_permission":
+        op = (iv.get("operation") or "").upper()
+        return f"Permission: {op}"
+    if t == "user_question":
+        return "Subagent question"
+    return iv.get("title") or "Permission request"
+
+
+def _body_for_interrupt(iv: dict) -> str:
+    if not isinstance(iv, dict):
+        return str(iv)
+    t = iv.get("type", "")
+    if t == "task_runner_permission":
+        paths = iv.get("paths", [])
+        op = iv.get("operation", "?")
+        reason = iv.get("reason", "")
+        risk = iv.get("risk_level", "")
+        zone = iv.get("zone", "")
+        path_str = ", ".join(paths) if isinstance(paths, list) else str(paths)
+        return f"{op} {path_str}\nzone: {zone}  risk: {risk}\n\n{reason}"
+    if t == "user_question":
+        return iv.get("question", "")
+    return iv.get("command") or iv.get("reason") or json.dumps(iv)[:300]
+
+
+def _options_for_interrupt(iv: dict) -> list[str]:
+    if not isinstance(iv, dict):
+        return ["approve", "reject"]
+    t = iv.get("type", "")
+    if t == "user_question":
+        return list(iv.get("options") or [])
+    return ["approve", "reject"]
 
 
 class OrchestratorLoop:
@@ -56,6 +99,7 @@ class OrchestratorLoop:
         thread_id = f"orch-{uuid.uuid4()}"
         graph = build_orchestrator(
             model=self._model, deps=self._deps, budget_tokens=self._budget,
+            skill_registry=self._deps.skill_registry,
         )
         message = task.render_to_message()
 
@@ -63,10 +107,22 @@ class OrchestratorLoop:
             kind="log", data={"text": f"[orch] task {task.event_id[:8]}…\n"},
         ))
 
+        # Route subagent interrupts (tr_* permission prompts, tr_ask_user) through
+        # the daemon's channel router so the user sees them in the web UI / terminal.
+        async def ask_handler(interrupt_value: dict) -> str:
+            ask = AskPrompt(
+                ask_id=str(uuid.uuid4()),
+                title=_title_for_interrupt(interrupt_value),
+                body=_body_for_interrupt(interrupt_value),
+                options=_options_for_interrupt(interrupt_value),
+                interrupt_value=dict(interrupt_value) if isinstance(interrupt_value, dict) else {},
+            )
+            return await self._channels.post_ask(ask)
+
         final_text = ""
         async for ev in astream_agent_iter(
             graph, message, thread_id=thread_id, recursion_limit=40,
-            ask_handler=None,  # orchestrator has no interrupts (no tr_* tools)
+            ask_handler=ask_handler,
         ):
             await _broadcast(self._channels, ev)
             if ev.kind == "final":

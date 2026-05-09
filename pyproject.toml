@@ -16,6 +16,10 @@ dependencies = [
     "streamlit>=1.56.0",
     "watchdog>=4.0.0",
     "python-ulid>=2.7.0",
+    "pyyaml>=6.0.0",
+    "sse-starlette>=2.0.0",
+    "tavily-python>=0.5.0",
+    "exa-py>=1.1.0",
 ]
 
 [project.scripts]

@@ -58,13 +58,17 @@ class TriageAgent:
         self._runnable = model.with_structured_output(TriageDecision)
 
     async def classify(
-        self, envelope: EventEnvelope, capabilities_block: str
+        self,
+        envelope: EventEnvelope,
+        capabilities_block: str,
+        skills_index: str = "",
     ) -> TriageDecision:
         msg = render_event_message(
             envelope_summary=envelope.summary,
             topic=envelope.topic,
             hints_json=json.dumps(envelope.hints),
             capabilities_block=capabilities_block,
+            skills_index=skills_index,
         )
         try:
             decision: TriageDecision = await self._runnable.ainvoke(

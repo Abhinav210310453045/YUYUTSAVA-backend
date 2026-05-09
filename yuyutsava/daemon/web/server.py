@@ -36,6 +36,7 @@ from yuyutsava.daemon.channels import (
     AskPrompt, ChannelEvent, ProposalDecision, UserChannel,
 )
 from yuyutsava.events.store import ConsentRule, Proposal, Store
+from yuyutsava.skills.registry import SkillRegistry
 
 logger = logging.getLogger("yuyutsava.daemon.web")
 
@@ -140,7 +141,7 @@ class WebChannel(UserChannel):
 # ---------------------------------------------------------------------------
 
 
-def make_app(hub: WebHub, *, host: str) -> FastAPI:
+def make_app(hub: WebHub, *, host: str, skill_registry: SkillRegistry | None = None) -> FastAPI:
     if not (host.startswith("127.") or host == "localhost" or host == "::1"):
         raise RuntimeError(
             f"Refusing to bind to non-loopback host {host!r}. "
@@ -219,8 +220,36 @@ def make_app(hub: WebHub, *, host: str) -> FastAPI:
         conn.commit()
         return {"deleted": cur.rowcount}
 
+    @app.get("/health")
+    async def health() -> Any:
+        return {"status": "ok", "ts": time.time()}
+
     @app.get("/decisions")
     async def list_decisions(limit: int = 50) -> Any:
         return JSONResponse(hub.store.list_decisions(limit=min(max(1, limit), 500)))
+
+    @app.get("/skills")
+    async def list_skills() -> Any:
+        if skill_registry is None:
+            return JSONResponse([])
+        skills = skill_registry.scan()
+        return JSONResponse([
+            {"name": s.name, "description": s.description,
+             "scope": s.scope, "agent": s.agent}
+            for s in skills
+        ])
+
+    @app.delete("/skills/{name}")
+    async def delete_skill(name: str) -> Any:
+        if skill_registry is None:
+            raise HTTPException(503, "skill registry not available")
+        # Only allow deleting personal-scope skills (not bundled).
+        personal_dir = skill_registry._home_dir / name
+        if not personal_dir.exists():
+            raise HTTPException(404, f"personal skill {name!r} not found")
+        import shutil
+        shutil.rmtree(personal_dir)
+        skill_registry._cache = None  # invalidate
+        return {"deleted": name}
 
     return app

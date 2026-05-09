@@ -1,0 +1,51 @@
+:root {
+  /* Backgrounds */
+  --bg-deep:     #0a0a0f;
+  --bg-panel:    #0f0f1a;
+  --bg-card:     #131320;
+  --bg-elevated: #1a1a2e;
+  --bg-hover:    #1e1e32;
+
+  /* Neon accents */
+  --neon-green:  #00ff88;
+  --neon-cyan:   #00d4ff;
+  --neon-purple: #8b5cf6;
+  --neon-amber:  #fbbf24;
+  --neon-red:    #ff3366;
+  --neon-blue:   #3b82f6;
+
+  /* Text */
+  --text-primary:   #f1f5f9;
+  --text-secondary: #cbd5e1;
+  --text-muted:     #94a3b8;
+  --text-code:      #00ff88;
+  --text-dim:       #64748b;
+
+  /* Borders */
+  --border-subtle:  rgba(255, 255, 255, 0.06);
+  --border-card:    rgba(255, 255, 255, 0.08);
+  --border-neon:    rgba(0, 255, 136, 0.2);
+  --border-focus:   rgba(0, 255, 136, 0.6);
+  --border-amber:   rgba(251, 191, 36, 0.3);
+  --border-red:     rgba(255, 51, 102, 0.3);
+
+  /* Fonts */
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', monospace;
+  --font-ui:   -apple-system, 'SF Pro Text', system-ui, sans-serif;
+
+  /* Shadows / glows */
+  --glow-green:  0 0 20px rgba(0, 255, 136, 0.25), 0 0 60px rgba(0, 255, 136, 0.08);
+  --glow-cyan:   0 0 20px rgba(0, 212, 255, 0.25);
+  --glow-purple: 0 0 20px rgba(139, 92, 246, 0.3);
+  --glow-amber:  0 0 20px rgba(251, 191, 36, 0.3);
+  --glow-red:    0 0 20px rgba(255, 51, 102, 0.3);
+
+  --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.6), 0 1px 4px rgba(0, 0, 0, 0.4);
+
+  /* Sizing */
+  --sidebar-w:    60px;
+  --titlebar-h:   40px;
+  --activity-w:   300px;
+  --radius-card:  8px;
+  --radius-btn:   4px;
+}

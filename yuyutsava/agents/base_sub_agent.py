@@ -37,6 +37,10 @@ from langgraph.prebuilt import create_react_agent
 
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
 from yuyutsava.agents.task_runner.tools import bind_tools
+from yuyutsava.core.config import SearchConfig
+from yuyutsava.core.tool_registry import ToolRegistry
+from yuyutsava.skills.registry import SkillRegistry
+from yuyutsava.skills.tools import make_read_skill_tool
 
 
 class BaseSubAgent(ABC):
@@ -47,8 +51,17 @@ class BaseSubAgent(ABC):
     ``build_react_agent()`` / ``as_deepagents_subagent_spec()`` interface.
     """
 
-    def __init__(self, task_runner: TaskRunnerAgent) -> None:
+    def __init__(
+        self,
+        task_runner: TaskRunnerAgent,
+        skill_registry: SkillRegistry | None = None,
+        can_write_skills: bool = False,
+        search_config: SearchConfig | None = None,
+    ) -> None:
         self._task_runner = task_runner
+        self._skill_registry = skill_registry
+        self._can_write_skills = can_write_skills
+        self._search_config = search_config
 
     # ------------------------------------------------------------------
     # Required overrides
@@ -89,9 +102,40 @@ class BaseSubAgent(ABC):
         """Return the four tr_* tools bound to this agent's TaskRunnerAgent."""
         return bind_tools(self._task_runner.workspace_root)
 
+    def skill_tools(self) -> list[BaseTool]:
+        """Return skill tools based on the can_write_skills flag.
+
+        When can_write_skills=True (opt-in), returns both sk_read_skill and
+        sk_write_skill. Default (False) returns read-only access.
+        """
+        if self._skill_registry is None:
+            return []
+        if self._can_write_skills:
+            from yuyutsava.skills.tools import make_skill_tools
+            return make_skill_tools(self._skill_registry)
+        return [make_read_skill_tool(self._skill_registry)]
+
+    def search_tools(self) -> list[BaseTool]:
+        """Return ws_* tools if a SearchConfig was provided with valid API keys."""
+        if self._search_config is None:
+            return []
+        from yuyutsava.tools.search import make_search_tools
+        return make_search_tools(self._search_config)
+
     def all_tools(self) -> list[BaseTool]:
-        """Combined list: TaskRunner tools + any extra_tools()."""
-        return self.task_runner_tools() + self.extra_tools()
+        """Combined list: TaskRunner + skill + search + extra_tools()."""
+        return (
+            self.task_runner_tools()
+            + self.skill_tools()
+            + self.search_tools()
+            + self.extra_tools()
+        )
+
+    def build_tool_registry(self) -> ToolRegistry:
+        """Build a ToolRegistry populated with all this agent's tools."""
+        registry = ToolRegistry()
+        registry.register_many(self.all_tools())
+        return registry
 
     def build_react_agent(
         self,
@@ -100,6 +144,10 @@ class BaseSubAgent(ABC):
     ) -> CompiledStateGraph:
         """
         Build a LangGraph react agent for this sub-agent.
+
+        All tools are registered in the graph (so LangGraph can execute them).
+        A ``tool_search`` tool is prepended so the agent can discover tool
+        schemas on demand rather than having them all injected upfront.
 
         A checkpointer is **required** because the TaskRunner tools call
         ``interrupt()`` for HITL permission prompts, and LangGraph needs
@@ -112,9 +160,14 @@ class BaseSubAgent(ABC):
         Returns:
             A compiled LangGraph ``CompiledStateGraph`` ready for ``.ainvoke()``.
         """
+        tool_registry = self.build_tool_registry()
+        # tool_search is prepended so it appears first in the model's tool list.
+        # All other tools follow — they're in the graph for execution, and their
+        # schemas are served on demand via tool_search.
+        tools_with_search = [tool_registry.make_tool_search_tool()] + self.all_tools()
         return create_react_agent(
             model=model,
-            tools=self.all_tools(),
+            tools=tools_with_search,
             prompt=self.system_prompt,
             checkpointer=checkpointer,
         )
