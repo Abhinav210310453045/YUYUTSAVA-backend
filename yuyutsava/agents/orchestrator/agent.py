@@ -21,6 +21,7 @@ from deepagents import create_deep_agent
 from deepagents.backends import LocalShellBackend
 from langchain_core.language_models import BaseChatModel
 from langchain_core.tools import BaseTool, tool
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.state import CompiledStateGraph
 
@@ -31,9 +32,12 @@ from yuyutsava.daemon.budget import BudgetMiddleware
 from yuyutsava.daemon.channels import AskPrompt, ChannelRouter
 from yuyutsava.core.tool_filter_middleware import ToolFilterMiddleware
 from yuyutsava.events.store import Store
+from yuyutsava.core.config import SearchConfig
 from yuyutsava.events.tools import make_recall_tool
+from yuyutsava.mcp.loader import MCPClientManager
 from yuyutsava.skills.registry import SkillRegistry
 from yuyutsava.skills.tools import make_skill_tools
+from yuyutsava.tools.search import make_search_tools
 
 logger = logging.getLogger("yuyutsava.agents.orchestrator")
 
@@ -49,6 +53,9 @@ class OrchestratorDeps:
     subagent_token_budget: int
     skill_registry: SkillRegistry | None = None
     workspace_root: Path | None = None
+    mcp_manager: MCPClientManager | None = None
+    search_config: SearchConfig | None = None
+    cap_enforcer: object | None = None  # tools.search._CapEnforcer
 
 
 def build_orchestrator(
@@ -57,11 +64,13 @@ def build_orchestrator(
     deps: OrchestratorDeps,
     budget_tokens: int,
     skill_registry: SkillRegistry | None = None,
+    checkpointer: BaseCheckpointSaver | None = None,
+    prefs_block: str = "",
 ) -> CompiledStateGraph:
     """Build a fresh create_deep_agent orchestrator. Call once per OrchestratorTask."""
     capabilities = render_capabilities_block(list(deps.subagents.values()))
     skills_index = skill_registry.index_block(agent="orchestrator") if skill_registry else ""
-    system_prompt = render_system_prompt(capabilities, skills_index=skills_index)
+    system_prompt = render_system_prompt(capabilities, skills_index=skills_index, prefs_block=prefs_block)
 
     master_tools: list[BaseTool] = [
         _make_ask_user_tool(deps.channels),
@@ -69,6 +78,12 @@ def build_orchestrator(
     ]
     if skill_registry:
         master_tools.extend(make_skill_tools(skill_registry))
+    if deps.search_config is not None:
+        # Orchestrator is always research-capable — attach every ws_* tool
+        # whose provider key is configured. Cap enforcement is opt-in.
+        master_tools.extend(make_search_tools(deps.search_config, cap_enforcer=deps.cap_enforcer))
+    if deps.mcp_manager is not None:
+        master_tools.extend(deps.mcp_manager.tools_for("orchestrator"))
 
     # Build subagent specs from registered BaseSubAgent instances.
     # as_deepagents_subagent_spec() already returns {name, description, system_prompt, tools}.
@@ -104,7 +119,7 @@ def build_orchestrator(
         tools=master_tools,
         backend=_backend_factory,
         system_prompt=system_prompt,
-        checkpointer=MemorySaver(),
+        checkpointer=checkpointer if checkpointer is not None else MemorySaver(),
         middleware=[ToolFilterMiddleware(), budget],
         subagents=subagent_specs,
     )

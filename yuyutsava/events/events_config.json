@@ -1,0 +1,27 @@
+{
+  "sources": {
+    "fs": {
+      "enabled": true,
+      "roots": ["~/Downloads"],
+      "ignore": ["*.tmp", ".DS_Store", "*.crdownload", "*.part"],
+      "coalesce_window_ms": 750
+    },
+    "clipboard": {
+      "enabled": true,
+      "poll_ms": 500
+    },
+    "hotkey": {
+      "enabled": false,
+      "bindings": {}
+    },
+    "appfocus": {
+      "enabled": false
+    },
+    "webcam": {
+      "enabled": false
+    },
+    "voice": {
+      "enabled": false
+    }
+  }
+}

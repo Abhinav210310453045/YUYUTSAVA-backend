@@ -11,11 +11,14 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import datetime
 import fnmatch
 import json
 import logging
+import os
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from ulid import ULID
@@ -61,6 +64,23 @@ class OrchestratorTask:
 # ---------------------------------------------------------------------------
 # Triage loop
 # ---------------------------------------------------------------------------
+
+
+def _build_fs_instruction(ev: "EventEnvelope") -> str:
+    """Build a concrete move instruction for fs.changed events.
+
+    Falls back to ev.summary for non-fs topics or when the path hint is absent.
+    """
+    if ev.topic != "fs.changed":
+        return ev.summary
+    path_str = ev.hints.get("path", "")
+    if not path_str:
+        return ev.summary
+    filename = Path(path_str).name
+    year = datetime.datetime.now().year
+    home = os.path.expanduser("~")
+    inbox = f"{home}/Documents/Inbox/{year}"
+    return f"Move {path_str} to {inbox}/{filename}"
 
 
 class TriageLoop:
@@ -123,13 +143,14 @@ class TriageLoop:
                     return
 
                 if rule and rule["decision"] == "auto_approve":
-                    # No triage call; build a minimal task. The proposal text
-                    # was set by the rule's own match — use the envelope summary
-                    # as the instruction.
+                    # No triage call; synthesise a proper instruction from event
+                    # metadata so the subagent gets an unambiguous path, not just
+                    # the raw summary string.
+                    proposed_instruction = _build_fs_instruction(ev)
                     decision = TriageDecision(
                         action="propose",
                         subagent_hint=rule.get("subagent_hint") or "file-organizer",
-                        proposed_instruction=ev.summary,
+                        proposed_instruction=proposed_instruction,
                         reason="auto_approve rule",
                         urgency=1,
                     )
@@ -250,8 +271,12 @@ class TriageLoop:
     async def _add_consent_rule_for(
         self, ev: EventEnvelope, *, decision_kind: str,
     ) -> None:
-        # Coarse rule by default: same topic + same path-extension.
-        match = {"topic": ev.topic, "ext": ev.hints.get("ext", "")}
+        # Scope by directory + ext so "remember for this PDF" means files in
+        # the same directory, not every PDF on the machine.
+        match: dict[str, str] = {"topic": ev.topic, "ext": ev.hints.get("ext", "")}
+        parent_dir = ev.hints.get("parent", "")
+        if parent_dir:
+            match["hints.parent"] = parent_dir
         rule = ConsentRule(
             rule_id=str(ULID()),
             topic_glob=ev.topic,

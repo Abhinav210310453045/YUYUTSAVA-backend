@@ -104,7 +104,16 @@ class UserChannel(ABC):
 
 @dataclass
 class ChannelRouter:
-    """Fan-out for events; first-available routing for asks/proposals."""
+    """Fan-out for events; first-available routing for asks/proposals.
+
+    TODO(phase2-§3.4): when ``yuyutsava/daemon/push_channel.py`` (pync-backed
+    macOS notifications) is added for ``--no-ui`` mode, this constructor
+    must assert that ``PushChannel`` is not present alongside ``WebChannel``.
+    The Electron renderer already shows focus-aware OS banners via
+    ``notify:show`` IPC; pairing both would double-banner the user. Pick
+    one channel based on ``DaemonConfig.headless`` at boot — never both.
+    See PHASE_2_PLAN §3.4 and the new-risks section.
+    """
 
     channels: list[UserChannel] = dataclasses.field(default_factory=list)
     primary_name: str = "web"  # tried first for asks/proposals

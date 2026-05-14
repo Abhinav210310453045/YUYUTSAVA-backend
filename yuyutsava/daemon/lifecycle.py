@@ -34,3 +34,23 @@ def install_signal_handlers(stop_event: asyncio.Event) -> None:
         except NotImplementedError:
             # Windows / restricted env: Ctrl-C still raises KeyboardInterrupt.
             pass
+
+
+def install_reload_handler(reload_event: asyncio.Event) -> None:
+    """Set *reload_event* on SIGHUP so main.py can re-read configs.
+
+    Main owns the event; consumers (e.g. MCP loader) re-read their config file
+    and diff against the running state. Best-effort: SIGHUP isn't supported on
+    Windows, so we silently skip there.
+    """
+    loop = asyncio.get_running_loop()
+
+    def _handle() -> None:
+        logger.info("received SIGHUP, scheduling config reload")
+        reload_event.set()
+
+    try:
+        loop.add_signal_handler(signal.SIGHUP, _handle)
+    except (AttributeError, NotImplementedError):
+        # SIGHUP missing on Windows; not a fatal error.
+        pass

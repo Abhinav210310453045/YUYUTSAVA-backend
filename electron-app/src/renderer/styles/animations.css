@@ -57,3 +57,15 @@
   0%, 100% { opacity: 1; }
   50%       { opacity: 0; }
 }
+
+/* Brief flash on a proposal card when the user clicks the OS notification
+   banner that referenced it. Removed after ~1.8s. */
+.proposal-flash {
+  animation: proposal-flash 1.8s ease-out;
+  border-radius: 6px;
+}
+@keyframes proposal-flash {
+  0%   { box-shadow: 0 0 0 2px var(--neon-green), 0 0 18px rgba(0,255,136,0.55); }
+  60%  { box-shadow: 0 0 0 2px rgba(0,255,136,0.4), 0 0 8px rgba(0,255,136,0.25); }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}

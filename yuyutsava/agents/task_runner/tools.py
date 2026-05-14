@@ -13,6 +13,7 @@ for each workspace_root path, avoiding redundant instantiation.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import uuid
 from pathlib import Path
@@ -23,6 +24,8 @@ from langgraph.types import interrupt
 
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
 from yuyutsava.models.operations import OperationRequest, OperationType
+
+_log = logging.getLogger("yuyutsava.agents.task_runner.tools")
 
 
 def _resolve_path(raw: str, workspace_root: Path) -> str:
@@ -55,6 +58,19 @@ def _resolve_path(raw: str, workspace_root: Path) -> str:
 # ---------------------------------------------------------------------------
 
 _registry: dict[str, TaskRunnerAgent] = {}
+_default_policy: object | None = None  # PermissionsPolicy; set by daemon at boot
+
+
+def set_default_policy(policy: object | None) -> None:
+    """Install a permissions policy for every TaskRunnerAgent the registry mints.
+
+    The daemon calls this once at startup. Already-cached agents are updated
+    in place so a hot reload picks up the new policy without rebuilding tools.
+    """
+    global _default_policy
+    _default_policy = policy
+    for agent in _registry.values():
+        agent._policy = policy  # type: ignore[attr-defined]
 
 
 def _get_or_create_agent(workspace_root: Path, sandbox_root: Path | None = None) -> TaskRunnerAgent:
@@ -62,7 +78,9 @@ def _get_or_create_agent(workspace_root: Path, sandbox_root: Path | None = None)
     sb = str(sandbox_root.resolve()) if sandbox_root is not None else ""
     key = f"{ws}|{sb}"
     if key not in _registry:
-        _registry[key] = TaskRunnerAgent(workspace_root, sandbox_root=sandbox_root)
+        _registry[key] = TaskRunnerAgent(
+            workspace_root, sandbox_root=sandbox_root, policy=_default_policy,
+        )
     return _registry[key]
 
 
@@ -114,6 +132,7 @@ def bind_tools(workspace_root: Path, sandbox_root: Path | None = None) -> list[B
             limit:  Maximum number of lines to return (None = read to end of file).
         """
         real_path = _resolve_path(path, workspace_root)
+        _log.debug("[tr_read_file] path=%s offset=%s limit=%s", real_path, offset, limit)
         request = OperationRequest(
             request_id=str(uuid.uuid4()),
             requesting_agent="agent",
@@ -125,6 +144,7 @@ def bind_tools(workspace_root: Path, sandbox_root: Path | None = None) -> list[B
             additional_context={"offset": offset, "limit": limit},
         )
         response = await agent.handle(request)
+        _log.debug("[tr_read_file] status=%s", response.status)
         return response.model_dump_json()
 
     # ------------------------------------------------------------------ #
@@ -141,6 +161,7 @@ def bind_tools(workspace_root: Path, sandbox_root: Path | None = None) -> list[B
             reason: Specific purpose shown to user in permission prompts.
         """
         real_path = _resolve_path(path, workspace_root)
+        _log.debug("[tr_write_file] path=%s bytes=%d", real_path, len(content.encode()))
         request = OperationRequest(
             request_id=str(uuid.uuid4()),
             requesting_agent="agent",
@@ -152,6 +173,7 @@ def bind_tools(workspace_root: Path, sandbox_root: Path | None = None) -> list[B
             additional_context={"content": content},
         )
         response = await agent.handle(request)
+        _log.debug("[tr_write_file] status=%s", response.status)
         return response.model_dump_json()
 
     # ------------------------------------------------------------------ #
@@ -167,6 +189,7 @@ def bind_tools(workspace_root: Path, sandbox_root: Path | None = None) -> list[B
             reason: Specific purpose shown to user in permission prompts.
         """
         real_path = _resolve_path(path, workspace_root)
+        _log.debug("[tr_delete_file] path=%s", real_path)
         request = OperationRequest(
             request_id=str(uuid.uuid4()),
             requesting_agent="agent",
@@ -177,6 +200,7 @@ def bind_tools(workspace_root: Path, sandbox_root: Path | None = None) -> list[B
             reason=reason,
         )
         response = await agent.handle(request)
+        _log.debug("[tr_delete_file] status=%s", response.status)
         return response.model_dump_json()
 
     # ------------------------------------------------------------------ #
@@ -197,6 +221,7 @@ def bind_tools(workspace_root: Path, sandbox_root: Path | None = None) -> list[B
             timeout: Max seconds (default 120).
         """
         sandbox_path = str(agent.sandbox_root)
+        _log.debug("[tr_execute_in_sandbox] cmd=%s", command[:200])
         request = OperationRequest(
             request_id=str(uuid.uuid4()),
             requesting_agent="agent",
@@ -212,6 +237,7 @@ def bind_tools(workspace_root: Path, sandbox_root: Path | None = None) -> list[B
             },
         )
         response = await agent.handle(request)
+        _log.debug("[tr_execute_in_sandbox] status=%s", response.status)
         return response.model_dump_json()
 
     # ------------------------------------------------------------------ #
@@ -244,6 +270,7 @@ def bind_tools(workspace_root: Path, sandbox_root: Path | None = None) -> list[B
             max_matches:      Stop after this many matches (default 100).
         """
         real_path = _resolve_path(path, workspace_root)
+        _log.debug("[tr_grep] pattern=%r path=%s", pattern, real_path)
         flags = "-rn"
         if case_insensitive:
             flags += "i"
@@ -323,6 +350,7 @@ def bind_tools(workspace_root: Path, sandbox_root: Path | None = None) -> list[B
             reason:  Why you need to run this (shown to user in permission prompt).
             timeout: Max seconds (default 120).
         """
+        _log.debug("[tr_execute] cmd=%s", command[:200])
         # Use "/host" as the sentinel path — it is outside workspace and sandbox,
         # so classify_zone() returns EXTERNAL, and EXTERNAL + EXECUTE = PROMPT.
         # This forces a user permission check before every execution.
@@ -341,6 +369,7 @@ def bind_tools(workspace_root: Path, sandbox_root: Path | None = None) -> list[B
             },
         )
         response = await agent.handle(request)
+        _log.debug("[tr_execute] status=%s", response.status)
         return response.model_dump_json()
 
     return [tr_read_file, tr_write_file, tr_delete_file, tr_execute_in_sandbox, tr_grep, tr_ask_user, tr_execute]

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import SettingsSection from './SettingsSection'
 import SettingsField from './SettingsField'
+import WatchedDirsEditor from './WatchedDirsEditor'
 
 function DaemonBtn({ label, color, borderColor, bg, disabled, onClick }) {
   return (
@@ -52,6 +53,13 @@ export default function SettingsPanel() {
       setDaemonStatus(status)
       setLoading(false)
     })
+
+    // Poll status so externally-started/stopped daemons reflect in the UI.
+    const id = setInterval(async () => {
+      const status = await window.electronAPI?.getDaemonStatus()
+      if (status) setDaemonStatus(status)
+    }, 3000)
+    return () => clearInterval(id)
   }, [])
 
   async function refreshStatus() {
@@ -202,6 +210,10 @@ export default function SettingsPanel() {
           />
         )}
       </div>
+
+      <SettingsSection title="Watched Directories" defaultOpen={true}>
+        <WatchedDirsEditor />
+      </SettingsSection>
 
       <SettingsSection title="Daemon" defaultOpen={true}>
         <SettingsField label="Port" envKey="YUYUTSAVA_DAEMON_PORT" type="number" value={settings['YUYUTSAVA_DAEMON_PORT']} onChange={onChange} placeholder="7654" />

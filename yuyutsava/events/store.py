@@ -76,6 +76,23 @@ CREATE TABLE IF NOT EXISTS consent_rules (
     expires_ts  REAL
 );
 CREATE INDEX IF NOT EXISTS idx_consent_rules_topic ON consent_rules(topic_glob);
+
+-- Per-tool daily call counters (for the permissions policy's daily_cap).
+-- One row per (tool_name, utc_date); count increments on every call.
+CREATE TABLE IF NOT EXISTS tool_call_counters (
+    tool_name  TEXT NOT NULL,
+    day        TEXT NOT NULL,   -- YYYY-MM-DD (UTC)
+    count      INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (tool_name, day)
+);
+
+-- User preferences: small JSON blobs keyed by a dot-namespaced string.
+-- e.g. key = "interaction.style", value_json = '"be terse and direct"'
+CREATE TABLE IF NOT EXISTS user_prefs (
+    key        TEXT PRIMARY KEY,
+    value_json TEXT NOT NULL,
+    updated_ts REAL NOT NULL
+);
 """
 
 
@@ -253,6 +270,32 @@ class Store:
         self._conn.commit()
         return cur.rowcount == 1
 
+    # --- tool-call counters (synchronous; used by permission policy) ---------
+
+    def incr_tool_call(self, tool_name: str, day: str) -> int:
+        """Increment ``tool_call_counters`` and return the new count for the day."""
+        assert self._conn is not None
+        self._conn.execute(
+            "INSERT INTO tool_call_counters(tool_name, day, count) VALUES(?,?,1) "
+            "ON CONFLICT(tool_name, day) DO UPDATE SET count = count + 1",
+            (tool_name, day),
+        )
+        self._conn.commit()
+        row = self._conn.execute(
+            "SELECT count FROM tool_call_counters WHERE tool_name=? AND day=?",
+            (tool_name, day),
+        ).fetchone()
+        return int(row["count"]) if row else 1
+
+    def get_tool_call_count(self, tool_name: str, day: str) -> int:
+        """Return the current per-day count for *tool_name* without incrementing."""
+        assert self._conn is not None
+        row = self._conn.execute(
+            "SELECT count FROM tool_call_counters WHERE tool_name=? AND day=?",
+            (tool_name, day),
+        ).fetchone()
+        return int(row["count"]) if row else 0
+
     # --- reads ---------------------------------------------------------------
 
     def get_event_payload(self, event_id: str) -> dict[str, Any] | None:
@@ -315,6 +358,22 @@ class Store:
                 out.append(dict(r))
         return out
 
+    def delete_event_payloads_with_blob_prefix(self, prefix: str, older_than_ts: float) -> int:
+        """Delete ``event_payloads`` rows whose ``blob_path`` starts with *prefix*
+        and whose ``ts`` is older than *older_than_ts*. Returns row count.
+
+        Used by :class:`yuyutsava.daemon.blob_sweeper.BlobSweeper` to keep
+        the event DB and the on-disk blob dir in sync. Synchronous because
+        the sweeper batches one call per tick.
+        """
+        assert self._conn is not None
+        cur = self._conn.execute(
+            "DELETE FROM event_payloads WHERE blob_path LIKE ? AND ts < ?",
+            (prefix + "%", older_than_ts),
+        )
+        self._conn.commit()
+        return cur.rowcount
+
     def expire_proposals(self, now: float | None = None) -> int:
         """Flip pending proposals past their expires_ts to 'expired'. Returns count."""
         assert self._conn is not None
@@ -325,3 +384,48 @@ class Store:
         )
         self._conn.commit()
         return cur.rowcount
+
+    # --- user_prefs (async write, sync read) ---------------------------------
+
+    async def put_pref(self, key: str, value: Any) -> None:
+        """Upsert a preference. ``value`` must be JSON-serialisable."""
+        await self._write_q.put((
+            "INSERT INTO user_prefs(key, value_json, updated_ts) VALUES(?,?,?) "
+            "ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json, "
+            "updated_ts=excluded.updated_ts",
+            (key, json.dumps(value, ensure_ascii=False), time.time()),
+        ))
+
+    async def delete_pref(self, key: str) -> None:
+        """Remove a preference key. No-op if the key doesn't exist."""
+        await self._write_q.put((
+            "DELETE FROM user_prefs WHERE key=?",
+            (key,),
+        ))
+
+    def get_pref(self, key: str, default: Any = None) -> Any:
+        """Return the stored value for ``key``, or ``default`` if absent."""
+        assert self._conn is not None
+        row = self._conn.execute(
+            "SELECT value_json FROM user_prefs WHERE key=?", (key,)
+        ).fetchone()
+        if row is None:
+            return default
+        try:
+            return json.loads(row["value_json"])
+        except Exception:
+            return default
+
+    def list_prefs(self) -> dict[str, Any]:
+        """Return all stored preferences as a ``{key: value}`` dict."""
+        assert self._conn is not None
+        rows = self._conn.execute(
+            "SELECT key, value_json FROM user_prefs ORDER BY key"
+        ).fetchall()
+        out: dict[str, Any] = {}
+        for r in rows:
+            try:
+                out[r["key"]] = json.loads(r["value_json"])
+            except Exception:
+                pass
+        return out

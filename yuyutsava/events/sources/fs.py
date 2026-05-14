@@ -103,8 +103,21 @@ class FsSource(EventSource):
                 logger.warning("fs source: watch root %s does not exist; creating", root)
                 root.mkdir(parents=True, exist_ok=True)
             observer.schedule(handler, str(root), recursive=True)
-            logger.info("fs source: watching %s", root)
+            logger.info("[fs] watching %s (ignore=%s)", root, list(ignore))
         observer.start()
+        # Surface a UI-visible signal that the watcher is live. The bus topic
+        # is informational; downstream consumers (triage) ignore source.* by
+        # default — it's there for the activity tab / health checks.
+        try:
+            await ctx.emit(
+                topic="source.started",
+                summary=f"fs watching {', '.join(str(r) for r in roots)}",
+                payload={"roots": [str(r) for r in roots], "ignore": list(ignore)},
+                severity=0,
+                hints={"source": "fs"},
+            )
+        except Exception:
+            logger.debug("fs source: source.started emit failed", exc_info=True)
 
         try:
             if heartbeat_sec <= 0:
@@ -177,12 +190,25 @@ class FsSource(EventSource):
 
     async def _flush_after(self, coalesce_ms: int, ctx: SourceContext) -> None:
         await asyncio.sleep(coalesce_ms / 1000.0)
+        # Snapshot and clear FIRST so a fresh task can be scheduled for any
+        # events that arrive while we're emitting. Without this, an event
+        # landing between the snapshot and `_flush_task.done()` becoming True
+        # would be stranded in _pending until the next event arrived.
         if not self._pending:
+            self._flush_task = None
             return
-        # Snapshot and clear so further events start a fresh burst.
         batch, self._pending = self._pending, {}
-        for path, info in batch.items():
-            await self._emit_one(path, info, ctx)
+        try:
+            for path, info in batch.items():
+                await self._emit_one(path, info, ctx)
+        finally:
+            self._flush_task = None
+            # If events arrived during emit, kick another flush window.
+            if self._pending:
+                self._flush_task = asyncio.create_task(
+                    self._flush_after(coalesce_ms, ctx),
+                    name="fs-flush",
+                )
 
     async def _emit_one(
         self, path: Path, info: dict[str, Any], ctx: SourceContext
@@ -215,6 +241,7 @@ class FsSource(EventSource):
             "path": str(path),
             "ext": ext,
             "kind": kind,
+            "parent": str(path.parent),
         }
         await ctx.emit(
             topic="fs.changed",

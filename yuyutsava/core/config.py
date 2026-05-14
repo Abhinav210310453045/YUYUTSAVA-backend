@@ -267,6 +267,11 @@ def yuyutsava_home() -> Path:
     return p
 
 
+def events_config_path() -> Path:
+    """Repo-local path for events_config.json: <repo_root>/yuyutsava/events/events_config.json."""
+    return Path(__file__).parent.parent / "events" / "events_config.json"
+
+
 # ---------------------------------------------------------------------------
 # Events config
 # ---------------------------------------------------------------------------
@@ -289,9 +294,9 @@ class EventsConfig:
 
     @classmethod
     def from_file(cls, path: Path | None = None) -> EventsConfig:
-        path = path or (yuyutsava_home() / "events_config.json")
+        path = path or events_config_path()
         if not path.exists():
-            return cls(sources={})
+            return cls.default()
         try:
             raw = json.loads(path.read_text())
         except json.JSONDecodeError as exc:
@@ -304,7 +309,7 @@ class EventsConfig:
             enabled = bool(body.get("enabled", True))
             params = {k: v for k, v in body.items() if k != "enabled"}
             sources[name] = SourceConfig(name=name, enabled=enabled, params=params)
-        return cls(sources=sources)
+        return cls(sources=sources) if sources else cls.default()
 
     @classmethod
     def default(cls) -> EventsConfig:
@@ -316,10 +321,59 @@ class EventsConfig:
                 params={
                     "roots": [str(Path.home() / "Downloads")],
                     "ignore": ["*.tmp", ".DS_Store", "*.crdownload", "*.part"],
-                    "coalesce_window_ms": 2000,
+                    "coalesce_window_ms": 750,
                 },
             ),
         })
+
+    def to_dict(self) -> dict[str, Any]:
+        out: dict[str, Any] = {"sources": {}}
+        for name, src in self.sources.items():
+            body: dict[str, Any] = {"enabled": src.enabled}
+            body.update(src.params)
+            out["sources"][name] = body
+        return out
+
+    def to_file(self, path: Path | None = None) -> Path:
+        """Persist this config to events_config.json atomically."""
+        path = path or events_config_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_text(json.dumps(self.to_dict(), indent=2, sort_keys=True))
+        tmp.replace(path)
+        return path
+
+    def with_fs_root_added(self, root: str | Path) -> EventsConfig:
+        """Return a new EventsConfig with ``root`` added to the fs source's roots."""
+        root_str = str(Path(str(root)).expanduser())
+        fs = self.sources.get("fs")
+        if fs is None:
+            new_fs = SourceConfig(
+                name="fs",
+                enabled=True,
+                params={
+                    "roots": [root_str],
+                    "ignore": ["*.tmp", ".DS_Store", "*.crdownload", "*.part"],
+                    "coalesce_window_ms": 750,
+                },
+            )
+        else:
+            roots = list(fs.params.get("roots") or [])
+            if root_str not in roots:
+                roots.append(root_str)
+            params = {**fs.params, "roots": roots}
+            new_fs = SourceConfig(name=fs.name, enabled=fs.enabled, params=params)
+        return EventsConfig(sources={**self.sources, "fs": new_fs})
+
+    def with_fs_root_removed(self, root: str | Path) -> EventsConfig:
+        root_str = str(Path(str(root)).expanduser())
+        fs = self.sources.get("fs")
+        if fs is None:
+            return self
+        roots = [r for r in (fs.params.get("roots") or []) if r != root_str]
+        params = {**fs.params, "roots": roots}
+        new_fs = SourceConfig(name=fs.name, enabled=fs.enabled, params=params)
+        return EventsConfig(sources={**self.sources, "fs": new_fs})
 
 
 # ---------------------------------------------------------------------------
@@ -333,10 +387,10 @@ class DaemonConfig:
 
     web_host: str = "127.0.0.1"
     web_port: int = 7654
-    web_open_browser: bool = True
+    web_open_browser: bool = False
     proposal_expiry_sec: int = 300
-    orchestrator_token_budget: int = 8000
-    subagent_token_budget: int = 30000
+    orchestrator_token_budget: int = 60000
+    subagent_token_budget: int = 60000
     headless: bool = False  # --no-ui semantics
     heartbeat_sec: int = 30  # idle sleep between event bursts; 0 = no sleep
 
@@ -351,7 +405,7 @@ class DaemonConfig:
         host = os.environ.get("YUYUTSAVA_DAEMON_HOST", "127.0.0.1").strip() or "127.0.0.1"
 
         open_browser_raw = os.environ.get("YUYUTSAVA_DAEMON_OPEN_BROWSER", "").strip().lower()
-        open_browser = open_browser_raw not in ("0", "false", "no")
+        open_browser = open_browser_raw in ("1", "true", "yes")
 
         expiry_raw = os.environ.get("YUYUTSAVA_PROPOSAL_EXPIRY_SEC", "").strip()
         try:

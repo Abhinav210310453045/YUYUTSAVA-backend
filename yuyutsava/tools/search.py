@@ -20,9 +20,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any
+from typing import Any, Protocol
 
-from langchain_core.tools import BaseTool, tool
+from langchain_core.tools import BaseTool, StructuredTool, tool
 
 from yuyutsava.core.config import SearchConfig
 from yuyutsava.core.exceptions import ExaSearchError, TavilySearchError
@@ -30,16 +30,31 @@ from yuyutsava.core.exceptions import ExaSearchError, TavilySearchError
 logger = logging.getLogger("yuyutsava.tools.search")
 
 
+class _CapEnforcer(Protocol):
+    """Anything that can decide whether a tool may be called and record it."""
+
+    def check_and_incr(self, tool_name: str) -> tuple[bool, str]:
+        """Return ``(allowed, reason)``. ``reason`` empty when ``allowed=True``."""
+
+
 # ---------------------------------------------------------------------------
 # Public factory
 # ---------------------------------------------------------------------------
 
 
-def make_search_tools(config: SearchConfig) -> list[BaseTool]:
+def make_search_tools(
+    config: SearchConfig,
+    *,
+    cap_enforcer: _CapEnforcer | None = None,
+) -> list[BaseTool]:
     """Build ws_* tools for every provider that has a configured API key.
 
     Only creates tools whose API key is present in *config*.
     Returns an empty list if no search providers are configured.
+
+    *cap_enforcer*, when provided, is called before every invocation. If it
+    returns ``(False, reason)`` the tool returns a refusal string and the
+    underlying provider is not contacted.
     """
     available = config.is_available()
     tools: list[BaseTool] = []
@@ -54,8 +69,43 @@ def make_search_tools(config: SearchConfig) -> list[BaseTool]:
 
     if not tools:
         logger.debug("search: no providers configured — ws_* tools not loaded")
+        return tools
 
+    if cap_enforcer is not None:
+        tools = [_wrap_with_cap(t, cap_enforcer) for t in tools]
     return tools
+
+
+def _wrap_with_cap(inner: BaseTool, cap: _CapEnforcer) -> BaseTool:
+    """Wrap a BaseTool so its invocation is gated by *cap*.
+
+    Preserves the original name, description, and args_schema so the LLM sees
+    exactly the same tool surface. The cap is consulted *before* the network
+    call; a failure inside the inner tool does not count against the quota.
+    """
+    name = inner.name
+    original_coroutine = inner.coroutine
+    original_func = getattr(inner, "func", None)
+
+    async def _gated(**kwargs: Any) -> str:
+        allowed, reason = cap.check_and_incr(name)
+        if not allowed:
+            logger.info("search: %s blocked by cap: %s", name, reason)
+            return json.dumps({"error": "rate_limited", "tool": name, "reason": reason})
+        if original_coroutine is not None:
+            return await original_coroutine(**kwargs)
+        if original_func is not None:
+            # Sync inner — run in a worker thread to avoid blocking the loop.
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(None, lambda: original_func(**kwargs))
+        raise RuntimeError(f"tool {name} has neither coroutine nor func")
+
+    return StructuredTool.from_function(
+        name=inner.name,
+        description=inner.description,
+        args_schema=inner.args_schema,
+        coroutine=_gated,
+    )
 
 
 # ---------------------------------------------------------------------------

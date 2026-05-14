@@ -4,6 +4,9 @@ description: |
   Deep research combining Exa neural search with full content fetching.
   Use when Tavily snippets are insufficient and full page text is needed
   (e.g. reading full articles, academic papers, documentation pages).
+requires_tools:
+  - ws_exa_search
+  - ws_exa_get_contents
 ---
 
 ## When to use

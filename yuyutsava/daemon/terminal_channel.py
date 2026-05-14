@@ -28,14 +28,30 @@ class TerminalChannel(UserChannel):
         self._verbose = verbose
 
     async def post_event(self, ev: ChannelEvent) -> None:
-        # Keep terminal noise low: only show timeline + tool calls + asks.
         if ev.kind == "timeline":
             line = ev.data.get("line", "")
             if line:
                 print(f"\033[36m• {line}\033[0m", file=sys.stderr, flush=True)
         elif ev.kind == "tool_call":
             name = ev.data.get("name", "?")
-            print(f"\033[33m🔧 {name}\033[0m", file=sys.stderr, flush=True)
+            if self._verbose:
+                args = ev.data.get("args", {})
+                args_str = ""
+                if isinstance(args, dict) and args:
+                    import json as _json
+                    args_str = " " + _json.dumps(args, ensure_ascii=False)[:160]
+                print(f"\033[33m🔧 {name}{args_str}\033[0m", file=sys.stderr, flush=True)
+            else:
+                print(f"\033[33m🔧 {name}\033[0m", file=sys.stderr, flush=True)
+        elif ev.kind == "tool_result" and self._verbose:
+            name = ev.data.get("name", "?")
+            preview = ev.data.get("preview", "")
+            short = preview[:300].replace("\n", " ") if preview else "(empty)"
+            print(f"\033[32m  ↳ [{name}] {short}\033[0m", file=sys.stderr, flush=True)
+        elif ev.kind == "token" and self._verbose:
+            text = ev.data.get("text", "")
+            if text:
+                print(text, end="", flush=True, file=sys.stderr)
         elif ev.kind == "log" and self._verbose:
             print(ev.data.get("text", ""), file=sys.stderr, flush=True)
 
