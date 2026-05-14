@@ -15,8 +15,8 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import subprocess
 import sys
-import webbrowser
 from pathlib import Path
 
 import uvicorn
@@ -26,22 +26,31 @@ try:
 except ImportError:  # pragma: no cover
     load_dotenv = None  # type: ignore[assignment]
 
+from yuyutsava.agents.face_watcher.agent import FaceWatcherAgent
 from yuyutsava.agents.file_organizer.agent import FileOrganizerAgent
 from yuyutsava.agents.orchestrator.agent import OrchestratorDeps
 from yuyutsava.agents.orchestrator.capabilities import render_capabilities_block
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
 from yuyutsava.agents.triage.agent import TriageAgent
 from yuyutsava.core.config import (
-    DaemonConfig, EventsConfig, llm_settings_from_env, yuyutsava_home,
+    DaemonConfig, EventsConfig, SearchConfig, llm_settings_from_env, yuyutsava_home,
 )
+from yuyutsava.mcp.config import MCPConfig
+from yuyutsava.mcp.loader import MCPClientManager
 from yuyutsava.skills.registry import SkillRegistry
 from yuyutsava.core.llm import chat_model
+from yuyutsava.agents.task_runner.tools import set_default_policy
+from yuyutsava.daemon.blob_sweeper import BlobSweeper, BlobSweepTarget
 from yuyutsava.daemon.channels import ChannelRouter
-from yuyutsava.daemon.lifecycle import install_signal_handlers
+from yuyutsava.daemon.checkpointing import CheckpointerManager
+from yuyutsava.daemon.lifecycle import install_reload_handler, install_signal_handlers
+from yuyutsava.daemon.permissions_policy import PermissionsPolicy, StorePolicyCapEnforcer
 from yuyutsava.daemon.orchestrator_loop import OrchestratorLoop
 from yuyutsava.daemon.terminal_channel import TerminalChannel
 from yuyutsava.daemon.triage_loop import OrchestratorTask, TriageLoop
 from yuyutsava.daemon.web.server import WebChannel, WebHub, make_app
+from yuyutsava.prefs.store import UserPrefsStore
+from yuyutsava.prefs.injector import PrefsInjector
 from yuyutsava.events.bus import EventBus
 from yuyutsava.events.registry import SourceRegistry
 from yuyutsava.events.store import Store
@@ -72,11 +81,12 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--workspace", "-w", type=Path, default=Path.cwd(),
                    help="Workspace root for the TaskRunner gateway (default: cwd).")
     p.add_argument("--no-ui", action="store_true",
-                   help="Headless mode: disable the web window. Terminal-only fallback.")
-    p.add_argument("--no-browser", action="store_true",
-                   help="Don't auto-open the browser; just print the URL.")
+                   help="Headless mode: don't auto-open the Electron app; terminal-only fallback.")
     p.add_argument("--verbose", "-v", action="store_true",
                    help="DEBUG-level logging to stderr.")
+    p.add_argument("--voice", action="store_true",
+                   help="Enable voice channel (TTS + STT). Requires yuyutsava[voice] extras "
+                        "and PIPER_MODEL / STT_PROVIDER env vars.")
     return p
 
 
@@ -97,13 +107,22 @@ async def _run_uvicorn(server: uvicorn.Server, stop_event: asyncio.Event) -> Non
                 pass
 
 
-async def _open_browser_when_ready(url: str) -> None:
-    # Tiny delay so the listener is up; webbrowser.open returns instantly.
+async def _open_electron_when_ready(url: str) -> None:
     await asyncio.sleep(0.4)
-    try:
-        webbrowser.open(url)
-    except Exception:
-        logger.warning("Could not auto-open browser; visit %s manually", url)
+    electron_app_dir = Path(__file__).resolve().parent.parent.parent / "electron-app"
+    if electron_app_dir.is_dir():
+        try:
+            subprocess.Popen(
+                ["npm", "run", "dev"],
+                cwd=electron_app_dir,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            return
+        except Exception:
+            logger.warning("Could not launch Electron app; visit %s manually", url)
+    else:
+        logger.warning("Electron app not found at %s; visit %s manually", electron_app_dir, url)
 
 
 async def _async_main(argv: list[str] | None = None) -> int:
@@ -118,9 +137,14 @@ async def _async_main(argv: list[str] | None = None) -> int:
 
     daemon_cfg = DaemonConfig.from_env()
     events_cfg = EventsConfig.from_file()
-    if not events_cfg.sources:
-        events_cfg = EventsConfig.default()
-        logger.info("no events_config.json — using built-in default (watching ~/Downloads)")
+
+    # --voice flag enables the voice event source if not already in config.
+    if getattr(args, "voice", False) and "voice" not in events_cfg.sources:
+        from yuyutsava.core.config import SourceConfig
+        events_cfg = EventsConfig(sources={
+            **events_cfg.sources,
+            "voice": SourceConfig(name="voice", enabled=True, params={}),
+        })
 
     # Inject heartbeat_sec into every source's params so sources can sleep
     # between bursts rather than spinning. Sources ignore unknown params.
@@ -138,6 +162,46 @@ async def _async_main(argv: list[str] | None = None) -> int:
     # ── store --------------------------------------------------------------
     store = Store()
     await store.start()
+
+    # ── user prefs store + orchestrator injector --------------------------
+    prefs_store = UserPrefsStore(store)
+    prefs_injector = PrefsInjector(prefs_store)
+
+    # ── permissions policy (Tier-1.5: auto_approve, ws_* daily caps) ------
+    policy = PermissionsPolicy.from_file()
+    set_default_policy(policy)
+    cap_enforcer = StorePolicyCapEnforcer(policy=policy, store=store)
+    if policy.entries:
+        logger.info("  policy    : %d rule(s) from permissions.json", len(policy.entries))
+
+    # ── MCP servers -------------------------------------------------------
+    mcp_manager = MCPClientManager()
+    mcp_cfg = MCPConfig.from_file()
+    await mcp_manager.start(mcp_cfg)
+    if mcp_manager.known_servers():
+        logger.info("  mcp       : %s", ", ".join(mcp_manager.known_servers()))
+
+    # ── checkpointer (SQLite-backed, sweeps stale threads on a schedule) --
+    checkpointer_mgr = CheckpointerManager(db_path=home / "checkpoints.db")
+    checkpointer = await checkpointer_mgr.start()
+
+    # ── blob sweeper (on-disk TTL for source-produced JPEGs/clips) --------
+    # Webcam frames pile up fast (potentially one every few seconds for
+    # hours). Keep ~1h of history then delete files + matching
+    # event_payloads rows. Enrolled-faces DB at ~/.yuyutsava/deepface/ is
+    # in a sibling directory and is NEVER swept — that's user data.
+    blob_sweeper = BlobSweeper(
+        store=store,
+        targets=[
+            BlobSweepTarget(
+                name="webcam",
+                directory=home / "blobs" / "webcam",
+                ttl_sec=3600,
+                glob="*.jpg",
+            ),
+        ],
+    )
+    await blob_sweeper.start()
 
     # ── bus ---------------------------------------------------------------
     bus = EventBus()
@@ -160,6 +224,17 @@ async def _async_main(argv: list[str] | None = None) -> int:
     if args.no_ui:
         channels.primary_name = "terminal"
 
+    # Voice channel — optional, disabled by default (privacy).
+    if args.voice:
+        try:
+            from yuyutsava.daemon.voice_channel import voice_channel_from_env
+            vc = voice_channel_from_env()
+            channels.channels.append(vc)
+            logger.info("  voice     : enabled (TTS=%s STT=%s)",
+                        type(vc._tts).__name__, type(vc._stt).__name__)
+        except Exception:
+            logger.warning("voice channel init failed — running without voice", exc_info=True)
+
     # ── models ------------------------------------------------------------
     triage_settings = llm_settings_from_env("triage")
     orchestrator_settings = llm_settings_from_env("orchestrator")
@@ -173,10 +248,29 @@ async def _async_main(argv: list[str] | None = None) -> int:
     logger.info("  skills    : %d bundled, scanning personal + workspace",
                 len([s for s in skill_registry.scan() if s.scope == "bundled"]))
 
+    # ── search config (ws_* tools) ---------------------------------------
+    search_config = SearchConfig.from_env()
+    available = search_config.is_available()
+    if any(available.values()):
+        logger.info("  search    : %s", ", ".join(p for p, ok in available.items() if ok))
+
     # ── subagents ---------------------------------------------------------
-    task_runner = TaskRunnerAgent(workspace_root=workspace)
+    task_runner = TaskRunnerAgent(workspace_root=workspace, policy=policy)
     subagent_list = [
-        FileOrganizerAgent(task_runner, store, skill_registry=skill_registry),
+        FileOrganizerAgent(
+            task_runner, store,
+            skill_registry=skill_registry,
+            mcp_manager=mcp_manager,
+            search_config=search_config,
+            cap_enforcer=cap_enforcer,
+        ),
+        FaceWatcherAgent(
+            task_runner, store,
+            skill_registry=skill_registry,
+            mcp_manager=mcp_manager,
+            search_config=search_config,
+            cap_enforcer=cap_enforcer,
+        ),
     ]
     subagents = {sa.name: sa for sa in subagent_list}
     capabilities_block = render_capabilities_block(list(subagents.values()))
@@ -201,6 +295,9 @@ async def _async_main(argv: list[str] | None = None) -> int:
         subagent_token_budget=daemon_cfg.subagent_token_budget,
         skill_registry=skill_registry,
         workspace_root=workspace,
+        mcp_manager=mcp_manager,
+        search_config=search_config,
+        cap_enforcer=cap_enforcer,
     )
     orch_loop = OrchestratorLoop(
         task_queue=task_queue,
@@ -209,20 +306,69 @@ async def _async_main(argv: list[str] | None = None) -> int:
         orchestrator_model=orchestrator_model,
         deps=orch_deps,
         orchestrator_token_budget=daemon_cfg.orchestrator_token_budget,
+        checkpointer=checkpointer,
+        prefs_injector=prefs_injector,
     )
+
+    stop_event = asyncio.Event()
+    reload_event = asyncio.Event()
+    install_signal_handlers(stop_event)
+    install_reload_handler(reload_event)
+
+    async def _hot_reload_events_config() -> None:
+        """Re-read events_config.json and rebind sources in place."""
+        new_cfg = EventsConfig.from_file()
+        # Reapply the heartbeat_sec inject so live sources still sleep.
+        if daemon_cfg.heartbeat_sec > 0:
+            from yuyutsava.core.config import SourceConfig
+            new_cfg = EventsConfig(sources={
+                name: SourceConfig(
+                    name=src.name,
+                    enabled=src.enabled,
+                    params={**src.params, "heartbeat_sec": daemon_cfg.heartbeat_sec},
+                )
+                for name, src in new_cfg.sources.items()
+            })
+        await registry.reload(new_cfg)
+        logger.info("config reload: events sources now %s",
+                    ", ".join(new_cfg.sources.keys()) or "(none)")
 
     # ── web server -------------------------------------------------------
     server_task: asyncio.Task[None] | None = None
     if web_hub is not None:
-        app = make_app(web_hub, host=daemon_cfg.web_host, skill_registry=skill_registry)
+        app = make_app(
+            web_hub,
+            host=daemon_cfg.web_host,
+            skill_registry=skill_registry,
+            config_reload=_hot_reload_events_config,
+        )
         config = uvicorn.Config(
             app, host=daemon_cfg.web_host, port=daemon_cfg.web_port,
             log_level="warning", access_log=False, lifespan="on",
         )
         web_server = uvicorn.Server(config)
 
-    stop_event = asyncio.Event()
-    install_signal_handlers(stop_event)
+    async def _reload_loop() -> None:
+        """On SIGHUP: re-read MCP + events configs and hot-reload."""
+        while not stop_event.is_set():
+            try:
+                await asyncio.wait_for(reload_event.wait(), timeout=1.0)
+            except asyncio.TimeoutError:
+                continue
+            reload_event.clear()
+            if stop_event.is_set():
+                return
+            try:
+                new_mcp = MCPConfig.from_file()
+                await mcp_manager.hot_reload(new_mcp)
+                logger.info("config reload: mcp servers now %s",
+                            ", ".join(mcp_manager.known_servers()) or "(none)")
+            except Exception:
+                logger.exception("mcp config reload failed")
+            try:
+                await _hot_reload_events_config()
+            except Exception:
+                logger.exception("events config reload failed")
 
     url = f"http://{daemon_cfg.web_host}:{daemon_cfg.web_port}/"
     logger.info("YUYUTSAVA daemon ready")
@@ -235,13 +381,14 @@ async def _async_main(argv: list[str] | None = None) -> int:
     if web_hub is not None:
         logger.info("  web window: %s", url)
 
-    if web_server is not None and daemon_cfg.web_open_browser and not args.no_browser:
-        asyncio.create_task(_open_browser_when_ready(url))
+    if web_server is not None and not args.no_ui:
+        asyncio.create_task(_open_electron_when_ready(url))
 
     # ── concurrent loops --------------------------------------------------
     tasks: list[asyncio.Task[None]] = [
         asyncio.create_task(triage_loop.run(stop_event), name="triage-loop"),
         asyncio.create_task(orch_loop.run(stop_event), name="orchestrator-loop"),
+        asyncio.create_task(_reload_loop(), name="reload-loop"),
     ]
     if web_server is not None:
         tasks.append(asyncio.create_task(_run_uvicorn(web_server, stop_event), name="web-server"))
@@ -277,6 +424,9 @@ async def _async_main(argv: list[str] | None = None) -> int:
     finally:
         logger.info("shutting down…")
         await channels.shutdown()
+        await mcp_manager.stop()
+        await blob_sweeper.stop()
+        await checkpointer_mgr.stop()
         await store.stop()
         logger.info("bye")
     return 0

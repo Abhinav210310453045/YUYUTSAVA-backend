@@ -21,6 +21,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from yuyutsava.agents.triage.prompts import TRIAGE_SYSTEM_PROMPT, render_event_message
+from yuyutsava.core.tracing import get_callback
 from yuyutsava.events.bus import EventEnvelope
 
 logger = logging.getLogger("yuyutsava.agents.triage")
@@ -71,8 +72,11 @@ class TriageAgent:
             skills_index=skills_index,
         )
         try:
+            _lf_cb = get_callback(run_name=f"triage:{envelope.topic}")
+            _invoke_cfg = {"callbacks": [_lf_cb]} if _lf_cb else {}
             decision: TriageDecision = await self._runnable.ainvoke(
-                [SystemMessage(content=TRIAGE_SYSTEM_PROMPT), HumanMessage(content=msg)]
+                [SystemMessage(content=TRIAGE_SYSTEM_PROMPT), HumanMessage(content=msg)],
+                config=_invoke_cfg,
             )  # type: ignore[assignment]
         except Exception as exc:
             logger.warning("triage LLM call failed (%s); defaulting to drop", exc)

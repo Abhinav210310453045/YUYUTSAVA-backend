@@ -60,4 +60,19 @@ function setBadge(n) {
   }
 }
 
-module.exports = { init, setBadge }
+// Increment the badge when an OS notification fires (window unfocused).
+// The renderer's setBadge() will eventually overwrite with the canonical
+// pendingCount once focus returns; this only bumps for visibility.
+function incrPending() {
+  setBadge(_pendingCount + 1)
+}
+
+// Called when the window regains focus — stop the dock-bounce-equivalent
+// (no-op on macOS; on Windows we cancel flashFrame).
+function clearAttention() {
+  if (process.platform === 'win32' && _win && !_win.isDestroyed()) {
+    try { _win.flashFrame(false) } catch {}
+  }
+}
+
+module.exports = { init, setBadge, incrPending, clearAttention }

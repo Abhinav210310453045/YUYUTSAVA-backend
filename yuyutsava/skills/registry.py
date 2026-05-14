@@ -34,6 +34,7 @@ class SkillMeta:
     path: Path   # absolute path to SKILL.md
     scope: str   # "bundled" | "personal" | "workspace"
     agent: str | None = None  # which agent this skill belongs to (bundled only)
+    requires_tools: tuple[str, ...] = ()  # e.g. ("ws_*",) — picked up by BaseSubAgent
 
 
 class SkillRegistry:
@@ -178,12 +179,23 @@ def _parse_frontmatter(path: Path, *, scope: str, agent: str | None) -> SkillMet
         body_lines = text[m.end() if m else 0:].strip().splitlines()
         description = next((l.lstrip("# ").strip() for l in body_lines if l.strip()), "")
 
+    # ``requires_tools`` — optional list of tool-name globs the skill needs
+    # exposed at build time. BaseSubAgent reads this to decide whether to
+    # attach ws_* search tools (and future categories) to an agent.
+    raw_req = fm.get("requires_tools") or []
+    if isinstance(raw_req, str):
+        raw_req = [raw_req]
+    requires_tools: tuple[str, ...] = tuple(
+        str(r).strip() for r in raw_req if isinstance(r, (str, int, float)) and str(r).strip()
+    )
+
     return SkillMeta(
         name=_slugify(name),
         description=description,
         path=path,
         scope=scope,
         agent=agent,
+        requires_tools=requires_tools,
     )
 
 

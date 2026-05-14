@@ -52,9 +52,16 @@ Complete every part of the user's instruction before finishing.
 """
 
 
-def render_system_prompt(capabilities_block: str, skills_index: str = "") -> str:
+def render_system_prompt(
+    capabilities_block: str,
+    skills_index: str = "",
+    prefs_block: str = "",
+) -> str:
     skills_section = f"\nLEARNED SKILLS\n{skills_index}" if skills_index else ""
-    return ORCHESTRATOR_SYSTEM_PROMPT.format(
+    prompt = ORCHESTRATOR_SYSTEM_PROMPT.format(
         capabilities=capabilities_block,
         skills_section=skills_section,
     )
+    if prefs_block:
+        prompt = prefs_block + "\n\n" + prompt
+    return prompt

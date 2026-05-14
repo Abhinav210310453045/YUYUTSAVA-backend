@@ -40,6 +40,11 @@ def _import_builtin_sources() -> None:
     """Import bundled sources so their ``register_source`` calls run."""
     # Local imports avoid a circular dep at package load time.
     from yuyutsava.events.sources import fs as _fs  # noqa: F401
+    from yuyutsava.events.sources import clipboard as _clip  # noqa: F401
+    from yuyutsava.events.sources import hotkey as _hk  # noqa: F401
+    from yuyutsava.events.sources import appfocus as _af  # noqa: F401
+    from yuyutsava.events.sources import webcam as _wc  # noqa: F401
+    from yuyutsava.events.sources import voice as _voice  # noqa: F401
 
 
 class SourceRegistry:
@@ -116,16 +121,43 @@ class SourceRegistry:
                 delay = min(delay * 2, 60.0)
 
     async def stop_all(self) -> None:
-        for name, source in list(self._sources.items()):
-            self._cancelled[name].set()
+        for name in list(self._sources.keys()):
+            await self._stop_one(name)
+        self._sources.clear()
+        self._tasks.clear()
+        self._cancelled.clear()
+
+    async def _stop_one(self, name: str) -> None:
+        source = self._sources.get(name)
+        cancelled = self._cancelled.get(name)
+        task = self._tasks.get(name)
+        if cancelled is not None:
+            cancelled.set()
+        if source is not None:
             try:
                 await asyncio.wait_for(source.stop(), timeout=2.0)
             except Exception:
                 logger.exception("source %s stop() failed", name)
-        for name, task in list(self._tasks.items()):
-            if not task.done():
-                task.cancel()
-                try:
-                    await task
-                except (asyncio.CancelledError, Exception):
-                    pass
+        if task is not None and not task.done():
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
+        self._sources.pop(name, None)
+        self._tasks.pop(name, None)
+        self._cancelled.pop(name, None)
+
+    async def reload(self, new_config: EventsConfig) -> None:
+        """Hot-swap to *new_config*.
+
+        Sources present in *new_config* with the same params keep running;
+        all others are stopped and re-started with the new params. This is
+        coarse but matches the user's mental model: "I changed the config —
+        restart the watchers."
+        """
+        self._config = new_config
+        # Stop everything currently running, then start what's enabled.
+        for name in list(self._sources.keys()):
+            await self._stop_one(name)
+        await self.start_all()

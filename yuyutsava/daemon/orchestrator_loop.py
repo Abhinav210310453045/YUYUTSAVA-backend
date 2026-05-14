@@ -17,9 +17,11 @@ import uuid
 from yuyutsava.agents.orchestrator.agent import OrchestratorDeps, build_orchestrator
 from yuyutsava.core.engine import StreamEvent, astream_agent_iter
 from yuyutsava.daemon.channels import AskPrompt, ChannelEvent, ChannelRouter
+from yuyutsava.daemon.checkpointing import thread_id as _mint_thread_id
 from yuyutsava.daemon.triage_loop import OrchestratorTask
 from yuyutsava.events.store import Store
 from langchain_core.language_models import BaseChatModel
+from langgraph.checkpoint.base import BaseCheckpointSaver
 
 logger = logging.getLogger("yuyutsava.daemon.orchestrator_loop")
 
@@ -76,6 +78,8 @@ class OrchestratorLoop:
         orchestrator_model: BaseChatModel,
         deps: OrchestratorDeps,
         orchestrator_token_budget: int,
+        checkpointer: BaseCheckpointSaver | None = None,
+        prefs_injector: object | None = None,  # yuyutsava.prefs.injector.PrefsInjector
     ) -> None:
         self._queue = task_queue
         self._channels = channels
@@ -83,6 +87,8 @@ class OrchestratorLoop:
         self._model = orchestrator_model
         self._deps = deps
         self._budget = orchestrator_token_budget
+        self._checkpointer = checkpointer
+        self._prefs_injector = prefs_injector
 
     async def run(self, stop_event: asyncio.Event) -> None:
         while not stop_event.is_set():
@@ -96,10 +102,13 @@ class OrchestratorLoop:
                 logger.exception("orchestrator task failed: %s", task.event_id)
 
     async def _run_task(self, task: OrchestratorTask) -> None:
-        thread_id = f"orch-{uuid.uuid4()}"
+        thread_id = _mint_thread_id("orch")
+        prefs_block = self._prefs_injector.build_block() if self._prefs_injector else ""
         graph = build_orchestrator(
             model=self._model, deps=self._deps, budget_tokens=self._budget,
             skill_registry=self._deps.skill_registry,
+            checkpointer=self._checkpointer,
+            prefs_block=prefs_block,
         )
         message = task.render_to_message()
 
@@ -122,7 +131,7 @@ class OrchestratorLoop:
         final_text = ""
         async for ev in astream_agent_iter(
             graph, message, thread_id=thread_id, recursion_limit=40,
-            ask_handler=ask_handler,
+            ask_handler=ask_handler, run_name="orchestrator",
         ):
             await _broadcast(self._channels, ev)
             if ev.kind == "final":

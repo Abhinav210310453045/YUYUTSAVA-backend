@@ -1,11 +1,13 @@
-import React, { useState, useCallback, useRef } from 'react'
+import React, { useState, useCallback, useEffect, useRef } from 'react'
 import Titlebar from './components/layout/Titlebar'
 import Sidebar from './components/layout/Sidebar'
 import ActivityLog from './components/layout/ActivityLog'
 import ProposalsPanel from './components/proposals/ProposalsPanel'
 import SettingsPanel from './components/settings/SettingsPanel'
 import ChatPanel from './components/chat/ChatPanel'
+import InWindowToast from './components/notifications/InWindowToast'
 import { useSSE } from './hooks/useSSE.jsx'
+import { NotificationsProvider } from './hooks/useNotifications.jsx'
 
 const SIDEBAR_MIN = 48
 const SIDEBAR_MAX = 200
@@ -44,6 +46,16 @@ export default function App() {
   const [activePanel, setActivePanel] = useState('proposals')
   const { proposals, asks, logLines, connected, pendingCount, removeProposal, removeAsk } = useSSE()
 
+  // OS banner click forwarded from main: bring proposals tab forward so the
+  // highlighted card is visible. The id-scroll happens inside ProposalsPanel,
+  // which consumes highlightId from NotificationsProvider.
+  useEffect(() => {
+    const off = window.electronAPI?.onNotificationClick?.(() => {
+      setActivePanel('proposals')
+    })
+    return () => off && off()
+  }, [])
+
   const [sidebarW, setSidebarW] = useState(60)
   const [activityW, setActivityW] = useState(300)
   const dragRef = useRef(null)
@@ -75,38 +87,42 @@ export default function App() {
   }, [sidebarW, activityW])
 
   return (
-    <div style={{
-      height: '100vh',
-      display: 'flex',
-      flexDirection: 'column',
-      background: 'var(--bg-deep)',
-      overflow: 'hidden',
-    }}>
-      <Titlebar connected={connected} />
+    <NotificationsProvider>
+      <div style={{
+        height: '100vh',
+        display: 'flex',
+        flexDirection: 'column',
+        background: 'var(--bg-deep)',
+        overflow: 'hidden',
+      }}>
+        <Titlebar connected={connected} />
 
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        <Sidebar active={activePanel} onNav={setActivePanel} pendingCount={pendingCount} width={sidebarW} />
-
-        <ResizeHandle onMouseDown={(e) => startDrag('sidebar', e)} side="left" />
-
-        {/* Main panel */}
         <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-          {activePanel === 'proposals' && (
-            <ProposalsPanel
-              proposals={proposals}
-              asks={asks}
-              onRemoveProposal={removeProposal}
-              onRemoveAsk={removeAsk}
-            />
-          )}
-          {activePanel === 'settings' && <SettingsPanel />}
-          {activePanel === 'chat' && <ChatPanel />}
+          <Sidebar active={activePanel} onNav={setActivePanel} pendingCount={pendingCount} width={sidebarW} />
+
+          <ResizeHandle onMouseDown={(e) => startDrag('sidebar', e)} side="left" />
+
+          {/* Main panel */}
+          <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+            {activePanel === 'proposals' && (
+              <ProposalsPanel
+                proposals={proposals}
+                asks={asks}
+                onRemoveProposal={removeProposal}
+                onRemoveAsk={removeAsk}
+              />
+            )}
+            {activePanel === 'settings' && <SettingsPanel />}
+            {activePanel === 'chat' && <ChatPanel />}
+          </div>
+
+          <ResizeHandle onMouseDown={(e) => startDrag('activity', e)} side="right" />
+
+          <ActivityLog lines={logLines} width={activityW} />
         </div>
 
-        <ResizeHandle onMouseDown={(e) => startDrag('activity', e)} side="right" />
-
-        <ActivityLog lines={logLines} width={activityW} />
+        <InWindowToast />
       </div>
-    </div>
+    </NotificationsProvider>
   )
 }

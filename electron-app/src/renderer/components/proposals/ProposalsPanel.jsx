@@ -1,11 +1,27 @@
-import React from 'react'
+import React, { useEffect, useRef } from 'react'
 import ProposalCard from './ProposalCard'
 import AskCard from './AskCard'
+import { useNotifications } from '../../hooks/useNotifications.jsx'
 
 export default function ProposalsPanel({ proposals, asks, onRemoveProposal, onRemoveAsk }) {
   const proposalList = [...proposals.values()]
   const askList = [...asks.values()]
   const isEmpty = proposalList.length === 0 && askList.length === 0
+
+  // When the user clicks an OS notification banner, NotificationsProvider sets
+  // highlightId; scroll the matching card into view and add a flash class.
+  const { highlightId } = useNotifications() || {}
+  const cardRefs = useRef(new Map())
+
+  useEffect(() => {
+    if (!highlightId) return
+    const el = cardRefs.current.get(highlightId)
+    if (!el) return
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    el.classList.add('proposal-flash')
+    const t = setTimeout(() => el.classList.remove('proposal-flash'), 1800)
+    return () => clearTimeout(t)
+  }, [highlightId])
 
   return (
     <div style={{
@@ -69,12 +85,28 @@ export default function ProposalsPanel({ proposals, asks, onRemoveProposal, onRe
 
       {/* Permission asks first (higher urgency) */}
       {askList.map(ask => (
-        <AskCard key={ask.ask_id} ask={ask} onResolved={onRemoveAsk} />
+        <div
+          key={ask.ask_id}
+          ref={(el) => {
+            if (el) cardRefs.current.set(ask.ask_id, el)
+            else cardRefs.current.delete(ask.ask_id)
+          }}
+        >
+          <AskCard ask={ask} onResolved={onRemoveAsk} />
+        </div>
       ))}
 
       {/* Proposals */}
       {proposalList.map(p => (
-        <ProposalCard key={p.proposal_id} proposal={p} onResolved={onRemoveProposal} />
+        <div
+          key={p.proposal_id}
+          ref={(el) => {
+            if (el) cardRefs.current.set(p.proposal_id, el)
+            else cardRefs.current.delete(p.proposal_id)
+          }}
+        >
+          <ProposalCard proposal={p} onResolved={onRemoveProposal} />
+        </div>
       ))}
     </div>
   )

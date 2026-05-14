@@ -66,12 +66,31 @@ class TaskRunnerAgent:
         workspace_root: Path,
         sandbox_subdir: str = "_sandbox",
         sandbox_root: Path | None = None,
+        policy: object | None = None,  # PermissionsPolicy; untyped to avoid daemon-side import
     ) -> None:
         self.workspace_root: Path = workspace_root.resolve()
         self.sandbox_root: Path = (
             sandbox_root.resolve() if sandbox_root is not None
             else (self.workspace_root / sandbox_subdir).resolve()
         )
+        self._policy = policy
+
+    @staticmethod
+    def _policy_tool_name(op: OperationType) -> str:
+        """Map an operation type to the conventional ``tr_*`` tool name.
+
+        Used to look the request up in the permission policy file. The mapping
+        mirrors the names defined in :mod:`yuyutsava.agents.task_runner.tools`
+        — keep them in sync.
+        """
+        return {
+            OperationType.READ:    "tr_read_file",
+            OperationType.WRITE:   "tr_write_file",
+            OperationType.CREATE:  "tr_write_file",
+            OperationType.DELETE:  "tr_delete_file",
+            OperationType.EXECUTE: "tr_execute",
+            OperationType.CHMOD:   "tr_chmod",
+        }.get(op, "tr_unknown")
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -135,27 +154,38 @@ class TaskRunnerAgent:
 
         # 4. PROMPT — ask the user via LangGraph interrupt()
         if action == PermissionAction.PROMPT:
-            payload = build_interrupt_payload(request, zone)
-            decision: str = interrupt(payload.to_interrupt_dict())
+            # Tier-1.5 policy override: a matching ``auto_approve`` entry in
+            # ~/.yuyutsava/permissions.json bypasses the prompt entirely.
+            if self._policy is not None:
+                tool_name = self._policy_tool_name(request.operation)
+                if self._policy.policy_for(tool_name) == "auto_approve":  # type: ignore[attr-defined]
+                    logger.info(
+                        "TaskRunner | POLICY auto_approve | %s | %s",
+                        request.operation.value.upper(), primary_path,
+                    )
+                    action = PermissionAction.ALLOW  # fall through to execute
+            if action == PermissionAction.PROMPT:
+                payload = build_interrupt_payload(request, zone)
+                decision: str = interrupt(payload.to_interrupt_dict())
 
-            if decision != "approve":
-                error_msg = (
-                    f"User denied permission for {request.operation.value.upper()} "
-                    f"on '{primary_path}'."
-                )
-                self._log_denied(request, zone, action, error_msg, user_decision="reject")
-                return self._denied(
-                    request, operation_id,
-                    error=error_msg,
-                    error_code=_EC_USER_DENIED,
-                    zone=zone,
-                    alternatives=get_alternatives(zone, request.operation),
-                )
+                if decision != "approve":
+                    error_msg = (
+                        f"User denied permission for {request.operation.value.upper()} "
+                        f"on '{primary_path}'."
+                    )
+                    self._log_denied(request, zone, action, error_msg, user_decision="reject")
+                    return self._denied(
+                        request, operation_id,
+                        error=error_msg,
+                        error_code=_EC_USER_DENIED,
+                        zone=zone,
+                        alternatives=get_alternatives(zone, request.operation),
+                    )
 
-            logger.info(
-                "TaskRunner | APPROVED by user | %s | %s",
-                request.operation.value.upper(), primary_path,
-            )
+                logger.info(
+                    "TaskRunner | APPROVED by user | %s | %s",
+                    request.operation.value.upper(), primary_path,
+                )
 
         # 5. ALLOW (or user-approved) — execute
         try:

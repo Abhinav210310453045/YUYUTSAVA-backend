@@ -1,0 +1,138 @@
+# LangFuse v3 self-hosted tracing stack (free, no license required)
+# Compatible with the langfuse Python SDK v4+.
+#
+# First run:
+#   docker compose -f docker-compose.langfuse.yml up -d
+#
+# The server auto-creates a project with the keys below (matches .env).
+# Open http://localhost:3000  (email: admin@yuyutsava.local  password: yuyutsava)
+#
+# To stop:   docker compose -f docker-compose.langfuse.yml down
+# To wipe:   docker compose -f docker-compose.langfuse.yml down -v
+
+x-langfuse-env: &langfuse-env
+  DATABASE_URL: postgresql://postgres:postgres@langfuse-db:5432/postgres
+  NEXTAUTH_SECRET: yuyutsava-langfuse-secret
+  SALT: yuyutsava-langfuse-salt
+  ENCRYPTION_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
+  NEXTAUTH_URL: http://localhost:3000
+  TELEMETRY_ENABLED: "false"
+  CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
+  CLICKHOUSE_URL: http://clickhouse:8123
+  CLICKHOUSE_USER: clickhouse
+  CLICKHOUSE_PASSWORD: clickhouse
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  MINIO_ENDPOINT: minio
+  MINIO_PORT: "9000"
+  MINIO_ACCESS_KEY_ID: minio
+  MINIO_SECRET_ACCESS_KEY: miniosecret
+  LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+  LANGFUSE_S3_EVENT_UPLOAD_REGION: us-east-1
+  LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://minio:9000
+  LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: minio
+  LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: miniosecret
+  LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+
+x-depends-on: &depends-on
+  depends_on:
+    langfuse-db:
+      condition: service_healthy
+    clickhouse:
+      condition: service_healthy
+    redis:
+      condition: service_started
+    minio:
+      condition: service_healthy
+
+services:
+  langfuse-web:
+    image: langfuse/langfuse:3
+    <<: *depends-on
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      <<: *langfuse-env
+      # Pre-seed org + project so keys are ready immediately (matches .env)
+      LANGFUSE_INIT_ORG_ID: yuyutsava-org
+      LANGFUSE_INIT_ORG_NAME: YUYUTSAVA
+      LANGFUSE_INIT_PROJECT_ID: yuyutsava-project
+      LANGFUSE_INIT_PROJECT_NAME: YUYUTSAVA
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: pk-lf-REPLACE_ME
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: sk-lf-REPLACE_ME
+      LANGFUSE_INIT_USER_EMAIL: admin@yuyutsava.local
+      LANGFUSE_INIT_USER_NAME: admin
+      LANGFUSE_INIT_USER_PASSWORD: yuyutsava
+
+  langfuse-worker:
+    image: langfuse/langfuse-worker:3
+    <<: *depends-on
+    restart: unless-stopped
+    environment:
+      <<: *langfuse-env
+
+  langfuse-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    environment:
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - langfuse_db:/var/lib/postgresql/data
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.3
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--host", "127.0.0.1", "--query", "SELECT 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse
+    volumes:
+      - langfuse_clickhouse:/var/lib/clickhouse
+      - langfuse_clickhouse_logs:/var/log/clickhouse-server
+      - ./clickhouse-config/keeper.xml:/etc/clickhouse-server/config.d/keeper.xml:ro
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - langfuse_redis:/data
+
+  minio:
+    image: minio/minio
+    restart: unless-stopped
+    entrypoint: sh
+    command: -c 'mkdir -p /data/langfuse && minio server /data --console-address ":9001"'
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: miniosecret
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - langfuse_minio:/data
+
+volumes:
+  langfuse_db:
+    driver: local
+  langfuse_clickhouse:
+    driver: local
+  langfuse_clickhouse_logs:
+    driver: local
+  langfuse_redis:
+    driver: local
+  langfuse_minio:
+    driver: local

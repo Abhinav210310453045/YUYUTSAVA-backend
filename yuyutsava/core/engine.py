@@ -31,6 +31,7 @@ from yuyutsava.core.config import DockerSettings, LocalSettings, LlmSettings, Se
 from yuyutsava.core.docker_sandbox_backend import DockerSandboxBackend
 from yuyutsava.core.llm import chat_model
 from yuyutsava.core.permission_middleware import PermissionMiddleware
+from yuyutsava.core.tracing import get_callback
 from yuyutsava.core.tool_filter_middleware import ToolFilterMiddleware
 from yuyutsava.core.tool_registry import ToolRegistry
 from yuyutsava.agents.task_runner.tools import bind_tools as _bind_task_runner_tools
@@ -672,6 +673,7 @@ async def astream_agent_iter(
     thread_id: str | None = None,
     recursion_limit: int = 200,
     ask_handler=None,  # async (interrupt_value: dict) -> str
+    run_name: str = "agent",
 ):
     """Async generator that yields ``StreamEvent``s instead of printing them.
 
@@ -683,10 +685,14 @@ async def astream_agent_iter(
 
     Yields events; the final yielded event is always ``StreamEvent("final", {"text": ...})``.
     """
+    _tid = thread_id or str(uuid.uuid4())
     cfg: RunnableConfig = {
         "recursion_limit": recursion_limit,
-        "configurable": {"thread_id": thread_id or str(uuid.uuid4())},
+        "configurable": {"thread_id": _tid},
     }
+    _lf_cb = get_callback(session_id=_tid, run_name=run_name)
+    if _lf_cb is not None:
+        cfg["callbacks"] = [_lf_cb]
 
     final_messages: list[Any] = []
     current_input: Any = {"messages": [HumanMessage(content=task)]}
@@ -791,10 +797,14 @@ async def astream_agent(
       asks the user on stdin, then resumes the graph with approve/reject.
     - Returns the final assistant text.
     """
+    _tid = thread_id or str(uuid.uuid4())
     cfg: RunnableConfig = {
         "recursion_limit": recursion_limit,
-        "configurable": {"thread_id": thread_id or str(uuid.uuid4())},
+        "configurable": {"thread_id": _tid},
     }
+    _lf_cb = get_callback(session_id=_tid, run_name="cli")
+    if _lf_cb is not None:
+        cfg["callbacks"] = [_lf_cb]
 
     logger.info(_SEP)
     logger.info("YUYUTSAVA  starting task  thread_id=%s", cfg["configurable"]["thread_id"])

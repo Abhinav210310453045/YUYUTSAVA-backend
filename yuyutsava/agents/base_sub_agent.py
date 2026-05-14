@@ -35,10 +35,13 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import create_react_agent
 
+import fnmatch
+
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
 from yuyutsava.agents.task_runner.tools import bind_tools
 from yuyutsava.core.config import SearchConfig
 from yuyutsava.core.tool_registry import ToolRegistry
+from yuyutsava.mcp.loader import MCPClientManager
 from yuyutsava.skills.registry import SkillRegistry
 from yuyutsava.skills.tools import make_read_skill_tool
 
@@ -57,11 +60,15 @@ class BaseSubAgent(ABC):
         skill_registry: SkillRegistry | None = None,
         can_write_skills: bool = False,
         search_config: SearchConfig | None = None,
+        mcp_manager: MCPClientManager | None = None,
+        cap_enforcer: object | None = None,  # tools.search._CapEnforcer; untyped to avoid cycle
     ) -> None:
         self._task_runner = task_runner
         self._skill_registry = skill_registry
         self._can_write_skills = can_write_skills
         self._search_config = search_config
+        self._mcp_manager = mcp_manager
+        self._cap_enforcer = cap_enforcer
 
     # ------------------------------------------------------------------
     # Required overrides
@@ -116,18 +123,43 @@ class BaseSubAgent(ABC):
         return [make_read_skill_tool(self._skill_registry)]
 
     def search_tools(self) -> list[BaseTool]:
-        """Return ws_* tools if a SearchConfig was provided with valid API keys."""
-        if self._search_config is None:
+        """Return ws_* tools required by this subagent's visible skills.
+
+        The blanket attach from the MVP is gone: a subagent now only sees the
+        ws_* tools that at least one of its visible skills declares via the
+        ``requires_tools`` frontmatter list. ``file-organizer`` reads only
+        ``pdf-to-archive``, which doesn't list any ws_* tools — so it gets
+        zero. A future skill that does list one will pick it up automatically.
+        """
+        if self._search_config is None or self._skill_registry is None:
+            return []
+        wanted: set[str] = set()
+        for skill in self._skill_registry.scan(agent=self.name):
+            for pat in skill.requires_tools:
+                wanted.add(pat)
+        if not wanted:
             return []
         from yuyutsava.tools.search import make_search_tools
-        return make_search_tools(self._search_config)
+        all_tools = make_search_tools(self._search_config, cap_enforcer=self._cap_enforcer)
+        return [t for t in all_tools if any(fnmatch.fnmatchcase(t.name, p) for p in wanted)]
+
+    def mcp_tools(self) -> list[BaseTool]:
+        """Return MCP tools scoped to this subagent's ``name``.
+
+        Empty list if no manager was provided or if the config's ``scopes``
+        map has no entry for this agent (and ``default_scope`` is empty).
+        """
+        if self._mcp_manager is None:
+            return []
+        return self._mcp_manager.tools_for(self.name)
 
     def all_tools(self) -> list[BaseTool]:
-        """Combined list: TaskRunner + skill + search + extra_tools()."""
+        """Combined list: TaskRunner + skill + search + MCP + extra_tools()."""
         return (
             self.task_runner_tools()
             + self.skill_tools()
             + self.search_tools()
+            + self.mcp_tools()
             + self.extra_tools()
         )
 
@@ -165,12 +197,16 @@ class BaseSubAgent(ABC):
         # All other tools follow — they're in the graph for execution, and their
         # schemas are served on demand via tool_search.
         tools_with_search = [tool_registry.make_tool_search_tool()] + self.all_tools()
-        return create_react_agent(
+        graph = create_react_agent(
             model=model,
             tools=tools_with_search,
             prompt=self.system_prompt,
             checkpointer=checkpointer,
         )
+        # Name the graph after the sub-agent so LangFuse traces show the real
+        # agent name (e.g. "file-organizer") instead of a generic "LangGraph".
+        graph.name = self.name
+        return graph
 
     def as_deepagents_subagent_spec(self) -> dict[str, Any]:
         """

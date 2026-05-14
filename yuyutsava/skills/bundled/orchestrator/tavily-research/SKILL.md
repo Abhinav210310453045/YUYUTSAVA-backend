@@ -4,6 +4,8 @@ description: |
   Research a topic using Tavily web search. Use when a task requires
   current or factual information not available in the workspace files.
   Best for broad questions, recent events, documentation lookups.
+requires_tools:
+  - ws_tavily_search
 ---
 
 ## When to use
