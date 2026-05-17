@@ -61,6 +61,25 @@ _registry: dict[str, TaskRunnerAgent] = {}
 _default_policy: object | None = None  # PermissionsPolicy; set by daemon at boot
 
 
+def _validation_error_json(exc: Exception) -> str:
+    """Return a structured JSON error so the LLM sees `status: error` instead of a
+    langchain `Error invoking tool ...` string it tends to ignore.
+    Attached as ``handle_validation_error=`` on every tr_* @tool so pydantic
+    arg-validation failures (missing reason=, wrong type, etc.) become a normal
+    OperationResponse-shaped result the model can react to.
+    """
+    msg = str(exc).replace("\n", " ")
+    return json.dumps({
+        "status": "error",
+        "error_code": "TR000_VALIDATION",
+        "error": f"Tool arguments invalid: {msg}",
+        "hint": (
+            "All tr_* tools require a non-empty `reason` string describing why the "
+            "operation is needed. Re-call the tool with every required argument."
+        ),
+    })
+
+
 def set_default_policy(policy: object | None) -> None:
     """Install a permissions policy for every TaskRunnerAgent the registry mints.
 
@@ -116,25 +135,22 @@ def bind_tools(workspace_root: Path, sandbox_root: Path | None = None) -> list[B
         offset: int = 0,
         limit: int | None = None,
     ) -> str:
-        """Read a file (zone-checked). Returns JSON with content and pagination metadata.
+        """Read a file (zone-checked). Returns JSON {content, has_more, truncation_notice, total_lines}.
 
-        For large files use offset + limit to read in chunks:
-          - offset: 0-based line number to start from (default 0 = beginning of file).
-          - limit:  maximum lines to return per call (omit to read from offset to EOF).
-
-        When the file has more content after the returned chunk, result.has_more is True
-        and result.truncation_notice contains recovery hints with the next offset to use.
+        Paginate large files via offset/limit; result.has_more + result.truncation_notice
+        give the next offset. After tr_grep, feed the matched line number as offset.
 
         Args:
-            path:   Absolute real path to the file (convert virtual ls paths first).
+            path:   Absolute real path (convert virtual ls/glob paths first).
             reason: Specific purpose shown to the user in permission prompts.
-            offset: Line number to start reading from (0-based, default 0).
-            limit:  Maximum number of lines to return (None = read to end of file).
+            offset: 0-based line to start from (default 0).
+            limit:  Max lines per call (None = read to EOF).
         """
         real_path = _resolve_path(path, workspace_root)
         _log.debug("[tr_read_file] path=%s offset=%s limit=%s", real_path, offset, limit)
         request = OperationRequest(
             request_id=str(uuid.uuid4()),
+            #TODO: Add the agent name who is going to use this tool
             requesting_agent="agent",
             task_id=str(uuid.uuid4()),
             task_description=reason,
@@ -155,8 +171,11 @@ def bind_tools(workspace_root: Path, sandbox_root: Path | None = None) -> list[B
     async def tr_write_file(path: str, content: str, reason: str) -> str:
         """Write/create a file (zone-checked, creates parent dirs). Returns JSON {status, result: {written_to}, error}.
 
+        First write into the sandbox creates the sandbox dir.
+        Deliverables → output_dir (from system prompt); scratch → sandbox.
+
         Args:
-            path: Absolute path to write.
+            path: Absolute real path to write.
             content: Text content to write.
             reason: Specific purpose shown to user in permission prompts.
         """
@@ -164,6 +183,7 @@ def bind_tools(workspace_root: Path, sandbox_root: Path | None = None) -> list[B
         _log.debug("[tr_write_file] path=%s bytes=%d", real_path, len(content.encode()))
         request = OperationRequest(
             request_id=str(uuid.uuid4()),
+            #TODO: Add the agent name who is going to use this tool
             requesting_agent="agent",
             task_id=str(uuid.uuid4()),
             task_description=reason,
@@ -184,14 +204,18 @@ def bind_tools(workspace_root: Path, sandbox_root: Path | None = None) -> list[B
     async def tr_delete_file(path: str, reason: str) -> str:
         """Delete a file or directory (zone-checked). Returns JSON {status, result: {deleted}, error}.
 
+        Use to clean up temp scripts after tr_execute_in_sandbox.
+        WORKSPACE zone prompts the user; SANDBOX is auto-allowed.
+
         Args:
-            path: Absolute path to delete.
+            path: Absolute real path to delete.
             reason: Specific purpose shown to user in permission prompts.
         """
         real_path = _resolve_path(path, workspace_root)
         _log.debug("[tr_delete_file] path=%s", real_path)
         request = OperationRequest(
             request_id=str(uuid.uuid4()),
+            #TODO: Add the agent name who is going to use this tool
             requesting_agent="agent",
             task_id=str(uuid.uuid4()),
             task_description=reason,
@@ -215,6 +239,11 @@ def bind_tools(workspace_root: Path, sandbox_root: Path | None = None) -> list[B
     ) -> str:
         """Run a shell command in the sandbox (auto-allowed, cwd=_sandbox/). Returns JSON {status, result: {stdout, stderr, exit_code}, error}.
 
+        No network. CWD = sandbox dir; use relative paths.
+        Sandbox dir is created by the first tr_write_file — do not call this before any write.
+        Script lifecycle: tr_write_file → this → read result.stdout → tr_delete_file.
+        Do NOT tr_read_file a script you just wrote; read the execution result.
+
         Args:
             command: Shell command to run.
             reason: Why you are running this command.
@@ -224,6 +253,7 @@ def bind_tools(workspace_root: Path, sandbox_root: Path | None = None) -> list[B
         _log.debug("[tr_execute_in_sandbox] cmd=%s", command[:200])
         request = OperationRequest(
             request_id=str(uuid.uuid4()),
+            #TODO: Add the agent name who is going to use this tool
             requesting_agent="agent",
             task_id=str(uuid.uuid4()),
             task_description=reason,
@@ -253,17 +283,14 @@ def bind_tools(workspace_root: Path, sandbox_root: Path | None = None) -> list[B
         case_insensitive: bool = False,
         max_matches: int = 100,
     ) -> str:
-        """Search for a regex pattern in a file or directory using real paths.
+        """Search a regex pattern in a file or directory. Returns JSON with stdout (matches + line numbers).
 
-        Use this instead of the built-in grep tool, which only works on virtual
-        paths and returns no results when given real absolute paths.
-
-        Returns JSON with stdout containing matching lines (with line numbers),
-        or a SuppressedContentNotice if the output is too large.
+        Use this, NOT the built-in grep (which only works on virtual paths).
+        Pass real absolute paths; returned line numbers feed tr_read_file offset.
 
         Args:
             pattern:          Regex or fixed string to search for.
-            path:             Real absolute path to a file or directory to search.
+            path:             Real absolute path to a file or directory.
             reason:           Specific purpose shown to the user in permission prompts.
             context_lines:    Lines of context before/after each match (default 3).
             case_insensitive: Case-insensitive matching (default False).
@@ -281,6 +308,7 @@ def bind_tools(workspace_root: Path, sandbox_root: Path | None = None) -> list[B
         sandbox_path = str(agent.sandbox_root)
         request = OperationRequest(
             request_id=str(uuid.uuid4()),
+            #TODO: Add the agent name who is going to use this tool
             requesting_agent="agent",
             task_id=str(uuid.uuid4()),
             task_description=reason,
@@ -336,14 +364,10 @@ def bind_tools(workspace_root: Path, sandbox_root: Path | None = None) -> list[B
         reason: str,
         timeout: int = 120,
     ) -> str:
-        """Run a shell command on the host machine (requires user approval each time).
+        """Run a shell command on the host (workspace cwd, full network, asks user every time).
 
-        Unlike tr_execute_in_sandbox (which runs in an isolated sandbox with no
-        internet), this tool runs in the workspace directory on the real host.
-        It has full network access — use it for curl, wget, API calls, etc.
-
-        Every invocation pauses for user permission before executing. The user
-        sees the command and the reason before deciding to approve or deny.
+        Use for internet-required commands (curl/wget/API). For local-only,
+        use tr_execute_in_sandbox (no approval prompt, no network).
 
         Args:
             command: Shell command to run (e.g. "curl -s https://example.com").
@@ -372,4 +396,13 @@ def bind_tools(workspace_root: Path, sandbox_root: Path | None = None) -> list[B
         _log.debug("[tr_execute] status=%s", response.status)
         return response.model_dump_json()
 
-    return [tr_read_file, tr_write_file, tr_delete_file, tr_execute_in_sandbox, tr_grep, tr_ask_user, tr_execute]
+    all_tools: list[BaseTool] = [
+        tr_read_file, tr_write_file, tr_delete_file,
+        tr_execute_in_sandbox, tr_grep, tr_ask_user, tr_execute,
+    ]
+    # Convert pydantic arg-validation failures (missing reason=, wrong type, etc.)
+    # into a structured JSON ToolMessage instead of langchain's opaque
+    # "Error invoking tool ..." string the LLM tends to ignore.
+    for t in all_tools:
+        t.handle_validation_error = _validation_error_json
+    return all_tools
