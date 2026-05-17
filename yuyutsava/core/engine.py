@@ -23,6 +23,7 @@ from deepagents import create_deep_agent
 from deepagents.backends import LocalShellBackend
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
@@ -318,6 +319,7 @@ def build_agent(
     local_settings: LocalSettings | None = None,
     permission_check: bool = True,
     search_config: SearchConfig | None = None,
+    checkpointer: BaseCheckpointSaver | None = None,
 ) -> AgentBundle:
     """Build a Deep Agent; ``local`` uses ``LocalShellBackend``, ``docker`` uses ``DockerSandboxBackend``.
 
@@ -328,9 +330,13 @@ def build_agent(
         search_config: When provided, ws_* web search tools are added and made
             discoverable via tool_search('ws_*'). Pass ``SearchConfig.from_env()``
             to auto-load from TAVILY_API_KEY / EXA_API_KEY env vars.
+        checkpointer: Optional persistent checkpointer. When omitted, falls back
+            to in-process ``MemorySaver()`` so existing callers (graph export,
+            tests) keep working unchanged. The CLI passes a SQLite-backed saver
+            so sessions survive Ctrl+C / crash / power loss.
     """
     model = chat_model(settings)
-    checkpointer = MemorySaver()
+    checkpointer = checkpointer or MemorySaver()
     middleware = [ToolFilterMiddleware()]
     if permission_check:
         middleware.append(PermissionMiddleware(workspace_root=workspace_root.resolve()))
@@ -818,6 +824,7 @@ async def astream_agent(
     *,
     thread_id: str | None = None,
     recursion_limit: int = 200,
+    on_tick=None,  # async (steps: int) -> None — progress hook for session bookkeeping
 ) -> str:
     """
     Run the agent with real-time async streaming.
@@ -827,6 +834,10 @@ async def astream_agent(
     - Handles ``interrupt()`` events from ``PermissionMiddleware``: pauses,
       asks the user on stdin, then resumes the graph with approve/reject.
     - Returns the final assistant text.
+    - ``on_tick`` (optional): awaited with the count of new messages observed
+      after each graph step batch. Used by ``yuyutsava.sessions.runner`` to
+      coalesce ``store.touch`` updates without coupling the engine to the
+      session layer.
     """
     _tid = thread_id or str(uuid.uuid4())
     cfg: RunnableConfig = {
@@ -966,6 +977,15 @@ async def astream_agent(
         # End of this stream pass — close any dangling AI output line
         if _in_ai_stream:
             print("\n", file=sys.stderr)
+
+        # Fire the progress hook once per pass so the runner can coalesce
+        # touches. Doing it here (not per-message) keeps the engine ignorant
+        # of the store's throttling policy.
+        if on_tick is not None and _steps_this_pass > 0:
+            try:
+                await on_tick(_steps_this_pass)
+            except Exception:
+                logger.exception("on_tick handler raised; continuing")
 
         # No interrupt → done
         if interrupted_value is None:

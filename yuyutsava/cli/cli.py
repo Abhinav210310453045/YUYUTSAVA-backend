@@ -12,7 +12,6 @@ import asyncio
 import dataclasses
 import os
 import sys
-import uuid
 from typing import Literal
 from pathlib import Path
 
@@ -25,13 +24,19 @@ from yuyutsava.cli.scenarios import format_scenario_list, get_scenario
 from yuyutsava.core.config import DockerSettings, LocalSettings, SearchConfig, llm_settings_from_env
 from yuyutsava.core.engine import (
     _cleanup_local_sandbox,
-    astream_agent,
     build_agent,
     builtin_tools_reference_json,
     export_agent_state_graph_png,
     setup_logging,
 )
 from yuyutsava.core.docker_sandbox_backend import pull_virtual_paths_to_host
+from yuyutsava.sessions import (
+    ResumeFailed,
+    SessionsSettings,
+    build_checkpointer,
+    get_default_session_store,
+    run_session,
+)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -88,6 +93,28 @@ def _build_parser() -> argparse.ArgumentParser:
         "-v",
         action="store_true",
         help="Print tool calls, results, and assistant text to stderr.",
+    )
+    p.add_argument(
+        "--list-sessions",
+        action="store_true",
+        help="List persisted sessions across all workspaces (id, workspace, timestamps, message count) and exit.",
+    )
+    p.add_argument(
+        "--this-workspace",
+        action="store_true",
+        help="With --list-sessions: restrict to sessions whose workspace == --workspace (default cwd).",
+    )
+    p.add_argument(
+        "--resume",
+        metavar="ID",
+        default=None,
+        help="Resume the session with this id (see --list-sessions). The given task is appended as the next user message.",
+    )
+    p.add_argument(
+        "--continue",
+        dest="continue_",
+        action="store_true",
+        help="Resume the most recently-updated session for the current --workspace.",
     )
     p.add_argument(
         "--generate_agent_graph",
@@ -232,6 +259,99 @@ def _parse_pull_paths(s: str) -> list[str]:
     return parts
 
 
+def _human_bytes(n: int) -> str:
+    """Format ``n`` bytes as KB/MB/GB for the sessions table."""
+    if n < 1024:
+        return f"{n}B"
+    for unit in ("KB", "MB", "GB", "TB"):
+        n /= 1024.0
+        if n < 1024:
+            return f"{n:.1f}{unit}"
+    return f"{n:.1f}PB"
+
+
+def _human_age(now: float, then: float) -> str:
+    """Compact "3m ago" / "2h ago" / "5d ago" for the sessions table."""
+    delta = max(0.0, now - then)
+    if delta < 60:
+        return f"{int(delta)}s ago"
+    if delta < 3600:
+        return f"{int(delta // 60)}m ago"
+    if delta < 86400:
+        return f"{int(delta // 3600)}h ago"
+    return f"{int(delta // 86400)}d ago"
+
+
+def _ansi(code: str) -> str:
+    """Return an ANSI escape only when stdout is a real TTY.
+
+    Keeps the table copy-paste-friendly when piped through ``less``, ``grep``,
+    or redirected to a file.
+    """
+    return code if sys.stdout.isatty() else ""
+
+
+_STATUS_COLOR_CODES = {
+    "running": "\033[32m",
+    "done":    "\033[2m",
+    "crashed": "\033[31m",
+    "idle":    "\033[33m",
+}
+
+
+async def _print_sessions_table(workspace_filter: Path | None = None) -> int:
+    """``--list-sessions`` handler. Prints to stdout, returns process exit code.
+
+    Renders each row as a labelled card with a fully-formed copy-paste resume
+    command beneath it. Long fields (workspace, task) are NOT truncated — the
+    point of this view is to be the source of truth the user copies from.
+    """
+    import shlex
+    import time as _time
+
+    store = get_default_session_store()
+    rows = await store.list(workspace=workspace_filter, limit=100)
+    if not rows:
+        print("(no sessions yet — start one with `uv run yuyutsava <task>`)")
+        return 0
+
+    reset  = _ansi("\033[0m")
+    dim    = _ansi("\033[2m")
+    bold   = _ansi("\033[1m")
+    cyan   = _ansi("\033[36m")
+    yellow = _ansi("\033[33m")
+
+    now = _time.time()
+    scope = "this workspace" if workspace_filter is not None else "all workspaces"
+    sep = "─" * 78
+    print(f"{bold}Sessions ({len(rows)}) — {scope}{reset}")
+    print(dim + sep + reset)
+
+    for s in rows:
+        status_colour = _ansi(_STATUS_COLOR_CODES.get(s.status, ""))
+        status_str = f"{status_colour}{s.status}{reset}"
+        ws_quoted = shlex.quote(str(s.workspace))
+        resume_cmd = (
+            f"uv run yuyutsava --verbose --workspace {ws_quoted} "
+            f"--resume {s.id} \"<your next message>\""
+        )
+
+        print(f"{bold}{cyan}{s.id}{reset}")
+        print(f"  {dim}status   {reset}{status_str}"
+              f"   {dim}updated  {reset}{_human_age(now, s.updated_at)}"
+              f"   {dim}msgs  {reset}{s.message_count}"
+              f"   {dim}mem  {reset}{s.memory_files_count}"
+              f"   {dim}size  {reset}{_human_bytes(s.db_row_bytes)}")
+        print(f"  {dim}workspace{reset}  {s.workspace}")
+        print(f"  {dim}task     {reset} {s.task_preview}")
+        print(f"  {dim}resume   {reset} {yellow}{resume_cmd}{reset}")
+        print(dim + sep + reset)
+
+    print(f"{dim}tip:{reset} replace {yellow}\"<your next message>\"{reset} "
+          f"with what you want the agent to do next, then paste into a terminal.")
+    return 0
+
+
 def _prefs_main(argv: list[str]) -> int:
     """``yuyutsava prefs {set|get|list|delete}`` subcommand."""
     import json as _json
@@ -331,6 +451,13 @@ async def _async_main(argv: list[str] | None = None) -> int:
         sys.stdout.write(builtin_tools_reference_json() + "\n")
         return 0
 
+    if args.list_sessions:
+        # Short-circuit before build_agent — no model, no Docker, no LLM keys needed.
+        # Default: show every session so the user can discover ids regardless of cwd.
+        # --this-workspace narrows to the current --workspace.
+        ws_filter = args.workspace.resolve() if args.this_workspace else None
+        return await _print_sessions_table(workspace_filter=ws_filter)
+
     if args.generate_agent_graph:
         if args.scenario or args.task:
             print(
@@ -378,7 +505,7 @@ async def _async_main(argv: list[str] | None = None) -> int:
         task = " ".join(args.task).strip()
         if not task:
             print(
-                "Error: provide a task, or use --scenario, or --list-scenarios / --print-tools.",
+                "Error: provide a task, or use --scenario, --list-sessions, --list-scenarios / --print-tools.",
                 file=sys.stderr,
             )
             return 2
@@ -390,46 +517,57 @@ async def _async_main(argv: list[str] | None = None) -> int:
     local_cfg = _local_settings_from_args(args)
     search_cfg = SearchConfig.from_env()
 
-    bundle = build_agent(
-        workspace,
-        settings,
-        bash_timeout_sec=args.bash_timeout,
-        execution_mode=execution,
-        docker_settings=docker_cfg,
-        local_settings=local_cfg,
-        permission_check=not args.no_permission_check,
-        search_config=search_cfg,
-    )
-    try:
-        thread_id = str(uuid.uuid4())
-        final = await astream_agent(
-            bundle.agent,
-            task,
-            thread_id=thread_id,
-            recursion_limit=args.recursion_limit,
+    store = get_default_session_store()
+    sessions_settings = SessionsSettings.from_env()
+
+    async with build_checkpointer(sessions_settings) as checkpointer:
+        bundle = build_agent(
+            workspace,
+            settings,
+            bash_timeout_sec=args.bash_timeout,
+            execution_mode=execution,
+            docker_settings=docker_cfg,
+            local_settings=local_cfg,
+            permission_check=not args.no_permission_check,
+            search_config=search_cfg,
+            checkpointer=checkpointer,
         )
-        pulls = _parse_pull_paths(args.docker_pull_paths)
-        if pulls:
-            if bundle.docker_backend is None:
-                print(
-                    "Warning: --docker-pull-paths only applies with --execution docker; ignored.",
-                    file=sys.stderr,
+        try:
+            try:
+                final = await run_session(
+                    store=store,
+                    agent=bundle.agent,
+                    task=task,
+                    workspace=workspace,
+                    resume_id=args.resume,
+                    continue_latest=args.continue_,
+                    recursion_limit=args.recursion_limit,
                 )
-            else:
-                dest = (
-                    (docker_cfg.export_dir / "_pulled").resolve()
-                    if docker_cfg.export_dir is not None
-                    else (workspace / "_docker_pull").resolve()
-                )
-                written = pull_virtual_paths_to_host(bundle.docker_backend, pulls, dest)
-                if args.verbose and written:
-                    print(f"Docker pull wrote: {written}", file=sys.stderr)
-        if execution == "local" and bundle.sandbox_root is not None:
-            _cleanup_local_sandbox(workspace, bundle.sandbox_root)
-        if final.strip() and not args.verbose:
-            print(final.strip())
-    finally:
-        bundle.close()
+            except ResumeFailed as exc:
+                print(f"Error: {exc}", file=sys.stderr)
+                return 2
+            pulls = _parse_pull_paths(args.docker_pull_paths)
+            if pulls:
+                if bundle.docker_backend is None:
+                    print(
+                        "Warning: --docker-pull-paths only applies with --execution docker; ignored.",
+                        file=sys.stderr,
+                    )
+                else:
+                    dest = (
+                        (docker_cfg.export_dir / "_pulled").resolve()
+                        if docker_cfg.export_dir is not None
+                        else (workspace / "_docker_pull").resolve()
+                    )
+                    written = pull_virtual_paths_to_host(bundle.docker_backend, pulls, dest)
+                    if args.verbose and written:
+                        print(f"Docker pull wrote: {written}", file=sys.stderr)
+            if execution == "local" and bundle.sandbox_root is not None:
+                _cleanup_local_sandbox(workspace, bundle.sandbox_root)
+            if final.strip() and not args.verbose:
+                print(final.strip())
+        finally:
+            bundle.close()
     return 0
 
 
