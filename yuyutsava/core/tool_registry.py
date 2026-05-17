@@ -91,7 +91,7 @@ class ToolRegistry:
               tool_search('tr_*')        — all TaskRunner tools
               tool_search('ws_*')        — all web search tools
               tool_search('sk_*')        — all Skills tools
-              tool_search('tr_execute')  — permission-gated shell (network access)
+              tool_search('tr_execute')  — tool to execute out of sandbox, permission-gated shell (network access)
               tool_search('tr_write*')   — just write/delete tools
               tool_search('*')           — everything (expensive, avoid)
 

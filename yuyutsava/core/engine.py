@@ -35,7 +35,6 @@ from yuyutsava.core.tracing import get_callback
 from yuyutsava.core.tool_filter_middleware import ToolFilterMiddleware
 from yuyutsava.core.tool_registry import ToolRegistry
 from yuyutsava.agents.task_runner.tools import bind_tools as _bind_task_runner_tools
-from yuyutsava.agents.task_runner.prompts import task_runner_rules_section
 from yuyutsava.skills.registry import SkillRegistry
 from yuyutsava.skills.tools import make_skill_tools
 from yuyutsava.tools.search import make_search_tools
@@ -132,27 +131,54 @@ def builtin_tools_reference_json() -> str:
 _TOOL_DISCOVERY_SECTION = """\
 ## TOOL DISCOVERY
 
-You have access to tool_search to discover available tools on demand.
-ALWAYS call tool_search before using any tool whose schema you don't know yet.
+For ALL file and shell operations you MUST use the tr_* tools. The built-in
+read_file / write_file / edit_file / execute / grep are NOT available — calling
+them will fail. ls and glob are the only built-in filesystem tools you may call
+directly (read-only, virtual paths).
 
-Common patterns:
-  tool_search('tr_*')        → TaskRunner tools (read, write, delete, execute, grep, ask_user)
+tr_* tool schemas are not preloaded; discover them with tool_search.
+First action of every task that touches the filesystem or shell:
+  tool_search('tr_*')        → read, write, delete, execute_in_sandbox, grep, ask_user, execute
+Other discovery patterns:
   tool_search('ws_*')        → Web search tools (Tavily, Exa — only if API keys configured)
-  tool_search('tr_execute')  → Permission-gated shell with full network/internet access
   tool_search('sk_*')        → Skills tools (read/write reusable patterns)
+  tool_search('tr_execute')  → host shell, permission-gated, full network
 
-Quick tools you can call without loading schemas first:
-  tr_ask_user(question, options) — ask the user a question and get their response.
-    Use this whenever you need clarification, a decision, or confirmation before acting.
-    Call it directly; no need to run tool_search first.
+Read the returned schema before calling the tool — do NOT guess parameters.
 
-Rules:
-- Start every task by calling tool_search('tr_*') to see what is available.
-- For internet access (curl, API calls, web scraping): use tr_execute (requires user approval)
-  OR ws_tavily_search / ws_exa_search (no approval needed, structured results).
-- Do NOT guess tool parameter schemas — always check via tool_search first.
-- tr_execute_in_sandbox runs WITHOUT network access (isolated sandbox).
-  Use tr_execute for commands that need the internet.
+tr_ask_user(question, options) — exempt from discovery; call directly whenever
+you need clarification, a decision, or confirmation before acting.
+
+Internet access: tr_execute (host shell, asks user) OR ws_tavily_search /
+ws_exa_search (no approval needed, structured results). tr_execute_in_sandbox
+has NO network — only use it for offline commands.
+
+Writing a file: Do not attempt write_file. If you find yourself
+about to call write_file / read_file / edit_file / execute / grep, STOP and
+call tool_search('tr_*') instead.
+
+## CALLING tr_* TOOLS (non-negotiable)
+
+EVERY tr_* call REQUIRES a non-empty `reason` string. Missing `reason` returns
+{"status":"error","error_code":"TR000_VALIDATION"} — re-call with reason filled.
+
+After EVERY tool call, parse the JSON result and read `status`:
+  - "success" → use `result`, continue.
+  - "denied"  → operation was blocked. Read `alternatives`; either pick one or
+                stop and tell the user what was denied. Do NOT pretend it worked.
+  - "error"   → something failed. Read `error` and `hint`. Either fix the call
+                and retry, or stop and report the failure to the user verbatim.
+NEVER claim a file was written, a command ran, or a result was produced unless
+the matching tool call returned status="success". Lying about success is the
+worst failure mode — always check.
+
+## WRITING DELIVERABLES (paths)
+
+Deliverable files MUST go under the deliverables path shown in the OUTPUT FILES
+section below — do NOT invent absolute paths like /Users/.../Desktop/Results/
+or /tmp/. If the user did not name a path, use that deliverables dir with a
+descriptive filename. Anything outside the workspace is the EXTERNAL zone and
+will block on user approval.
 
 ## SKILL REFLECTION (after every completed task)
 
@@ -167,6 +193,29 @@ Keep the body concise (≤ 150 words): what was done, which tools were used, any
 If no clear reusable pattern: skip it — do not save trivial or one-off tasks as skills.
 """
 
+def _rules_section(workspace_root: Path, sandbox_root: Path, output_dir: Path) -> str:
+    """Operational rules every CLI agent always needs. No per-tool examples."""
+    return f"""\
+## ZONES
+| Zone | Path | r/w | delete | execute |
+| SANDBOX | {sandbox_root}/ | auto | auto | auto |
+| WORKSPACE | {workspace_root}/ | auto | asks user | DENIED |
+| EXTERNAL | outside workspace | asks user | asks user | asks user |
+| SYSTEM-CRITICAL | /etc /sys /proc /dev /boot /root /usr/bin /usr/sbin | DENIED | DENIED | DENIED |
+Every tr_* tool returns JSON: status = success | denied (read alternatives) | error.
+reason= is shown to the user — be specific.
+
+## OUTPUT FILES
+Deliverables → {output_dir}/ (permanent). Scratch → {sandbox_root}/ (deleted after task).
+Diagrams: Mermaid/SVG in .md fenced block; PNG only if explicitly requested.
+Binary or text > 200 lines → {output_dir}/ then report path. NEVER base64 binaries.
+Sandbox dir is created by the first tr_write_file into it; do not run a sandbox command before that.
+
+## TASK PROTOCOL
+For tasks with 3+ distinct steps: write_todos → ORIENT (one command) → EXECUTE → REPORT (path + how to open).
+For one-shot tasks: skip write_todos, just do it. Never embed binary content in responses.
+Missing capability: stdlib → curl → scoped install (pip --target / npm --save-dev, never -g) → tr_ask_user."""
+
 
 def _local_system_prompt(
     workspace_root: Path,
@@ -177,23 +226,14 @@ def _local_system_prompt(
     sb = sandbox_root.resolve() if sandbox_root is not None else root / "_sandbox"
     out = output_dir.resolve() if output_dir is not None else root / "_output"
     return f"""\
-{task_runner_rules_section(root, sb, out)}
-
 {_TOOL_DISCOVERY_SECTION}
+{_rules_section(root, sb, out)}
+
 ## WORKSPACE CONTEXT
-
-Root: {root} | Mode: real disk + local shell.
-Output dir: {out} — write all deliverables here, not to the sandbox.
-
-PATH RULES (critical):
-- ls and glob use VIRTUAL paths: `/` is the workspace root, NOT the real filesystem root.
-  - To list workspace root: ls(path="/")
-  - To list a subdirectory: ls(path="/subdir")
-  - NEVER pass a real absolute path like `{root}` to ls or glob — it will return empty.
-- ls and glob RETURN virtual paths. Before passing them to tr_* tools, convert to real paths:
-  virtual `/foo.xlsx`  →  real `{root}/foo.xlsx`
-  virtual `/subdir/bar.py`  →  real `{root}/subdir/bar.py`
-- Never pass a virtual path directly to tr_read_file / tr_write_file / tr_delete_file.
+Root: {root} | Mode: real disk + local shell. Output dir: {out}.
+ls/glob use VIRTUAL paths (/ = workspace root); they return virtual paths.
+Convert to real before any tr_* call: virtual `/foo.xlsx` → real `{root}/foo.xlsx`.
+NEVER pass a real absolute path to ls/glob, and NEVER pass a virtual path to tr_*.
 
 Complete the user's task; be concise."""
 
@@ -201,28 +241,19 @@ Complete the user's task; be concise."""
 def _docker_system_prompt(workspace_root: Path, export_host: Path | None) -> str:
     root = workspace_root.resolve()
     sandbox = root / "_sandbox"
+    out = export_host.resolve() if export_host is not None else root / "_output"
     extra = ""
     if export_host is not None:
-        exp = export_host.resolve()
-        extra = f" Output dir: host {exp} → /output in container (write deliverables to /output/...)."
+        extra = f" Host {out} → /output in container — write deliverables to /output/."
     return f"""\
-{task_runner_rules_section(root, sandbox)}
-
 {_TOOL_DISCOVERY_SECTION}
+{_rules_section(root, sandbox, out)}
+
 ## WORKSPACE CONTEXT
-
-Mode: Docker sandbox (isolated from host shell).
-Mount: host {root} → /workspace.{extra}
-
-PATH RULES (critical):
-- ls and glob use VIRTUAL paths: `/` is the workspace root (/workspace), NOT the real filesystem root.
-  - To list workspace root: ls(path="/")
-  - To list a subdirectory: ls(path="/subdir")
-  - NEVER pass a real absolute path like `/workspace` to ls or glob — it will return empty.
-- ls and glob RETURN virtual paths. Before passing them to tr_* tools, convert to real paths:
-  virtual `/foo.xlsx`  →  real `/workspace/foo.xlsx`
-  virtual `/subdir/bar.py`  →  real `/workspace/subdir/bar.py`
-- Never pass a virtual path directly to tr_read_file / tr_write_file / tr_delete_file.
+Mode: Docker sandbox (isolated from host shell). Mount: host {root} → /workspace.{extra}
+ls/glob use VIRTUAL paths (/ = /workspace); they return virtual paths.
+Convert to real before any tr_* call: virtual `/foo.xlsx` → real `/workspace/foo.xlsx`.
+NEVER pass a real absolute path to ls/glob, and NEVER pass a virtual path to tr_*.
 
 Complete the user's task; be concise."""
 
@@ -919,17 +950,18 @@ async def astream_agent(
                         elif isinstance(m, ToolMessage):
                             tn = getattr(m, "name", "tool") or "tool"
                             body = m.content if isinstance(m.content, str) else str(m.content)
-                            # Last-resort guard: replaces runaway payloads with a
-                            # SuppressedContentNotice before they reach the LLM.
-                            # tr_read_file results are already handled at the executor
-                            # layer; this only fires for pathological cases.
                             safe_body = _guard_tool_result(body, tn)
                             if safe_body is not body:
                                 m.content = safe_body
                             preview = safe_body if len(safe_body) <= 600 else safe_body[:600] + "\n    … [truncated]"
+                            is_error = _is_tool_error(m, safe_body)
                             logger.info("")
-                            logger.info("\033[32m✅  TOOL RESULT ← %s\033[0m", tn)
-                            logger.info("    %s", preview.replace("\n", "\n    "))
+                            if is_error:
+                                logger.error("\033[1;31m❌  TOOL ERROR ← %s\033[0m", tn)
+                                logger.error("    %s", preview.replace("\n", "\n    "))
+                            else:
+                                logger.info("\033[32m✅  TOOL RESULT ← %s\033[0m", tn)
+                                logger.info("    %s", preview.replace("\n", "\n    "))
 
         # End of this stream pass — close any dangling AI output line
         if _in_ai_stream:
@@ -968,5 +1000,27 @@ async def astream_agent(
 def _indent(text: str, spaces: int) -> str:
     pad = " " * spaces
     return "\n".join(pad + line for line in text.splitlines())
+
+
+def _is_tool_error(msg: ToolMessage, body: str) -> bool:
+    """True when a ToolMessage represents a failure the user should see in red.
+
+    Covers three cases:
+      1. langchain set ``status='error'`` on the message (raised + caught).
+      2. langchain's default fallback string `Error invoking tool ...`.
+      3. Our tr_* JSON envelope with ``"status": "error"`` or ``"denied"``.
+    """
+    if getattr(msg, "status", None) == "error":
+        return True
+    if body.startswith("Error invoking tool"):
+        return True
+    stripped = body.lstrip()
+    if stripped.startswith("{"):
+        try:
+            parsed = json.loads(stripped)
+        except (json.JSONDecodeError, ValueError):
+            return False
+        return isinstance(parsed, dict) and parsed.get("status") in ("error", "denied")
+    return False
 
 
