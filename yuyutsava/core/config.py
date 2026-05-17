@@ -267,6 +267,17 @@ def yuyutsava_home() -> Path:
     return p
 
 
+def sessions_db_path() -> Path:
+    """Shared SQLite file backing the CLI session index + checkpointer.
+
+    Override with ``YUYUTSAVA_SESSIONS_DB``. Parent dir is created on first access.
+    """
+    raw = os.environ.get("YUYUTSAVA_SESSIONS_DB", "").strip()
+    p = Path(raw).expanduser() if raw else yuyutsava_home() / "sessions.db"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    return p
+
+
 def events_config_path() -> Path:
     """Repo-local path for events_config.json: <repo_root>/yuyutsava/events/events_config.json."""
     return Path(__file__).parent.parent / "events" / "events_config.json"
