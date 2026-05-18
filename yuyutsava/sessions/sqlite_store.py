@@ -198,6 +198,7 @@ class SqliteSessionStore:
         workspace: Path | None = None,
         limit: int = 100,
         order_by: str = "updated_at",
+        cursor: float | None = None,
     ) -> list[Session]:
         await self._ensure_schema()
         if order_by not in ("updated_at", "created_at"):
@@ -207,10 +208,16 @@ class SqliteSessionStore:
             "message_count, memory_files_count, db_row_bytes, task_preview, "
             "schema_version FROM sessions"
         )
+        clauses: list[str] = []
         params: tuple[Any, ...] = ()
         if workspace is not None:
-            sql += " WHERE workspace=?"
-            params = (str(workspace.resolve()),)
+            clauses.append("workspace=?")
+            params = (*params, str(workspace.resolve()))
+        if cursor is not None:
+            clauses.append(f"{order_by} < ?")
+            params = (*params, float(cursor))
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
         sql += f" ORDER BY {order_by} DESC LIMIT ?"
         params = (*params, int(limit))
         async with self._conn() as conn:
@@ -225,8 +232,13 @@ class SqliteSessionStore:
         *,
         message_delta: int = 0,
         memory_files_count: int | None = None,
+        task_preview: str | None = None,
     ) -> None:
         now = time.time()
+        preview = (
+            None if task_preview is None
+            else task_preview[:_TASK_PREVIEW_MAX]
+        )
 
         async def _do(conn):
             # Recompute checkpoint bytes for this thread. Both tables live in
@@ -245,22 +257,19 @@ class SqliteSessionStore:
                 # Checkpoints table not yet created — fine, treat as 0.
                 pass
 
-            if memory_files_count is None:
-                await conn.execute(
-                    "UPDATE sessions SET updated_at=?, "
-                    "message_count=message_count+?, db_row_bytes=? "
-                    "WHERE id=?",
-                    (now, int(message_delta), bytes_for_thread, session_id),
-                )
-            else:
-                await conn.execute(
-                    "UPDATE sessions SET updated_at=?, "
-                    "message_count=message_count+?, "
-                    "memory_files_count=?, db_row_bytes=? "
-                    "WHERE id=?",
-                    (now, int(message_delta), int(memory_files_count),
-                     bytes_for_thread, session_id),
-                )
+            sets = ["updated_at=?", "message_count=message_count+?", "db_row_bytes=?"]
+            args: list[Any] = [now, int(message_delta), bytes_for_thread]
+            if memory_files_count is not None:
+                sets.append("memory_files_count=?")
+                args.append(int(memory_files_count))
+            if preview is not None:
+                sets.append("task_preview=?")
+                args.append(preview)
+            args.append(session_id)
+            await conn.execute(
+                f"UPDATE sessions SET {', '.join(sets)} WHERE id=?",
+                tuple(args),
+            )
 
         await self._run_write(_do)
 

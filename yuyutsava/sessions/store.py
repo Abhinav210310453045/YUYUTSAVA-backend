@@ -35,6 +35,7 @@ class SessionStore(Protocol):
         workspace: Path | None = None,
         limit: int = 100,
         order_by: str = "updated_at",
+        cursor: float | None = None,
     ) -> list[Session]: ...
 
     async def touch(
@@ -43,6 +44,7 @@ class SessionStore(Protocol):
         *,
         message_delta: int = 0,
         memory_files_count: int | None = None,
+        task_preview: str | None = None,
     ) -> None: ...
 
     async def update_status(self, session_id: str, status: str) -> None: ...

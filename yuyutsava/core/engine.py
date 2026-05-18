@@ -725,7 +725,7 @@ async def astream_agent_iter(
     _tid = thread_id or str(uuid.uuid4())
     cfg: RunnableConfig = {
         "recursion_limit": recursion_limit,
-        "configurable": {"thread_id": _tid},
+        "configurable": {"thread_id": _tid, "agent_path": "orchestrator"},
     }
     _lf_cb = get_callback(session_id=_tid, run_name=run_name)
     if _lf_cb is not None:
@@ -842,7 +842,7 @@ async def astream_agent(
     _tid = thread_id or str(uuid.uuid4())
     cfg: RunnableConfig = {
         "recursion_limit": recursion_limit,
-        "configurable": {"thread_id": _tid},
+        "configurable": {"thread_id": _tid, "agent_path": "orchestrator"},
     }
     _lf_cb = get_callback(session_id=_tid, run_name="cli")
     if _lf_cb is not None:

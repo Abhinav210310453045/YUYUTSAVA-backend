@@ -32,6 +32,7 @@ from yuyutsava.core.engine import (
 from yuyutsava.core.docker_sandbox_backend import pull_virtual_paths_to_host
 from yuyutsava.sessions import (
     ResumeFailed,
+    SessionNotFound,
     SessionsSettings,
     build_checkpointer,
     get_default_session_store,
@@ -103,6 +104,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "--this-workspace",
         action="store_true",
         help="With --list-sessions: restrict to sessions whose workspace == --workspace (default cwd).",
+    )
+    p.add_argument(
+        "--delete-session",
+        metavar="ID",
+        default=None,
+        help="Delete the session row AND its LangGraph checkpoint rows, then exit.",
     )
     p.add_argument(
         "--resume",
@@ -352,6 +359,24 @@ async def _print_sessions_table(workspace_filter: Path | None = None) -> int:
     return 0
 
 
+async def _delete_session_cmd(session_id: str) -> int:
+    """``--delete-session`` handler. Removes the session row AND its
+    checkpoint rows. Prints a one-line confirmation or error.
+    """
+    store = get_default_session_store()
+    try:
+        s = await store.get(session_id)
+    except SessionNotFound:
+        print(f"Error: no session with id {session_id!r}", file=sys.stderr)
+        return 2
+    settings = SessionsSettings.from_env()
+    async with build_checkpointer(settings) as saver:
+        await saver.adelete_thread(s.thread_id)
+    await store.delete(session_id)
+    print(f"Deleted session {session_id} (workspace: {s.workspace})")
+    return 0
+
+
 def _prefs_main(argv: list[str]) -> int:
     """``yuyutsava prefs {set|get|list|delete}`` subcommand."""
     import json as _json
@@ -457,6 +482,10 @@ async def _async_main(argv: list[str] | None = None) -> int:
         # --this-workspace narrows to the current --workspace.
         ws_filter = args.workspace.resolve() if args.this_workspace else None
         return await _print_sessions_table(workspace_filter=ws_filter)
+
+    if args.delete_session:
+        # Short-circuit: no model/sandbox needed to remove a session.
+        return await _delete_session_cmd(args.delete_session)
 
     if args.generate_agent_graph:
         if args.scenario or args.task:

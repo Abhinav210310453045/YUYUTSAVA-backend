@@ -140,6 +140,9 @@ def build_interrupt_payload(
     zone: FilesystemZone,
 ) -> TaskRunnerPermissionInterrupt:
     """Build the typed interrupt payload passed to LangGraph's ``interrupt()``."""
+    from yuyutsava.core.agent_context import current_context
+
+    ctx = current_context()
     return TaskRunnerPermissionInterrupt(
         operation=request.operation.value,
         paths=request.paths,
@@ -150,4 +153,6 @@ def build_interrupt_payload(
         task_id=request.task_id,
         task_description=request.task_description,
         risk_level=get_risk_level(zone, request.operation),
+        session_id=ctx.get("session_id"),
+        agent_path=ctx.get("agent_path"),
     )

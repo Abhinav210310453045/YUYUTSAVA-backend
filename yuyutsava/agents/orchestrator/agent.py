@@ -138,12 +138,17 @@ def _make_ask_user_tool(channels: ChannelRouter) -> BaseTool:
         ``options`` is an optional list of one-word choices; if empty, the user
         responds with free text. Returns the user's response string.
         """
+        from yuyutsava.core.agent_context import current_context
+
+        ctx = current_context()
         ask = AskPrompt(
             ask_id=str(uuid.uuid4()),
             title="Orchestrator question",
             body=question,
             options=list(options) if options else [],
-            interrupt_value={"type": "orchestrator_ask", "question": question},
+            interrupt_value={"type": "orchestrator_ask", "question": question, **ctx},
+            session_id=ctx.get("session_id"),
+            agent_path=ctx.get("agent_path"),
         )
         return await channels.post_ask(ask)
 

@@ -6,6 +6,7 @@ const KIND_STYLE = {
   tool_call:   { color: 'var(--neon-amber)', prefix: '→ ' },
   tool_result: { color: 'var(--text-secondary)', prefix: '← ' },
   timeline:    { color: 'var(--text-primary)', borderLeft: '2px solid var(--neon-purple)', paddingLeft: 6 },
+  http_log:    { color: 'var(--neon-amber)', prefix: 'HTTP ' },
   default:     { color: 'var(--text-muted)' },
 }
 
@@ -17,7 +18,14 @@ function fmtTime(ts) {
   return `${hh}:${mm}:${ss}`
 }
 
-export default function ActivityLog({ lines, width }) {
+const TABS = [
+  { id: 'events', label: 'Events', emptyText: '> awaiting events...' },
+  { id: 'logs',   label: 'Logs',   emptyText: '> awaiting logs...' },
+]
+
+export default function ActivityLog({ events = [], logs = [], width }) {
+  const [tab, setTab] = useState('events')
+  const lines = tab === 'logs' ? logs : events
   const bottomRef = useRef(null)
   const containerRef = useRef(null)
   const [autoScroll, setAutoScroll] = useState(true)
@@ -28,12 +36,17 @@ export default function ActivityLog({ lines, width }) {
     }
   }, [lines, autoScroll])
 
+  // Reset scroll when switching tabs.
+  useEffect(() => { setAutoScroll(true) }, [tab])
+
   const handleScroll = () => {
     const el = containerRef.current
     if (!el) return
     const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40
     setAutoScroll(atBottom)
   }
+
+  const emptyText = TABS.find((t) => t.id === tab)?.emptyText || '> awaiting...'
 
   return (
     <div style={{
@@ -43,18 +56,50 @@ export default function ActivityLog({ lines, width }) {
       display: 'flex',
       flexDirection: 'column',
       flexShrink: 0,
+      position: 'relative',
     }}>
       <div style={{
-        padding: '8px 12px',
+        display: 'flex',
         borderBottom: '1px solid var(--border-subtle)',
-        fontFamily: 'var(--font-mono)',
-        fontSize: 10,
-        color: 'var(--text-secondary)',
-        letterSpacing: '0.1em',
-        textTransform: 'uppercase',
         flexShrink: 0,
       }}>
-        Activity
+        {TABS.map((t) => {
+          const count = (t.id === 'logs' ? logs : events).length
+          const active = t.id === tab
+          return (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              style={{
+                flex: 1,
+                padding: '8px 12px',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 10,
+                letterSpacing: '0.12em',
+                textTransform: 'uppercase',
+                background: active ? 'var(--bg-elevated)' : 'transparent',
+                color: active ? 'var(--neon-green)' : 'var(--text-secondary)',
+                border: 'none',
+                borderBottom: active ? '1px solid var(--neon-green)' : '1px solid transparent',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6,
+                transition: 'color 0.2s, background 0.2s',
+              }}
+            >
+              <span>{t.label}</span>
+              <span style={{
+                fontSize: 9,
+                color: active ? 'var(--neon-green)' : 'var(--text-dim)',
+                opacity: 0.7,
+              }}>
+                {count > 999 ? '999+' : count}
+              </span>
+            </button>
+          )
+        })}
       </div>
 
       <div
@@ -78,7 +123,7 @@ export default function ActivityLog({ lines, width }) {
 
         {lines.length === 0 && (
           <div style={{ padding: '20px 12px', color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', fontSize: 11 }}>
-            {'> awaiting events...'}
+            {emptyText}
             <span style={{ animation: 'blink 1s step-end infinite' }}>_</span>
           </div>
         )}

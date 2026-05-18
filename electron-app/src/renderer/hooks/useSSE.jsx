@@ -1,7 +1,32 @@
 import { createContext, useContext, useReducer, useEffect, useRef } from 'react'
 import { SSEClient } from '../api/sse'
 
-const MAX_LOG_LINES = 2000
+const MAX_LINES = 2000
+// Kinds routed to the "Logs" tab. Everything else goes to "Events".
+const LOG_KINDS = new Set(['http_log'])
+const LOGS_ENABLED_KEY = 'yuyutsava.logsInUI'
+
+// Module-level mutable flag so the SSE onEvent callback (captured once in
+// useEffect) can read the latest UI toggle state without re-subscribing.
+const logsFlag = { enabled: readLogsEnabled() }
+
+function readLogsEnabled() {
+  try {
+    const v = localStorage.getItem(LOGS_ENABLED_KEY)
+    return v === null ? true : v === '1'
+  } catch {
+    return true
+  }
+}
+
+export function setLogsEnabled(enabled) {
+  logsFlag.enabled = enabled
+  try { localStorage.setItem(LOGS_ENABLED_KEY, enabled ? '1' : '0') } catch {}
+}
+
+export function getLogsEnabled() {
+  return logsFlag.enabled
+}
 
 const SSEContext = createContext(null)
 
@@ -33,9 +58,13 @@ function reducer(state, action) {
       asks.delete(action.id)
       return { ...state, asks, pendingCount: state.proposals.size + asks.size }
     }
+    case 'EVENT_LINE': {
+      const eventLines = [...state.eventLines, action.line]
+      return { ...state, eventLines: eventLines.length > MAX_LINES ? eventLines.slice(-MAX_LINES) : eventLines }
+    }
     case 'LOG_LINE': {
       const logLines = [...state.logLines, action.line]
-      return { ...state, logLines: logLines.length > MAX_LOG_LINES ? logLines.slice(-MAX_LOG_LINES) : logLines }
+      return { ...state, logLines: logLines.length > MAX_LINES ? logLines.slice(-MAX_LINES) : logLines }
     }
     default:
       return state
@@ -45,6 +74,7 @@ function reducer(state, action) {
 const initialState = {
   proposals: new Map(),
   asks: new Map(),
+  eventLines: [],
   logLines: [],
   connected: false,
   pendingCount: 0,
@@ -62,14 +92,21 @@ export function SSEProvider({ children }) {
       onAsk: (data) => dispatch({ type: 'ASK', payload: data }),
       onEvent: (data) => {
         const kind = data.kind || 'log'
+        const isLog = LOG_KINDS.has(kind)
+        // Logs are gated by the Titlebar toggle; events always flow.
+        if (isLog && !logsFlag.enabled) return
         let text = ''
         if (kind === 'token') text = data.data?.token || ''
         else if (kind === 'tool_call') text = `${data.data?.name || ''}(${JSON.stringify(data.data?.input || {})})`
         else if (kind === 'tool_result') text = `${data.data?.name || ''}: ${JSON.stringify(data.data?.output ?? '').slice(0, 120)}`
         else if (kind === 'timeline') text = data.data?.text || data.data?.summary || JSON.stringify(data.data)
+        else if (kind === 'http_log') text = `${data.data?.method} ${data.data?.path} → ${data.data?.status} (${data.data?.duration_ms}ms)`
         else text = data.data?.text || data.data?.message || JSON.stringify(data.data)
 
-        dispatch({ type: 'LOG_LINE', line: { kind, text, ts: data.data?.ts || Date.now() / 1000 } })
+        dispatch({
+          type: isLog ? 'LOG_LINE' : 'EVENT_LINE',
+          line: { kind, text, ts: data.data?.ts || Date.now() / 1000 },
+        })
       },
     })
     clientRef.current = client

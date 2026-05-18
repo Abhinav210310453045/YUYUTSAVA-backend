@@ -30,3 +30,16 @@ export const deleteRule = (id) => _json('DELETE', `/rules/${id}`)
 export const getDecisions = (limit = 50) => _json('GET', `/decisions?limit=${limit}`)
 export const getSkills = () => _json('GET', '/skills')
 export const deleteSkill = (name) => _json('DELETE', `/skills/${name}`)
+
+export const listSessions = (workspace = null, limit = 50, cursor = null) => {
+  const qs = new URLSearchParams()
+  if (workspace) qs.set('workspace', workspace)
+  qs.set('limit', String(limit))
+  if (cursor != null) qs.set('cursor', String(cursor))
+  return _json('GET', `/sessions?${qs}`)
+}
+export const getSession = (id) => _json('GET', `/sessions/${encodeURIComponent(id)}`)
+export const deleteSession = (id) => _json('DELETE', `/sessions/${encodeURIComponent(id)}`)
+
+export const getLogLevel = () => _json('GET', '/logs/level')
+export const setLogLevel = (level) => _json('PUT', '/logs/level', { level })
