@@ -1,10 +1,8 @@
 import React from 'react'
 
-export default function Titlebar({ connected }) {
-  const minimize = () => window.electronAPI?.minimizeWindow()
-  const maximize = () => window.electronAPI?.maximizeWindow()
-  const close = () => window.electronAPI?.closeWindow()
+const LEVELS = ['DEBUG', 'INFO', 'WARNING']
 
+export default function Titlebar({ connected, logsEnabled, onToggleLogs, logLevel, onChangeLogLevel }) {
   return (
     <div style={{
       height: 'var(--titlebar-h)',
@@ -52,6 +50,54 @@ export default function Titlebar({ connected }) {
         }} />
         {connected ? 'daemon connected' : 'disconnected'}
       </span>
+
+      {/* right-aligned cluster: log level + logs toggle */}
+      <div style={{
+        marginLeft: 'auto',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        WebkitAppRegion: 'no-drag',
+      }}>
+        <select
+          value={logLevel || 'INFO'}
+          onChange={(e) => onChangeLogLevel?.(e.target.value)}
+          title="Daemon log level"
+          style={{
+            background: 'var(--bg-panel)',
+            color: 'var(--text-secondary)',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: 4,
+            fontFamily: 'var(--font-mono)',
+            fontSize: 10,
+            padding: '3px 6px',
+            cursor: 'pointer',
+            letterSpacing: '0.08em',
+          }}
+        >
+          {LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
+        </select>
+
+        <button
+          onClick={() => onToggleLogs?.(!logsEnabled)}
+          title="Stream HTTP request logs into the Activity panel"
+          style={{
+            background: logsEnabled ? 'rgba(0,255,136,0.12)' : 'transparent',
+            color: logsEnabled ? 'var(--neon-green)' : 'var(--text-muted)',
+            border: `1px solid ${logsEnabled ? 'var(--neon-green)' : 'var(--border-subtle)'}`,
+            borderRadius: 4,
+            fontFamily: 'var(--font-mono)',
+            fontSize: 10,
+            padding: '3px 8px',
+            cursor: 'pointer',
+            letterSpacing: '0.1em',
+            textTransform: 'uppercase',
+            transition: 'all 0.2s',
+          }}
+        >
+          Logs {logsEnabled ? 'ON' : 'OFF'}
+        </button>
+      </div>
     </div>
   )
 }

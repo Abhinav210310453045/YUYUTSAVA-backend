@@ -53,9 +53,12 @@ CREATE TABLE IF NOT EXISTS proposals (
     urgency      INTEGER NOT NULL,
     created_ts   REAL NOT NULL,
     expires_ts   REAL NOT NULL,
-    status       TEXT NOT NULL CHECK (status IN ('pending','approved','skipped','expired','modified'))
+    status       TEXT NOT NULL CHECK (status IN ('pending','approved','skipped','expired','modified')),
+    session_id   TEXT,
+    agent_path   TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_proposals_status ON proposals(status, expires_ts);
+CREATE INDEX IF NOT EXISTS idx_proposals_session ON proposals(session_id);
 
 CREATE TABLE IF NOT EXISTS decisions (
     decision_id    TEXT PRIMARY KEY,
@@ -63,9 +66,18 @@ CREATE TABLE IF NOT EXISTS decisions (
     event_id       TEXT NOT NULL,
     outcome        TEXT NOT NULL,
     action_summary TEXT,
-    ts             REAL NOT NULL
+    ts             REAL NOT NULL,
+    session_id     TEXT,
+    agent_path     TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_decisions_ts ON decisions(ts);
+
+-- Schema version anchor for forward migrations. Current schema is v2
+-- (added session_id/agent_path to proposals & decisions).
+CREATE TABLE IF NOT EXISTS schema_meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS consent_rules (
     rule_id     TEXT PRIMARY KEY,
@@ -96,6 +108,46 @@ CREATE TABLE IF NOT EXISTS user_prefs (
 """
 
 
+_SCHEMA_VERSION = 2
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Idempotent migrations for existing DBs.
+
+    `CREATE TABLE IF NOT EXISTS` won't add columns to a pre-existing table, so
+    forward migrations need explicit ALTER statements gated on `schema_meta.version`.
+    """
+    row = conn.execute(
+        "SELECT value FROM schema_meta WHERE key='version'"
+    ).fetchone()
+    current = int(row["value"]) if row else 0
+
+    if current < 2:
+        existing_proposal_cols = {
+            r["name"] for r in conn.execute("PRAGMA table_info(proposals)").fetchall()
+        }
+        if "session_id" not in existing_proposal_cols:
+            conn.execute("ALTER TABLE proposals ADD COLUMN session_id TEXT")
+        if "agent_path" not in existing_proposal_cols:
+            conn.execute("ALTER TABLE proposals ADD COLUMN agent_path TEXT")
+
+        existing_decision_cols = {
+            r["name"] for r in conn.execute("PRAGMA table_info(decisions)").fetchall()
+        }
+        if "session_id" not in existing_decision_cols:
+            conn.execute("ALTER TABLE decisions ADD COLUMN session_id TEXT")
+        if "agent_path" not in existing_decision_cols:
+            conn.execute("ALTER TABLE decisions ADD COLUMN agent_path TEXT")
+
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_proposals_session ON proposals(session_id)")
+
+    conn.execute(
+        "INSERT INTO schema_meta(key, value) VALUES('version', ?) "
+        "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        (str(_SCHEMA_VERSION),),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Records
 # ---------------------------------------------------------------------------
@@ -115,6 +167,8 @@ class Proposal:
     created_ts: float
     expires_ts: float
     status: str = "pending"
+    session_id: str | None = None
+    agent_path: str | None = None
 
     @classmethod
     def new(
@@ -127,6 +181,8 @@ class Proposal:
         subagent: str,
         urgency: int,
         expiry_sec: int,
+        session_id: str | None = None,
+        agent_path: str | None = None,
     ) -> Proposal:
         now = time.time()
         return cls(
@@ -140,6 +196,8 @@ class Proposal:
             created_ts=now,
             expires_ts=now + expiry_sec,
             status="pending",
+            session_id=session_id,
+            agent_path=agent_path,
         )
 
 
@@ -180,6 +238,7 @@ class Store:
         # WAL keeps readers non-blocking against the single writer.
         self._conn.executescript("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")
         self._conn.executescript(_SCHEMA)
+        _migrate(self._conn)
         self._conn.commit()
         self._writer_task = asyncio.create_task(self._writer_loop(), name="store-writer")
 
@@ -228,9 +287,10 @@ class Store:
     async def put_proposal(self, p: Proposal) -> None:
         await self._write_q.put((
             "INSERT INTO proposals(proposal_id, event_id, topic, summary, proposed, subagent, "
-            "urgency, created_ts, expires_ts, status) VALUES(?,?,?,?,?,?,?,?,?,?)",
+            "urgency, created_ts, expires_ts, status, session_id, agent_path) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
             (p.proposal_id, p.event_id, p.topic, p.summary, p.proposed, p.subagent,
-             p.urgency, p.created_ts, p.expires_ts, p.status),
+             p.urgency, p.created_ts, p.expires_ts, p.status, p.session_id, p.agent_path),
         ))
 
     async def put_decision(
@@ -241,11 +301,14 @@ class Store:
         outcome: str,
         action_summary: str | None = None,
         ts: float | None = None,
+        session_id: str | None = None,
+        agent_path: str | None = None,
     ) -> None:
         await self._write_q.put((
-            "INSERT INTO decisions(decision_id, proposal_id, event_id, outcome, action_summary, ts) "
-            "VALUES(?,?,?,?,?,?)",
-            (str(ULID()), proposal_id, event_id, outcome, action_summary, ts or time.time()),
+            "INSERT INTO decisions(decision_id, proposal_id, event_id, outcome, action_summary, ts, "
+            "session_id, agent_path) VALUES(?,?,?,?,?,?,?,?)",
+            (str(ULID()), proposal_id, event_id, outcome, action_summary, ts or time.time(),
+             session_id, agent_path),
         ))
 
     async def put_consent_rule(self, rule: ConsentRule) -> None:
@@ -370,6 +433,22 @@ class Store:
         cur = self._conn.execute(
             "DELETE FROM event_payloads WHERE blob_path LIKE ? AND ts < ?",
             (prefix + "%", older_than_ts),
+        )
+        self._conn.commit()
+        return cur.rowcount
+
+    def delete_event_payloads_older_than(self, older_than_ts: float) -> int:
+        """Delete non-blob ``event_payloads`` rows whose ``ts`` is older than
+        *older_than_ts*. Returns row count.
+
+        Blob-backed rows (``blob_path IS NOT NULL``) are skipped — those are
+        owned by :class:`yuyutsava.daemon.blob_sweeper.BlobSweeper`, which
+        ties their deletion to on-disk file removal.
+        """
+        assert self._conn is not None
+        cur = self._conn.execute(
+            "DELETE FROM event_payloads WHERE blob_path IS NULL AND ts < ?",
+            (older_than_ts,),
         )
         self._conn.commit()
         return cur.rowcount

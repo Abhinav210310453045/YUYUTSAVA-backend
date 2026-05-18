@@ -226,6 +226,11 @@ async def run_session(
                 f"hallucinate success. Re-ask if you wanted that action to run.",
                 file=sys.stderr,
             )
+        # Refresh task_preview so the sessions list shows the most recent intent
+        # rather than the original prompt from the first run.
+        new_preview = (task or "").strip().replace("\n", " ")
+        if new_preview:
+            await store.touch(session.id, task_preview=new_preview)
 
     ticker = _CoalescedTicker(store, session.id)
 

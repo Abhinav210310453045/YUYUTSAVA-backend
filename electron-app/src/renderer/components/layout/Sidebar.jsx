@@ -6,6 +6,12 @@ const icons = {
       <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
     </svg>
   ),
+  sessions: (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10"/>
+      <polyline points="12 6 12 12 16 14"/>
+    </svg>
+  ),
   settings: (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="12" cy="12" r="3"/>
@@ -23,8 +29,9 @@ const icons = {
 export default function Sidebar({ active, onNav, pendingCount, width }) {
   const items = [
     { id: 'proposals', label: 'Proposals', badge: pendingCount },
+    { id: 'sessions', label: 'Sessions' },
     { id: 'settings', label: 'Settings' },
-    { id: 'chat', label: 'Chat', locked: true },
+    { id: 'chat', label: 'Chat' },
   ]
 
   return (

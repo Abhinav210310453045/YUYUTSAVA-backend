@@ -41,6 +41,7 @@ from yuyutsava.skills.registry import SkillRegistry
 from yuyutsava.core.llm import chat_model
 from yuyutsava.agents.task_runner.tools import set_default_policy
 from yuyutsava.daemon.blob_sweeper import BlobSweeper, BlobSweepTarget
+from yuyutsava.daemon.events_sweeper import EventsSweeper
 from yuyutsava.daemon.channels import ChannelRouter
 from yuyutsava.daemon.checkpointing import CheckpointerManager
 from yuyutsava.daemon.lifecycle import install_reload_handler, install_signal_handlers
@@ -58,8 +59,25 @@ from yuyutsava.events.store import Store
 logger = logging.getLogger("yuyutsava.daemon")
 
 
-def _setup_logging(verbose: bool) -> None:
-    level = logging.DEBUG if verbose else logging.INFO
+_LOG_LEVEL_NAMES = ("DEBUG", "INFO", "WARNING")
+
+
+def _resolve_level(name: str | None, fallback: int) -> int:
+    if not name:
+        return fallback
+    upper = name.upper()
+    if upper not in _LOG_LEVEL_NAMES:
+        return fallback
+    return getattr(logging, upper)
+
+
+def _setup_logging(verbose: bool, persisted_level: str | None = None) -> None:
+    # CLI --verbose forces DEBUG; otherwise use persisted pref, else INFO.
+    if verbose:
+        level = logging.DEBUG
+    else:
+        level = _resolve_level(persisted_level, logging.INFO)
+
     handler = logging.StreamHandler(sys.stderr)
     handler.setLevel(level)
     handler.setFormatter(logging.Formatter("%(asctime)s %(levelname).1s %(name)s: %(message)s",
@@ -69,8 +87,10 @@ def _setup_logging(verbose: bool) -> None:
     root.handlers.clear()
     root.addHandler(handler)
     root.propagate = False
-    # Quiet down access logs in the foreground.
-    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+    # Mirror the level to uvicorn so HTTP request logs follow the same knob.
+    logging.getLogger("uvicorn").setLevel(level)
+    logging.getLogger("uvicorn.error").setLevel(level)
+    logging.getLogger("uvicorn.access").setLevel(level)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -167,6 +187,11 @@ async def _async_main(argv: list[str] | None = None) -> int:
     prefs_store = UserPrefsStore(store)
     prefs_injector = PrefsInjector(prefs_store)
 
+    # Re-apply logging with any persisted runtime level (CLI --verbose wins).
+    persisted_level = prefs_store.get("daemon.log_level", None)
+    if not args.verbose and isinstance(persisted_level, str):
+        _setup_logging(args.verbose, persisted_level)
+
     # ── permissions policy (Tier-1.5: auto_approve, ws_* daily caps) ------
     policy = PermissionsPolicy.from_file()
     set_default_policy(policy)
@@ -202,6 +227,10 @@ async def _async_main(argv: list[str] | None = None) -> int:
         ],
     )
     await blob_sweeper.start()
+
+    # ── events sweeper (TTL for non-blob event_payloads rows) ------------
+    events_sweeper = EventsSweeper(store=store)
+    await events_sweeper.start()
 
     # ── bus ---------------------------------------------------------------
     bus = EventBus()
@@ -342,9 +371,12 @@ async def _async_main(argv: list[str] | None = None) -> int:
             skill_registry=skill_registry,
             config_reload=_hot_reload_events_config,
         )
+        uvicorn_level = logging.getLevelName(
+            logging.getLogger("yuyutsava").getEffectiveLevel()
+        ).lower()
         config = uvicorn.Config(
             app, host=daemon_cfg.web_host, port=daemon_cfg.web_port,
-            log_level="warning", access_log=False, lifespan="on",
+            log_level=uvicorn_level, access_log=True, lifespan="on",
         )
         web_server = uvicorn.Server(config)
 
@@ -426,6 +458,7 @@ async def _async_main(argv: list[str] | None = None) -> int:
         await channels.shutdown()
         await mcp_manager.stop()
         await blob_sweeper.stop()
+        await events_sweeper.stop()
         await checkpointer_mgr.stop()
         await store.stop()
         logger.info("bye")

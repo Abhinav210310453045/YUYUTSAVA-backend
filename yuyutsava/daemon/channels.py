@@ -62,6 +62,8 @@ class AskPrompt:
     body: str
     options: list[str]              # e.g. ["approve","reject"] or free-text if empty
     interrupt_value: dict[str, Any]  # raw langgraph interrupt for caller context
+    session_id: str | None = None    # thread_id of the originating run (HITL scoping)
+    agent_path: str | None = None    # e.g. "orchestrator/file_organizer#1" — who's asking
 
 
 @dataclass(frozen=True)

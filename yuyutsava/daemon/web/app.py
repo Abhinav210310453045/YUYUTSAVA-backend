@@ -10,9 +10,10 @@ host avoids accidentally exposing an unauthenticated agent to the LAN.
 
 from __future__ import annotations
 
+import time
 from typing import Awaitable, Callable
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from yuyutsava.daemon.web.exceptions import register_exception_handlers
@@ -20,8 +21,10 @@ from yuyutsava.daemon.web.routers import (
     config as config_router,
     decisions as decisions_router,
     health as health_router,
+    logs as logs_router,
     proposals as proposals_router,
     rules as rules_router,
+    sessions as sessions_router,
     skills as skills_router,
     static_files as static_router,
     stream as stream_router,
@@ -74,14 +77,43 @@ def create_app(
 
     register_exception_handlers(app)
 
+    @app.middleware("http")
+    async def _broadcast_http_log(request: Request, call_next):
+        path = request.url.path
+        start = time.perf_counter()
+        response = await call_next(request)
+        # Suppress feedback loop: /stream subscribers would receive their own
+        # request event. Static assets are noisy and not interesting.
+        if path == "/stream" or path.startswith("/static"):
+            return response
+        duration_ms = int((time.perf_counter() - start) * 1000)
+        try:
+            await hub.broadcast({
+                "type": "event",
+                "kind": "http_log",
+                "data": {
+                    "method": request.method,
+                    "path": path,
+                    "status": response.status_code,
+                    "duration_ms": duration_ms,
+                    "ts": time.time(),
+                },
+            })
+        except Exception:
+            # Broadcasting must never break a request.
+            pass
+        return response
+
     for r in (
         health_router.router,
         stream_router.router,
         proposals_router.router,
         rules_router.router,
         decisions_router.router,
+        sessions_router.router,
         skills_router.router,
         config_router.router,
+        logs_router.router,
         static_router.router,
     ):
         app.include_router(r)

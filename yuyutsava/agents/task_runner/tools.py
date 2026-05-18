@@ -346,10 +346,13 @@ def bind_tools(workspace_root: Path, sandbox_root: Path | None = None) -> list[B
         Returns:
             JSON: {status, result: {response: <user's answer>}}
         """
+        from yuyutsava.core.agent_context import current_context
+
         payload = {
             "type": "user_question",
             "question": question,
             "options": options or [],
+            **current_context(),
         }
         response: str = interrupt(payload)
         return json.dumps({"status": "success", "result": {"response": response}})

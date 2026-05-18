@@ -3,11 +3,13 @@ import Titlebar from './components/layout/Titlebar'
 import Sidebar from './components/layout/Sidebar'
 import ActivityLog from './components/layout/ActivityLog'
 import ProposalsPanel from './components/proposals/ProposalsPanel'
+import SessionsPanel from './components/sessions/SessionsPanel'
 import SettingsPanel from './components/settings/SettingsPanel'
 import ChatPanel from './components/chat/ChatPanel'
 import InWindowToast from './components/notifications/InWindowToast'
-import { useSSE } from './hooks/useSSE.jsx'
+import { useSSE, getLogsEnabled, setLogsEnabled } from './hooks/useSSE.jsx'
 import { NotificationsProvider } from './hooks/useNotifications.jsx'
+import { getLogLevel, setLogLevel } from './api/client'
 
 const SIDEBAR_MIN = 48
 const SIDEBAR_MAX = 200
@@ -44,7 +46,24 @@ function ResizeHandle({ onMouseDown, side }) {
 
 export default function App() {
   const [activePanel, setActivePanel] = useState('proposals')
-  const { proposals, asks, logLines, connected, pendingCount, removeProposal, removeAsk } = useSSE()
+  const { proposals, asks, eventLines, logLines, connected, pendingCount, removeProposal, removeAsk } = useSSE()
+
+  const [logsEnabled, setLogsEnabledState] = useState(getLogsEnabled())
+  const [logLevel, setLogLevelState] = useState('INFO')
+
+  useEffect(() => {
+    getLogLevel().then((r) => setLogLevelState(r.level)).catch(() => {})
+  }, [])
+
+  const onToggleLogs = useCallback((next) => {
+    setLogsEnabled(next)
+    setLogsEnabledState(next)
+  }, [])
+
+  const onChangeLogLevel = useCallback((next) => {
+    setLogLevelState(next)
+    setLogLevel(next).catch(() => {})
+  }, [])
 
   // OS banner click forwarded from main: bring proposals tab forward so the
   // highlighted card is visible. The id-scroll happens inside ProposalsPanel,
@@ -95,10 +114,21 @@ export default function App() {
         background: 'var(--bg-deep)',
         overflow: 'hidden',
       }}>
-        <Titlebar connected={connected} />
+        <Titlebar
+          connected={connected}
+          logsEnabled={logsEnabled}
+          onToggleLogs={onToggleLogs}
+          logLevel={logLevel}
+          onChangeLogLevel={onChangeLogLevel}
+        />
 
         <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-          <Sidebar active={activePanel} onNav={setActivePanel} pendingCount={pendingCount} width={sidebarW} />
+          <Sidebar
+            active={activePanel}
+            onNav={(id) => setActivePanel((p) => (p === id ? 'chat' : id))}
+            pendingCount={pendingCount}
+            width={sidebarW}
+          />
 
           <ResizeHandle onMouseDown={(e) => startDrag('sidebar', e)} side="left" />
 
@@ -112,13 +142,14 @@ export default function App() {
                 onRemoveAsk={removeAsk}
               />
             )}
+            {activePanel === 'sessions' && <SessionsPanel />}
             {activePanel === 'settings' && <SettingsPanel />}
             {activePanel === 'chat' && <ChatPanel />}
           </div>
 
           <ResizeHandle onMouseDown={(e) => startDrag('activity', e)} side="right" />
 
-          <ActivityLog lines={logLines} width={activityW} />
+          <ActivityLog events={eventLines} logs={logLines} width={activityW} />
         </div>
 
         <InWindowToast />
