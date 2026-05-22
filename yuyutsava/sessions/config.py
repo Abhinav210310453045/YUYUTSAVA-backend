@@ -10,7 +10,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from yuyutsava.core.config import sessions_db_path
+from yuyutsava.core.config import interrupts_db_path, sessions_db_path
 
 
 @dataclass(frozen=True)
@@ -18,6 +18,7 @@ class SessionsSettings:
     db_path: Path
     backend: str = "sqlite"
     busy_timeout_ms: int = 5000
+    interrupts_db_path: Path | None = None
 
     @classmethod
     def from_env(cls) -> "SessionsSettings":
@@ -25,4 +26,5 @@ class SessionsSettings:
             db_path=sessions_db_path(),
             backend=os.environ.get("YUYUTSAVA_SESSIONS_BACKEND", "sqlite").strip().lower(),
             busy_timeout_ms=int(os.environ.get("YUYUTSAVA_SESSIONS_BUSY_TIMEOUT_MS", "5000")),
+            interrupts_db_path=interrupts_db_path(),
         )

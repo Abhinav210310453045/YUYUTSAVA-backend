@@ -3347,6 +3347,15 @@ wheels = [
 ]
 
 [[package]]
+name = "sqlglot"
+version = "30.8.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/0f/64/89299aefc6ebdf4fc899f5dc14c7fcb7eb9da9290a2b4d615ae7ab884b17/sqlglot-30.8.0.tar.gz", hash = "sha256:1c5f93fb742dd9aaa75eee6bb33a637794a858b9a86375fac23a2dc0f7bc127e", size = 5869750, upload-time = "2026-05-13T09:04:38.923Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/88/4e/80705091aaf9c95e125d243f0aa871bc9f3670b4c9d963e6bad3b3dce8ff/sqlglot-30.8.0-py3-none-any.whl", hash = "sha256:af903378c331d5b72277a1b41118f07bc3e50cf4478e2d47eed12c96ee6a22a4", size = 687831, upload-time = "2026-05-13T09:04:36.336Z" },
+]
+
+[[package]]
 name = "sqlite-vec"
 version = "0.1.9"
 source = { registry = "https://pypi.org/simple" }
@@ -4172,6 +4181,7 @@ name = "yuyutsava"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "aiosqlite" },
     { name = "deepagents" },
     { name = "exa-py" },
     { name = "fastapi" },
@@ -4188,6 +4198,7 @@ dependencies = [
     { name = "python-ulid" },
     { name = "pyyaml" },
     { name = "requests" },
+    { name = "sqlglot" },
     { name = "sse-starlette" },
     { name = "streamlit" },
     { name = "tavily-python" },
@@ -4214,6 +4225,7 @@ voice = [
 
 [package.metadata]
 requires-dist = [
+    { name = "aiosqlite", specifier = ">=0.20.0" },
     { name = "deepagents", specifier = ">=0.4.12" },
     { name = "deepface", marker = "extra == 'deepface'", specifier = ">=0.0.93" },
     { name = "exa-py", specifier = ">=1.1.0" },
@@ -4238,6 +4250,7 @@ requires-dist = [
     { name = "requests", specifier = ">=2.32.5" },
     { name = "sounddevice", marker = "extra == 'voice'", specifier = ">=0.4.6" },
     { name = "soundfile", marker = "extra == 'voice'", specifier = ">=0.12.1" },
+    { name = "sqlglot", specifier = ">=25.0.0" },
     { name = "sse-starlette", specifier = ">=2.0.0" },
     { name = "streamlit", specifier = ">=1.56.0" },
     { name = "tavily-python", specifier = ">=0.5.0" },

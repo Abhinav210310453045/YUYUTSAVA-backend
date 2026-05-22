@@ -37,7 +37,7 @@ _SUPPRESS_NAMES: frozenset[str] = frozenset({
 # Prefix suppression: all our custom-prefixed tools are hidden from the LLM
 # upfront. The agent calls tool_search('tr_*') / tool_search('ws_*') to
 # discover their schemas on demand.
-_SUPPRESS_PREFIXES: tuple[str, ...] = ("tr_", "ws_", "sk_", "fo_", "ev_")
+_SUPPRESS_PREFIXES: tuple[str, ...] = ("tr_", "ws_", "sk_", "fo_", "ev_", "db_")
 
 
 def _should_suppress(name: str) -> bool:

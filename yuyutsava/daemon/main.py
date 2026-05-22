@@ -28,6 +28,7 @@ except ImportError:  # pragma: no cover
 
 from yuyutsava.agents.face_watcher.agent import FaceWatcherAgent
 from yuyutsava.agents.file_organizer.agent import FileOrganizerAgent
+from yuyutsava.agents.general_purpose.agent import GeneralPurposeAgent
 from yuyutsava.agents.orchestrator.agent import OrchestratorDeps
 from yuyutsava.agents.orchestrator.capabilities import render_capabilities_block
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
@@ -295,6 +296,14 @@ async def _async_main(argv: list[str] | None = None) -> int:
         ),
         FaceWatcherAgent(
             task_runner, store,
+            skill_registry=skill_registry,
+            mcp_manager=mcp_manager,
+            search_config=search_config,
+            cap_enforcer=cap_enforcer,
+        ),
+        # name="general-purpose" suppresses deepagents' built-in default.
+        GeneralPurposeAgent(
+            task_runner,
             skill_registry=skill_registry,
             mcp_manager=mcp_manager,
             search_config=search_config,

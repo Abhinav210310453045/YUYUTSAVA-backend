@@ -108,7 +108,12 @@ def _get_or_create_agent(workspace_root: Path, sandbox_root: Path | None = None)
 # ---------------------------------------------------------------------------
 
 
-def bind_tools(workspace_root: Path, sandbox_root: Path | None = None) -> list[BaseTool]:
+def bind_tools(
+    workspace_root: Path,
+    sandbox_root: Path | None = None,
+    *,
+    agent_name: str = "agent",
+) -> list[BaseTool]:
     """
     Return the TaskRunner tools bound to *workspace_root*.
 
@@ -121,6 +126,10 @@ def bind_tools(workspace_root: Path, sandbox_root: Path | None = None) -> list[B
 
     Each file/shell tool returns a JSON string (OperationResponse.model_dump_json())
     so the calling LLM sees a structured, parseable result in its ToolMessage.
+
+    ``agent_name`` flows into ``OperationRequest.requesting_agent`` and is used
+    by the HITL machinery to append ``/<agent_name>`` to ``agent_path`` in
+    every interrupt payload — so the UI knows which subagent is asking.
     """
     agent = _get_or_create_agent(workspace_root, sandbox_root)
 
@@ -150,8 +159,7 @@ def bind_tools(workspace_root: Path, sandbox_root: Path | None = None) -> list[B
         _log.debug("[tr_read_file] path=%s offset=%s limit=%s", real_path, offset, limit)
         request = OperationRequest(
             request_id=str(uuid.uuid4()),
-            #TODO: Add the agent name who is going to use this tool
-            requesting_agent="agent",
+            requesting_agent=agent_name,
             task_id=str(uuid.uuid4()),
             task_description=reason,
             operation=OperationType.READ,
@@ -183,8 +191,7 @@ def bind_tools(workspace_root: Path, sandbox_root: Path | None = None) -> list[B
         _log.debug("[tr_write_file] path=%s bytes=%d", real_path, len(content.encode()))
         request = OperationRequest(
             request_id=str(uuid.uuid4()),
-            #TODO: Add the agent name who is going to use this tool
-            requesting_agent="agent",
+            requesting_agent=agent_name,
             task_id=str(uuid.uuid4()),
             task_description=reason,
             operation=OperationType.WRITE,
@@ -215,8 +222,7 @@ def bind_tools(workspace_root: Path, sandbox_root: Path | None = None) -> list[B
         _log.debug("[tr_delete_file] path=%s", real_path)
         request = OperationRequest(
             request_id=str(uuid.uuid4()),
-            #TODO: Add the agent name who is going to use this tool
-            requesting_agent="agent",
+            requesting_agent=agent_name,
             task_id=str(uuid.uuid4()),
             task_description=reason,
             operation=OperationType.DELETE,
@@ -253,8 +259,7 @@ def bind_tools(workspace_root: Path, sandbox_root: Path | None = None) -> list[B
         _log.debug("[tr_execute_in_sandbox] cmd=%s", command[:200])
         request = OperationRequest(
             request_id=str(uuid.uuid4()),
-            #TODO: Add the agent name who is going to use this tool
-            requesting_agent="agent",
+            requesting_agent=agent_name,
             task_id=str(uuid.uuid4()),
             task_description=reason,
             operation=OperationType.EXECUTE,
@@ -308,8 +313,7 @@ def bind_tools(workspace_root: Path, sandbox_root: Path | None = None) -> list[B
         sandbox_path = str(agent.sandbox_root)
         request = OperationRequest(
             request_id=str(uuid.uuid4()),
-            #TODO: Add the agent name who is going to use this tool
-            requesting_agent="agent",
+            requesting_agent=agent_name,
             task_id=str(uuid.uuid4()),
             task_description=reason,
             operation=OperationType.EXECUTE,
@@ -348,11 +352,18 @@ def bind_tools(workspace_root: Path, sandbox_root: Path | None = None) -> list[B
         """
         from yuyutsava.core.agent_context import current_context
 
+        ctx = current_context()
+        parent_path = ctx.get("agent_path") or "orchestrator"
+        # Override agent_path so the UI knows which subagent (not just "orchestrator")
+        # is the asker. When agent_name is the default "agent" (no subagent), keep
+        # the parent path unchanged.
+        if agent_name and agent_name != "agent" and not parent_path.endswith(f"/{agent_name}"):
+            ctx = {**ctx, "agent_path": f"{parent_path}/{agent_name}"}
         payload = {
             "type": "user_question",
             "question": question,
             "options": options or [],
-            **current_context(),
+            **ctx,
         }
         response: str = interrupt(payload)
         return json.dumps({"status": "success", "result": {"response": response}})
@@ -383,7 +394,7 @@ def bind_tools(workspace_root: Path, sandbox_root: Path | None = None) -> list[B
         # This forces a user permission check before every execution.
         request = OperationRequest(
             request_id=str(uuid.uuid4()),
-            requesting_agent="agent",
+            requesting_agent=agent_name,
             task_id=str(uuid.uuid4()),
             task_description=reason,
             operation=OperationType.EXECUTE,

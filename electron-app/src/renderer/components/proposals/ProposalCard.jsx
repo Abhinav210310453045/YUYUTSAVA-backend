@@ -77,6 +77,29 @@ export default function ProposalCard({ proposal, onResolved }) {
           <span style={{ color: 'var(--text-muted)', fontSize: 10, fontFamily: 'var(--font-mono)' }}>
             {proposal.topic}
           </span>
+          {proposal.agent_path && (
+            <span
+              title={proposal.agent_path}
+              style={{
+                fontFamily: 'var(--font-mono)',
+                fontSize: 10,
+                color: 'var(--text-secondary)',
+                background: 'rgba(255,255,255,0.04)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                borderRadius: 3,
+                padding: '2px 6px',
+              }}
+            >
+              {proposal.agent_path.split('/').slice(-2).join('/')}
+            </span>
+          )}
+          {proposal.session_id && (
+            <span title={proposal.session_id} style={{
+              fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-dim)',
+            }}>
+              sess: {String(proposal.session_id).slice(-8)}
+            </span>
+          )}
         </div>
         <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
           {URGENCY_DOTS(proposal.urgency || 0)}

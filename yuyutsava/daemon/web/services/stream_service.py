@@ -91,6 +91,8 @@ class WebChannel(UserChannel):
                 "title": a.title,
                 "body": a.body,
                 "options": a.options,
+                "session_id": a.session_id,
+                "agent_path": a.agent_path,
             },
         })
         try:

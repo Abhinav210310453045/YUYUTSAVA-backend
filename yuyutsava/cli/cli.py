@@ -20,11 +20,14 @@ try:
 except ImportError:
     load_dotenv = None  # type: ignore[assignment, misc]
 
+from yuyutsava.agents.general_purpose.agent import GeneralPurposeAgent
+from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
 from yuyutsava.cli.scenarios import format_scenario_list, get_scenario
 from yuyutsava.core.config import DockerSettings, LocalSettings, SearchConfig, llm_settings_from_env
 from yuyutsava.core.engine import (
     _cleanup_local_sandbox,
     build_agent,
+    build_cli_deepagent,
     builtin_tools_reference_json,
     export_agent_state_graph_png,
     setup_logging,
@@ -38,6 +41,7 @@ from yuyutsava.sessions import (
     get_default_session_store,
     run_session,
 )
+from yuyutsava.skills.registry import SkillRegistry
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -550,7 +554,25 @@ async def _async_main(argv: list[str] | None = None) -> int:
     sessions_settings = SessionsSettings.from_env()
 
     async with build_checkpointer(sessions_settings) as checkpointer:
-        bundle = build_agent(
+        # Subagents wired into the CLI deepagent. Currently just general-purpose:
+        # passing it as a subagent spec causes deepagents to name-match-override
+        # its built-in default with OUR tighter prompt + lazy tool discovery.
+        skill_registry = SkillRegistry(workspace_dir=workspace)
+        sandbox_root_for_tr = (
+            local_cfg.sandbox_dir.resolve()
+            if local_cfg.sandbox_dir is not None
+            else (workspace / "_sandbox").resolve()
+        )
+        task_runner = TaskRunnerAgent(
+            workspace_root=workspace,
+            sandbox_root=sandbox_root_for_tr,
+        )
+        general_purpose = GeneralPurposeAgent(
+            task_runner=task_runner,
+            skill_registry=skill_registry,
+            search_config=search_cfg,
+        )
+        bundle = build_cli_deepagent(
             workspace,
             settings,
             bash_timeout_sec=args.bash_timeout,
@@ -560,6 +582,7 @@ async def _async_main(argv: list[str] | None = None) -> int:
             permission_check=not args.no_permission_check,
             search_config=search_cfg,
             checkpointer=checkpointer,
+            subagents=[general_purpose],
         )
         try:
             try:
@@ -571,6 +594,7 @@ async def _async_main(argv: list[str] | None = None) -> int:
                     resume_id=args.resume,
                     continue_latest=args.continue_,
                     recursion_limit=args.recursion_limit,
+                    agent_path="cli",
                 )
             except ResumeFailed as exc:
                 print(f"Error: {exc}", file=sys.stderr)
