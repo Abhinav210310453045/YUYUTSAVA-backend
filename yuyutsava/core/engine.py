@@ -294,9 +294,12 @@ def _build_tool_registry_and_tools(
     All custom tools go into the graph for execution; only tool_search is
     visible to the LLM upfront (the ToolFilterMiddleware hides tr_*/ws_* etc.).
     """
+    from yuyutsava.agents.db_tools import make_db_tools
+
     search_tools = make_search_tools(search_config) if search_config else []
     skill_tools = make_skill_tools(skill_registry) if skill_registry else []
-    all_custom_tools = task_runner_tools + search_tools + skill_tools
+    db_tools = make_db_tools()  # always available — read-only by construction
+    all_custom_tools = task_runner_tools + search_tools + skill_tools + db_tools
 
     registry = ToolRegistry()
     registry.register_many(all_custom_tools)
@@ -309,7 +312,7 @@ def _build_tool_registry_and_tools(
     return startup_tools, registry
 
 
-def build_agent(
+def build_cli_deepagent(
     workspace_root: Path,
     settings: LlmSettings,
     *,
@@ -320,20 +323,27 @@ def build_agent(
     permission_check: bool = True,
     search_config: SearchConfig | None = None,
     checkpointer: BaseCheckpointSaver | None = None,
+    subagents: "list[Any] | None" = None,
 ) -> AgentBundle:
-    """Build a Deep Agent; ``local`` uses ``LocalShellBackend``, ``docker`` uses ``DockerSandboxBackend``.
+    """Build the CLI deepagent.
+
+    Distinct factory from :func:`build_orchestrator`: the CLI is a single
+    deepagent (no event-driven Triage, no ChannelRouter, no daemon Store);
+    delegation to specialised subagents happens via deepagents' built-in
+    ``task(subagent_type, ...)`` tool when ``subagents=[…]`` is passed.
 
     Args:
         permission_check: When ``True`` (default), attaches ``PermissionMiddleware`` so
             the agent pauses and asks the user before running dangerous shell commands.
-            Pass ``False`` to disable (e.g. in automated / non-interactive pipelines).
         search_config: When provided, ws_* web search tools are added and made
-            discoverable via tool_search('ws_*'). Pass ``SearchConfig.from_env()``
-            to auto-load from TAVILY_API_KEY / EXA_API_KEY env vars.
+            discoverable via tool_search('ws_*').
         checkpointer: Optional persistent checkpointer. When omitted, falls back
-            to in-process ``MemorySaver()`` so existing callers (graph export,
-            tests) keep working unchanged. The CLI passes a SQLite-backed saver
-            so sessions survive Ctrl+C / crash / power loss.
+            to in-process ``MemorySaver()``.
+        subagents: Optional list of ``BaseSubAgent`` instances. Each is converted
+            via ``as_deepagents_subagent_spec()`` and passed to ``create_deep_agent``.
+            Passing ``GeneralPurposeAgent`` here name-match-overrides deepagents'
+            built-in default (see ``deepagents.graph`` ~line 240-246), so
+            ``task('general-purpose', …)`` calls hit our tighter spec.
     """
     model = chat_model(settings)
     checkpointer = checkpointer or MemorySaver()
@@ -347,6 +357,10 @@ def build_agent(
     output_dir   = (loc.output_dir.resolve()  if loc.output_dir  else ws / "_output")
 
     skill_registry = SkillRegistry(workspace_dir=ws)
+
+    subagent_specs: list[dict] | None = None
+    if subagents:
+        subagent_specs = [sa.as_deepagents_subagent_spec() for sa in subagents]
 
     if execution_mode == "docker":
         docker_cfg = docker_settings or DockerSettings()
@@ -371,6 +385,7 @@ def build_agent(
             system_prompt=_docker_system_prompt(workspace_root, docker_cfg.export_dir),
             checkpointer=checkpointer,
             middleware=middleware,
+            subagents=subagent_specs,
             debug=False,
         )
         return AgentBundle(agent=graph, docker_backend=docker_backend)
@@ -386,9 +401,90 @@ def build_agent(
         system_prompt=_local_system_prompt(workspace_root, sandbox_root, output_dir),
         checkpointer=checkpointer,
         middleware=middleware,
+        subagents=subagent_specs,
         debug=False,
     )
     return AgentBundle(agent=graph, docker_backend=None, sandbox_root=sandbox_root, output_dir=output_dir)
+
+
+# Back-compat alias. Old callers that still say ``build_agent`` keep working
+# for one cycle; new code should prefer ``build_cli_deepagent``.
+build_agent = build_cli_deepagent
+
+
+def build_orchestrator(
+    *,
+    model: "BaseChatModel",
+    deps: "OrchestratorDeps",
+    budget_tokens: int,
+    skill_registry: "SkillRegistry | None" = None,
+    checkpointer: BaseCheckpointSaver | None = None,
+    prefs_block: str = "",
+) -> CompiledStateGraph:
+    """Build the daemon orchestrator: master deepagent + pre-registered subagents.
+
+    Moved here from ``yuyutsava/agents/orchestrator/agent.py`` so all master
+    agents are built from the shared engine. ``OrchestratorDeps`` and the
+    ``_make_ask_user_tool`` helper still live in that module — they are agent
+    *definition*, not build mechanics.
+    """
+    # Lazy imports: this function is in engine.py but pulls daemon-only modules.
+    # Keeping these imports inside the function avoids loading the daemon stack
+    # when the CLI imports the engine.
+    from deepagents.backends import LocalShellBackend
+    from yuyutsava.agents.orchestrator.agent import _make_ask_user_tool
+    from yuyutsava.agents.orchestrator.capabilities import render_capabilities_block
+    from yuyutsava.agents.orchestrator.prompts import render_system_prompt
+    from yuyutsava.daemon.budget import BudgetMiddleware
+    from yuyutsava.events.tools import make_recall_tool
+
+    capabilities = render_capabilities_block(list(deps.subagents.values()))
+    skills_index = skill_registry.index_block(agent="orchestrator") if skill_registry else ""
+    system_prompt = render_system_prompt(capabilities, skills_index=skills_index, prefs_block=prefs_block)
+
+    master_tools: list = [
+        _make_ask_user_tool(deps.channels),
+        make_recall_tool(deps.store),
+        # spawn_subagent is intentionally NOT registered. The orchestrator
+        # delegates dynamic tasks to the `general-purpose` subagent instead.
+    ]
+    if skill_registry:
+        master_tools.extend(make_skill_tools(skill_registry))
+    if deps.search_config is not None:
+        master_tools.extend(make_search_tools(deps.search_config, cap_enforcer=deps.cap_enforcer))
+    if deps.mcp_manager is not None:
+        master_tools.extend(deps.mcp_manager.tools_for("orchestrator"))
+
+    subagent_specs = []
+    for sa in deps.subagents.values():
+        spec = sa.as_deepagents_subagent_spec()
+        spec["model"] = deps.subagent_model
+        spec["middleware"] = [
+            ToolFilterMiddleware(),
+            BudgetMiddleware(max_input_tokens=deps.subagent_token_budget, role=sa.name),
+        ]
+        subagent_specs.append(spec)
+
+    budget = BudgetMiddleware(max_input_tokens=budget_tokens, role="orchestrator")
+    workspace_root = str(deps.workspace_root.resolve()) if deps.workspace_root else "/"
+
+    def _backend_factory(_runtime):
+        return LocalShellBackend(
+            root_dir=workspace_root,
+            virtual_mode=True,
+            timeout=10,
+            inherit_env=False,
+        )
+
+    return create_deep_agent(
+        model=model,
+        tools=master_tools,
+        backend=_backend_factory,
+        system_prompt=system_prompt,
+        checkpointer=checkpointer if checkpointer is not None else MemorySaver(),
+        middleware=[ToolFilterMiddleware(), budget],
+        subagents=subagent_specs,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -595,17 +691,73 @@ def _cleanup_local_sandbox(workspace_root: Path, sandbox_root: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def _prompt_permission(interrupt_value: Any) -> str:
+def _fmt_session_tail(sid: str | None) -> str:
+    """Mirror AskCard/ProposalCard rendering: 'sess:…<last 8>'."""
+    if not sid:
+        return ""
+    s = str(sid)
+    return f"sess:…{s[-8:]}" if len(s) > 8 else f"sess:{s}"
+
+
+def _fmt_agent_path(path: str | None) -> str:
+    """Mirror UI chip: last two path segments (e.g. cli/general-purpose)."""
+    if not path:
+        return ""
+    parts = [p for p in str(path).split("/") if p]
+    return "/".join(parts[-2:]) if parts else ""
+
+
+def _print_scoping_chips(payload: Any, *, colour: str) -> None:
+    """Print agent_path + session tail underneath the interrupt header.
+
+    No-op when neither field is present, so the bare PermissionRequestInterrupt
+    branch stays clean if the daemon never populated them.
+    """
+    if not isinstance(payload, dict):
+        return
+    ap = _fmt_agent_path(payload.get("agent_path"))
+    st = _fmt_session_tail(payload.get("session_id"))
+    if not ap and not st:
+        return
+    chips: list[str] = []
+    if ap:
+        chips.append(f"agent: {ap}")
+    if st:
+        chips.append(st)
+    print(f"  \033[2m{'   '.join(chips)}\033[0m", file=sys.stderr)
+
+
+async def _prompt_permission(
+    interrupt_value: Any,
+    *,
+    interrupts_store: "Any | None" = None,
+    session_id: str | None = None,
+    thread_id: str | None = None,
+    invocation_mode: str = "cli",
+) -> str:
     """Render the interrupt payload to the terminal and collect the user's response.
 
-    Dispatches on the validated interrupt type.  Each branch parses the raw dict
-    into the corresponding typed model so all field access is safe and explicit.
+    When ``interrupts_store`` is provided, every interrupt is also persisted
+    to the audit DB before prompting and resolved after the user answers.
+    Failures to write are swallowed (best-effort audit, never block the user).
 
     Returns the user's response string:
       • "approve" / "reject"  for permission prompts
       • free-text answer      for user questions
     """
     interrupt_type = interrupt_value.get("type", "") if isinstance(interrupt_value, dict) else ""
+
+    row_id = ""
+    if interrupts_store is not None and isinstance(interrupt_value, dict):
+        try:
+            row_id = await interrupts_store.record(
+                payload=interrupt_value,
+                session_id=session_id or "",
+                thread_id=thread_id or "",
+                invocation_mode=invocation_mode,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("interrupts_store.record raised: %s", exc)
 
     # ── tr_ask_user: agent asks a free-text question ───────────────────────
     if interrupt_type == "user_question":
@@ -617,11 +769,14 @@ async def _prompt_permission(interrupt_value: Any) -> str:
         print(f"  {iv.question}", file=sys.stderr)
         if iv.options:
             print(f"  Options: {' | '.join(iv.options)}", file=sys.stderr)
+        _print_scoping_chips(interrupt_value, colour="36")
         print(f"\033[36m{_SEP}\033[0m", file=sys.stderr)
 
         answer: str = await asyncio.to_thread(input, "  Your answer: ")
         response = answer.strip() or "no response"
         print(f"\033[36m  → {response}\033[0m\n", file=sys.stderr)
+        if interrupts_store is not None and row_id:
+            await interrupts_store.resolve(row_id, outcome="answered", user_response=response)
         return response
 
     # ── TaskRunnerAgent: filesystem operation permission request ───────────
@@ -641,6 +796,7 @@ async def _prompt_permission(interrupt_value: Any) -> str:
         print(agent_line, file=sys.stderr)
         print(f"  Reason    : {iv.reason}", file=sys.stderr)
         print(f"  Risk      : {iv.risk_level}", file=sys.stderr)
+        _print_scoping_chips(interrupt_value, colour="35")
         print(f"\033[35m{_SEP}\033[0m", file=sys.stderr)
 
         answer = await asyncio.to_thread(input, "  Allow? [y/N]: ")
@@ -649,6 +805,8 @@ async def _prompt_permission(interrupt_value: Any) -> str:
             print("\033[32m  ✅  Approved\033[0m\n", file=sys.stderr)
         else:
             print("\033[31m  🚫  Rejected\033[0m\n", file=sys.stderr)
+        if interrupts_store is not None and row_id:
+            await interrupts_store.resolve(row_id, outcome=decision)
         return decision
 
     # ── PermissionMiddleware: raw execute call triggered a pattern check ───
@@ -668,6 +826,7 @@ async def _prompt_permission(interrupt_value: Any) -> str:
     print(f"\033[33m{_SEP}\033[0m", file=sys.stderr)
     print(f"  Command : {iv2.command}", file=sys.stderr)
     print(f"  Reason  : {iv2.reason}", file=sys.stderr)
+    _print_scoping_chips(interrupt_value, colour="33")
     print(f"\033[33m{_SEP}\033[0m", file=sys.stderr)
 
     answer = await asyncio.to_thread(input, "  Allow? [y/N]: ")
@@ -676,6 +835,8 @@ async def _prompt_permission(interrupt_value: Any) -> str:
         print("\033[32m  ✅  Approved — running command\033[0m\n", file=sys.stderr)
     else:
         print("\033[31m  🚫  Rejected — command will not run\033[0m\n", file=sys.stderr)
+    if interrupts_store is not None and row_id:
+        await interrupts_store.resolve(row_id, outcome=decision)
     return decision
 
 
@@ -711,6 +872,7 @@ async def astream_agent_iter(
     recursion_limit: int = 200,
     ask_handler=None,  # async (interrupt_value: dict) -> str
     run_name: str = "agent",
+    agent_path: str = "orchestrator",
 ):
     """Async generator that yields ``StreamEvent``s instead of printing them.
 
@@ -720,12 +882,16 @@ async def astream_agent_iter(
     user's decision string. If ``ask_handler`` is None, interrupts are
     auto-rejected (suitable for headless / autonomous runs).
 
+    ``agent_path`` is seeded into ``configurable`` so downstream interrupts can
+    attribute themselves (``"orchestrator"`` by default — daemon-style;
+    ``"cli"`` for direct CLI runs).
+
     Yields events; the final yielded event is always ``StreamEvent("final", {"text": ...})``.
     """
     _tid = thread_id or str(uuid.uuid4())
     cfg: RunnableConfig = {
         "recursion_limit": recursion_limit,
-        "configurable": {"thread_id": _tid, "agent_path": "orchestrator"},
+        "configurable": {"thread_id": _tid, "agent_path": agent_path},
     }
     _lf_cb = get_callback(session_id=_tid, run_name=run_name)
     if _lf_cb is not None:
@@ -825,6 +991,10 @@ async def astream_agent(
     thread_id: str | None = None,
     recursion_limit: int = 200,
     on_tick=None,  # async (steps: int) -> None — progress hook for session bookkeeping
+    agent_path: str = "cli",
+    session_id: str | None = None,
+    interrupts_store: "Any | None" = None,
+    invocation_mode: str = "cli",
 ) -> str:
     """
     Run the agent with real-time async streaming.
@@ -842,7 +1012,7 @@ async def astream_agent(
     _tid = thread_id or str(uuid.uuid4())
     cfg: RunnableConfig = {
         "recursion_limit": recursion_limit,
-        "configurable": {"thread_id": _tid, "agent_path": "orchestrator"},
+        "configurable": {"thread_id": _tid, "agent_path": agent_path},
     }
     _lf_cb = get_callback(session_id=_tid, run_name="cli")
     if _lf_cb is not None:
@@ -999,7 +1169,13 @@ async def astream_agent(
             break
 
         # Ask the user, then resume the graph
-        decision = await _prompt_permission(interrupted_value)
+        decision = await _prompt_permission(
+            interrupted_value,
+            interrupts_store=interrupts_store,
+            session_id=session_id,
+            thread_id=_tid,
+            invocation_mode=invocation_mode,
+        )
         current_input = Command(resume=decision)
 
     final_text = last_assistant_text(final_messages)

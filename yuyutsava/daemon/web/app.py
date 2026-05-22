@@ -10,6 +10,7 @@ host avoids accidentally exposing an unauthenticated agent to the LAN.
 
 from __future__ import annotations
 
+import os
 import time
 from typing import Awaitable, Callable
 
@@ -19,6 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from yuyutsava.daemon.web.exceptions import register_exception_handlers
 from yuyutsava.daemon.web.routers import (
     config as config_router,
+    db as db_router,
     decisions as decisions_router,
     health as health_router,
     logs as logs_router,
@@ -117,5 +119,9 @@ def create_app(
         static_router.router,
     ):
         app.include_router(r)
+
+    # Read-only DB introspection. Opt-out via env (defaults on).
+    if os.environ.get("YUYUTSAVA_DB_API_ENABLED", "true").lower() not in {"0", "false", "no"}:
+        app.include_router(db_router.router)
 
     return app

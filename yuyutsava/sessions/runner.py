@@ -20,6 +20,8 @@ from langchain_core.messages import ToolMessage
 from langgraph.graph.state import CompiledStateGraph
 
 from yuyutsava.core.engine import astream_agent
+from yuyutsava.core.interrupts_store import InterruptsStore
+from yuyutsava.sessions.config import SessionsSettings
 from yuyutsava.sessions.models import Session
 from yuyutsava.sessions.store import SessionNotFound, SessionStore
 
@@ -205,6 +207,8 @@ async def run_session(
     resume_id: str | None = None,
     continue_latest: bool = False,
     recursion_limit: int = 200,
+    agent_path: str = "cli",
+    interrupts_store: InterruptsStore | None = None,
 ) -> str:
     """Persist + run + bookkeep one CLI session.
 
@@ -217,6 +221,21 @@ async def run_session(
     )
     _print_start_banner(session, resuming=resuming)
 
+    # Lazily construct the interrupt audit store from env config when the
+    # caller didn't pass one in. Best-effort: if it fails to open we still run.
+    if interrupts_store is None:
+        try:
+            settings = SessionsSettings.from_env()
+            if settings.interrupts_db_path is not None:
+                interrupts_store = InterruptsStore(
+                    settings.interrupts_db_path,
+                    busy_timeout_ms=settings.busy_timeout_ms,
+                )
+        except Exception as exc:  # noqa: BLE001
+            print(f"\033[33msessions:\033[0m interrupts store init failed: {exc}",
+                  file=sys.stderr)
+            interrupts_store = None
+
     if resuming:
         n_patched = await _patch_orphan_cancellations(agent, session.thread_id)
         if n_patched:
@@ -226,6 +245,18 @@ async def run_session(
                 f"hallucinate success. Re-ask if you wanted that action to run.",
                 file=sys.stderr,
             )
+        if interrupts_store is not None:
+            try:
+                n_orphaned = await interrupts_store.mark_orphaned_for_session(session.id)
+                if n_orphaned:
+                    print(
+                        f"\033[2msessions:\033[0m flagged {n_orphaned} unresolved "
+                        f"interrupt(s) from prior run as orphaned.",
+                        file=sys.stderr,
+                    )
+            except Exception as exc:  # noqa: BLE001
+                print(f"\033[33msessions:\033[0m mark_orphaned failed: {exc}",
+                      file=sys.stderr)
         # Refresh task_preview so the sessions list shows the most recent intent
         # rather than the original prompt from the first run.
         new_preview = (task or "").strip().replace("\n", " ")
@@ -244,6 +275,10 @@ async def run_session(
             thread_id=session.thread_id,
             recursion_limit=recursion_limit,
             on_tick=_on_tick,
+            agent_path=agent_path,
+            session_id=session.id,
+            interrupts_store=interrupts_store,
+            invocation_mode="cli",
         )
         completed = True
         return final

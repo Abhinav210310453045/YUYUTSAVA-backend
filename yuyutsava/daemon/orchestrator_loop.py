@@ -119,12 +119,15 @@ class OrchestratorLoop:
         # Route subagent interrupts (tr_* permission prompts, tr_ask_user) through
         # the daemon's channel router so the user sees them in the web UI / terminal.
         async def ask_handler(interrupt_value: dict) -> str:
+            iv = interrupt_value if isinstance(interrupt_value, dict) else {}
             ask = AskPrompt(
                 ask_id=str(uuid.uuid4()),
                 title=_title_for_interrupt(interrupt_value),
                 body=_body_for_interrupt(interrupt_value),
                 options=_options_for_interrupt(interrupt_value),
-                interrupt_value=dict(interrupt_value) if isinstance(interrupt_value, dict) else {},
+                interrupt_value=dict(iv),
+                session_id=iv.get("session_id") or thread_id,
+                agent_path=iv.get("agent_path") or "orchestrator",
             )
             return await self._channels.post_ask(ask)
 

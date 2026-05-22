@@ -143,6 +143,16 @@ def build_interrupt_payload(
     from yuyutsava.core.agent_context import current_context
 
     ctx = current_context()
+    parent_path = ctx.get("agent_path") or "orchestrator"
+    # If a subagent (anything other than the default "agent" sentinel) requested
+    # the op, append its name so the UI shows e.g. "orchestrator/file-organizer"
+    # rather than the orchestrator's path. The check is idempotent: re-nesting is
+    # avoided so repeated calls within one subagent stay shallow.
+    asker = request.requesting_agent
+    if asker and asker != "agent" and not parent_path.endswith(f"/{asker}"):
+        agent_path = f"{parent_path}/{asker}"
+    else:
+        agent_path = parent_path
     return TaskRunnerPermissionInterrupt(
         operation=request.operation.value,
         paths=request.paths,
@@ -154,5 +164,5 @@ def build_interrupt_payload(
         task_description=request.task_description,
         risk_level=get_risk_level(zone, request.operation),
         session_id=ctx.get("session_id"),
-        agent_path=ctx.get("agent_path"),
+        agent_path=agent_path,
     )

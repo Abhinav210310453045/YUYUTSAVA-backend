@@ -278,6 +278,18 @@ def sessions_db_path() -> Path:
     return p
 
 
+def interrupts_db_path() -> Path:
+    """SQLite file backing the cross-front (CLI + daemon) interrupt audit log.
+
+    Sits next to ``sessions.db`` in ``~/.yuyutsava/`` so it travels with the
+    rest of the local state. Override with ``YUYUTSAVA_INTERRUPTS_DB``.
+    """
+    raw = os.environ.get("YUYUTSAVA_INTERRUPTS_DB", "").strip()
+    p = Path(raw).expanduser() if raw else yuyutsava_home() / "interrupts.db"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    return p
+
+
 def events_config_path() -> Path:
     """Repo-local path for events_config.json: <repo_root>/yuyutsava/events/events_config.json."""
     return Path(__file__).parent.parent / "events" / "events_config.json"

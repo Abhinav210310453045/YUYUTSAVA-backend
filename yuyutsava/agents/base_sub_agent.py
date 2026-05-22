@@ -106,8 +106,12 @@ class BaseSubAgent(ABC):
     # ------------------------------------------------------------------
 
     def task_runner_tools(self) -> list[BaseTool]:
-        """Return the four tr_* tools bound to this agent's TaskRunnerAgent."""
-        return bind_tools(self._task_runner.workspace_root)
+        """Return the four tr_* tools bound to this agent's TaskRunnerAgent.
+
+        ``self.name`` is threaded into each tool so HITL interrupts carry the
+        subagent's identity in their ``agent_path`` (e.g. ``orchestrator/file-organizer``).
+        """
+        return bind_tools(self._task_runner.workspace_root, agent_name=self.name)
 
     def skill_tools(self) -> list[BaseTool]:
         """Return skill tools based on the can_write_skills flag.

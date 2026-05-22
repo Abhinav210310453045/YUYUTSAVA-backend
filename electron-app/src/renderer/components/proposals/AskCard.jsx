@@ -48,7 +48,7 @@ export default function AskCard({ ask, onResolved }) {
       animationIterationCount: 'infinite',
     }}>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <span style={{
           fontFamily: 'var(--font-mono)',
           fontSize: 10,
@@ -65,6 +65,34 @@ export default function AskCard({ ask, onResolved }) {
         <span style={{ color: 'var(--text-primary)', fontWeight: 600, fontSize: 13 }}>
           {ask.title}
         </span>
+        {ask.agent_path && (
+          <span
+            title={ask.agent_path}
+            style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 10,
+              color: 'var(--text-secondary)',
+              background: 'rgba(255,255,255,0.04)',
+              border: '1px solid rgba(255,255,255,0.08)',
+              borderRadius: 3,
+              padding: '2px 6px',
+            }}
+          >
+            {ask.agent_path.split('/').slice(-2).join('/')}
+          </span>
+        )}
+        {ask.session_id && (
+          <span
+            title={ask.session_id}
+            style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 10,
+              color: 'var(--text-dim)',
+            }}
+          >
+            sess: {String(ask.session_id).slice(-8)}
+          </span>
+        )}
       </div>
 
       {/* Body */}

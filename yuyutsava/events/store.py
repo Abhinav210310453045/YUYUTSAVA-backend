@@ -58,7 +58,7 @@ CREATE TABLE IF NOT EXISTS proposals (
     agent_path   TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_proposals_status ON proposals(status, expires_ts);
-CREATE INDEX IF NOT EXISTS idx_proposals_session ON proposals(session_id);
+-- idx_proposals_session is created in _migrate() AFTER the ALTER adds the column on v0 DBs
 
 CREATE TABLE IF NOT EXISTS decisions (
     decision_id    TEXT PRIMARY KEY,
