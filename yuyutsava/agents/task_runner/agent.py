@@ -37,7 +37,14 @@ from yuyutsava.models.operations import (
     OperationType,
     PermissionAction,
 )
-from yuyutsava.models.results import DeleteResult, ReadResult, ShellResult, WriteResult
+from yuyutsava.models.results import (
+    DeleteResult,
+    DirEntry,
+    ListResult,
+    ReadResult,
+    ShellResult,
+    WriteResult,
+)
 from yuyutsava.models.tool_messages import SuppressedContentNotice
 
 logger = logging.getLogger("yuyutsava.task_runner")
@@ -64,14 +71,13 @@ class TaskRunnerAgent:
     def __init__(
         self,
         workspace_root: Path,
-        sandbox_subdir: str = "_sandbox",
         sandbox_root: Path | None = None,
         policy: object | None = None,  # PermissionsPolicy; untyped to avoid daemon-side import
     ) -> None:
         self.workspace_root: Path = workspace_root.resolve()
         self.sandbox_root: Path = (
             sandbox_root.resolve() if sandbox_root is not None
-            else (self.workspace_root / sandbox_subdir).resolve()
+            else (self.workspace_root / "_sandbox").resolve()
         )
         self._policy = policy
 
@@ -90,6 +96,8 @@ class TaskRunnerAgent:
             OperationType.DELETE:  "tr_delete_file",
             OperationType.EXECUTE: "tr_execute",
             OperationType.CHMOD:   "tr_chmod",
+            OperationType.LIST:    "tr_ls",
+            OperationType.GLOB:    "tr_glob",
         }.get(op, "tr_unknown")
 
     # ------------------------------------------------------------------
@@ -222,7 +230,7 @@ class TaskRunnerAgent:
 
     async def _execute(
         self, request: OperationRequest
-    ) -> ShellResult | WriteResult | DeleteResult | ReadResult:
+    ) -> ShellResult | WriteResult | DeleteResult | ReadResult | ListResult:
         """Dispatch to the appropriate executor and return a typed result model."""
         path = Path(request.paths[0])
         ctx = request.additional_context or {}
@@ -274,6 +282,35 @@ class TaskRunnerAgent:
                     stdout=raw["stdout"],
                     stderr=raw["stderr"],
                     exit_code=raw["exit_code"],
+                )
+
+            case OperationType.LIST:
+                _max = ctx.get("max_entries", 500)
+                max_entries = int(_max) if isinstance(_max, (int, float, str)) else 500
+                data = await _exec.execute_list(path, max_entries=max_entries)
+                entries = [DirEntry(**e) for e in data["entries"]]
+                return ListResult(
+                    root=str(path),
+                    pattern=None,
+                    entries=entries,
+                    returned=len(entries),
+                    total=data["total"],
+                    has_more=data["has_more"],
+                )
+
+            case OperationType.GLOB:
+                pattern = str(ctx.get("pattern", "*"))
+                _max = ctx.get("max_entries", 500)
+                max_entries = int(_max) if isinstance(_max, (int, float, str)) else 500
+                data = await _exec.execute_glob(path, pattern, max_entries=max_entries)
+                entries = [DirEntry(**e) for e in data["entries"]]
+                return ListResult(
+                    root=str(path),
+                    pattern=pattern,
+                    entries=entries,
+                    returned=len(entries),
+                    total=data["total"],
+                    has_more=data["has_more"],
                 )
 
             case _:

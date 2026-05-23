@@ -12,7 +12,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Query
 
 from yuyutsava.daemon.web.schemas.session import SessionOut
-from yuyutsava.sessions import (
+from yuyutsava.storage.sessions import (
     SessionNotFound,
     SessionsSettings,
     build_checkpointer,

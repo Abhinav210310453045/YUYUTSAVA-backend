@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
-from yuyutsava.sessions import Session
+from yuyutsava.storage.models import Session
 
 
 class SessionOut(BaseModel):

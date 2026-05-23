@@ -12,6 +12,7 @@ loss still leaves a recoverable row in the store:
 from __future__ import annotations
 
 import asyncio
+import logging
 import sys
 import time
 from pathlib import Path
@@ -19,11 +20,12 @@ from pathlib import Path
 from langchain_core.messages import ToolMessage
 from langgraph.graph.state import CompiledStateGraph
 
-from yuyutsava.core.engine import astream_agent
-from yuyutsava.core.interrupts_store import InterruptsStore
-from yuyutsava.sessions.config import SessionsSettings
-from yuyutsava.sessions.models import Session
-from yuyutsava.sessions.store import SessionNotFound, SessionStore
+from yuyutsava.core.streaming import astream_agent
+from yuyutsava.storage.interrupts import InterruptsStore
+from yuyutsava.storage.models import Session
+from yuyutsava.storage.sessions import SessionNotFound, SessionStore, SessionsSettings
+
+logger = logging.getLogger("yuyutsava.sessions.runner")
 
 
 _TICK_COALESCE_SEC = 0.5
@@ -66,12 +68,13 @@ async def _patch_orphan_cancellations(agent: CompiledStateGraph, thread_id: str)
     try:
         state = await agent.aget_state(config)
     except Exception:
+        logger.exception("orphan-cancellation patch failed for thread=%s", thread_id)
         return 0
     msgs = state.values.get("messages", []) if state and state.values else []
     patched: list = []
     for m in msgs:
         content = m.content if isinstance(m.content, str) else ""
-        if type(m).__name__ == "ToolMessage" and _CANCELLED_TOOL_MARKER in content:
+        if isinstance(m, ToolMessage) and _CANCELLED_TOOL_MARKER in content:
             patched.append(ToolMessage(
                 id=m.id,
                 tool_call_id=m.tool_call_id,

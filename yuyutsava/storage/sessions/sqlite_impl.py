@@ -1,0 +1,260 @@
+"""SQLite-backed ``SessionStore`` — concrete implementation.
+
+Lives in the same DB file as the LangGraph ``AsyncSqliteSaver`` checkpointer
+(see :mod:`yuyutsava.storage.sessions.checkpointer`) but in a disjoint
+``sessions`` table — one WAL file, one fsync per write batch.
+
+Concurrency
+-----------
+* WAL + ``busy_timeout`` allow concurrent readers (daemon polling) while the
+  CLI writes. Writes serialize via SQLite's internal lock.
+* Each mutation runs in ``BEGIN IMMEDIATE`` with retry on ``SQLITE_BUSY``.
+* A per-process ``asyncio.Lock`` (provided by ``BaseSqliteStore``) serializes
+  within-process writers so the retry loop doesn't fight itself.
+"""
+
+from __future__ import annotations
+
+import sqlite3
+import time
+from pathlib import Path
+from typing import Any, ClassVar
+
+import aiosqlite
+
+from yuyutsava.storage.base import BaseSqliteStore
+from yuyutsava.storage.ids import mint_thread_id
+from yuyutsava.storage.models import SESSION_STATUSES, Session
+from yuyutsava.storage.sessions.config import SessionsSettings
+from yuyutsava.storage.sessions.store import SessionNotFound
+
+
+_TASK_PREVIEW_MAX = 200
+
+
+class SqliteSessionStore(BaseSqliteStore):
+    """``SessionStore`` impl backed by a single sqlite file via aiosqlite."""
+
+    _SCHEMA_VERSION: ClassVar[int] = 1
+    _META_TABLE: ClassVar[str] = "sessions_meta"
+    _SCHEMA_SQL: ClassVar[str] = """
+    CREATE TABLE IF NOT EXISTS sessions_meta (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS sessions (
+        id                 TEXT PRIMARY KEY,
+        thread_id          TEXT NOT NULL,
+        workspace          TEXT NOT NULL,
+        status             TEXT NOT NULL,
+        created_at         REAL NOT NULL,
+        updated_at         REAL NOT NULL,
+        message_count      INTEGER NOT NULL DEFAULT 0,
+        memory_files_count INTEGER NOT NULL DEFAULT 0,
+        db_row_bytes       INTEGER NOT NULL DEFAULT 0,
+        task_preview       TEXT NOT NULL DEFAULT '',
+        schema_version     INTEGER NOT NULL DEFAULT 1
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_sessions_workspace_updated
+        ON sessions(workspace, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_sessions_updated
+        ON sessions(updated_at DESC);
+    """
+
+    # ------------------------------------------------------------------
+    # Writes
+    # ------------------------------------------------------------------
+
+    async def create(
+        self,
+        *,
+        workspace: Path,
+        task: str,
+        thread_id: str | None = None,
+    ) -> Session:
+        tid = thread_id or mint_thread_id("cli")
+        now = time.time()
+        preview = (task or "").strip().replace("\n", " ")[:_TASK_PREVIEW_MAX]
+        ws = str(workspace.resolve())
+        row = (tid, tid, ws, "running", now, now, 0, 0, 0, preview, self._SCHEMA_VERSION)
+
+        async def _do(conn: aiosqlite.Connection) -> None:
+            await conn.execute(
+                """INSERT INTO sessions
+                   (id, thread_id, workspace, status, created_at, updated_at,
+                    message_count, memory_files_count, db_row_bytes,
+                    task_preview, schema_version)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                row,
+            )
+
+        await self._run_write(_do)
+        return Session(
+            id=tid, thread_id=tid, workspace=Path(ws), status="running",
+            created_at=now, updated_at=now, message_count=0,
+            memory_files_count=0, db_row_bytes=0, task_preview=preview,
+            schema_version=self._SCHEMA_VERSION,
+        )
+
+    async def touch(
+        self,
+        session_id: str,
+        *,
+        message_delta: int = 0,
+        memory_files_count: int | None = None,
+        task_preview: str | None = None,
+    ) -> None:
+        now = time.time()
+        preview = (
+            None if task_preview is None
+            else task_preview[:_TASK_PREVIEW_MAX]
+        )
+
+        async def _do(conn: aiosqlite.Connection) -> None:
+            # Recompute checkpoint bytes for this thread. Both tables live in
+            # the same file (checkpoints lives in checkpoints.db today, but
+            # if a future migration co-locates them this stays correct).
+            bytes_for_thread = 0
+            try:
+                cur = await conn.execute(
+                    "SELECT COALESCE(SUM(LENGTH(checkpoint)+LENGTH(metadata)), 0) "
+                    "FROM checkpoints WHERE thread_id=?",
+                    (session_id,),
+                )
+                row = await cur.fetchone()
+                await cur.close()
+                bytes_for_thread = int(row[0]) if row else 0
+            except sqlite3.OperationalError:
+                # Checkpoints table not yet created — fine, treat as 0.
+                pass
+
+            sets = ["updated_at=?", "message_count=message_count+?", "db_row_bytes=?"]
+            args: list[Any] = [now, int(message_delta), bytes_for_thread]
+            if memory_files_count is not None:
+                sets.append("memory_files_count=?")
+                args.append(int(memory_files_count))
+            if preview is not None:
+                sets.append("task_preview=?")
+                args.append(preview)
+            args.append(session_id)
+            await conn.execute(
+                f"UPDATE sessions SET {', '.join(sets)} WHERE id=?",
+                tuple(args),
+            )
+
+        await self._run_write(_do)
+
+    async def update_status(self, session_id: str, status: str) -> None:
+        if status not in SESSION_STATUSES:
+            raise ValueError(
+                f"status must be one of {SESSION_STATUSES}, got {status!r}"
+            )
+        now = time.time()
+
+        async def _do(conn: aiosqlite.Connection) -> None:
+            await conn.execute(
+                "UPDATE sessions SET status=?, updated_at=? WHERE id=?",
+                (status, now, session_id),
+            )
+
+        await self._run_write(_do)
+
+    async def delete(self, session_id: str) -> None:
+        async def _do(conn: aiosqlite.Connection) -> None:
+            await conn.execute("DELETE FROM sessions WHERE id=?", (session_id,))
+
+        await self._run_write(_do)
+
+    # ------------------------------------------------------------------
+    # Reads
+    # ------------------------------------------------------------------
+
+    async def get(self, session_id: str) -> Session:
+        await self._ensure_schema()
+        async with self._conn() as conn:
+            cur = await conn.execute(
+                "SELECT id, thread_id, workspace, status, created_at, updated_at, "
+                "message_count, memory_files_count, db_row_bytes, task_preview, "
+                "schema_version FROM sessions WHERE id=?",
+                (session_id,),
+            )
+            row = await cur.fetchone()
+            await cur.close()
+        if row is None:
+            raise SessionNotFound(session_id)
+        return _row_to_session(row)
+
+    async def list(
+        self,
+        *,
+        workspace: Path | None = None,
+        limit: int = 100,
+        order_by: str = "updated_at",
+        cursor: float | None = None,
+    ) -> list[Session]:
+        await self._ensure_schema()
+        if order_by not in ("updated_at", "created_at"):
+            raise ValueError(
+                f"order_by must be updated_at or created_at, got {order_by!r}"
+            )
+        sql = (
+            "SELECT id, thread_id, workspace, status, created_at, updated_at, "
+            "message_count, memory_files_count, db_row_bytes, task_preview, "
+            "schema_version FROM sessions"
+        )
+        clauses: list[str] = []
+        params: tuple[Any, ...] = ()
+        if workspace is not None:
+            clauses.append("workspace=?")
+            params = (*params, str(workspace.resolve()))
+        if cursor is not None:
+            clauses.append(f"{order_by} < ?")
+            params = (*params, float(cursor))
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
+        sql += f" ORDER BY {order_by} DESC LIMIT ?"
+        params = (*params, int(limit))
+        async with self._conn() as conn:
+            cur = await conn.execute(sql, params)
+            rows = await cur.fetchall()
+            await cur.close()
+        return [_row_to_session(r) for r in rows]
+
+
+def _row_to_session(row: Any) -> Session:
+    """Build a ``Session`` from either a tuple row or an ``aiosqlite.Row``.
+
+    ``BaseSqliteStore`` configures ``conn.row_factory = aiosqlite.Row`` so
+    reads return rows that support both tuple-unpacking and key lookup.
+    """
+    (
+        sid, tid, ws, status, created, updated, msgs, mems, dbbytes, preview, ver,
+    ) = row
+    return Session(
+        id=sid, thread_id=tid, workspace=Path(ws), status=status,
+        created_at=created, updated_at=updated, message_count=msgs,
+        memory_files_count=mems, db_row_bytes=dbbytes, task_preview=preview,
+        schema_version=ver,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Process-level default store factory
+# ---------------------------------------------------------------------------
+
+_DEFAULT_STORE: SqliteSessionStore | None = None
+
+
+def get_default_session_store() -> SqliteSessionStore:
+    """Lazy singleton — one store per process, ``~/.yuyutsava/sessions.db`` by default.
+
+    Both the CLI and the daemon resolve to the same instance for their own
+    process; cross-process coordination falls back to SQLite's WAL lock.
+    """
+    global _DEFAULT_STORE
+    if _DEFAULT_STORE is None:
+        s = SessionsSettings.from_env()
+        _DEFAULT_STORE = SqliteSessionStore(s.db_path, busy_timeout_ms=s.busy_timeout_ms)
+    return _DEFAULT_STORE

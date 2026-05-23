@@ -31,7 +31,8 @@ from yuyutsava.daemon.web.routers import (
     static_files as static_router,
     stream as stream_router,
 )
-from yuyutsava.daemon.web.services.stream_service import WebHub
+from yuyutsava.daemon.channels import HttpLogPayload
+from yuyutsava.daemon.web.services.stream_service import StreamEventItem, WebHub
 from yuyutsava.skills.registry import SkillRegistry
 
 
@@ -90,17 +91,13 @@ def create_app(
             return response
         duration_ms = int((time.perf_counter() - start) * 1000)
         try:
-            await hub.broadcast({
-                "type": "event",
-                "kind": "http_log",
-                "data": {
-                    "method": request.method,
-                    "path": path,
-                    "status": response.status_code,
-                    "duration_ms": duration_ms,
-                    "ts": time.time(),
-                },
-            })
+            await hub.broadcast(StreamEventItem(payload=HttpLogPayload(
+                method=request.method,
+                path=path,
+                status=response.status_code,
+                duration_ms=duration_ms,
+                ts=time.time(),
+            )))
         except Exception:
             # Broadcasting must never break a request.
             pass

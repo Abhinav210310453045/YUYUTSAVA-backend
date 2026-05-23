@@ -52,7 +52,12 @@ class TriageDecision(BaseModel):
 
 
 class TriageAgent:
-    """LLM-backed triage. One ``classify(envelope, capabilities)`` call per event."""
+    """Single-call event classifier. Deliberately NOT a ``BaseSubAgent`` —
+    it's a one-shot LLM call without tools or a delegation graph, invoked
+    directly by the daemon's triage loop. If you're adding a new agent and
+    the orchestrator should be able to spawn it, inherit ``BaseSubAgent``
+    instead.
+    """
 
     def __init__(self, model: BaseChatModel) -> None:
         # ``with_structured_output`` produces a runnable that returns a TriageDecision.

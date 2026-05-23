@@ -1,35 +1,45 @@
-"""User preferences store backed by the existing ``state.db``.
+"""User preferences store backed by the shared ``state.db``.
 
 Each preference is a small JSON blob keyed by a dot-namespaced string:
 ``interaction.style``, ``media.tone``, ``spotify.prefs``, etc.
 
 Reads are synchronous (same thread that owns the SQLite connection).
-Writes go through ``Store``'s async writer queue so they never block the loop.
+Writes go through the underlying :class:`Store`'s async writer queue so they
+never block the loop.
 
-CLI: ``yuyutsava prefs set <key> <json>``
-         ``yuyutsava prefs get <key>``
-         ``yuyutsava prefs list``
+This module is the typed wrapper that callers should depend on. The actual
+``user_prefs`` table lives in :mod:`yuyutsava.storage.events.store` for now
+because the daemon constructs one :class:`Store` covering all tables — a
+future per-table split is documented in the package ``__init__``.
+
+CLI:
+    ``yuyutsava prefs set <key> <json>``
+    ``yuyutsava prefs get <key>``
+    ``yuyutsava prefs list``
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 
-from yuyutsava.events.store import Store
+from yuyutsava.storage.events.store import Store
 
-logger = logging.getLogger("yuyutsava.prefs.store")
+logger = logging.getLogger("yuyutsava.storage.prefs")
 
 
-class UserPrefsStore:
-    """Thin API over the ``user_prefs`` table in ``state.db``."""
+class PrefsStore:
+    """Typed API over the ``user_prefs`` table.
+
+    Construct with the same :class:`Store` instance the daemon (or the CLI's
+    ``prefs`` subcommand) already created — the connection is shared.
+    """
 
     def __init__(self, store: Store) -> None:
         self._store = store
 
     # ------------------------------------------------------------------ #
-    # Write (async)                                                         #
+    # Write (async — queues through Store's writer task)                  #
     # ------------------------------------------------------------------ #
 
     async def set(self, key: str, value: Any) -> None:
@@ -43,7 +53,7 @@ class UserPrefsStore:
         logger.debug("prefs: deleted %s", key)
 
     # ------------------------------------------------------------------ #
-    # Read (sync)                                                           #
+    # Read (sync — straight off the shared connection)                    #
     # ------------------------------------------------------------------ #
 
     def get(self, key: str, default: Any = None) -> Any:

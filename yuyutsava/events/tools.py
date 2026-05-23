@@ -14,7 +14,7 @@ from typing import Any
 
 from langchain_core.tools import BaseTool, tool
 
-from yuyutsava.events.store import Store
+from yuyutsava.storage.events import Store
 
 
 def make_fetch_event_tool(store: Store) -> BaseTool:
@@ -34,7 +34,16 @@ def make_fetch_event_tool(store: Store) -> BaseTool:
         rec = store.get_event_payload(event_id)
         if rec is None:
             return json.dumps({"error": "event_not_found", "event_id": event_id})
-        return json.dumps(rec, default=str)
+        return json.dumps(
+            {
+                "event_id": rec.event_id,
+                "topic": rec.topic,
+                "ts": rec.ts,
+                "payload": rec.payload,
+                "blob_path": rec.blob_path,
+            },
+            default=str,
+        )
 
     return fetch_event
 

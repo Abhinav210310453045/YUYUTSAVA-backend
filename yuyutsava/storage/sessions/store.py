@@ -1,8 +1,7 @@
 """Abstract session store contract.
 
-Concrete backends live next to this module (``sqlite_store.py`` today; a
-SQLAlchemy/Postgres impl is the planned drop-in). Callers depend only on this
-Protocol — swapping backends is a single factory change.
+Callers depend only on this Protocol — swapping backends (SQLite today,
+Postgres later) is a single factory change.
 """
 
 from __future__ import annotations
@@ -10,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from yuyutsava.sessions.models import Session
+from yuyutsava.storage.models import Session
 
 
 class SessionNotFound(KeyError):

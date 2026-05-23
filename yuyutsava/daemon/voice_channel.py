@@ -26,14 +26,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import shutil
 import tempfile
 from pathlib import Path
 
 from yuyutsava.daemon.channels import (
-    AskPrompt, ChannelEvent, ProposalDecision, UserChannel,
+    AskPrompt, ChannelEvent, LogPayload, ProposalDecision, UserChannel,
 )
-from yuyutsava.events.store import Proposal
+from yuyutsava.storage.events import Proposal
 from yuyutsava.io.audio import AudioUnavailableError, capture_wav, play_wav
 from yuyutsava.io.stt import STT
 from yuyutsava.io.tts import TTS
@@ -52,7 +53,6 @@ _ASK_LISTEN_SEC = 10.0
 
 def _words(text: str) -> set[str]:
     """Lower-cased word set."""
-    import re
     return set(re.sub(r"[^a-z ]", "", text.lower()).split())
 
 
@@ -101,9 +101,9 @@ class VoiceChannel(UserChannel):
     # ------------------------------------------------------------------ #
 
     async def post_event(self, ev: ChannelEvent) -> None:
-        if ev.kind != "log":
+        if not isinstance(ev.payload, LogPayload):
             return
-        msg = (ev.data.get("msg") or ev.data.get("text") or "").strip()
+        msg = (ev.payload.text or "").strip()
         if not msg:
             return
         # Keep announcements short so voice doesn't become noisy.

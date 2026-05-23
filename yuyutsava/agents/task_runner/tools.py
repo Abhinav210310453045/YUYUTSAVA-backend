@@ -369,6 +369,80 @@ def bind_tools(
         return json.dumps({"status": "success", "result": {"response": response}})
 
     # ------------------------------------------------------------------ #
+    # tr_ls                                                                #
+    # ------------------------------------------------------------------ #
+
+    @tool
+    async def tr_ls(path: str, reason: str, max_entries: int = 500) -> str:
+        """List directory entries at a real absolute path (zone-checked).
+
+        Returns JSON {entries: [{name, path, type, size}], total, has_more}.
+        Use this for ANY directory listing, including inside the workspace —
+        the built-in ls is not available. WORKSPACE/SANDBOX zones auto-allow;
+        EXTERNAL paths prompt the user once.
+
+        Args:
+            path:        Real absolute path of the directory to list.
+            reason:      Specific purpose shown to the user in permission prompts.
+            max_entries: Cap on returned entries (default 500).
+        """
+        real_path = _resolve_path(path, workspace_root)
+        _log.debug("[tr_ls] path=%s max=%d", real_path, max_entries)
+        request = OperationRequest(
+            request_id=str(uuid.uuid4()),
+            requesting_agent=agent_name,
+            task_id=str(uuid.uuid4()),
+            task_description=reason,
+            operation=OperationType.LIST,
+            paths=[real_path],
+            reason=reason,
+            additional_context={"max_entries": max_entries},
+        )
+        response = await agent.handle(request)
+        _log.debug("[tr_ls] status=%s", response.status)
+        return response.model_dump_json()
+
+    # ------------------------------------------------------------------ #
+    # tr_glob                                                              #
+    # ------------------------------------------------------------------ #
+
+    @tool
+    async def tr_glob(
+        pattern: str,
+        path: str,
+        reason: str,
+        max_entries: int = 500,
+    ) -> str:
+        """Glob files matching a pattern under a real absolute path (zone-checked).
+
+        Returns JSON {entries: [{name, path, type, size}], total, has_more, pattern, root}.
+        Patterns use pathlib semantics: '*.pdf' shallow, '**/*.pdf' recursive.
+        Use this for ANY pattern match, including inside the workspace — the
+        built-in glob is not available. EXTERNAL paths prompt the user once.
+
+        Args:
+            pattern:     Glob pattern (e.g. '*.pdf', '**/*.py', 'README*').
+            path:        Real absolute path of the root directory to search.
+            reason:      Specific purpose shown to the user in permission prompts.
+            max_entries: Cap on returned entries (default 500).
+        """
+        real_path = _resolve_path(path, workspace_root)
+        _log.debug("[tr_glob] pattern=%r path=%s max=%d", pattern, real_path, max_entries)
+        request = OperationRequest(
+            request_id=str(uuid.uuid4()),
+            requesting_agent=agent_name,
+            task_id=str(uuid.uuid4()),
+            task_description=reason,
+            operation=OperationType.GLOB,
+            paths=[real_path],
+            reason=reason,
+            additional_context={"pattern": pattern, "max_entries": max_entries},
+        )
+        response = await agent.handle(request)
+        _log.debug("[tr_glob] status=%s", response.status)
+        return response.model_dump_json()
+
+    # ------------------------------------------------------------------ #
     # tr_execute                                                           #
     # ------------------------------------------------------------------ #
 
@@ -412,7 +486,8 @@ def bind_tools(
 
     all_tools: list[BaseTool] = [
         tr_read_file, tr_write_file, tr_delete_file,
-        tr_execute_in_sandbox, tr_grep, tr_ask_user, tr_execute,
+        tr_execute_in_sandbox, tr_grep, tr_ls, tr_glob,
+        tr_ask_user, tr_execute,
     ]
     # Convert pydantic arg-validation failures (missing reason=, wrong type, etc.)
     # into a structured JSON ToolMessage instead of langchain's opaque

@@ -29,6 +29,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, Protocol
 
+from yuyutsava.storage.paths import events_config_path
+
 
 GROQ_OPENAI_BASE_URL = "https://api.groq.com/openai/v1"
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
@@ -251,48 +253,59 @@ def llm_settings_from_env(role: str | None = None) -> LlmSettings:
 
 
 # ---------------------------------------------------------------------------
-# Daemon home directory
+# Path functions moved to ``yuyutsava.storage.paths`` (Step 1 of restructure).
+# Importers should switch to ``from yuyutsava.storage.paths import …``.
 # ---------------------------------------------------------------------------
 
 
-def yuyutsava_home() -> Path:
-    """Per-user state dir for the daemon (events, blobs, configs).
-
-    Override with ``YUYUTSAVA_HOME``. Created on first access.
-    """
-    raw = os.environ.get("YUYUTSAVA_HOME", "").strip()
-    p = Path(raw).expanduser() if raw else Path.home() / ".yuyutsava"
-    p.mkdir(parents=True, exist_ok=True)
-    (p / "blobs").mkdir(exist_ok=True)
-    return p
+# ---------------------------------------------------------------------------
+# Size limits + timing — consolidated from scattered module-level constants.
+# Tune here; callers import LIMITS / TIMING and read the typed fields.
+# ---------------------------------------------------------------------------
 
 
-def sessions_db_path() -> Path:
-    """Shared SQLite file backing the CLI session index + checkpointer.
+@dataclass(frozen=True)
+class LimitsConfig:
+    """Size caps applied to LLM-bound content and on-disk payloads."""
 
-    Override with ``YUYUTSAVA_SESSIONS_DB``. Parent dir is created on first access.
-    """
-    raw = os.environ.get("YUYUTSAVA_SESSIONS_DB", "").strip()
-    p = Path(raw).expanduser() if raw else yuyutsava_home() / "sessions.db"
-    p.parent.mkdir(parents=True, exist_ok=True)
-    return p
+    # Absolute ceiling: tool results larger than this are never passed to the
+    # LLM as-is. Catches binary blobs read as text and pathological stdout.
+    max_tool_result_chars: int = 100_000
+
+    # Softer cap used when constructing SuppressedContentNotice payloads for
+    # sandbox stdout overflow.
+    max_stdout_chars: int = 40_000
+
+    # User preferences block injected into the orchestrator system prompt.
+    # Roughly 500 tokens at 4 chars/token.
+    max_prefs_chars: int = 2_000
+
+    # Skill index XML rendered into the orchestrator system prompt.
+    max_skill_index_chars: int = 8_000
+
+    # Per-skill description cap inside the index.
+    max_skill_desc_chars: int = 512
+
+    # Docker sandbox: per-command stdout/stderr cap before SuppressedContentNotice.
+    docker_max_output_bytes: int = 100_000
 
 
-def interrupts_db_path() -> Path:
-    """SQLite file backing the cross-front (CLI + daemon) interrupt audit log.
+@dataclass(frozen=True)
+class TimingConfig:
+    """Default timeouts and busy-waits used across the runtime."""
 
-    Sits next to ``sessions.db`` in ``~/.yuyutsava/`` so it travels with the
-    rest of the local state. Override with ``YUYUTSAVA_INTERRUPTS_DB``.
-    """
-    raw = os.environ.get("YUYUTSAVA_INTERRUPTS_DB", "").strip()
-    p = Path(raw).expanduser() if raw else yuyutsava_home() / "interrupts.db"
-    p.parent.mkdir(parents=True, exist_ok=True)
-    return p
+    # Default `PRAGMA busy_timeout` for every async-sqlite store.
+    sqlite_busy_timeout_ms: int = 5_000
+
+    # Default seconds before a task_runner tr_execute_in_sandbox call gives up.
+    tool_default_timeout_sec: int = 120
+
+    # Default seconds before a deepagents bash tool call gives up.
+    bash_default_timeout_sec: int = 120
 
 
-def events_config_path() -> Path:
-    """Repo-local path for events_config.json: <repo_root>/yuyutsava/events/events_config.json."""
-    return Path(__file__).parent.parent / "events" / "events_config.json"
+LIMITS = LimitsConfig()
+TIMING = TimingConfig()
 
 
 # ---------------------------------------------------------------------------

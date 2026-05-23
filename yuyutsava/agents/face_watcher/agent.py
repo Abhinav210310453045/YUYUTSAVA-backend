@@ -24,7 +24,7 @@ TODO(future): authorized-user presence gating.
       - New event source ``yuyutsava/events/sources/presence_check.py`` that
         fires ``face.frame`` on a schedule (e.g. every 60s), independent of
         the motion-triggered ``webcam`` source.
-      - New consent-rule category in ``permissions_policy.py``:
+      - New consent-rule category in ``core/policy.py``:
         ``presence.authorised_identities = [...]``.
       - New "lockout" channel state in ``ChannelRouter`` that drops
         non-confirmation asks while gated.
@@ -40,7 +40,7 @@ from yuyutsava.agents.base_sub_agent import BaseSubAgent
 from yuyutsava.agents.face_watcher.prompts import FACE_WATCHER_PROMPT
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
 from yuyutsava.core.config import SearchConfig
-from yuyutsava.events.store import Store
+from yuyutsava.storage.events import Store
 from yuyutsava.events.tools import make_fetch_event_tool
 from yuyutsava.mcp.loader import MCPClientManager
 from yuyutsava.skills.registry import SkillRegistry

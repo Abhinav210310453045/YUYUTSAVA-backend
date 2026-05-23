@@ -18,7 +18,12 @@ Two databases are exposed today:
   - ``state``    — the daemon's event/proposal/decision store.
   - ``sessions`` — the CLI session index + LangGraph checkpoints.
 
-Add another by extending ``DATABASES``.
+Add another by extending the ``_databases()`` map.
+
+Lived under ``daemon/db_introspect.py`` until the storage restructure — it's a
+storage concern (read-only SQL execution against the persistence layer), not
+daemon-specific. The HTTP shim at ``daemon/web/routers/db.py`` and the
+``db_*`` agent tools at ``agents/db_tools/tools.py`` are the two consumers.
 """
 
 from __future__ import annotations
@@ -26,6 +31,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -33,9 +39,9 @@ import aiosqlite
 import sqlglot
 from sqlglot import expressions as exp
 
-from yuyutsava.core.config import sessions_db_path, yuyutsava_home
+from yuyutsava.storage.paths import sessions_db_path, state_db_path
 
-logger = logging.getLogger("yuyutsava.daemon.db_introspect")
+logger = logging.getLogger("yuyutsava.storage.introspect")
 
 
 DEFAULT_LIMIT = 1000
@@ -43,10 +49,25 @@ MAX_LIMIT = 1000
 QUERY_TIMEOUT_SEC = 5.0
 
 
+@dataclass(frozen=True)
+class DatabaseInfo:
+    """Typed row returned from :func:`list_databases`.
+
+    Replaces the previous ``dict[str, Any]`` shape — the HTTP layer's Pydantic
+    ``DatabaseInfo`` schema mirrors these fields and is built via
+    ``dataclasses.asdict`` at the router boundary.
+    """
+
+    name: str
+    path: str
+    exists: bool
+    size_bytes: int | None = None
+
+
 def _databases() -> dict[str, Path]:
     """Built fresh per call so env overrides (e.g. ``YUYUTSAVA_SESSIONS_DB``) take effect."""
     return {
-        "state": yuyutsava_home() / "state.db",
+        "state": state_db_path(),
         "sessions": sessions_db_path(),
     }
 
@@ -181,17 +202,19 @@ def _ensure_limit(sql: str, parsed: exp.Expression, limit: int) -> str:
 # ---------------------------------------------------------------------------
 
 
-async def list_databases() -> list[dict[str, Any]]:
-    """Return [{name, path, exists, size_bytes}, ...]."""
-    out: list[dict[str, Any]] = []
+async def list_databases() -> list[DatabaseInfo]:
+    """Return [DatabaseInfo(name, path, exists, size_bytes), ...]."""
+    out: list[DatabaseInfo] = []
     for name, path in _databases().items():
-        info: dict[str, Any] = {"name": name, "path": str(path), "exists": path.exists()}
+        size_bytes: int | None = None
         if path.exists():
             try:
-                info["size_bytes"] = path.stat().st_size
+                size_bytes = path.stat().st_size
             except OSError:
-                info["size_bytes"] = None
-        out.append(info)
+                size_bytes = None
+        out.append(DatabaseInfo(
+            name=name, path=str(path), exists=path.exists(), size_bytes=size_bytes,
+        ))
     return out
 
 

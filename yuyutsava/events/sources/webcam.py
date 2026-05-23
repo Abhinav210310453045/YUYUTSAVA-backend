@@ -27,7 +27,7 @@ Config (params from ``events_config.json``)::
     }
 
 Frames go to disk; only the path travels through the bus envelope. The
-:class:`yuyutsava.daemon.blob_sweeper.BlobSweeper` deletes stale JPEGs
+:class:`yuyutsava.storage.sweeper.UnifiedSweeper` deletes stale JPEGs
 (default TTL ~1h) and the matching ``event_payloads.blob_path`` rows.
 The deepface enrolled-faces DB at ``~/.yuyutsava/deepface/`` is in a
 separate directory and is never touched by this sweep.

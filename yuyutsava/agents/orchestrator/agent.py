@@ -20,7 +20,7 @@ from langchain_core.tools import BaseTool, tool
 
 from yuyutsava.agents.base_sub_agent import BaseSubAgent
 from yuyutsava.daemon.channels import AskPrompt, ChannelRouter
-from yuyutsava.events.store import Store
+from yuyutsava.storage.events import Store
 from yuyutsava.core.config import SearchConfig
 from yuyutsava.mcp.loader import MCPClientManager
 from yuyutsava.skills.registry import SkillRegistry
@@ -42,11 +42,6 @@ class OrchestratorDeps:
     mcp_manager: MCPClientManager | None = None
     search_config: SearchConfig | None = None
     cap_enforcer: object | None = None  # tools.search._CapEnforcer
-
-
-# Re-export so existing callers keep importing build_orchestrator from here.
-# The implementation lives in core/engine.py.
-from yuyutsava.core.engine import build_orchestrator  # noqa: E402,F401
 
 
 # ---------------------------------------------------------------------------

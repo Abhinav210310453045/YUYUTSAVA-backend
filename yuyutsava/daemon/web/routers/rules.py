@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from typing import Any
 
 from fastapi import APIRouter, Depends
@@ -14,7 +15,7 @@ router = APIRouter(tags=["rules"])
 
 @router.get("/rules", summary="List active consent rules")
 async def list_rules(hub=Depends(get_hub)) -> list[dict[str, Any]]:
-    return hub.store.list_consent_rules()
+    return [asdict(r) for r in hub.store.list_consent_rules()]
 
 
 @router.delete("/rules/{rule_id}", summary="Revoke a consent rule")

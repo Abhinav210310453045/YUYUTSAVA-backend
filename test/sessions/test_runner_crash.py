@@ -13,7 +13,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from yuyutsava.sessions.sqlite_store import SqliteSessionStore
+from yuyutsava.storage.sessions import SqliteSessionStore
 
 
 class _FakeAgent:
