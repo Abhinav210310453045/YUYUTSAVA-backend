@@ -1,8 +1,10 @@
 """
 YUYUTSAVA — command-line AI agent that executes natural language tasks.
 
-Loads ``.env``, builds a Deep Agent with Groq or OpenRouter (see ``LLM_PROVIDER``)
-and ``LocalShellBackend``, then invokes the graph.
+This file is the entry-point: build the argparse parser, dispatch to the
+handler in ``cli/commands/*``. All the actual work lives in those handlers
+(chat, sessions, prefs, scenarios). Procedural by design — see
+RESTRUCTURE_HANDOFF.md §5 / plan §11.1 for why we do not make this a class.
 """
 
 from __future__ import annotations
@@ -12,36 +14,25 @@ import asyncio
 import dataclasses
 import os
 import sys
-from typing import Literal
 from pathlib import Path
+from typing import Literal
 
 try:
     from dotenv import load_dotenv
 except ImportError:
     load_dotenv = None  # type: ignore[assignment, misc]
 
-from yuyutsava.agents.general_purpose.agent import GeneralPurposeAgent
-from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
-from yuyutsava.cli.scenarios import format_scenario_list, get_scenario
+from yuyutsava.cli.commands.chat import run_chat
+from yuyutsava.cli.commands.prefs import run_prefs
+from yuyutsava.cli.commands.scenarios import format_scenario_list, get_scenario
+from yuyutsava.cli.commands.sessions import delete_session, print_sessions_table
 from yuyutsava.core.config import DockerSettings, LocalSettings, SearchConfig, llm_settings_from_env
 from yuyutsava.core.engine import (
-    _cleanup_local_sandbox,
     build_agent,
-    build_cli_deepagent,
     builtin_tools_reference_json,
     export_agent_state_graph_png,
     setup_logging,
 )
-from yuyutsava.core.docker_sandbox_backend import pull_virtual_paths_to_host
-from yuyutsava.sessions import (
-    ResumeFailed,
-    SessionNotFound,
-    SessionsSettings,
-    build_checkpointer,
-    get_default_session_store,
-    run_session,
-)
-from yuyutsava.skills.registry import SkillRegistry
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -265,194 +256,6 @@ def _local_settings_from_args(args: argparse.Namespace) -> LocalSettings:
     return cfg
 
 
-def _parse_pull_paths(s: str) -> list[str]:
-    parts = [p.strip() for p in s.split(",") if p.strip()]
-    return parts
-
-
-def _human_bytes(n: int) -> str:
-    """Format ``n`` bytes as KB/MB/GB for the sessions table."""
-    if n < 1024:
-        return f"{n}B"
-    for unit in ("KB", "MB", "GB", "TB"):
-        n /= 1024.0
-        if n < 1024:
-            return f"{n:.1f}{unit}"
-    return f"{n:.1f}PB"
-
-
-def _human_age(now: float, then: float) -> str:
-    """Compact "3m ago" / "2h ago" / "5d ago" for the sessions table."""
-    delta = max(0.0, now - then)
-    if delta < 60:
-        return f"{int(delta)}s ago"
-    if delta < 3600:
-        return f"{int(delta // 60)}m ago"
-    if delta < 86400:
-        return f"{int(delta // 3600)}h ago"
-    return f"{int(delta // 86400)}d ago"
-
-
-def _ansi(code: str) -> str:
-    """Return an ANSI escape only when stdout is a real TTY.
-
-    Keeps the table copy-paste-friendly when piped through ``less``, ``grep``,
-    or redirected to a file.
-    """
-    return code if sys.stdout.isatty() else ""
-
-
-_STATUS_COLOR_CODES = {
-    "running": "\033[32m",
-    "done":    "\033[2m",
-    "crashed": "\033[31m",
-    "idle":    "\033[33m",
-}
-
-
-async def _print_sessions_table(workspace_filter: Path | None = None) -> int:
-    """``--list-sessions`` handler. Prints to stdout, returns process exit code.
-
-    Renders each row as a labelled card with a fully-formed copy-paste resume
-    command beneath it. Long fields (workspace, task) are NOT truncated — the
-    point of this view is to be the source of truth the user copies from.
-    """
-    import shlex
-    import time as _time
-
-    store = get_default_session_store()
-    rows = await store.list(workspace=workspace_filter, limit=100)
-    if not rows:
-        print("(no sessions yet — start one with `uv run yuyutsava <task>`)")
-        return 0
-
-    reset  = _ansi("\033[0m")
-    dim    = _ansi("\033[2m")
-    bold   = _ansi("\033[1m")
-    cyan   = _ansi("\033[36m")
-    yellow = _ansi("\033[33m")
-
-    now = _time.time()
-    scope = "this workspace" if workspace_filter is not None else "all workspaces"
-    sep = "─" * 78
-    print(f"{bold}Sessions ({len(rows)}) — {scope}{reset}")
-    print(dim + sep + reset)
-
-    for s in rows:
-        status_colour = _ansi(_STATUS_COLOR_CODES.get(s.status, ""))
-        status_str = f"{status_colour}{s.status}{reset}"
-        ws_quoted = shlex.quote(str(s.workspace))
-        resume_cmd = (
-            f"uv run yuyutsava --verbose --workspace {ws_quoted} "
-            f"--resume {s.id} \"<your next message>\""
-        )
-
-        print(f"{bold}{cyan}{s.id}{reset}")
-        print(f"  {dim}status   {reset}{status_str}"
-              f"   {dim}updated  {reset}{_human_age(now, s.updated_at)}"
-              f"   {dim}msgs  {reset}{s.message_count}"
-              f"   {dim}mem  {reset}{s.memory_files_count}"
-              f"   {dim}size  {reset}{_human_bytes(s.db_row_bytes)}")
-        print(f"  {dim}workspace{reset}  {s.workspace}")
-        print(f"  {dim}task     {reset} {s.task_preview}")
-        print(f"  {dim}resume   {reset} {yellow}{resume_cmd}{reset}")
-        print(dim + sep + reset)
-
-    print(f"{dim}tip:{reset} replace {yellow}\"<your next message>\"{reset} "
-          f"with what you want the agent to do next, then paste into a terminal.")
-    return 0
-
-
-async def _delete_session_cmd(session_id: str) -> int:
-    """``--delete-session`` handler. Removes the session row AND its
-    checkpoint rows. Prints a one-line confirmation or error.
-    """
-    store = get_default_session_store()
-    try:
-        s = await store.get(session_id)
-    except SessionNotFound:
-        print(f"Error: no session with id {session_id!r}", file=sys.stderr)
-        return 2
-    settings = SessionsSettings.from_env()
-    async with build_checkpointer(settings) as saver:
-        await saver.adelete_thread(s.thread_id)
-    await store.delete(session_id)
-    print(f"Deleted session {session_id} (workspace: {s.workspace})")
-    return 0
-
-
-def _prefs_main(argv: list[str]) -> int:
-    """``yuyutsava prefs {set|get|list|delete}`` subcommand."""
-    import json as _json
-    from yuyutsava.core.config import yuyutsava_home
-    from yuyutsava.events.store import Store
-    from yuyutsava.prefs.store import UserPrefsStore
-
-    if not argv:
-        print("Usage: yuyutsava prefs {set <key> <json> | get <key> | delete <key> | list}",
-              file=sys.stderr)
-        return 2
-
-    sub = argv[0]
-
-    async def _run() -> int:
-        store = Store()
-        await store.start()
-        prefs = UserPrefsStore(store)
-        try:
-            if sub == "list":
-                all_prefs = prefs.all()
-                if not all_prefs:
-                    print("(no preferences set)")
-                else:
-                    for key, val in sorted(all_prefs.items()):
-                        print(f"{key} = {_json.dumps(val)}")
-                return 0
-
-            if sub == "get":
-                if len(argv) < 2:
-                    print("Usage: yuyutsava prefs get <key>", file=sys.stderr)
-                    return 2
-                val = prefs.get(argv[1])
-                if val is None:
-                    print(f"(not set: {argv[1]})")
-                else:
-                    print(_json.dumps(val))
-                return 0
-
-            if sub == "set":
-                if len(argv) < 3:
-                    print("Usage: yuyutsava prefs set <key> <json_value>", file=sys.stderr)
-                    return 2
-                key = argv[1]
-                try:
-                    value = _json.loads(argv[2])
-                except _json.JSONDecodeError as exc:
-                    print(f"Error: invalid JSON value: {exc}", file=sys.stderr)
-                    return 1
-                await prefs.set(key, value)
-                # Drain the write queue before closing.
-                await asyncio.sleep(0.05)
-                print(f"Set {key} = {_json.dumps(value)}")
-                return 0
-
-            if sub == "delete":
-                if len(argv) < 2:
-                    print("Usage: yuyutsava prefs delete <key>", file=sys.stderr)
-                    return 2
-                await prefs.delete(argv[1])
-                await asyncio.sleep(0.05)
-                print(f"Deleted {argv[1]}")
-                return 0
-
-            print(f"Unknown prefs subcommand: {sub!r}", file=sys.stderr)
-            return 2
-        finally:
-            await store.stop()
-
-    return asyncio.run(_run())
-
-
 def main(argv: list[str] | None = None) -> int:
     """Sync entry point required by setuptools console_scripts. Drives async logic."""
     raw = list(argv) if argv is not None else sys.argv[1:]
@@ -461,7 +264,7 @@ def main(argv: list[str] | None = None) -> int:
         from yuyutsava.daemon.main import main as daemon_main
         return daemon_main(raw[1:])
     if raw and raw[0] == "prefs":
-        return _prefs_main(raw[1:])
+        return run_prefs(raw[1:])
     return asyncio.run(_async_main(raw))
 
 
@@ -485,11 +288,11 @@ async def _async_main(argv: list[str] | None = None) -> int:
         # Default: show every session so the user can discover ids regardless of cwd.
         # --this-workspace narrows to the current --workspace.
         ws_filter = args.workspace.resolve() if args.this_workspace else None
-        return await _print_sessions_table(workspace_filter=ws_filter)
+        return await print_sessions_table(workspace_filter=ws_filter)
 
     if args.delete_session:
         # Short-circuit: no model/sandbox needed to remove a session.
-        return await _delete_session_cmd(args.delete_session)
+        return await delete_session(args.delete_session)
 
     if args.generate_agent_graph:
         if args.scenario or args.task:
@@ -543,85 +346,22 @@ async def _async_main(argv: list[str] | None = None) -> int:
             )
             return 2
 
-    settings = llm_settings_from_env()
-    workspace = args.workspace.resolve()
-    execution = _resolved_execution_mode(args)
-    docker_cfg = _docker_settings_from_args(args)
-    local_cfg = _local_settings_from_args(args)
-    search_cfg = SearchConfig.from_env()
-
-    store = get_default_session_store()
-    sessions_settings = SessionsSettings.from_env()
-
-    async with build_checkpointer(sessions_settings) as checkpointer:
-        # Subagents wired into the CLI deepagent. Currently just general-purpose:
-        # passing it as a subagent spec causes deepagents to name-match-override
-        # its built-in default with OUR tighter prompt + lazy tool discovery.
-        skill_registry = SkillRegistry(workspace_dir=workspace)
-        sandbox_root_for_tr = (
-            local_cfg.sandbox_dir.resolve()
-            if local_cfg.sandbox_dir is not None
-            else (workspace / "_sandbox").resolve()
-        )
-        task_runner = TaskRunnerAgent(
-            workspace_root=workspace,
-            sandbox_root=sandbox_root_for_tr,
-        )
-        general_purpose = GeneralPurposeAgent(
-            task_runner=task_runner,
-            skill_registry=skill_registry,
-            search_config=search_cfg,
-        )
-        bundle = build_cli_deepagent(
-            workspace,
-            settings,
-            bash_timeout_sec=args.bash_timeout,
-            execution_mode=execution,
-            docker_settings=docker_cfg,
-            local_settings=local_cfg,
-            permission_check=not args.no_permission_check,
-            search_config=search_cfg,
-            checkpointer=checkpointer,
-            subagents=[general_purpose],
-        )
-        try:
-            try:
-                final = await run_session(
-                    store=store,
-                    agent=bundle.agent,
-                    task=task,
-                    workspace=workspace,
-                    resume_id=args.resume,
-                    continue_latest=args.continue_,
-                    recursion_limit=args.recursion_limit,
-                    agent_path="cli",
-                )
-            except ResumeFailed as exc:
-                print(f"Error: {exc}", file=sys.stderr)
-                return 2
-            pulls = _parse_pull_paths(args.docker_pull_paths)
-            if pulls:
-                if bundle.docker_backend is None:
-                    print(
-                        "Warning: --docker-pull-paths only applies with --execution docker; ignored.",
-                        file=sys.stderr,
-                    )
-                else:
-                    dest = (
-                        (docker_cfg.export_dir / "_pulled").resolve()
-                        if docker_cfg.export_dir is not None
-                        else (workspace / "_docker_pull").resolve()
-                    )
-                    written = pull_virtual_paths_to_host(bundle.docker_backend, pulls, dest)
-                    if args.verbose and written:
-                        print(f"Docker pull wrote: {written}", file=sys.stderr)
-            if execution == "local" and bundle.sandbox_root is not None:
-                _cleanup_local_sandbox(workspace, bundle.sandbox_root)
-            if final.strip() and not args.verbose:
-                print(final.strip())
-        finally:
-            bundle.close()
-    return 0
+    return await run_chat(
+        task=task,
+        workspace=args.workspace.resolve(),
+        settings=llm_settings_from_env(),
+        execution_mode=_resolved_execution_mode(args),
+        docker_settings=_docker_settings_from_args(args),
+        local_settings=_local_settings_from_args(args),
+        search_config=SearchConfig.from_env(),
+        bash_timeout_sec=args.bash_timeout,
+        recursion_limit=args.recursion_limit,
+        permission_check=not args.no_permission_check,
+        resume_id=args.resume,
+        continue_latest=args.continue_,
+        docker_pull_paths=args.docker_pull_paths,
+        verbose=args.verbose,
+    )
 
 
 if __name__ == "__main__":

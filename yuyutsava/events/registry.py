@@ -21,7 +21,7 @@ from typing import Callable
 from yuyutsava.core.config import EventsConfig, SourceConfig
 from yuyutsava.events.bus import EventBus
 from yuyutsava.events.source import EventSource, SourceContext
-from yuyutsava.events.store import Store
+from yuyutsava.storage.events import Store
 
 logger = logging.getLogger("yuyutsava.events.registry")
 

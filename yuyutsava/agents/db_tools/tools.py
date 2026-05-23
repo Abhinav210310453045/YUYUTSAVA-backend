@@ -1,6 +1,6 @@
 """``db_*`` agent tools — read-only access to the daemon's SQLite stores.
 
-These call directly into :mod:`yuyutsava.daemon.db_introspect`; the same safety
+These call directly into :mod:`yuyutsava.storage.introspect`; the same safety
 guarantees (``mode=ro`` URI + sqlglot validator + LIMIT cap + timeout) apply
 whether the caller is an agent or the HTTP API.
 
@@ -11,11 +11,12 @@ upfront and discovered on demand via ``tool_search('db_*')``.
 from __future__ import annotations
 
 import json
+from dataclasses import asdict
 from typing import Any
 
 from langchain_core.tools import BaseTool, tool
 
-from yuyutsava.daemon.db_introspect import (
+from yuyutsava.storage.introspect import (
     DbApiError,
     execute_read_query,
     list_databases,
@@ -47,7 +48,7 @@ def make_db_tools() -> list[BaseTool]:
         to ``db_schema`` and ``db_query``.
         """
         try:
-            return _ok(await list_databases())
+            return _ok([asdict(d) for d in await list_databases()])
         except DbApiError as e:
             return _err(str(e))
 

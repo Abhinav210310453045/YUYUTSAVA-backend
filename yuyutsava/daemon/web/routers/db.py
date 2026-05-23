@@ -4,16 +4,18 @@ Mounted under ``/db`` from :mod:`yuyutsava.daemon.web.app`. Loopback-only by
 deployment (the daemon binds to 127.0.0.1); no auth header is required in v1.
 Toggle the whole surface off by setting ``YUYUTSAVA_DB_API_ENABLED=false``.
 
-The hard safety guarantees live in :mod:`yuyutsava.daemon.db_introspect` —
+The hard safety guarantees live in :mod:`yuyutsava.storage.introspect` —
 ``mode=ro`` connections + sqlglot statement parsing. This router is the thin
 FastAPI shim.
 """
 
 from __future__ import annotations
 
+from dataclasses import asdict
+
 from fastapi import APIRouter, HTTPException
 
-from yuyutsava.daemon.db_introspect import (
+from yuyutsava.storage.introspect import (
     DbApiError,
     execute_read_query,
     list_databases,
@@ -33,7 +35,7 @@ router = APIRouter(tags=["db"])
 
 @router.get("/db/databases", response_model=list[DatabaseInfo], summary="List exposed databases")
 async def get_databases() -> list[DatabaseInfo]:
-    return [DatabaseInfo(**d) for d in await list_databases()]
+    return [DatabaseInfo(**asdict(d)) for d in await list_databases()]
 
 
 @router.get("/db/{db}/tables", response_model=list[TableInfo], summary="List tables and views")

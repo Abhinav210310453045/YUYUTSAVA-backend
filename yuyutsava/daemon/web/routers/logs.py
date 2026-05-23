@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from yuyutsava.daemon.web.deps import get_store
-from yuyutsava.prefs.store import UserPrefsStore
+from yuyutsava.storage.prefs import PrefsStore
 
 router = APIRouter(tags=["logs"])
 
@@ -55,5 +55,5 @@ async def set_log_level(body: LogLevelIn, store=Depends(get_store)) -> LogLevelO
         for h in lg.handlers:
             h.setLevel(level)
     # Persist across restarts.
-    await UserPrefsStore(store).set(_PREF_KEY, level_name)
+    await PrefsStore(store).set(_PREF_KEY, level_name)
     return LogLevelOut(level=level_name)

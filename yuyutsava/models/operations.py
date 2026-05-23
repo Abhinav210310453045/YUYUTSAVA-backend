@@ -16,7 +16,7 @@ from typing import Literal, Union
 
 from pydantic import BaseModel, Field
 
-from yuyutsava.models.results import DeleteResult, ReadResult, ShellResult, WriteResult
+from yuyutsava.models.results import DeleteResult, ListResult, ReadResult, ShellResult, WriteResult
 
 
 class OperationType(str, Enum):
@@ -26,6 +26,8 @@ class OperationType(str, Enum):
     DELETE  = "delete"
     EXECUTE = "execute"
     CHMOD   = "chmod"
+    LIST    = "list"   # directory listing (tr_ls)
+    GLOB    = "glob"   # pattern match (tr_glob)
 
 
 class FilesystemZone(str, Enum):
@@ -42,7 +44,7 @@ class PermissionAction(str, Enum):
 
 
 # Union of all concrete result types — replaces bare `Any` on OperationResponse.result
-OperationResult = Union[ShellResult, WriteResult, DeleteResult, ReadResult, None]
+OperationResult = Union[ShellResult, WriteResult, DeleteResult, ReadResult, ListResult, None]
 
 
 class OperationRequest(BaseModel):

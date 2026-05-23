@@ -24,11 +24,86 @@ import dataclasses
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, Literal, Mapping
 
-from yuyutsava.events.store import Proposal
+from yuyutsava.storage.events import Proposal
 
 logger = logging.getLogger("yuyutsava.daemon.channels")
+
+
+# ---------------------------------------------------------------------------
+# ChannelEvent payload variants
+# ---------------------------------------------------------------------------
+#
+# Each payload variant is a frozen dataclass with its own ``kind`` literal
+# discriminator. Consumers can match on the payload type (``match`` or
+# ``isinstance``) instead of dict-fishing on free-form data.
+
+
+@dataclass(frozen=True)
+class LogPayload:
+    """Free-text status message (one short line)."""
+
+    text: str = ""
+    kind: Literal["log"] = "log"
+
+
+@dataclass(frozen=True)
+class TokenPayload:
+    """Streaming AI text chunk."""
+
+    text: str = ""
+    kind: Literal["token"] = "token"
+
+
+@dataclass(frozen=True)
+class ToolCallPayload:
+    """The model called a tool."""
+
+    name: str
+    args: Mapping[str, Any] = field(default_factory=dict)
+    kind: Literal["tool_call"] = "tool_call"
+
+
+@dataclass(frozen=True)
+class ToolResultPayload:
+    """A tool returned (preview is already truncated)."""
+
+    name: str
+    preview: str = ""
+    kind: Literal["tool_result"] = "tool_result"
+
+
+@dataclass(frozen=True)
+class TimelinePayload:
+    """Structured timeline row (event/proposal/decision)."""
+
+    line: str = ""
+    cls: str = ""
+    ts: float | None = None
+    kind: Literal["timeline"] = "timeline"
+
+
+@dataclass(frozen=True)
+class HttpLogPayload:
+    """HTTP access log entry (produced by the web middleware)."""
+
+    method: str
+    path: str
+    status: int
+    duration_ms: int
+    ts: float
+    kind: Literal["http_log"] = "http_log"
+
+
+ChannelPayload = (
+    LogPayload
+    | TokenPayload
+    | ToolCallPayload
+    | ToolResultPayload
+    | TimelinePayload
+    | HttpLogPayload
+)
 
 
 # ---------------------------------------------------------------------------
@@ -40,17 +115,16 @@ logger = logging.getLogger("yuyutsava.daemon.channels")
 class ChannelEvent:
     """Token / status / log event broadcast to all channels.
 
-    ``kind`` semantics (kept small for the SSE payload):
-
-    - ``log``: free-text status (one short line).
-    - ``token``: streaming AI text. ``data["text"]`` holds the chunk.
-    - ``tool_call``: the model called a tool. ``data`` has ``name`` and ``args``.
-    - ``tool_result``: a tool returned. ``data`` has ``name`` and ``preview``.
-    - ``timeline``: a structured timeline row appended (event/proposal/decision).
+    The ``payload`` is a typed variant (see :data:`ChannelPayload`); each
+    variant carries its own ``kind`` discriminator so consumers can pattern
+    match on the payload type.
     """
 
-    kind: Literal["log", "token", "tool_call", "tool_result", "timeline"]
-    data: dict[str, Any] = field(default_factory=dict)
+    payload: ChannelPayload
+
+    @property
+    def kind(self) -> str:
+        return self.payload.kind
 
 
 @dataclass(frozen=True)
@@ -61,7 +135,14 @@ class AskPrompt:
     title: str
     body: str
     options: list[str]              # e.g. ["approve","reject"] or free-text if empty
-    interrupt_value: dict[str, Any]  # raw langgraph interrupt for caller context
+    # ``interrupt_value`` is a raw passthrough from LangGraph's ``interrupt()``
+    # — its shape is one of the variants documented in
+    # :mod:`yuyutsava.models.interrupts` (plus the loose ``orchestrator_ask``
+    # form the orchestrator builds inline). We treat it as opaque context
+    # carried with the prompt; consumers parse it back into a typed model
+    # when they need to. Typed as a read-only ``Mapping`` to discourage
+    # mutation through this field.
+    interrupt_value: Mapping[str, Any]
     session_id: str | None = None    # thread_id of the originating run (HITL scoping)
     agent_path: str | None = None    # e.g. "orchestrator/file_organizer#1" — who's asking
 

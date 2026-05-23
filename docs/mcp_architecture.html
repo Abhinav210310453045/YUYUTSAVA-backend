@@ -74,8 +74,8 @@
 
   <!-- DAEMON OUTER -->
   <rect class="node daemon" x="20" y="20" width="780" height="520" rx="12"/>
-  <text class="title" x="40" y="46">YUYUTSAVA Daemon (yuyutsava/daemon/main.py)</text>
-  <text class="small" x="40" y="62">Boots once, owns all state. CLI does not use MCP.</text>
+  <text class="title" x="40" y="46">YUYUTSAVA Daemon (yuyutsava/daemon/main.py + bootstrap.py)</text>
+  <text class="small" x="40" y="62">main.py owns lifecycle; bootstrap.py wires subsystems. CLI does not use MCP.</text>
 
   <!-- Config -->
   <rect class="node" x="50" y="84" width="220" height="70" rx="8"/>
@@ -84,27 +84,28 @@
   <text class="small" x="62" y="140">loaded by MCPConfig.from_file()</text>
 
   <!-- Manager -->
-  <rect class="node mgr" x="50" y="184" width="320" height="120" rx="8"/>
+  <rect class="node mgr" x="50" y="184" width="320" height="135" rx="8"/>
   <text class="title" x="64" y="208">MCPClientManager</text>
   <text class="small" x="64" y="226">yuyutsava/mcp/loader.py</text>
-  <text class="small" x="64" y="244">• start(cfg) → spawn one task per server</text>
-  <text class="small" x="64" y="260">• tools_for(agent_name) → scoped BaseTools</text>
-  <text class="small" x="64" y="276">• hot_reload(new_cfg)  on SIGHUP</text>
-  <text class="small" x="64" y="292">• stop() — AsyncExitStack per server</text>
+  <text class="small" x="64" y="244">• constructed in daemon/bootstrap.py</text>
+  <text class="small" x="64" y="260">• start(cfg) → spawn one task per server</text>
+  <text class="small" x="64" y="276">• tools_for(agent_name) → scoped BaseTools</text>
+  <text class="small" x="64" y="292">• hot_reload(new_cfg)  on SIGHUP</text>
+  <text class="small" x="64" y="308">• stop() — AsyncExitStack per server</text>
 
   <!-- Adapter -->
-  <rect class="node" x="50" y="324" width="320" height="70" rx="8"/>
-  <text class="title" x="64" y="346">tool_adapter.adapt()</text>
-  <text class="small" x="64" y="364">mcp.types.Tool → langchain StructuredTool</text>
-  <text class="small" x="64" y="380">name = "&lt;server&gt;__&lt;tool&gt;"  (collision-safe)</text>
+  <rect class="node" x="50" y="335" width="320" height="70" rx="8"/>
+  <text class="title" x="64" y="357">tool_adapter.adapt()</text>
+  <text class="small" x="64" y="375">mcp.types.Tool → langchain StructuredTool</text>
+  <text class="small" x="64" y="391">name = "&lt;server&gt;__&lt;tool&gt;"  (collision-safe)</text>
 
   <!-- Sessions -->
-  <rect class="node" x="50" y="414" width="320" height="100" rx="8"/>
-  <text class="title" x="64" y="436">ClientSession × N (one per server)</text>
-  <text class="small" x="64" y="454">from `mcp` SDK — official Python client</text>
-  <text class="small" x="64" y="470">stdio_client( ) or sse_client( ) transport</text>
-  <text class="small" x="64" y="486">sampling_callback / elicitation_callback:</text>
-  <text class="small" x="64" y="502">&nbsp;&nbsp;defaults → "INVALID_REQUEST" stubs</text>
+  <rect class="node" x="50" y="420" width="320" height="100" rx="8"/>
+  <text class="title" x="64" y="442">ClientSession × N (one per server)</text>
+  <text class="small" x="64" y="460">from `mcp` SDK — official Python client</text>
+  <text class="small" x="64" y="476">stdio_client( ) or sse_client( ) transport</text>
+  <text class="small" x="64" y="492">sampling_callback / elicitation_callback:</text>
+  <text class="small" x="64" y="508">&nbsp;&nbsp;defaults → "INVALID_REQUEST" stubs</text>
 
   <!-- Agents -->
   <rect class="node agent" x="430" y="184" width="350" height="270" rx="8"/>
@@ -126,12 +127,12 @@
   <!-- Reload handler -->
   <rect class="node" x="430" y="476" width="350" height="44" rx="8"/>
   <text class="small" x="446" y="494">SIGHUP → daemon/main.py _reload_loop</text>
-  <text class="small" x="446" y="510">→ MCPConfig.from_file() → manager.hot_reload(new)</text>
+  <text class="small" x="446" y="510">→ MCPConfig.from_file() → subs.mcp_manager.hot_reload(new)</text>
 
   <!-- Arrows inside daemon -->
   <line class="edge" x1="160" y1="154" x2="160" y2="184" marker-end="url(#arr)"/>
-  <line class="edge" x1="210" y1="304" x2="210" y2="324" marker-end="url(#arr)"/>
-  <line class="edge" x1="210" y1="394" x2="210" y2="414" marker-end="url(#arr)"/>
+  <line class="edge" x1="210" y1="319" x2="210" y2="335" marker-end="url(#arr)"/>
+  <line class="edge" x1="210" y1="405" x2="210" y2="420" marker-end="url(#arr)"/>
   <path class="edge bold" d="M370,250 C400,250 410,250 446,259" marker-end="url(#arr)"/>
   <path class="edge bold" d="M370,260 C400,300 410,300 446,307" marker-end="url(#arr)"/>
   <path class="edge bold" d="M370,270 C400,340 410,340 446,355" marker-end="url(#arr)"/>
@@ -175,23 +176,40 @@
 
 <h2>2. Boot sequence</h2>
 <pre>
-daemon/main.py
-   ├─ load .env
-   ├─ Store.start()
-   ├─ PermissionsPolicy.from_file()
-   ├─ MCPClientManager()                          # owns all sessions
-   ├─ MCPConfig.from_file()                       # ~/.yuyutsava/mcp_config.json
-   ├─ mcp_manager.start(mcp_cfg)
-   │    └─ for each server → asyncio.create_task(_run_server)
-   │         ├─ stdio_client(StdioServerParameters(...))   ← spawn process
-   │         │  or sse_client(url)                         ← open SSE
-   │         ├─ ClientSession(read, write).initialize()
-   │         ├─ session.list_tools()  → cap at spec.max_tools
-   │         ├─ adapt(session, name, tool) for each        ← StructuredTool wrappers
-   │         └─ park on stop_event (same task owns AsyncExitStack)
-   ├─ build subagents — each gets mcp_manager
-   ├─ build orchestrator — also gets mcp_manager
-   └─ on SIGHUP → mcp_manager.hot_reload(new_cfg)  (diff add/remove/changed)
+daemon/main.py                                    # lifecycle only (~261 lines)
+   ├─ load .env  /  argparse  /  _setup_logging
+   ├─ opts = DaemonOptions(workspace, headless, voice, verbose)
+   ├─ subs = await build_daemon(opts)             ← daemon/bootstrap.py
+   │    │
+   │    │   bootstrap.py — single async function, owns all wiring:
+   │    │
+   │    ├─ Store.start()
+   │    ├─ PrefsStore(store) / PrefsInjector
+   │    ├─ PermissionsPolicy.from_file() + StorePolicyCapEnforcer
+   │    ├─ MCPClientManager()                     # owns all sessions
+   │    ├─ MCPConfig.from_file()                  # ~/.yuyutsava/mcp_config.json
+   │    ├─ await mcp_manager.start(mcp_cfg)
+   │    │     └─ for each server → asyncio.create_task(_run_server)
+   │    │          ├─ stdio_client(StdioServerParameters(...))  ← spawn process
+   │    │          │  or sse_client(url)                        ← open SSE
+   │    │          ├─ ClientSession(read, write).initialize()
+   │    │          ├─ session.list_tools() → cap at spec.max_tools
+   │    │          ├─ adapt(session, name, tool) for each       ← StructuredTool wrappers
+   │    │          └─ park on stop_event (same task owns AsyncExitStack)
+   │    ├─ CheckpointerSaver / UnifiedSweeper / EventBus / SourceRegistry
+   │    ├─ ChannelRouter (+ WebChannel, TerminalChannel, optional VoiceChannel)
+   │    ├─ build subagents — each gets mcp_manager
+   │    │     (FileOrganizer, FaceWatcher, GeneralPurpose)
+   │    ├─ build TriageAgent + TriageLoop / OrchestratorDeps + OrchestratorLoop
+   │    │     (orchestrator graph itself is built lazily per-task via
+   │    │      core/engine.build_orchestrator — also receives mcp_manager)
+   │    └─ return DaemonSubsystems(...)           ← frozen record
+   │
+   ├─ install signal handlers + schedule loop tasks
+   ├─ run until stop_event
+   └─ on SIGHUP → main.py _reload_loop
+        → MCPConfig.from_file() → subs.mcp_manager.hot_reload(new_cfg)
+          (diff add/remove/changed)
 </pre>
 
 <h2>3. How tools get into an agent</h2>
@@ -300,12 +318,12 @@ daemon/main.py
   <li><a href="../yuyutsava/mcp/config.py">yuyutsava/mcp/config.py</a> — <code>MCPConfig</code>, <code>MCPServerSpec</code></li>
   <li><a href="../yuyutsava/mcp/loader.py">yuyutsava/mcp/loader.py</a> — <code>MCPClientManager</code>, per-server runner task</li>
   <li><a href="../yuyutsava/mcp/tool_adapter.py">yuyutsava/mcp/tool_adapter.py</a> — <code>adapt()</code>, <code>_flatten_content()</code></li>
-  <li><a href="../yuyutsava/daemon/main.py#L203">yuyutsava/daemon/main.py:204</a> — <code>mcp_manager.start(mcp_cfg)</code></li>
-  <li><a href="../yuyutsava/daemon/main.py#L392">yuyutsava/daemon/main.py:392</a> — SIGHUP reload loop</li>
-  <li><a href="../yuyutsava/agents/base_sub_agent.py#L150">yuyutsava/agents/base_sub_agent.py:150</a> — <code>mcp_tools()</code></li>
-  <li><a href="../yuyutsava/agents/orchestrator/agent.py#L90">yuyutsava/agents/orchestrator/agent.py:90</a> — orchestrator pulls MCP tools</li>
+  <li><a href="../yuyutsava/daemon/bootstrap.py#L199">yuyutsava/daemon/bootstrap.py:199-203</a> — <code>MCPClientManager()</code> construction + <code>mcp_manager.start(mcp_cfg)</code></li>
+  <li><a href="../yuyutsava/daemon/main.py#L143">yuyutsava/daemon/main.py:143-146</a> — SIGHUP reload loop calls <code>subs.mcp_manager.hot_reload(...)</code></li>
+  <li><a href="../yuyutsava/agents/base_sub_agent.py#L150">yuyutsava/agents/base_sub_agent.py:150</a> — <code>mcp_tools()</code> on every subagent</li>
+  <li><a href="../yuyutsava/core/engine.py#L316">yuyutsava/core/engine.py:316</a> — <code>build_orchestrator</code> pulls MCP tools via <code>deps.mcp_manager.tools_for("orchestrator")</code></li>
   <li><a href="../yuyutsava/mcp_servers/deepface/server.py">yuyutsava/mcp_servers/deepface/server.py</a> — in-tree FastMCP example</li>
-  <li><span class="muted">yuyutsava/cli/cli.py — <strong>no MCP integration</strong> (CLI is daemon-less)</span></li>
+  <li><span class="muted">yuyutsava/cli/cli.py — <strong>no MCP integration</strong> (CLI is daemon-less; agent stack built by <code>cli/agent_stack.py</code> does not receive an <code>MCPClientManager</code>)</span></li>
 </ul>
 
 </div>

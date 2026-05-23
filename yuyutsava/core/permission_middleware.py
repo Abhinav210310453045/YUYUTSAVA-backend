@@ -20,6 +20,7 @@ The first match that requires user input calls ``interrupt()``.
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 from typing import Any
@@ -133,7 +134,6 @@ def _extract_absolute_paths(command: str) -> list[str]:
 
 def _resolve(path: str) -> str:
     """Canonicalize a path without requiring it to exist."""
-    import os
     return os.path.normpath(os.path.realpath(os.path.abspath(path)))
 
 

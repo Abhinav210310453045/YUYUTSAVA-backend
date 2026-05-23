@@ -1,0 +1,588 @@
+"""Streaming + interrupt-handling runtime for compiled deepagent graphs.
+
+The factories in :mod:`yuyutsava.core.engine` build the graphs; this module
+drives them. Two execution entrypoints:
+
+  * :func:`astream_agent`       — CLI flow. Prints LLM tokens, tool calls,
+                                  tool results to stderr; prompts the user on
+                                  stdin when an interrupt fires.
+  * :func:`astream_agent_iter`  — Daemon flow. Yields typed :class:`StreamEvent`
+                                  records; an ``ask_handler`` callback handles
+                                  interrupts (the daemon routes them through
+                                  the channel system).
+
+Both share the same interrupt-prompt rendering (:func:`prompt_permission`),
+which also persists every interrupt to the audit DB via
+:class:`yuyutsava.storage.interrupts.InterruptsStore` when one is supplied.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import sys
+import uuid
+from dataclasses import dataclass
+from typing import Any
+
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
+from langchain_core.runnables import RunnableConfig
+from langgraph.graph.state import CompiledStateGraph
+from langgraph.types import Command
+
+from yuyutsava.core.tool_result import guard_tool_result, is_tool_error
+from yuyutsava.core.tracing import get_callback
+from yuyutsava.models.interrupts import (
+    PermissionRequestInterrupt,
+    TaskRunnerPermissionInterrupt,
+    UserQuestionInterrupt,
+)
+from yuyutsava.storage.interrupts import InterruptsStore
+from yuyutsava.storage.models import InterruptRecord
+
+logger = logging.getLogger("yuyutsava")
+
+_SEP = "━" * 60
+
+
+# ---------------------------------------------------------------------------
+# Message helpers
+# ---------------------------------------------------------------------------
+
+
+def _ai_message_text(msg: AIMessage) -> str:
+    c = msg.content
+    if isinstance(c, str) and c.strip():
+        return c.strip()
+    if isinstance(c, list):
+        parts: list[str] = []
+        for block in c:
+            if isinstance(block, dict) and block.get("type") == "text":
+                parts.append(str(block.get("text", "")))
+        return "".join(parts).strip()
+    return ""
+
+
+def last_assistant_text(messages: list[Any]) -> str:
+    for m in reversed(messages):
+        if isinstance(m, AIMessage):
+            text = _ai_message_text(m)
+            if text:
+                return text
+    return ""
+
+
+def _indent(text: str, spaces: int) -> str:
+    pad = " " * spaces
+    return "\n".join(pad + line for line in text.splitlines())
+
+
+# ---------------------------------------------------------------------------
+# Interrupt rendering helpers
+# ---------------------------------------------------------------------------
+
+
+def _fmt_session_tail(sid: str | None) -> str:
+    """Mirror AskCard/ProposalCard rendering: 'sess:…<last 8>'."""
+    if not sid:
+        return ""
+    s = str(sid)
+    return f"sess:…{s[-8:]}" if len(s) > 8 else f"sess:{s}"
+
+
+def _fmt_agent_path(path: str | None) -> str:
+    """Mirror UI chip: last two path segments (e.g. cli/general-purpose)."""
+    if not path:
+        return ""
+    parts = [p for p in str(path).split("/") if p]
+    return "/".join(parts[-2:]) if parts else ""
+
+
+def _print_scoping_chips(payload: Any, *, colour: str) -> None:
+    """Print agent_path + session tail underneath the interrupt header.
+
+    No-op when neither field is present, so the bare PermissionRequestInterrupt
+    branch stays clean if the daemon never populated them.
+    """
+    if not isinstance(payload, dict):
+        return
+    ap = _fmt_agent_path(payload.get("agent_path"))
+    st = _fmt_session_tail(payload.get("session_id"))
+    if not ap and not st:
+        return
+    chips: list[str] = []
+    if ap:
+        chips.append(f"agent: {ap}")
+    if st:
+        chips.append(st)
+    print(f"  \033[2m{'   '.join(chips)}\033[0m", file=sys.stderr)
+
+
+# ---------------------------------------------------------------------------
+# Permission prompt / user question handler
+# ---------------------------------------------------------------------------
+
+
+async def prompt_permission(
+    interrupt_value: Any,
+    *,
+    interrupts_store: InterruptsStore | None = None,
+    session_id: str | None = None,
+    thread_id: str | None = None,
+    invocation_mode: str = "cli",
+) -> str:
+    """Render the interrupt payload to the terminal and collect the user's response.
+
+    When ``interrupts_store`` is provided, every interrupt is also persisted
+    to the audit DB before prompting and resolved after the user answers.
+    Failures to write are swallowed (best-effort audit, never block the user).
+
+    Returns the user's response string:
+      • "approve" / "reject"  for permission prompts
+      • free-text answer      for user questions
+    """
+    interrupt_type = interrupt_value.get("type", "") if isinstance(interrupt_value, dict) else ""
+
+    row_id = ""
+    if interrupts_store is not None and isinstance(interrupt_value, dict):
+        try:
+            record = InterruptRecord.from_payload(
+                interrupt_value,
+                session_id=session_id or "",
+                thread_id=thread_id or "",
+                invocation_mode=invocation_mode,
+            )
+            row_id = await interrupts_store.record(record)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("InterruptsStore.record raised: %s", exc)
+
+    # ── tr_ask_user: agent asks a free-text question ───────────────────────
+    if interrupt_type == "user_question":
+        iv = UserQuestionInterrupt.model_validate(interrupt_value)
+
+        print(f"\n\033[36m{_SEP}\033[0m", file=sys.stderr)
+        print("\033[36m💬  AGENT QUESTION\033[0m", file=sys.stderr)
+        print(f"\033[36m{_SEP}\033[0m", file=sys.stderr)
+        print(f"  {iv.question}", file=sys.stderr)
+        if iv.options:
+            print(f"  Options: {' | '.join(iv.options)}", file=sys.stderr)
+        _print_scoping_chips(interrupt_value, colour="36")
+        print(f"\033[36m{_SEP}\033[0m", file=sys.stderr)
+
+        answer: str = await asyncio.to_thread(input, "  Your answer: ")
+        response = answer.strip() or "no response"
+        print(f"\033[36m  → {response}\033[0m\n", file=sys.stderr)
+        if interrupts_store is not None and row_id:
+            await interrupts_store.resolve(row_id, outcome="answered", user_response=response)
+        return response
+
+    # ── TaskRunnerAgent: filesystem operation permission request ───────────
+    if interrupt_type == "task_runner_permission":
+        iv = TaskRunnerPermissionInterrupt.model_validate(interrupt_value)
+        path_str = ", ".join(iv.paths)
+
+        print(f"\n\033[35m{_SEP}\033[0m", file=sys.stderr)
+        print("\033[35m🔐  TASK RUNNER PERMISSION REQUEST\033[0m", file=sys.stderr)
+        print(f"\033[35m{_SEP}\033[0m", file=sys.stderr)
+        print(f"  Operation : {iv.operation.upper()}", file=sys.stderr)
+        print(f"  Path(s)   : {path_str}", file=sys.stderr)
+        print(f"  Zone      : {iv.zone.upper()}", file=sys.stderr)
+        agent_line = f"  Agent     : {iv.requesting_agent}"
+        if iv.parent_agent:
+            agent_line += f"  (parent: {iv.parent_agent})"
+        print(agent_line, file=sys.stderr)
+        print(f"  Reason    : {iv.reason}", file=sys.stderr)
+        print(f"  Risk      : {iv.risk_level}", file=sys.stderr)
+        _print_scoping_chips(interrupt_value, colour="35")
+        print(f"\033[35m{_SEP}\033[0m", file=sys.stderr)
+
+        answer = await asyncio.to_thread(input, "  Allow? [y/N]: ")
+        decision = "approve" if answer.strip().lower() in ("y", "yes") else "reject"
+        if decision == "approve":
+            print("\033[32m  ✅  Approved\033[0m\n", file=sys.stderr)
+        else:
+            print("\033[31m  🚫  Rejected\033[0m\n", file=sys.stderr)
+        if interrupts_store is not None and row_id:
+            await interrupts_store.resolve(row_id, outcome=decision)
+        return decision
+
+    # ── PermissionMiddleware: raw execute call triggered a pattern check ───
+    if isinstance(interrupt_value, dict):
+        iv2 = PermissionRequestInterrupt.model_validate({
+            "command": interrupt_value.get("command", "<unknown>"),
+            "reason":  interrupt_value.get("reason", "Potentially dangerous operation"),
+        })
+    else:
+        iv2 = PermissionRequestInterrupt(
+            command=str(interrupt_value),
+            reason="Potentially dangerous operation",
+        )
+
+    print(f"\n\033[33m{_SEP}\033[0m", file=sys.stderr)
+    print("\033[33m🛑  PERMISSION REQUEST\033[0m", file=sys.stderr)
+    print(f"\033[33m{_SEP}\033[0m", file=sys.stderr)
+    print(f"  Command : {iv2.command}", file=sys.stderr)
+    print(f"  Reason  : {iv2.reason}", file=sys.stderr)
+    _print_scoping_chips(interrupt_value, colour="33")
+    print(f"\033[33m{_SEP}\033[0m", file=sys.stderr)
+
+    answer = await asyncio.to_thread(input, "  Allow? [y/N]: ")
+    decision = "approve" if answer.strip().lower() in ("y", "yes") else "reject"
+    if decision == "approve":
+        print("\033[32m  ✅  Approved — running command\033[0m\n", file=sys.stderr)
+    else:
+        print("\033[31m  🚫  Rejected — command will not run\033[0m\n", file=sys.stderr)
+    if interrupts_store is not None and row_id:
+        await interrupts_store.resolve(row_id, outcome=decision)
+    return decision
+
+
+# ---------------------------------------------------------------------------
+# Typed stream events  (consumed by the daemon's channel router)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class StreamEvent:
+    """Structured event yielded by ``astream_agent_iter``.
+
+    ``kind``:
+      - ``token``       data={"text": str}
+      - ``tool_call``   data={"name": str, "args": dict}
+      - ``tool_result`` data={"name": str, "preview": str}
+      - ``log``         data={"text": str}
+      - ``final``       data={"text": str}   (last assistant message)
+    """
+
+    kind: str
+    data: dict
+
+
+async def astream_agent_iter(
+    agent: CompiledStateGraph,
+    task: str,
+    *,
+    thread_id: str | None = None,
+    recursion_limit: int = 200,
+    ask_handler=None,  # async (interrupt_value: dict) -> str
+    run_name: str = "agent",
+    agent_path: str = "orchestrator",
+):
+    """Async generator that yields ``StreamEvent``s instead of printing them.
+
+    The daemon uses this to feed events into the channel router. ``ask_handler``
+    is called whenever the graph emits an ``interrupt`` — the daemon plugs in
+    a function that routes through the web/terminal channel and returns the
+    user's decision string. If ``ask_handler`` is None, interrupts are
+    auto-rejected (suitable for headless / autonomous runs).
+
+    ``agent_path`` is seeded into ``configurable`` so downstream interrupts can
+    attribute themselves (``"orchestrator"`` by default — daemon-style;
+    ``"cli"`` for direct CLI runs).
+
+    Yields events; the final yielded event is always ``StreamEvent("final", {"text": ...})``.
+    """
+    _tid = thread_id or str(uuid.uuid4())
+    cfg: RunnableConfig = {
+        "recursion_limit": recursion_limit,
+        "configurable": {"thread_id": _tid, "agent_path": agent_path},
+    }
+    _lf_cb = get_callback(session_id=_tid, run_name=run_name)
+    if _lf_cb is not None:
+        cfg["callbacks"] = [_lf_cb]
+
+    final_messages: list[Any] = []
+    current_input: Any = {"messages": [HumanMessage(content=task)]}
+
+    while True:
+        interrupted_value: Any = None
+        _steps_this_pass = 0
+
+        async for event in agent.astream(
+            current_input, config=cfg, stream_mode=["messages", "updates"],
+        ):
+            if not isinstance(event, tuple) or len(event) != 2:
+                continue
+            mode, data = event
+
+            if mode == "updates" and isinstance(data, dict) and "__interrupt__" in data:
+                interrupts = data["__interrupt__"]
+                if interrupts:
+                    iv = interrupts[0]
+                    interrupted_value = iv.value if hasattr(iv, "value") else iv
+                continue
+
+            if mode == "messages":
+                chunk, _meta = data
+                if isinstance(chunk, AIMessageChunk):
+                    text = ""
+                    if isinstance(chunk.content, str):
+                        text = chunk.content
+                    elif isinstance(chunk.content, list):
+                        for block in chunk.content:
+                            if isinstance(block, dict) and block.get("type") == "text":
+                                text += str(block.get("text", ""))
+                    if text:
+                        yield StreamEvent("token", {"text": text})
+
+            elif mode == "updates":
+                if not isinstance(data, dict):
+                    continue
+                for _node_name, node_data in data.items():
+                    if not isinstance(node_data, dict):
+                        continue
+                    msgs = node_data.get("messages", [])
+                    if not isinstance(msgs, list):
+                        continue
+                    for m in msgs:
+                        final_messages.append(m)
+                        _steps_this_pass += 1
+                        if isinstance(m, AIMessage) and m.tool_calls:
+                            for tc in m.tool_calls:
+                                name = tc.get("name", "?") if isinstance(tc, dict) else getattr(tc, "name", "?")
+                                args = tc.get("args", {}) if isinstance(tc, dict) else getattr(tc, "args", {})
+                                yield StreamEvent("tool_call", {"name": name, "args": args})
+                        elif isinstance(m, ToolMessage):
+                            tn = getattr(m, "name", "tool") or "tool"
+                            body = m.content if isinstance(m.content, str) else str(m.content)
+                            safe_body = guard_tool_result(body, tn)
+                            if safe_body is not body:
+                                m.content = safe_body
+                            preview = safe_body if len(safe_body) <= 600 else safe_body[:600] + " …[truncated]"
+                            yield StreamEvent("tool_result", {"name": tn, "preview": preview})
+
+        if interrupted_value is None:
+            final_text = last_assistant_text(final_messages)
+            if not final_text and _steps_this_pass == 0:
+                yield StreamEvent("log", {
+                    "text": (
+                        f"⚠️  Agent produced no output — possible recursion limit hit "
+                        f"(limit={recursion_limit}) or graph exited unexpectedly."
+                    )
+                })
+            elif not final_text:
+                yield StreamEvent("log", {
+                    "text": "⚠️  Task ended with no assistant text. Agent may have stopped mid-task."
+                })
+            yield StreamEvent("final", {"text": final_text})
+            return
+
+        if ask_handler is None:
+            decision = "reject"
+        else:
+            try:
+                decision = await ask_handler(interrupted_value)
+            except Exception as exc:
+                yield StreamEvent("log", {"text": f"ask_handler raised: {exc}; rejecting"})
+                decision = "reject"
+        current_input = Command(resume=decision)
+
+
+async def astream_agent(
+    agent: CompiledStateGraph,
+    task: str,
+    *,
+    thread_id: str | None = None,
+    recursion_limit: int = 200,
+    on_tick=None,  # async (steps: int) -> None — progress hook for session bookkeeping
+    agent_path: str = "cli",
+    session_id: str | None = None,
+    interrupts_store: InterruptsStore | None = None,
+    invocation_mode: str = "cli",
+) -> str:
+    """
+    Run the agent with real-time async streaming.
+
+    - LLM tokens are printed to stderr as they arrive (no buffering).
+    - Tool calls and results are logged at INFO level with clear labels.
+    - Handles ``interrupt()`` events from ``PermissionMiddleware``: pauses,
+      asks the user on stdin, then resumes the graph with approve/reject.
+    - Returns the final assistant text.
+    - ``on_tick`` (optional): awaited with the count of new messages observed
+      after each graph step batch. Used by ``yuyutsava.sessions.runner`` to
+      coalesce ``store.touch`` updates without coupling the engine to the
+      session layer.
+    """
+    _tid = thread_id or str(uuid.uuid4())
+    cfg: RunnableConfig = {
+        "recursion_limit": recursion_limit,
+        "configurable": {"thread_id": _tid, "agent_path": agent_path},
+    }
+    _lf_cb = get_callback(session_id=_tid, run_name="cli")
+    if _lf_cb is not None:
+        cfg["callbacks"] = [_lf_cb]
+
+    logger.info(_SEP)
+    logger.info("YUYUTSAVA  starting task  thread_id=%s", cfg["configurable"]["thread_id"])
+    logger.info(_SEP)
+    logger.info("Task: %s", task)
+    logger.info(_SEP)
+
+    final_messages: list[Any] = []
+    # First call uses the task message; subsequent calls (after interrupt) use Command(resume=...)
+    current_input: Any = {"messages": [HumanMessage(content=task)]}
+
+    while True:
+        _in_ai_stream = False
+        interrupted_value: Any = None
+        _steps_this_pass = 0
+
+        # We stream with two modes at once:
+        #   "messages" → yields (mode, (chunk, metadata)) — LLM tokens as they arrive
+        #   "updates"  → yields (mode, {"node": state_delta}) — tool calls / results
+        async for event in agent.astream(
+            current_input,
+            config=cfg,
+            stream_mode=["messages", "updates"],
+        ):
+            # With multiple stream_mode values, events are (mode, data) tuples
+            if not isinstance(event, tuple) or len(event) != 2:
+                continue
+            mode, data = event
+
+            # ── interrupt detection (updates mode) ─────────────────────────
+            if mode == "updates" and isinstance(data, dict) and "__interrupt__" in data:
+                if _in_ai_stream:
+                    print("\n", file=sys.stderr)
+                    _in_ai_stream = False
+                interrupts = data["__interrupt__"]
+                if interrupts:
+                    iv = interrupts[0]
+                    interrupted_value = iv.value if hasattr(iv, "value") else iv
+                continue  # let any other events in this batch process normally
+
+            # ── messages mode: streaming LLM tokens ────────────────────────
+            if mode == "messages":
+                chunk, _meta = data
+                if isinstance(chunk, AIMessageChunk):
+                    text = ""
+                    if isinstance(chunk.content, str):
+                        text = chunk.content
+                    elif isinstance(chunk.content, list):
+                        for block in chunk.content:
+                            if isinstance(block, dict) and block.get("type") == "text":
+                                text += str(block.get("text", ""))
+
+                    if text:
+                        if not _in_ai_stream:
+                            print(f"\n\033[36m{'─' * 60}\033[0m", file=sys.stderr)
+                            print("\033[36m🤖  AI (streaming)\033[0m", file=sys.stderr)
+                            print(f"\033[36m{'─' * 60}\033[0m", file=sys.stderr)
+                            _in_ai_stream = True
+                        print(text, end="", flush=True, file=sys.stderr)
+
+                    # Close the AI stream line if a tool call is starting
+                    if chunk.tool_calls or getattr(chunk, "tool_call_chunks", None):
+                        if _in_ai_stream:
+                            print("\n", file=sys.stderr)
+                            _in_ai_stream = False
+
+                elif isinstance(chunk, ToolMessage):
+                    if _in_ai_stream:
+                        print("\n", file=sys.stderr)
+                        _in_ai_stream = False
+
+            # ── updates mode: full state delta after each node ──────────────
+            elif mode == "updates":
+                if _in_ai_stream:
+                    print("\n", file=sys.stderr)
+                    _in_ai_stream = False
+
+                if not isinstance(data, dict):
+                    continue
+
+                for _node_name, node_data in data.items():
+                    if not isinstance(node_data, dict):
+                        continue
+                    msgs = node_data.get("messages", [])
+                    if not isinstance(msgs, list):
+                        continue
+
+                    for m in msgs:
+                        final_messages.append(m)
+                        _steps_this_pass += 1
+
+                        if isinstance(m, AIMessage):
+                            usage = getattr(m, "usage_metadata", None)
+                            if usage:
+                                parts_u: list[str] = []
+                                for k in ("input_tokens", "output_tokens", "total_tokens"):
+                                    v = usage.get(k) if isinstance(usage, dict) else getattr(usage, k, None)
+                                    if v is not None:
+                                        parts_u.append(f"{k.replace('_tokens', '')}: {v}")
+                                if parts_u:
+                                    logger.debug("    Tokens  %s", " | ".join(parts_u))
+
+                            if m.tool_calls:
+                                for tc in m.tool_calls:
+                                    name = tc.get("name", "?") if isinstance(tc, dict) else getattr(tc, "name", "?")
+                                    args = tc.get("args", {}) if isinstance(tc, dict) else getattr(tc, "args", {})
+                                    args_str = json.dumps(args, indent=4) if isinstance(args, dict) else str(args)
+                                    logger.info("")
+                                    logger.info("\033[33m🔧  TOOL CALL → %s\033[0m", name)
+                                    logger.info("    Input:\n%s", _indent(args_str, 4))
+
+                        elif isinstance(m, ToolMessage):
+                            tn = getattr(m, "name", "tool") or "tool"
+                            body = m.content if isinstance(m.content, str) else str(m.content)
+                            safe_body = guard_tool_result(body, tn)
+                            if safe_body is not body:
+                                m.content = safe_body
+                            preview = safe_body if len(safe_body) <= 600 else safe_body[:600] + "\n    … [truncated]"
+                            err = is_tool_error(m, safe_body)
+                            logger.info("")
+                            if err:
+                                logger.error("\033[1;31m❌  TOOL ERROR ← %s\033[0m", tn)
+                                logger.error("    %s", preview.replace("\n", "\n    "))
+                            else:
+                                logger.info("\033[32m✅  TOOL RESULT ← %s\033[0m", tn)
+                                logger.info("    %s", preview.replace("\n", "\n    "))
+
+        # End of this stream pass — close any dangling AI output line
+        if _in_ai_stream:
+            print("\n", file=sys.stderr)
+
+        # Fire the progress hook once per pass so the runner can coalesce
+        # touches. Doing it here (not per-message) keeps the engine ignorant
+        # of the store's throttling policy.
+        if on_tick is not None and _steps_this_pass > 0:
+            try:
+                await on_tick(_steps_this_pass)
+            except Exception:
+                logger.exception("on_tick handler raised; continuing")
+
+        # No interrupt → done
+        if interrupted_value is None:
+            if _steps_this_pass == 0 and not final_messages:
+                logger.error(
+                    "⚠️  Agent produced no output — possible recursion limit hit "
+                    "(limit=%d) or graph exited unexpectedly. "
+                    "Try re-running with --recursion-limit <higher value>.",
+                    recursion_limit,
+                )
+            break
+
+        # Ask the user, then resume the graph
+        decision = await prompt_permission(
+            interrupted_value,
+            interrupts_store=interrupts_store,
+            session_id=session_id,
+            thread_id=_tid,
+            invocation_mode=invocation_mode,
+        )
+        current_input = Command(resume=decision)
+
+    final_text = last_assistant_text(final_messages)
+    if not final_text:
+        logger.warning(
+            "⚠️  Task ended with no assistant text. The agent may have stopped "
+            "mid-task. Check for budget/recursion limit errors above."
+        )
+
+    logger.info("")
+    logger.info(_SEP)
+    logger.info("YUYUTSAVA  task complete")
+    logger.info(_SEP)
+
+    return final_text

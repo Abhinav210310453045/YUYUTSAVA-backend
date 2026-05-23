@@ -14,12 +14,22 @@ import json
 import logging
 import uuid
 
-from yuyutsava.agents.orchestrator.agent import OrchestratorDeps, build_orchestrator
-from yuyutsava.core.engine import StreamEvent, astream_agent_iter
-from yuyutsava.daemon.channels import AskPrompt, ChannelEvent, ChannelRouter
-from yuyutsava.daemon.checkpointing import thread_id as _mint_thread_id
+from yuyutsava.agents.orchestrator.agent import OrchestratorDeps
+from yuyutsava.core.engine import build_orchestrator
+from yuyutsava.core.streaming import StreamEvent, astream_agent_iter
+from yuyutsava.daemon.channels import (
+    AskPrompt,
+    ChannelEvent,
+    ChannelRouter,
+    LogPayload,
+    TimelinePayload,
+    TokenPayload,
+    ToolCallPayload,
+    ToolResultPayload,
+)
+from yuyutsava.storage.ids import mint_thread_id as _mint_thread_id
 from yuyutsava.daemon.triage_loop import OrchestratorTask
-from yuyutsava.events.store import Store
+from yuyutsava.storage.events import Store
 from langchain_core.language_models import BaseChatModel
 from langgraph.checkpoint.base import BaseCheckpointSaver
 
@@ -113,7 +123,7 @@ class OrchestratorLoop:
         message = task.render_to_message()
 
         await self._channels.post_event(ChannelEvent(
-            kind="log", data={"text": f"[orch] task {task.event_id[:8]}…\n"},
+            payload=LogPayload(text=f"[orch] task {task.event_id[:8]}…\n"),
         ))
 
         # Route subagent interrupts (tr_* permission prompts, tr_ask_user) through
@@ -146,21 +156,33 @@ class OrchestratorLoop:
             action_summary=(final_text or "(empty)")[:300],
         )
         await self._channels.post_event(ChannelEvent(
-            kind="timeline",
-            data={"line": f"orchestrator: {final_text[:120]}", "cls": "event-action"},
+            payload=TimelinePayload(
+                line=f"orchestrator: {final_text[:120]}",
+                cls="event-action",
+            ),
         ))
 
 
 async def _broadcast(channels: ChannelRouter, ev: StreamEvent) -> None:
     if ev.kind == "token":
-        await channels.post_event(ChannelEvent(kind="token", data={"text": ev.data.get("text", "")}))
+        await channels.post_event(ChannelEvent(
+            payload=TokenPayload(text=ev.data.get("text", "")),
+        ))
     elif ev.kind == "tool_call":
-        await channels.post_event(ChannelEvent(kind="tool_call",
-                                               data={"name": ev.data.get("name", "?"),
-                                                     "args": ev.data.get("args", {})}))
+        await channels.post_event(ChannelEvent(
+            payload=ToolCallPayload(
+                name=ev.data.get("name", "?"),
+                args=ev.data.get("args", {}),
+            ),
+        ))
     elif ev.kind == "tool_result":
-        await channels.post_event(ChannelEvent(kind="tool_result",
-                                               data={"name": ev.data.get("name", "?"),
-                                                     "preview": ev.data.get("preview", "")}))
+        await channels.post_event(ChannelEvent(
+            payload=ToolResultPayload(
+                name=ev.data.get("name", "?"),
+                preview=ev.data.get("preview", ""),
+            ),
+        ))
     elif ev.kind == "log":
-        await channels.post_event(ChannelEvent(kind="log", data={"text": ev.data.get("text", "")}))
+        await channels.post_event(ChannelEvent(
+            payload=LogPayload(text=ev.data.get("text", "")),
+        ))

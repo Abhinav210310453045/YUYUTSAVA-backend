@@ -32,6 +32,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from yuyutsava.storage.paths import state_dir
+
 logger = logging.getLogger("yuyutsava.mcp.config")
 
 
@@ -76,9 +78,7 @@ class MCPConfig:
     def from_file(cls, path: Path | None = None) -> MCPConfig:
         """Load ``mcp_config.json``; return :meth:`empty` if the file is absent."""
         if path is None:
-            # Lazy import to avoid yuyutsava.core.config <-> agents <-> mcp cycle.
-            from yuyutsava.core.config import yuyutsava_home
-            path = yuyutsava_home() / "mcp_config.json"
+            path = state_dir() / "mcp_config.json"
         if not path.exists():
             logger.debug("no mcp_config.json at %s — running with zero MCP servers", path)
             return cls.empty()

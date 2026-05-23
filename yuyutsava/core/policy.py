@@ -4,6 +4,10 @@ The MVP shows a Tier-2 prompt every time a subagent's ``tr_*`` tool hits a
 PROMPT zone. This file lets the user pre-categorise tools so trusted
 operations skip the prompt.
 
+Lives in :mod:`yuyutsava.core` (not ``daemon/``) because the same policy
+model is consumable by the CLI permission middleware as well as the
+daemon. No daemon-runtime imports.
+
 Supported policies (Phase 2, step 1)
 ------------------------------------
 ``auto_approve``
@@ -49,7 +53,9 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
-logger = logging.getLogger("yuyutsava.daemon.permissions_policy")
+from yuyutsava.storage.paths import state_dir
+
+logger = logging.getLogger("yuyutsava.core.policy")
 
 
 # Policies we understand. Anything else is treated as "propose" and a
@@ -81,8 +87,7 @@ class PermissionsPolicy:
     @classmethod
     def from_file(cls, path: Path | None = None) -> PermissionsPolicy:
         if path is None:
-            from yuyutsava.core.config import yuyutsava_home
-            path = yuyutsava_home() / "permissions.json"
+            path = state_dir() / "permissions.json"
         if not path.exists():
             logger.debug("no permissions.json at %s — defaulting to propose for all", path)
             return cls.empty()
@@ -160,7 +165,7 @@ class StorePolicyCapEnforcer:
 
     def __init__(self, policy: PermissionsPolicy, store: object) -> None:
         self._policy = policy
-        self._store = store  # yuyutsava.events.store.Store, kept untyped to avoid cycle
+        self._store = store  # yuyutsava.storage.events.Store, kept untyped to avoid cycle
 
     def check_and_incr(self, tool_name: str) -> tuple[bool, str]:
         cap = self._policy.daily_cap_for(tool_name)

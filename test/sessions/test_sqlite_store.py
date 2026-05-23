@@ -10,8 +10,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from yuyutsava.sessions.sqlite_store import SqliteSessionStore, mint_thread_id
-from yuyutsava.sessions.store import SessionNotFound
+from yuyutsava.storage.ids import mint_thread_id
+from yuyutsava.storage.sessions import SessionNotFound, SqliteSessionStore
 
 
 class SqliteSessionStoreTests(unittest.IsolatedAsyncioTestCase):

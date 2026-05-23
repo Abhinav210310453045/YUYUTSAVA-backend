@@ -1,7 +1,8 @@
 """Async checkpointer factory.
 
-Currently produces ``AsyncSqliteSaver``; the plan is to add an ``AsyncPostgres
-Saver`` branch keyed off ``SessionsSettings.backend`` without touching callers.
+Currently produces ``AsyncSqliteSaver``; an ``AsyncPostgresSaver`` branch
+keyed off ``SessionsSettings.backend`` is the planned extension point and
+will not require touching callers.
 """
 
 from __future__ import annotations
@@ -11,7 +12,7 @@ from contextlib import asynccontextmanager
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
-from yuyutsava.sessions.config import SessionsSettings
+from yuyutsava.storage.sessions.config import SessionsSettings
 
 
 @asynccontextmanager

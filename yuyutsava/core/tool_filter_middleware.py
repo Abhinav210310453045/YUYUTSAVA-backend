@@ -3,9 +3,11 @@ Middleware that hides specific tool schemas from the LLM.
 
 Two suppression layers:
 
-1. Named deepagents built-ins (read_file, write_file, edit_file, execute, grep)
-   — replaced by tr_* equivalents; sending both wastes ~700 tokens and risks the
-   model choosing the unguarded versions.
+1. Named deepagents built-ins (read_file, write_file, edit_file, execute, grep,
+   ls, glob) — replaced by tr_* equivalents; sending both wastes ~700 tokens
+   and risks the model choosing the unguarded versions. ls/glob are filtered
+   because their virtual-path mode silently returns [] for any real path
+   outside the workspace (see tr_ls / tr_glob, which are zone-checked).
 
 2. Our custom tool prefixes (tr_*, ws_*, sk_*, fo_*, ev_*)
    — these are injected into the graph for execution but hidden from the LLM's
@@ -31,7 +33,7 @@ from langchain.agents.middleware.types import (
 
 # Exact-name suppression: deepagents built-in tools replaced by tr_* equivalents.
 _SUPPRESS_NAMES: frozenset[str] = frozenset({
-    "read_file", "write_file", "edit_file", "execute", "grep",
+    "read_file", "write_file", "edit_file", "execute", "grep", "ls", "glob",
 })
 
 # Prefix suppression: all our custom-prefixed tools are hidden from the LLM

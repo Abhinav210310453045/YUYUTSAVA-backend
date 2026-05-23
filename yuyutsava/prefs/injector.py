@@ -6,7 +6,7 @@ Design constraints from PHASE_2_PLAN §8.4 / §8.7:
   ``media.tone``).  Spotify, face-watcher, and other agent-specific prefs
   stay out of the master prompt — subagents access them via a ``prefs`` tool
   instead.
-- The entire block is hard-capped at ``_MAX_CHARS`` characters (~500 tokens).
+- The entire block is hard-capped at ``LIMITS.max_prefs_chars`` (~500 tokens).
   Longest entries are truncated first.
 - The block is wrapped in a fixed prefix so the model knows it is
   *informational only*, mitigating prompt-injection risk from malicious pref
@@ -17,15 +17,17 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+from yuyutsava.core.config import LIMITS
+
+if TYPE_CHECKING:
+    from yuyutsava.storage.prefs import PrefsStore
 
 logger = logging.getLogger("yuyutsava.prefs.injector")
 
 # Keys injected into the orchestrator prompt.
 DEFAULT_WHITELIST: frozenset[str] = frozenset({"interaction.style", "media.tone"})
-
-# Rough 500-token cap (4 chars ≈ 1 token).
-_MAX_CHARS = 2000
 
 _PREFIX = (
     "USER PREFERENCES "
@@ -39,11 +41,9 @@ class PrefsInjector:
 
     def __init__(
         self,
-        prefs_store: "UserPrefsStore",  # noqa: F821
+        prefs_store: PrefsStore,
         whitelist: frozenset[str] | None = None,
     ) -> None:
-        from yuyutsava.prefs.store import UserPrefsStore  # local import avoids circular dep
-        assert isinstance(prefs_store, UserPrefsStore)
         self._store = prefs_store
         self._whitelist = whitelist if whitelist is not None else DEFAULT_WHITELIST
 
@@ -62,11 +62,11 @@ class PrefsInjector:
         body = "\n".join(lines)
         block = f"{_PREFIX}\n{body}"
 
-        if len(block) > _MAX_CHARS:
+        if len(block) > LIMITS.max_prefs_chars:
             logger.warning(
                 "prefs block exceeds %d chars (%d); truncating",
-                _MAX_CHARS, len(block),
+                LIMITS.max_prefs_chars, len(block),
             )
-            block = block[:_MAX_CHARS]
+            block = block[:LIMITS.max_prefs_chars]
 
         return block

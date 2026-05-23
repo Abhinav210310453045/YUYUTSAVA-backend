@@ -20,6 +20,7 @@ async def stream(request: Request, hub=Depends(get_hub)) -> EventSourceResponse:
         async for item in hub.subscribe():
             if await request.is_disconnected():
                 return
-            yield {"event": item.get("type", "event"), "data": json.dumps(item, default=str)}
+            wire = item.to_wire_dict()
+            yield {"event": wire["type"], "data": json.dumps(wire, default=str)}
 
     return EventSourceResponse(gen())

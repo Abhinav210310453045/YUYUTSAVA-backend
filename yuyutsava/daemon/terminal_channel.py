@@ -10,13 +10,22 @@ exists for headed-but-no-browser scenarios and as a debug surface.
 from __future__ import annotations
 
 import asyncio
+import json
 import sys
 import time
 
 from yuyutsava.daemon.channels import (
-    AskPrompt, ChannelEvent, ProposalDecision, UserChannel,
+    AskPrompt,
+    ChannelEvent,
+    LogPayload,
+    ProposalDecision,
+    TimelinePayload,
+    TokenPayload,
+    ToolCallPayload,
+    ToolResultPayload,
+    UserChannel,
 )
-from yuyutsava.events.store import Proposal
+from yuyutsava.storage.events import Proposal
 
 _SEP = "━" * 60
 
@@ -28,32 +37,26 @@ class TerminalChannel(UserChannel):
         self._verbose = verbose
 
     async def post_event(self, ev: ChannelEvent) -> None:
-        if ev.kind == "timeline":
-            line = ev.data.get("line", "")
-            if line:
+        match ev.payload:
+            case TimelinePayload(line=line) if line:
                 print(f"\033[36m• {line}\033[0m", file=sys.stderr, flush=True)
-        elif ev.kind == "tool_call":
-            name = ev.data.get("name", "?")
-            if self._verbose:
-                args = ev.data.get("args", {})
-                args_str = ""
-                if isinstance(args, dict) and args:
-                    import json as _json
-                    args_str = " " + _json.dumps(args, ensure_ascii=False)[:160]
-                print(f"\033[33m🔧 {name}{args_str}\033[0m", file=sys.stderr, flush=True)
-            else:
-                print(f"\033[33m🔧 {name}\033[0m", file=sys.stderr, flush=True)
-        elif ev.kind == "tool_result" and self._verbose:
-            name = ev.data.get("name", "?")
-            preview = ev.data.get("preview", "")
-            short = preview[:300].replace("\n", " ") if preview else "(empty)"
-            print(f"\033[32m  ↳ [{name}] {short}\033[0m", file=sys.stderr, flush=True)
-        elif ev.kind == "token" and self._verbose:
-            text = ev.data.get("text", "")
-            if text:
+            case ToolCallPayload(name=name, args=args):
+                if self._verbose:
+                    args_str = ""
+                    if args:
+                        args_str = " " + json.dumps(dict(args), ensure_ascii=False)[:160]
+                    print(f"\033[33m🔧 {name}{args_str}\033[0m", file=sys.stderr, flush=True)
+                else:
+                    print(f"\033[33m🔧 {name}\033[0m", file=sys.stderr, flush=True)
+            case ToolResultPayload(name=name, preview=preview) if self._verbose:
+                short = preview[:300].replace("\n", " ") if preview else "(empty)"
+                print(f"\033[32m  ↳ [{name}] {short}\033[0m", file=sys.stderr, flush=True)
+            case TokenPayload(text=text) if self._verbose and text:
                 print(text, end="", flush=True, file=sys.stderr)
-        elif ev.kind == "log" and self._verbose:
-            print(ev.data.get("text", ""), file=sys.stderr, flush=True)
+            case LogPayload(text=text) if self._verbose:
+                print(text, file=sys.stderr, flush=True)
+            case _:
+                pass
 
     async def post_proposal(self, p: Proposal) -> ProposalDecision:
         print(f"\n\033[35m{_SEP}\033[0m", file=sys.stderr)

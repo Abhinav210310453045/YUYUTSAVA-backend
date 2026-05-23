@@ -20,11 +20,13 @@ from pathlib import Path
 
 import yaml
 
+from yuyutsava.core.config import LIMITS
+
 logger = logging.getLogger("yuyutsava.skills")
 
 _FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
-_MAX_INDEX_CHARS = 8000  # cap on total XML index size
-_MAX_DESC_CHARS = 512    # cap per-skill description in the index
+_MAX_INDEX_CHARS = LIMITS.max_skill_index_chars
+_MAX_DESC_CHARS = LIMITS.max_skill_desc_chars
 
 
 @dataclass

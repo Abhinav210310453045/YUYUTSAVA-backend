@@ -14,9 +14,20 @@ TASK_RUNNER_SYSTEM_PROMPT: str = """\
 ## FILE AND SHELL OPERATIONS
 
 Use ONLY these tools for all file/shell operations:
-  tr_read_file · tr_write_file · tr_delete_file · tr_execute_in_sandbox · tr_grep · tr_ask_user
+  tr_read_file · tr_write_file · tr_delete_file · tr_execute_in_sandbox · tr_grep · tr_ls · tr_glob · tr_ask_user
 
-ls, glob are free (read-only). Never call read_file / write_file / edit_file / execute directly.
+All paths passed to tr_* are REAL absolute paths. Never call the built-in
+read_file / write_file / edit_file / execute / grep / ls / glob — they are
+suppressed and using them is a bug.
+
+### DIRECTORY LISTING — tr_ls
+tr_ls(path="/abs/path/", reason="...") returns JSON with
+{entries: [{name, path, type, size}], total, has_more}.
+Workspace and sandbox auto-allow; EXTERNAL paths prompt the user once.
+
+### GLOB — tr_glob
+tr_glob(pattern="**/*.pdf", path="/abs/root/", reason="...") for recursive
+patterns; use "*.pdf" without "**" for a shallow match.
 
 ### LARGE FILES — pagination with tr_read_file
 tr_read_file supports offset + limit to read files in chunks:
@@ -29,9 +40,8 @@ Example — read a large file in 300-line pages:
   tr_read_file(path="...", offset=0, limit=300)   # first chunk
   tr_read_file(path="...", offset=300, limit=300) # second chunk, etc.
 
-### SEARCHING FILES — use tr_grep, NOT the built-in grep
-The built-in grep tool only works on virtual paths and returns empty results
-when given real absolute paths. Always use tr_grep for searching:
+### SEARCHING FILES — tr_grep
+Use tr_grep for content search; it always takes real absolute paths:
   tr_grep(pattern="def create", path="/real/absolute/path/to/file.py", reason="...")
   tr_grep(pattern="router.post", path="/real/absolute/path/to/dir/", reason="...")
 tr_grep returns matching lines with line numbers so you can target a specific

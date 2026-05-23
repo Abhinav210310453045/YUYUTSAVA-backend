@@ -28,8 +28,10 @@ from deepagents.backends.protocol import (
 )
 from deepagents.backends.sandbox import BaseSandbox
 
-DEFAULT_DOCKER_TIMEOUT = 120
-DEFAULT_MAX_OUTPUT_BYTES = 100_000
+from yuyutsava.core.config import LIMITS, TIMING
+
+DEFAULT_DOCKER_TIMEOUT = TIMING.bash_default_timeout_sec
+DEFAULT_MAX_OUTPUT_BYTES = LIMITS.docker_max_output_bytes
 
 
 def _host_path_for_docker(p: Path) -> str:

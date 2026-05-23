@@ -12,24 +12,22 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import datetime
-import fnmatch
 import json
 import logging
 import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from ulid import ULID
 
-from yuyutsava.agents.orchestrator.capabilities import render_capabilities_block
 from yuyutsava.agents.triage.agent import TriageAgent, TriageDecision
 from yuyutsava.daemon.channels import (
-    ChannelEvent, ChannelRouter, ProposalDecision,
+    ChannelEvent, ChannelRouter, ProposalDecision, TimelinePayload,
 )
+from yuyutsava.daemon.consent import ConsentEvaluator
 from yuyutsava.events.bus import EventBus, EventEnvelope
-from yuyutsava.events.store import ConsentRule, Proposal, Store
+from yuyutsava.storage.events import ConsentRule, Proposal, Store
 from yuyutsava.skills.registry import SkillRegistry
 
 logger = logging.getLogger("yuyutsava.daemon.triage_loop")
@@ -109,6 +107,7 @@ class TriageLoop:
         self._sem = asyncio.Semaphore(max_concurrent)
         self._workers: set[asyncio.Task[None]] = set()
         self._skill_registry = skill_registry
+        self._consent = ConsentEvaluator(store)
 
     async def run(self, stop_event: asyncio.Event) -> None:
         sub = self._bus.subscribe("**")
@@ -128,33 +127,35 @@ class TriageLoop:
         async with self._sem:
             try:
                 # 1. consent_rules first — auto-approve / auto-skip without LLM.
-                rule = self._match_rule(ev)
-                if rule and rule["decision"] == "auto_skip":
+                rule = self._consent.evaluate(ev).rule
+                if rule and rule.decision == "auto_skip":
                     await self._store.put_decision(
                         proposal_id=None, event_id=ev.event_id,
                         outcome="skipped_by_rule",
-                        action_summary=f"rule:{rule['rule_id']}",
+                        action_summary=f"rule:{rule.rule_id}",
                     )
                     await self._channels.post_event(ChannelEvent(
-                        kind="timeline",
-                        data={"ts": ev.ts, "line": f"auto-skipped: {ev.summary}",
-                              "cls": "event-decision-skipped"},
+                        payload=TimelinePayload(
+                            ts=ev.ts,
+                            line=f"auto-skipped: {ev.summary}",
+                            cls="event-decision-skipped",
+                        ),
                     ))
                     return
 
-                if rule and rule["decision"] == "auto_approve":
+                if rule and rule.decision == "auto_approve":
                     # No triage call; synthesise a proper instruction from event
                     # metadata so the subagent gets an unambiguous path, not just
                     # the raw summary string.
                     proposed_instruction = _build_fs_instruction(ev)
                     decision = TriageDecision(
                         action="propose",
-                        subagent_hint=rule.get("subagent_hint") or "file-organizer",
+                        subagent_hint="file-organizer",
                         proposed_instruction=proposed_instruction,
                         reason="auto_approve rule",
                         urgency=1,
                     )
-                    await self._auto_approve_path(ev, decision, rule_id=rule["rule_id"])
+                    await self._auto_approve_path(ev, decision, rule_id=rule.rule_id)
                     return
 
                 # 2. LLM triage — include skills index if available.
@@ -174,9 +175,10 @@ class TriageLoop:
                         outcome="logged", action_summary=decision.reason,
                     )
                     await self._channels.post_event(ChannelEvent(
-                        kind="timeline",
-                        data={"ts": ev.ts, "line": f"logged: {ev.summary} — {decision.reason}",
-                              "cls": ""},
+                        payload=TimelinePayload(
+                            ts=ev.ts,
+                            line=f"logged: {ev.summary} — {decision.reason}",
+                        ),
                     ))
                     return
 
@@ -217,9 +219,11 @@ class TriageLoop:
             outcome="auto_approved", action_summary=f"rule:{rule_id}",
         )
         await self._channels.post_event(ChannelEvent(
-            kind="timeline",
-            data={"ts": ev.ts, "line": f"auto-approved: {approved.proposed}",
-                  "cls": "event-decision-approved"},
+            payload=TimelinePayload(
+                ts=ev.ts,
+                line=f"auto-approved: {approved.proposed}",
+                cls="event-decision-approved",
+            ),
         ))
         await self._task_queue.put(OrchestratorTask(
             proposal_id=approved.proposal_id, event_id=ev.event_id,
@@ -286,43 +290,3 @@ class TriageLoop:
             expires_ts=time.time() + 7 * 86400 if decision_kind == "auto_approve" else None,
         )
         await self._store.put_consent_rule(rule)
-
-    # --- rule matching --------------------------------------------------
-
-    def _match_rule(self, ev: EventEnvelope) -> dict[str, Any] | None:
-        rules = self._store.list_consent_rules()
-        now = time.time()
-        for rule in rules:
-            if rule.get("expires_ts") and rule["expires_ts"] < now:
-                continue
-            if not fnmatch.fnmatchcase(ev.topic, rule["topic_glob"]):
-                continue
-            try:
-                m = json.loads(rule["match_json"])
-            except Exception:
-                continue
-            if not self._match_predicate(ev, m):
-                continue
-            return rule
-        return None
-
-    @staticmethod
-    def _match_predicate(ev: EventEnvelope, predicate: dict[str, Any]) -> bool:
-        # Dotted hint paths: "hints.ext" => ev.hints["ext"]
-        for key, expected in predicate.items():
-            if key == "topic":
-                if not fnmatch.fnmatchcase(ev.topic, str(expected)):
-                    return False
-                continue
-            if key.startswith("hints."):
-                hint_key = key.split(".", 1)[1]
-                actual = ev.hints.get(hint_key, "")
-                if not fnmatch.fnmatchcase(str(actual), str(expected)):
-                    return False
-                continue
-            if key in ("ext", "kind"):
-                actual = ev.hints.get(key, "")
-                if not fnmatch.fnmatchcase(str(actual), str(expected)):
-                    return False
-                continue
-        return True
