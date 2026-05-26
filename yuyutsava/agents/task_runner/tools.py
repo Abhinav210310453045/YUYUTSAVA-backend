@@ -29,29 +29,19 @@ _log = logging.getLogger("yuyutsava.agents.task_runner.tools")
 
 
 def _resolve_path(raw: str, workspace_root: Path) -> str:
-    """
-    Translate a path the model may have taken from ls/glob virtual output.
+    """Normalize a tr_* path argument.
 
-    ls/glob in LocalShellBackend (virtual_mode=True) returns paths anchored at
-    the virtual root '/' — e.g. '/README.md' actually means
-    '<workspace_root>/README.md'.  If the raw path is NOT under the workspace
-    or sandbox, and its depth from '/' is ≤ 3 levels (a strong signal it is a
-    virtual path rather than a real absolute path), prefix it with the workspace
-    root and return a corrected path plus a warning so the model can learn.
-
-    Real system paths like '/etc/hosts' are handled by the SYSTEM_CRITICAL zone
-    check downstream; this guard only catches the common virtual-path mistake.
+    Contract: tr_* tools take REAL absolute paths. Relative paths are
+    resolved against workspace_root explicitly (not against process cwd).
+    Non-existent absolute paths surface as clean FileNotFoundError downstream
+    rather than being silently rewritten.
     """
-    resolved = os.path.normpath(os.path.realpath(os.path.abspath(os.path.expanduser(raw))))
-    ws = str(workspace_root.resolve())
-    if resolved.startswith(ws):
-        return raw  # already correct
-    # Heuristic: if the path has ≤ 3 components from root it's likely virtual
-    parts = Path(resolved).parts  # ('/', 'README.md') or ('/', 'sub', 'f.py')
-    if len(parts) <= 4:
-        corrected = str(workspace_root.resolve() / Path(raw).relative_to("/"))
-        return corrected
-    return raw
+    if not raw:
+        return raw
+    expanded = os.path.expanduser(raw)
+    if not os.path.isabs(expanded):
+        expanded = str(workspace_root.resolve() / expanded)
+    return os.path.normpath(expanded)
 
 # ---------------------------------------------------------------------------
 # TaskRunnerAgent registry — one instance per resolved workspace root
