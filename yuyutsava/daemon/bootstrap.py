@@ -129,6 +129,11 @@ class DaemonSubsystems:
     async_task_mirror: object | None = None
     async_task_watcher: object | None = None
     session_origin: object | None = None
+    # Profile-wide host attachment returned by ``acquire_or_attach_host``;
+    # the daemon shutdown hook calls ``release_host_lock`` on it. Stays
+    # ``None`` when the daemon attached to an already-running host owned
+    # by another process (no lock to release) or when async subs are off.
+    async_host_attachment: object | None = None
 
     # hot reload — closure over registry + daemon_cfg; reload-loop calls it.
     hot_reload_events_config: Callable[[], Awaitable[None]] = None  # type: ignore[assignment]
@@ -326,26 +331,47 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     # Subagents are exposed as `<name>-bg` peers alongside their sync entries.
     import os
     async_host = None
+    async_host_url: str | None = None
     async_mirror = None
     async_watcher = None
     session_origin = None
+    async_host_attachment = None
     if os.environ.get("YUYUTSAVA_ASYNC_SUBAGENTS", "").lower() in ("1", "true", "yes"):
         from yuyutsava.async_subagents.host import AsyncSubagentHost
+        from yuyutsava.async_subagents.host_lock import (
+            acquire_or_attach_host,
+            register_host_cleanup,
+        )
         from yuyutsava.async_subagents.mirror import AsyncTaskMirror
         from yuyutsava.async_subagents.session_origin import SessionOriginMap
         from yuyutsava.async_subagents.watcher import AsyncTaskHealthWatcher
         from yuyutsava.daemon.orchestrator_loop import make_ask_handler
 
         logger.info("  async subs: enabled (YUYUTSAVA_ASYNC_SUBAGENTS=1)")
-        # Compile each subagent's react graph using the subagent_model; the
-        # checkpointer is shared with the rest of the daemon for consistency.
-        async_host = AsyncSubagentHost.from_subagents(
-            subagent_list,
-            model=subagent_model,
-            checkpointer=checkpointer,
+
+        # First-come-wins shared host. If another process (typically a CLI
+        # chat started before the daemon) already owns the LangGraph dev
+        # server, attach to it instead of starting a second one.
+        def _build_host() -> AsyncSubagentHost:
+            return AsyncSubagentHost.from_subagents(
+                subagent_list,
+                model=subagent_model,
+                checkpointer=checkpointer,
+            )
+
+        attachment = await asyncio.to_thread(
+            acquire_or_attach_host, factory=_build_host
         )
-        await asyncio.to_thread(async_host.start)
-        logger.info("  async host: %s (graphs=%s)", async_host.url, async_host.graph_ids)
+        async_host_attachment = attachment
+        async_host_url = attachment.url
+        async_host = attachment.host  # None when attaching to another owner
+        register_host_cleanup(attachment)
+
+        if attachment.host is not None:
+            logger.info("  async host: %s (owner; graphs=%s)",
+                        attachment.url, attachment.host.graph_ids)
+        else:
+            logger.info("  async host: %s (attached to running owner)", attachment.url)
 
         async_mirror = AsyncTaskMirror()
         session_origin = SessionOriginMap()
@@ -353,7 +379,7 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
 
         async_watcher = AsyncTaskHealthWatcher(
             mirror=async_mirror,
-            host_url=async_host.url,
+            host_url=async_host_url,
             ask_handler=make_ask_handler(
                 channels,
                 default_session_id="bg-orphan",
@@ -369,7 +395,7 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
 
     capabilities_block = render_capabilities_block(
         list(subagents.values()),
-        async_subagents=subagent_list if async_host is not None else None,
+        async_subagents=subagent_list if async_host_url is not None else None,
     )
 
     # ── triage agent + loop ----------------------------------------------
@@ -395,8 +421,8 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         mcp_manager=mcp_manager,
         search_config=search_config,
         cap_enforcer=cap_enforcer,
-        async_subagents=subagent_list if async_host is not None else None,
-        async_host_url=async_host.url if async_host is not None else None,
+        async_subagents=subagent_list if async_host_url is not None else None,
+        async_host_url=async_host_url,
         async_task_mirror=async_mirror,
     )
     orch_loop = OrchestratorLoop(
@@ -457,5 +483,6 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         async_task_mirror=async_mirror,
         async_task_watcher=async_watcher,
         session_origin=session_origin,
+        async_host_attachment=async_host_attachment,
         hot_reload_events_config=_hot_reload_events_config,
     )

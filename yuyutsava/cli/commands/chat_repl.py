@@ -22,10 +22,11 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import logging
+import json
 import os
 import sys
-import warnings
+from collections import deque
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -36,7 +37,7 @@ from prompt_toolkit.patch_stdout import patch_stdout
 
 from yuyutsava.cli.agent_stack import build_cli_agent_stack
 from yuyutsava.core.config import DockerSettings, LlmSettings, LocalSettings, SearchConfig
-from yuyutsava.core.engine import cleanup_local_sandbox
+from yuyutsava.core.engine import cleanup_local_sandbox, silence_plumbing_loggers
 from yuyutsava.core.streaming import StreamEvent, _normalize_yes_no, astream_agent_iter
 from yuyutsava.storage.paths import state_dir
 from yuyutsava.storage.sessions import (
@@ -82,11 +83,14 @@ def _print_banner(*, session_id: str, workspace: Path, resuming: bool) -> None:
 def _print_help() -> None:
     print(file=sys.stderr)
     print(f"{_CYAN}Commands:{_RESET}", file=sys.stderr)
-    print(f"  {_DIM}/help{_RESET}      show this help", file=sys.stderr)
-    print(f"  {_DIM}/quit{_RESET}      exit the chat (Ctrl+D also works)", file=sys.stderr)
-    print(f"  {_DIM}/clear{_RESET}     redraw the banner", file=sys.stderr)
-    print(f"  {_DIM}/new{_RESET}       start a fresh session in this process", file=sys.stderr)
-    print(f"  {_DIM}/session{_RESET}   show the current session id", file=sys.stderr)
+    print(f"  {_DIM}/help{_RESET}         show this help", file=sys.stderr)
+    print(f"  {_DIM}/quit{_RESET}         exit the chat (Ctrl+D also works)", file=sys.stderr)
+    print(f"  {_DIM}/clear{_RESET}        redraw the banner", file=sys.stderr)
+    print(f"  {_DIM}/new{_RESET}          start a fresh session in this process", file=sys.stderr)
+    print(f"  {_DIM}/session{_RESET}      show the current session id", file=sys.stderr)
+    print(f"  {_DIM}/ring{_RESET}         list recent tool calls/results with their [#n] indices", file=sys.stderr)
+    print(f"  {_DIM}/last [k]{_RESET}     print the last k captured payloads in full (default 1)", file=sys.stderr)
+    print(f"  {_DIM}/expand <n>{_RESET}   print the full body of the [#n] entry", file=sys.stderr)
     print(file=sys.stderr)
     print(f"{_DIM}Ctrl+C cancels the current turn but keeps the session open.{_RESET}", file=sys.stderr)
     print(file=sys.stderr)
@@ -95,61 +99,10 @@ def _print_help() -> None:
 # ---------------------------------------------------------------------------
 # Log silencing
 # ---------------------------------------------------------------------------
-
-# Loggers raised to WARNING — INFO chatter goes away but real problems still surface.
-_WARN_FLOOR_LOGGERS = (
-    "langgraph_api",
-    "langgraph_runtime_inmem",
-    "langgraph_runtime",
-    "langgraph_api.auth.custom",
-    "langgraph_api.auth.middleware",
-    "langgraph_api.timing.timer",
-    "langgraph_api.cron_scheduler",
-    "langgraph_api.metadata",
-    "langgraph_api.lifespan",
-    "langgraph_api.queue",
-    "langgraph_runtime_inmem.queue",
-    "langgraph_runtime_inmem.lifespan",
-    "langgraph_runtime_inmem._persistence",
-    "httpx",
-    "httpcore",
-    "uvicorn",
-    "uvicorn.access",
-    "uvicorn.error",
-)
-
-# Loggers raised to ERROR — these emit chatty WARNING-level lines that
-# aren't actionable for a chat user.
-_ERROR_FLOOR_LOGGERS = (
-    "langfuse",
-    "py.warnings",
-)
-
-
-def _silence_third_party_logs() -> None:
-    """Raise third-party loggers above the chatter floor.
-
-    The ``yuyutsava`` logger is left untouched — chat-relevant warnings
-    still surface. This is a no-op under ``--verbose``.
-
-    ``langfuse`` and ``py.warnings`` propagate to the root logger, where
-    langgraph_api installs a structlog handler that renders them anyway.
-    Setting ``propagate = False`` cuts that escape route; ``disabled = True``
-    is the belt-and-braces fallback.
-    """
-    for name in _WARN_FLOOR_LOGGERS:
-        lg = logging.getLogger(name)
-        lg.setLevel(logging.WARNING)
-        lg.propagate = False
-    for name in _ERROR_FLOOR_LOGGERS:
-        lg = logging.getLogger(name)
-        lg.setLevel(logging.ERROR)
-        lg.propagate = False
-        lg.disabled = True
-    # The deepagents callable-backend deprecation is the main culprit here;
-    # the broad filter is fine because real errors still get raised.
-    warnings.filterwarnings("ignore", category=DeprecationWarning)
-    warnings.filterwarnings("ignore", category=PendingDeprecationWarning)
+#
+# The plumbing-logger floor + the warnings filter live in
+# ``yuyutsava.core.engine.silence_plumbing_loggers`` so the same rules apply
+# to the daemon. The REPL just calls it.
 
 
 @contextlib.contextmanager
@@ -185,12 +138,43 @@ def _suppress_stdio():
 # ---------------------------------------------------------------------------
 
 
+@dataclass
+class RingEntry:
+    """One captured event with its full untruncated payload.
+
+    Stored in ``ChatRenderer._ring`` so ``/last`` and ``/expand <n>`` can
+    surface payloads the truncated preview hid. Per-entry body is capped
+    by ``YUYUTSAVA_REPL_RING_ENTRY_KB`` (default 100 KB) to keep huge tool
+    outputs from blowing up REPL memory.
+    """
+    index: int
+    kind: str           # "tool_call" | "tool_result"
+    name: str           # tool name
+    full: str           # pretty-printed full body (already capped)
+    truncated: bool     # True if the body was clipped to the per-entry cap
+
+
 class ChatRenderer:
-    """Print StreamEvents in a Claude-Code-style minimal layout."""
+    """Print StreamEvents in a Claude-Code-style minimal layout.
+
+    Maintains a ring buffer of recent tool_call / tool_result events with
+    their full bodies so the ``/last`` and ``/expand`` slash commands can
+    show what the inline preview truncated.
+    """
 
     def __init__(self, *, verbose: bool) -> None:
         self._verbose = verbose
         self._in_ai_stream = False
+        try:
+            ring_size = max(1, int(os.environ.get("YUYUTSAVA_REPL_RING", "50")))
+        except ValueError:
+            ring_size = 50
+        try:
+            self._entry_cap = max(1024, int(os.environ.get("YUYUTSAVA_REPL_RING_ENTRY_KB", "100")) * 1024)
+        except ValueError:
+            self._entry_cap = 100 * 1024
+        self._ring: deque[RingEntry] = deque(maxlen=ring_size)
+        self._next_index = 1
 
     def render(self, ev: StreamEvent) -> None:
         if ev.kind == "token":
@@ -211,17 +195,28 @@ class ChatRenderer:
             name = ev.data.get("name", "?")
             args = ev.data.get("args", {})
             preview = self._fmt_args(args, limit=120 if not self._verbose else 400)
-            print(f"  {_DIM}· {name}({preview}){_RESET}", file=sys.stderr, flush=True)
+            idx = self._push_ring("tool_call", name, self._pretty(args))
+            print(
+                f"  {_DIM}· {name}({preview}) [#{idx}]{_RESET}",
+                file=sys.stderr,
+                flush=True,
+            )
 
         elif ev.kind == "tool_result":
             name = ev.data.get("name", "tool")
             body = ev.data.get("preview", "") or ""
+            full = ev.data.get("full", body) or body
             limit = 600 if self._verbose else 200
             if len(body) > limit:
                 body = body[:limit] + " …"
             # Collapse to one line for the compact display.
             one_line = body.replace("\n", " ⏎ ")
-            print(f"  {_DIM}↳ {name}: {one_line}{_RESET}", file=sys.stderr, flush=True)
+            idx = self._push_ring("tool_result", name, full)
+            print(
+                f"  {_DIM}↳ {name}: {one_line} [#{idx}]{_RESET}",
+                file=sys.stderr,
+                flush=True,
+            )
 
         elif ev.kind == "log":
             text = ev.data.get("text", "")
@@ -237,6 +232,66 @@ class ChatRenderer:
         if self._in_ai_stream:
             print(flush=True)
             self._in_ai_stream = False
+
+    # ------------------------------------------------------------------
+    # Ring buffer + slash command helpers
+    # ------------------------------------------------------------------
+
+    def _push_ring(self, kind: str, name: str, full: str) -> int:
+        truncated = False
+        if len(full) > self._entry_cap:
+            full = full[: self._entry_cap] + f"\n…[truncated to {self._entry_cap // 1024}KB]"
+            truncated = True
+        idx = self._next_index
+        self._next_index += 1
+        self._ring.append(RingEntry(index=idx, kind=kind, name=name, full=full, truncated=truncated))
+        return idx
+
+    def _find(self, idx: int) -> RingEntry | None:
+        for e in self._ring:
+            if e.index == idx:
+                return e
+        return None
+
+    def print_ring(self) -> None:
+        if not self._ring:
+            print(f"{_DIM}(ring empty){_RESET}", file=sys.stderr)
+            return
+        print(f"{_CYAN}ring (most recent last):{_RESET}", file=sys.stderr)
+        for e in self._ring:
+            summary = e.full.replace("\n", " ⏎ ")
+            if len(summary) > 100:
+                summary = summary[:100] + "…"
+            tag = "·" if e.kind == "tool_call" else "↳"
+            print(f"  {_DIM}[#{e.index}] {tag} {e.name}: {summary}{_RESET}", file=sys.stderr)
+
+    def print_entry(self, idx: int) -> None:
+        e = self._find(idx)
+        if e is None:
+            print(f"{_DIM}no ring entry #{idx} (try /ring){_RESET}", file=sys.stderr)
+            return
+        header = f"[#{e.index}] {e.kind} {e.name}"
+        if e.truncated:
+            header += " (truncated)"
+        print(f"{_CYAN}{header}{_RESET}", file=sys.stderr)
+        print(e.full, file=sys.stderr)
+
+    def print_last(self, k: int = 1) -> None:
+        if not self._ring:
+            print(f"{_DIM}(ring empty){_RESET}", file=sys.stderr)
+            return
+        k = max(1, k)
+        for e in list(self._ring)[-k:]:
+            self.print_entry(e.index)
+
+    @staticmethod
+    def _pretty(args: Any) -> str:
+        try:
+            if isinstance(args, (dict, list)):
+                return json.dumps(args, indent=2, default=str)
+        except Exception:
+            pass
+        return str(args)
 
     @staticmethod
     def _fmt_args(args: Any, *, limit: int) -> str:
@@ -373,6 +428,7 @@ def _handle_slash(
     *,
     session_id: str,
     workspace: Path,
+    renderer: "ChatRenderer",
 ) -> Any:
     """Return _SLASH_QUIT to exit, _SLASH_HANDLED if handled in-place,
     None if the input isn't a slash command, or a string "new" sentinel
@@ -381,7 +437,8 @@ def _handle_slash(
     c = cmd.strip()
     if not c.startswith("/"):
         return None
-    head = c.split()[0].lower()
+    parts = c.split()
+    head = parts[0].lower()
     if head in ("/quit", "/exit", "/q"):
         return _SLASH_QUIT
     if head == "/help":
@@ -395,6 +452,30 @@ def _handle_slash(
     if head == "/session":
         print(f"  {_DIM}session:{_RESET}   {session_id}", file=sys.stderr)
         print(f"  {_DIM}workspace:{_RESET} {workspace}", file=sys.stderr)
+        return _SLASH_HANDLED
+    if head == "/ring":
+        renderer.print_ring()
+        return _SLASH_HANDLED
+    if head == "/last":
+        k = 1
+        if len(parts) > 1:
+            try:
+                k = int(parts[1])
+            except ValueError:
+                print(f"{_DIM}/last: expected integer, got {parts[1]!r}{_RESET}", file=sys.stderr)
+                return _SLASH_HANDLED
+        renderer.print_last(k)
+        return _SLASH_HANDLED
+    if head == "/expand":
+        if len(parts) < 2:
+            print(f"{_DIM}/expand: usage: /expand <n>{_RESET}", file=sys.stderr)
+            return _SLASH_HANDLED
+        try:
+            idx = int(parts[1])
+        except ValueError:
+            print(f"{_DIM}/expand: expected integer, got {parts[1]!r}{_RESET}", file=sys.stderr)
+            return _SLASH_HANDLED
+        renderer.print_entry(idx)
         return _SLASH_HANDLED
     if head == "/new":
         return "new"
@@ -421,10 +502,13 @@ async def run_chat_repl(
     resume_id: str | None,
     continue_latest: bool,
     verbose: bool,
+    debug_plumbing: bool = False,
 ) -> int:
     """Drive the interactive chat loop. Returns process exit code."""
-    if not verbose:
-        _silence_third_party_logs()
+    if not debug_plumbing:
+        debug_plumbing = os.environ.get("YUYUTSAVA_DEBUG_PLUMBING", "").lower() in ("1", "true", "yes")
+    if not debug_plumbing:
+        silence_plumbing_loggers()
 
     store = get_default_session_store()
     sessions_settings = SessionsSettings.from_env()
@@ -450,26 +534,32 @@ async def run_chat_repl(
             search_config=search_config,
             checkpointer=checkpointer,
         )
-        if verbose:
+        # Always wrap build_cli_agent_stack in fd-level stdio suppression —
+        # the LangGraph host writes its startup banner from a daemon thread
+        # using direct fd writes that bypass Python logging. Skip only when
+        # the user explicitly asked to see plumbing.
+        if debug_plumbing:
             bundle = await builder
         else:
             with _suppress_stdio():
                 bundle = await builder
-            # langgraph_api configures its own loggers inside run_server —
-            # re-silence after the build so background INFO/DEBUG stay muted.
-            _silence_third_party_logs()
+            # langgraph_api re-imports `logging` inside run_server and resets
+            # uvicorn handlers, so re-silence after the build.
+            silence_plumbing_loggers()
 
-        # Wire the async-subagent HITL bridge if the bundle has it.
+        # Wire the async-subagent HITL bridge if the bundle has a host URL —
+        # this works whether the chat process owns the host or attached to
+        # one started by the daemon / another chat.
         cli_bridge = None
         cli_watcher = None
-        if bundle.async_host is not None and bundle.async_task_mirror is not None:
+        if bundle.async_host_url is not None and bundle.async_task_mirror is not None:
             from yuyutsava.async_subagents.watcher import AsyncTaskHealthWatcher
             from yuyutsava.cli.async_hitl import CliHitlBridge
 
             cli_bridge = CliHitlBridge()
             cli_watcher = AsyncTaskHealthWatcher(
                 mirror=bundle.async_task_mirror,
-                host_url=bundle.async_host.url,
+                host_url=bundle.async_host_url,
                 ask_handler=cli_bridge.post_ask,
                 event_sink=cli_bridge.post_event,
                 agent_path_root="cli",
@@ -544,7 +634,7 @@ async def run_chat_repl(
                     continue
 
                 slash_result = _handle_slash(
-                    user_input, session_id=session.id, workspace=workspace
+                    user_input, session_id=session.id, workspace=workspace, renderer=renderer,
                 )
                 if slash_result is _SLASH_QUIT:
                     break
@@ -575,6 +665,7 @@ async def run_chat_repl(
                         ask_handler=_ask_handler,
                         run_name="cli-chat",
                         agent_path="cli",
+                        keep_full_payloads=True,
                     ):
                         renderer.render(ev)
                 except KeyboardInterrupt:

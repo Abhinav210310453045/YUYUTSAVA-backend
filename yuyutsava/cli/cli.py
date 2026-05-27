@@ -92,6 +92,15 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Print tool calls, results, and assistant text to stderr.",
     )
     p.add_argument(
+        "--debug-plumbing",
+        action="store_true",
+        help=(
+            "Show uvicorn / langgraph runtime / httpx logs (debugging only). "
+            "Off by default — these are normally silenced regardless of --verbose. "
+            "Also honoured via YUYUTSAVA_DEBUG_PLUMBING=1."
+        ),
+    )
+    p.add_argument(
         "--list-sessions",
         action="store_true",
         help="List persisted sessions across all workspaces (id, workspace, timestamps, message count) and exit.",
@@ -280,7 +289,7 @@ async def _async_main(argv: list[str] | None = None, *, force_chat: bool = False
         load_dotenv()
 
     args = _build_parser().parse_args(argv)
-    setup_logging(verbose=args.verbose)
+    setup_logging(verbose=args.verbose, debug_plumbing=args.debug_plumbing)
 
     if args.list_scenarios:
         sys.stdout.write(format_scenario_list())
@@ -364,6 +373,7 @@ async def _async_main(argv: list[str] | None = None, *, force_chat: bool = False
                 resume_id=args.resume,
                 continue_latest=args.continue_,
                 verbose=args.verbose,
+                debug_plumbing=args.debug_plumbing,
             )
 
     return await run_chat(
