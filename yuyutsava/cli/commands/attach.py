@@ -26,6 +26,28 @@ from yuyutsava.cli.remote_attach import (
 logger = logging.getLogger("yuyutsava.cli.commands.attach")
 
 
+def _default_daemon_url() -> str:
+    """Resolve the daemon URL: discovery file → env → built-in default.
+
+    Reading the discovery file first means a running daemon advertises its
+    actual URL (which may differ from the default if env-overridden), so
+    ``yuyutsava attach`` "just works" without the user having to set
+    ``YUYUTSAVA_DAEMON_URL`` manually.
+    """
+    env = os.environ.get("YUYUTSAVA_DAEMON_URL")
+    if env:
+        return env
+    try:
+        from yuyutsava.daemon.singleton import read_daemon_discovery
+        disco = read_daemon_discovery()
+        if disco and isinstance(disco.get("web_url"), str):
+            url = str(disco["web_url"]).rstrip("/")
+            return url
+    except Exception:  # noqa: BLE001
+        pass
+    return "http://127.0.0.1:7654"
+
+
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     p = argparse.ArgumentParser(
         prog="yuyutsava attach",
@@ -33,8 +55,11 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     )
     p.add_argument(
         "--daemon-url",
-        default=os.environ.get("YUYUTSAVA_DAEMON_URL", "http://127.0.0.1:8765"),
-        help="Daemon base URL (default: http://127.0.0.1:8765 or $YUYUTSAVA_DAEMON_URL).",
+        default=_default_daemon_url(),
+        help=(
+            "Daemon base URL. Resolution order: $YUYUTSAVA_DAEMON_URL → "
+            "~/.yuyutsava/daemon.json discovery file → http://127.0.0.1:7654."
+        ),
     )
     p.add_argument(
         "--session-id",

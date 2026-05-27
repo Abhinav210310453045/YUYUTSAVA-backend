@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import shutil
 import sys
@@ -49,8 +50,76 @@ from yuyutsava.tools.search import make_search_tools
 logger = logging.getLogger("yuyutsava")
 
 
-def setup_logging(verbose: bool = False) -> None:
-    """Configure root yuyutsava logger to print coloured lines to stderr."""
+# Loggers raised to WARNING by silence_plumbing_loggers — these emit chatty
+# HTTP / runtime traffic (langgraph dev server, uvicorn access lines,
+# httpx client logs) that pollute interactive output. Real problems still
+# surface at WARNING/ERROR.
+_PLUMBING_WARN_LOGGERS = (
+    "langgraph_api",
+    "langgraph_runtime_inmem",
+    "langgraph_runtime",
+    "langgraph_api.auth.custom",
+    "langgraph_api.auth.middleware",
+    "langgraph_api.timing.timer",
+    "langgraph_api.cron_scheduler",
+    "langgraph_api.metadata",
+    "langgraph_api.lifespan",
+    "langgraph_api.queue",
+    "langgraph_runtime_inmem.queue",
+    "langgraph_runtime_inmem.lifespan",
+    "langgraph_runtime_inmem._persistence",
+    "httpx",
+    "httpcore",
+    "uvicorn",
+    "uvicorn.access",
+    "uvicorn.error",
+)
+
+# Loggers raised to ERROR — these emit chatty WARNING-level lines that
+# aren't actionable for interactive users (langfuse handshake, warnings hook).
+_PLUMBING_ERROR_LOGGERS = (
+    "langfuse",
+    "py.warnings",
+)
+
+
+def silence_plumbing_loggers() -> None:
+    """Raise plumbing loggers above the chatter floor.
+
+    The ``yuyutsava`` namespace is left untouched — application warnings
+    still surface. Cross-call idempotent; ``langgraph_api`` re-imports
+    ``logging`` inside its server thread, so callers that build a LangGraph
+    host should call this *after* the build to re-silence handlers that
+    were just installed.
+    """
+    import warnings
+
+    for name in _PLUMBING_WARN_LOGGERS:
+        lg = logging.getLogger(name)
+        lg.setLevel(logging.WARNING)
+        lg.propagate = False
+    for name in _PLUMBING_ERROR_LOGGERS:
+        lg = logging.getLogger(name)
+        lg.setLevel(logging.ERROR)
+        lg.propagate = False
+        lg.disabled = True
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
+    warnings.filterwarnings("ignore", category=PendingDeprecationWarning)
+
+
+def setup_logging(verbose: bool = False, *, debug_plumbing: bool = False) -> None:
+    """Configure the ``yuyutsava`` logger for the CLI to print to stderr.
+
+    Root logger is kept at WARNING; only the ``yuyutsava`` namespace is
+    flipped to DEBUG (verbose) or INFO (default). Plumbing loggers
+    (uvicorn / langgraph_api / httpx / …) are silenced regardless of
+    verbose so the chat REPL stays uncluttered. Pass
+    ``debug_plumbing=True`` (or set ``YUYUTSAVA_DEBUG_PLUMBING=1``) to
+    see those — useful only when debugging the runtime itself.
+    """
+    if not debug_plumbing:
+        debug_plumbing = os.environ.get("YUYUTSAVA_DEBUG_PLUMBING", "").lower() in ("1", "true", "yes")
+
     level = logging.DEBUG if verbose else logging.INFO
     handler = logging.StreamHandler(sys.stderr)
     handler.setLevel(level)
@@ -70,12 +139,25 @@ def setup_logging(verbose: bool = False) -> None:
             msg = super().format(record)
             return f"{colour}{msg}{self._RESET}"
 
-    handler.setFormatter(_Fmt("%(message)s"))
+    # Verbose: prefix with timestamp + logger name so the user can tell which
+    # subsystem is talking. Plain ``%(message)s`` otherwise to keep
+    # non-verbose output uncluttered.
+    fmt = "%(asctime)s %(name)s | %(message)s" if verbose else "%(message)s"
+    handler.setFormatter(_Fmt(fmt, datefmt="%H:%M:%S"))
+
+    # Root stays at WARNING so unrelated libraries don't flood stderr.
+    root = logging.getLogger()
+    if root.level == logging.NOTSET or root.level < logging.WARNING:
+        root.setLevel(logging.WARNING)
+
     log = logging.getLogger("yuyutsava")
     log.setLevel(level)
     log.handlers.clear()
     log.addHandler(handler)
     log.propagate = False
+
+    if not debug_plumbing:
+        silence_plumbing_loggers()
 
 
 # ---------------------------------------------------------------------------
@@ -90,6 +172,16 @@ class AgentBundle:
     ``async_host`` and ``async_task_mirror`` are wired in when async (background)
     subagents are enabled. CLI Mode 1 owns these objects directly; the daemon
     keeps them on ``DaemonSubsystems`` and threads them through ``OrchestratorDeps``.
+
+    ``async_host_url`` is the live URL of the shared LangGraph dev server —
+    set whether or not this process owns the host. Code that needs to dial
+    the host (watchers, SDK clients) should prefer this string over
+    ``async_host.url`` so attached clients work too.
+
+    ``async_host_attachment`` is the ownership handle returned by
+    :func:`yuyutsava.async_subagents.host_lock.acquire_or_attach_host`.
+    ``close()`` releases it (no-op when this process is an attacher, not
+    the owner).
     """
 
     agent: CompiledStateGraph
@@ -97,12 +189,22 @@ class AgentBundle:
     sandbox_root: Path | None = None
     output_dir: Path | None = None
     async_host: Any | None = None          # AsyncSubagentHost — duck-typed to avoid cycle
+    async_host_url: str | None = None
+    async_host_attachment: Any | None = None  # HostAttachment
     async_task_mirror: Any | None = None   # AsyncTaskMirror
 
     def close(self) -> None:
         if self.docker_backend is not None:
             self.docker_backend.stop()
-        if self.async_host is not None:
+        if self.async_host_attachment is not None:
+            try:
+                from yuyutsava.async_subagents.host_lock import release_host_lock
+                release_host_lock(self.async_host_attachment)
+            except Exception:
+                logger.exception("AgentBundle: release_host_lock failed")
+        elif self.async_host is not None:
+            # Legacy direct-ownership path (kept for callers that haven't
+            # migrated to acquire_or_attach_host yet).
             try:
                 self.async_host.shutdown()
             except Exception:
@@ -203,6 +305,7 @@ def build_cli_deepagent(
     async_task_mirror: Any | None = None,
     async_max_concurrent: int = 8,
     async_host: Any | None = None,
+    async_host_attachment: Any | None = None,
 ) -> AgentBundle:
     """Build the CLI deepagent.
 
@@ -318,6 +421,8 @@ def build_cli_deepagent(
             agent=graph,
             docker_backend=docker_backend,
             async_host=async_host,
+            async_host_url=async_host_url,
+            async_host_attachment=async_host_attachment,
             async_task_mirror=async_task_mirror,
         )
 
@@ -341,6 +446,8 @@ def build_cli_deepagent(
         sandbox_root=sandbox_root,
         output_dir=output_dir,
         async_host=async_host,
+        async_host_url=async_host_url,
+        async_host_attachment=async_host_attachment,
         async_task_mirror=async_task_mirror,
     )
 

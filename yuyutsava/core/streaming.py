@@ -291,6 +291,7 @@ async def astream_agent_iter(
     ask_handler=None,  # async (interrupt_value: dict) -> str
     run_name: str = "agent",
     agent_path: str = "orchestrator",
+    keep_full_payloads: bool = False,
 ):
     """Async generator that yields ``StreamEvent``s instead of printing them.
 
@@ -303,6 +304,11 @@ async def astream_agent_iter(
     ``agent_path`` is seeded into ``configurable`` so downstream interrupts can
     attribute themselves (``"orchestrator"`` by default — daemon-style;
     ``"cli"`` for direct CLI runs).
+
+    ``keep_full_payloads``: when True, tool_result payloads include a
+    ``full`` field with the untruncated body alongside the 600-char
+    ``preview``. The chat REPL passes True so its ``/expand`` slash command
+    can show full output. Default False keeps daemon SSE frames small.
 
     Yields events; the final yielded event is always ``StreamEvent("final", {"text": ...})``.
     """
@@ -373,7 +379,10 @@ async def astream_agent_iter(
                             if safe_body is not body:
                                 m.content = safe_body
                             preview = safe_body if len(safe_body) <= 600 else safe_body[:600] + " …[truncated]"
-                            yield StreamEvent("tool_result", {"name": tn, "preview": preview})
+                            payload: dict = {"name": tn, "preview": preview}
+                            if keep_full_payloads:
+                                payload["full"] = safe_body
+                            yield StreamEvent("tool_result", payload)
 
         if interrupted_value is None:
             final_text = last_assistant_text(final_messages)

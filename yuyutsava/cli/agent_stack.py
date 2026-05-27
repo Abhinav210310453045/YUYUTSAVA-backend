@@ -78,27 +78,42 @@ async def build_cli_agent_stack(
     async_subagents = None
     async_host_url = None
     async_host = None
+    async_host_attachment = None
     async_mirror = None
 
     if _async_enabled():
         # Local imports keep langgraph_api off the import path when async is off.
         from yuyutsava.async_subagents.host import AsyncSubagentHost
+        from yuyutsava.async_subagents.host_lock import acquire_or_attach_host
         from yuyutsava.async_subagents.mirror import AsyncTaskMirror
 
         model = chat_model(settings)
         async_subagents = [general_purpose]
-        async_host = AsyncSubagentHost.from_subagents(
-            async_subagents,
-            model=model,
-            checkpointer=checkpointer,
+
+        # First-come-wins shared host. If a daemon (or another chat) is
+        # already running and owns the LangGraph dev server, attach to its
+        # URL instead of starting a second one.
+        def _build_host() -> AsyncSubagentHost:
+            return AsyncSubagentHost.from_subagents(
+                async_subagents,
+                model=model,
+                checkpointer=checkpointer,
+            )
+
+        attachment = await asyncio.to_thread(
+            acquire_or_attach_host, factory=_build_host
         )
-        await asyncio.to_thread(async_host.start)
-        async_host_url = async_host.url
+        async_host_attachment = attachment
+        async_host_url = attachment.url
+        async_host = attachment.host  # None when attached to another owner
         async_mirror = AsyncTaskMirror()
-        logger.info(
-            "CLI Mode 1 async enabled: host=%s graphs=%s",
-            async_host_url, async_host.graph_ids,
-        )
+        if attachment.host is not None:
+            logger.info(
+                "CLI async host: owner @ %s graphs=%s",
+                async_host_url, attachment.host.graph_ids,
+            )
+        else:
+            logger.info("CLI async host: attached to running owner @ %s", async_host_url)
 
     bundle = build_cli_deepagent(
         workspace,
@@ -115,5 +130,6 @@ async def build_cli_agent_stack(
         async_host_url=async_host_url,
         async_task_mirror=async_mirror,
         async_host=async_host,
+        async_host_attachment=async_host_attachment,
     )
     return bundle

@@ -61,17 +61,17 @@ async def run_chat(
             checkpointer=checkpointer,
         )
 
-        # CLI Mode 1 async — if the bundle wired up a host + mirror, stand up
-        # the bridge + watcher inside this asyncio context.
+        # CLI Mode 1 async — if the bundle has a host URL (owned or attached),
+        # stand up the bridge + watcher inside this asyncio context.
         cli_bridge = None
         cli_watcher = None
-        if bundle.async_host is not None and bundle.async_task_mirror is not None:
+        if bundle.async_host_url is not None and bundle.async_task_mirror is not None:
             from yuyutsava.async_subagents.watcher import AsyncTaskHealthWatcher
             from yuyutsava.cli.async_hitl import CliHitlBridge
             cli_bridge = CliHitlBridge()
             cli_watcher = AsyncTaskHealthWatcher(
                 mirror=bundle.async_task_mirror,
-                host_url=bundle.async_host.url,
+                host_url=bundle.async_host_url,
                 ask_handler=cli_bridge.post_ask,
                 event_sink=cli_bridge.post_event,
                 agent_path_root="cli",
