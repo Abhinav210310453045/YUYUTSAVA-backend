@@ -68,7 +68,9 @@ class BaseSqliteStore:
         Each store call opens and closes its own connection; the WAL file
         is shared across opens so reads stay non-blocking.
         """
-        self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(
+            self._db_path.parent.mkdir, parents=True, exist_ok=True
+        )
         conn = await aiosqlite.connect(str(self._db_path))
         try:
             await conn.execute(f"PRAGMA busy_timeout={int(self._busy_timeout_ms)}")

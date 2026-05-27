@@ -19,6 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from yuyutsava.daemon.web.exceptions import register_exception_handlers
 from yuyutsava.daemon.web.routers import (
+    cli_attach as cli_attach_router,
     config as config_router,
     db as db_router,
     decisions as decisions_router,
@@ -45,6 +46,8 @@ def create_app(
     host: str,
     skill_registry: SkillRegistry | None = None,
     config_reload: ReloadCallback = None,
+    channels: "object | None" = None,           # ChannelRouter; duck-typed
+    session_origin: "object | None" = None,     # SessionOriginMap; duck-typed
 ) -> FastAPI:
     if not (host.startswith("127.") or host == "localhost" or host == "::1"):
         raise RuntimeError(
@@ -69,6 +72,8 @@ def create_app(
     app.state.store = hub.store
     app.state.skill_registry = skill_registry
     app.state.config_reload = config_reload
+    app.state.channels = channels
+    app.state.session_origin = session_origin
 
     app.add_middleware(
         CORSMiddleware,
@@ -114,6 +119,7 @@ def create_app(
         config_router.router,
         logs_router.router,
         static_router.router,
+        cli_attach_router.router,
     ):
         app.include_router(r)
 

@@ -54,6 +54,9 @@ class BaseSubAgent(ABC):
     ``build_react_agent()`` / ``as_deepagents_subagent_spec()`` interface.
     """
 
+    # Class attribute. Subclasses set ``False`` to opt out of background mode.
+    supports_async: bool = True
+
     def __init__(
         self,
         task_runner: TaskRunnerAgent,
@@ -176,7 +179,7 @@ class BaseSubAgent(ABC):
     def build_react_agent(
         self,
         model: BaseChatModel,
-        checkpointer: BaseCheckpointSaver,
+        checkpointer: BaseCheckpointSaver | None,
     ) -> CompiledStateGraph:
         """
         Build a LangGraph react agent for this sub-agent.
@@ -231,3 +234,55 @@ class BaseSubAgent(ABC):
             "system_prompt": self.system_prompt,
             "tools": self.all_tools(),
         }
+
+    # ------------------------------------------------------------------
+    # Async (background) mode
+    # ------------------------------------------------------------------
+
+    def async_graph_id(self) -> str:
+        """Stable graph_id used to register this subagent with the LangGraph host.
+
+        Must be a Python-identifier-safe string after kebab→underscore conversion
+        (see ``yuyutsava.async_subagents._lg_graphs``). Default: same as ``name``.
+        """
+        return self.name
+
+    def async_subagent_name(self) -> str:
+        """Name the master uses to invoke this subagent via ``start_async_task``.
+
+        Suffix is load-bearing: ``AsyncSubAgentMiddleware`` rejects duplicate
+        names, so the sync entry (``<name>``) and the async entry (``<name>-bg``)
+        must differ.
+        """
+        return f"{self.name}-bg"
+
+    def as_async_subagent_spec(self, url: str) -> dict[str, Any]:
+        """Return an ``AsyncSubAgent`` TypedDict for ``create_deep_agent``.
+
+        ``url`` is the base URL of an Agent Protocol server hosting this
+        subagent's compiled graph (typically the in-process AsyncSubagentHost).
+        Remote-hosted variants pass a different URL — same shape.
+        """
+        return {
+            "name": self.async_subagent_name(),
+            "description": f"[background] {self.description}",
+            "graph_id": self.async_graph_id(),
+            "url": url,
+        }
+
+    def build_async_graph(
+        self,
+        model: BaseChatModel,
+        checkpointer: BaseCheckpointSaver,
+    ) -> CompiledStateGraph:
+        """Compiled graph registered with the LangGraph host.
+
+        Default: same react graph as the sync path. Subclasses can override
+        to compile a different graph for background execution (e.g. different
+        prompt, longer recursion limit, different tool subset).
+
+        No checkpointer is passed here: LangGraph API injects its own
+        checkpointer at runtime, and embedding one causes a ValueError at
+        graph load time.
+        """
+        return self.build_react_agent(model, None)

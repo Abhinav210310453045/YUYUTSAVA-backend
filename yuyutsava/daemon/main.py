@@ -37,6 +37,7 @@ except ImportError:  # pragma: no cover
 from yuyutsava.daemon.bootstrap import DaemonOptions, DaemonSubsystems, build_daemon
 from yuyutsava.daemon.lifecycle import install_reload_handler, install_signal_handlers
 from yuyutsava.mcp.config import MCPConfig
+from yuyutsava.storage.paths import ensure_state_dirs
 
 logger = logging.getLogger("yuyutsava.daemon")
 
@@ -240,6 +241,19 @@ async def _async_main(argv: list[str] | None = None) -> int:
             await asyncio.gather(*tasks, return_exceptions=True)
     finally:
         logger.info("shutting down…")
+        # Async subagents teardown: watcher first (cancels in-flight runs on
+        # the lg server via SDK + marks mirror entries cancelled), then host
+        # (uvicorn daemon thread; best-effort — process exit reaps it).
+        if subs.async_task_watcher is not None:
+            try:
+                await subs.async_task_watcher.shutdown()
+            except Exception:
+                logger.exception("async_task_watcher.shutdown failed")
+        if subs.async_host is not None:
+            try:
+                subs.async_host.shutdown()
+            except Exception:
+                logger.exception("async_host.shutdown failed")
         await subs.channels.shutdown()
         await subs.mcp_manager.stop()
         # Sweeper task is joined via the gather() above (it's in `tasks`);
@@ -251,6 +265,7 @@ async def _async_main(argv: list[str] | None = None) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    ensure_state_dirs()
     try:
         return asyncio.run(_async_main(argv))
     except KeyboardInterrupt:
