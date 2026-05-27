@@ -18,6 +18,10 @@ export default function AskCard({ ask, onResolved }) {
   }
 
   const hasOptions = ask.options && ask.options.length > 0
+  // Background subagents tag their agent_path with `#bg`. Show a clear badge
+  // so users can tell a question is from a background worker (vs the master
+  // agent or a sync subagent).
+  const isBackground = !!(ask.agent_path && ask.agent_path.endsWith('#bg'))
 
   const btnBase = {
     padding: '6px 14px',
@@ -62,6 +66,24 @@ export default function AskCard({ ask, onResolved }) {
         }}>
           Permission
         </span>
+        {isBackground && (
+          <span
+            title="Question from a background subagent"
+            style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 10,
+              color: 'var(--neon-cyan, #22d3ee)',
+              background: 'rgba(34,211,238,0.08)',
+              border: '1px solid rgba(34,211,238,0.30)',
+              borderRadius: 3,
+              padding: '2px 6px',
+              textTransform: 'uppercase',
+              letterSpacing: '0.08em',
+            }}
+          >
+            Background
+          </span>
+        )}
         <span style={{ color: 'var(--text-primary)', fontWeight: 600, fontSize: 13 }}>
           {ask.title}
         </span>

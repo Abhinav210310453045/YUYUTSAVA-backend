@@ -85,16 +85,28 @@ def setup_logging(verbose: bool = False) -> None:
 
 @dataclass
 class AgentBundle:
-    """Compiled Deep Agent graph plus optional Docker resources to tear down."""
+    """Compiled Deep Agent graph plus optional Docker resources to tear down.
+
+    ``async_host`` and ``async_task_mirror`` are wired in when async (background)
+    subagents are enabled. CLI Mode 1 owns these objects directly; the daemon
+    keeps them on ``DaemonSubsystems`` and threads them through ``OrchestratorDeps``.
+    """
 
     agent: CompiledStateGraph
     docker_backend: DockerSandboxBackend | None = None
     sandbox_root: Path | None = None
     output_dir: Path | None = None
+    async_host: Any | None = None          # AsyncSubagentHost — duck-typed to avoid cycle
+    async_task_mirror: Any | None = None   # AsyncTaskMirror
 
     def close(self) -> None:
         if self.docker_backend is not None:
             self.docker_backend.stop()
+        if self.async_host is not None:
+            try:
+                self.async_host.shutdown()
+            except Exception:
+                logger.exception("AgentBundle: async_host.shutdown failed")
 
 
 def builtin_tools_reference_json() -> str:
@@ -185,6 +197,12 @@ def build_cli_deepagent(
     search_config: SearchConfig | None = None,
     checkpointer: BaseCheckpointSaver | None = None,
     subagents: "list[Any] | None" = None,
+    async_subagents: "list[Any] | None" = None,
+    async_host_url: str | None = None,
+    remote_async_subagents: "list[Any] | None" = None,
+    async_task_mirror: Any | None = None,
+    async_max_concurrent: int = 8,
+    async_host: Any | None = None,
 ) -> AgentBundle:
     """Build the CLI deepagent.
 
@@ -205,6 +223,23 @@ def build_cli_deepagent(
             Passing ``GeneralPurposeAgent`` here name-match-overrides deepagents'
             built-in default (see ``deepagents.graph`` ~line 240-246), so
             ``task('general-purpose', …)`` calls hit our tighter spec.
+        async_subagents: Local-mode background subagents. Each is converted via
+            ``as_async_subagent_spec(url=async_host_url)`` and added to the same
+            ``subagents=`` list. ``deepagents`` auto-routes by dict shape and
+            attaches ``AsyncSubAgentMiddleware``, which injects ``start_/check_/
+            update_/cancel_/list_async_tasks`` onto the master.
+        async_host_url: Base URL of the in-process LangGraph Agent Protocol
+            server hosting the compiled graphs (typically the
+            ``AsyncSubagentHost``). Required if ``async_subagents`` is provided.
+        remote_async_subagents: ``RemoteAsyncSubagentSpec`` entries whose graphs
+            live on a different Agent Protocol server (e.g. another YUYUTSAVA
+            daemon). Treated as first-class peers of local async subagents.
+        async_task_mirror: ``AsyncTaskMirror`` instance for cross-turn task
+            awareness and the concurrency cap. When provided alongside any
+            async subagents, ``BackgroundTaskCapMiddleware`` is installed.
+        async_max_concurrent: Cap for in-flight bg tasks. Defaults to ``8``.
+        async_host: Optional ``AsyncSubagentHost`` reference recorded on the
+            returned bundle so ``AgentBundle.close`` can tear it down.
     """
     model = chat_model(settings)
     checkpointer = checkpointer or MemorySaver()
@@ -219,9 +254,34 @@ def build_cli_deepagent(
 
     skill_registry = SkillRegistry(workspace_dir=ws)
 
-    subagent_specs: list[dict] | None = None
+    subagent_specs: list[dict] = []
     if subagents:
-        subagent_specs = [sa.as_deepagents_subagent_spec() for sa in subagents]
+        subagent_specs.extend(sa.as_deepagents_subagent_spec() for sa in subagents)
+
+    if async_subagents:
+        if not async_host_url:
+            raise ValueError(
+                "build_cli_deepagent: async_subagents requires async_host_url. "
+                "Build an AsyncSubagentHost and pass its .url here."
+            )
+        subagent_specs.extend(
+            sa.as_async_subagent_spec(url=async_host_url)
+            for sa in async_subagents
+            if getattr(sa, "supports_async", False)
+        )
+
+    if remote_async_subagents:
+        subagent_specs.extend(r.as_async_subagent_spec() for r in remote_async_subagents)
+
+    if async_task_mirror is not None and (async_subagents or remote_async_subagents):
+        # Local import: keeps engine.py importable from contexts that don't
+        # ship langgraph_api (e.g. very minimal CLI scripts).
+        from yuyutsava.async_subagents.cap_middleware import BackgroundTaskCapMiddleware
+        middleware.append(
+            BackgroundTaskCapMiddleware(async_task_mirror, max_concurrent=async_max_concurrent)
+        )
+
+    final_subagent_specs = subagent_specs or None
 
     if execution_mode == "docker":
         docker_cfg = docker_settings or DockerSettings()
@@ -246,10 +306,15 @@ def build_cli_deepagent(
             system_prompt=docker_system_prompt(workspace_root, docker_cfg.export_dir),
             checkpointer=checkpointer,
             middleware=middleware,
-            subagents=subagent_specs,
+            subagents=final_subagent_specs,
             debug=False,
         )
-        return AgentBundle(agent=graph, docker_backend=docker_backend)
+        return AgentBundle(
+            agent=graph,
+            docker_backend=docker_backend,
+            async_host=async_host,
+            async_task_mirror=async_task_mirror,
+        )
 
     backend = _local_shell_backend_factory(workspace_root, bash_timeout_sec)
     startup_tools, _ = _build_tool_registry_and_tools(
@@ -262,10 +327,17 @@ def build_cli_deepagent(
         system_prompt=local_system_prompt(workspace_root, sandbox_root, output_dir),
         checkpointer=checkpointer,
         middleware=middleware,
-        subagents=subagent_specs,
+        subagents=final_subagent_specs,
         debug=False,
     )
-    return AgentBundle(agent=graph, docker_backend=None, sandbox_root=sandbox_root, output_dir=output_dir)
+    return AgentBundle(
+        agent=graph,
+        docker_backend=None,
+        sandbox_root=sandbox_root,
+        output_dir=output_dir,
+        async_host=async_host,
+        async_task_mirror=async_task_mirror,
+    )
 
 
 # Back-compat alias. Old callers that still say ``build_agent`` keep working
@@ -298,7 +370,11 @@ def build_orchestrator(
     from yuyutsava.daemon.budget import BudgetMiddleware
     from yuyutsava.events.tools import make_recall_tool
 
-    capabilities = render_capabilities_block(list(deps.subagents.values()))
+    capabilities = render_capabilities_block(
+        list(deps.subagents.values()),
+        async_subagents=getattr(deps, "async_subagents", None),
+        remote_async_subagents=getattr(deps, "remote_async_subagents", None),
+    )
     skills_index = skill_registry.index_block(agent="orchestrator") if skill_registry else ""
     system_prompt = render_system_prompt(capabilities, skills_index=skills_index, prefs_block=prefs_block)
 
@@ -315,7 +391,7 @@ def build_orchestrator(
     if deps.mcp_manager is not None:
         master_tools.extend(deps.mcp_manager.tools_for("orchestrator"))
 
-    subagent_specs = []
+    subagent_specs: list[dict] = []
     for sa in deps.subagents.values():
         spec = sa.as_deepagents_subagent_spec()
         spec["model"] = deps.subagent_model
@@ -324,6 +400,24 @@ def build_orchestrator(
             BudgetMiddleware(max_input_tokens=deps.subagent_token_budget, role=sa.name),
         ]
         subagent_specs.append(spec)
+
+    # Async (background) subagents — same `subagents=` list; deepagents auto-
+    # routes dicts shaped like AsyncSubAgent to AsyncSubAgentMiddleware.
+    async_subagents = getattr(deps, "async_subagents", None) or []
+    async_host_url = getattr(deps, "async_host_url", None)
+    if async_subagents:
+        if not async_host_url:
+            raise ValueError(
+                "build_orchestrator: deps.async_subagents requires deps.async_host_url. "
+                "Build an AsyncSubagentHost at daemon boot and store its .url on deps."
+            )
+        for sa in async_subagents:
+            if not getattr(sa, "supports_async", False):
+                continue
+            subagent_specs.append(sa.as_async_subagent_spec(url=async_host_url))
+
+    for r in (getattr(deps, "remote_async_subagents", None) or []):
+        subagent_specs.append(r.as_async_subagent_spec())
 
     budget = BudgetMiddleware(max_input_tokens=budget_tokens, role="orchestrator")
     workspace_root = str(deps.workspace_root.resolve()) if deps.workspace_root else "/"
@@ -336,14 +430,23 @@ def build_orchestrator(
             inherit_env=False,
         )
 
+    master_middleware: list = [ToolFilterMiddleware(), budget]
+    mirror = getattr(deps, "async_task_mirror", None)
+    if mirror is not None and (async_subagents or getattr(deps, "remote_async_subagents", None)):
+        from yuyutsava.async_subagents.cap_middleware import BackgroundTaskCapMiddleware
+        max_conc = getattr(deps, "async_max_concurrent", 8)
+        master_middleware.append(
+            BackgroundTaskCapMiddleware(mirror, max_concurrent=max_conc)
+        )
+
     return create_deep_agent(
         model=model,
         tools=master_tools,
         backend=_backend_factory,
         system_prompt=system_prompt,
         checkpointer=checkpointer if checkpointer is not None else MemorySaver(),
-        middleware=[ToolFilterMiddleware(), budget],
-        subagents=subagent_specs,
+        middleware=master_middleware,
+        subagents=subagent_specs or None,
     )
 
 

@@ -4,6 +4,15 @@ import { SSEClient } from '../api/sse'
 const MAX_LINES = 2000
 // Kinds routed to the "Logs" tab. Everything else goes to "Events".
 const LOG_KINDS = new Set(['http_log'])
+// Kinds handled by the Background Tasks panel — not routed to event/log lines.
+const BG_TASK_KINDS = new Set([
+  'async_task_started',
+  'async_task_progress',
+  'async_task_awaiting_user',
+  'async_task_completed',
+])
+// Keep at most this many completed bg tasks in the panel before evicting.
+const MAX_COMPLETED_BG_TASKS = 30
 const LOGS_ENABLED_KEY = 'yuyutsava.logsInUI'
 
 // Module-level mutable flag so the SSE onEvent callback (captured once in
@@ -66,6 +75,38 @@ function reducer(state, action) {
       const logLines = [...state.logLines, action.line]
       return { ...state, logLines: logLines.length > MAX_LINES ? logLines.slice(-MAX_LINES) : logLines }
     }
+    case 'BG_TASK': {
+      // ``payload`` is the inner ``data`` from a ``async_task_*`` event.
+      const kind = action.kind
+      const data = action.payload
+      const taskId = data?.task_id
+      if (!taskId) return state
+      const bgTasks = new Map(state.bgTasks)
+      const prev = bgTasks.get(taskId) || { task_id: taskId, status: 'running', events: [] }
+      let status = prev.status
+      if (kind === 'async_task_started') status = 'running'
+      else if (kind === 'async_task_awaiting_user') status = 'awaiting_user'
+      else if (kind === 'async_task_completed') status = data?.ok ? 'success' : 'failed'
+      // progress: status unchanged
+      const next = {
+        ...prev,
+        ...data,
+        status,
+        last_kind: kind,
+        last_update_at: data?.ts || (Date.now() / 1000),
+      }
+      bgTasks.set(taskId, next)
+      // Trim completed/failed beyond the cap (FIFO by last_update_at).
+      const finished = Array.from(bgTasks.values()).filter(
+        t => t.status === 'success' || t.status === 'failed',
+      )
+      if (finished.length > MAX_COMPLETED_BG_TASKS) {
+        finished.sort((a, b) => (a.last_update_at || 0) - (b.last_update_at || 0))
+        const evict = finished.slice(0, finished.length - MAX_COMPLETED_BG_TASKS)
+        for (const t of evict) bgTasks.delete(t.task_id)
+      }
+      return { ...state, bgTasks }
+    }
     default:
       return state
   }
@@ -76,6 +117,7 @@ const initialState = {
   asks: new Map(),
   eventLines: [],
   logLines: [],
+  bgTasks: new Map(),     // task_id -> { task_id, agent_name, status, ... }
   connected: false,
   pendingCount: 0,
 }
@@ -92,6 +134,25 @@ export function SSEProvider({ children }) {
       onAsk: (data) => dispatch({ type: 'ASK', payload: data }),
       onEvent: (data) => {
         const kind = data.kind || 'log'
+        // Background subagent events: handled by the BG_TASK reducer, not the
+        // event/log line stream. Fire a focus-aware OS notification on
+        // completion so users get a banner from collapsed/minimized windows.
+        if (BG_TASK_KINDS.has(kind)) {
+          dispatch({ type: 'BG_TASK', kind, payload: data.data || {} })
+          if (kind === 'async_task_completed') {
+            const ok = !!data.data?.ok
+            const agent = data.data?.agent_name || 'background task'
+            try {
+              // Preload exposes the IPC as ``showNotification`` (preload.js:35
+              // → ipcMain ``notify:show`` handler in main/notifications.js).
+              window.electronAPI?.showNotification?.({
+                title: ok ? `${agent} ✓ completed` : `${agent} ✗ failed`,
+                body: (data.data?.summary || '').slice(0, 200),
+              })
+            } catch {}
+          }
+          return
+        }
         const isLog = LOG_KINDS.has(kind)
         // Logs are gated by the Titlebar toggle; events always flow.
         if (isLog && !logsFlag.enabled) return

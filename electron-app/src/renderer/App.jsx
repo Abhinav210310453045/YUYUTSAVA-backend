@@ -2,6 +2,7 @@ import React, { useState, useCallback, useEffect, useRef } from 'react'
 import Titlebar from './components/layout/Titlebar'
 import Sidebar from './components/layout/Sidebar'
 import ActivityLog from './components/layout/ActivityLog'
+import BackgroundTasksPanel from './components/background-tasks/BackgroundTasksPanel'
 import ProposalsPanel from './components/proposals/ProposalsPanel'
 import SessionsPanel from './components/sessions/SessionsPanel'
 import SettingsPanel from './components/settings/SettingsPanel'
@@ -149,7 +150,24 @@ export default function App() {
 
           <ResizeHandle onMouseDown={(e) => startDrag('activity', e)} side="right" />
 
-          <ActivityLog events={eventLines} logs={logLines} width={activityW} />
+          <div style={{
+            width: activityW,
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            borderTop: 'none',
+          }}>
+            {/* Sticky band: in-flight background subagent tasks. */}
+            <div style={{
+              borderBottom: '1px solid var(--border-divider, rgba(255,255,255,0.08))',
+              flexShrink: 0,
+            }}>
+              <BackgroundTasksPanel />
+            </div>
+            <div style={{ flex: 1, overflow: 'hidden' }}>
+              <ActivityLog events={eventLines} logs={logLines} width={activityW} />
+            </div>
+          </div>
         </div>
 
         <InWindowToast />

@@ -30,7 +30,22 @@ logger = logging.getLogger("yuyutsava.agents.orchestrator")
 
 @dataclass
 class OrchestratorDeps:
-    """Bag of dependencies the orchestrator and its tools need at call time."""
+    """Bag of dependencies the orchestrator and its tools need at call time.
+
+    The ``async_*`` fields are wired in when background subagents are enabled.
+    They are duck-typed (``object | None``) so this module doesn't pull
+    ``async_subagents`` (and transitively ``langgraph_api``) when async is off.
+
+    - ``async_subagents``: ``list[BaseSubAgent]`` whose graphs are hosted by
+      ``async_host``. Optional.
+    - ``async_host_url``: base URL of the local ``AsyncSubagentHost`` (required
+      when ``async_subagents`` is non-empty).
+    - ``remote_async_subagents``: ``list[RemoteAsyncSubagentSpec]`` peers hosted
+      elsewhere. Optional.
+    - ``async_task_mirror``: ``AsyncTaskMirror`` instance used by
+      ``BackgroundTaskCapMiddleware`` and the turn-start status injector.
+    - ``async_max_concurrent``: cap honoured by the cap middleware.
+    """
 
     subagents: dict[str, BaseSubAgent]
     subagent_model: BaseChatModel
@@ -42,6 +57,13 @@ class OrchestratorDeps:
     mcp_manager: MCPClientManager | None = None
     search_config: SearchConfig | None = None
     cap_enforcer: object | None = None  # tools.search._CapEnforcer
+
+    # Async (background) subagent wiring; all optional.
+    async_subagents: list[BaseSubAgent] | None = None
+    async_host_url: str | None = None
+    remote_async_subagents: list[object] | None = None
+    async_task_mirror: object | None = None
+    async_max_concurrent: int = 8
 
 
 # ---------------------------------------------------------------------------

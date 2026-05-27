@@ -11,10 +11,27 @@ from yuyutsava.daemon.web.app import create_app
 from yuyutsava.daemon.web.services.stream_service import WebChannel, WebHub
 
 
-def make_app(hub, *, host, skill_registry=None, config_reload=None):
-    """Backwards-compatible alias of :func:`create_app`."""
+def make_app(
+    hub,
+    *,
+    host,
+    skill_registry=None,
+    config_reload=None,
+    channels=None,
+    session_origin=None,
+):
+    """Backwards-compatible alias of :func:`create_app`.
+
+    Extended to forward ``channels`` and ``session_origin`` (CLI Mode 2
+    attach/detach router needs them).
+    """
     return create_app(
-        hub, host=host, skill_registry=skill_registry, config_reload=config_reload,
+        hub,
+        host=host,
+        skill_registry=skill_registry,
+        config_reload=config_reload,
+        channels=channels,
+        session_origin=session_origin,
     )
 
 

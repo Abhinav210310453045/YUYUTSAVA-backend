@@ -96,6 +96,68 @@ class HttpLogPayload:
     kind: Literal["http_log"] = "http_log"
 
 
+# ---------------------------------------------------------------------------
+# Async (background) subagent payloads
+# ---------------------------------------------------------------------------
+# Emitted by ``yuyutsava.async_subagents.watcher.AsyncTaskHealthWatcher`` as
+# background tasks make progress. Rendered by the Electron renderer's
+# Background Tasks panel and used by the CLI Mode-1 bridge to print inline
+# status banners between user turns.
+
+
+@dataclass(frozen=True)
+class AsyncTaskStartedPayload:
+    """A new background subagent task was launched."""
+
+    task_id: str
+    agent_name: str
+    instruction_preview: str
+    ts: float
+    kind: Literal["async_task_started"] = "async_task_started"
+
+
+@dataclass(frozen=True)
+class AsyncTaskProgressPayload:
+    """A status change or log line for a known background task.
+
+    ``kind_hint`` distinguishes "status_change" (e.g. running->awaiting_user)
+    from "log" (free-form progress text). Free text avoids a second Literal
+    explosion; the consumer can format accordingly.
+    """
+
+    task_id: str
+    agent_name: str
+    kind_hint: str
+    text: str
+    ts: float
+    kind: Literal["async_task_progress"] = "async_task_progress"
+
+
+@dataclass(frozen=True)
+class AsyncTaskAwaitingUserPayload:
+    """The background graph hit ``interrupt()`` and is waiting for a user reply."""
+
+    task_id: str
+    agent_name: str
+    ask_id: str
+    title: str
+    ts: float
+    kind: Literal["async_task_awaiting_user"] = "async_task_awaiting_user"
+
+
+@dataclass(frozen=True)
+class AsyncTaskCompletedPayload:
+    """The background task reached a terminal status."""
+
+    task_id: str
+    agent_name: str
+    ok: bool
+    summary: str
+    duration_sec: float
+    ts: float
+    kind: Literal["async_task_completed"] = "async_task_completed"
+
+
 ChannelPayload = (
     LogPayload
     | TokenPayload
@@ -103,6 +165,10 @@ ChannelPayload = (
     | ToolResultPayload
     | TimelinePayload
     | HttpLogPayload
+    | AsyncTaskStartedPayload
+    | AsyncTaskProgressPayload
+    | AsyncTaskAwaitingUserPayload
+    | AsyncTaskCompletedPayload
 )
 
 
@@ -187,7 +253,15 @@ class UserChannel(ABC):
 
 @dataclass
 class ChannelRouter:
-    """Fan-out for events; first-available routing for asks/proposals.
+    """Fan-out for events; origin-aware then first-available for asks/proposals.
+
+    Routing for ``post_ask`` / ``post_proposal``:
+      1. If ``session_origin`` is set and the ask carries a ``session_id`` that
+         maps to a connected channel, try that channel first. This lets a
+         CLI-issued task get its HITL prompt back in the same CLI session
+         even when the Electron renderer is also live.
+      2. Otherwise fall back to ``primary_name``-first (default: ``web``).
+      3. Channels that raise ``NotImplementedError`` are skipped.
 
     TODO(phase2-§3.4): when ``yuyutsava/daemon/push_channel.py`` (pync-backed
     macOS notifications) is added for ``--no-ui`` mode, this constructor
@@ -200,6 +274,11 @@ class ChannelRouter:
 
     channels: list[UserChannel] = dataclasses.field(default_factory=list)
     primary_name: str = "web"  # tried first for asks/proposals
+    # Optional ``SessionOriginMap`` — see yuyutsava.async_subagents.session_origin.
+    # Typed as ``Any`` here to avoid the daemon-side channels module importing
+    # async_subagents (which pulls langgraph_api). The duck-typed contract is
+    # ``.get(session_id) -> channel_name | None``.
+    session_origin: Any | None = None
 
     async def post_event(self, ev: ChannelEvent) -> None:
         await asyncio.gather(
@@ -207,10 +286,17 @@ class ChannelRouter:
             return_exceptions=True,
         )
 
-    def _ordered_for_ask(self) -> list[UserChannel]:
-        primary = [c for c in self.channels if c.name == self.primary_name]
-        rest = [c for c in self.channels if c.name != self.primary_name]
-        return primary + rest
+    def _ordered_for_ask(self, *, prefer: str | None = None) -> list[UserChannel]:
+        # 1. Origin channel (if connected) — placed first when supplied.
+        origin = [c for c in self.channels if prefer and c.name == prefer]
+        # 2. Primary channel (skip if it was the origin).
+        primary = [
+            c for c in self.channels
+            if c.name == self.primary_name and not (prefer and c.name == prefer)
+        ]
+        # 3. Everything else.
+        rest = [c for c in self.channels if c not in origin and c not in primary]
+        return origin + primary + rest
 
     async def post_proposal(self, p: Proposal) -> ProposalDecision:
         for c in self._ordered_for_ask():
@@ -222,7 +308,14 @@ class ChannelRouter:
         return ProposalDecision(decision="skip")
 
     async def post_ask(self, a: AskPrompt) -> str:
-        for c in self._ordered_for_ask():
+        prefer = None
+        if self.session_origin is not None:
+            try:
+                prefer = self.session_origin.get(a.session_id)
+            except Exception:  # noqa: BLE001
+                logger.debug("session_origin.get failed", exc_info=True)
+                prefer = None
+        for c in self._ordered_for_ask(prefer=prefer):
             try:
                 return await c.post_ask(a)
             except NotImplementedError:

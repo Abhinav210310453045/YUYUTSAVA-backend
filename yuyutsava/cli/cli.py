@@ -33,6 +33,7 @@ from yuyutsava.core.engine import (
     export_agent_state_graph_png,
     setup_logging,
 )
+from yuyutsava.storage.paths import ensure_state_dirs
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -258,6 +259,7 @@ def _local_settings_from_args(args: argparse.Namespace) -> LocalSettings:
 
 def main(argv: list[str] | None = None) -> int:
     """Sync entry point required by setuptools console_scripts. Drives async logic."""
+    ensure_state_dirs()
     raw = list(argv) if argv is not None else sys.argv[1:]
     if raw and raw[0] == "daemon":
         # Hand off to the always-on daemon. The rest of argv is the daemon's own.
@@ -265,6 +267,9 @@ def main(argv: list[str] | None = None) -> int:
         return daemon_main(raw[1:])
     if raw and raw[0] == "prefs":
         return run_prefs(raw[1:])
+    if raw and raw[0] == "attach":
+        from yuyutsava.cli.commands.attach import run_attach
+        return run_attach(raw[1:])
     return asyncio.run(_async_main(raw))
 
 
