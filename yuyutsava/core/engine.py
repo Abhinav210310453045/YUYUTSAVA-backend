@@ -281,6 +281,11 @@ def build_cli_deepagent(
             BackgroundTaskCapMiddleware(async_task_mirror, max_concurrent=async_max_concurrent)
         )
 
+    if async_subagents or remote_async_subagents:
+        from yuyutsava.async_subagents.interrupt_middleware import AsyncTaskInterruptPatchMiddleware
+        async_specs = [s for s in subagent_specs if "graph_id" in s and "url" in s]
+        middleware.append(AsyncTaskInterruptPatchMiddleware(async_specs))
+
     final_subagent_specs = subagent_specs or None
 
     if execution_mode == "docker":
@@ -438,6 +443,11 @@ def build_orchestrator(
         master_middleware.append(
             BackgroundTaskCapMiddleware(mirror, max_concurrent=max_conc)
         )
+
+    if async_subagents or getattr(deps, "remote_async_subagents", None):
+        from yuyutsava.async_subagents.interrupt_middleware import AsyncTaskInterruptPatchMiddleware
+        async_specs = [s for s in subagent_specs if "graph_id" in s and "url" in s]
+        master_middleware.append(AsyncTaskInterruptPatchMiddleware(async_specs))
 
     return create_deep_agent(
         model=model,

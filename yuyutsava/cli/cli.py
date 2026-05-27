@@ -270,10 +270,12 @@ def main(argv: list[str] | None = None) -> int:
     if raw and raw[0] == "attach":
         from yuyutsava.cli.commands.attach import run_attach
         return run_attach(raw[1:])
+    if raw and raw[0] == "chat":
+        return asyncio.run(_async_main(raw[1:], force_chat=True))
     return asyncio.run(_async_main(raw))
 
 
-async def _async_main(argv: list[str] | None = None) -> int:
+async def _async_main(argv: list[str] | None = None, *, force_chat: bool = False) -> int:
     if load_dotenv:
         load_dotenv()
 
@@ -344,12 +346,25 @@ async def _async_main(argv: list[str] | None = None) -> int:
             return 2
     else:
         task = " ".join(args.task).strip()
-        if not task:
-            print(
-                "Error: provide a task, or use --scenario, --list-sessions, --list-scenarios / --print-tools.",
-                file=sys.stderr,
+        # No task + no scenario → drop into the interactive chat REPL.
+        # Also when invoked explicitly via `yuyutsava chat`.
+        if force_chat or not task:
+            from yuyutsava.cli.commands.chat_repl import run_chat_repl
+
+            return await run_chat_repl(
+                workspace=args.workspace.resolve(),
+                settings=llm_settings_from_env(),
+                execution_mode=_resolved_execution_mode(args),
+                docker_settings=_docker_settings_from_args(args),
+                local_settings=_local_settings_from_args(args),
+                search_config=SearchConfig.from_env(),
+                bash_timeout_sec=args.bash_timeout,
+                recursion_limit=args.recursion_limit,
+                permission_check=not args.no_permission_check,
+                resume_id=args.resume,
+                continue_latest=args.continue_,
+                verbose=args.verbose,
             )
-            return 2
 
     return await run_chat(
         task=task,

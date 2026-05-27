@@ -66,6 +66,15 @@ def _body_for_interrupt(iv: dict) -> str:
         return f"{op} {path_str}\nzone: {zone}  risk: {risk}\n\n{reason}"
     if t == "user_question":
         return iv.get("question", "")
+    # PermissionMiddleware (raw execute) — show both command and reason so
+    # the Electron card carries the same "what / why" that the CLI prompts
+    # already include.
+    if t == "permission_request":
+        command = iv.get("command", "")
+        reason = iv.get("reason", "")
+        if command and reason:
+            return f"{command}\n\n{reason}"
+        return command or reason or json.dumps(iv)[:300]
     return iv.get("command") or iv.get("reason") or json.dumps(iv)[:300]
 
 

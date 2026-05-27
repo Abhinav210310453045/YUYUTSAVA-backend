@@ -123,6 +123,29 @@ def _print_scoping_chips(payload: Any, *, colour: str) -> None:
 # Permission prompt / user question handler
 # ---------------------------------------------------------------------------
 
+# Accepted yes/no synonyms — also used by the chat REPL's _ask_handler
+# (yuyutsava.cli.commands.chat_repl) so both surfaces accept the same
+# vocabulary. Anything outside these sets falls through to "reject".
+_AFFIRMATIVE: frozenset[str] = frozenset({
+    "y", "yes", "a", "approve", "ok", "allow",
+})
+_NEGATIVE: frozenset[str] = frozenset({
+    "n", "no", "r", "reject", "deny", "cancel",
+})
+
+
+def _normalize_yes_no(answer: str) -> str:
+    """Map common synonyms to the canonical 'approve' / 'reject' tokens.
+
+    The permission middleware and TaskRunner gateway compare the decision
+    string strictly against ``"approve"`` — without normalization the
+    user typing ``y`` or ``yes`` would silently reject.
+    """
+    a = (answer or "").strip().lower()
+    if a in _AFFIRMATIVE:
+        return "approve"
+    return "reject"
+
 
 async def prompt_permission(
     interrupt_value: Any,
@@ -198,7 +221,7 @@ async def prompt_permission(
         print(f"\033[35m{_SEP}\033[0m", file=sys.stderr)
 
         answer = await asyncio.to_thread(input, "  Allow? [y/N]: ")
-        decision = "approve" if answer.strip().lower() in ("y", "yes") else "reject"
+        decision = _normalize_yes_no(answer)
         if decision == "approve":
             print("\033[32m  ✅  Approved\033[0m\n", file=sys.stderr)
         else:
@@ -228,7 +251,7 @@ async def prompt_permission(
     print(f"\033[33m{_SEP}\033[0m", file=sys.stderr)
 
     answer = await asyncio.to_thread(input, "  Allow? [y/N]: ")
-    decision = "approve" if answer.strip().lower() in ("y", "yes") else "reject"
+    decision = _normalize_yes_no(answer)
     if decision == "approve":
         print("\033[32m  ✅  Approved — running command\033[0m\n", file=sys.stderr)
     else:

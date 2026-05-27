@@ -71,6 +71,7 @@ class AsyncSubagentHost:
         port: int | None = None,
         healthcheck_timeout_sec: float = 60.0,
         server_log_level: str = "WARNING",
+        allow_blocking: bool = True,
     ) -> None:
         if not graphs:
             raise ValueError("AsyncSubagentHost requires at least one graph")
@@ -81,6 +82,7 @@ class AsyncSubagentHost:
         self._port = port or _pick_free_port()
         self._healthcheck_timeout = healthcheck_timeout_sec
         self._server_log_level = server_log_level
+        self._allow_blocking = allow_blocking
         self._thread: threading.Thread | None = None
         self._started = False
 
@@ -155,6 +157,7 @@ class AsyncSubagentHost:
                     reload=False,
                     open_browser=False,
                     server_level=self._server_log_level,
+                    allow_blocking=self._allow_blocking,
                 )
             except Exception:  # pragma: no cover  # uvicorn exit / shutdown
                 logger.exception("AsyncSubagentHost: server thread exited with error")
