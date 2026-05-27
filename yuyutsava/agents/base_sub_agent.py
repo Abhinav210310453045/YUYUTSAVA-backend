@@ -108,6 +108,36 @@ class BaseSubAgent(ABC):
     # Provided by base class — do not override
     # ------------------------------------------------------------------
 
+    def workspace_context_block(self) -> str:
+        """Concrete WORKSPACE / SANDBOX / OUTPUT paths injected into the prompt.
+
+        Subagents only see their static ``system_prompt``; the master's prompt
+        (which carries the real paths) is invisible to them. Without this
+        block, a subagent has no way to know where the sandbox actually lives
+        and would hallucinate something like ``/sandbox`` when calling tr_*
+        tools. Rendering the real paths from the task_runner ties the prompt
+        to the live config rather than a guess.
+        """
+        ws = self._task_runner.workspace_root
+        sb = self._task_runner.sandbox_root
+        out = (ws / "_output").resolve()
+        return (
+            "## WORKSPACE CONTEXT\n"
+            f"WORKSPACE_ROOT: {ws}\n"
+            f"SANDBOX_ROOT:   {sb}\n"
+            f"OUTPUT_DIR:     {out}\n"
+            "All tr_* tools take REAL absolute paths. Pass paths under "
+            "WORKSPACE_ROOT for workspace ops; under SANDBOX_ROOT for scratch "
+            "work (tr_execute_in_sandbox cwd is SANDBOX_ROOT). Deliverables go "
+            "under OUTPUT_DIR. Do NOT invent paths like /sandbox, /workspace, "
+            "or /tmp — they will not exist.\n"
+        )
+
+    def rendered_system_prompt(self) -> str:
+        """``system_prompt`` with the workspace-context block appended."""
+        base = self.system_prompt.rstrip()
+        return f"{base}\n\n{self.workspace_context_block()}"
+
     def task_runner_tools(self) -> list[BaseTool]:
         """Return the four tr_* tools bound to this agent's TaskRunnerAgent.
 
@@ -207,7 +237,7 @@ class BaseSubAgent(ABC):
         graph = create_react_agent(
             model=model,
             tools=tools_with_search,
-            prompt=self.system_prompt,
+            prompt=self.rendered_system_prompt(),
             checkpointer=checkpointer,
         )
         # Name the graph after the sub-agent so LangFuse traces show the real
@@ -231,7 +261,7 @@ class BaseSubAgent(ABC):
         return {
             "name": self.name,
             "description": self.description,
-            "system_prompt": self.system_prompt,
+            "system_prompt": self.rendered_system_prompt(),
             "tools": self.all_tools(),
         }
 

@@ -28,6 +28,7 @@ dependencies = [
     "langfuse>=4",
     "aiosqlite>=0.20.0",
     "sqlglot>=25.0.0",
+    "prompt-toolkit>=3.0",
 ]
 
 [project.optional-dependencies]

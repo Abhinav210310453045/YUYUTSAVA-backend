@@ -73,11 +73,15 @@ class CliHitlBridge:
         Asks for background subagents flush queued events first so context
         about which task is asking is visible right above the prompt.
         """
+        from yuyutsava.core.streaming import _normalize_yes_no
+
         # Flush queued events into stderr so the user sees recent context.
         await self._flush_to_stderr()
         title = ask.title or "Background task question"
         body = ask.body or ""
         agent_path = ask.agent_path or ""
+        is_permission = set(ask.options or []) == {"approve", "reject"}
+
         prefix = f"\n\033[36m▣ {title}\033[0m"
         if agent_path:
             prefix += f"  \033[2m({agent_path})\033[0m"
@@ -87,13 +91,18 @@ class CliHitlBridge:
         if ask.options:
             opt_str = " / ".join(ask.options)
             print(f"  options: {opt_str}", file=sys.stderr, flush=True)
-        # Always include a `> ` prompt; allow free text if no options given.
+        if is_permission:
+            print("  \033[2m[y]es / [n]o  (also: approve / reject)\033[0m", file=sys.stderr, flush=True)
+
+        prompt = "approve/reject> " if is_permission else "> "
         try:
             line = await asyncio.get_running_loop().run_in_executor(
-                None, lambda: input("> ").strip()
+                None, lambda: input(prompt).strip()
             )
         except (EOFError, KeyboardInterrupt):
-            line = "reject"
+            return "reject"
+        if is_permission:
+            return _normalize_yes_no(line)
         return line or "reject"
 
     # ------------------------------------------------------------------
