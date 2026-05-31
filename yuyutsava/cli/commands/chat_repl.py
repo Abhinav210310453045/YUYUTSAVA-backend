@@ -157,13 +157,21 @@ class RingEntry:
 class ChatRenderer:
     """Print StreamEvents in a Claude-Code-style minimal layout.
 
-    Maintains a ring buffer of recent tool_call / tool_result events with
-    their full bodies so the ``/last`` and ``/expand`` slash commands can
-    show what the inline preview truncated.
+    Two display modes share the same ring buffer and slash commands:
+
+    * Non-verbose — one terse line per tool call (``· name: <summary>
+      [zone] [#N]``). Successful tool results are suppressed; errors
+      surface as a single red ``↳ name ✗ <msg>`` line.
+    * Verbose — multi-line pretty-printed tool calls and results, JSON
+      bodies indented two levels, truncation only at the per-entry cap.
+
+    ``write_todos`` always renders as a checklist regardless of mode.
+    Use ``/expand <n>`` to pull the full payload of any ``[#N]`` entry.
     """
 
-    def __init__(self, *, verbose: bool) -> None:
+    def __init__(self, *, verbose: bool, workspace: Path | None = None) -> None:
         self._verbose = verbose
+        self._workspace = workspace
         self._in_ai_stream = False
         try:
             ring_size = max(1, int(os.environ.get("YUYUTSAVA_REPL_RING", "50")))
@@ -194,36 +202,39 @@ class ChatRenderer:
         if ev.kind == "tool_call":
             name = ev.data.get("name", "?")
             args = ev.data.get("args", {})
-            preview = self._fmt_args(args, limit=120 if not self._verbose else 400)
             idx = self._push_ring("tool_call", name, self._pretty(args))
-            print(
-                f"  {_DIM}· {name}({preview}) [#{idx}]{_RESET}",
-                file=sys.stderr,
-                flush=True,
-            )
+            if name == "write_todos":
+                self._render_todos(args, idx)
+                return
+            if self._verbose:
+                self._render_tool_call_verbose(name, args, idx)
+            else:
+                self._render_tool_call_compact(name, args, idx)
+            return
 
-        elif ev.kind == "tool_result":
+        if ev.kind == "tool_result":
             name = ev.data.get("name", "tool")
             body = ev.data.get("preview", "") or ""
             full = ev.data.get("full", body) or body
-            limit = 600 if self._verbose else 200
-            if len(body) > limit:
-                body = body[:limit] + " …"
-            # Collapse to one line for the compact display.
-            one_line = body.replace("\n", " ⏎ ")
             idx = self._push_ring("tool_result", name, full)
-            print(
-                f"  {_DIM}↳ {name}: {one_line} [#{idx}]{_RESET}",
-                file=sys.stderr,
-                flush=True,
-            )
+            # The write_todos call line already reflects the new state.
+            if name == "write_todos":
+                return
+            is_err = self._looks_like_error(full or body)
+            if self._verbose:
+                self._render_tool_result_verbose(name, full or body, idx, is_err)
+            elif is_err:
+                self._render_tool_result_compact_error(name, full or body, idx)
+            # else: suppress on success in non-verbose
+            return
 
-        elif ev.kind == "log":
+        if ev.kind == "log":
             text = ev.data.get("text", "")
             if text:
                 print(f"{_YELLOW}{text}{_RESET}", file=sys.stderr, flush=True)
+            return
 
-        elif ev.kind == "final":
+        if ev.kind == "final":
             # The token stream above already covered the prose. Just newline.
             print(flush=True)
 
@@ -311,6 +322,255 @@ class ChatRenderer:
         if len(out) > limit:
             out = out[:limit] + "…"
         return out
+
+    # ------------------------------------------------------------------
+    # Mode-specific renderers
+    # ------------------------------------------------------------------
+
+    def _render_tool_call_compact(self, name: str, args: Any, idx: int) -> None:
+        summary = self._compact_summary(args)
+        zone_chip = self._zone_chip(name, args)
+        head = f"  {_DIM}·{_RESET} {_CYAN}{name}{_RESET}"
+        body = f"{_DIM}: {summary}{_RESET}" if summary else ""
+        tail = f"{_DIM}  [#{idx}]{_RESET}"
+        print(f"{head}{body}{zone_chip}{tail}", file=sys.stderr, flush=True)
+
+    def _render_tool_call_verbose(self, name: str, args: Any, idx: int) -> None:
+        print(
+            f"\n  {_DIM}·{_RESET} {_CYAN}{name}{_RESET}  {_DIM}[#{idx}]{_RESET}",
+            file=sys.stderr,
+        )
+        if not isinstance(args, dict) or not args:
+            return
+        for k, v in args.items():
+            sval = self._format_arg_value(v)
+            if "\n" in sval:
+                print(f"    {_DIM}{k}:{_RESET}", file=sys.stderr)
+                for line in sval.splitlines():
+                    print(f"      {line}", file=sys.stderr)
+            else:
+                if len(sval) > 200:
+                    sval = sval[:200] + "…"
+                print(f"    {_DIM}{k}:{_RESET} {sval}", file=sys.stderr)
+
+    def _render_tool_result_verbose(
+        self, name: str, body: str, idx: int, is_err: bool
+    ) -> None:
+        status = f"{_RED}✗ error{_RESET}" if is_err else f"{_GREEN}← ok{_RESET}"
+        print(
+            f"  {_DIM}↳{_RESET} {_CYAN}{name}{_RESET} {status}  {_DIM}[#{idx}]{_RESET}",
+            file=sys.stderr,
+        )
+        pretty = self._pretty_body(body)
+        if len(pretty) > self._entry_cap:
+            pretty = (
+                pretty[: self._entry_cap]
+                + f"\n…[truncated; /expand {idx} for full]"
+            )
+        for line in pretty.splitlines():
+            print(f"      {line}", file=sys.stderr)
+
+    def _render_tool_result_compact_error(
+        self, name: str, body: str, idx: int
+    ) -> None:
+        short = self._error_message(body)
+        if short:
+            tail = f"{_DIM}  [#{idx}]{_RESET}"
+            print(
+                f"  {_RED}↳ {name} ✗ {short}{_RESET}{tail}",
+                file=sys.stderr,
+                flush=True,
+            )
+        else:
+            print(
+                f"  {_RED}↳ {name} ✗ error{_RESET}{_DIM}  [#{idx}]{_RESET}",
+                file=sys.stderr,
+                flush=True,
+            )
+
+    def _render_todos(self, args: Any, idx: int) -> None:
+        todos = args.get("todos") if isinstance(args, dict) else None
+        if not isinstance(todos, list) or not todos:
+            print(
+                f"  {_DIM}· write_todos  [#{idx}]{_RESET}",
+                file=sys.stderr,
+                flush=True,
+            )
+            return
+        print(
+            f"\n  {_CYAN}TODO:{_RESET}  {_DIM}[#{idx}]{_RESET}",
+            file=sys.stderr,
+        )
+        for t in todos:
+            if not isinstance(t, dict):
+                continue
+            status = str(t.get("status", "")).lower()
+            content = str(t.get("content", "")).strip()
+            symbol = self._todo_symbol(status)
+            if status == "completed":
+                colour = _DIM
+            elif status == "in_progress":
+                colour = _GREEN
+            else:
+                colour = ""
+            reset = _RESET if colour else ""
+            print(
+                f"    {colour}{symbol} {content}{reset}",
+                file=sys.stderr,
+            )
+        print(file=sys.stderr)
+
+    @staticmethod
+    def _todo_symbol(status: str) -> str:
+        if status == "completed":
+            return "[✓]"
+        if status == "in_progress":
+            return "[▶]"
+        return "[ ]"
+
+    # ------------------------------------------------------------------
+    # Format helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _compact_summary(args: Any) -> str:
+        if not isinstance(args, dict):
+            s = str(args)
+            return s if len(s) <= 80 else s[:80] + "…"
+        reason = args.get("reason")
+        if isinstance(reason, str) and reason.strip():
+            s = reason.strip()
+            return s if len(s) <= 80 else s[:80] + "…"
+        for key in ("path", "file_path", "target", "directory"):
+            v = args.get(key)
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+        paths = args.get("paths")
+        if isinstance(paths, list) and paths:
+            head = ", ".join(str(p) for p in paths[:2])
+            return head + ("…" if len(paths) > 2 else "")
+        for key in ("query", "pattern", "name", "command", "question"):
+            v = args.get(key)
+            if isinstance(v, str) and v.strip():
+                s = v.strip()
+                if len(s) > 80:
+                    s = s[:80] + "…"
+                return f'{key}="{s}"'
+        # Fallback: terse key=value summary.
+        items: list[str] = []
+        for k, v in args.items():
+            sval = str(v)
+            if len(sval) > 40:
+                sval = sval[:40] + "…"
+            items.append(f"{k}={sval}")
+        out = ", ".join(items)
+        return out if len(out) <= 80 else out[:80] + "…"
+
+    def _zone_chip(self, name: str, args: Any) -> str:
+        if not (name.startswith("tr_") and isinstance(args, dict)):
+            return ""
+        path: str | None = None
+        for k in ("path", "file_path", "target", "directory"):
+            v = args.get(k)
+            if isinstance(v, str) and v.strip():
+                path = v.strip()
+                break
+        if path is None:
+            paths = args.get("paths")
+            if isinstance(paths, list) and paths:
+                p0 = paths[0]
+                if isinstance(p0, str) and p0.strip():
+                    path = p0.strip()
+        if not path:
+            return ""
+        zone = self._classify_zone(path)
+        if not zone:
+            return ""
+        colour = _YELLOW if zone == "external" else _DIM
+        return f"  {colour}[{zone}]{_RESET}"
+
+    def _classify_zone(self, path: str) -> str:
+        if self._workspace is not None and path.startswith(str(self._workspace)):
+            return "workspace"
+        if path.startswith(("/tmp", "/var/folders", "/private/tmp")):
+            return "sandbox"
+        if path.startswith("/"):
+            return "external"
+        return ""
+
+    @staticmethod
+    def _format_arg_value(v: Any) -> str:
+        if isinstance(v, str):
+            stripped = v.strip()
+            if stripped.startswith(("{", "[")):
+                try:
+                    return json.dumps(json.loads(stripped), indent=2, default=str)
+                except Exception:
+                    pass
+            return v
+        if isinstance(v, (dict, list)):
+            try:
+                return json.dumps(v, indent=2, default=str)
+            except Exception:
+                return str(v)
+        return str(v)
+
+    @staticmethod
+    def _pretty_body(body: str) -> str:
+        if not isinstance(body, str):
+            return str(body)
+        stripped = body.strip()
+        if stripped.startswith(("{", "[")):
+            try:
+                return json.dumps(json.loads(stripped), indent=2, default=str)
+            except Exception:
+                pass
+        return body
+
+    @staticmethod
+    def _looks_like_error(body: str) -> bool:
+        if not isinstance(body, str) or not body:
+            return False
+        stripped = body.strip()
+        if stripped.startswith("{"):
+            try:
+                obj = json.loads(stripped)
+                if isinstance(obj, dict):
+                    status = str(obj.get("status", "")).lower()
+                    if status in ("error", "rejected", "fail", "failed"):
+                        return True
+                    err = obj.get("error")
+                    if err:
+                        return True
+            except Exception:
+                pass
+        head = stripped[:200].lower()
+        markers = ("error:", "exception:", "traceback", "failed:", "✗")
+        return any(m in head for m in markers)
+
+    @staticmethod
+    def _error_message(body: str) -> str:
+        if not isinstance(body, str):
+            return ""
+        stripped = body.strip()
+        if stripped.startswith("{"):
+            try:
+                obj = json.loads(stripped)
+                if isinstance(obj, dict):
+                    err = obj.get("error")
+                    if isinstance(err, dict):
+                        msg = err.get("message") or err.get("code")
+                        if msg:
+                            return str(msg)[:120]
+                    elif isinstance(err, str) and err:
+                        return err[:120]
+                    msg = obj.get("message")
+                    if isinstance(msg, str) and msg:
+                        return msg[:120]
+            except Exception:
+                pass
+        first = stripped.splitlines()[0] if stripped else ""
+        return first[:120]
 
 
 # ---------------------------------------------------------------------------
@@ -517,8 +777,23 @@ async def run_chat_repl(
     # follows the same lifecycle as the SQLite session store.
     history_path = state_dir() / "chat_history"
 
-    renderer = ChatRenderer(verbose=verbose)
+    renderer = ChatRenderer(verbose=verbose, workspace=workspace)
     exit_code = 0
+
+    # The renderer is the only voice the user should hear in chat mode.
+    # Without this, the TaskRunner / tool_registry / task_runner.tools
+    # INFO lines interleave with renderer output and look like duplicate
+    # noise. Plumbing debugging keeps its escape hatch via the env var.
+    if not debug_plumbing:
+        import logging as _logging
+
+        for _name in (
+            "yuyutsava.task_runner",
+            "yuyutsava.agents.task_runner.tools",
+            "yuyutsava.core.tool_registry",
+            "yuyutsava.core.permission_middleware",
+        ):
+            _logging.getLogger(_name).setLevel(_logging.WARNING)
 
     async with build_checkpointer(sessions_settings) as checkpointer:
         # Build the agent stack ONCE. Swallow the LangGraph host's startup
