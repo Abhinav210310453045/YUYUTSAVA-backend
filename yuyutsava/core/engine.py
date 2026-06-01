@@ -79,6 +79,9 @@ _PLUMBING_WARN_LOGGERS = (
 # aren't actionable for interactive users (langfuse handshake, warnings hook).
 _PLUMBING_ERROR_LOGGERS = (
     "langfuse",
+    # OTEL exporter retry spam when Langfuse drops mid-session (the whole
+    # opentelemetry.* tree, incl. exporter.otlp.proto.http.trace_exporter).
+    "opentelemetry",
     "py.warnings",
 )
 

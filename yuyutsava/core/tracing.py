@@ -19,8 +19,13 @@ from __future__ import annotations
 
 import logging
 import os
+import urllib.error
+import urllib.request
 
 logger = logging.getLogger("yuyutsava.core.tracing")
+
+# Process-wide cache for the reachability probe. ``None`` = not yet probed.
+_reachable: bool | None = None
 
 
 def is_configured() -> bool:
@@ -29,6 +34,38 @@ def is_configured() -> bool:
         and os.getenv("LANGFUSE_PUBLIC_KEY")
         and os.getenv("LANGFUSE_SECRET_KEY")
     )
+
+
+def reset_reachability_cache() -> None:
+    """Clear the cached reachability result (mainly for tests)."""
+    global _reachable
+    _reachable = None
+
+
+def _langfuse_reachable() -> bool:
+    """Return whether Langfuse is actually up, probing once per process.
+
+    Without this, langfuse v4 happily installs a global OTEL ``BatchSpanProcessor``
+    aimed at a dead ``LANGFUSE_HOST`` and the exporter spams retry warnings. We
+    probe ``/api/public/health`` once, cache the result, and log a single quiet
+    line when Langfuse is unreachable so tracing degrades to a silent no-op.
+    """
+    global _reachable
+    if _reachable is not None:
+        return _reachable
+
+    host = (os.getenv("LANGFUSE_HOST") or "").rstrip("/")
+    ok = False
+    try:
+        with urllib.request.urlopen(f"{host}/api/public/health", timeout=1.5) as r:
+            ok = r.status == 200
+    except (urllib.error.URLError, ConnectionError, OSError, ValueError):
+        ok = False
+
+    _reachable = ok
+    if not ok:
+        logger.info("Langfuse not active at %s — tracing disabled", host or "<unset>")
+    return ok
 
 
 def get_callback(
@@ -43,6 +80,8 @@ def get_callback(
     LANGFUSE_HOST env vars.  Session and trace name go via TraceContext.
     """
     if not is_configured():
+        return None
+    if not _langfuse_reachable():
         return None
     name = trace_name or run_name
     try:
