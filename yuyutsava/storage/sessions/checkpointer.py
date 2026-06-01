@@ -7,6 +7,7 @@ will not require touching callers.
 
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -28,7 +29,9 @@ async def build_checkpointer(settings: SessionsSettings):
             "only 'sqlite' is supported. Add a branch here when you wire Postgres."
         )
 
-    settings.db_path.parent.mkdir(parents=True, exist_ok=True)
+    await asyncio.to_thread(
+        settings.db_path.parent.mkdir, parents=True, exist_ok=True
+    )
     async with AsyncSqliteSaver.from_conn_string(str(settings.db_path)) as saver:
         await saver.setup()
         yield saver

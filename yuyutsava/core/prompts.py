@@ -127,6 +127,32 @@ WORKSPACE and SANDBOX zones auto-allow reads/lists; EXTERNAL prompts once.
 Complete the user's task; be concise."""
 
 
+ASYNC_SUBAGENT_GUIDANCE = """\
+## BACKGROUND (ASYNC) SUBAGENTS
+You may have access to background subagents listed under AVAILABLE SUBAGENTS
+with a [background] tag. Use them for long-running work that shouldn't block
+the conversation.
+
+- task(name, ...): SYNC. Blocks until the subagent answers. Use when you
+  need the result before your next step.
+- start_async_task(subagent_type, description): BACKGROUND. Returns a
+  task_id immediately. Tell the user the task started and continue chatting.
+  Do NOT poll check_async_task in a loop.
+- check_async_task(task_id): inspect ONE task on demand (user asked, or
+  the in-flight status block flagged a change).
+- list_async_tasks([status]) / update_async_task / cancel_async_task: as named.
+
+When in doubt: prefer SYNC for short work (<30s), BACKGROUND for long work
+the user can keep chatting through. At the start of each turn you may see
+an in-flight tasks block — acknowledge any status change briefly and move on.
+"""
+
+
+def async_subagent_guidance() -> str:
+    """Optional block appended to the CLI system prompt when async is enabled."""
+    return ASYNC_SUBAGENT_GUIDANCE
+
+
 def docker_system_prompt(workspace_root: Path, export_host: Path | None) -> str:
     root = workspace_root.resolve()
     sandbox = root / "_sandbox"

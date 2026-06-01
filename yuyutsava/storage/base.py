@@ -15,12 +15,82 @@ keep their hand-rolled patterns until Step 2 swaps them over.
 from __future__ import annotations
 
 import asyncio
+import fcntl
+import logging
+import os
 import sqlite3
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
-from typing import Any, AsyncIterator, Awaitable, Callable, ClassVar
+from typing import Any, AsyncIterator, Awaitable, Callable, ClassVar, Iterator
 
 import aiosqlite
+
+from yuyutsava.storage.paths import state_dir
+
+logger = logging.getLogger("yuyutsava.storage.base")
+
+
+def _migrations_lock_path() -> Path:
+    return state_dir() / "migrations.lock"
+
+
+@contextmanager
+def migration_lock() -> Iterator[None]:
+    """Cross-process exclusive lock for schema migrations.
+
+    SQLite WAL + ``busy_timeout`` already serializes normal CRUD writers
+    across processes. The remaining hole is concurrent schema migrations
+    on first daemon + chat startup: each process can race
+    ``CREATE TABLE IF NOT EXISTS`` / ``ALTER TABLE`` calls. Wrap the
+    migration block with this and only one process will run migrations
+    at a time; the other waits.
+
+    Blocking ``flock`` — every caller will eventually get the lock. The
+    body is expected to be fast (milliseconds) so blocking is fine.
+    """
+    path = _migrations_lock_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        except OSError:
+            pass
+        os.close(fd)
+
+
+@asynccontextmanager
+async def amigration_lock() -> AsyncIterator[None]:
+    """Async wrapper around :func:`migration_lock` that runs the blocking
+    ``flock`` on a worker thread so the asyncio loop stays responsive.
+    """
+    fd = await asyncio.to_thread(_acquire_migration_lock_fd)
+    try:
+        yield
+    finally:
+        await asyncio.to_thread(_release_migration_lock_fd, fd)
+
+
+def _acquire_migration_lock_fd() -> int:
+    path = _migrations_lock_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
+    fcntl.flock(fd, fcntl.LOCK_EX)
+    return fd
+
+
+def _release_migration_lock_fd(fd: int) -> None:
+    try:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+    except OSError:
+        pass
+    try:
+        os.close(fd)
+    except OSError:
+        pass
 
 
 class BaseSqliteStore:
@@ -68,7 +138,9 @@ class BaseSqliteStore:
         Each store call opens and closes its own connection; the WAL file
         is shared across opens so reads stay non-blocking.
         """
-        self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(
+            self._db_path.parent.mkdir, parents=True, exist_ok=True
+        )
         conn = await aiosqlite.connect(str(self._db_path))
         try:
             await conn.execute(f"PRAGMA busy_timeout={int(self._busy_timeout_ms)}")
@@ -80,21 +152,26 @@ class BaseSqliteStore:
             await conn.close()
 
     async def _ensure_schema(self) -> None:
-        """Idempotent — runs once per instance and caches the result."""
+        """Idempotent — runs once per instance and caches the result.
+
+        Wrapped in the cross-process migration lock so a second daemon /
+        chat starting at the same time can't race on schema setup.
+        """
         if self._initialized:
             return
         if not self._SCHEMA_SQL:
             raise RuntimeError(
                 f"{type(self).__name__} did not define _SCHEMA_SQL"
             )
-        async with self._conn() as conn:
-            await conn.executescript(self._SCHEMA_SQL)
-            await conn.execute(
-                f"INSERT OR IGNORE INTO {self._META_TABLE}(key, value) VALUES(?, ?)",
-                (self._META_VERSION_KEY, str(self._SCHEMA_VERSION)),
-            )
-            await conn.commit()
-            await self._migrate(conn)
+        async with amigration_lock():
+            async with self._conn() as conn:
+                await conn.executescript(self._SCHEMA_SQL)
+                await conn.execute(
+                    f"INSERT OR IGNORE INTO {self._META_TABLE}(key, value) VALUES(?, ?)",
+                    (self._META_VERSION_KEY, str(self._SCHEMA_VERSION)),
+                )
+                await conn.commit()
+                await self._migrate(conn)
         self._initialized = True
 
     async def _migrate(self, conn: aiosqlite.Connection) -> None:

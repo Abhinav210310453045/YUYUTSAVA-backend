@@ -123,6 +123,29 @@ def _print_scoping_chips(payload: Any, *, colour: str) -> None:
 # Permission prompt / user question handler
 # ---------------------------------------------------------------------------
 
+# Accepted yes/no synonyms — also used by the chat REPL's _ask_handler
+# (yuyutsava.cli.commands.chat_repl) so both surfaces accept the same
+# vocabulary. Anything outside these sets falls through to "reject".
+_AFFIRMATIVE: frozenset[str] = frozenset({
+    "y", "yes", "a", "approve", "ok", "allow",
+})
+_NEGATIVE: frozenset[str] = frozenset({
+    "n", "no", "r", "reject", "deny", "cancel",
+})
+
+
+def _normalize_yes_no(answer: str) -> str:
+    """Map common synonyms to the canonical 'approve' / 'reject' tokens.
+
+    The permission middleware and TaskRunner gateway compare the decision
+    string strictly against ``"approve"`` — without normalization the
+    user typing ``y`` or ``yes`` would silently reject.
+    """
+    a = (answer or "").strip().lower()
+    if a in _AFFIRMATIVE:
+        return "approve"
+    return "reject"
+
 
 async def prompt_permission(
     interrupt_value: Any,
@@ -198,7 +221,7 @@ async def prompt_permission(
         print(f"\033[35m{_SEP}\033[0m", file=sys.stderr)
 
         answer = await asyncio.to_thread(input, "  Allow? [y/N]: ")
-        decision = "approve" if answer.strip().lower() in ("y", "yes") else "reject"
+        decision = _normalize_yes_no(answer)
         if decision == "approve":
             print("\033[32m  ✅  Approved\033[0m\n", file=sys.stderr)
         else:
@@ -228,7 +251,7 @@ async def prompt_permission(
     print(f"\033[33m{_SEP}\033[0m", file=sys.stderr)
 
     answer = await asyncio.to_thread(input, "  Allow? [y/N]: ")
-    decision = "approve" if answer.strip().lower() in ("y", "yes") else "reject"
+    decision = _normalize_yes_no(answer)
     if decision == "approve":
         print("\033[32m  ✅  Approved — running command\033[0m\n", file=sys.stderr)
     else:
@@ -268,6 +291,7 @@ async def astream_agent_iter(
     ask_handler=None,  # async (interrupt_value: dict) -> str
     run_name: str = "agent",
     agent_path: str = "orchestrator",
+    keep_full_payloads: bool = False,
 ):
     """Async generator that yields ``StreamEvent``s instead of printing them.
 
@@ -280,6 +304,11 @@ async def astream_agent_iter(
     ``agent_path`` is seeded into ``configurable`` so downstream interrupts can
     attribute themselves (``"orchestrator"`` by default — daemon-style;
     ``"cli"`` for direct CLI runs).
+
+    ``keep_full_payloads``: when True, tool_result payloads include a
+    ``full`` field with the untruncated body alongside the 600-char
+    ``preview``. The chat REPL passes True so its ``/expand`` slash command
+    can show full output. Default False keeps daemon SSE frames small.
 
     Yields events; the final yielded event is always ``StreamEvent("final", {"text": ...})``.
     """
@@ -296,7 +325,10 @@ async def astream_agent_iter(
     current_input: Any = {"messages": [HumanMessage(content=task)]}
 
     while True:
-        interrupted_value: Any = None
+        # pending: every interrupt fired in this pass, in arrival order.
+        # LangGraph requires Command(resume={id: value, ...}) whenever >1
+        # interrupt is pending — see fix note in the file docstring.
+        pending: list[tuple[str | None, Any]] = []
         _steps_this_pass = 0
 
         async for event in agent.astream(
@@ -308,9 +340,10 @@ async def astream_agent_iter(
 
             if mode == "updates" and isinstance(data, dict) and "__interrupt__" in data:
                 interrupts = data["__interrupt__"]
-                if interrupts:
-                    iv = interrupts[0]
-                    interrupted_value = iv.value if hasattr(iv, "value") else iv
+                for iv in interrupts or []:
+                    it_id = getattr(iv, "id", None)
+                    value = iv.value if hasattr(iv, "value") else iv
+                    pending.append((it_id, value))
                 continue
 
             if mode == "messages":
@@ -350,9 +383,12 @@ async def astream_agent_iter(
                             if safe_body is not body:
                                 m.content = safe_body
                             preview = safe_body if len(safe_body) <= 600 else safe_body[:600] + " …[truncated]"
-                            yield StreamEvent("tool_result", {"name": tn, "preview": preview})
+                            payload: dict = {"name": tn, "preview": preview}
+                            if keep_full_payloads:
+                                payload["full"] = safe_body
+                            yield StreamEvent("tool_result", payload)
 
-        if interrupted_value is None:
+        if not pending:
             final_text = last_assistant_text(final_messages)
             if not final_text and _steps_this_pass == 0:
                 yield StreamEvent("log", {
@@ -368,15 +404,33 @@ async def astream_agent_iter(
             yield StreamEvent("final", {"text": final_text})
             return
 
-        if ask_handler is None:
-            decision = "reject"
-        else:
-            try:
-                decision = await ask_handler(interrupted_value)
-            except Exception as exc:
-                yield StreamEvent("log", {"text": f"ask_handler raised: {exc}; rejecting"})
+        # Ask the user for every pending interrupt, then resume the graph
+        # with a single Command. Use resume_map form when N>1 — required
+        # by LangGraph; keep scalar form for N==1 to minimize diff risk
+        # for any node that may not accept the map form.
+        decisions: list[tuple[str | None, str]] = []
+        for it_id, value in pending:
+            if ask_handler is None:
                 decision = "reject"
-        current_input = Command(resume=decision)
+            else:
+                try:
+                    decision = await ask_handler(value)
+                except Exception as exc:
+                    yield StreamEvent("log", {"text": f"ask_handler raised: {exc}; rejecting"})
+                    decision = "reject"
+            decisions.append((it_id, decision))
+
+        if len(decisions) == 1:
+            current_input = Command(resume=decisions[0][1])
+        else:
+            resume_map: dict[str, Any] = {}
+            for it_id, decision in decisions:
+                if it_id is None:
+                    # Should not happen with current LangGraph, but be defensive:
+                    # without an id we cannot route the decision, so reject.
+                    continue
+                resume_map[it_id] = decision
+            current_input = Command(resume=resume_map)
 
 
 async def astream_agent(
@@ -425,7 +479,8 @@ async def astream_agent(
 
     while True:
         _in_ai_stream = False
-        interrupted_value: Any = None
+        # See note in astream_agent_iter — same multi-interrupt handling.
+        pending: list[tuple[str | None, Any]] = []
         _steps_this_pass = 0
 
         # We stream with two modes at once:
@@ -447,9 +502,10 @@ async def astream_agent(
                     print("\n", file=sys.stderr)
                     _in_ai_stream = False
                 interrupts = data["__interrupt__"]
-                if interrupts:
-                    iv = interrupts[0]
-                    interrupted_value = iv.value if hasattr(iv, "value") else iv
+                for iv in interrupts or []:
+                    it_id = getattr(iv, "id", None)
+                    value = iv.value if hasattr(iv, "value") else iv
+                    pending.append((it_id, value))
                 continue  # let any other events in this batch process normally
 
             # ── messages mode: streaming LLM tokens ────────────────────────
@@ -553,7 +609,7 @@ async def astream_agent(
                 logger.exception("on_tick handler raised; continuing")
 
         # No interrupt → done
-        if interrupted_value is None:
+        if not pending:
             if _steps_this_pass == 0 and not final_messages:
                 logger.error(
                     "⚠️  Agent produced no output — possible recursion limit hit "
@@ -563,15 +619,30 @@ async def astream_agent(
                 )
             break
 
-        # Ask the user, then resume the graph
-        decision = await prompt_permission(
-            interrupted_value,
-            interrupts_store=interrupts_store,
-            session_id=session_id,
-            thread_id=_tid,
-            invocation_mode=invocation_mode,
-        )
-        current_input = Command(resume=decision)
+        # Ask the user for every pending interrupt, then resume the graph
+        # with a single Command. resume_map form is required by LangGraph
+        # when more than one interrupt is in flight; keep the scalar form
+        # for the common single-interrupt case.
+        decisions: list[tuple[str | None, str]] = []
+        for it_id, value in pending:
+            decision = await prompt_permission(
+                value,
+                interrupts_store=interrupts_store,
+                session_id=session_id,
+                thread_id=_tid,
+                invocation_mode=invocation_mode,
+            )
+            decisions.append((it_id, decision))
+
+        if len(decisions) == 1:
+            current_input = Command(resume=decisions[0][1])
+        else:
+            resume_map: dict[str, Any] = {}
+            for it_id, decision in decisions:
+                if it_id is None:
+                    continue
+                resume_map[it_id] = decision
+            current_input = Command(resume=resume_map)
 
     final_text = last_assistant_text(final_messages)
     if not final_text:

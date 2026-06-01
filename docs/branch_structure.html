@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YUYUTSAVA-backend — Branch Structure</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --border:#30363d; --text:#e6edf3; --muted:#8b949e;
+    --main:#58a6ff; --legacy:#8b949e; --v2:#d2a8ff; --sync:#f778ba; --async:#ffa657;
+    --yuyu:#7ee787; --daemon:#79c0ff; --feature:#e3b341; --merge:#ff7b72; --root:#a5d6ff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:'Segoe UI',-apple-system,Helvetica,Arial,sans-serif;line-height:1.55}
+  .wrap{max-width:1180px;margin:0 auto;padding:32px 24px 64px}
+  h1{font-size:26px;margin:0 0 4px}
+  .sub{color:var(--muted);margin:0 0 28px;font-size:14px}
+  .grid{display:grid;grid-template-columns:1.15fr 1fr;gap:28px;align-items:start}
+  @media(max-width:900px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px 22px}
+  .card h2{font-size:15px;margin:0 0 16px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+  svg{width:100%;height:auto;display:block}
+  .node-label{font:600 12px 'Segoe UI',sans-serif;fill:var(--text)}
+  .node-sub{font:11px 'Segoe UI',sans-serif;fill:var(--muted)}
+  .sha{font:11px ui-monospace,SFMono-Regular,Menlo,monospace;fill:var(--muted)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--border);vertical-align:top}
+  th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+  td code{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--muted)}
+  .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:7px;vertical-align:middle}
+  .tip{font-weight:600}
+  .badge{display:inline-block;font-size:10px;padding:1px 7px;border-radius:10px;background:#1f6feb33;color:var(--main);border:1px solid #1f6feb55;margin-left:6px}
+  .badge.head{background:#e3b34122;color:var(--feature);border-color:#e3b34155}
+  .note{font-size:12.5px;color:var(--muted);margin-top:18px}
+  .legend{display:flex;flex-wrap:wrap;gap:10px 18px;margin-top:18px;font-size:12px;color:var(--muted)}
+  .legend span{display:flex;align-items:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>YUYUTSAVA-backend — Branch Structure</h1>
+  <p class="sub">8 local branches · two fork hubs (<code style="color:var(--muted)">c34bff1</code> root and the <code style="color:var(--merge)">9461edd</code> merge) · generated 2026-05-29</p>
+
+  <div class="grid">
+    <!-- ===================== DIAGRAM ===================== -->
+    <div class="card">
+      <h2>Commit Topology (oldest → newest)</h2>
+      <svg viewBox="0 0 560 880" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <style>
+            .edge{stroke:#3d444d;stroke-width:2;fill:none}
+          </style>
+        </defs>
+
+        <!-- ===== EDGES ===== -->
+        <!-- root -> rename chain -->
+        <path class="edge" d="M120,50 L120,120"/>
+        <!-- root -> legacy -->
+        <path class="edge" d="M120,50 C300,60 470,60 470,120"/>
+        <!-- rename chain -> dd52aed -->
+        <path class="edge" d="M120,150 L120,200"/>
+        <!-- dd52aed -> v2.0 -->
+        <path class="edge" d="M120,230 C120,265 320,255 320,290"/>
+        <!-- dd52aed -> sync chain -->
+        <path class="edge" d="M120,230 L120,290"/>
+        <!-- sync -> async -->
+        <path class="edge" d="M120,320 L120,370"/>
+        <!-- async -> yuyutsava -->
+        <path class="edge" d="M120,400 L120,450"/>
+        <!-- yuyutsava -> merge -->
+        <path class="edge" d="M120,480 C120,515 250,515 250,545"/>
+        <!-- legacy -> merge -->
+        <path class="edge" d="M470,150 C470,360 250,400 250,545"/>
+        <!-- merge -> main -->
+        <path class="edge" d="M250,575 C250,610 150,610 150,640"/>
+        <!-- merge -> daemon chain -->
+        <path class="edge" d="M250,575 C250,610 400,610 400,640"/>
+        <!-- daemon -> feature -->
+        <path class="edge" d="M400,670 L400,720"/>
+
+        <!-- ===== NODES ===== -->
+        <!-- root -->
+        <circle cx="120" cy="40" r="8" fill="var(--root)"/>
+        <text x="136" y="36" class="node-label">root</text>
+        <text x="136" y="50" class="sha">c34bff1 · pre-rename initial commit</text>
+
+        <!-- rename chain (collapsed) -->
+        <circle cx="120" cy="135" r="7" fill="var(--main)"/>
+        <text x="136" y="132" class="node-sub">86a6015 rename + 3 commits (v2 plan, …)</text>
+
+        <!-- dd52aed -->
+        <circle cx="120" cy="215" r="7" fill="var(--main)"/>
+        <text x="136" y="212" class="node-sub">dd52aed · invoke → stream + logging</text>
+
+        <!-- v2.0 tip -->
+        <circle cx="320" cy="305" r="8" fill="var(--v2)"/>
+        <text x="336" y="301" class="node-label">yuyutsava_v2.0</text>
+        <text x="336" y="315" class="sha">4751a3b · memory-mgmt plan (2 commits)</text>
+
+        <!-- sync tip -->
+        <circle cx="120" cy="305" r="8" fill="var(--sync)"/>
+        <text x="-4" y="290" class="node-label" text-anchor="start">yuyutsava-sync-version</text>
+        <text x="-4" y="304" class="sha" text-anchor="start">ed48012 · docker sandbox (+2 below)</text>
+
+        <!-- async tip -->
+        <circle cx="120" cy="385" r="8" fill="var(--async)"/>
+        <text x="136" y="382" class="node-label">yuyutsava-async</text>
+        <text x="136" y="396" class="sha">17724cc · task runner (+2 below)</text>
+
+        <!-- yuyutsava tip -->
+        <circle cx="120" cy="465" r="8" fill="var(--yuyu)"/>
+        <text x="136" y="462" class="node-label">yuyutsava</text>
+        <text x="136" y="476" class="sha">0991f2e · tool-read, ollama, anthropic (+2)</text>
+
+        <!-- legacy tip -->
+        <circle cx="470" cy="135" r="8" fill="var(--legacy)"/>
+        <text x="486" y="131" class="node-label" text-anchor="end" x="458">legacy/foundation</text>
+        <text x="458" y="145" class="sha" text-anchor="end">855d223</text>
+
+        <!-- merge -->
+        <rect x="218" y="548" width="64" height="26" rx="6" fill="none" stroke="var(--merge)" stroke-width="2"/>
+        <circle cx="250" cy="561" r="7" fill="var(--merge)"/>
+        <text x="250" y="595" class="node-label" text-anchor="middle">9461edd · MERGE</text>
+        <text x="250" y="609" class="sha" text-anchor="middle">yuyutsava + legacy/foundation</text>
+
+        <!-- main tip -->
+        <circle cx="150" cy="655" r="8" fill="var(--main)"/>
+        <text x="134" y="651" class="node-label" text-anchor="end">main</text>
+        <text x="134" y="665" class="sha" text-anchor="end">8896902 · MIT license</text>
+
+        <!-- daemon tip -->
+        <circle cx="400" cy="655" r="8" fill="var(--daemon)"/>
+        <text x="416" y="651" class="node-label">yuyutsava-daemon</text>
+        <text x="416" y="665" class="sha">f2551ab · tr_ls/tr_glob fix (+7 below)</text>
+
+        <!-- feature tip (HEAD) -->
+        <circle cx="400" cy="735" r="9" fill="var(--feature)" stroke="#fff" stroke-width="2"/>
+        <text x="416" y="731" class="node-label">feature/async-subagents ◄ HEAD</text>
+        <text x="416" y="745" class="sha">1fc1725 · singleton LangGraph, chat REPL (+2)</text>
+      </svg>
+
+      <div class="legend">
+        <span><i class="dot" style="background:var(--root)"></i>root</span>
+        <span><i class="dot" style="background:var(--main)"></i>main spine</span>
+        <span><i class="dot" style="background:var(--merge)"></i>merge</span>
+        <span><i class="dot" style="background:var(--feature)"></i>HEAD</span>
+      </div>
+    </div>
+
+    <!-- ===================== TABLE ===================== -->
+    <div class="card">
+      <h2>Branches</h2>
+      <table>
+        <thead><tr><th>Branch</th><th>Tip</th><th>Last commit</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="dot" style="background:var(--feature)"></span><span class="tip">feature/async-subagents</span><span class="badge head">HEAD</span></td>
+            <td><code>1fc1725</code></td>
+            <td>Singleton LangGraph server for async subagents + improved chat REPL · 05-28</td>
+          </tr>
+          <tr>
+            <td><span class="dot" style="background:var(--daemon)"></span><span class="tip">yuyutsava-daemon</span></td>
+            <td><code>f2551ab</code></td>
+            <td>Background daemon + tr_ls/tr_glob/virtual-path fixes · 05-26 <em>(direct ancestor of feature branch)</em></td>
+          </tr>
+          <tr>
+            <td><span class="dot" style="background:var(--main)"></span><span class="tip">main</span></td>
+            <td><code>8896902</code></td>
+            <td>Added MIT license · 05-06</td>
+          </tr>
+          <tr>
+            <td><span class="dot" style="background:var(--legacy)"></span><span class="tip">legacy/foundation</span></td>
+            <td><code>855d223</code></td>
+            <td>Correcting main branch · 05-02 <em>(early fork off root, merged into 9461edd)</em></td>
+          </tr>
+          <tr>
+            <td><span class="dot" style="background:var(--yuyu)"></span><span class="tip">yuyutsava</span></td>
+            <td><code>0991f2e</code></td>
+            <td>Tool-read logic, Ollama + Anthropic support · merged into main lineage</td>
+          </tr>
+          <tr>
+            <td><span class="dot" style="background:var(--async)"></span><span class="tip">yuyutsava-async</span></td>
+            <td><code>17724cc</code></td>
+            <td>Async task-runner subagent · 04-22</td>
+          </tr>
+          <tr>
+            <td><span class="dot" style="background:var(--sync)"></span><span class="tip">yuyutsava-sync-version</span></td>
+            <td><code>ed48012</code></td>
+            <td>Docker sandbox configuration · 04-16</td>
+          </tr>
+          <tr>
+            <td><span class="dot" style="background:var(--v2)"></span><span class="tip">yuyutsava_v2.0</span></td>
+            <td><code>4751a3b</code></td>
+            <td>Memory-management plan · 04-13 <em>(side branch off dd52aed)</em></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p class="note"><strong>Reading it:</strong> Everything starts at <code>c34bff1</code>. The <span style="color:var(--legacy)">legacy/foundation</span> line forks off immediately, while the main lineage evolves through the <span style="color:var(--sync)">sync</span> → <span style="color:var(--async)">async</span> → <span style="color:var(--yuyu)">yuyutsava</span> tips (with <span style="color:var(--v2)">v2.0</span> as an experimental side branch). Those two lines reunite at the <span style="color:var(--merge)">9461edd</span> merge. From there <span style="color:var(--main)">main</span> just adds the license, while the active development line runs through <span style="color:var(--daemon)">yuyutsava-daemon</span> up to your current <span style="color:var(--feature)">feature/async-subagents</span> (HEAD), which is <strong>3 commits ahead</strong> of <code>yuyutsava-daemon</code> and has <strong>not yet been merged back into main</strong>.</p>
+    </div>
+  </div>
+</div>
+</body>
+</html>
