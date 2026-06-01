@@ -36,6 +36,7 @@ from prompt_toolkit.history import FileHistory
 from prompt_toolkit.patch_stdout import patch_stdout
 
 from yuyutsava.cli.agent_stack import build_cli_agent_stack
+from yuyutsava.cli.stream_smoother import TokenSmoother
 from yuyutsava.core.config import DockerSettings, LlmSettings, LocalSettings, SearchConfig
 from yuyutsava.core.engine import cleanup_local_sandbox, silence_plumbing_loggers
 from yuyutsava.core.streaming import StreamEvent, _normalize_yes_no, astream_agent_iter
@@ -63,6 +64,59 @@ _YELLOW = "\033[33m"
 _GREEN = "\033[32m"
 _RED = "\033[31m"
 _RESET = "\033[0m"
+
+
+def _print_version_notice() -> None:
+    """Render langgraph-api upgrade/support notices once, above the banner.
+
+    langgraph_api normally emits these from a background daemon thread that
+    lands mid-chat (disabled via ``LANGGRAPH_NO_VERSION_CHECK`` in
+    ``AsyncSubagentHost.start``). Here we run the *same* check synchronously so
+    any notice appears cleanly before the YUYUTSAVA graphic instead of
+    interleaving with the conversation. Best-effort — never breaks startup.
+    """
+    import logging as _logging
+
+    log = _logging.getLogger("version_check")
+    lines: list[str] = []
+
+    class _Capture(_logging.Handler):
+        def emit(self, record: _logging.LogRecord) -> None:
+            lines.append(record.getMessage())
+
+    handler = _Capture()
+    saved = (log.level, log.propagate, log.disabled, list(log.handlers))
+    saved_env = os.environ.get("LANGGRAPH_NO_VERSION_CHECK")
+    try:
+        from langgraph_api import __version__ as _lg_version
+        from langgraph_api.cli import _check_newer_version
+
+        # The check early-returns when this is set, and attaches its own stderr
+        # handler when the logger has none — clear the flag and pre-install our
+        # capture handler (propagate off) so it neither skips nor prints itself.
+        os.environ["LANGGRAPH_NO_VERSION_CHECK"] = ""
+        log.handlers = [handler]
+        log.propagate = False
+        log.disabled = False
+        log.setLevel(_logging.INFO)
+        _check_newer_version("langgraph-api", _lg_version)
+    except Exception:
+        return
+    finally:
+        log.setLevel(saved[0])
+        log.propagate = saved[1]
+        log.disabled = saved[2]
+        log.handlers = saved[3]
+        if saved_env is None:
+            os.environ.pop("LANGGRAPH_NO_VERSION_CHECK", None)
+        else:
+            os.environ["LANGGRAPH_NO_VERSION_CHECK"] = saved_env
+
+    if not lines:
+        return
+    for msg in lines:
+        for line in msg.splitlines():
+            print(f"{_DIM}{_YELLOW}{line}{_RESET}", file=sys.stderr)
 
 
 def _print_banner(*, session_id: str, workspace: Path, resuming: bool) -> None:
@@ -183,18 +237,52 @@ class ChatRenderer:
             self._entry_cap = 100 * 1024
         self._ring: deque[RingEntry] = deque(maxlen=ring_size)
         self._next_index = 1
+        self._smoother = self._make_smoother()
 
-    def render(self, ev: StreamEvent) -> None:
+    @staticmethod
+    def _make_smoother() -> TokenSmoother | None:
+        """Build a token smoother for prose, or None to print directly.
+
+        Smoothing is for interactive terminals only: when stdout is not a TTY
+        (piped output, tests) or the user disabled it via
+        ``YUYUTSAVA_REPL_SMOOTH=0``, return None so the render path is
+        byte-for-byte identical to printing chunks as they arrive.
+        """
+        flag = os.environ.get("YUYUTSAVA_REPL_SMOOTH", "1").strip().lower()
+        if flag in ("0", "false", "no", "off"):
+            return None
+        try:
+            if not sys.stdout.isatty():
+                return None
+        except (ValueError, AttributeError):
+            return None
+        try:
+            base_cps = float(os.environ.get("YUYUTSAVA_REPL_SMOOTH_CPS", "180"))
+        except ValueError:
+            base_cps = 180.0
+        return TokenSmoother(
+            sys.stdout.write,
+            flush=sys.stdout.flush,
+            base_cps=base_cps,
+        )
+
+    async def render(self, ev: StreamEvent) -> None:
         if ev.kind == "token":
             if not self._in_ai_stream:
                 # Open the AI line with a small chip; no big separator block.
                 print(f"\n{_CYAN}🤖{_RESET}  ", end="", flush=True)
                 self._in_ai_stream = True
             text = ev.data.get("text", "")
-            print(text, end="", flush=True)
+            if self._smoother is not None:
+                self._smoother.feed(text)
+            else:
+                print(text, end="", flush=True)
             return
 
-        # Any non-token event closes the AI stream visually.
+        # Any non-token event closes the AI stream visually. Flush the
+        # smoother first so buffered prose lands before the tool/log line.
+        if self._smoother is not None:
+            await self._smoother.drain()
         if self._in_ai_stream:
             print(flush=True)
             self._in_ai_stream = False
@@ -238,8 +326,10 @@ class ChatRenderer:
             # The token stream above already covered the prose. Just newline.
             print(flush=True)
 
-    def end_of_turn(self) -> None:
+    async def end_of_turn(self) -> None:
         """Force-close any dangling streaming line."""
+        if self._smoother is not None:
+            await self._smoother.drain()
         if self._in_ai_stream:
             print(flush=True)
             self._in_ai_stream = False
@@ -853,6 +943,9 @@ async def run_chat_repl(
                 continue_latest=continue_latest,
             )
 
+            # Surface any langgraph-api upgrade/support notice once, cleanly,
+            # right above the banner rather than mid-chat.
+            _print_version_notice()
             _print_banner(
                 session_id=session.id, workspace=workspace, resuming=resuming
             )
@@ -942,20 +1035,20 @@ async def run_chat_repl(
                         agent_path="cli",
                         keep_full_payloads=True,
                     ):
-                        renderer.render(ev)
+                        await renderer.render(ev)
                 except KeyboardInterrupt:
-                    renderer.end_of_turn()
+                    await renderer.end_of_turn()
                     print(
                         f"{_DIM}(turn cancelled — session still open){_RESET}",
                         file=sys.stderr,
                     )
                     continue
                 except Exception as exc:  # noqa: BLE001
-                    renderer.end_of_turn()
+                    await renderer.end_of_turn()
                     print(f"{_RED}error:{_RESET} {exc}", file=sys.stderr)
                     continue
 
-                renderer.end_of_turn()
+                await renderer.end_of_turn()
 
             # Loop exited — mark the session done.
             try:
@@ -964,6 +1057,9 @@ async def run_chat_repl(
                 pass
 
         finally:
+            with contextlib.suppress(Exception):
+                if renderer._smoother is not None:
+                    await renderer._smoother.aclose()
             if cli_watcher is not None:
                 try:
                     await cli_watcher.shutdown()
