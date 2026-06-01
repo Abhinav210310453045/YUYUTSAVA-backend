@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import shutil
 import sys
@@ -49,8 +50,79 @@ from yuyutsava.tools.search import make_search_tools
 logger = logging.getLogger("yuyutsava")
 
 
-def setup_logging(verbose: bool = False) -> None:
-    """Configure root yuyutsava logger to print coloured lines to stderr."""
+# Loggers raised to WARNING by silence_plumbing_loggers — these emit chatty
+# HTTP / runtime traffic (langgraph dev server, uvicorn access lines,
+# httpx client logs) that pollute interactive output. Real problems still
+# surface at WARNING/ERROR.
+_PLUMBING_WARN_LOGGERS = (
+    "langgraph_api",
+    "langgraph_runtime_inmem",
+    "langgraph_runtime",
+    "langgraph_api.auth.custom",
+    "langgraph_api.auth.middleware",
+    "langgraph_api.timing.timer",
+    "langgraph_api.cron_scheduler",
+    "langgraph_api.metadata",
+    "langgraph_api.lifespan",
+    "langgraph_api.queue",
+    "langgraph_runtime_inmem.queue",
+    "langgraph_runtime_inmem.lifespan",
+    "langgraph_runtime_inmem._persistence",
+    "httpx",
+    "httpcore",
+    "uvicorn",
+    "uvicorn.access",
+    "uvicorn.error",
+)
+
+# Loggers raised to ERROR — these emit chatty WARNING-level lines that
+# aren't actionable for interactive users (langfuse handshake, warnings hook).
+_PLUMBING_ERROR_LOGGERS = (
+    "langfuse",
+    # OTEL exporter retry spam when Langfuse drops mid-session (the whole
+    # opentelemetry.* tree, incl. exporter.otlp.proto.http.trace_exporter).
+    "opentelemetry",
+    "py.warnings",
+)
+
+
+def silence_plumbing_loggers() -> None:
+    """Raise plumbing loggers above the chatter floor.
+
+    The ``yuyutsava`` namespace is left untouched — application warnings
+    still surface. Cross-call idempotent; ``langgraph_api`` re-imports
+    ``logging`` inside its server thread, so callers that build a LangGraph
+    host should call this *after* the build to re-silence handlers that
+    were just installed.
+    """
+    import warnings
+
+    for name in _PLUMBING_WARN_LOGGERS:
+        lg = logging.getLogger(name)
+        lg.setLevel(logging.WARNING)
+        lg.propagate = False
+    for name in _PLUMBING_ERROR_LOGGERS:
+        lg = logging.getLogger(name)
+        lg.setLevel(logging.ERROR)
+        lg.propagate = False
+        lg.disabled = True
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
+    warnings.filterwarnings("ignore", category=PendingDeprecationWarning)
+
+
+def setup_logging(verbose: bool = False, *, debug_plumbing: bool = False) -> None:
+    """Configure the ``yuyutsava`` logger for the CLI to print to stderr.
+
+    Root logger is kept at WARNING; only the ``yuyutsava`` namespace is
+    flipped to DEBUG (verbose) or INFO (default). Plumbing loggers
+    (uvicorn / langgraph_api / httpx / …) are silenced regardless of
+    verbose so the chat REPL stays uncluttered. Pass
+    ``debug_plumbing=True`` (or set ``YUYUTSAVA_DEBUG_PLUMBING=1``) to
+    see those — useful only when debugging the runtime itself.
+    """
+    if not debug_plumbing:
+        debug_plumbing = os.environ.get("YUYUTSAVA_DEBUG_PLUMBING", "").lower() in ("1", "true", "yes")
+
     level = logging.DEBUG if verbose else logging.INFO
     handler = logging.StreamHandler(sys.stderr)
     handler.setLevel(level)
@@ -70,12 +142,25 @@ def setup_logging(verbose: bool = False) -> None:
             msg = super().format(record)
             return f"{colour}{msg}{self._RESET}"
 
-    handler.setFormatter(_Fmt("%(message)s"))
+    # Verbose: prefix with timestamp + logger name so the user can tell which
+    # subsystem is talking. Plain ``%(message)s`` otherwise to keep
+    # non-verbose output uncluttered.
+    fmt = "%(asctime)s %(name)s | %(message)s" if verbose else "%(message)s"
+    handler.setFormatter(_Fmt(fmt, datefmt="%H:%M:%S"))
+
+    # Root stays at WARNING so unrelated libraries don't flood stderr.
+    root = logging.getLogger()
+    if root.level == logging.NOTSET or root.level < logging.WARNING:
+        root.setLevel(logging.WARNING)
+
     log = logging.getLogger("yuyutsava")
     log.setLevel(level)
     log.handlers.clear()
     log.addHandler(handler)
     log.propagate = False
+
+    if not debug_plumbing:
+        silence_plumbing_loggers()
 
 
 # ---------------------------------------------------------------------------
@@ -85,16 +170,48 @@ def setup_logging(verbose: bool = False) -> None:
 
 @dataclass
 class AgentBundle:
-    """Compiled Deep Agent graph plus optional Docker resources to tear down."""
+    """Compiled Deep Agent graph plus optional Docker resources to tear down.
+
+    ``async_host`` and ``async_task_mirror`` are wired in when async (background)
+    subagents are enabled. CLI Mode 1 owns these objects directly; the daemon
+    keeps them on ``DaemonSubsystems`` and threads them through ``OrchestratorDeps``.
+
+    ``async_host_url`` is the live URL of the shared LangGraph dev server —
+    set whether or not this process owns the host. Code that needs to dial
+    the host (watchers, SDK clients) should prefer this string over
+    ``async_host.url`` so attached clients work too.
+
+    ``async_host_attachment`` is the ownership handle returned by
+    :func:`yuyutsava.async_subagents.host_lock.acquire_or_attach_host`.
+    ``close()`` releases it (no-op when this process is an attacher, not
+    the owner).
+    """
 
     agent: CompiledStateGraph
     docker_backend: DockerSandboxBackend | None = None
     sandbox_root: Path | None = None
     output_dir: Path | None = None
+    async_host: Any | None = None          # AsyncSubagentHost — duck-typed to avoid cycle
+    async_host_url: str | None = None
+    async_host_attachment: Any | None = None  # HostAttachment
+    async_task_mirror: Any | None = None   # AsyncTaskMirror
 
     def close(self) -> None:
         if self.docker_backend is not None:
             self.docker_backend.stop()
+        if self.async_host_attachment is not None:
+            try:
+                from yuyutsava.async_subagents.host_lock import release_host_lock
+                release_host_lock(self.async_host_attachment)
+            except Exception:
+                logger.exception("AgentBundle: release_host_lock failed")
+        elif self.async_host is not None:
+            # Legacy direct-ownership path (kept for callers that haven't
+            # migrated to acquire_or_attach_host yet).
+            try:
+                self.async_host.shutdown()
+            except Exception:
+                logger.exception("AgentBundle: async_host.shutdown failed")
 
 
 def builtin_tools_reference_json() -> str:
@@ -185,6 +302,13 @@ def build_cli_deepagent(
     search_config: SearchConfig | None = None,
     checkpointer: BaseCheckpointSaver | None = None,
     subagents: "list[Any] | None" = None,
+    async_subagents: "list[Any] | None" = None,
+    async_host_url: str | None = None,
+    remote_async_subagents: "list[Any] | None" = None,
+    async_task_mirror: Any | None = None,
+    async_max_concurrent: int = 8,
+    async_host: Any | None = None,
+    async_host_attachment: Any | None = None,
 ) -> AgentBundle:
     """Build the CLI deepagent.
 
@@ -205,6 +329,23 @@ def build_cli_deepagent(
             Passing ``GeneralPurposeAgent`` here name-match-overrides deepagents'
             built-in default (see ``deepagents.graph`` ~line 240-246), so
             ``task('general-purpose', …)`` calls hit our tighter spec.
+        async_subagents: Local-mode background subagents. Each is converted via
+            ``as_async_subagent_spec(url=async_host_url)`` and added to the same
+            ``subagents=`` list. ``deepagents`` auto-routes by dict shape and
+            attaches ``AsyncSubAgentMiddleware``, which injects ``start_/check_/
+            update_/cancel_/list_async_tasks`` onto the master.
+        async_host_url: Base URL of the in-process LangGraph Agent Protocol
+            server hosting the compiled graphs (typically the
+            ``AsyncSubagentHost``). Required if ``async_subagents`` is provided.
+        remote_async_subagents: ``RemoteAsyncSubagentSpec`` entries whose graphs
+            live on a different Agent Protocol server (e.g. another YUYUTSAVA
+            daemon). Treated as first-class peers of local async subagents.
+        async_task_mirror: ``AsyncTaskMirror`` instance for cross-turn task
+            awareness and the concurrency cap. When provided alongside any
+            async subagents, ``BackgroundTaskCapMiddleware`` is installed.
+        async_max_concurrent: Cap for in-flight bg tasks. Defaults to ``8``.
+        async_host: Optional ``AsyncSubagentHost`` reference recorded on the
+            returned bundle so ``AgentBundle.close`` can tear it down.
     """
     model = chat_model(settings)
     checkpointer = checkpointer or MemorySaver()
@@ -219,9 +360,39 @@ def build_cli_deepagent(
 
     skill_registry = SkillRegistry(workspace_dir=ws)
 
-    subagent_specs: list[dict] | None = None
+    subagent_specs: list[dict] = []
     if subagents:
-        subagent_specs = [sa.as_deepagents_subagent_spec() for sa in subagents]
+        subagent_specs.extend(sa.as_deepagents_subagent_spec() for sa in subagents)
+
+    if async_subagents:
+        if not async_host_url:
+            raise ValueError(
+                "build_cli_deepagent: async_subagents requires async_host_url. "
+                "Build an AsyncSubagentHost and pass its .url here."
+            )
+        subagent_specs.extend(
+            sa.as_async_subagent_spec(url=async_host_url)
+            for sa in async_subagents
+            if getattr(sa, "supports_async", False)
+        )
+
+    if remote_async_subagents:
+        subagent_specs.extend(r.as_async_subagent_spec() for r in remote_async_subagents)
+
+    if async_task_mirror is not None and (async_subagents or remote_async_subagents):
+        # Local import: keeps engine.py importable from contexts that don't
+        # ship langgraph_api (e.g. very minimal CLI scripts).
+        from yuyutsava.async_subagents.cap_middleware import BackgroundTaskCapMiddleware
+        middleware.append(
+            BackgroundTaskCapMiddleware(async_task_mirror, max_concurrent=async_max_concurrent)
+        )
+
+    if async_subagents or remote_async_subagents:
+        from yuyutsava.async_subagents.interrupt_middleware import AsyncTaskInterruptPatchMiddleware
+        async_specs = [s for s in subagent_specs if "graph_id" in s and "url" in s]
+        middleware.append(AsyncTaskInterruptPatchMiddleware(async_specs))
+
+    final_subagent_specs = subagent_specs or None
 
     if execution_mode == "docker":
         docker_cfg = docker_settings or DockerSettings()
@@ -246,10 +417,17 @@ def build_cli_deepagent(
             system_prompt=docker_system_prompt(workspace_root, docker_cfg.export_dir),
             checkpointer=checkpointer,
             middleware=middleware,
-            subagents=subagent_specs,
+            subagents=final_subagent_specs,
             debug=False,
         )
-        return AgentBundle(agent=graph, docker_backend=docker_backend)
+        return AgentBundle(
+            agent=graph,
+            docker_backend=docker_backend,
+            async_host=async_host,
+            async_host_url=async_host_url,
+            async_host_attachment=async_host_attachment,
+            async_task_mirror=async_task_mirror,
+        )
 
     backend = _local_shell_backend_factory(workspace_root, bash_timeout_sec)
     startup_tools, _ = _build_tool_registry_and_tools(
@@ -262,10 +440,19 @@ def build_cli_deepagent(
         system_prompt=local_system_prompt(workspace_root, sandbox_root, output_dir),
         checkpointer=checkpointer,
         middleware=middleware,
-        subagents=subagent_specs,
+        subagents=final_subagent_specs,
         debug=False,
     )
-    return AgentBundle(agent=graph, docker_backend=None, sandbox_root=sandbox_root, output_dir=output_dir)
+    return AgentBundle(
+        agent=graph,
+        docker_backend=None,
+        sandbox_root=sandbox_root,
+        output_dir=output_dir,
+        async_host=async_host,
+        async_host_url=async_host_url,
+        async_host_attachment=async_host_attachment,
+        async_task_mirror=async_task_mirror,
+    )
 
 
 # Back-compat alias. Old callers that still say ``build_agent`` keep working
@@ -298,7 +485,11 @@ def build_orchestrator(
     from yuyutsava.daemon.budget import BudgetMiddleware
     from yuyutsava.events.tools import make_recall_tool
 
-    capabilities = render_capabilities_block(list(deps.subagents.values()))
+    capabilities = render_capabilities_block(
+        list(deps.subagents.values()),
+        async_subagents=getattr(deps, "async_subagents", None),
+        remote_async_subagents=getattr(deps, "remote_async_subagents", None),
+    )
     skills_index = skill_registry.index_block(agent="orchestrator") if skill_registry else ""
     system_prompt = render_system_prompt(capabilities, skills_index=skills_index, prefs_block=prefs_block)
 
@@ -315,7 +506,7 @@ def build_orchestrator(
     if deps.mcp_manager is not None:
         master_tools.extend(deps.mcp_manager.tools_for("orchestrator"))
 
-    subagent_specs = []
+    subagent_specs: list[dict] = []
     for sa in deps.subagents.values():
         spec = sa.as_deepagents_subagent_spec()
         spec["model"] = deps.subagent_model
@@ -324,6 +515,24 @@ def build_orchestrator(
             BudgetMiddleware(max_input_tokens=deps.subagent_token_budget, role=sa.name),
         ]
         subagent_specs.append(spec)
+
+    # Async (background) subagents — same `subagents=` list; deepagents auto-
+    # routes dicts shaped like AsyncSubAgent to AsyncSubAgentMiddleware.
+    async_subagents = getattr(deps, "async_subagents", None) or []
+    async_host_url = getattr(deps, "async_host_url", None)
+    if async_subagents:
+        if not async_host_url:
+            raise ValueError(
+                "build_orchestrator: deps.async_subagents requires deps.async_host_url. "
+                "Build an AsyncSubagentHost at daemon boot and store its .url on deps."
+            )
+        for sa in async_subagents:
+            if not getattr(sa, "supports_async", False):
+                continue
+            subagent_specs.append(sa.as_async_subagent_spec(url=async_host_url))
+
+    for r in (getattr(deps, "remote_async_subagents", None) or []):
+        subagent_specs.append(r.as_async_subagent_spec())
 
     budget = BudgetMiddleware(max_input_tokens=budget_tokens, role="orchestrator")
     workspace_root = str(deps.workspace_root.resolve()) if deps.workspace_root else "/"
@@ -336,14 +545,28 @@ def build_orchestrator(
             inherit_env=False,
         )
 
+    master_middleware: list = [ToolFilterMiddleware(), budget]
+    mirror = getattr(deps, "async_task_mirror", None)
+    if mirror is not None and (async_subagents or getattr(deps, "remote_async_subagents", None)):
+        from yuyutsava.async_subagents.cap_middleware import BackgroundTaskCapMiddleware
+        max_conc = getattr(deps, "async_max_concurrent", 8)
+        master_middleware.append(
+            BackgroundTaskCapMiddleware(mirror, max_concurrent=max_conc)
+        )
+
+    if async_subagents or getattr(deps, "remote_async_subagents", None):
+        from yuyutsava.async_subagents.interrupt_middleware import AsyncTaskInterruptPatchMiddleware
+        async_specs = [s for s in subagent_specs if "graph_id" in s and "url" in s]
+        master_middleware.append(AsyncTaskInterruptPatchMiddleware(async_specs))
+
     return create_deep_agent(
         model=model,
         tools=master_tools,
         backend=_backend_factory,
         system_prompt=system_prompt,
         checkpointer=checkpointer if checkpointer is not None else MemorySaver(),
-        middleware=[ToolFilterMiddleware(), budget],
-        subagents=subagent_specs,
+        middleware=master_middleware,
+        subagents=subagent_specs or None,
     )
 
 

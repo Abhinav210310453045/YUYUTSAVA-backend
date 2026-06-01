@@ -37,7 +37,7 @@ logger = logging.getLogger("yuyutsava.daemon.orchestrator_loop")
 
 
 # ---------------------------------------------------------------------------
-# Interrupt formatting helpers (used by ask_handler inside _run_task)
+# Interrupt formatting helpers (used by the ask_handler factory)
 # ---------------------------------------------------------------------------
 
 def _title_for_interrupt(iv: dict) -> str:
@@ -66,6 +66,15 @@ def _body_for_interrupt(iv: dict) -> str:
         return f"{op} {path_str}\nzone: {zone}  risk: {risk}\n\n{reason}"
     if t == "user_question":
         return iv.get("question", "")
+    # PermissionMiddleware (raw execute) — show both command and reason so
+    # the Electron card carries the same "what / why" that the CLI prompts
+    # already include.
+    if t == "permission_request":
+        command = iv.get("command", "")
+        reason = iv.get("reason", "")
+        if command and reason:
+            return f"{command}\n\n{reason}"
+        return command or reason or json.dumps(iv)[:300]
     return iv.get("command") or iv.get("reason") or json.dumps(iv)[:300]
 
 
@@ -76,6 +85,36 @@ def _options_for_interrupt(iv: dict) -> list[str]:
     if t == "user_question":
         return list(iv.get("options") or [])
     return ["approve", "reject"]
+
+
+def make_ask_handler(
+    channels: ChannelRouter,
+    *,
+    default_session_id: str,
+    default_agent_path: str = "orchestrator",
+):
+    """Factory producing the ask handler the orchestrator + bg watcher share.
+
+    Both the master's streaming loop and the ``AsyncTaskHealthWatcher`` route
+    interrupt values into ``ChannelRouter.post_ask`` with the same shape.
+    Extracting it here keeps the formatting consistent and lets the watcher
+    reuse the daemon's HITL surface without duplicating logic.
+    """
+
+    async def ask_handler(interrupt_value: dict) -> str:
+        iv = interrupt_value if isinstance(interrupt_value, dict) else {}
+        ask = AskPrompt(
+            ask_id=str(uuid.uuid4()),
+            title=_title_for_interrupt(interrupt_value),
+            body=_body_for_interrupt(interrupt_value),
+            options=_options_for_interrupt(interrupt_value),
+            interrupt_value=dict(iv),
+            session_id=iv.get("session_id") or default_session_id,
+            agent_path=iv.get("agent_path") or default_agent_path,
+        )
+        return await channels.post_ask(ask)
+
+    return ask_handler
 
 
 class OrchestratorLoop:
@@ -122,24 +161,28 @@ class OrchestratorLoop:
         )
         message = task.render_to_message()
 
+        # Inject in-flight background tasks at the start of every turn so the
+        # master is aware of bg work across fresh ``thread_id``s and across
+        # context compactions. Empty when no async subagents are configured
+        # or no tasks are currently running.
+        mirror = getattr(self._deps, "async_task_mirror", None)
+        if mirror is not None:
+            block = mirror.render_block()
+            if block:
+                message = f"{block}\n\n{message}" if isinstance(message, str) else message
+
         await self._channels.post_event(ChannelEvent(
             payload=LogPayload(text=f"[orch] task {task.event_id[:8]}…\n"),
         ))
 
-        # Route subagent interrupts (tr_* permission prompts, tr_ask_user) through
-        # the daemon's channel router so the user sees them in the web UI / terminal.
-        async def ask_handler(interrupt_value: dict) -> str:
-            iv = interrupt_value if isinstance(interrupt_value, dict) else {}
-            ask = AskPrompt(
-                ask_id=str(uuid.uuid4()),
-                title=_title_for_interrupt(interrupt_value),
-                body=_body_for_interrupt(interrupt_value),
-                options=_options_for_interrupt(interrupt_value),
-                interrupt_value=dict(iv),
-                session_id=iv.get("session_id") or thread_id,
-                agent_path=iv.get("agent_path") or "orchestrator",
-            )
-            return await self._channels.post_ask(ask)
+        # Route subagent interrupts (tr_* permission prompts, tr_ask_user, and
+        # any background AsyncTaskHealthWatcher asks) through the daemon's
+        # channel router so the user sees them in the Electron renderer.
+        ask_handler = make_ask_handler(
+            self._channels,
+            default_session_id=thread_id,
+            default_agent_path="orchestrator",
+        )
 
         final_text = ""
         async for ev in astream_agent_iter(

@@ -121,8 +121,22 @@ class DaemonSubsystems:
     orchestrator_settings: LlmSettings
     subagent_names: tuple[str, ...]
 
+    # Async (background) subagent infrastructure. ``None`` when async is
+    # disabled (e.g. ``--no-async-subagents`` or env-gated). Lifecycle owns
+    # shutdown ordering: watcher first (cancels in-flight runs via SDK),
+    # then host (uvicorn server thread).
+    async_host: object | None = None
+    async_task_mirror: object | None = None
+    async_task_watcher: object | None = None
+    session_origin: object | None = None
+    # Profile-wide host attachment returned by ``acquire_or_attach_host``;
+    # the daemon shutdown hook calls ``release_host_lock`` on it. Stays
+    # ``None`` when the daemon attached to an already-running host owned
+    # by another process (no lock to release) or when async subs are off.
+    async_host_attachment: object | None = None
+
     # hot reload — closure over registry + daemon_cfg; reload-loop calls it.
-    hot_reload_events_config: Callable[[], Awaitable[None]]
+    hot_reload_events_config: Callable[[], Awaitable[None]] = None  # type: ignore[assignment]
 
 
 # ---------------------------------------------------------------------------
@@ -310,7 +324,79 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         ),
     ]
     subagents = {sa.name: sa for sa in subagent_list}
-    capabilities_block = render_capabilities_block(list(subagents.values()))
+
+    # ── async (background) subagent host + mirror + watcher --------------
+    # Gated by env so this is opt-in for v1. To enable:
+    #   export YUYUTSAVA_ASYNC_SUBAGENTS=1
+    # Subagents are exposed as `<name>-bg` peers alongside their sync entries.
+    import os
+    async_host = None
+    async_host_url: str | None = None
+    async_mirror = None
+    async_watcher = None
+    session_origin = None
+    async_host_attachment = None
+    if os.environ.get("YUYUTSAVA_ASYNC_SUBAGENTS", "").lower() in ("1", "true", "yes"):
+        from yuyutsava.async_subagents.host import AsyncSubagentHost
+        from yuyutsava.async_subagents.host_lock import (
+            acquire_or_attach_host,
+            register_host_cleanup,
+        )
+        from yuyutsava.async_subagents.mirror import AsyncTaskMirror
+        from yuyutsava.async_subagents.session_origin import SessionOriginMap
+        from yuyutsava.async_subagents.watcher import AsyncTaskHealthWatcher
+        from yuyutsava.daemon.orchestrator_loop import make_ask_handler
+
+        logger.info("  async subs: enabled (YUYUTSAVA_ASYNC_SUBAGENTS=1)")
+
+        # First-come-wins shared host. If another process (typically a CLI
+        # chat started before the daemon) already owns the LangGraph dev
+        # server, attach to it instead of starting a second one.
+        def _build_host() -> AsyncSubagentHost:
+            return AsyncSubagentHost.from_subagents(
+                subagent_list,
+                model=subagent_model,
+                checkpointer=checkpointer,
+            )
+
+        attachment = await asyncio.to_thread(
+            acquire_or_attach_host, factory=_build_host
+        )
+        async_host_attachment = attachment
+        async_host_url = attachment.url
+        async_host = attachment.host  # None when attaching to another owner
+        register_host_cleanup(attachment)
+
+        if attachment.host is not None:
+            logger.info("  async host: %s (owner; graphs=%s)",
+                        attachment.url, attachment.host.graph_ids)
+        else:
+            logger.info("  async host: %s (attached to running owner)", attachment.url)
+
+        async_mirror = AsyncTaskMirror()
+        session_origin = SessionOriginMap()
+        channels.session_origin = session_origin
+
+        async_watcher = AsyncTaskHealthWatcher(
+            mirror=async_mirror,
+            host_url=async_host_url,
+            ask_handler=make_ask_handler(
+                channels,
+                default_session_id="bg-orphan",
+                default_agent_path="orchestrator",
+            ),
+            event_sink=channels.post_event,
+            agent_path_root="orchestrator",
+        )
+        await async_watcher.start()
+        logger.info("  async watcher: running")
+    else:
+        logger.info("  async subs: disabled (set YUYUTSAVA_ASYNC_SUBAGENTS=1 to enable)")
+
+    capabilities_block = render_capabilities_block(
+        list(subagents.values()),
+        async_subagents=subagent_list if async_host_url is not None else None,
+    )
 
     # ── triage agent + loop ----------------------------------------------
     triage = TriageAgent(triage_model)
@@ -335,6 +421,9 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         mcp_manager=mcp_manager,
         search_config=search_config,
         cap_enforcer=cap_enforcer,
+        async_subagents=subagent_list if async_host_url is not None else None,
+        async_host_url=async_host_url,
+        async_task_mirror=async_mirror,
     )
     orch_loop = OrchestratorLoop(
         task_queue=task_queue,
@@ -354,6 +443,8 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
             host=daemon_cfg.web_host,
             skill_registry=skill_registry,
             config_reload=_hot_reload_events_config,
+            channels=channels,
+            session_origin=session_origin,
         )
         uvicorn_level = logging.getLevelName(
             logging.getLogger("yuyutsava").getEffectiveLevel()
@@ -388,5 +479,10 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         triage_settings=triage_settings,
         orchestrator_settings=orchestrator_settings,
         subagent_names=tuple(subagents.keys()),
+        async_host=async_host,
+        async_task_mirror=async_mirror,
+        async_task_watcher=async_watcher,
+        session_origin=session_origin,
+        async_host_attachment=async_host_attachment,
         hot_reload_events_config=_hot_reload_events_config,
     )

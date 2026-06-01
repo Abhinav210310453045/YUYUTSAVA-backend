@@ -49,7 +49,7 @@ async def run_chat(
     sessions_settings = SessionsSettings.from_env()
 
     async with build_checkpointer(sessions_settings) as checkpointer:
-        bundle = build_cli_agent_stack(
+        bundle = await build_cli_agent_stack(
             workspace,
             settings,
             bash_timeout_sec=bash_timeout_sec,
@@ -60,6 +60,23 @@ async def run_chat(
             search_config=search_config,
             checkpointer=checkpointer,
         )
+
+        # CLI Mode 1 async — if the bundle has a host URL (owned or attached),
+        # stand up the bridge + watcher inside this asyncio context.
+        cli_bridge = None
+        cli_watcher = None
+        if bundle.async_host_url is not None and bundle.async_task_mirror is not None:
+            from yuyutsava.async_subagents.watcher import AsyncTaskHealthWatcher
+            from yuyutsava.cli.async_hitl import CliHitlBridge
+            cli_bridge = CliHitlBridge()
+            cli_watcher = AsyncTaskHealthWatcher(
+                mirror=bundle.async_task_mirror,
+                host_url=bundle.async_host_url,
+                ask_handler=cli_bridge.post_ask,
+                event_sink=cli_bridge.post_event,
+                agent_path_root="cli",
+            )
+            await cli_watcher.start()
         try:
             try:
                 final = await run_session(
@@ -97,6 +114,17 @@ async def run_chat(
                 cleanup_local_sandbox(workspace, bundle.sandbox_root)
             if final.strip() and not verbose:
                 print(final.strip())
+
+            # Flush any background-task events emitted during the run.
+            if cli_bridge is not None:
+                await cli_bridge.render_between_turns()
         finally:
+            # Shut down the watcher first (cancels in-flight runs), then the
+            # host (best-effort daemon-thread teardown).
+            if cli_watcher is not None:
+                try:
+                    await cli_watcher.shutdown()
+                except Exception:
+                    pass
             bundle.close()
     return 0

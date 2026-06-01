@@ -189,13 +189,18 @@ class Store:
         self._writer_task: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
+        from yuyutsava.storage.base import migration_lock
+
         self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         # WAL keeps readers non-blocking against the single writer.
         self._conn.executescript("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")
-        self._conn.executescript(_SCHEMA)
-        _migrate(self._conn)
-        self._conn.commit()
+        # Cross-process migration lock: prevents two processes (daemon + chat)
+        # from racing on CREATE TABLE / ALTER TABLE during simultaneous startup.
+        with migration_lock():
+            self._conn.executescript(_SCHEMA)
+            _migrate(self._conn)
+            self._conn.commit()
         self._writer_task = asyncio.create_task(self._writer_loop(), name="store-writer")
 
     async def stop(self) -> None:

@@ -33,3 +33,13 @@ def get_skill_registry(request: Request):
 def get_config_reload(request: Request):
     """Async callback that re-reads EventsConfig and rebinds fs watchers."""
     return getattr(request.app.state, "config_reload", None)
+
+
+def get_channels(request: Request):
+    """The daemon's ``ChannelRouter``. ``None`` only in tests that omit it."""
+    return getattr(request.app.state, "channels", None)
+
+
+def get_session_origin(request: Request):
+    """The daemon's ``SessionOriginMap``. ``None`` when async subagents disabled."""
+    return getattr(request.app.state, "session_origin", None)
