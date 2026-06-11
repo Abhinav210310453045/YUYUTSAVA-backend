@@ -409,6 +409,18 @@ async def _async_main(argv: list[str] | None = None) -> int:
         # closing the saver here releases the checkpoints.db lock.
         await subs.checkpointer_saver.stop()
         await subs.store.stop()
+        # Postgres-backed runs: embedder's httpx client, then the pool —
+        # last, because every pg store borrows connections from it.
+        if subs.embedder is not None:
+            try:
+                await subs.embedder.aclose()
+            except Exception:
+                logger.exception("embedder.aclose failed")
+        if subs.pg_pool is not None:
+            try:
+                await subs.pg_pool.close()
+            except Exception:
+                logger.exception("pg_pool.close failed")
         # Release the daemon singleton lock + discovery file.
         release_daemon_lock(lock_fd)
         logger.info("bye")

@@ -29,13 +29,17 @@ from yuyutsava.agents.orchestrator.capabilities import render_capabilities_block
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
 from yuyutsava.agents.task_runner.tools import set_default_policy
 from yuyutsava.agents.triage.agent import TriageAgent
+from yuyutsava.context.artifacts import PgArtifactStore, SqliteArtifactStore
+from yuyutsava.context.config import ContextSettings
+from yuyutsava.context.injector import MemoryInjector
+from yuyutsava.context.summary_store import PgThreadSummaryStore, SqliteThreadSummaryStore
 from yuyutsava.core.config import (
     DaemonConfig, EventsConfig, LlmSettings, SearchConfig, SourceConfig,
-    llm_settings_from_env,
+    _env, llm_settings_from_env,
 )
 from yuyutsava.core.llm import chat_model
 from yuyutsava.core.policy import PermissionsPolicy, StorePolicyCapEnforcer
-from yuyutsava.daemon.channels import ChannelRouter
+from yuyutsava.daemon.channels import ChannelEvent, ChannelRouter, TimelinePayload
 from yuyutsava.daemon.checkpointing import CheckpointerSaver
 from yuyutsava.daemon.orchestrator_loop import OrchestratorLoop
 from yuyutsava.daemon.terminal_channel import TerminalChannel
@@ -45,10 +49,16 @@ from yuyutsava.events.bus import EventBus
 from yuyutsava.events.registry import SourceRegistry
 from yuyutsava.mcp.config import MCPConfig
 from yuyutsava.mcp.loader import MCPClientManager
+from yuyutsava.memory.config import MemorySettings
+from yuyutsava.memory.embedder import Embedder
+from yuyutsava.memory.store import MemoryStore, PgMemoryStore, SqliteMemoryStore
 from yuyutsava.prefs.injector import PrefsInjector
 from yuyutsava.skills.registry import SkillRegistry
+from yuyutsava.storage.backend import StorageSettings
 from yuyutsava.storage.events import Store
-from yuyutsava.storage.paths import blobs_dir, checkpoints_db_path, state_dir
+from yuyutsava.storage.paths import blobs_dir, checkpoints_db_path, state_db_path, state_dir
+from yuyutsava.storage.pg import migrations as pg_migrations
+from yuyutsava.storage.pg.pool import PgPool
 from yuyutsava.storage.prefs import PrefsStore
 from yuyutsava.storage.sweeper import BlobSweepTarget, SweeperConfig, UnifiedSweeper
 
@@ -109,6 +119,15 @@ class DaemonSubsystems:
     # storage TTL
     checkpointer_saver: CheckpointerSaver
     sweeper: UnifiedSweeper
+
+    # storage backend (postgres mode) + context controller. ``pg_pool`` and
+    # ``embedder`` are owned here for teardown; the stores are borrowed by
+    # OrchestratorDeps / the sweeper. All None/sqlite in zero-config mode.
+    pg_pool: object | None
+    artifact_store: object
+    summary_store: object
+    memory_store: object | None
+    embedder: object | None
 
     # subagents + queue + loops
     task_queue: asyncio.Queue[OrchestratorTask]
@@ -194,6 +213,65 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     daemon_cfg = DaemonConfig.from_env()
     events_cfg = _build_initial_events_config(opts, daemon_cfg)
 
+    # ── storage backend (sqlite default / postgres) ------------------------
+    # Opened before everything that persists: the checkpointer and the
+    # context/memory stores dispatch on whether the pool came up. A dead
+    # Postgres falls back to SQLite loudly (timeline event after channels
+    # exist) unless YUYUTSAVA_STORAGE_REQUIRE=1.
+    storage = StorageSettings.from_env()
+    pg_pool: PgPool | None = None
+    storage_fallback_reason: str | None = None
+    if storage.is_postgres():
+        try:
+            pg_pool = PgPool(storage)
+            await pg_pool.open()
+            await pg_migrations.apply(pg_pool)
+            logger.info("  storage   : postgres")
+        except Exception as exc:
+            if storage.require:
+                logger.error(
+                    "storage: postgres unavailable and YUYUTSAVA_STORAGE_REQUIRE=1 "
+                    "— refusing to boot"
+                )
+                raise
+            storage_fallback_reason = (
+                f"Postgres unavailable ({exc}); using SQLite for this run. "
+                "Checkpoints/artifacts written now are INVISIBLE to Postgres."
+            )
+            logger.error("storage: %s", storage_fallback_reason)
+            if pg_pool is not None:
+                await pg_pool.close()
+            pg_pool = None
+            from dataclasses import replace as _dc_replace
+            storage = _dc_replace(storage, backend="sqlite")
+    else:
+        logger.info("  storage   : sqlite (set YUYUTSAVA_STORAGE_BACKEND=postgres for durable mode)")
+
+    # ── context controller stores ------------------------------------------
+    if pg_pool is not None:
+        artifact_store = PgArtifactStore(pg_pool)
+        summary_store = PgThreadSummaryStore(pg_pool)
+    else:
+        artifact_store = SqliteArtifactStore(state_db_path())
+        summary_store = SqliteThreadSummaryStore(state_db_path())
+
+    # ── semantic memory (default-on when postgres is live) -----------------
+    mem_settings = MemorySettings.from_env(default_enabled=pg_pool is not None)
+    memory_store: MemoryStore | None = None
+    embedder: Embedder | None = None
+    if mem_settings.enabled:
+        if pg_pool is not None:
+            embedder = Embedder(mem_settings)
+            memory_store = PgMemoryStore(pg_pool, embedder)
+            logger.info("  memory    : pgvector (embed=%s)", mem_settings.embed_model)
+        else:
+            memory_store = SqliteMemoryStore(state_db_path())
+            logger.info("  memory    : sqlite keyword fallback (no embeddings)")
+    memory_injector = (
+        MemoryInjector(memory_store, top_k=mem_settings.top_k)
+        if memory_store is not None else None
+    )
+
     # ── store --------------------------------------------------------------
     store = Store()
     await store.start()
@@ -216,8 +294,8 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     if mcp_manager.known_servers():
         logger.info("  mcp       : %s", ", ".join(mcp_manager.known_servers()))
 
-    # ── checkpointer (SQLite-backed; sweeper handles stale threads) -------
-    checkpointer_saver = CheckpointerSaver(db_path=checkpoints_db_path())
+    # ── checkpointer (sqlite or postgres; sweeper handles stale threads) --
+    checkpointer_saver = CheckpointerSaver(db_path=checkpoints_db_path(), storage=storage)
     checkpointer = await checkpointer_saver.start()
 
     # ── unified TTL sweeper (checkpoints + on-disk blobs + event rows) ---
@@ -237,6 +315,7 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
             ),
         ],
         config=SweeperConfig(),
+        artifact_store=artifact_store,
     )
 
     # ── bus ---------------------------------------------------------------
@@ -278,6 +357,15 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         except Exception:
             logger.warning("voice channel init failed — running without voice", exc_info=True)
 
+    # Surface any Postgres→SQLite fallback on the user channels — silent
+    # divergence (checkpoints landing where Postgres can't see them) is the
+    # one failure mode that must never be quiet.
+    for reason in (storage_fallback_reason, checkpointer_saver.fallback_reason):
+        if reason:
+            await channels.post_event(ChannelEvent(
+                payload=TimelinePayload(line=f"storage: {reason}", cls="event-error"),
+            ))
+
     # ── models ------------------------------------------------------------
     triage_settings = llm_settings_from_env("triage")
     orchestrator_settings = llm_settings_from_env("orchestrator")
@@ -285,6 +373,21 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     triage_model = chat_model(triage_settings, temperature=0.0)
     orchestrator_model = chat_model(orchestrator_settings, temperature=0.0)
     subagent_model = chat_model(subagent_settings, temperature=0.1)
+
+    # Compaction model: role "compaction" so a cheap/local model can own
+    # summarization (COMPACTION_LLM_PROVIDER=ollama …); falls back to the
+    # main provider settings when the role is unset.
+    compaction_model = chat_model(llm_settings_from_env("compaction"), temperature=0.0)
+    context_settings = ContextSettings.from_env(
+        "orchestrator",
+        provider=_env("LLM_PROVIDER", "orchestrator", "groq"),
+    )
+    logger.info(
+        "  context   : compact >%d tokens, keep %d msgs, offload >%d chars",
+        context_settings.compact_trigger_tokens,
+        context_settings.keep_messages,
+        context_settings.offload_threshold_chars,
+    )
 
     # ── skills registry ---------------------------------------------------
     skill_registry = SkillRegistry(home_dir=home / "skills")
@@ -424,6 +527,11 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         async_subagents=subagent_list if async_host_url is not None else None,
         async_host_url=async_host_url,
         async_task_mirror=async_mirror,
+        artifact_store=artifact_store,
+        summary_store=summary_store,
+        memory_store=memory_store,
+        context_settings=context_settings,
+        compaction_model=compaction_model,
     )
     orch_loop = OrchestratorLoop(
         task_queue=task_queue,
@@ -434,6 +542,7 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         orchestrator_token_budget=daemon_cfg.orchestrator_token_budget,
         checkpointer=checkpointer,
         prefs_injector=prefs_injector,
+        memory_injector=memory_injector,
     )
 
     # ── web server -------------------------------------------------------
@@ -472,6 +581,11 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         mcp_manager=mcp_manager,
         checkpointer_saver=checkpointer_saver,
         sweeper=sweeper,
+        pg_pool=pg_pool,
+        artifact_store=artifact_store,
+        summary_store=summary_store,
+        memory_store=memory_store,
+        embedder=embedder,
         task_queue=task_queue,
         triage_loop=triage_loop,
         orch_loop=orch_loop,

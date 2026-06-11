@@ -65,6 +65,26 @@ class OrchestratorDeps:
     async_task_mirror: object | None = None
     async_max_concurrent: int = 8
 
+    # Context controller wiring (yuyutsava.context / yuyutsava.memory); all
+    # optional — None disables the corresponding layer. Duck-typed so this
+    # module doesn't import the context stack at definition time.
+    #
+    # - ``artifact_store``: context.artifacts.ArtifactStore — enables tool-
+    #   result offloading + the ctx_* retrieval tools.
+    # - ``summary_store``: context.summary_store.ThreadSummaryStore —
+    #   compaction summaries persist here.
+    # - ``memory_store``: memory.store.MemoryStore — mem_* tools + summary
+    #   embedding + task-outcome writes.
+    # - ``context_settings``: context.config.ContextSettings — enables the
+    #   compaction middleware (and sizes the offload threshold).
+    # - ``compaction_model``: cheap chat model for summarization; falls back
+    #   to the agent's own model when None.
+    artifact_store: object | None = None
+    summary_store: object | None = None
+    memory_store: object | None = None
+    context_settings: object | None = None
+    compaction_model: BaseChatModel | None = None
+
 
 # ---------------------------------------------------------------------------
 # ask_user tool
