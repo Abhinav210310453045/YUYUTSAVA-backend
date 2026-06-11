@@ -104,7 +104,11 @@ Sandbox dir is created by the first tr_write_file into it; do not run a sandbox 
 ## TASK PROTOCOL
 For tasks with 3+ distinct steps: write_todos → ORIENT (one command) → EXECUTE → REPORT (path + how to open).
 For one-shot tasks: skip write_todos, just do it. Never embed binary content in responses.
-Missing capability: stdlib → curl → scoped install (pip --target / npm --save-dev, never -g) → tr_ask_user."""
+Missing capability: stdlib → curl → scoped install (pip --target / npm --save-dev, never -g) → tr_ask_user.
+
+## FOLLOWING CONVENTIONS
+Read files before editing — understand existing content before changing it.
+Mimic existing style, naming conventions, and patterns."""
 
 
 def local_system_prompt(
