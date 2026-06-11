@@ -24,10 +24,16 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 
 from yuyutsava.agents.general_purpose.agent import GeneralPurposeAgent
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
-from yuyutsava.core.config import DockerSettings, LlmSettings, LocalSettings, SearchConfig
+from yuyutsava.context.artifacts import SqliteArtifactStore
+from yuyutsava.context.config import ContextSettings
+from yuyutsava.context.summary_store import SqliteThreadSummaryStore
+from yuyutsava.core.config import DockerSettings, LlmSettings, LocalSettings, SearchConfig, _env
 from yuyutsava.core.engine import AgentBundle, build_cli_deepagent
 from yuyutsava.core.llm import chat_model
+from yuyutsava.core.config import llm_settings_from_env
+from yuyutsava.memory.config import MemorySettings
 from yuyutsava.skills.registry import SkillRegistry
+from yuyutsava.storage.paths import state_db_path
 
 logger = logging.getLogger("yuyutsava.cli.agent_stack")
 
@@ -59,6 +65,22 @@ async def build_cli_agent_stack(
     plus an ``AsyncTaskMirror``, an ``AsyncTaskHealthWatcher``, and a
     ``CliHitlBridge`` for routing interrupts to stdin.
     """
+    # Context controller: CLI chat threads are the longest-lived in the
+    # system, so offload + compaction are always on. Stores are the SQLite
+    # twins in state.db regardless of YUYUTSAVA_STORAGE_BACKEND — the CLI
+    # has no pool lifecycle owner yet (the daemon does); checkpoints still
+    # honor the postgres backend via build_checkpointer.
+    artifact_store = SqliteArtifactStore(state_db_path())
+    summary_store = SqliteThreadSummaryStore(state_db_path())
+    context_settings = ContextSettings.from_env(
+        "cli", provider=_env("LLM_PROVIDER", None, "groq"),
+    )
+    compaction_model = chat_model(llm_settings_from_env("compaction"), temperature=0.0)
+    memory_store = None
+    if MemorySettings.from_env().enabled:
+        from yuyutsava.memory.store import SqliteMemoryStore
+        memory_store = SqliteMemoryStore(state_db_path())
+
     skill_registry = SkillRegistry(workspace_dir=workspace)
     sandbox_root_for_tr = (
         local_settings.sandbox_dir.resolve()
@@ -131,5 +153,10 @@ async def build_cli_agent_stack(
         async_task_mirror=async_mirror,
         async_host=async_host,
         async_host_attachment=async_host_attachment,
+        artifact_store=artifact_store,
+        summary_store=summary_store,
+        memory_store=memory_store,
+        context_settings=context_settings,
+        compaction_model=compaction_model,
     )
     return bundle

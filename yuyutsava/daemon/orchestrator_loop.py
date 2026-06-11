@@ -129,6 +129,7 @@ class OrchestratorLoop:
         orchestrator_token_budget: int,
         checkpointer: BaseCheckpointSaver | None = None,
         prefs_injector: object | None = None,  # yuyutsava.prefs.injector.PrefsInjector
+        memory_injector: object | None = None,  # yuyutsava.context.injector.MemoryInjector
     ) -> None:
         self._queue = task_queue
         self._channels = channels
@@ -138,6 +139,7 @@ class OrchestratorLoop:
         self._budget = orchestrator_token_budget
         self._checkpointer = checkpointer
         self._prefs_injector = prefs_injector
+        self._memory_injector = memory_injector
 
     async def run(self, stop_event: asyncio.Event) -> None:
         while not stop_event.is_set():
@@ -153,11 +155,20 @@ class OrchestratorLoop:
     async def _run_task(self, task: OrchestratorTask) -> None:
         thread_id = _mint_thread_id("orch")
         prefs_block = self._prefs_injector.build_block() if self._prefs_injector else ""
+        # Relevant past context (summaries, outcomes, saved facts) recalled
+        # by similarity to the task text — same informational-block contract
+        # as prefs. Empty when memory is disabled or nothing matches.
+        memory_block = ""
+        if self._memory_injector is not None:
+            memory_block = await self._memory_injector.build_block(
+                f"{task.summary}\n{task.instruction}"
+            )
+        blocks = "\n\n".join(b for b in (prefs_block, memory_block) if b)
         graph = build_orchestrator(
             model=self._model, deps=self._deps, budget_tokens=self._budget,
             skill_registry=self._deps.skill_registry,
             checkpointer=self._checkpointer,
-            prefs_block=prefs_block,
+            prefs_block=blocks,
         )
         message = task.render_to_message()
 
@@ -198,6 +209,17 @@ class OrchestratorLoop:
             outcome="orchestrator_done",
             action_summary=(final_text or "(empty)")[:300],
         )
+        memory = getattr(self._deps, "memory_store", None)
+        if memory is not None and final_text:
+            try:
+                await memory.add(
+                    kind="task_outcome",
+                    text=f"{task.instruction[:300]} → {final_text[:700]}",
+                    source_thread_id=thread_id,
+                    metadata={"topic": task.topic, "event_id": task.event_id},
+                )
+            except Exception:
+                logger.exception("memory: task_outcome write failed")
         await self._channels.post_event(ChannelEvent(
             payload=TimelinePayload(
                 line=f"orchestrator: {final_text[:120]}",
