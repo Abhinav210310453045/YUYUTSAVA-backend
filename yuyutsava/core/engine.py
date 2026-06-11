@@ -34,6 +34,7 @@ from langgraph.graph.state import CompiledStateGraph
 from yuyutsava.core.config import DockerSettings, LocalSettings, LlmSettings, SearchConfig
 from yuyutsava.core.docker_sandbox_backend import DockerSandboxBackend
 from yuyutsava.core.llm import chat_model
+from yuyutsava.core.filesystem_prompt_middleware import FilesystemPromptOverrideMiddleware
 from yuyutsava.core.permission_middleware import PermissionMiddleware
 from yuyutsava.core.prompts import docker_system_prompt, local_system_prompt
 from yuyutsava.core.tool_filter_middleware import ToolFilterMiddleware
@@ -349,7 +350,11 @@ def build_cli_deepagent(
     """
     model = chat_model(settings)
     checkpointer = checkpointer or MemorySaver()
-    middleware = [ToolFilterMiddleware()]
+    # FilesystemPromptOverrideMiddleware strips the deepagents "## Filesystem Tools"
+    # block: those built-in tools are filtered out by ToolFilterMiddleware and our
+    # own prompt routes filesystem ops through tr_*, so the block only misleads the
+    # model and wastes cache-prefix tokens. Pass replacement="..." to reword instead.
+    middleware = [ToolFilterMiddleware(), FilesystemPromptOverrideMiddleware()]
     if permission_check:
         middleware.append(PermissionMiddleware(workspace_root=workspace_root.resolve()))
 
