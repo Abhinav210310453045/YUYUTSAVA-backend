@@ -40,6 +40,7 @@ from yuyutsava.daemon.web.routers import (
     skills as skills_router,
     static_files as static_router,
     stream as stream_router,
+    system as system_router,
     tasks as tasks_router,
     usage as usage_router,
 )
@@ -76,6 +77,8 @@ def create_app(
     decision_service: "object | None" = None,   # DecisionService; duck-typed
     channel_plugins: "object | None" = None,    # ChannelPluginRegistry; duck-typed
     usage_store: "object | None" = None,        # daemon.usage.UsageStore; duck-typed
+    resource_monitor: "object | None" = None,   # daemon.resources.ResourceMonitor; duck-typed
+    admission_controller: "object | None" = None,  # daemon.resources.AdmissionController; duck-typed
 ) -> FastAPI:
     if auth is None:
         auth = AuthSettings.from_env(host=host)
@@ -122,6 +125,8 @@ def create_app(
     app.state.decision_service = decision_service
     app.state.channel_plugins = channel_plugins
     app.state.usage_store = usage_store
+    app.state.resource_monitor = resource_monitor
+    app.state.admission_controller = admission_controller
 
     # Auth first so CORSMiddleware (added after → wraps outside) answers
     # preflight OPTIONS before the bearer check can 401 them.
@@ -177,6 +182,7 @@ def create_app(
         tasks_router.router,
         channels_router.router,
         usage_router.router,
+        system_router.router,
     ):
         app.include_router(r)
 

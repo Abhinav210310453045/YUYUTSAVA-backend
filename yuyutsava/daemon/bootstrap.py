@@ -47,6 +47,7 @@ from yuyutsava.core.policy import PermissionsPolicy, StorePolicyCapEnforcer
 from yuyutsava.daemon.channels import ChannelEvent, ChannelRouter, TimelinePayload
 from yuyutsava.daemon.checkpointing import CheckpointerSaver
 from yuyutsava.daemon.orchestrator_loop import OrchestratorLoop
+from yuyutsava.daemon.resources import AdmissionController, ResourceMonitor, ResourceSettings
 from yuyutsava.daemon.task_registry import PgTaskStore, SqliteTaskStore, TaskRegistry
 from yuyutsava.daemon.task_submission import TaskSubmissionService
 from yuyutsava.daemon.terminal_channel import TerminalChannel
@@ -160,6 +161,12 @@ class DaemonSubsystems:
     # down above (pg_pool / per-call sqlite), so no teardown of its own.
     usage_store: UsageStore
     model_router: ModelRouter
+
+    # resource governor (Phase 5). The monitor is a loop main.py schedules
+    # alongside triage/orchestrator (joins on stop_event — no teardown hook);
+    # the admission controller is borrowed by the orchestrator loop + web app.
+    resource_monitor: ResourceMonitor
+    admission: AdmissionController
 
     # for logging / future use
     skill_registry: SkillRegistry
@@ -414,6 +421,26 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
                 payload=TimelinePayload(line=f"storage: {reason}", cls="event-error"),
             ))
 
+    # ── resource governor (Phase 5) ----------------------------------------
+    # Monitor samples psutil into a ring (main.py schedules its run loop);
+    # admission gates heavy tasks (complexity ≥ threshold / heavy hints)
+    # behind a semaphore + load check in OrchestratorLoop._run_task. The
+    # activity probe is assigned after construction because the controller
+    # it asks "is anything running?" needs the monitor first.
+    res_settings = ResourceSettings.from_env()
+    resource_monitor = ResourceMonitor(res_settings, event_sink=channels.post_event)
+    admission = AdmissionController(
+        resource_monitor, res_settings,
+        registry=task_registry, event_sink=channels.post_event,
+    )
+    resource_monitor.activity_probe = lambda: bool(admission.active())
+    logger.info(
+        "  resources : cpu<%.0f%% mem>%dMB disk>%.0fGB, heavy=complexity≥%d (max %d)",
+        res_settings.cpu_high_pct, res_settings.mem_min_mb,
+        res_settings.disk_min_gb, res_settings.heavy_complexity,
+        res_settings.max_heavy_tasks,
+    )
+
     # ── models ------------------------------------------------------------
     triage_settings = llm_settings_from_env("triage")
     orchestrator_settings = llm_settings_from_env("orchestrator")
@@ -607,6 +634,7 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         memory_injector=memory_injector,
         task_registry=task_registry,
         model_router=model_router,
+        admission=admission,
     )
 
     # ── channel plugins (Phase 3) ------------------------------------------
@@ -659,6 +687,8 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
             decision_service=decision_service,
             channel_plugins=channel_plugins,
             usage_store=usage_store,
+            resource_monitor=resource_monitor,
+            admission_controller=admission,
         )
         uvicorn_level = logging.getLevelName(
             logging.getLogger("yuyutsava").getEffectiveLevel()
@@ -705,6 +735,8 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         channel_plugins=channel_plugins,
         usage_store=usage_store,
         model_router=model_router,
+        resource_monitor=resource_monitor,
+        admission=admission,
         skill_registry=skill_registry,
         triage_settings=triage_settings,
         orchestrator_settings=orchestrator_settings,

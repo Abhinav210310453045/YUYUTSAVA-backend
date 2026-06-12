@@ -18,6 +18,7 @@
 | 2026-06-12 | 2 | **Phase 2 implemented end-to-end** (auth, task submission/registry, tasks API, per-task SSE + ring replay, tests + live-PG verification of migration v2). Per user instruction, work stayed on `feature/phase-1-postgres-context` (no new phase branch). |
 | 2026-06-12 | 3 | **Phase 3 implemented end-to-end** (decision_service extraction, ChannelRouter register/unregister, `yuyutsava/channels/` plugin framework + ChannelPluginRegistry, Telegram reference plugin, /channels API, origin-aware ask routing). Same branch. |
 | 2026-06-12 | 4 | **Phase 4 implemented end-to-end** (ModelRouter + tier env roles, ComplexityScorer, triage complexity scoring, llm_usage table + UsageRecorder middleware, GET /usage, tasks.model column, tests + live-PG verification of migration v3). Same branch. |
+| 2026-06-12 | 5 | **Phase 5 implemented end-to-end** (psutil dep, ResourceMonitor + AdmissionController in daemon/resources.py, admission.slot() wrapping OrchestratorLoop._run_task, deferred_ms recording, SystemMetricsPayload, GET /system/metrics, tests). Same branch. |
 
 ## Phase 1 — Postgres backend + Context Controller  [CODE COMPLETE — 2 manual checks open]
 
@@ -208,5 +209,38 @@
 5. **`ComplexityScorer` parses a digit from a plain completion** instead of structured output — light-tier models (tiny Ollama) are unreliable with tool-calling/structured output; regex `[1-5]` + fallback 3 is more robust.
 6. **Misconfigured tier falls back to the role model** (logged) instead of raising — routing must never make a runnable task unrunnable; the plan only specified flag-off behaviour.
 7. **`GET /usage` without `group_by` returns one `key="all"` totals row** (plan left ungrouped behaviour unspecified).
-## Phase 5 — Resource governor  [NOT STARTED]
+## Phase 5 — Resource governor  [CODE COMPLETE — 1 manual check open]
+
+### New files
+- [x] `yuyutsava/daemon/resources.py` — `ResourceSettings.from_env()` (`YUYUTSAVA_RES_CPU_HIGH_PCT=85`, `YUYUTSAVA_RES_MEM_MIN_MB=1024`, `YUYUTSAVA_RES_DISK_MIN_GB=5`, `YUYUTSAVA_MAX_HEAVY_TASKS=1`, `YUYUTSAVA_RES_SAMPLE_SEC=5`, `YUYUTSAVA_RES_DEFER_MAX_SEC=600`, plus `YUYUTSAVA_RES_EMIT_SEC=10`, `YUYUTSAVA_RES_HEAVY_COMPLEXITY=4`, `YUYUTSAVA_RES_HEAVY_HINTS=` csv, `YUYUTSAVA_RES_DOCKER_STATS=0`); `ResourceSnapshot` (cpu_pct / mem_available_mb / disk_free_gb / per_container / ts); `ResourceMonitor` (psutil sampler, ring of 120 samples, `snapshot()`/`ring()`/`loaded()`/`disk_critical()`, lifecycle `run(stop_event)` à la UnifiedSweeper, debounced `SystemMetricsPayload` emission while tasks run); `AdmissionController` (`weight_for` = complexity ≥ 4 or hint in heavy set; `slot(task, task_id=)` async ctx manager: heavy → disk check → `Semaphore(max_heavy)` → load deferral w/ 2s→30s backoff capped at defer_max then **run anyway**; `DiskCriticalError` fails the task; `active()` per-task attribution; deferred_ms → `TaskRegistry.set_deferred_ms`)
+- [x] `yuyutsava/daemon/web/routers/system.py` + `web/schemas/system.py` — `GET /system/metrics` (current snapshot + ring + loaded/disk_critical + heavy_slots {max,in_use} + active_tasks attribution; 503 when monitor unwired; admission absent → monitor-only output)
+
+### Modified
+- [x] `daemon/channels.py` — `SystemMetricsPayload` (kind `system_metrics`) added to the `ChannelPayload` union (serializes through the existing generic `StreamEventItem.to_wire_dict`)
+- [x] `daemon/orchestrator_loop.py` — `admission` param; `_run_task` body wrapped in `async with admission.slot(task, task_id=)` (null context when unwired — pre-Phase-5 identical); slot entered **before** `mark_running` so deferral happens while the row still reads `queued`; cancel re-check after the slot (a task cancelled during a long deferral never starts the graph); `_cancel_before_start` helper extracted (used by both cancel paths); `DiskCriticalError` propagates through the existing failure path → `mark_failed` with the clear disk message
+- [x] `daemon/bootstrap.py` — `ResourceSettings.from_env()` → `ResourceMonitor` (event_sink=channels.post_event) → `AdmissionController` (registry + event_sink) after the channels block; `monitor.activity_probe = lambda: bool(admission.active())`; threaded into OrchestratorLoop + make_app; `DaemonSubsystems` gains `resource_monitor` + `admission` (no teardown — the monitor loop joins on stop_event like the sweeper)
+- [x] `daemon/main.py` — `resource-monitor` task scheduled alongside triage/orchestrator/sweeper loops
+- [x] `web/app.py` + `server.py` + `web/deps.py` — `resource_monitor`/`admission_controller` app-state, `get_resource_monitor` (503) / `get_admission_controller` (None-degrade), system router wired
+- [x] `pyproject.toml` — `psutil>=5.9` (installed 7.2.2)
+
+### Tests (full suite 218 tests; only the pre-existing `test_async` 401 import error remains)
+- [x] test/daemon/test_resources.py — settings env parsing (defaults / overrides / hint csv / malformed fallback), monitor ring + loaded/disk_critical flags (scripted sampler), live psutil sample sanity, SystemMetricsPayload debounce + activity gating; admission: weight matrix incl. heavy-hint set, **light passes immediately on a loaded system**, **heavy defers w/ backoff then runs once load clears (deferred_ms=6000 recorded)**, **deferral ceiling → runs anyway**, **Semaphore(1) caps concurrent heavies** (+ "waiting for slot" event), **disk-critical raises DiskCriticalError without leaking the semaphore**, unloaded heavy passes with no deferral row
+- [x] test/daemon/test_orchestrator_admission.py — fake-graph loop integration: heavy task deferred then done w/ `deferred_ms` on the registry row + "deferred — system busy" timeline event; disk-critical → status `failed` w/ clear error, graph never runs; **cancel during deferral → cancelled, graph never runs, slot released**; light task unaffected by load
+- [x] test/web/test_system_api.py — empty-ring shape, samples + active heavy task attribution over httpx ASGI, admission-absent degradation, 503 missing monitor
+
+### Definition of Done
+- [x] Unit: admission math with fake snapshot provider — loaded system: heavy defers then runs, light passes immediately; semaphore caps concurrent heavies; disk-critical fails task
+- [ ] Integration (manual, needs a real busy machine + LLM keys): busy-loop the machine, submit complexity-5 task → observe `deferred:` timeline event then execution; `deferred_ms` recorded (unit-level equivalent covered by test_orchestrator_admission)
+- [x] `GET /system/metrics` returns sane values on macOS (live psutil smoke: cpu 12%, mem 3879MB free, disk 243GB free; + unit sanity test)
+- [x] Progress file updated
+
+### Deviations from MASTER_PLAN (all intentional)
+1. **Docker container stats are opt-in** (`YUYUTSAVA_RES_DOCKER_STATS=1`, default off) — sampling forks a `docker stats` CLI subprocess every tick; the snapshot schema carries `per_container` either way and failures degrade to `{}`. The Docker per-task hard cage (DockerSettings) is untouched.
+2. **Heavy-hint set defaults empty** (`YUYUTSAVA_RES_HEAVY_HINTS` csv) — Phase 4 shipped, so complexity is the primary weight signal; no subagent hint is inherently heavy. The complexity threshold is also env-tunable (`YUYUTSAVA_RES_HEAVY_COMPLEXITY`, default 4 per plan).
+3. **Cancel re-checked after admission deferral** (not in plan) — a heavy task the user cancels during a 10-minute deferral is marked cancelled and never starts the graph.
+4. **Disk-critical gates only heavy tasks** (matches the plan's flow diagram — light tasks bypass the gate entirely).
+5. **deferred_ms includes semaphore wait** (time queued behind another heavy task), not just load deferral — it measures "how long admission held the task back", which is what the column documents; ~0ms holds are not written.
+6. **Admission slot wraps `mark_running`** so a deferred task stays `queued` in `GET /tasks` until it actually starts (plan didn't pin the ordering).
+7. **`clock`/`sleep` injectable on AdmissionController** — deterministic deferral/backoff tests without real waiting.
+
 ## Phase 6 — Mobile API contract  [NOT STARTED]

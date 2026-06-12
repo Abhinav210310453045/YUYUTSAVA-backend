@@ -75,6 +75,20 @@ def get_usage_store(request: Request):
     return store
 
 
+def get_resource_monitor(request: Request):
+    """The ``ResourceMonitor`` (Phase 5 system metrics)."""
+    monitor = getattr(request.app.state, "resource_monitor", None)
+    if monitor is None:
+        raise ServiceUnavailableError("resource monitor not initialized")
+    return monitor
+
+
+def get_admission_controller(request: Request):
+    """The ``AdmissionController``; ``None`` degrades /system/metrics to
+    monitor-only output (no slot/attribution section)."""
+    return getattr(request.app.state, "admission_controller", None)
+
+
 def get_channel_plugins(request: Request):
     """The daemon's ``ChannelPluginRegistry`` (enable/disable at runtime)."""
     registry = getattr(request.app.state, "channel_plugins", None)

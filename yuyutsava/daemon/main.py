@@ -351,6 +351,7 @@ async def _async_main(argv: list[str] | None = None) -> int:
         asyncio.create_task(subs.triage_loop.run(stop_event), name="triage-loop"),
         asyncio.create_task(subs.orch_loop.run(stop_event), name="orchestrator-loop"),
         asyncio.create_task(subs.sweeper.run(stop_event), name="unified-sweeper"),
+        asyncio.create_task(subs.resource_monitor.run(stop_event), name="resource-monitor"),
         asyncio.create_task(_reload_loop(subs, stop_event, reload_event), name="reload-loop"),
     ]
     if subs.web_server is not None:
