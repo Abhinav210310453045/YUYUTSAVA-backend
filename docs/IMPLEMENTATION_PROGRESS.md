@@ -19,6 +19,7 @@
 | 2026-06-12 | 3 | **Phase 3 implemented end-to-end** (decision_service extraction, ChannelRouter register/unregister, `yuyutsava/channels/` plugin framework + ChannelPluginRegistry, Telegram reference plugin, /channels API, origin-aware ask routing). Same branch. |
 | 2026-06-12 | 4 | **Phase 4 implemented end-to-end** (ModelRouter + tier env roles, ComplexityScorer, triage complexity scoring, llm_usage table + UsageRecorder middleware, GET /usage, tasks.model column, tests + live-PG verification of migration v3). Same branch. |
 | 2026-06-12 | 5 | **Phase 5 implemented end-to-end** (psutil dep, ResourceMonitor + AdmissionController in daemon/resources.py, admission.slot() wrapping OrchestratorLoop._run_task, deferred_ms recording, SystemMetricsPayload, GET /system/metrics, tests). Same branch. |
+| 2026-06-12 | 6 | **Phase 6 backend implemented end-to-end** (/v1 canonical surface + hidden legacy aliases, GET /v1/server-info capability flags, decisions cursor pagination, docs/api_v1.md contract freeze, test/web/test_v1_contract.py golden + alias-regression tests). Same branch. Mobile app follows in the separate `yuyutsava-mobile` repo. |
 
 ## Phase 1 — Postgres backend + Context Controller  [CODE COMPLETE — 2 manual checks open]
 
@@ -243,4 +244,35 @@
 6. **Admission slot wraps `mark_running`** so a deferred task stays `queued` in `GET /tasks` until it actually starts (plan didn't pin the ordering).
 7. **`clock`/`sleep` injectable on AdmissionController** — deterministic deferral/backoff tests without real waiting.
 
-## Phase 6 — Mobile API contract  [NOT STARTED]
+## Phase 6 — Mobile API contract  [BACKEND CODE COMPLETE — manual checks open; app in separate repo]
+
+### Backend additions (this repo)
+- [x] `web/app.py` — every API router mounted twice: canonical under **`/v1`** (the only surface `/openapi.json` documents → clean TS client generation) and unprefixed as a **legacy alias hidden from the schema** (Electron renderer untouched; same handler objects, so responses are byte-identical). Static files stay unprefixed only. `_broadcast_http_log` also suppresses `/v1/stream`.
+- [x] `web/auth.py` — `_PUBLIC_PATHS` gains `/v1/health`; query-token rule generalized to `_QUERY_TOKEN_PATHS = {"/stream", "/v1/stream"}`.
+- [x] `web/routers/server_info.py` + `web/schemas/server_info.py` — `GET /v1/server-info`: package version (importlib.metadata), `api_version: "v1"`, capability flags {model_routing (ModelRouter.enabled), memory (memory store wired), resource_governor (ResourceMonitor wired), async_subagents (host enabled)} + ChannelPluginRegistry snapshot. Everything optional — a missing singleton reads as "capability off".
+- [x] Wiring: `create_app`/`make_app` gain `model_router` / `memory_store` / `async_subagents`; bootstrap passes them (`async_subagents = async_host_url is not None`).
+- [x] Pagination: `GET /tasks` already had ULID-cursor (Phase 2); `GET /sessions` already had `updated_at`-keyset (pre-existing); **`GET /decisions` gained `cursor` (ts keyset)** — `Store.list_decisions(limit, cursor=None)` extended backward-compatibly.
+- [x] `docs/api_v1.md` — full contract: auth rules, error envelope, pagination matrix, every endpoint with request/response shapes, the three SSE wire envelopes (event/proposal/ask) incl. all 11 `kind` values (`system_metrics`, `async_task_*`…), task lifecycle (queued → running → done|failed|cancelled), client recipes (reconnect replay-fill, approvals, capability gating).
+
+### Tests (full suite 236; only the pre-existing `test_async` 401 import error remains)
+- [x] test/web/test_v1_contract.py — golden httpx ASGI tests for every /v1 endpoint group: health, server-info (full + degraded), tasks lifecycle (submit/list/detail/events/cancel), decisions pagination (keyset math), sessions pagination + detail, proposal/ask respond (+409), rules/skills/usage/system/channels, channel enable/disable (404 unknown), logs/config; **alias regression** (9 GET endpoints answer byte-identically on both prefixes; POST aliases interoperate); **OpenAPI documents only /v1**; auth: /v1/health public, /v1 paths need bearer, query token on both stream paths only.
+
+### Definition of Done
+- [x] `/v1` endpoints live, legacy aliases intact (unit-level; Electron smoke test is a manual check below)
+- [x] `docs/api_v1.md` complete incl. SSE wire schema; TS client generates from `/openapi.json` (verified in the mobile repo)
+- [x] Contract tests (httpx golden tests) against every `/v1` endpoint
+- [ ] Manual: phone on LTE + Tailscale — submit task, watch live logs, approve a Tier-2 ask, kill app mid-stream, reopen → replay fills gap
+- [ ] Manual: Electron smoke test against the aliased endpoints (open the app, confirm timeline/proposals still render)
+- [x] Progress file updated
+
+### Deviations from MASTER_PLAN (all intentional)
+1. **Legacy aliases are hidden from `/openapi.json`** (`include_in_schema=False`) — the plan says "aliases kept", not "documented twice"; a doubled schema would double the generated TS client surface. Behaviour is identical (same handler objects; alias-regression test asserts it).
+2. **`GET /sessions` and `GET /decisions` keep returning bare arrays** (no `{items, next_cursor}` envelope like /tasks) — wrapping would break the Electron renderer on the aliased paths, and the alias must answer identically to /v1. Next-page cursor = last row's `updated_at` / `ts`, documented in api_v1.md. Sessions already had keyset pagination; only decisions needed the cursor param.
+3. **All API routers ride /v1** (config, logs, db, cli_attach, rules, skills too), not just the mobile-contract table — one uniform surface, no special-casing; api_v1.md marks the desktop-only group as not-needed-for-mobile.
+4. **`server-info` reports `resource_governor` from ResourceMonitor presence** (the metrics/SSE capability the app actually consumes), not AdmissionController presence — the monitor is what feeds /system/metrics and `system_metrics` events.
+5. **`/v1/health` made public alongside `/health`** so a client built purely against the /v1 contract can probe reachability without a token.
+
+### LEFT TO THE USER (needs physical devices / keys) — consolidated
+- Phone on LTE + Tailscale: submit task, watch live logs, approve a Tier-2 ask, kill app mid-stream, reopen → replay fills the gap.
+- Electron smoke test against the aliased endpoints (timeline/proposals still render).
+- Earlier phases' open manual checks: PG kill -9 resume + langfuse plateau (P1), tailnet bind from second device + real-triage proposal flow (P2), real Telegram bot checks (P3), real two-model Ollama routing (P4), busy-machine deferral (P5).

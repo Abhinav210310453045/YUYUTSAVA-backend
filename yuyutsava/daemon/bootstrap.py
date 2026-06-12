@@ -689,6 +689,9 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
             usage_store=usage_store,
             resource_monitor=resource_monitor,
             admission_controller=admission,
+            model_router=model_router,
+            memory_store=memory_store,
+            async_subagents=async_host_url is not None,
         )
         uvicorn_level = logging.getLevelName(
             logging.getLogger("yuyutsava").getEffectiveLevel()

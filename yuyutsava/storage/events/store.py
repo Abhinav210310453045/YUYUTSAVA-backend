@@ -359,11 +359,22 @@ class Store:
         ).fetchall()
         return [_row_to_consent_rule(r) for r in rows]
 
-    def list_decisions(self, limit: int = 50) -> list[Decision]:
+    def list_decisions(
+        self, limit: int = 50, cursor: float | None = None,
+    ) -> list[Decision]:
+        """Newest-first decisions; *cursor* is the ``ts`` of the previous
+        page's last row (keyset pagination, same shape as the sessions
+        store's ``updated_at`` cursor)."""
         assert self._conn is not None
-        rows = self._conn.execute(
-            "SELECT * FROM decisions ORDER BY ts DESC LIMIT ?", (limit,)
-        ).fetchall()
+        if cursor is not None:
+            rows = self._conn.execute(
+                "SELECT * FROM decisions WHERE ts < ? ORDER BY ts DESC LIMIT ?",
+                (float(cursor), limit),
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                "SELECT * FROM decisions ORDER BY ts DESC LIMIT ?", (limit,)
+            ).fetchall()
         return [_row_to_decision(r) for r in rows]
 
     def recall(
