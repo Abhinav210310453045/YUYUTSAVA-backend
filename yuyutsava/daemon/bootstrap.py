@@ -42,8 +42,11 @@ from yuyutsava.core.policy import PermissionsPolicy, StorePolicyCapEnforcer
 from yuyutsava.daemon.channels import ChannelEvent, ChannelRouter, TimelinePayload
 from yuyutsava.daemon.checkpointing import CheckpointerSaver
 from yuyutsava.daemon.orchestrator_loop import OrchestratorLoop
+from yuyutsava.daemon.task_registry import PgTaskStore, SqliteTaskStore, TaskRegistry
+from yuyutsava.daemon.task_submission import TaskSubmissionService
 from yuyutsava.daemon.terminal_channel import TerminalChannel
 from yuyutsava.daemon.triage_loop import OrchestratorTask, TriageLoop
+from yuyutsava.daemon.web.auth import AuthSettings
 from yuyutsava.daemon.web.server import WebChannel, WebHub, make_app
 from yuyutsava.events.bus import EventBus
 from yuyutsava.events.registry import SourceRegistry
@@ -133,6 +136,12 @@ class DaemonSubsystems:
     task_queue: asyncio.Queue[OrchestratorTask]
     triage_loop: TriageLoop
     orch_loop: OrchestratorLoop
+
+    # task gateway (Phase 2). Both are borrowed by the web app; the
+    # registry's stores ride the same backends torn down above (pg_pool /
+    # per-call sqlite connections), so neither needs its own teardown.
+    task_registry: TaskRegistry
+    task_submission: TaskSubmissionService
 
     # for logging / future use
     skill_registry: SkillRegistry
@@ -254,6 +263,13 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     else:
         artifact_store = SqliteArtifactStore(state_db_path())
         summary_store = SqliteThreadSummaryStore(state_db_path())
+
+    # ── task registry (Phase 2: first-class task tracking) -----------------
+    task_store = (
+        PgTaskStore(pg_pool) if pg_pool is not None
+        else SqliteTaskStore(state_db_path())
+    )
+    task_registry = TaskRegistry(task_store)
 
     # ── semantic memory (default-on when postgres is live) -----------------
     mem_settings = MemorySettings.from_env(default_enabled=pg_pool is not None)
@@ -505,6 +521,15 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     triage = TriageAgent(triage_model)
     task_queue: asyncio.Queue[OrchestratorTask] = asyncio.Queue()
 
+    # ── task submission (POST /tasks; channel plugins in Phase 3) ---------
+    task_submission = TaskSubmissionService(
+        registry=task_registry,
+        task_queue=task_queue,
+        store=store,
+        bus=bus,
+        proposal_expiry_sec=daemon_cfg.proposal_expiry_sec,
+    )
+
     triage_loop = TriageLoop(
         bus=bus, store=store, channels=channels, triage=triage,
         capabilities_block=capabilities_block,
@@ -543,10 +568,15 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         checkpointer=checkpointer,
         prefs_injector=prefs_injector,
         memory_injector=memory_injector,
+        task_registry=task_registry,
     )
 
     # ── web server -------------------------------------------------------
     if web_hub is not None:
+        auth_settings = AuthSettings.from_env(host=daemon_cfg.web_host)
+        if auth_settings.enforce:
+            logger.info("  web auth  : bearer token enforced (non-loopback bind %s)",
+                        daemon_cfg.web_host)
         app = make_app(
             web_hub,
             host=daemon_cfg.web_host,
@@ -554,13 +584,21 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
             config_reload=_hot_reload_events_config,
             channels=channels,
             session_origin=session_origin,
+            auth=auth_settings,
+            task_registry=task_registry,
+            task_submission=task_submission,
         )
         uvicorn_level = logging.getLevelName(
             logging.getLogger("yuyutsava").getEffectiveLevel()
         ).lower()
         config = uvicorn.Config(
             app, host=daemon_cfg.web_host, port=daemon_cfg.web_port,
-            log_level=uvicorn_level, access_log=True, lifespan="on",
+            log_level=uvicorn_level, lifespan="on",
+            # uvicorn's access log records full request lines including the
+            # query string — which carries ?token= on /stream when auth is
+            # enforced. Drop it off-loopback; the in-app HTTP log middleware
+            # (path-only) still covers observability.
+            access_log=not auth_settings.enforce,
         )
         web_server = uvicorn.Server(config)
 
@@ -589,6 +627,8 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         task_queue=task_queue,
         triage_loop=triage_loop,
         orch_loop=orch_loop,
+        task_registry=task_registry,
+        task_submission=task_submission,
         skill_registry=skill_registry,
         triage_settings=triage_settings,
         orchestrator_settings=orchestrator_settings,

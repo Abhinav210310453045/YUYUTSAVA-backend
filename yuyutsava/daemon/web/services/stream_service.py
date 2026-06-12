@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import time
+from collections import OrderedDict, deque
 from dataclasses import dataclass
 from typing import Any, AsyncIterator, Literal
 
@@ -37,15 +38,24 @@ def _payload_to_data(payload: ChannelPayload) -> dict[str, Any]:
 
 @dataclass(frozen=True)
 class StreamEventItem:
-    """SSE relay of a :class:`ChannelEvent` (token/log/timeline/etc.)."""
+    """SSE relay of a :class:`ChannelEvent` (token/log/timeline/etc.).
+
+    ``task_id`` / ``session_id`` mirror the ChannelEvent scoping tags so the
+    SSE responder can filter (``/stream?task_id=``) and the hub can route
+    items into the per-task replay ring.
+    """
 
     payload: ChannelPayload
+    task_id: str | None = None
+    session_id: str | None = None
     type: Literal["event"] = "event"
 
     def to_wire_dict(self) -> dict[str, Any]:
         return {
             "type": self.type,
             "kind": self.payload.kind,
+            "task_id": self.task_id,
+            "session_id": self.session_id,
             "data": _payload_to_data(self.payload),
         }
 
@@ -106,8 +116,17 @@ StreamItem = StreamEventItem | StreamProposalItem | StreamAskItem
 # ---------------------------------------------------------------------------
 
 
+# Per-task replay ring: enough to refill a mobile client that reconnects
+# mid-task without persisting the firehose.
+TASK_RING_SIZE = 500
+# Rings are dropped oldest-task-first past this bound so an immortal daemon
+# can't accumulate rings forever.
+MAX_TRACKED_TASKS = 64
+
+
 class WebHub:
-    """Holds pending proposals/asks and the SSE broadcast queue."""
+    """Holds pending proposals/asks, the SSE broadcast queue, and per-task
+    replay rings (last :data:`TASK_RING_SIZE` items per task)."""
 
     def __init__(self, store: Store) -> None:
         self.store = store
@@ -115,6 +134,7 @@ class WebHub:
         self._lock = asyncio.Lock()
         self.pending_proposals: dict[str, asyncio.Future[ProposalDecision]] = {}
         self.pending_asks: dict[str, asyncio.Future[str]] = {}
+        self._task_rings: "OrderedDict[str, deque[StreamItem]]" = OrderedDict()
 
     async def subscribe(self) -> AsyncIterator[StreamItem]:
         q: asyncio.Queue[StreamItem] = asyncio.Queue(maxsize=256)
@@ -130,6 +150,15 @@ class WebHub:
                     self._subscribers.remove(q)
 
     async def broadcast(self, item: StreamItem) -> None:
+        task_id = getattr(item, "task_id", None)
+        if task_id:
+            ring = self._task_rings.get(task_id)
+            if ring is None:
+                ring = deque(maxlen=TASK_RING_SIZE)
+                self._task_rings[task_id] = ring
+                while len(self._task_rings) > MAX_TRACKED_TASKS:
+                    self._task_rings.popitem(last=False)
+            ring.append(item)
         async with self._lock:
             subs = list(self._subscribers)
         for q in subs:
@@ -139,6 +168,14 @@ class WebHub:
                 # Drop silently for slow tabs.
                 pass
 
+    def task_events(self, task_id: str) -> list[StreamItem]:
+        """Replay buffer for one task (oldest first); ``[]`` when unknown.
+
+        Served by ``GET /tasks/{id}/events`` so a client that reconnects
+        mid-task can fill the gap before resuming the live stream.
+        """
+        return list(self._task_rings.get(task_id, ()))
+
 
 class WebChannel(UserChannel):
     name = "web"
@@ -147,7 +184,9 @@ class WebChannel(UserChannel):
         self._hub = hub
 
     async def post_event(self, ev: ChannelEvent) -> None:
-        await self._hub.broadcast(StreamEventItem(payload=ev.payload))
+        await self._hub.broadcast(StreamEventItem(
+            payload=ev.payload, task_id=ev.task_id, session_id=ev.session_id,
+        ))
 
     async def post_proposal(self, p: Proposal) -> ProposalDecision:
         loop = asyncio.get_running_loop()

@@ -4,8 +4,11 @@ Wires routers, attaches daemon singletons to ``app.state`` for ``Depends``,
 registers exception handlers, and exposes Swagger UI / ReDoc at ``/docs``
 and ``/redoc``.
 
-The server is loopback-only by contract — refusing to bind to a non-loopback
-host avoids accidentally exposing an unauthenticated agent to the LAN.
+Bind policy (Phase 2): loopback binds stay unauthenticated (the Electron
+renderer is single-user and local). Non-loopback binds — e.g. a Tailscale
+address for the mobile app — are allowed **iff** bearer-token auth is
+active; the factory refuses to build an unauthenticated network-exposed
+app.
 """
 
 from __future__ import annotations
@@ -17,6 +20,11 @@ from typing import Awaitable, Callable
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
+from yuyutsava.daemon.web.auth import (
+    AuthSettings,
+    install_auth_middleware,
+    is_loopback_host,
+)
 from yuyutsava.daemon.web.exceptions import register_exception_handlers
 from yuyutsava.daemon.web.routers import (
     cli_attach as cli_attach_router,
@@ -31,6 +39,7 @@ from yuyutsava.daemon.web.routers import (
     skills as skills_router,
     static_files as static_router,
     stream as stream_router,
+    tasks as tasks_router,
 )
 from yuyutsava.daemon.channels import HttpLogPayload
 from yuyutsava.daemon.web.services.stream_service import StreamEventItem, WebHub
@@ -38,6 +47,16 @@ from yuyutsava.skills.registry import SkillRegistry
 
 
 ReloadCallback = Callable[[], Awaitable[None]] | None
+
+
+def _cors_kwargs() -> dict:
+    """Explicit origins from ``YUYUTSAVA_CORS_ORIGINS`` (comma-separated),
+    falling back to the historical loopback-only regex."""
+    raw = os.environ.get("YUYUTSAVA_CORS_ORIGINS", "").strip()
+    origins = [o.strip() for o in raw.split(",") if o.strip()]
+    if origins:
+        return {"allow_origins": origins}
+    return {"allow_origin_regex": r"http://(localhost|127\.0\.0\.1)(:\d+)?"}
 
 
 def create_app(
@@ -48,19 +67,28 @@ def create_app(
     config_reload: ReloadCallback = None,
     channels: "object | None" = None,           # ChannelRouter; duck-typed
     session_origin: "object | None" = None,     # SessionOriginMap; duck-typed
+    auth: AuthSettings | None = None,
+    task_registry: "object | None" = None,      # TaskRegistry; duck-typed
+    task_submission: "object | None" = None,    # TaskSubmissionService; duck-typed
 ) -> FastAPI:
-    if not (host.startswith("127.") or host == "localhost" or host == "::1"):
+    if auth is None:
+        auth = AuthSettings.from_env(host=host)
+    if not is_loopback_host(host) and not (auth.enforce and auth.token):
         raise RuntimeError(
-            f"Refusing to bind to non-loopback host {host!r}. "
-            "The web window is single-user and not authenticated for network access."
+            f"Refusing to bind to non-loopback host {host!r} without bearer "
+            "auth. Set YUYUTSAVA_API_TOKEN (or let it auto-generate to "
+            "~/.yuyutsava/api_token) — the API must never be network-exposed "
+            "unauthenticated."
         )
 
     app = FastAPI(
         title="YUYUTSAVA daemon",
         version="0.2.0",
         description=(
-            "Local-only HTTP API for the YUYUTSAVA daemon. Proposals, consent "
-            "rules, decisions, skills, and live event stream."
+            "HTTP API for the YUYUTSAVA daemon. Proposals, consent "
+            "rules, decisions, skills, tasks, and live event stream. "
+            "Loopback binds are unauthenticated; network binds require "
+            "'Authorization: Bearer <token>'."
         ),
         docs_url="/docs",
         redoc_url="/redoc",
@@ -74,19 +102,27 @@ def create_app(
     app.state.config_reload = config_reload
     app.state.channels = channels
     app.state.session_origin = session_origin
+    app.state.task_registry = task_registry
+    app.state.task_submission = task_submission
+
+    # Auth first so CORSMiddleware (added after → wraps outside) answers
+    # preflight OPTIONS before the bearer check can 401 them.
+    install_auth_middleware(app, auth)
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origin_regex=r"http://(localhost|127\.0\.0\.1)(:\d+)?",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        **_cors_kwargs(),
     )
 
     register_exception_handlers(app)
 
     @app.middleware("http")
     async def _broadcast_http_log(request: Request, call_next):
+        # NOTE: only ``request.url.path`` is logged — never the query string,
+        # which may carry ``?token=`` on /stream.
         path = request.url.path
         start = time.perf_counter()
         response = await call_next(request)
@@ -120,6 +156,7 @@ def create_app(
         logs_router.router,
         static_router.router,
         cli_attach_router.router,
+        tasks_router.router,
     ):
         app.include_router(r)
 

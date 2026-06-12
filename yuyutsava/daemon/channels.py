@@ -184,9 +184,17 @@ class ChannelEvent:
     The ``payload`` is a typed variant (see :data:`ChannelPayload`); each
     variant carries its own ``kind`` discriminator so consumers can pattern
     match on the payload type.
+
+    ``task_id`` / ``session_id`` scope the event to one orchestrator run:
+    the orchestrator loop tags everything it emits so the SSE stream can be
+    filtered per task (``/stream?task_id=``) and the WebHub can keep a
+    per-task replay ring. ``None`` for unscoped events (boot notices, HTTP
+    logs, source chatter).
     """
 
     payload: ChannelPayload
+    task_id: str | None = None
+    session_id: str | None = None
 
     @property
     def kind(self) -> str:

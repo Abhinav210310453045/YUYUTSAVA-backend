@@ -49,6 +49,11 @@ class OrchestratorTask:
     instruction: str        # what the orchestrator/subagent should do
     subagent_hint: str
     urgency: int
+    # TaskRegistry join key (``tsk_<ULID>``). Set by TaskSubmissionService
+    # for user-submitted tasks (carried through triage via event hints);
+    # empty for organic events — the orchestrator loop mints one so every
+    # run is visible to ``GET /tasks``.
+    task_id: str = ""
 
     def render_to_message(self) -> str:
         return (
@@ -230,6 +235,7 @@ class TriageLoop:
             topic=ev.topic, summary=ev.summary,
             instruction=approved.proposed, subagent_hint=approved.subagent,
             urgency=approved.urgency,
+            task_id=ev.hints.get("task_id", ""),
         ))
 
     async def _handle_user_decision(
@@ -270,6 +276,7 @@ class TriageLoop:
             topic=ev.topic, summary=ev.summary,
             instruction=instruction, subagent_hint=proposal.subagent,
             urgency=proposal.urgency,
+            task_id=ev.hints.get("task_id", ""),
         ))
 
     async def _add_consent_rule_for(

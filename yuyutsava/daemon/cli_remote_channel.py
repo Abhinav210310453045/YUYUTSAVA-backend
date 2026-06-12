@@ -50,7 +50,9 @@ class CliRemoteChannel(UserChannel):
         self._hub = hub
 
     async def post_event(self, ev: ChannelEvent) -> None:
-        await self._hub.broadcast(StreamEventItem(payload=ev.payload))
+        await self._hub.broadcast(StreamEventItem(
+            payload=ev.payload, task_id=ev.task_id, session_id=ev.session_id,
+        ))
 
     async def post_proposal(self, p: Proposal) -> ProposalDecision:
         loop = asyncio.get_running_loop()
