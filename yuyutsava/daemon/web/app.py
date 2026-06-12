@@ -27,6 +27,7 @@ from yuyutsava.daemon.web.auth import (
 )
 from yuyutsava.daemon.web.exceptions import register_exception_handlers
 from yuyutsava.daemon.web.routers import (
+    channels as channels_router,
     cli_attach as cli_attach_router,
     config as config_router,
     db as db_router,
@@ -42,6 +43,7 @@ from yuyutsava.daemon.web.routers import (
     tasks as tasks_router,
 )
 from yuyutsava.daemon.channels import HttpLogPayload
+from yuyutsava.daemon.web.services.decision_service import DecisionService
 from yuyutsava.daemon.web.services.stream_service import StreamEventItem, WebHub
 from yuyutsava.skills.registry import SkillRegistry
 
@@ -70,6 +72,8 @@ def create_app(
     auth: AuthSettings | None = None,
     task_registry: "object | None" = None,      # TaskRegistry; duck-typed
     task_submission: "object | None" = None,    # TaskSubmissionService; duck-typed
+    decision_service: "object | None" = None,   # DecisionService; duck-typed
+    channel_plugins: "object | None" = None,    # ChannelPluginRegistry; duck-typed
 ) -> FastAPI:
     if auth is None:
         auth = AuthSettings.from_env(host=host)
@@ -95,6 +99,15 @@ def create_app(
         openapi_url="/openapi.json",
     )
 
+    # When the daemon didn't pass a shared DecisionService (tests, embedded
+    # use), build a hub-local one so the proposal/ask endpoints keep working
+    # exactly as before the Phase-3 extraction.
+    if decision_service is None:
+        decision_service = DecisionService(hub.store)
+        decision_service.add_waiters(
+            proposals=hub.pending_proposals, asks=hub.pending_asks,
+        )
+
     # State for Depends(...) accessors.
     app.state.hub = hub
     app.state.store = hub.store
@@ -104,6 +117,8 @@ def create_app(
     app.state.session_origin = session_origin
     app.state.task_registry = task_registry
     app.state.task_submission = task_submission
+    app.state.decision_service = decision_service
+    app.state.channel_plugins = channel_plugins
 
     # Auth first so CORSMiddleware (added after → wraps outside) answers
     # preflight OPTIONS before the bearer check can 401 them.
@@ -157,6 +172,7 @@ def create_app(
         static_router.router,
         cli_attach_router.router,
         tasks_router.router,
+        channels_router.router,
     ):
         app.include_router(r)
 

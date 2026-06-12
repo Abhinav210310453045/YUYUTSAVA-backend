@@ -16,6 +16,7 @@
 |---|---|---|
 | 2026-06-12 | 1 | Plan finalized → docs/MASTER_PLAN.md. Branch `feature/phase-1-postgres-context`. **Phase 1 implemented end-to-end** (1A–1D + tests + PG integration verification). |
 | 2026-06-12 | 2 | **Phase 2 implemented end-to-end** (auth, task submission/registry, tasks API, per-task SSE + ring replay, tests + live-PG verification of migration v2). Per user instruction, work stayed on `feature/phase-1-postgres-context` (no new phase branch). |
+| 2026-06-12 | 3 | **Phase 3 implemented end-to-end** (decision_service extraction, ChannelRouter register/unregister, `yuyutsava/channels/` plugin framework + ChannelPluginRegistry, Telegram reference plugin, /channels API, origin-aware ask routing). Same branch. |
 
 ## Phase 1 — Postgres backend + Context Controller  [CODE COMPLETE — 2 manual checks open]
 
@@ -123,7 +124,45 @@
 6. **uvicorn access_log off when auth is enforced** — uvicorn logs full request lines incl. query strings (`?token=` on /stream); the plan only mentioned `_broadcast_http_log`, which was already path-only.
 7. **WebHub rings capped at 64 tracked tasks** (oldest evicted) on top of the plan's 500-items-per-task, so an immortal daemon can't grow rings unboundedly.
 8. `decision_service` extraction from `routers/proposals.py` NOT done here — the plan schedules it for Phase 3 (it's the InboundSink seam).
-## Phase 3 — Channel plugins + Telegram  [NOT STARTED — next up]
+## Phase 3 — Channel plugins + Telegram  [CODE COMPLETE — real-bot manual checks open]
+
+### New files
+- [x] `yuyutsava/daemon/web/services/decision_service.py` — `DecisionService` extracted from `routers/proposals.py` (deferred from Phase 2 per plan §Phase 3): flips proposal status + resolves the blocking `asyncio.Future` wherever it lives. Surfaces register their pending maps via `add_waiters` (WebHub at boot, InboundSink for plugins); `pending_ids()` feeds `InboundSink.list_pending`. Raises `DecisionConflictError`; router maps it to 409
+- [x] `yuyutsava/channels/plugin.py` — `ChannelPlugin(UserChannel)` ABC (`plugin_id`, `capabilities` {notify,proposal,ask,invoke}, `start(sink)/stop()`, `from_config(params)`) + `InboundSink` facade (`submit_task`→submit_direct, `respond_proposal/respond_ask`→DecisionService, `list_pending` (registry queued/running + pending ids), `daemon_status`, `get_state/put_state` (PrefsStore), and `pending_proposals/pending_asks` maps in the WebHub-future pattern)
+- [x] `yuyutsava/channels/config.py` — `ChannelsConfig`/`ChannelConfig`, `~/.yuyutsava/channels_config.json` (`channels_config_path()` added to storage/paths.py, env override `YUYUTSAVA_CHANNELS_CONFIG`), EventsConfig-shaped json, atomic `to_file`, `with_enabled`
+- [x] `yuyutsava/channels/registry.py` — `ChannelPluginRegistry` modeled on SourceRegistry: `start_all` (one bad plugin logs, never kills boot), `enable`/`disable` idempotent under an asyncio lock (single instance per name → never two pollers per bot token; router name-collision rolls back with `plugin.stop()`), coarse `reload`, `snapshot()` for GET /channels; static factory map v1 `{"telegram": …}` (lazy import)
+- [x] `yuyutsava/channels/telegram/client.py` — minimal httpx Bot API client (no python-telegram-bot): getUpdates/sendMessage/editMessageText/answerCallbackQuery/setMyCommands/getMe; exp backoff on network errors 1s→60s (6 attempts), honors 429 `retry_after`; token never logged
+- [x] `yuyutsava/channels/telegram/channel.py` — `TelegramChannelPlugin`: env `YUYUTSAVA_TELEGRAM_BOT_TOKEN` (env-only) + `YUYUTSAVA_TELEGRAM_CHAT_IDS` allowlist (non-allowlisted dropped + WARNING). Outbound: Token/HttpLog suppressed, Log/Timeline debounced 2s, completion classes (`event-action`/`event-error`, AsyncTaskCompleted) flush immediately as background sends; post_proposal = inline keyboard [Approve][Skip][Modify…] + future in sink map, honors expires_ts, edits outcome into the message; post_ask = options keyboard or force-reply free text. Inbound: callback_query → sink.respond_*; modify → force-reply follow-up; `/tasks`, `/status`, `/help`; plain text → `sink.submit_task(origin="telegram")`; offset persisted in user_prefs key `telegram.offset` after each batch
+- [x] `yuyutsava/daemon/web/routers/channels.py` — `GET /channels` (snapshot), `POST /channels/{name}/enable|disable` (persists config + hot-applies; 404 unknown, 422 misconfigured e.g. missing token)
+
+### Modified
+- [x] `daemon/channels.py` — `ChannelRouter.register()` (idempotent by name) / `unregister(name)` / `find(name)`; `routers/cli_attach.py` refactored onto them (formalizes the hand-mutation precedent)
+- [x] `routers/proposals.py` — thin veneer over the shared DecisionService (`Depends(get_decision_service)`)
+- [x] `web/app.py`/`server.py`/`deps.py` — forward + expose `decision_service` and `channel_plugins`; create_app builds a hub-local DecisionService when none passed (tests/embedded unchanged); channels router wired
+- [x] `daemon/bootstrap.py` — `SessionOriginMap` now ALWAYS constructed (was async-subagents-gated; it's a plain dict, no langgraph import); DecisionService(store) + hub waiters; InboundSink (status_provider closure); `ChannelPluginRegistry` built after task_submission, `start_all()` before loops; `DaemonSubsystems` gains `decision_service` + `channel_plugins`
+- [x] `daemon/orchestrator_loop.py` — `_map_session_origin`: when a task's registry-row origin equals a registered channel name (e.g. "telegram"), map the run's `thread_id` → that channel in `session_origin` so Tier-2 asks route back to the submitting surface; cleared in `finally`
+- [x] `daemon/main.py` — teardown: `channel_plugins.stop_all()` before `channels.shutdown()`
+
+### Tests (full suite 145 tests; only the pre-existing `test_async` 401 import error remains)
+- [x] test/channels/test_registry.py — FakeChannelPlugin lifecycle: enable→router fan-out; disable→removed+stopped+no fan-out; double-enable/disable idempotent (single instance); reload applies config diff (fresh instance, new params); unknown plugin KeyError; router-collision rollback; start_all survives a broken factory; snapshot shape. + ChannelRouter register/unregister idempotence
+- [x] test/channels/test_config.py — default/roundtrip/with_enabled/invalid-json
+- [x] test/web/test_decision_service.py — resolution across multiple waiter maps; modify carries edited_instruction (non-modify drops it); conflict; invalid decision; no-listener note; ask blank→"reject"; pending_ids; duplicate add_waiters no-op; **HTTP regression**: /proposal/{id}/respond + /ask/{id}/respond unchanged post-extraction (200/409, hub future resolved)
+- [x] test/channels/telegram/test_channel.py — token/http-log suppression; 2s debounce batching; completion immediate flush; proposal approve via button (keyboard layout, message edit, callback answered); modify flow via force-reply; expiry → "expired"; ask options keyboard + free-text force-reply; plain text → submit_task("telegram"); non-allowlisted drop; /status, /tasks; **offset persisted and fresh instance resumes from it**
+- [x] test/web/test_channels_api.py — list/enable/disable over httpx ASGI incl. config-file persistence, idempotent re-enable, 404/422
+- [x] test/daemon/test_orchestrator_session_origin.py — channel-origin mapped, api-origin not, None-map and blank-task safe
+
+### Definition of Done — remaining MANUAL checks (need user's real bot)
+- [ ] Real test bot: task completion notification arrives; proposal approved via button; "summarize ~/Downloads" from phone → task runs → completion message back
+- [ ] Daemon restart → poller resumes from persisted offset against live Bot API (covered by unit test with fake client)
+
+### Deviations from MASTER_PLAN (all intentional)
+1. **DecisionService owns a list of waiter maps** instead of only the WebHub futures — the plan's sequence routes Telegram callbacks through the sink to one shared implementation, but the blocking future for a Telegram-shown proposal lives in the plugin, not WebHub. Surfaces register their maps (`add_waiters`); plugins park futures in `InboundSink.pending_proposals/asks`.
+2. **InboundSink gained `get_state`/`put_state`** (PrefsStore-backed) beyond the plan's five methods — the Telegram offset must persist in `user_prefs` and the sink is the only daemon surface a plugin sees.
+3. **`channels_config.json` lives under `~/.yuyutsava/`** (per plan) with a `YUYUTSAVA_CHANNELS_CONFIG` env override for tests, unlike repo-local events_config.json — which channels a user enabled is runtime state, not a project artifact.
+4. **Origin-aware ask routing implemented in OrchestratorLoop** (`_map_session_origin`), not in the plugin: ask `session_id` is the per-task `thread_id` minted at run start, which the plugin never sees. The loop maps thread→origin-channel when the registry row's origin matches a registered channel name. `SessionOriginMap` is now always constructed (it was async-subagents-gated; it's a thread-safe dict with no heavy imports).
+5. **DecisionConflictError re-exported via `yuyutsava.channels.plugin`** so plugins don't import daemon web internals.
+6. **`/channels/{name}/enable` returns 422 (not 500) on misconfiguration** (missing bot token etc.) and does NOT persist `enabled: true` for a plugin that failed to start.
+7. **Telegram outbound goes to every allowlisted chat** (plan didn't specify a primary); first answer wins for proposals/asks.
 ## Phase 4 — Model routing + cost  [NOT STARTED]
 ## Phase 5 — Resource governor  [NOT STARTED]
 ## Phase 6 — Mobile API contract  [NOT STARTED]

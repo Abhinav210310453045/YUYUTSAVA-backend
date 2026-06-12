@@ -191,6 +191,11 @@ class OrchestratorLoop:
         thread_id = _mint_thread_id("orch")
         if self._registry is not None and task_id:
             await self._registry.mark_running(task_id, thread_id=thread_id)
+        # Origin-aware ask routing (Phase 3): when the task came in through a
+        # channel plugin (origin == a registered channel name, e.g.
+        # "telegram"), map this run's thread_id to that channel so Tier-2
+        # asks prefer the surface the user submitted from.
+        mapped_origin = await self._map_session_origin(task_id, thread_id)
         try:
             await self._execute(task, task_id=task_id, thread_id=thread_id)
         except Exception as exc:
@@ -200,6 +205,26 @@ class OrchestratorLoop:
                 except Exception:
                     logger.exception("task registry: mark_failed failed")
             raise
+        finally:
+            if mapped_origin and self._channels.session_origin is not None:
+                self._channels.session_origin.clear(thread_id)
+
+    async def _map_session_origin(self, task_id: str, thread_id: str) -> str | None:
+        """Map ``thread_id`` → origin channel for HITL routing; returns the
+        channel name when a mapping was set (caller clears it after the run)."""
+        session_origin = self._channels.session_origin
+        if session_origin is None or self._registry is None or not task_id:
+            return None
+        try:
+            rec = await self._registry.get(task_id)
+        except Exception:  # noqa: BLE001
+            logger.exception("task registry: get(%s) failed", task_id)
+            return None
+        origin = rec.origin if rec is not None else ""
+        if not origin or self._channels.find(origin) is None:
+            return None
+        session_origin.set(thread_id, origin)
+        return origin
 
     async def _execute(
         self, task: OrchestratorTask, *, task_id: str, thread_id: str

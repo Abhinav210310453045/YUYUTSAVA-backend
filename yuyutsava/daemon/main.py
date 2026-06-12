@@ -403,6 +403,12 @@ async def _async_main(argv: list[str] | None = None) -> int:
                 release_host_lock(subs.async_host_attachment)
             except Exception:
                 logger.exception("release_host_lock failed")
+        # Channel plugins first: their inbound pollers post through the
+        # router, so they must stop before the channels they fan out to.
+        try:
+            await subs.channel_plugins.stop_all()
+        except Exception:
+            logger.exception("channel_plugins.stop_all failed")
         await subs.channels.shutdown()
         await subs.mcp_manager.stop()
         # Sweeper task is joined via the gather() above (it's in `tasks`);

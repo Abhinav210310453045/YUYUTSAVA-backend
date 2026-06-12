@@ -57,3 +57,19 @@ def get_task_submission(request: Request):
     if submission is None:
         raise ServiceUnavailableError("task submission service not initialized")
     return submission
+
+
+def get_decision_service(request: Request):
+    """Shared proposal/ask resolver (also backs the channel InboundSink)."""
+    service = getattr(request.app.state, "decision_service", None)
+    if service is None:
+        raise ServiceUnavailableError("decision service not initialized")
+    return service
+
+
+def get_channel_plugins(request: Request):
+    """The daemon's ``ChannelPluginRegistry`` (enable/disable at runtime)."""
+    registry = getattr(request.app.state, "channel_plugins", None)
+    if registry is None:
+        raise ServiceUnavailableError("channel plugin registry not initialized")
+    return registry

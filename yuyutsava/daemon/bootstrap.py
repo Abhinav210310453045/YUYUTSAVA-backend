@@ -29,6 +29,10 @@ from yuyutsava.agents.orchestrator.capabilities import render_capabilities_block
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
 from yuyutsava.agents.task_runner.tools import set_default_policy
 from yuyutsava.agents.triage.agent import TriageAgent
+from yuyutsava.async_subagents.session_origin import SessionOriginMap
+from yuyutsava.channels.config import ChannelsConfig
+from yuyutsava.channels.plugin import InboundSink
+from yuyutsava.channels.registry import ChannelPluginRegistry
 from yuyutsava.context.artifacts import PgArtifactStore, SqliteArtifactStore
 from yuyutsava.context.config import ContextSettings
 from yuyutsava.context.injector import MemoryInjector
@@ -48,6 +52,7 @@ from yuyutsava.daemon.terminal_channel import TerminalChannel
 from yuyutsava.daemon.triage_loop import OrchestratorTask, TriageLoop
 from yuyutsava.daemon.web.auth import AuthSettings
 from yuyutsava.daemon.web.server import WebChannel, WebHub, make_app
+from yuyutsava.daemon.web.services.decision_service import DecisionService
 from yuyutsava.events.bus import EventBus
 from yuyutsava.events.registry import SourceRegistry
 from yuyutsava.mcp.config import MCPConfig
@@ -142,6 +147,11 @@ class DaemonSubsystems:
     # per-call sqlite connections), so neither needs its own teardown.
     task_registry: TaskRegistry
     task_submission: TaskSubmissionService
+
+    # channel plugins (Phase 3). ``channel_plugins`` owns running plugin
+    # instances — main.py calls stop_all() before channels.shutdown().
+    decision_service: DecisionService
+    channel_plugins: ChannelPluginRegistry
 
     # for logging / future use
     skill_registry: SkillRegistry
@@ -350,6 +360,11 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
 
     # ── channels ----------------------------------------------------------
     channels = ChannelRouter(channels=[], primary_name="web")
+    # Origin-aware HITL routing is always on (Phase 3): CLI attach and
+    # channel plugins both map session ids to their channel. Previously
+    # constructed only when async subagents were enabled.
+    session_origin = SessionOriginMap()
+    channels.session_origin = session_origin
     web_hub: WebHub | None = None
     web_server: uvicorn.Server | None = None
 
@@ -453,7 +468,6 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     async_host_url: str | None = None
     async_mirror = None
     async_watcher = None
-    session_origin = None
     async_host_attachment = None
     if os.environ.get("YUYUTSAVA_ASYNC_SUBAGENTS", "").lower() in ("1", "true", "yes"):
         from yuyutsava.async_subagents.host import AsyncSubagentHost
@@ -462,7 +476,6 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
             register_host_cleanup,
         )
         from yuyutsava.async_subagents.mirror import AsyncTaskMirror
-        from yuyutsava.async_subagents.session_origin import SessionOriginMap
         from yuyutsava.async_subagents.watcher import AsyncTaskHealthWatcher
         from yuyutsava.daemon.orchestrator_loop import make_ask_handler
 
@@ -493,8 +506,6 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
             logger.info("  async host: %s (attached to running owner)", attachment.url)
 
         async_mirror = AsyncTaskMirror()
-        session_origin = SessionOriginMap()
-        channels.session_origin = session_origin
 
         async_watcher = AsyncTaskHealthWatcher(
             mirror=async_mirror,
@@ -571,6 +582,37 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         task_registry=task_registry,
     )
 
+    # ── channel plugins (Phase 3) ------------------------------------------
+    # One DecisionService resolves proposal/ask responses for every surface:
+    # the HTTP routers and any plugin's inbound loop land on the same code
+    # path. Waiter maps are registered per surface (WebHub + InboundSink).
+    decision_service = DecisionService(store)
+    if web_hub is not None:
+        decision_service.add_waiters(
+            proposals=web_hub.pending_proposals, asks=web_hub.pending_asks,
+        )
+
+    def _daemon_status() -> str:
+        return (
+            f"daemon: running — web http://{daemon_cfg.web_host}:"
+            f"{daemon_cfg.web_port}/ · subagents: {', '.join(subagents)}"
+        )
+
+    inbound_sink = InboundSink(
+        task_submission=task_submission,
+        decision_service=decision_service,
+        task_registry=task_registry,
+        prefs_store=prefs_store,
+        status_provider=_daemon_status,
+    )
+    decision_service.add_waiters(
+        proposals=inbound_sink.pending_proposals, asks=inbound_sink.pending_asks,
+    )
+    channel_plugins = ChannelPluginRegistry(
+        router=channels, sink=inbound_sink, config=ChannelsConfig.from_file(),
+    )
+    await channel_plugins.start_all()
+
     # ── web server -------------------------------------------------------
     if web_hub is not None:
         auth_settings = AuthSettings.from_env(host=daemon_cfg.web_host)
@@ -587,6 +629,8 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
             auth=auth_settings,
             task_registry=task_registry,
             task_submission=task_submission,
+            decision_service=decision_service,
+            channel_plugins=channel_plugins,
         )
         uvicorn_level = logging.getLevelName(
             logging.getLogger("yuyutsava").getEffectiveLevel()
@@ -629,6 +673,8 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         orch_loop=orch_loop,
         task_registry=task_registry,
         task_submission=task_submission,
+        decision_service=decision_service,
+        channel_plugins=channel_plugins,
         skill_registry=skill_registry,
         triage_settings=triage_settings,
         orchestrator_settings=orchestrator_settings,
