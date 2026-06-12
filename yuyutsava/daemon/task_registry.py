@@ -41,7 +41,7 @@ TERMINAL_STATUSES = frozenset({"done", "failed", "cancelled"})
 # Columns mark_* helpers are allowed to touch. Guards against a typo'd
 # kwarg silently becoming SQL.
 _MUTABLE_COLUMNS = frozenset({
-    "status", "thread_id", "complexity", "started_ts", "finished_ts",
+    "status", "thread_id", "complexity", "model", "started_ts", "finished_ts",
     "deferred_ms", "result_summary", "error",
 })
 
@@ -63,6 +63,7 @@ class TaskRecord:
     created_ts: float
     thread_id: str | None = None
     complexity: int | None = None      # filled by Phase 4 routing
+    model: str | None = None           # chosen model name (Phase 4 routing)
     started_ts: float | None = None
     finished_ts: float | None = None
     deferred_ms: int = 0               # filled by Phase 5 admission control
@@ -111,7 +112,7 @@ def _check_fields(fields: dict[str, Any]) -> None:
 
 _SELECT_COLS = (
     "task_id, origin, instruction, status, created_ts, thread_id, complexity, "
-    "started_ts, finished_ts, deferred_ms, result_summary, error"
+    "started_ts, finished_ts, deferred_ms, result_summary, error, model"
 )
 
 
@@ -123,14 +124,16 @@ def _row_to_record(row: Any) -> TaskRecord:
         task_id=vals[0], origin=vals[1], instruction=vals[2], status=vals[3],
         created_ts=vals[4], thread_id=vals[5], complexity=vals[6],
         started_ts=vals[7], finished_ts=vals[8], deferred_ms=vals[9],
-        result_summary=vals[10], error=vals[11],
+        result_summary=vals[10], error=vals[11], model=vals[12],
     )
 
 
 class SqliteTaskStore(BaseSqliteStore, TaskStore):
     """``tasks`` table inside ``state.db`` (zero-config fallback)."""
 
-    _SCHEMA_VERSION = 1
+    # v2 (Phase 4): + model column. Fresh DBs get it from _SCHEMA_SQL and
+    # anchor at 2; v1 DBs get the ALTER in _migrate.
+    _SCHEMA_VERSION = 2
     _META_TABLE = "tasks_meta"
     _SCHEMA_SQL = """
         CREATE TABLE IF NOT EXISTS tasks_meta (
@@ -145,6 +148,7 @@ class SqliteTaskStore(BaseSqliteStore, TaskStore):
                            ('queued','running','done','failed','cancelled')),
             thread_id      TEXT,
             complexity     INTEGER,
+            model          TEXT,
             created_ts     REAL NOT NULL,
             started_ts     REAL,
             finished_ts    REAL,
@@ -155,16 +159,29 @@ class SqliteTaskStore(BaseSqliteStore, TaskStore):
         CREATE INDEX IF NOT EXISTS tasks_status_idx ON tasks (status, created_ts);
     """
 
+    async def _migrate(self, conn) -> None:
+        cur = await conn.execute(
+            f"SELECT value FROM {self._META_TABLE} WHERE key=?",
+            (self._META_VERSION_KEY,),
+        )
+        row = await cur.fetchone()
+        await cur.close()
+        current = int(row[0]) if row else 0
+        if current < 2:
+            await conn.execute("ALTER TABLE tasks ADD COLUMN model TEXT")
+        await super()._migrate(conn)
+
     async def insert(self, rec: TaskRecord) -> None:
         async def _do(conn):
             await conn.execute(
                 "INSERT INTO tasks (task_id, origin, instruction, status, "
-                "thread_id, complexity, created_ts, started_ts, finished_ts, "
-                "deferred_ms, result_summary, error) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "thread_id, complexity, model, created_ts, started_ts, "
+                "finished_ts, deferred_ms, result_summary, error) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (rec.task_id, rec.origin, rec.instruction, rec.status,
-                 rec.thread_id, rec.complexity, rec.created_ts, rec.started_ts,
-                 rec.finished_ts, rec.deferred_ms, rec.result_summary, rec.error),
+                 rec.thread_id, rec.complexity, rec.model, rec.created_ts,
+                 rec.started_ts, rec.finished_ts, rec.deferred_ms,
+                 rec.result_summary, rec.error),
             )
 
         await self._run_write(_do)
@@ -231,12 +248,13 @@ class PgTaskStore(TaskStore):
         async with self._pool.connection() as conn:
             await conn.execute(
                 "INSERT INTO tasks (task_id, origin, instruction, status, "
-                "thread_id, complexity, created_ts, started_ts, finished_ts, "
-                "deferred_ms, result_summary, error) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                "thread_id, complexity, model, created_ts, started_ts, "
+                "finished_ts, deferred_ms, result_summary, error) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (rec.task_id, rec.origin, rec.instruction, rec.status,
-                 rec.thread_id, rec.complexity, rec.created_ts, rec.started_ts,
-                 rec.finished_ts, rec.deferred_ms, rec.result_summary, rec.error),
+                 rec.thread_id, rec.complexity, rec.model, rec.created_ts,
+                 rec.started_ts, rec.finished_ts, rec.deferred_ms,
+                 rec.result_summary, rec.error),
             )
 
     async def update(self, task_id: str, fields: dict[str, Any]) -> bool:
@@ -314,24 +332,42 @@ class TaskRegistry:
         origin: str,
         instruction: str,
         session_hint: str | None = None,
+        complexity: int | None = None,
     ) -> TaskRecord:
         """Insert a fresh ``queued`` row. ``session_hint`` is accepted for the
-        Phase-3 channel-origin contract but not yet persisted."""
+        Phase-3 channel-origin contract but not yet persisted. ``complexity``
+        is the submit-time score when one exists (client override or scoring
+        call); ``mark_running`` records the final value either way."""
         rec = TaskRecord(
             task_id=task_id,
             origin=origin,
             instruction=instruction,
             status="queued",
             created_ts=time.time(),
+            complexity=complexity,
         )
         await self._store.insert(rec)
         return rec
 
-    async def mark_running(self, task_id: str, *, thread_id: str) -> None:
-        await self._update(task_id, {
+    async def mark_running(
+        self,
+        task_id: str,
+        *,
+        thread_id: str,
+        complexity: int | None = None,
+        model: str | None = None,
+    ) -> None:
+        """``complexity`` and ``model`` (Phase 4 routing) are recorded when
+        known — the audit join ``llm_usage × tasks`` depends on them."""
+        fields: dict[str, Any] = {
             "status": "running", "thread_id": thread_id,
             "started_ts": time.time(),
-        })
+        }
+        if complexity is not None:
+            fields["complexity"] = int(complexity)
+        if model:
+            fields["model"] = model
+        await self._update(task_id, fields)
 
     async def mark_done(self, task_id: str, *, result_summary: str = "") -> None:
         await self._update(task_id, {

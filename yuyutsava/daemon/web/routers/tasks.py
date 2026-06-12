@@ -36,7 +36,9 @@ async def submit_task(
     submission=Depends(get_task_submission),
 ) -> TaskSubmitOut:
     if body.mode == "direct":
-        task_id = await submission.submit_direct(body.instruction, origin=body.origin)
+        task_id = await submission.submit_direct(
+            body.instruction, origin=body.origin, complexity=body.complexity,
+        )
     else:
         task_id = await submission.submit_via_triage(body.instruction, origin=body.origin)
     return TaskSubmitOut(task_id=task_id, mode=body.mode)

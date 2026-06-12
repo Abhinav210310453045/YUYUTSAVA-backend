@@ -41,6 +41,7 @@ from yuyutsava.daemon.web.routers import (
     static_files as static_router,
     stream as stream_router,
     tasks as tasks_router,
+    usage as usage_router,
 )
 from yuyutsava.daemon.channels import HttpLogPayload
 from yuyutsava.daemon.web.services.decision_service import DecisionService
@@ -74,6 +75,7 @@ def create_app(
     task_submission: "object | None" = None,    # TaskSubmissionService; duck-typed
     decision_service: "object | None" = None,   # DecisionService; duck-typed
     channel_plugins: "object | None" = None,    # ChannelPluginRegistry; duck-typed
+    usage_store: "object | None" = None,        # daemon.usage.UsageStore; duck-typed
 ) -> FastAPI:
     if auth is None:
         auth = AuthSettings.from_env(host=host)
@@ -119,6 +121,7 @@ def create_app(
     app.state.task_submission = task_submission
     app.state.decision_service = decision_service
     app.state.channel_plugins = channel_plugins
+    app.state.usage_store = usage_store
 
     # Auth first so CORSMiddleware (added after → wraps outside) answers
     # preflight OPTIONS before the bearer check can 401 them.
@@ -173,6 +176,7 @@ def create_app(
         cli_attach_router.router,
         tasks_router.router,
         channels_router.router,
+        usage_router.router,
     ):
         app.include_router(r)
 

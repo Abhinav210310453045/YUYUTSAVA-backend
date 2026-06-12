@@ -6,7 +6,8 @@ same database, and a ``schema_meta`` table (mirroring the
 ``BaseSqliteStore._META_TABLE`` convention) anchors the applied version.
 
 All Phase-1+ DDL for the Postgres backend lives here — artifacts,
-thread_summaries, memories (v1), tasks (v2). Later phases append
+thread_summaries, memories (v1), tasks (v2), llm_usage + tasks.model (v3).
+Later phases append
 ``(N, sql)`` tuples; never edit an applied migration.
 
 The ``memories.embedding`` column is ``vector(768)`` (nomic-embed-text
@@ -103,6 +104,30 @@ MIGRATIONS: list[tuple[int, str]] = [
         );
         CREATE INDEX IF NOT EXISTS tasks_status_idx
             ON tasks (status, created_ts);
+        """,
+    ),
+    (
+        3,
+        # Phase 4: model routing + cost tracking. One llm_usage row per
+        # model call; tasks gains the chosen-model column so the
+        # "complexity-1 tasks that burned 50k tokens" audit join works.
+        # Same epoch-seconds DOUBLE PRECISION convention as tasks (v2).
+        """
+        CREATE TABLE IF NOT EXISTS llm_usage (
+            id            TEXT PRIMARY KEY,
+            ts            DOUBLE PRECISION NOT NULL,
+            thread_id     TEXT NOT NULL DEFAULT '',
+            task_id       TEXT NOT NULL DEFAULT '',
+            role          TEXT NOT NULL,
+            model         TEXT NOT NULL,
+            input_tokens  INTEGER NOT NULL DEFAULT 0,
+            output_tokens INTEGER NOT NULL DEFAULT 0,
+            est_cost_usd  DOUBLE PRECISION NOT NULL DEFAULT 0
+        );
+        CREATE INDEX IF NOT EXISTS llm_usage_ts_idx ON llm_usage (ts);
+        CREATE INDEX IF NOT EXISTS llm_usage_task_idx ON llm_usage (task_id);
+
+        ALTER TABLE tasks ADD COLUMN IF NOT EXISTS model TEXT;
         """,
     ),
 ]

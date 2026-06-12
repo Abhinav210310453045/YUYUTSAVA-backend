@@ -55,12 +55,14 @@ class TaskSubmissionService:
         store: Store,
         bus: EventBus,
         proposal_expiry_sec: int = 300,
+        complexity_scorer: object | None = None,  # core.model_router.ComplexityScorer
     ) -> None:
         self._registry = registry
         self._queue = task_queue
         self._store = store
         self._bus = bus
         self._proposal_expiry_sec = proposal_expiry_sec
+        self._scorer = complexity_scorer
 
     async def submit_direct(
         self,
@@ -68,6 +70,7 @@ class TaskSubmissionService:
         *,
         origin: str = "api",
         session_hint: str | None = None,
+        complexity: int | None = None,
     ) -> str:
         """Trusted submission: auto-approved proposal + immediate enqueue.
 
@@ -75,10 +78,19 @@ class TaskSubmissionService:
         stored on the proposal's ``session_id`` so origin-aware ask routing
         (``ChannelRouter.session_origin``) can prefer the submitting channel
         for Tier-2 prompts.
+
+        ``complexity`` (Phase 4): direct submissions skip triage, so no LLM
+        self-scores them. A client-supplied 1-5 override wins; otherwise one
+        short light-tier scoring call runs when a scorer is wired (model
+        routing enabled). The scorer never raises — any failure scores 3.
         """
         instruction = instruction.strip()
         if not instruction:
             raise ValueError("instruction must not be empty")
+        if complexity is not None:
+            complexity = max(1, min(int(complexity), 5))
+        elif self._scorer is not None:
+            complexity = await self._scorer.score(instruction)
 
         task_id = self._registry.mint_task_id()
         event_id = str(ULID())
@@ -110,13 +122,14 @@ class TaskSubmissionService:
 
         await self._registry.create(
             task_id=task_id, origin=origin, instruction=instruction,
-            session_hint=session_hint,
+            session_hint=session_hint, complexity=complexity,
         )
         await self._queue.put(OrchestratorTask(
             proposal_id=approved.proposal_id, event_id=event_id,
             topic=SUBMITTED_TOPIC, summary=instruction[:120],
             instruction=instruction, subagent_hint=_DIRECT_SUBAGENT_HINT,
             urgency=_DIRECT_URGENCY, task_id=task_id,
+            complexity=complexity if complexity is not None else 3,
         ))
         logger.info("task submitted (direct, %s): %s", origin, task_id)
         return task_id
