@@ -544,6 +544,7 @@ def build_orchestrator(
     skill_registry: "SkillRegistry | None" = None,
     checkpointer: BaseCheckpointSaver | None = None,
     prefs_block: str = "",
+    usage_context: "Any | None" = None,
 ) -> CompiledStateGraph:
     """Build the daemon orchestrator: master deepagent + pre-registered subagents.
 
@@ -551,6 +552,11 @@ def build_orchestrator(
     agents are built from the shared engine. ``OrchestratorDeps`` and the
     ``_make_ask_user_tool`` helper still live in that module — they are agent
     *definition*, not build mechanics.
+
+    ``usage_context`` (``yuyutsava.daemon.usage.UsageContext``) carries the
+    task's join keys; when ``deps.usage_store`` is set, a ``UsageRecorder``
+    rides every agent in the graph and writes one ``llm_usage`` row per
+    model call.
     """
     # Lazy imports: this function is in engine.py but pulls daemon-only modules.
     # Keeping these imports inside the function avoids loading the daemon stack
@@ -599,6 +605,21 @@ def build_orchestrator(
             role=role,
         )
 
+    def _usage_mw(agent_model: BaseChatModel, role: str) -> list:
+        """Per-call cost accounting (Phase 4); [] when no store is wired."""
+        usage_store = getattr(deps, "usage_store", None)
+        if usage_store is None:
+            return []
+        from yuyutsava.core.llm import model_name_of
+        from yuyutsava.daemon.usage import UsageRecorder
+        return [UsageRecorder(
+            usage_store,
+            role=role,
+            model_name=model_name_of(agent_model),
+            task_id=getattr(usage_context, "task_id", ""),
+            thread_id=getattr(usage_context, "thread_id", ""),
+        )]
+
     subagent_specs: list[dict] = []
     for sa in deps.subagents.values():
         spec = sa.as_deepagents_subagent_spec()
@@ -607,6 +628,7 @@ def build_orchestrator(
             ToolFilterMiddleware(),
             *_ctx_mw(deps.subagent_model, sa.name),
             BudgetMiddleware(max_input_tokens=deps.subagent_token_budget, role=sa.name),
+            *_usage_mw(deps.subagent_model, sa.name),
         ]
         if deps.artifact_store is not None:
             # Subagents read their own offloaded results, so the ctx_* pair
@@ -645,11 +667,13 @@ def build_orchestrator(
         )
 
     # Order: tool filter → offload (tool path) → compaction (model path) →
-    # budget (absolute ceiling, must see post-compaction usage last).
+    # budget (absolute ceiling, must see post-compaction usage last) →
+    # usage recorder (passive accounting, sees the same final usage).
     master_middleware: list = [
         ToolFilterMiddleware(),
         *_ctx_mw(model, "orchestrator"),
         budget,
+        *_usage_mw(model, "orchestrator"),
     ]
     mirror = getattr(deps, "async_task_mirror", None)
     if mirror is not None and (async_subagents or getattr(deps, "remote_async_subagents", None)):

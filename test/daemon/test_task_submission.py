@@ -120,5 +120,70 @@ class TaskSubmissionTests(unittest.IsolatedAsyncioTestCase):
             await self.svc.submit_via_triage("")
 
 
+class _RecordingScorer:
+    """ComplexityScorer stand-in (the real one never raises)."""
+
+    def __init__(self, value: int = 4) -> None:
+        self.value = value
+        self.scored: list[str] = []
+
+    async def score(self, instruction: str) -> int:
+        self.scored.append(instruction)
+        return self.value
+
+
+class TaskSubmissionComplexityTests(unittest.IsolatedAsyncioTestCase):
+    """Phase 4: direct submissions carry a 1-5 complexity score."""
+
+    async def asyncSetUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.registry = TaskRegistry(
+            SqliteTaskStore(Path(self._tmp.name) / "state.db")
+        )
+        self.queue: asyncio.Queue = asyncio.Queue()
+        self.scorer = _RecordingScorer(value=4)
+        self.svc = TaskSubmissionService(
+            registry=self.registry,
+            task_queue=self.queue,
+            store=_RecordingStore(),
+            bus=_RecordingBus(),
+            proposal_expiry_sec=300,
+            complexity_scorer=self.scorer,
+        )
+
+    async def asyncTearDown(self) -> None:
+        self._tmp.cleanup()
+
+    async def test_scorer_used_when_no_override(self) -> None:
+        task_id = await self.svc.submit_direct("research topic X")
+        self.assertEqual(self.scorer.scored, ["research topic X"])
+        self.assertEqual(self.queue.get_nowait().complexity, 4)
+        rec = await self.registry.get(task_id)
+        self.assertEqual(rec.complexity, 4)
+
+    async def test_client_override_wins(self) -> None:
+        task_id = await self.svc.submit_direct("research topic X", complexity=2)
+        self.assertEqual(self.scorer.scored, [])  # scorer not consulted
+        self.assertEqual(self.queue.get_nowait().complexity, 2)
+        rec = await self.registry.get(task_id)
+        self.assertEqual(rec.complexity, 2)
+
+    async def test_override_clamped_to_range(self) -> None:
+        await self.svc.submit_direct("x", complexity=99)
+        self.assertEqual(self.queue.get_nowait().complexity, 5)
+
+    async def test_no_scorer_leaves_unscored(self) -> None:
+        svc = TaskSubmissionService(
+            registry=self.registry, task_queue=self.queue,
+            store=_RecordingStore(), bus=_RecordingBus(),
+            proposal_expiry_sec=300,
+        )
+        task_id = await svc.submit_direct("x")
+        # Row stays NULL ("never scored"); the OrchestratorTask defaults to 3.
+        rec = await self.registry.get(task_id)
+        self.assertIsNone(rec.complexity)
+        self.assertEqual(self.queue.get_nowait().complexity, 3)
+
+
 if __name__ == "__main__":
     unittest.main()

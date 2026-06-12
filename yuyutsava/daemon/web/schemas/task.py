@@ -23,6 +23,12 @@ class TaskSubmitIn(BaseModel):
         "api", max_length=64,
         description="Submitting surface, recorded on the task row",
     )
+    complexity: int | None = Field(
+        None, ge=1, le=5,
+        description="Optional client override of the 1-5 complexity score; "
+                    "when omitted, direct tasks are scored by a light-tier "
+                    "model call (if model routing is enabled)",
+    )
 
 
 class TaskSubmitOut(BaseModel):
@@ -38,6 +44,7 @@ class TaskOut(BaseModel):
     created_ts: float
     thread_id: str | None = None
     complexity: int | None = None
+    model: str | None = None
     started_ts: float | None = None
     finished_ts: float | None = None
     deferred_ms: int = 0

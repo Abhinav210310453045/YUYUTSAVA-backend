@@ -49,6 +49,11 @@ class TriageDecision(BaseModel):
         default=1, ge=0, le=3,
         description="0=trace, 1=info, 2=notable, 3=urgent.",
     )
+    complexity: int = Field(
+        default=3, ge=1, le=5,
+        description="How complex the proposed work is for an agent, 1-5. "
+                    "See the anchored examples in the system prompt.",
+    )
 
 
 class TriageAgent:

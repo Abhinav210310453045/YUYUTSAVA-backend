@@ -24,13 +24,15 @@ def make_app(
     task_submission=None,
     decision_service=None,
     channel_plugins=None,
+    usage_store=None,
 ):
     """Backwards-compatible alias of :func:`create_app`.
 
     Extended to forward ``channels`` and ``session_origin`` (CLI Mode 2
     attach/detach router needs them), the Phase-2 gateway singletons
     (``auth``, ``task_registry``, ``task_submission``), and the Phase-3
-    channel-plugin singletons (``decision_service``, ``channel_plugins``).
+    channel-plugin singletons (``decision_service``, ``channel_plugins``),
+    and the Phase-4 ``usage_store``.
     """
     return create_app(
         hub,
@@ -44,6 +46,7 @@ def make_app(
         task_submission=task_submission,
         decision_service=decision_service,
         channel_plugins=channel_plugins,
+        usage_store=usage_store,
     )
 
 

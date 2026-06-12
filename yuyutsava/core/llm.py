@@ -22,6 +22,19 @@ from pydantic import SecretStr
 from yuyutsava.core.config import AnthropicSettings, LlmSettings
 
 
+def model_name_of(model: BaseChatModel | object) -> str:
+    """Best-effort model identifier for logging / usage rows.
+
+    ``ChatOpenAI`` exposes ``model_name``, ``ChatAnthropic`` exposes
+    ``model``; fakes and stubs typically expose neither → "".
+    """
+    for attr in ("model_name", "model"):
+        v = getattr(model, attr, None)
+        if isinstance(v, str) and v:
+            return v
+    return ""
+
+
 def chat_model(settings: LlmSettings, *, temperature: float = 0.1) -> BaseChatModel:
     """Return a chat model for tool calling. Uses ChatAnthropic for AnthropicSettings, ChatOpenAI otherwise."""
     if isinstance(settings, AnthropicSettings):

@@ -17,6 +17,7 @@
 | 2026-06-12 | 1 | Plan finalized → docs/MASTER_PLAN.md. Branch `feature/phase-1-postgres-context`. **Phase 1 implemented end-to-end** (1A–1D + tests + PG integration verification). |
 | 2026-06-12 | 2 | **Phase 2 implemented end-to-end** (auth, task submission/registry, tasks API, per-task SSE + ring replay, tests + live-PG verification of migration v2). Per user instruction, work stayed on `feature/phase-1-postgres-context` (no new phase branch). |
 | 2026-06-12 | 3 | **Phase 3 implemented end-to-end** (decision_service extraction, ChannelRouter register/unregister, `yuyutsava/channels/` plugin framework + ChannelPluginRegistry, Telegram reference plugin, /channels API, origin-aware ask routing). Same branch. |
+| 2026-06-12 | 4 | **Phase 4 implemented end-to-end** (ModelRouter + tier env roles, ComplexityScorer, triage complexity scoring, llm_usage table + UsageRecorder middleware, GET /usage, tasks.model column, tests + live-PG verification of migration v3). Same branch. |
 
 ## Phase 1 — Postgres backend + Context Controller  [CODE COMPLETE — 2 manual checks open]
 
@@ -163,6 +164,49 @@
 5. **DecisionConflictError re-exported via `yuyutsava.channels.plugin`** so plugins don't import daemon web internals.
 6. **`/channels/{name}/enable` returns 422 (not 500) on misconfiguration** (missing bot token etc.) and does NOT persist `enabled: true` for a plugin that failed to start.
 7. **Telegram outbound goes to every allowlisted chat** (plan didn't specify a primary); first answer wins for proposals/asks.
-## Phase 4 — Model routing + cost  [NOT STARTED]
+## Phase 4 — Model routing + cost  [CODE COMPLETE — 1 manual check open]
+
+### New files
+- [x] `yuyutsava/core/model_router.py` — `ModelTier`, `RoutingSettings.from_env()` (`YUYUTSAVA_MODEL_ROUTING`, `YUYUTSAVA_ROUTING_THRESHOLDS="2,3"`), `ModelRouter` (tier_for / lazy+cached `tier_model` via `llm_settings_from_env("tier_light|standard|heavy")` / `model_for(complexity, fallback=)` — flag OFF or misconfigured tier → fallback, never blocks); `PRICES` (USD per 1M in/out, prefix-keyed, longest prefix wins) + `load_price_table()` (`~/.yuyutsava/model_prices.json` override) + `estimate_cost_usd()`; `ComplexityScorer` (lazy model factory, one-digit prompt, fallback 3 on ANY failure)
+- [x] `yuyutsava/daemon/usage.py` — `UsageContext` (task_id/thread_id join keys), `UsageRow`/`UsageAggregate`, `UsageStore` ABC + `SqliteUsageStore` (state.db, own `llm_usage_meta`) / `PgUsageStore` twins (`list`, `aggregate(since, group_by=task|model|day|None)` — shared SQL builder, day via strftime/to_char), `UsageRecorder(AgentMiddleware)` (`aafter_model`, input+output tokens from `usage_metadata`, est cost; no-usage calls skipped; store failure logged + swallowed)
+- [x] `yuyutsava/daemon/web/routers/usage.py` + `web/schemas/usage.py` — `GET /usage?since=&group_by=` (422 on bad group_by, 503 when store unwired)
+
+### Modified
+- [x] `agents/triage/agent.py` — `TriageDecision.complexity: int = 3` (ge=1 le=5); `agents/triage/prompts.py` — anchored-examples paragraph (move one file=1 … refactor code across files=5)
+- [x] `daemon/triage_loop.py` — `OrchestratorTask.complexity: int = 3`; LLM path carries `decision.complexity` through `_handle_user_decision(…, complexity=)`; auto-approve rule path scores 1 (no LLM in the loop; it IS the anchored complexity-1 example)
+- [x] `daemon/task_submission.py` — `submit_direct(complexity=None)`: client override (clamped 1–5) wins, else one light-tier scoring call when a scorer is wired; unscored stays NULL on the row, OrchestratorTask defaults 3. `TaskSubmitIn` gains optional `complexity`
+- [x] `daemon/orchestrator_loop.py` — `model_router` param; `_select_models()` per task (router absent/disabled → booted role models, byte-identical); routed subagent model rides a `dataclasses.replace` per-task deps copy; `mark_running(complexity=, model=)`; `UsageContext` passed to `build_orchestrator`
+- [x] `daemon/task_registry.py` — `TaskRecord.model` column; SQLite `_SCHEMA_VERSION` 1→2 (idempotent `ALTER TABLE tasks ADD COLUMN model` in `_migrate`); `create(complexity=)`; `mark_running(complexity=, model=)`
+- [x] `core/engine.py` — `build_orchestrator(usage_context=)`; `_usage_mw()` appends `UsageRecorder` to master middleware (after budget — passive accounting) and to every subagent spec, keyed by `deps.usage_store` (None → [], pre-Phase-4 identical)
+- [x] `core/llm.py` — `model_name_of()` helper (model_name | model attr)
+- [x] `storage/pg/migrations.py` — v3: `llm_usage` table + ts/task indexes + `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS model`
+- [x] `daemon/bootstrap.py` — usage store (PG/SQLite by backend), `ModelRouter.from_env()`, scorer only when routing enabled (a score nobody routes on is wasted spend), threaded into TaskSubmissionService / OrchestratorDeps / OrchestratorLoop / make_app; `DaemonSubsystems` gains `usage_store` + `model_router` (no teardown — rides pg_pool / per-call sqlite)
+- [x] `web/app.py` + `server.py` + `web/deps.py` — `usage_store` app-state + `get_usage_store` + usage router wired
+
+### Tests (full suite 196 tests; only the pre-existing `test_async` 401 import error remains)
+- [x] test/core/test_model_router.py — threshold parsing (default/custom/malformed), tier mapping + None/out-of-range clamp, **flag-off passthrough returns fallback identity**, lazy build + per-tier cache (ollama tier, no keys needed), misconfigured-tier fallback, longest-prefix pricing, known-token cost sums, price-file merge + malformed-file tolerance, scorer (digit / prose digit / garbage→3 / LLM failure→3 / factory failure→3 / model resolved once)
+- [x] test/daemon/test_usage.py — store roundtrip, list filters, **aggregate totals/task/model/day with known token counts (cost rows sum correctly)**, order by cost, bad group_by; recorder writes row w/ cost + join keys, one row per call, no-usage/no-messages skipped, store failure swallowed
+- [x] test/daemon/test_triage_complexity.py — TriageDecision default+bounds, user-decision path carries complexity, auto-approve path = 1
+- [x] test/daemon/test_task_submission.py (extended) — scorer used when no override, client override wins (scorer not consulted), override clamped, no-scorer → NULL row + task default 3
+- [x] test/daemon/test_orchestrator_routing.py — complexity-1 → light model in build_orchestrator (+ per-task deps copy, booted deps untouched), complexity-5 → heavy, disabled router → role models + same deps object, no-router pre-Phase-4 behaviour, registry row records complexity + model name, UsageContext join keys match thread_id
+- [x] test/daemon/test_task_registry.py (extended) — mark_running records complexity+model; **v1 state.db migrates in place** (ALTER adds model, legacy rows readable)
+- [x] test/web/test_usage_api.py — totals/model/task groupings over httpx ASGI, cost-ordered, 422 bad group_by, 503 missing store
+
+### Postgres integration verification (live pgvector:pg16 container, 2026-06-12)
+- [x] migration v3 applies + idempotent re-apply (`schema_meta` → 3; `llm_usage` cols + `tasks.model` present)
+- [x] PgUsageStore add/list + all four aggregate shapes (None/task/model/day); PgTaskStore row carries complexity + model through mark_running (twin parity; verification rows cleaned up)
+- [x] `build_orchestrator` compiles with `usage_store` + `UsageContext` wired (smoke)
+
+### Definition of Done — remaining MANUAL check (needs user's Ollama/LLM keys)
+- [ ] Integration with two real models configured as light/standard (e.g. Ollama): submit complexity-1 task with `YUYUTSAVA_MODEL_ROUTING=1` → assert `llm_usage.model` shows the light model (unit-level equivalent covered by test_orchestrator_routing)
+
+### Deviations from MASTER_PLAN (all intentional)
+1. **`tasks` gains a `model` column** (PG v3 + SQLite tasks_meta v2): the plan says "record complexity + chosen model in TaskRegistry" but the Phase-2 schema had no model column — added rather than abusing result_summary.
+2. **Scorer only constructed when routing is enabled** — a complexity score nobody routes on is a wasted LLM call; rows from unscored direct tasks keep `complexity NULL` ("never scored") while the OrchestratorTask defaults to 3.
+3. **Auto-approve (consent-rule) path scores complexity 1**, not the default 3 — there is no LLM in that path and a rule-approved single-file move is literally the prompt's anchored complexity-1 example.
+4. **`UsageRecorder` model name is fixed at construction** (the routed model), falling back to `response_metadata.model_name` — deterministic attribution to the model the router chose, which is what the audit join needs.
+5. **`ComplexityScorer` parses a digit from a plain completion** instead of structured output — light-tier models (tiny Ollama) are unreliable with tool-calling/structured output; regex `[1-5]` + fallback 3 is more robust.
+6. **Misconfigured tier falls back to the role model** (logged) instead of raising — routing must never make a runnable task unrunnable; the plan only specified flag-off behaviour.
+7. **`GET /usage` without `group_by` returns one `key="all"` totals row** (plan left ungrouped behaviour unspecified).
 ## Phase 5 — Resource governor  [NOT STARTED]
 ## Phase 6 — Mobile API contract  [NOT STARTED]

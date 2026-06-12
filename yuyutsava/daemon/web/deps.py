@@ -67,6 +67,14 @@ def get_decision_service(request: Request):
     return service
 
 
+def get_usage_store(request: Request):
+    """The ``llm_usage`` store (Phase 4 cost tracking)."""
+    store = getattr(request.app.state, "usage_store", None)
+    if store is None:
+        raise ServiceUnavailableError("usage store not initialized")
+    return store
+
+
 def get_channel_plugins(request: Request):
     """The daemon's ``ChannelPluginRegistry`` (enable/disable at runtime)."""
     registry = getattr(request.app.state, "channel_plugins", None)

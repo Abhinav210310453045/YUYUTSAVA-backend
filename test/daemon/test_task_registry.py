@@ -116,6 +116,49 @@ class TaskRegistryTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             await store.update(tid, {"instruction; DROP TABLE tasks": "x"})
 
+    async def test_mark_running_records_complexity_and_model(self) -> None:
+        tid = mint_task_id()
+        await self.registry.create(task_id=tid, origin="api", instruction="x")
+        await self.registry.mark_running(
+            tid, thread_id="orch-1", complexity=4, model="big:70b",
+        )
+        rec = await self.registry.get(tid)
+        self.assertEqual(rec.complexity, 4)
+        self.assertEqual(rec.model, "big:70b")
+
+    async def test_v1_database_migrates_model_column(self) -> None:
+        # Simulate a Phase-2 (schema v1) state.db: tasks table without the
+        # model column, version anchor at 1. Opening the v2 store must ALTER
+        # in place and serve old rows with model=None.
+        import sqlite3
+
+        db = Path(self._tmp.name) / "old.db"
+        conn = sqlite3.connect(db)
+        conn.executescript("""
+            CREATE TABLE tasks_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+            INSERT INTO tasks_meta VALUES ('schema_version', '1');
+            CREATE TABLE tasks (
+                task_id TEXT PRIMARY KEY, origin TEXT NOT NULL,
+                instruction TEXT NOT NULL, status TEXT NOT NULL,
+                thread_id TEXT, complexity INTEGER, created_ts REAL NOT NULL,
+                started_ts REAL, finished_ts REAL,
+                deferred_ms INTEGER NOT NULL DEFAULT 0,
+                result_summary TEXT, error TEXT
+            );
+            INSERT INTO tasks (task_id, origin, instruction, status, created_ts)
+            VALUES ('tsk_old', 'api', 'legacy row', 'done', 1.0);
+        """)
+        conn.commit()
+        conn.close()
+
+        store = SqliteTaskStore(db)
+        rec = await store.get("tsk_old")
+        self.assertEqual(rec.instruction, "legacy row")
+        self.assertIsNone(rec.model)
+        ok = await store.update("tsk_old", {"model": "tiny:1b"})
+        self.assertTrue(ok)
+        self.assertEqual((await store.get("tsk_old")).model, "tiny:1b")
+
 
 if __name__ == "__main__":
     unittest.main()

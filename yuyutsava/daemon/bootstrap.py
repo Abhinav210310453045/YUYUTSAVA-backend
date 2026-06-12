@@ -42,6 +42,7 @@ from yuyutsava.core.config import (
     _env, llm_settings_from_env,
 )
 from yuyutsava.core.llm import chat_model
+from yuyutsava.core.model_router import ComplexityScorer, ModelRouter
 from yuyutsava.core.policy import PermissionsPolicy, StorePolicyCapEnforcer
 from yuyutsava.daemon.channels import ChannelEvent, ChannelRouter, TimelinePayload
 from yuyutsava.daemon.checkpointing import CheckpointerSaver
@@ -50,6 +51,7 @@ from yuyutsava.daemon.task_registry import PgTaskStore, SqliteTaskStore, TaskReg
 from yuyutsava.daemon.task_submission import TaskSubmissionService
 from yuyutsava.daemon.terminal_channel import TerminalChannel
 from yuyutsava.daemon.triage_loop import OrchestratorTask, TriageLoop
+from yuyutsava.daemon.usage import PgUsageStore, SqliteUsageStore, UsageStore
 from yuyutsava.daemon.web.auth import AuthSettings
 from yuyutsava.daemon.web.server import WebChannel, WebHub, make_app
 from yuyutsava.daemon.web.services.decision_service import DecisionService
@@ -152,6 +154,12 @@ class DaemonSubsystems:
     # instances — main.py calls stop_all() before channels.shutdown().
     decision_service: DecisionService
     channel_plugins: ChannelPluginRegistry
+
+    # model routing + cost tracking (Phase 4). Borrowed by the web app and
+    # the orchestrator loop; the usage store rides the same backends torn
+    # down above (pg_pool / per-call sqlite), so no teardown of its own.
+    usage_store: UsageStore
+    model_router: ModelRouter
 
     # for logging / future use
     skill_registry: SkillRegistry
@@ -280,6 +288,15 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         else SqliteTaskStore(state_db_path())
     )
     task_registry = TaskRegistry(task_store)
+
+    # ── usage accounting + model routing (Phase 4) --------------------------
+    usage_store: UsageStore = (
+        PgUsageStore(pg_pool) if pg_pool is not None
+        else SqliteUsageStore(state_db_path())
+    )
+    model_router = ModelRouter.from_env()
+    if model_router.enabled:
+        logger.info("  routing   : complexity-based model routing enabled")
 
     # ── semantic memory (default-on when postgres is live) -----------------
     mem_settings = MemorySettings.from_env(default_enabled=pg_pool is not None)
@@ -533,12 +550,20 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     task_queue: asyncio.Queue[OrchestratorTask] = asyncio.Queue()
 
     # ── task submission (POST /tasks; channel plugins in Phase 3) ---------
+    # Direct submissions skip triage, so a light-tier call scores their
+    # complexity — only when routing is on (a score nobody routes on is
+    # wasted spend). The scorer resolves its model lazily and never raises.
+    complexity_scorer = (
+        ComplexityScorer(lambda: model_router.tier_model("light"))
+        if model_router.enabled else None
+    )
     task_submission = TaskSubmissionService(
         registry=task_registry,
         task_queue=task_queue,
         store=store,
         bus=bus,
         proposal_expiry_sec=daemon_cfg.proposal_expiry_sec,
+        complexity_scorer=complexity_scorer,
     )
 
     triage_loop = TriageLoop(
@@ -568,6 +593,7 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         memory_store=memory_store,
         context_settings=context_settings,
         compaction_model=compaction_model,
+        usage_store=usage_store,
     )
     orch_loop = OrchestratorLoop(
         task_queue=task_queue,
@@ -580,6 +606,7 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         prefs_injector=prefs_injector,
         memory_injector=memory_injector,
         task_registry=task_registry,
+        model_router=model_router,
     )
 
     # ── channel plugins (Phase 3) ------------------------------------------
@@ -631,6 +658,7 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
             task_submission=task_submission,
             decision_service=decision_service,
             channel_plugins=channel_plugins,
+            usage_store=usage_store,
         )
         uvicorn_level = logging.getLevelName(
             logging.getLogger("yuyutsava").getEffectiveLevel()
@@ -675,6 +703,8 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         task_submission=task_submission,
         decision_service=decision_service,
         channel_plugins=channel_plugins,
+        usage_store=usage_store,
+        model_router=model_router,
         skill_registry=skill_registry,
         triage_settings=triage_settings,
         orchestrator_settings=orchestrator_settings,
