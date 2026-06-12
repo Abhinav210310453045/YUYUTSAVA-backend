@@ -288,6 +288,35 @@ class ChannelRouter:
     # ``.get(session_id) -> channel_name | None``.
     session_origin: Any | None = None
 
+    def register(self, channel: UserChannel) -> bool:
+        """Add ``channel`` to the fan-out. Idempotent by ``channel.name``.
+
+        Returns ``True`` when newly added, ``False`` when a channel with
+        that name is already registered (the existing instance wins —
+        callers that need the live instance should :meth:`find` it).
+        """
+        if self.find(channel.name) is not None:
+            return False
+        self.channels.append(channel)
+        return True
+
+    def unregister(self, name: str) -> UserChannel | None:
+        """Remove and return the channel named ``name`` (None if absent).
+
+        The caller owns any further teardown (``await channel.shutdown()``
+        or a plugin's ``stop()``) — the router only stops fanning out to it.
+        """
+        ch = self.find(name)
+        if ch is not None:
+            self.channels.remove(ch)
+        return ch
+
+    def find(self, name: str) -> UserChannel | None:
+        for c in self.channels:
+            if c.name == name:
+                return c
+        return None
+
     async def post_event(self, ev: ChannelEvent) -> None:
         await asyncio.gather(
             *(c.post_event(ev) for c in self.channels),
