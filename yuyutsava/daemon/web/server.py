@@ -27,6 +27,9 @@ def make_app(
     usage_store=None,
     resource_monitor=None,
     admission_controller=None,
+    model_router=None,
+    memory_store=None,
+    async_subagents=False,
 ):
     """Backwards-compatible alias of :func:`create_app`.
 
@@ -34,8 +37,10 @@ def make_app(
     attach/detach router needs them), the Phase-2 gateway singletons
     (``auth``, ``task_registry``, ``task_submission``), the Phase-3
     channel-plugin singletons (``decision_service``, ``channel_plugins``),
-    the Phase-4 ``usage_store``, and the Phase-5 resource governor
-    (``resource_monitor``, ``admission_controller``).
+    the Phase-4 ``usage_store``, the Phase-5 resource governor
+    (``resource_monitor``, ``admission_controller``), and the Phase-6
+    capability sources for /v1/server-info (``model_router``,
+    ``memory_store``, ``async_subagents``).
     """
     return create_app(
         hub,
@@ -52,6 +57,9 @@ def make_app(
         usage_store=usage_store,
         resource_monitor=resource_monitor,
         admission_controller=admission_controller,
+        model_router=model_router,
+        memory_store=memory_store,
+        async_subagents=async_subagents,
     )
 
 

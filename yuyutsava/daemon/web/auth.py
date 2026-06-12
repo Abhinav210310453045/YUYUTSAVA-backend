@@ -33,10 +33,12 @@ logger = logging.getLogger("yuyutsava.daemon.web.auth")
 
 # Open even when auth is enforced: unauthenticated reachability probe
 # (mobile app pings it to validate the server URL before asking for a token).
-_PUBLIC_PATHS = frozenset({"/health"})
+# Both the canonical /v1 path and the legacy alias are public.
+_PUBLIC_PATHS = frozenset({"/health", "/v1/health"})
 
-# The one path where a query-string token is accepted (EventSource).
-_QUERY_TOKEN_PATH = "/stream"
+# The only paths where a query-string token is accepted (EventSource
+# cannot set headers). /v1 canonical + legacy alias.
+_QUERY_TOKEN_PATHS = frozenset({"/stream", "/v1/stream"})
 
 
 def is_loopback_host(host: str) -> bool:
@@ -94,7 +96,7 @@ def check_request(
     supplied = ""
     if authorization.lower().startswith("bearer "):
         supplied = authorization[len("bearer "):].strip()
-    if not supplied and path == _QUERY_TOKEN_PATH:
+    if not supplied and path in _QUERY_TOKEN_PATHS:
         supplied = query_token
     if not supplied or not settings.token:
         return False

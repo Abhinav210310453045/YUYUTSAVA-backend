@@ -36,6 +36,7 @@ from yuyutsava.daemon.web.routers import (
     logs as logs_router,
     proposals as proposals_router,
     rules as rules_router,
+    server_info as server_info_router,
     sessions as sessions_router,
     skills as skills_router,
     static_files as static_router,
@@ -79,6 +80,9 @@ def create_app(
     usage_store: "object | None" = None,        # daemon.usage.UsageStore; duck-typed
     resource_monitor: "object | None" = None,   # daemon.resources.ResourceMonitor; duck-typed
     admission_controller: "object | None" = None,  # daemon.resources.AdmissionController; duck-typed
+    model_router: "object | None" = None,       # core.model_router.ModelRouter; duck-typed
+    memory_store: "object | None" = None,       # memory.store.MemoryStore; duck-typed
+    async_subagents: bool = False,              # background subagent host enabled
 ) -> FastAPI:
     if auth is None:
         auth = AuthSettings.from_env(host=host)
@@ -127,6 +131,9 @@ def create_app(
     app.state.usage_store = usage_store
     app.state.resource_monitor = resource_monitor
     app.state.admission_controller = admission_controller
+    app.state.model_router = model_router
+    app.state.memory_store = memory_store
+    app.state.async_subagents = async_subagents
 
     # Auth first so CORSMiddleware (added after → wraps outside) answers
     # preflight OPTIONS before the bearer check can 401 them.
@@ -151,7 +158,7 @@ def create_app(
         response = await call_next(request)
         # Suppress feedback loop: /stream subscribers would receive their own
         # request event. Static assets are noisy and not interesting.
-        if path == "/stream" or path.startswith("/static"):
+        if path in ("/stream", "/v1/stream") or path.startswith("/static"):
             return response
         duration_ms = int((time.perf_counter() - start) * 1000)
         try:
@@ -167,8 +174,14 @@ def create_app(
             pass
         return response
 
-    for r in (
+    # Phase 6: every API router is mounted twice — canonical under /v1
+    # (what /openapi.json documents; the mobile TS client generates from
+    # it) and unprefixed as a legacy alias (hidden from the schema) so the
+    # Electron renderer keeps working untouched. Static assets stay
+    # unprefixed only.
+    api_routers = [
         health_router.router,
+        server_info_router.router,
         stream_router.router,
         proposals_router.router,
         rules_router.router,
@@ -177,17 +190,20 @@ def create_app(
         skills_router.router,
         config_router.router,
         logs_router.router,
-        static_router.router,
         cli_attach_router.router,
         tasks_router.router,
         channels_router.router,
         usage_router.router,
         system_router.router,
-    ):
-        app.include_router(r)
-
+    ]
     # Read-only DB introspection. Opt-out via env (defaults on).
     if os.environ.get("YUYUTSAVA_DB_API_ENABLED", "true").lower() not in {"0", "false", "no"}:
-        app.include_router(db_router.router)
+        api_routers.append(db_router.router)
+
+    for r in api_routers:
+        app.include_router(r, prefix="/v1")
+        app.include_router(r, include_in_schema=False)
+
+    app.include_router(static_router.router)
 
     return app
