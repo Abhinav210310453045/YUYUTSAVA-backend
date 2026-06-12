@@ -6,8 +6,8 @@ same database, and a ``schema_meta`` table (mirroring the
 ``BaseSqliteStore._META_TABLE`` convention) anchors the applied version.
 
 All Phase-1+ DDL for the Postgres backend lives here — artifacts,
-thread_summaries, memories. Later phases append ``(N, sql)`` tuples; never
-edit an applied migration.
+thread_summaries, memories (v1), tasks (v2). Later phases append
+``(N, sql)`` tuples; never edit an applied migration.
 
 The ``memories.embedding`` column is ``vector(768)`` (nomic-embed-text
 dimensionality). If you switch to an embedder with a different dimension,
@@ -76,6 +76,33 @@ MIGRATIONS: list[tuple[int, str]] = [
             ON memories (kind);
         CREATE INDEX IF NOT EXISTS memories_embedding_idx
             ON memories USING hnsw (embedding vector_cosine_ops);
+        """,
+    ),
+    (
+        2,
+        # Phase 2: first-class task tracking (POST /tasks + GET /tasks).
+        # Timestamps are epoch-seconds DOUBLE PRECISION, not TIMESTAMPTZ:
+        # the registry reads them back and serves them over the API as the
+        # same floats the SQLite twin stores, so the two backends stay
+        # byte-identical at the wire boundary.
+        """
+        CREATE TABLE IF NOT EXISTS tasks (
+            task_id        TEXT PRIMARY KEY,
+            origin         TEXT NOT NULL,
+            instruction    TEXT NOT NULL,
+            status         TEXT NOT NULL CHECK (status IN
+                           ('queued','running','done','failed','cancelled')),
+            thread_id      TEXT,
+            complexity     INTEGER,
+            created_ts     DOUBLE PRECISION NOT NULL,
+            started_ts     DOUBLE PRECISION,
+            finished_ts    DOUBLE PRECISION,
+            deferred_ms    INTEGER NOT NULL DEFAULT 0,
+            result_summary TEXT,
+            error          TEXT
+        );
+        CREATE INDEX IF NOT EXISTS tasks_status_idx
+            ON tasks (status, created_ts);
         """,
     ),
 ]

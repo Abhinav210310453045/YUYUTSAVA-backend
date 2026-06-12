@@ -43,3 +43,17 @@ def get_channels(request: Request):
 def get_session_origin(request: Request):
     """The daemon's ``SessionOriginMap``. ``None`` when async subagents disabled."""
     return getattr(request.app.state, "session_origin", None)
+
+
+def get_task_registry(request: Request):
+    registry = getattr(request.app.state, "task_registry", None)
+    if registry is None:
+        raise ServiceUnavailableError("task registry not initialized")
+    return registry
+
+
+def get_task_submission(request: Request):
+    submission = getattr(request.app.state, "task_submission", None)
+    if submission is None:
+        raise ServiceUnavailableError("task submission service not initialized")
+    return submission

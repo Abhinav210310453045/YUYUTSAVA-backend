@@ -19,11 +19,15 @@ def make_app(
     config_reload=None,
     channels=None,
     session_origin=None,
+    auth=None,
+    task_registry=None,
+    task_submission=None,
 ):
     """Backwards-compatible alias of :func:`create_app`.
 
     Extended to forward ``channels`` and ``session_origin`` (CLI Mode 2
-    attach/detach router needs them).
+    attach/detach router needs them) and the Phase-2 gateway singletons
+    (``auth``, ``task_registry``, ``task_submission``).
     """
     return create_app(
         hub,
@@ -32,6 +36,9 @@ def make_app(
         config_reload=config_reload,
         channels=channels,
         session_origin=session_origin,
+        auth=auth,
+        task_registry=task_registry,
+        task_submission=task_submission,
     )
 
 

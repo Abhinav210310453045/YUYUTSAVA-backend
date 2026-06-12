@@ -130,6 +130,7 @@ class OrchestratorLoop:
         checkpointer: BaseCheckpointSaver | None = None,
         prefs_injector: object | None = None,  # yuyutsava.prefs.injector.PrefsInjector
         memory_injector: object | None = None,  # yuyutsava.context.injector.MemoryInjector
+        task_registry: object | None = None,  # yuyutsava.daemon.task_registry.TaskRegistry
     ) -> None:
         self._queue = task_queue
         self._channels = channels
@@ -140,6 +141,7 @@ class OrchestratorLoop:
         self._checkpointer = checkpointer
         self._prefs_injector = prefs_injector
         self._memory_injector = memory_injector
+        self._registry = task_registry
 
     async def run(self, stop_event: asyncio.Event) -> None:
         while not stop_event.is_set():
@@ -150,10 +152,58 @@ class OrchestratorLoop:
             try:
                 await self._run_task(task)
             except Exception:
+                # Registry already marked failed inside _run_task.
                 logger.exception("orchestrator task failed: %s", task.event_id)
 
+    async def _register_task(self, task: OrchestratorTask) -> str:
+        """Resolve the TaskRegistry join key for this run.
+
+        User-submitted tasks arrive with ``task.task_id`` already minted and
+        a ``queued`` row in place; organic (event-born) tasks get a fresh id
+        and row here so every orchestrator run is visible to ``GET /tasks``.
+        Returns "" when no registry is wired (tests, headless minimal boots).
+        """
+        if self._registry is None:
+            return task.task_id
+        if task.task_id:
+            return task.task_id
+        task_id = self._registry.mint_task_id()
+        await self._registry.create(
+            task_id=task_id, origin=f"event:{task.topic}",
+            instruction=task.instruction,
+        )
+        return task_id
+
     async def _run_task(self, task: OrchestratorTask) -> None:
+        task_id = await self._register_task(task)
+        if self._registry is not None and task_id and self._registry.cancel_requested(task_id):
+            # Cancelled while still queued — never start the graph.
+            await self._registry.mark_cancelled(task_id, note="cancelled before start")
+            await self._channels.post_event(ChannelEvent(
+                payload=TimelinePayload(
+                    line=f"task {task_id}: cancelled before start",
+                    cls="event-decision-skipped",
+                ),
+                task_id=task_id,
+            ))
+            return
+
         thread_id = _mint_thread_id("orch")
+        if self._registry is not None and task_id:
+            await self._registry.mark_running(task_id, thread_id=thread_id)
+        try:
+            await self._execute(task, task_id=task_id, thread_id=thread_id)
+        except Exception as exc:
+            if self._registry is not None and task_id:
+                try:
+                    await self._registry.mark_failed(task_id, error=str(exc))
+                except Exception:
+                    logger.exception("task registry: mark_failed failed")
+            raise
+
+    async def _execute(
+        self, task: OrchestratorTask, *, task_id: str, thread_id: str
+    ) -> None:
         prefs_block = self._prefs_injector.build_block() if self._prefs_injector else ""
         # Relevant past context (summaries, outcomes, saved facts) recalled
         # by similarity to the task text — same informational-block contract
@@ -184,6 +234,7 @@ class OrchestratorLoop:
 
         await self._channels.post_event(ChannelEvent(
             payload=LogPayload(text=f"[orch] task {task.event_id[:8]}…\n"),
+            task_id=task_id or None, session_id=thread_id,
         ))
 
         # Route subagent interrupts (tr_* permission prompts, tr_ask_user, and
@@ -196,19 +247,47 @@ class OrchestratorLoop:
         )
 
         final_text = ""
+        cancelled = False
         async for ev in astream_agent_iter(
             graph, message, thread_id=thread_id, recursion_limit=40,
             ask_handler=ask_handler, run_name="orchestrator",
         ):
-            await _broadcast(self._channels, ev)
+            await _broadcast(self._channels, ev, task_id=task_id or None, session_id=thread_id)
             if ev.kind == "final":
                 final_text = ev.data.get("text", "") or ""
+            # Coarse v1 cancellation: honored between stream events. An
+            # in-flight LLM/tool call always finishes; the run stops at the
+            # next event boundary.
+            if (
+                self._registry is not None and task_id
+                and self._registry.cancel_requested(task_id)
+            ):
+                cancelled = True
+                break
+
+        if cancelled:
+            await self._registry.mark_cancelled(task_id, note="cancelled by user")
+            await self._store.put_decision(
+                proposal_id=task.proposal_id, event_id=task.event_id,
+                outcome="orchestrator_cancelled",
+                action_summary="cancelled by user",
+            )
+            await self._channels.post_event(ChannelEvent(
+                payload=TimelinePayload(
+                    line=f"task {task_id}: cancelled by user",
+                    cls="event-decision-skipped",
+                ),
+                task_id=task_id or None, session_id=thread_id,
+            ))
+            return
 
         await self._store.put_decision(
             proposal_id=task.proposal_id, event_id=task.event_id,
             outcome="orchestrator_done",
             action_summary=(final_text or "(empty)")[:300],
         )
+        if self._registry is not None and task_id:
+            await self._registry.mark_done(task_id, result_summary=final_text)
         memory = getattr(self._deps, "memory_store", None)
         if memory is not None and final_text:
             try:
@@ -225,29 +304,33 @@ class OrchestratorLoop:
                 line=f"orchestrator: {final_text[:120]}",
                 cls="event-action",
             ),
+            task_id=task_id or None, session_id=thread_id,
         ))
 
 
-async def _broadcast(channels: ChannelRouter, ev: StreamEvent) -> None:
+async def _broadcast(
+    channels: ChannelRouter,
+    ev: StreamEvent,
+    *,
+    task_id: str | None = None,
+    session_id: str | None = None,
+) -> None:
+    payload = None
     if ev.kind == "token":
-        await channels.post_event(ChannelEvent(
-            payload=TokenPayload(text=ev.data.get("text", "")),
-        ))
+        payload = TokenPayload(text=ev.data.get("text", ""))
     elif ev.kind == "tool_call":
-        await channels.post_event(ChannelEvent(
-            payload=ToolCallPayload(
-                name=ev.data.get("name", "?"),
-                args=ev.data.get("args", {}),
-            ),
-        ))
+        payload = ToolCallPayload(
+            name=ev.data.get("name", "?"),
+            args=ev.data.get("args", {}),
+        )
     elif ev.kind == "tool_result":
-        await channels.post_event(ChannelEvent(
-            payload=ToolResultPayload(
-                name=ev.data.get("name", "?"),
-                preview=ev.data.get("preview", ""),
-            ),
-        ))
+        payload = ToolResultPayload(
+            name=ev.data.get("name", "?"),
+            preview=ev.data.get("preview", ""),
+        )
     elif ev.kind == "log":
+        payload = LogPayload(text=ev.data.get("text", ""))
+    if payload is not None:
         await channels.post_event(ChannelEvent(
-            payload=LogPayload(text=ev.data.get("text", "")),
+            payload=payload, task_id=task_id, session_id=session_id,
         ))
