@@ -96,6 +96,22 @@ class HttpLogPayload:
     kind: Literal["http_log"] = "http_log"
 
 
+@dataclass(frozen=True)
+class SystemMetricsPayload:
+    """System load reading (Phase 5 ResourceMonitor).
+
+    Emitted at most once per ``ResourceSettings.emit_sec`` while any
+    orchestrator task is running, so mobile/web clients get a live load
+    view over the existing SSE stream without polling /system/metrics.
+    """
+
+    cpu_pct: float
+    mem_available_mb: float
+    disk_free_gb: float
+    ts: float
+    kind: Literal["system_metrics"] = "system_metrics"
+
+
 # ---------------------------------------------------------------------------
 # Async (background) subagent payloads
 # ---------------------------------------------------------------------------
@@ -165,6 +181,7 @@ ChannelPayload = (
     | ToolResultPayload
     | TimelinePayload
     | HttpLogPayload
+    | SystemMetricsPayload
     | AsyncTaskStartedPayload
     | AsyncTaskProgressPayload
     | AsyncTaskAwaitingUserPayload

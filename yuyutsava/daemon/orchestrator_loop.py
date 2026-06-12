@@ -10,6 +10,7 @@ regardless of daemon uptime.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import dataclasses
 import json
 import logging
@@ -135,6 +136,7 @@ class OrchestratorLoop:
         memory_injector: object | None = None,  # yuyutsava.context.injector.MemoryInjector
         task_registry: object | None = None,  # yuyutsava.daemon.task_registry.TaskRegistry
         model_router: object | None = None,  # yuyutsava.core.model_router.ModelRouter
+        admission: object | None = None,  # yuyutsava.daemon.resources.AdmissionController
     ) -> None:
         self._queue = task_queue
         self._channels = channels
@@ -147,6 +149,7 @@ class OrchestratorLoop:
         self._memory_injector = memory_injector
         self._registry = task_registry
         self._model_router = model_router
+        self._admission = admission
 
     async def run(self, stop_event: asyncio.Event) -> None:
         while not stop_event.is_set():
@@ -183,37 +186,50 @@ class OrchestratorLoop:
         task_id = await self._register_task(task)
         if self._registry is not None and task_id and self._registry.cancel_requested(task_id):
             # Cancelled while still queued — never start the graph.
-            await self._registry.mark_cancelled(task_id, note="cancelled before start")
-            await self._channels.post_event(ChannelEvent(
-                payload=TimelinePayload(
-                    line=f"task {task_id}: cancelled before start",
-                    cls="event-decision-skipped",
-                ),
-                task_id=task_id,
-            ))
+            await self._cancel_before_start(task_id)
             return
 
         thread_id = _mint_thread_id("orch")
-        # Complexity-based model routing (Phase 4): fresh graph per task
-        # makes per-task selection free. Router absent or flag off → the
-        # role models the daemon booted with, exactly as before.
-        model, deps = self._select_models(task)
-        if self._registry is not None and task_id:
-            await self._registry.mark_running(
-                task_id, thread_id=thread_id,
-                complexity=task.complexity,
-                model=model_name_of(model) or None,
-            )
-        # Origin-aware ask routing (Phase 3): when the task came in through a
-        # channel plugin (origin == a registered channel name, e.g.
-        # "telegram"), map this run's thread_id to that channel so Tier-2
-        # asks prefer the surface the user submitted from.
-        mapped_origin = await self._map_session_origin(task_id, thread_id)
+        # Resource governor (Phase 5): heavy tasks (complexity ≥ threshold or
+        # a configured heavy subagent_hint) wait inside the slot for a free
+        # heavy-task semaphore + an unloaded system before anything starts;
+        # a critically full disk raises DiskCriticalError, which the failure
+        # path below turns into a failed task with a clear error. No
+        # controller wired → null context, pre-Phase-5 behaviour.
+        slot = (
+            self._admission.slot(task, task_id=task_id)
+            if self._admission is not None else contextlib.nullcontext()
+        )
+        mapped_origin: str | None = None
         try:
-            await self._execute(
-                task, task_id=task_id, thread_id=thread_id,
-                model=model, deps=deps,
-            )
+            async with slot:
+                if (
+                    self._registry is not None and task_id
+                    and self._registry.cancel_requested(task_id)
+                ):
+                    # A long admission deferral is plenty of time for the
+                    # user to cancel — honor it before the graph starts.
+                    await self._cancel_before_start(task_id)
+                    return
+                # Complexity-based model routing (Phase 4): fresh graph per
+                # task makes per-task selection free. Router absent or flag
+                # off → the role models the daemon booted with, as before.
+                model, deps = self._select_models(task)
+                if self._registry is not None and task_id:
+                    await self._registry.mark_running(
+                        task_id, thread_id=thread_id,
+                        complexity=task.complexity,
+                        model=model_name_of(model) or None,
+                    )
+                # Origin-aware ask routing (Phase 3): when the task came in
+                # through a channel plugin (origin == a registered channel
+                # name, e.g. "telegram"), map this run's thread_id to that
+                # channel so Tier-2 asks prefer the submitting surface.
+                mapped_origin = await self._map_session_origin(task_id, thread_id)
+                await self._execute(
+                    task, task_id=task_id, thread_id=thread_id,
+                    model=model, deps=deps,
+                )
         except Exception as exc:
             if self._registry is not None and task_id:
                 try:
@@ -224,6 +240,16 @@ class OrchestratorLoop:
         finally:
             if mapped_origin and self._channels.session_origin is not None:
                 self._channels.session_origin.clear(thread_id)
+
+    async def _cancel_before_start(self, task_id: str) -> None:
+        await self._registry.mark_cancelled(task_id, note="cancelled before start")
+        await self._channels.post_event(ChannelEvent(
+            payload=TimelinePayload(
+                line=f"task {task_id}: cancelled before start",
+                cls="event-decision-skipped",
+            ),
+            task_id=task_id,
+        ))
 
     def _select_models(self, task: OrchestratorTask):
         """Resolve (master model, deps) for one task via the ModelRouter.
