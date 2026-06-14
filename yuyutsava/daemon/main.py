@@ -351,6 +351,7 @@ async def _async_main(argv: list[str] | None = None) -> int:
         asyncio.create_task(subs.triage_loop.run(stop_event), name="triage-loop"),
         asyncio.create_task(subs.orch_loop.run(stop_event), name="orchestrator-loop"),
         asyncio.create_task(subs.sweeper.run(stop_event), name="unified-sweeper"),
+        asyncio.create_task(subs.resource_monitor.run(stop_event), name="resource-monitor"),
         asyncio.create_task(_reload_loop(subs, stop_event, reload_event), name="reload-loop"),
     ]
     if subs.web_server is not None:
@@ -403,12 +404,30 @@ async def _async_main(argv: list[str] | None = None) -> int:
                 release_host_lock(subs.async_host_attachment)
             except Exception:
                 logger.exception("release_host_lock failed")
+        # Channel plugins first: their inbound pollers post through the
+        # router, so they must stop before the channels they fan out to.
+        try:
+            await subs.channel_plugins.stop_all()
+        except Exception:
+            logger.exception("channel_plugins.stop_all failed")
         await subs.channels.shutdown()
         await subs.mcp_manager.stop()
         # Sweeper task is joined via the gather() above (it's in `tasks`);
         # closing the saver here releases the checkpoints.db lock.
         await subs.checkpointer_saver.stop()
         await subs.store.stop()
+        # Postgres-backed runs: embedder's httpx client, then the pool —
+        # last, because every pg store borrows connections from it.
+        if subs.embedder is not None:
+            try:
+                await subs.embedder.aclose()
+            except Exception:
+                logger.exception("embedder.aclose failed")
+        if subs.pg_pool is not None:
+            try:
+                await subs.pg_pool.close()
+            except Exception:
+                logger.exception("pg_pool.close failed")
         # Release the daemon singleton lock + discovery file.
         release_daemon_lock(lock_fd)
         logger.info("bye")

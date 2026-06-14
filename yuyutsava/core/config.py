@@ -280,6 +280,11 @@ class LimitsConfig:
     # Roughly 500 tokens at 4 chars/token.
     max_prefs_chars: int = 2_000
 
+    # Relevant-memory block injected into the orchestrator system prompt
+    # (see yuyutsava.context.injector.MemoryInjector). Same budget rationale
+    # as the prefs block.
+    max_memory_chars: int = 2_000
+
     # Skill index XML rendered into the orchestrator system prompt.
     max_skill_index_chars: int = 8_000
 
@@ -449,17 +454,20 @@ class DaemonConfig:
         except ValueError:
             expiry = 300
 
+        # Fallbacks match the dataclass defaults (they used to disagree:
+        # 8000/30000 here vs 60000 on the class — from_env silently shrank
+        # every budget).
         orch_raw = os.environ.get("YUYUTSAVA_ORCHESTRATOR_TOKEN_BUDGET", "").strip()
         try:
-            orch_budget = int(orch_raw) if orch_raw else 8000
+            orch_budget = int(orch_raw) if orch_raw else 60000
         except ValueError:
-            orch_budget = 8000
+            orch_budget = 60000
 
         sub_raw = os.environ.get("YUYUTSAVA_SUBAGENT_TOKEN_BUDGET", "").strip()
         try:
-            sub_budget = int(sub_raw) if sub_raw else 30000
+            sub_budget = int(sub_raw) if sub_raw else 60000
         except ValueError:
-            sub_budget = 30000
+            sub_budget = 60000
 
         heartbeat_raw = os.environ.get("YUYUTSAVA_HEARTBEAT_SEC", "").strip()
         try:

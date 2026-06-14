@@ -96,6 +96,22 @@ class HttpLogPayload:
     kind: Literal["http_log"] = "http_log"
 
 
+@dataclass(frozen=True)
+class SystemMetricsPayload:
+    """System load reading (Phase 5 ResourceMonitor).
+
+    Emitted at most once per ``ResourceSettings.emit_sec`` while any
+    orchestrator task is running, so mobile/web clients get a live load
+    view over the existing SSE stream without polling /system/metrics.
+    """
+
+    cpu_pct: float
+    mem_available_mb: float
+    disk_free_gb: float
+    ts: float
+    kind: Literal["system_metrics"] = "system_metrics"
+
+
 # ---------------------------------------------------------------------------
 # Async (background) subagent payloads
 # ---------------------------------------------------------------------------
@@ -165,6 +181,7 @@ ChannelPayload = (
     | ToolResultPayload
     | TimelinePayload
     | HttpLogPayload
+    | SystemMetricsPayload
     | AsyncTaskStartedPayload
     | AsyncTaskProgressPayload
     | AsyncTaskAwaitingUserPayload
@@ -184,9 +201,17 @@ class ChannelEvent:
     The ``payload`` is a typed variant (see :data:`ChannelPayload`); each
     variant carries its own ``kind`` discriminator so consumers can pattern
     match on the payload type.
+
+    ``task_id`` / ``session_id`` scope the event to one orchestrator run:
+    the orchestrator loop tags everything it emits so the SSE stream can be
+    filtered per task (``/stream?task_id=``) and the WebHub can keep a
+    per-task replay ring. ``None`` for unscoped events (boot notices, HTTP
+    logs, source chatter).
     """
 
     payload: ChannelPayload
+    task_id: str | None = None
+    session_id: str | None = None
 
     @property
     def kind(self) -> str:
@@ -279,6 +304,35 @@ class ChannelRouter:
     # async_subagents (which pulls langgraph_api). The duck-typed contract is
     # ``.get(session_id) -> channel_name | None``.
     session_origin: Any | None = None
+
+    def register(self, channel: UserChannel) -> bool:
+        """Add ``channel`` to the fan-out. Idempotent by ``channel.name``.
+
+        Returns ``True`` when newly added, ``False`` when a channel with
+        that name is already registered (the existing instance wins —
+        callers that need the live instance should :meth:`find` it).
+        """
+        if self.find(channel.name) is not None:
+            return False
+        self.channels.append(channel)
+        return True
+
+    def unregister(self, name: str) -> UserChannel | None:
+        """Remove and return the channel named ``name`` (None if absent).
+
+        The caller owns any further teardown (``await channel.shutdown()``
+        or a plugin's ``stop()``) — the router only stops fanning out to it.
+        """
+        ch = self.find(name)
+        if ch is not None:
+            self.channels.remove(ch)
+        return ch
+
+    def find(self, name: str) -> UserChannel | None:
+        for c in self.channels:
+            if c.name == name:
+                return c
+        return None
 
     async def post_event(self, ev: ChannelEvent) -> None:
         await asyncio.gather(

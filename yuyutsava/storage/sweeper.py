@@ -38,6 +38,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from yuyutsava.storage.events import Store
@@ -61,6 +62,11 @@ class SweeperConfig:
     # Non-blob event_payloads rows past this age are deleted.
     event_ttl_sec: int = 7 * 24 * 3600
 
+    # Offloaded tool-result artifacts past this age are deleted. Artifacts
+    # are scratch (referenced from compaction summaries by id) — anything a
+    # task still needs after a week should have been written to a file.
+    artifact_ttl_sec: int = 7 * 24 * 3600
+
     # Loop interval — one tick of every target per period.
     sweep_interval_sec: int = 300
 
@@ -73,6 +79,7 @@ class SweepReport:
     blob_files_deleted: int = 0
     blob_rows_deleted: int = 0
     event_rows_deleted: int = 0
+    artifact_rows_deleted: int = 0
 
     @property
     def total(self) -> int:
@@ -81,6 +88,7 @@ class SweepReport:
             + self.blob_files_deleted
             + self.blob_rows_deleted
             + self.event_rows_deleted
+            + self.artifact_rows_deleted
         )
 
 
@@ -115,14 +123,16 @@ class UnifiedSweeper:
         self,
         *,
         store: Store,
-        checkpoint_saver: AsyncSqliteSaver,
+        checkpoint_saver: BaseCheckpointSaver,
         blob_targets: list[BlobSweepTarget] | None = None,
         config: SweeperConfig | None = None,
+        artifact_store: object | None = None,  # context.artifacts.ArtifactStore
     ) -> None:
         self._store = store
         self._saver = checkpoint_saver
         self._blob_targets = list(blob_targets or [])
         self._config = config or SweeperConfig()
+        self._artifact_store = artifact_store
 
         # Make sure every registered blob directory exists so the first sweep
         # doesn't log a FileNotFoundError on a fresh install.
@@ -166,15 +176,17 @@ class UnifiedSweeper:
                 logger.exception("sweeper: tick failed")
 
     async def sweep_once(self) -> SweepReport:
-        """Run all three sweeps once and return a typed counter report."""
+        """Run every sweep once and return a typed counter report."""
         checkpoints_deleted = await self._sweep_checkpoints()
         blob_files_deleted, blob_rows_deleted = await self._sweep_blobs()
         event_rows_deleted = self._sweep_events()
+        artifact_rows_deleted = await self._sweep_artifacts()
         return SweepReport(
             checkpoints_deleted=checkpoints_deleted,
             blob_files_deleted=blob_files_deleted,
             blob_rows_deleted=blob_rows_deleted,
             event_rows_deleted=event_rows_deleted,
+            artifact_rows_deleted=artifact_rows_deleted,
         )
 
     # ------------------------------------------------------------------
@@ -187,20 +199,20 @@ class UnifiedSweeper:
         Threads with unparseable timestamps (e.g. external callers) are left
         in place — the format ``<role>-<unix_ts>-<uuid>`` is load-bearing here
         and ``parse_thread_id_ts`` returns None for non-conforming ids.
+
+        Enumeration dispatches on saver type (SQLite vs Postgres); deletion
+        goes through the shared ``adelete_thread`` API either way.
         """
         cutoff = time.time() - self._config.checkpoint_ttl_sec
-        stale: list[str] = []
         try:
-            async with self._saver.lock, self._saver.conn.execute(
-                "SELECT DISTINCT thread_id FROM checkpoints"
-            ) as cur:
-                async for (tid,) in cur:
-                    ts = parse_thread_id_ts(tid)
-                    if ts is not None and ts < cutoff:
-                        stale.append(tid)
+            thread_ids = await self._enumerate_thread_ids()
         except Exception:
             logger.exception("sweeper: failed to enumerate stale checkpoints")
             return 0
+        stale = [
+            tid for tid in thread_ids
+            if (ts := parse_thread_id_ts(tid)) is not None and ts < cutoff
+        ]
         deleted = 0
         for tid in stale:
             try:
@@ -209,6 +221,34 @@ class UnifiedSweeper:
             except Exception:
                 logger.exception("sweeper: failed to delete thread %r", tid)
         return deleted
+
+    async def _enumerate_thread_ids(self) -> list[str]:
+        """List distinct checkpoint thread_ids for the active saver backend."""
+        if isinstance(self._saver, AsyncSqliteSaver):
+            out: list[str] = []
+            async with self._saver.lock, self._saver.conn.execute(
+                "SELECT DISTINCT thread_id FROM checkpoints"
+            ) as cur:
+                async for (tid,) in cur:
+                    out.append(tid)
+            return out
+
+        from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+
+        if isinstance(self._saver, AsyncPostgresSaver):
+            # _cursor() is the saver's own pool-vs-connection abstraction;
+            # there is no public query surface, and the table name is part
+            # of the package's stable migration contract.
+            async with self._saver._cursor() as cur:  # noqa: SLF001
+                await cur.execute("SELECT DISTINCT thread_id FROM checkpoints")
+                rows = await cur.fetchall()
+            return [r["thread_id"] if isinstance(r, dict) else r[0] for r in rows]
+
+        logger.warning(
+            "sweeper: unknown checkpointer type %s — skipping checkpoint sweep",
+            type(self._saver).__name__,
+        )
+        return []
 
     async def _sweep_blobs(self) -> tuple[int, int]:
         """Run one pass over every registered blob target. Returns (files, rows)."""
@@ -250,6 +290,17 @@ class UnifiedSweeper:
                 # the next sweep will try again.
                 logger.debug("sweeper: unlink %s failed", path, exc_info=True)
         return removed
+
+    async def _sweep_artifacts(self) -> int:
+        """Delete offloaded tool-result artifacts older than their TTL."""
+        if self._artifact_store is None:
+            return 0
+        cutoff = time.time() - self._config.artifact_ttl_sec
+        try:
+            return await self._artifact_store.delete_older_than(cutoff)  # type: ignore[attr-defined]
+        except Exception:
+            logger.exception("sweeper: artifact sweep failed")
+            return 0
 
     def _sweep_events(self) -> int:
         """Delete non-blob ``event_payloads`` rows older than the retention window.

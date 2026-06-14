@@ -29,6 +29,9 @@ dependencies = [
     "aiosqlite>=0.20.0",
     "sqlglot>=25.0.0",
     "prompt-toolkit>=3.0",
+    "langgraph-checkpoint-postgres>=2.0.0",
+    "psycopg[binary,pool]>=3.2",
+    "psutil>=5.9",
 ]
 
 [project.optional-dependencies]
@@ -46,6 +49,9 @@ voice = [
     "numpy>=1.26.0",
     "openwakeword>=0.6.0",
     "faster-whisper>=1.0.0",
+]
+memory = [
+    "pgvector>=0.3.0",
 ]
 
 [project.scripts]

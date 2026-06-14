@@ -72,6 +72,17 @@ def blobs_dir() -> Path:
     return Path(raw).expanduser() if raw else state_dir() / "blobs"
 
 
+def channels_config_path() -> Path:
+    """User-state path for ``channels_config.json`` (channel plugins).
+
+    Under ``state_dir()`` (unlike ``events_config_path``) because which
+    channels a user enabled — and their params — is per-user runtime
+    state, not a project artifact. Override with ``YUYUTSAVA_CHANNELS_CONFIG``.
+    """
+    raw = os.environ.get("YUYUTSAVA_CHANNELS_CONFIG", "").strip()
+    return Path(raw).expanduser() if raw else state_dir() / "channels_config.json"
+
+
 def events_config_path() -> Path:
     """Repo-local path for ``events_config.json``.
 

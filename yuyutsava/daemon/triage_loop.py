@@ -49,6 +49,14 @@ class OrchestratorTask:
     instruction: str        # what the orchestrator/subagent should do
     subagent_hint: str
     urgency: int
+    # TaskRegistry join key (``tsk_<ULID>``). Set by TaskSubmissionService
+    # for user-submitted tasks (carried through triage via event hints);
+    # empty for organic events — the orchestrator loop mints one so every
+    # run is visible to ``GET /tasks``.
+    task_id: str = ""
+    # 1-5 complexity score (Phase 4 model routing). Triage self-scores
+    # organic events; direct submissions are scored at submit time.
+    complexity: int = 3
 
     def render_to_message(self) -> str:
         return (
@@ -154,6 +162,9 @@ class TriageLoop:
                         proposed_instruction=proposed_instruction,
                         reason="auto_approve rule",
                         urgency=1,
+                        # No LLM here; a rule-approved single-file move is the
+                        # prompt's anchored complexity-1 example.
+                        complexity=1,
                     )
                     await self._auto_approve_path(ev, decision, rule_id=rule.rule_id)
                     return
@@ -195,7 +206,9 @@ class TriageLoop:
                 await self._store.put_proposal(proposal)
 
                 user_decision: ProposalDecision = await self._channels.post_proposal(proposal)
-                await self._handle_user_decision(ev, proposal, user_decision)
+                await self._handle_user_decision(
+                    ev, proposal, user_decision, complexity=decision.complexity,
+                )
             except Exception:
                 logger.exception("triage handler crashed for %s", ev.event_id)
 
@@ -230,10 +243,13 @@ class TriageLoop:
             topic=ev.topic, summary=ev.summary,
             instruction=approved.proposed, subagent_hint=approved.subagent,
             urgency=approved.urgency,
+            task_id=ev.hints.get("task_id", ""),
+            complexity=decision.complexity,
         ))
 
     async def _handle_user_decision(
         self, ev: EventEnvelope, proposal: Proposal, ud: ProposalDecision,
+        *, complexity: int = 3,
     ) -> None:
         outcome = ud.decision
 
@@ -270,6 +286,8 @@ class TriageLoop:
             topic=ev.topic, summary=ev.summary,
             instruction=instruction, subagent_hint=proposal.subagent,
             urgency=proposal.urgency,
+            task_id=ev.hints.get("task_id", ""),
+            complexity=complexity,
         ))
 
     async def _add_consent_rule_for(

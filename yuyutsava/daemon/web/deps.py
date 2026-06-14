@@ -43,3 +43,55 @@ def get_channels(request: Request):
 def get_session_origin(request: Request):
     """The daemon's ``SessionOriginMap``. ``None`` when async subagents disabled."""
     return getattr(request.app.state, "session_origin", None)
+
+
+def get_task_registry(request: Request):
+    registry = getattr(request.app.state, "task_registry", None)
+    if registry is None:
+        raise ServiceUnavailableError("task registry not initialized")
+    return registry
+
+
+def get_task_submission(request: Request):
+    submission = getattr(request.app.state, "task_submission", None)
+    if submission is None:
+        raise ServiceUnavailableError("task submission service not initialized")
+    return submission
+
+
+def get_decision_service(request: Request):
+    """Shared proposal/ask resolver (also backs the channel InboundSink)."""
+    service = getattr(request.app.state, "decision_service", None)
+    if service is None:
+        raise ServiceUnavailableError("decision service not initialized")
+    return service
+
+
+def get_usage_store(request: Request):
+    """The ``llm_usage`` store (Phase 4 cost tracking)."""
+    store = getattr(request.app.state, "usage_store", None)
+    if store is None:
+        raise ServiceUnavailableError("usage store not initialized")
+    return store
+
+
+def get_resource_monitor(request: Request):
+    """The ``ResourceMonitor`` (Phase 5 system metrics)."""
+    monitor = getattr(request.app.state, "resource_monitor", None)
+    if monitor is None:
+        raise ServiceUnavailableError("resource monitor not initialized")
+    return monitor
+
+
+def get_admission_controller(request: Request):
+    """The ``AdmissionController``; ``None`` degrades /system/metrics to
+    monitor-only output (no slot/attribution section)."""
+    return getattr(request.app.state, "admission_controller", None)
+
+
+def get_channel_plugins(request: Request):
+    """The daemon's ``ChannelPluginRegistry`` (enable/disable at runtime)."""
+    registry = getattr(request.app.state, "channel_plugins", None)
+    if registry is None:
+        raise ServiceUnavailableError("channel plugin registry not initialized")
+    return registry

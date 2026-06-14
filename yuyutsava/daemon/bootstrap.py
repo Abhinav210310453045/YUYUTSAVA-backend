@@ -29,26 +29,47 @@ from yuyutsava.agents.orchestrator.capabilities import render_capabilities_block
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
 from yuyutsava.agents.task_runner.tools import set_default_policy
 from yuyutsava.agents.triage.agent import TriageAgent
+from yuyutsava.async_subagents.session_origin import SessionOriginMap
+from yuyutsava.channels.config import ChannelsConfig
+from yuyutsava.channels.plugin import InboundSink
+from yuyutsava.channels.registry import ChannelPluginRegistry
+from yuyutsava.context.artifacts import PgArtifactStore, SqliteArtifactStore
+from yuyutsava.context.config import ContextSettings
+from yuyutsava.context.injector import MemoryInjector
+from yuyutsava.context.summary_store import PgThreadSummaryStore, SqliteThreadSummaryStore
 from yuyutsava.core.config import (
     DaemonConfig, EventsConfig, LlmSettings, SearchConfig, SourceConfig,
-    llm_settings_from_env,
+    _env, llm_settings_from_env,
 )
 from yuyutsava.core.llm import chat_model
+from yuyutsava.core.model_router import ComplexityScorer, ModelRouter
 from yuyutsava.core.policy import PermissionsPolicy, StorePolicyCapEnforcer
-from yuyutsava.daemon.channels import ChannelRouter
+from yuyutsava.daemon.channels import ChannelEvent, ChannelRouter, TimelinePayload
 from yuyutsava.daemon.checkpointing import CheckpointerSaver
 from yuyutsava.daemon.orchestrator_loop import OrchestratorLoop
+from yuyutsava.daemon.resources import AdmissionController, ResourceMonitor, ResourceSettings
+from yuyutsava.daemon.task_registry import PgTaskStore, SqliteTaskStore, TaskRegistry
+from yuyutsava.daemon.task_submission import TaskSubmissionService
 from yuyutsava.daemon.terminal_channel import TerminalChannel
 from yuyutsava.daemon.triage_loop import OrchestratorTask, TriageLoop
+from yuyutsava.daemon.usage import PgUsageStore, SqliteUsageStore, UsageStore
+from yuyutsava.daemon.web.auth import AuthSettings
 from yuyutsava.daemon.web.server import WebChannel, WebHub, make_app
+from yuyutsava.daemon.web.services.decision_service import DecisionService
 from yuyutsava.events.bus import EventBus
 from yuyutsava.events.registry import SourceRegistry
 from yuyutsava.mcp.config import MCPConfig
 from yuyutsava.mcp.loader import MCPClientManager
+from yuyutsava.memory.config import MemorySettings
+from yuyutsava.memory.embedder import Embedder
+from yuyutsava.memory.store import MemoryStore, PgMemoryStore, SqliteMemoryStore
 from yuyutsava.prefs.injector import PrefsInjector
 from yuyutsava.skills.registry import SkillRegistry
+from yuyutsava.storage.backend import StorageSettings
 from yuyutsava.storage.events import Store
-from yuyutsava.storage.paths import blobs_dir, checkpoints_db_path, state_dir
+from yuyutsava.storage.paths import blobs_dir, checkpoints_db_path, state_db_path, state_dir
+from yuyutsava.storage.pg import migrations as pg_migrations
+from yuyutsava.storage.pg.pool import PgPool
 from yuyutsava.storage.prefs import PrefsStore
 from yuyutsava.storage.sweeper import BlobSweepTarget, SweeperConfig, UnifiedSweeper
 
@@ -110,10 +131,42 @@ class DaemonSubsystems:
     checkpointer_saver: CheckpointerSaver
     sweeper: UnifiedSweeper
 
+    # storage backend (postgres mode) + context controller. ``pg_pool`` and
+    # ``embedder`` are owned here for teardown; the stores are borrowed by
+    # OrchestratorDeps / the sweeper. All None/sqlite in zero-config mode.
+    pg_pool: object | None
+    artifact_store: object
+    summary_store: object
+    memory_store: object | None
+    embedder: object | None
+
     # subagents + queue + loops
     task_queue: asyncio.Queue[OrchestratorTask]
     triage_loop: TriageLoop
     orch_loop: OrchestratorLoop
+
+    # task gateway (Phase 2). Both are borrowed by the web app; the
+    # registry's stores ride the same backends torn down above (pg_pool /
+    # per-call sqlite connections), so neither needs its own teardown.
+    task_registry: TaskRegistry
+    task_submission: TaskSubmissionService
+
+    # channel plugins (Phase 3). ``channel_plugins`` owns running plugin
+    # instances — main.py calls stop_all() before channels.shutdown().
+    decision_service: DecisionService
+    channel_plugins: ChannelPluginRegistry
+
+    # model routing + cost tracking (Phase 4). Borrowed by the web app and
+    # the orchestrator loop; the usage store rides the same backends torn
+    # down above (pg_pool / per-call sqlite), so no teardown of its own.
+    usage_store: UsageStore
+    model_router: ModelRouter
+
+    # resource governor (Phase 5). The monitor is a loop main.py schedules
+    # alongside triage/orchestrator (joins on stop_event — no teardown hook);
+    # the admission controller is borrowed by the orchestrator loop + web app.
+    resource_monitor: ResourceMonitor
+    admission: AdmissionController
 
     # for logging / future use
     skill_registry: SkillRegistry
@@ -194,6 +247,81 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     daemon_cfg = DaemonConfig.from_env()
     events_cfg = _build_initial_events_config(opts, daemon_cfg)
 
+    # ── storage backend (sqlite default / postgres) ------------------------
+    # Opened before everything that persists: the checkpointer and the
+    # context/memory stores dispatch on whether the pool came up. A dead
+    # Postgres falls back to SQLite loudly (timeline event after channels
+    # exist) unless YUYUTSAVA_STORAGE_REQUIRE=1.
+    storage = StorageSettings.from_env()
+    pg_pool: PgPool | None = None
+    storage_fallback_reason: str | None = None
+    if storage.is_postgres():
+        try:
+            pg_pool = PgPool(storage)
+            await pg_pool.open()
+            await pg_migrations.apply(pg_pool)
+            logger.info("  storage   : postgres")
+        except Exception as exc:
+            if storage.require:
+                logger.error(
+                    "storage: postgres unavailable and YUYUTSAVA_STORAGE_REQUIRE=1 "
+                    "— refusing to boot"
+                )
+                raise
+            storage_fallback_reason = (
+                f"Postgres unavailable ({exc}); using SQLite for this run. "
+                "Checkpoints/artifacts written now are INVISIBLE to Postgres."
+            )
+            logger.error("storage: %s", storage_fallback_reason)
+            if pg_pool is not None:
+                await pg_pool.close()
+            pg_pool = None
+            from dataclasses import replace as _dc_replace
+            storage = _dc_replace(storage, backend="sqlite")
+    else:
+        logger.info("  storage   : sqlite (set YUYUTSAVA_STORAGE_BACKEND=postgres for durable mode)")
+
+    # ── context controller stores ------------------------------------------
+    if pg_pool is not None:
+        artifact_store = PgArtifactStore(pg_pool)
+        summary_store = PgThreadSummaryStore(pg_pool)
+    else:
+        artifact_store = SqliteArtifactStore(state_db_path())
+        summary_store = SqliteThreadSummaryStore(state_db_path())
+
+    # ── task registry (Phase 2: first-class task tracking) -----------------
+    task_store = (
+        PgTaskStore(pg_pool) if pg_pool is not None
+        else SqliteTaskStore(state_db_path())
+    )
+    task_registry = TaskRegistry(task_store)
+
+    # ── usage accounting + model routing (Phase 4) --------------------------
+    usage_store: UsageStore = (
+        PgUsageStore(pg_pool) if pg_pool is not None
+        else SqliteUsageStore(state_db_path())
+    )
+    model_router = ModelRouter.from_env()
+    if model_router.enabled:
+        logger.info("  routing   : complexity-based model routing enabled")
+
+    # ── semantic memory (default-on when postgres is live) -----------------
+    mem_settings = MemorySettings.from_env(default_enabled=pg_pool is not None)
+    memory_store: MemoryStore | None = None
+    embedder: Embedder | None = None
+    if mem_settings.enabled:
+        if pg_pool is not None:
+            embedder = Embedder(mem_settings)
+            memory_store = PgMemoryStore(pg_pool, embedder)
+            logger.info("  memory    : pgvector (embed=%s)", mem_settings.embed_model)
+        else:
+            memory_store = SqliteMemoryStore(state_db_path())
+            logger.info("  memory    : sqlite keyword fallback (no embeddings)")
+    memory_injector = (
+        MemoryInjector(memory_store, top_k=mem_settings.top_k)
+        if memory_store is not None else None
+    )
+
     # ── store --------------------------------------------------------------
     store = Store()
     await store.start()
@@ -216,8 +344,8 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     if mcp_manager.known_servers():
         logger.info("  mcp       : %s", ", ".join(mcp_manager.known_servers()))
 
-    # ── checkpointer (SQLite-backed; sweeper handles stale threads) -------
-    checkpointer_saver = CheckpointerSaver(db_path=checkpoints_db_path())
+    # ── checkpointer (sqlite or postgres; sweeper handles stale threads) --
+    checkpointer_saver = CheckpointerSaver(db_path=checkpoints_db_path(), storage=storage)
     checkpointer = await checkpointer_saver.start()
 
     # ── unified TTL sweeper (checkpoints + on-disk blobs + event rows) ---
@@ -237,6 +365,7 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
             ),
         ],
         config=SweeperConfig(),
+        artifact_store=artifact_store,
     )
 
     # ── bus ---------------------------------------------------------------
@@ -255,6 +384,11 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
 
     # ── channels ----------------------------------------------------------
     channels = ChannelRouter(channels=[], primary_name="web")
+    # Origin-aware HITL routing is always on (Phase 3): CLI attach and
+    # channel plugins both map session ids to their channel. Previously
+    # constructed only when async subagents were enabled.
+    session_origin = SessionOriginMap()
+    channels.session_origin = session_origin
     web_hub: WebHub | None = None
     web_server: uvicorn.Server | None = None
 
@@ -278,6 +412,35 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         except Exception:
             logger.warning("voice channel init failed — running without voice", exc_info=True)
 
+    # Surface any Postgres→SQLite fallback on the user channels — silent
+    # divergence (checkpoints landing where Postgres can't see them) is the
+    # one failure mode that must never be quiet.
+    for reason in (storage_fallback_reason, checkpointer_saver.fallback_reason):
+        if reason:
+            await channels.post_event(ChannelEvent(
+                payload=TimelinePayload(line=f"storage: {reason}", cls="event-error"),
+            ))
+
+    # ── resource governor (Phase 5) ----------------------------------------
+    # Monitor samples psutil into a ring (main.py schedules its run loop);
+    # admission gates heavy tasks (complexity ≥ threshold / heavy hints)
+    # behind a semaphore + load check in OrchestratorLoop._run_task. The
+    # activity probe is assigned after construction because the controller
+    # it asks "is anything running?" needs the monitor first.
+    res_settings = ResourceSettings.from_env()
+    resource_monitor = ResourceMonitor(res_settings, event_sink=channels.post_event)
+    admission = AdmissionController(
+        resource_monitor, res_settings,
+        registry=task_registry, event_sink=channels.post_event,
+    )
+    resource_monitor.activity_probe = lambda: bool(admission.active())
+    logger.info(
+        "  resources : cpu<%.0f%% mem>%dMB disk>%.0fGB, heavy=complexity≥%d (max %d)",
+        res_settings.cpu_high_pct, res_settings.mem_min_mb,
+        res_settings.disk_min_gb, res_settings.heavy_complexity,
+        res_settings.max_heavy_tasks,
+    )
+
     # ── models ------------------------------------------------------------
     triage_settings = llm_settings_from_env("triage")
     orchestrator_settings = llm_settings_from_env("orchestrator")
@@ -285,6 +448,21 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     triage_model = chat_model(triage_settings, temperature=0.0)
     orchestrator_model = chat_model(orchestrator_settings, temperature=0.0)
     subagent_model = chat_model(subagent_settings, temperature=0.1)
+
+    # Compaction model: role "compaction" so a cheap/local model can own
+    # summarization (COMPACTION_LLM_PROVIDER=ollama …); falls back to the
+    # main provider settings when the role is unset.
+    compaction_model = chat_model(llm_settings_from_env("compaction"), temperature=0.0)
+    context_settings = ContextSettings.from_env(
+        "orchestrator",
+        provider=_env("LLM_PROVIDER", "orchestrator", "groq"),
+    )
+    logger.info(
+        "  context   : compact >%d tokens, keep %d msgs, offload >%d chars",
+        context_settings.compact_trigger_tokens,
+        context_settings.keep_messages,
+        context_settings.offload_threshold_chars,
+    )
 
     # ── skills registry ---------------------------------------------------
     skill_registry = SkillRegistry(home_dir=home / "skills")
@@ -334,7 +512,6 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     async_host_url: str | None = None
     async_mirror = None
     async_watcher = None
-    session_origin = None
     async_host_attachment = None
     if os.environ.get("YUYUTSAVA_ASYNC_SUBAGENTS", "").lower() in ("1", "true", "yes"):
         from yuyutsava.async_subagents.host import AsyncSubagentHost
@@ -343,7 +520,6 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
             register_host_cleanup,
         )
         from yuyutsava.async_subagents.mirror import AsyncTaskMirror
-        from yuyutsava.async_subagents.session_origin import SessionOriginMap
         from yuyutsava.async_subagents.watcher import AsyncTaskHealthWatcher
         from yuyutsava.daemon.orchestrator_loop import make_ask_handler
 
@@ -374,8 +550,6 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
             logger.info("  async host: %s (attached to running owner)", attachment.url)
 
         async_mirror = AsyncTaskMirror()
-        session_origin = SessionOriginMap()
-        channels.session_origin = session_origin
 
         async_watcher = AsyncTaskHealthWatcher(
             mirror=async_mirror,
@@ -402,6 +576,23 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     triage = TriageAgent(triage_model)
     task_queue: asyncio.Queue[OrchestratorTask] = asyncio.Queue()
 
+    # ── task submission (POST /tasks; channel plugins in Phase 3) ---------
+    # Direct submissions skip triage, so a light-tier call scores their
+    # complexity — only when routing is on (a score nobody routes on is
+    # wasted spend). The scorer resolves its model lazily and never raises.
+    complexity_scorer = (
+        ComplexityScorer(lambda: model_router.tier_model("light"))
+        if model_router.enabled else None
+    )
+    task_submission = TaskSubmissionService(
+        registry=task_registry,
+        task_queue=task_queue,
+        store=store,
+        bus=bus,
+        proposal_expiry_sec=daemon_cfg.proposal_expiry_sec,
+        complexity_scorer=complexity_scorer,
+    )
+
     triage_loop = TriageLoop(
         bus=bus, store=store, channels=channels, triage=triage,
         capabilities_block=capabilities_block,
@@ -424,6 +615,12 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         async_subagents=subagent_list if async_host_url is not None else None,
         async_host_url=async_host_url,
         async_task_mirror=async_mirror,
+        artifact_store=artifact_store,
+        summary_store=summary_store,
+        memory_store=memory_store,
+        context_settings=context_settings,
+        compaction_model=compaction_model,
+        usage_store=usage_store,
     )
     orch_loop = OrchestratorLoop(
         task_queue=task_queue,
@@ -434,10 +631,49 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         orchestrator_token_budget=daemon_cfg.orchestrator_token_budget,
         checkpointer=checkpointer,
         prefs_injector=prefs_injector,
+        memory_injector=memory_injector,
+        task_registry=task_registry,
+        model_router=model_router,
+        admission=admission,
     )
+
+    # ── channel plugins (Phase 3) ------------------------------------------
+    # One DecisionService resolves proposal/ask responses for every surface:
+    # the HTTP routers and any plugin's inbound loop land on the same code
+    # path. Waiter maps are registered per surface (WebHub + InboundSink).
+    decision_service = DecisionService(store)
+    if web_hub is not None:
+        decision_service.add_waiters(
+            proposals=web_hub.pending_proposals, asks=web_hub.pending_asks,
+        )
+
+    def _daemon_status() -> str:
+        return (
+            f"daemon: running — web http://{daemon_cfg.web_host}:"
+            f"{daemon_cfg.web_port}/ · subagents: {', '.join(subagents)}"
+        )
+
+    inbound_sink = InboundSink(
+        task_submission=task_submission,
+        decision_service=decision_service,
+        task_registry=task_registry,
+        prefs_store=prefs_store,
+        status_provider=_daemon_status,
+    )
+    decision_service.add_waiters(
+        proposals=inbound_sink.pending_proposals, asks=inbound_sink.pending_asks,
+    )
+    channel_plugins = ChannelPluginRegistry(
+        router=channels, sink=inbound_sink, config=ChannelsConfig.from_file(),
+    )
+    await channel_plugins.start_all()
 
     # ── web server -------------------------------------------------------
     if web_hub is not None:
+        auth_settings = AuthSettings.from_env(host=daemon_cfg.web_host)
+        if auth_settings.enforce:
+            logger.info("  web auth  : bearer token enforced (non-loopback bind %s)",
+                        daemon_cfg.web_host)
         app = make_app(
             web_hub,
             host=daemon_cfg.web_host,
@@ -445,17 +681,38 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
             config_reload=_hot_reload_events_config,
             channels=channels,
             session_origin=session_origin,
+            auth=auth_settings,
+            task_registry=task_registry,
+            task_submission=task_submission,
+            decision_service=decision_service,
+            channel_plugins=channel_plugins,
+            usage_store=usage_store,
+            resource_monitor=resource_monitor,
+            admission_controller=admission,
+            model_router=model_router,
+            memory_store=memory_store,
+            async_subagents=async_host_url is not None,
         )
         uvicorn_level = logging.getLevelName(
             logging.getLogger("yuyutsava").getEffectiveLevel()
         ).lower()
         config = uvicorn.Config(
             app, host=daemon_cfg.web_host, port=daemon_cfg.web_port,
-            log_level=uvicorn_level, access_log=True, lifespan="on",
+            log_level=uvicorn_level, lifespan="on",
+            # uvicorn's access log records full request lines including the
+            # query string — which carries ?token= on /stream when auth is
+            # enforced. Drop it off-loopback; the in-app HTTP log middleware
+            # (path-only) still covers observability.
+            access_log=not auth_settings.enforce,
         )
         web_server = uvicorn.Server(config)
 
-    web_url = f"http://{daemon_cfg.web_host}:{daemon_cfg.web_port}/"
+    # A wildcard bind (0.0.0.0 / ::) is not an openable address; show loopback
+    # for the local web window. Remote clients use the host's tailnet IP.
+    _display_host = daemon_cfg.web_host
+    if _display_host in ("0.0.0.0", "::", ""):
+        _display_host = "127.0.0.1"
+    web_url = f"http://{_display_host}:{daemon_cfg.web_port}/"
 
     return DaemonSubsystems(
         daemon_cfg=daemon_cfg,
@@ -472,9 +729,22 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         mcp_manager=mcp_manager,
         checkpointer_saver=checkpointer_saver,
         sweeper=sweeper,
+        pg_pool=pg_pool,
+        artifact_store=artifact_store,
+        summary_store=summary_store,
+        memory_store=memory_store,
+        embedder=embedder,
         task_queue=task_queue,
         triage_loop=triage_loop,
         orch_loop=orch_loop,
+        task_registry=task_registry,
+        task_submission=task_submission,
+        decision_service=decision_service,
+        channel_plugins=channel_plugins,
+        usage_store=usage_store,
+        model_router=model_router,
+        resource_monitor=resource_monitor,
+        admission=admission,
         skill_registry=skill_registry,
         triage_settings=triage_settings,
         orchestrator_settings=orchestrator_settings,

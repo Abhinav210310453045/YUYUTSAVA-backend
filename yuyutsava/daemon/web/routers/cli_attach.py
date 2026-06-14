@@ -57,10 +57,8 @@ class OkOut(BaseModel):
 
 
 def _find_cli_channel(channels) -> CliRemoteChannel | None:
-    for c in channels.channels:
-        if c.name == _CLI_CHANNEL_NAME and isinstance(c, CliRemoteChannel):
-            return c
-    return None
+    c = channels.find(_CLI_CHANNEL_NAME)
+    return c if isinstance(c, CliRemoteChannel) else None
 
 
 @router.post(
@@ -76,13 +74,9 @@ async def attach(
 ) -> CliAttachOut:
     if channels is None:
         raise ServiceUnavailableError("ChannelRouter not initialized")
-    existing = _find_cli_channel(channels)
-    if existing is None:
-        channels.channels.append(CliRemoteChannel(hub, name=_CLI_CHANNEL_NAME))
-        attached = True
+    attached = channels.register(CliRemoteChannel(hub, name=_CLI_CHANNEL_NAME))
+    if attached:
         logger.info("CLI attached (label=%s session_id=%s)", body.label, body.session_id)
-    else:
-        attached = False
     if body.session_id and session_origin is not None:
         session_origin.set(body.session_id, _CLI_CHANNEL_NAME)
     return CliAttachOut(ok=True, channel_name=_CLI_CHANNEL_NAME, attached=attached)
@@ -102,8 +96,6 @@ async def detach(
         raise ServiceUnavailableError("ChannelRouter not initialized")
     if body.session_id and session_origin is not None:
         session_origin.clear(body.session_id)
-    cli = _find_cli_channel(channels)
-    if cli is not None:
-        channels.channels.remove(cli)
+    if channels.unregister(_CLI_CHANNEL_NAME) is not None:
         logger.info("CLI detached")
     return OkOut(ok=True)

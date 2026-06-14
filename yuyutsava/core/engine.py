@@ -266,19 +266,24 @@ def _build_tool_registry_and_tools(
     task_runner_tools: list,
     search_config: SearchConfig | None,
     skill_registry: SkillRegistry | None,
+    extra_tools: list | None = None,
 ) -> tuple[list, Any]:
     """Build a ToolRegistry and return (startup_tools, registry).
 
     startup_tools = [tool_search] + all_custom_tools
     All custom tools go into the graph for execution; only tool_search is
     visible to the LLM upfront (the ToolFilterMiddleware hides tr_*/ws_* etc.).
+    ``extra_tools`` rides along for families outside the fixed sets (e.g.
+    the always-visible ctx_* artifact readers).
     """
     from yuyutsava.agents.db_tools import make_db_tools
 
     search_tools = make_search_tools(search_config) if search_config else []
     skill_tools = make_skill_tools(skill_registry) if skill_registry else []
     db_tools = make_db_tools()  # always available — read-only by construction
-    all_custom_tools = task_runner_tools + search_tools + skill_tools + db_tools
+    all_custom_tools = (
+        task_runner_tools + search_tools + skill_tools + db_tools + (extra_tools or [])
+    )
 
     registry = ToolRegistry()
     registry.register_many(all_custom_tools)
@@ -289,6 +294,43 @@ def _build_tool_registry_and_tools(
     # tool_search is visible, driving the lazy-discovery pattern.
     startup_tools = [tool_search] + all_custom_tools
     return startup_tools, registry
+
+
+def _context_middleware(
+    *,
+    model: BaseChatModel,
+    artifact_store: Any | None,
+    context_settings: Any | None,
+    summary_store: Any | None = None,
+    memory_store: Any | None = None,
+    compaction_model: BaseChatModel | None = None,
+    role: str = "agent",
+) -> list:
+    """Build the context-controller middleware pair for one agent.
+
+    Order matters downstream: offload must run on the tool path before the
+    compactor ever counts tokens, and both sit before BudgetMiddleware (the
+    absolute spend ceiling) in the caller's list. Returns [] when the
+    context controller is not wired (stores absent), preserving the
+    pre-context-controller behaviour exactly.
+    """
+    from yuyutsava.context.compaction import YuyutsavaCompactionMiddleware
+    from yuyutsava.context.offload_middleware import ToolResultOffloadMiddleware
+
+    out: list = []
+    if artifact_store is not None and context_settings is not None:
+        out.append(ToolResultOffloadMiddleware(artifact_store, context_settings))
+    if context_settings is not None:
+        out.append(
+            YuyutsavaCompactionMiddleware(
+                model=compaction_model or model,
+                settings=context_settings,
+                summary_store=summary_store,
+                memory_sink=memory_store,
+                role=role,
+            )
+        )
+    return out
 
 
 def build_cli_deepagent(
@@ -310,6 +352,11 @@ def build_cli_deepagent(
     async_max_concurrent: int = 8,
     async_host: Any | None = None,
     async_host_attachment: Any | None = None,
+    artifact_store: Any | None = None,
+    summary_store: Any | None = None,
+    memory_store: Any | None = None,
+    context_settings: Any | None = None,
+    compaction_model: BaseChatModel | None = None,
 ) -> AgentBundle:
     """Build the CLI deepagent.
 
@@ -347,6 +394,11 @@ def build_cli_deepagent(
         async_max_concurrent: Cap for in-flight bg tasks. Defaults to ``8``.
         async_host: Optional ``AsyncSubagentHost`` reference recorded on the
             returned bundle so ``AgentBundle.close`` can tear it down.
+        artifact_store / summary_store / memory_store / context_settings /
+            compaction_model: context-controller wiring (see
+            ``yuyutsava.context``). All optional; None disables the layer.
+            CLI chat threads are the longest-lived in the system, so the
+            stack factory (``cli/agent_stack.py``) wires these by default.
     """
     model = chat_model(settings)
     checkpointer = checkpointer or MemorySaver()
@@ -355,8 +407,25 @@ def build_cli_deepagent(
     # own prompt routes filesystem ops through tr_*, so the block only misleads the
     # model and wastes cache-prefix tokens. Pass replacement="..." to reword instead.
     middleware = [ToolFilterMiddleware(), FilesystemPromptOverrideMiddleware()]
+    middleware.extend(_context_middleware(
+        model=model,
+        artifact_store=artifact_store,
+        context_settings=context_settings,
+        summary_store=summary_store,
+        memory_store=memory_store,
+        compaction_model=compaction_model,
+        role="cli",
+    ))
     if permission_check:
         middleware.append(PermissionMiddleware(workspace_root=workspace_root.resolve()))
+
+    context_tools: list = []
+    if artifact_store is not None:
+        from yuyutsava.context.tools import make_context_tools
+        context_tools.extend(make_context_tools(artifact_store))
+    if memory_store is not None:
+        from yuyutsava.memory.tools import make_memory_tools
+        context_tools.extend(make_memory_tools(memory_store))
 
     loc = local_settings or LocalSettings()
     ws = workspace_root.resolve()
@@ -413,7 +482,8 @@ def build_cli_deepagent(
             pids_limit=docker_cfg.pids_limit,
         )
         startup_tools, _ = _build_tool_registry_and_tools(
-            _bind_task_runner_tools(ws), search_config, skill_registry
+            _bind_task_runner_tools(ws), search_config, skill_registry,
+            extra_tools=context_tools,
         )
         graph = create_deep_agent(
             model=model,
@@ -436,7 +506,8 @@ def build_cli_deepagent(
 
     backend = _local_shell_backend_factory(workspace_root, bash_timeout_sec)
     startup_tools, _ = _build_tool_registry_and_tools(
-        _bind_task_runner_tools(ws, sandbox_root), search_config, skill_registry
+        _bind_task_runner_tools(ws, sandbox_root), search_config, skill_registry,
+        extra_tools=context_tools,
     )
     graph = create_deep_agent(
         model=model,
@@ -473,6 +544,7 @@ def build_orchestrator(
     skill_registry: "SkillRegistry | None" = None,
     checkpointer: BaseCheckpointSaver | None = None,
     prefs_block: str = "",
+    usage_context: "Any | None" = None,
 ) -> CompiledStateGraph:
     """Build the daemon orchestrator: master deepagent + pre-registered subagents.
 
@@ -480,6 +552,11 @@ def build_orchestrator(
     agents are built from the shared engine. ``OrchestratorDeps`` and the
     ``_make_ask_user_tool`` helper still live in that module — they are agent
     *definition*, not build mechanics.
+
+    ``usage_context`` (``yuyutsava.daemon.usage.UsageContext``) carries the
+    task's join keys; when ``deps.usage_store`` is set, a ``UsageRecorder``
+    rides every agent in the graph and writes one ``llm_usage`` row per
+    model call.
     """
     # Lazy imports: this function is in engine.py but pulls daemon-only modules.
     # Keeping these imports inside the function avoids loading the daemon stack
@@ -510,6 +587,38 @@ def build_orchestrator(
         master_tools.extend(make_search_tools(deps.search_config, cap_enforcer=deps.cap_enforcer))
     if deps.mcp_manager is not None:
         master_tools.extend(deps.mcp_manager.tools_for("orchestrator"))
+    if deps.artifact_store is not None:
+        from yuyutsava.context.tools import make_context_tools
+        master_tools.extend(make_context_tools(deps.artifact_store))
+    if deps.memory_store is not None:
+        from yuyutsava.memory.tools import make_memory_tools
+        master_tools.extend(make_memory_tools(deps.memory_store))
+
+    def _ctx_mw(agent_model: BaseChatModel, role: str) -> list:
+        return _context_middleware(
+            model=agent_model,
+            artifact_store=deps.artifact_store,
+            context_settings=deps.context_settings,
+            summary_store=deps.summary_store,
+            memory_store=deps.memory_store,
+            compaction_model=deps.compaction_model,
+            role=role,
+        )
+
+    def _usage_mw(agent_model: BaseChatModel, role: str) -> list:
+        """Per-call cost accounting (Phase 4); [] when no store is wired."""
+        usage_store = getattr(deps, "usage_store", None)
+        if usage_store is None:
+            return []
+        from yuyutsava.core.llm import model_name_of
+        from yuyutsava.daemon.usage import UsageRecorder
+        return [UsageRecorder(
+            usage_store,
+            role=role,
+            model_name=model_name_of(agent_model),
+            task_id=getattr(usage_context, "task_id", ""),
+            thread_id=getattr(usage_context, "thread_id", ""),
+        )]
 
     subagent_specs: list[dict] = []
     for sa in deps.subagents.values():
@@ -517,8 +626,15 @@ def build_orchestrator(
         spec["model"] = deps.subagent_model
         spec["middleware"] = [
             ToolFilterMiddleware(),
+            *_ctx_mw(deps.subagent_model, sa.name),
             BudgetMiddleware(max_input_tokens=deps.subagent_token_budget, role=sa.name),
+            *_usage_mw(deps.subagent_model, sa.name),
         ]
+        if deps.artifact_store is not None:
+            # Subagents read their own offloaded results, so the ctx_* pair
+            # must exist in their graphs too (fresh instances per spec).
+            from yuyutsava.context.tools import make_context_tools
+            spec["tools"] = list(spec.get("tools") or []) + make_context_tools(deps.artifact_store)
         subagent_specs.append(spec)
 
     # Async (background) subagents — same `subagents=` list; deepagents auto-
@@ -550,7 +666,15 @@ def build_orchestrator(
             inherit_env=False,
         )
 
-    master_middleware: list = [ToolFilterMiddleware(), budget]
+    # Order: tool filter → offload (tool path) → compaction (model path) →
+    # budget (absolute ceiling, must see post-compaction usage last) →
+    # usage recorder (passive accounting, sees the same final usage).
+    master_middleware: list = [
+        ToolFilterMiddleware(),
+        *_ctx_mw(model, "orchestrator"),
+        budget,
+        *_usage_mw(model, "orchestrator"),
+    ]
     mirror = getattr(deps, "async_task_mirror", None)
     if mirror is not None and (async_subagents or getattr(deps, "remote_async_subagents", None)):
         from yuyutsava.async_subagents.cap_middleware import BackgroundTaskCapMiddleware
