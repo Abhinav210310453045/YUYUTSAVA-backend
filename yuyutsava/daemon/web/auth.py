@@ -42,8 +42,16 @@ _QUERY_TOKEN_PATHS = frozenset({"/stream", "/v1/stream"})
 
 
 def is_loopback_host(host: str) -> bool:
-    """The bind-address test the app factory and AuthSettings share."""
-    return host.startswith("127.") or host in ("localhost", "::1")
+    """The bind-address test the app factory and AuthSettings share.
+
+    Also matches the IPv4-mapped-IPv6 loopback form (``::ffff:127.0.0.1``)
+    that can appear as a peer address on dual-stack sockets.
+    """
+    return (
+        host.startswith("127.")
+        or host.startswith("::ffff:127.")
+        or host in ("localhost", "::1")
+    )
 
 
 def _load_or_generate_token() -> str:
@@ -86,12 +94,21 @@ def check_request(
     path: str,
     authorization: str = "",
     query_token: str = "",
+    peer_host: str = "",
 ) -> bool:
     """Pure decision function the middleware (and tests) call.
 
     Returns True when the request may proceed.
+
+    ``peer_host`` is the connecting client's address. When the bind is
+    non-loopback (e.g. ``0.0.0.0`` for local UI + tailnet access), requests
+    that still arrive over loopback are exempt — this keeps the Electron
+    renderer untouched while tailnet peers continue to need the token. A
+    loopback source cannot be spoofed from off-box.
     """
     if not settings.enforce or path in _PUBLIC_PATHS:
+        return True
+    if peer_host and is_loopback_host(peer_host):
         return True
     supplied = ""
     if authorization.lower().startswith("bearer "):
@@ -119,6 +136,7 @@ def install_auth_middleware(app: FastAPI, settings: AuthSettings) -> None:
             path=request.url.path,
             authorization=request.headers.get("authorization", ""),
             query_token=request.query_params.get("token", ""),
+            peer_host=request.client.host if request.client else "",
         )
         if not ok:
             return JSONResponse(

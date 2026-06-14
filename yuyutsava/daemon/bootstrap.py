@@ -707,7 +707,12 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         )
         web_server = uvicorn.Server(config)
 
-    web_url = f"http://{daemon_cfg.web_host}:{daemon_cfg.web_port}/"
+    # A wildcard bind (0.0.0.0 / ::) is not an openable address; show loopback
+    # for the local web window. Remote clients use the host's tailnet IP.
+    _display_host = daemon_cfg.web_host
+    if _display_host in ("0.0.0.0", "::", ""):
+        _display_host = "127.0.0.1"
+    web_url = f"http://{_display_host}:{daemon_cfg.web_port}/"
 
     return DaemonSubsystems(
         daemon_cfg=daemon_cfg,

@@ -14,9 +14,12 @@ from yuyutsava.daemon.web.auth import AuthSettings, check_request
 from yuyutsava.daemon.web.services.stream_service import WebHub
 
 
-def _client(app) -> httpx.AsyncClient:
+def _client(app, *, peer: str = "127.0.0.1") -> httpx.AsyncClient:
+    # ``client`` sets request.client.host so tests can simulate a loopback
+    # renderer vs an off-box (tailnet) peer.
     return httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://test",
+        transport=httpx.ASGITransport(app=app, client=(peer, 12345)),
+        base_url="http://test",
     )
 
 
@@ -55,13 +58,31 @@ class CheckRequestTests(unittest.TestCase):
         relaxed = AuthSettings(token="", enforce=False)
         self.assertTrue(check_request(relaxed, path="/tasks"))
 
+    def test_loopback_peer_exempt_when_enforced(self) -> None:
+        # 0.0.0.0 bind enforces auth, but loopback peers (the Electron
+        # renderer) are exempt without a token.
+        for peer in ("127.0.0.1", "::1", "::ffff:127.0.0.1"):
+            self.assertTrue(check_request(
+                self.settings, path="/tasks", peer_host=peer,
+            ), peer)
+
+    def test_non_loopback_peer_still_needs_token(self) -> None:
+        self.assertFalse(check_request(
+            self.settings, path="/tasks", peer_host="100.64.0.1",
+        ))
+        self.assertTrue(check_request(
+            self.settings, path="/tasks", peer_host="100.64.0.1",
+            authorization="Bearer sekret",
+        ))
+
 
 class AuthMiddlewareTests(unittest.IsolatedAsyncioTestCase):
     async def test_non_loopback_requires_bearer(self) -> None:
         # /openapi.json: protected (not in the public set) yet stateless, so
         # the assertion exercises auth and nothing else.
         app = _app("100.64.0.1", AuthSettings(token="sekret", enforce=True))
-        async with _client(app) as client:
+        # Off-box peer: the loopback exemption does not apply.
+        async with _client(app, peer="100.64.0.2") as client:
             r = await client.get("/openapi.json")
             self.assertEqual(r.status_code, 401)
             self.assertEqual(r.json()["code"], "unauthorized")
@@ -73,6 +94,14 @@ class AuthMiddlewareTests(unittest.IsolatedAsyncioTestCase):
 
             # Reachability probe stays open.
             r = await client.get("/health")
+            self.assertEqual(r.status_code, 200)
+
+    async def test_loopback_peer_exempt_on_non_loopback_bind(self) -> None:
+        # 0.0.0.0-style bind enforces auth, but the local renderer (loopback
+        # peer) reaches protected routes without a token.
+        app = _app("0.0.0.0", AuthSettings(token="sekret", enforce=True))
+        async with _client(app, peer="127.0.0.1") as client:
+            r = await client.get("/openapi.json")
             self.assertEqual(r.status_code, 200)
 
     async def test_loopback_needs_no_token(self) -> None:
