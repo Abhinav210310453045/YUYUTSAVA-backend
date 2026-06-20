@@ -37,6 +37,44 @@ export function getLogsEnabled() {
   return logsFlag.enabled
 }
 
+// --- readable line formatters -------------------------------------------
+// Events lines are human-readable; the raw JSON payload is never dumped into
+// the line (it's available via each row's copy button instead).
+
+function fmtArgs(args) {
+  if (!args || typeof args !== 'object') return ''
+  return Object.entries(args)
+    .map(([k, v]) => {
+      let s = typeof v === 'string' ? v : JSON.stringify(v)
+      if (s && s.length > 60) s = s.slice(0, 60) + '…'
+      return `${k}=${s}`
+    })
+    .join(', ')
+}
+
+function fmtMetrics(d) {
+  const cpu = d?.cpu_pct != null ? `cpu ${Math.round(d.cpu_pct)}%` : null
+  const mem = d?.mem_available_mb != null ? `mem ${Math.round(d.mem_available_mb)}MB` : null
+  const disk = d?.disk_free_gb != null ? `disk ${Math.round(d.disk_free_gb)}GB` : null
+  return [cpu, mem, disk].filter(Boolean).join(' · ') || 'resources'
+}
+
+// Owner-labeled background-task line so progress is attributable at a glance.
+function fmtBgTask(kind, d) {
+  const who = `${d?.agent_name || 'bg task'} · ${(d?.task_id || '').slice(0, 8)}`
+  if (kind === 'async_task_started')
+    return `[bg ${who}] started${d?.instruction_preview ? ': ' + d.instruction_preview : ''}`
+  if (kind === 'async_task_progress') {
+    const arrow = d?.kind_hint === 'tool_call' ? '→ ' : ''
+    return `[bg ${who}] ${arrow}${d?.text || ''}`.trimEnd()
+  }
+  if (kind === 'async_task_awaiting_user')
+    return `[bg ${who}] ⏸ awaiting approval: ${d?.title || ''}`.trimEnd()
+  if (kind === 'async_task_completed')
+    return `[bg ${who}] ${d?.ok ? '✓ done' : '✗ failed'}${d?.summary ? ': ' + d.summary : ''}`
+  return `[bg ${who}] ${kind}`
+}
+
 const SSEContext = createContext(null)
 
 function reducer(state, action) {
@@ -132,41 +170,53 @@ export function SSEProvider({ children }) {
       onDisconnected: () => dispatch({ type: 'DISCONNECTED' }),
       onProposal: (data) => dispatch({ type: 'PROPOSAL', payload: data }),
       onAsk: (data) => dispatch({ type: 'ASK', payload: data }),
+      // Resolved elsewhere (CLI answer, expiry, watcher auto-reject): drop the card.
+      onAskResolved: (data) => dispatch({ type: 'REMOVE_ASK', id: data.ask_id }),
+      onProposalResolved: (data) => dispatch({ type: 'REMOVE_PROPOSAL', id: data.proposal_id }),
       onEvent: (data) => {
         const kind = data.kind || 'log'
-        // Background subagent events: handled by the BG_TASK reducer, not the
-        // event/log line stream. Fire a focus-aware OS notification on
-        // completion so users get a banner from collapsed/minimized windows.
+        const d = data.data || {}
+        const ts = d.ts || Date.now() / 1000
+        // Background subagent events: update the Tasks panel AND surface an
+        // owner-labeled line in the Events stream so progress is attributable.
+        // Also fire a focus-aware OS notification on completion.
         if (BG_TASK_KINDS.has(kind)) {
-          dispatch({ type: 'BG_TASK', kind, payload: data.data || {} })
+          dispatch({ type: 'BG_TASK', kind, payload: d })
           if (kind === 'async_task_completed') {
-            const ok = !!data.data?.ok
-            const agent = data.data?.agent_name || 'background task'
+            const ok = !!d.ok
+            const agent = d.agent_name || 'background task'
             try {
               // Preload exposes the IPC as ``showNotification`` (preload.js:35
               // → ipcMain ``notify:show`` handler in main/notifications.js).
               window.electronAPI?.showNotification?.({
                 title: ok ? `${agent} ✓ completed` : `${agent} ✗ failed`,
-                body: (data.data?.summary || '').slice(0, 200),
+                body: (d.summary || '').slice(0, 200),
               })
             } catch {}
           }
+          dispatch({
+            type: 'EVENT_LINE',
+            line: { kind: 'bg_task', text: fmtBgTask(kind, d), ts, raw: data },
+          })
           return
         }
+        // Token fragments are the model's streaming reply — rendered in the
+        // chat view, not the activity log. Skip them so Events stays readable.
+        if (kind === 'token') return
         const isLog = LOG_KINDS.has(kind)
         // Logs are gated by the Titlebar toggle; events always flow.
         if (isLog && !logsFlag.enabled) return
         let text = ''
-        if (kind === 'token') text = data.data?.token || ''
-        else if (kind === 'tool_call') text = `${data.data?.name || ''}(${JSON.stringify(data.data?.input || {})})`
-        else if (kind === 'tool_result') text = `${data.data?.name || ''}: ${JSON.stringify(data.data?.output ?? '').slice(0, 120)}`
-        else if (kind === 'timeline') text = data.data?.text || data.data?.summary || JSON.stringify(data.data)
-        else if (kind === 'http_log') text = `${data.data?.method} ${data.data?.path} → ${data.data?.status} (${data.data?.duration_ms}ms)`
-        else text = data.data?.text || data.data?.message || JSON.stringify(data.data)
+        if (kind === 'tool_call') text = `${d.name || ''}(${fmtArgs(d.args)})`
+        else if (kind === 'tool_result') text = `${d.name || ''}: ${String(d.preview ?? '').replace(/\s+/g, ' ').slice(0, 200)}`
+        else if (kind === 'timeline') text = d.line || d.text || d.summary || ''
+        else if (kind === 'system_metrics') text = fmtMetrics(d)
+        else if (kind === 'http_log') text = `${d.method} ${d.path} → ${d.status} (${d.duration_ms}ms)`
+        else text = d.text || d.message || kind
 
         dispatch({
           type: isLog ? 'LOG_LINE' : 'EVENT_LINE',
-          line: { kind, text, ts: data.data?.ts || Date.now() / 1000 },
+          line: { kind, text, ts, raw: data },
         })
       },
     })

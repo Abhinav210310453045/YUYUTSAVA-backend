@@ -23,6 +23,7 @@ from ulid import ULID
 from yuyutsava.memory.embedder import Embedder
 from yuyutsava.storage.base import BaseSqliteStore
 from yuyutsava.storage.pg.pool import PgPool
+from yuyutsava.storage.pg.threads import ensure_thread
 
 logger = logging.getLogger("yuyutsava.memory.store")
 
@@ -91,6 +92,9 @@ class PgMemoryStore(MemoryStore):
                 exc_info=True,
             )
         async with self._pool.connection() as conn:
+            # source_thread_id FKs to threads (ON DELETE SET NULL); upsert the
+            # parent first so the constraint holds. No-op when it's None.
+            await ensure_thread(conn, source_thread_id)
             await conn.execute(
                 "INSERT INTO memories "
                 "(memory_id, kind, text, embedding, source_thread_id, metadata) "

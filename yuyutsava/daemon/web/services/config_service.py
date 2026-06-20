@@ -64,7 +64,8 @@ class ConfigService:
     async def save_events(self, cfg: EventsConfig) -> EventsConfig:
         _validate_events_config(cfg)
         async with self._lock:
-            cfg.to_file()
+            # to_file does mkdir + os.replace → off-loop (blockbuster-safe).
+            await asyncio.to_thread(cfg.to_file)
             if self._reload is not None:
                 try:
                     await self._reload()

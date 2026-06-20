@@ -71,6 +71,17 @@ async function onReady() {
     })
     if (response === 0) daemon.start(process.cwd())
   }
+
+  // Keep the tray menu's daemon status accurate, including daemons started or
+  // stopped externally (CLI / a prior session). Only rebuilds when it changes.
+  let lastRunning = null
+  setInterval(async () => {
+    const running = daemon.isRunning() || await daemon.ping(daemon.getPort())
+    if (running !== lastRunning) {
+      lastRunning = running
+      tray.refreshMenu(running)
+    }
+  }, 4000)
 }
 
 app.whenReady().then(onReady)

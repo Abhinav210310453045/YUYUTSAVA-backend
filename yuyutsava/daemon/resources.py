@@ -183,7 +183,9 @@ class ResourceMonitor:
 
     async def sample_once(self) -> ResourceSnapshot:
         """Take one sample, append it to the ring, and return it."""
-        snap = self._sampler()
+        # Off-loop: psutil reads (disk_usage → os.statvfs) are blocking and would
+        # trip blockbuster on the event loop under allow_blocking=False.
+        snap = await asyncio.to_thread(self._sampler)
         if self._settings.docker_stats:
             stats = await self._docker_stats()
             if stats:

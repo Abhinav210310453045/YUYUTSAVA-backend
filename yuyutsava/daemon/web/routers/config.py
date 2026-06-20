@@ -8,16 +8,36 @@ DELETE /config/events/roots?path=... — remove a watched directory
 
 from __future__ import annotations
 
+import dataclasses
+
 from fastapi import APIRouter, Depends, Query, Request
 
 from yuyutsava.core.config import EventsConfig, SourceConfig
 from yuyutsava.daemon.web.deps import get_config_reload
 from yuyutsava.daemon.web.schemas.config import (
-    AddRootIn, EventsConfigOut, EventsConfigPatchIn, RootsOut, SourceDTO,
+    AddRootIn, ConfigGroupDTO, ConfigSchemaOut, ConfigVarDTO,
+    EventsConfigOut, EventsConfigPatchIn, RootsOut, SourceDTO,
 )
+from yuyutsava.daemon.web.services.config_schema import config_groups
 from yuyutsava.daemon.web.services.config_service import ConfigService
 
 router = APIRouter(prefix="/config", tags=["config"])
+
+
+@router.get("/schema", response_model=ConfigSchemaOut,
+            summary="Config-variable catalog for the Settings UI")
+async def get_schema() -> ConfigSchemaOut:
+    """The canonical list of configurable env variables, grouped and typed, so
+    the desktop Settings form renders the current set (never a stale subset).
+    Carries ``reload_class`` per variable so the UI knows whether a change is
+    hot-applied, restart-with-resume, or restart-from-scratch."""
+    return ConfigSchemaOut(groups=[
+        ConfigGroupDTO(
+            name=g.name,
+            vars=[ConfigVarDTO(**dataclasses.asdict(v)) for v in g.vars],
+        )
+        for g in config_groups()
+    ])
 
 
 def _to_dto(cfg: EventsConfig) -> EventsConfigOut:

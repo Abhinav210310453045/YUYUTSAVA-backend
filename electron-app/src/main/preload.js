@@ -39,6 +39,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('notify:click', handler)
   },
 
+  // Tray menu navigation: main process asks the renderer to switch view
+  // (e.g. tray → "Settings"). Cleanup fn removes the listener.
+  onNavigate: (cb) => {
+    const handler = (_event, target) => cb(target)
+    ipcRenderer.on('tray:navigate', handler)
+    return () => ipcRenderer.removeListener('tray:navigate', handler)
+  },
+
   // Daemon log stream
   onDaemonLog: (cb) => {
     ipcRenderer.on('daemon:log', (_event, line) => cb(line))

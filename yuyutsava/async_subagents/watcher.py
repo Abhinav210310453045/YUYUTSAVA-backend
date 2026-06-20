@@ -26,6 +26,7 @@ Responsibilities
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 import uuid
@@ -40,10 +41,16 @@ from yuyutsava.daemon.channels import (
     AsyncTaskStartedPayload,
     ChannelEvent,
 )
+from yuyutsava.async_subagents.launch_index import LaunchIndex
 from yuyutsava.async_subagents.mirror import (
     AsyncTaskMirror,
     MirroredTask,
     TERMINAL_STATUSES,
+)
+from yuyutsava.daemon.interrupt_format import (
+    body_for_interrupt,
+    options_for_interrupt,
+    title_for_interrupt,
 )
 
 logger = logging.getLogger("yuyutsava.async_subagents.watcher")
@@ -51,6 +58,9 @@ logger = logging.getLogger("yuyutsava.async_subagents.watcher")
 
 AskHandler = Callable[[AskPrompt], Awaitable[str]]
 EventSink = Callable[[ChannelEvent], Awaitable[None]]
+# Called once per task when it reaches a terminal status, so the daemon can wake
+# the master agent on the originating thread. (task, ok, summary) -> None.
+CompletionSink = Callable[[MirroredTask, bool, str], Awaitable[None]]
 
 
 # Statuses we treat as "still running" for HITL/polling purposes.
@@ -62,6 +72,16 @@ def _first_str(*parts: str | None) -> str:
         if p:
             return p
     return ""
+
+
+def _clean_agent_name(raw: str | None) -> str | None:
+    """Display name from a graph/assistant id (strips the async ``-bg`` suffix)."""
+    if not raw or not isinstance(raw, str):
+        return None
+    name = raw.strip()
+    if name.endswith("-bg"):
+        name = name[:-3]
+    return name or None
 
 
 def _extract_thread_id(thread_obj: Any) -> str | None:
@@ -95,6 +115,63 @@ def _last_message_text(values: Any) -> str:
                 out.append(block)
         return "\n".join(out)
     return str(content) if content is not None else ""
+
+
+def _content_text(content: Any) -> str:
+    """Flatten a message ``content`` (str | list-of-blocks) to plain text."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        out: list[str] = []
+        for block in content:
+            if isinstance(block, dict) and "text" in block:
+                out.append(str(block["text"]))
+            elif isinstance(block, str):
+                out.append(block)
+        return "\n".join(out)
+    return str(content) if content is not None else ""
+
+
+def _new_progress_steps(values: Any, seen: int) -> tuple[list[tuple[str, str]], int]:
+    """Diff a sub-thread's message history into new progress steps.
+
+    Returns ``(steps, total)`` where ``steps`` is a list of
+    ``(kind_hint, text)`` for each message past ``seen`` — a tool call
+    (``"tool_call"``, ``"<name> <args>"``) or a chunk of assistant text
+    (``"text"``). Tool results and human turns are skipped to keep the live
+    stream readable; the full payload is always available via the event's copy
+    button on the UI side. ``total`` is the new high-water message count.
+    """
+    if not isinstance(values, dict):
+        return [], seen
+    msgs = values.get("messages") or []
+    total = len(msgs)
+    if total <= seen:
+        return [], total
+    steps: list[tuple[str, str]] = []
+    for m in msgs[seen:]:
+        if isinstance(m, dict):
+            tcs = m.get("tool_calls")
+            content = m.get("content", "")
+            mtype = m.get("type") or m.get("role") or ""
+        else:
+            tcs = getattr(m, "tool_calls", None)
+            content = getattr(m, "content", "")
+            mtype = getattr(m, "type", "") or ""
+        if tcs:
+            for tc in tcs:
+                name = tc.get("name", "?") if isinstance(tc, dict) else getattr(tc, "name", "?")
+                args = tc.get("args", {}) if isinstance(tc, dict) else getattr(tc, "args", {})
+                try:
+                    args_str = json.dumps(args, ensure_ascii=False) if args else ""
+                except (TypeError, ValueError):
+                    args_str = str(args)
+                steps.append(("tool_call", f"{name} {args_str}".strip()[:200]))
+        elif mtype in ("ai", "assistant"):
+            text = _content_text(content).strip()
+            if text:
+                steps.append(("text", text[:200]))
+    return steps, total
 
 
 class AsyncTaskHealthWatcher:
@@ -136,6 +213,8 @@ class AsyncTaskHealthWatcher:
         poll_interval_sec: float = 1.5,
         per_task_timeout_sec: float = 3600.0,
         headers: dict[str, str] | None = None,
+        completion_sink: CompletionSink | None = None,
+        launch_index: LaunchIndex | None = None,
     ) -> None:
         self._mirror = mirror
         self._host_url = host_url
@@ -145,12 +224,20 @@ class AsyncTaskHealthWatcher:
         self._poll = poll_interval_sec
         self._task_timeout = per_task_timeout_sec
         self._headers = headers
+        # Wakes the master agent when a bg task finishes (daemon path). When
+        # None (e.g. CLI Mode-1) the watcher only emits the UI completion event.
+        self._completion_sink = completion_sink
+        # Links a discovered sub-thread back to the launching turn/channel.
+        self._launch_index = launch_index
         self._stop = asyncio.Event()
         self._loop_task: asyncio.Task | None = None
         self._client = None
         self._known_threads: set[str] = set()
         # task_id -> set of interrupt_ids already routed (avoid double-ask on slow resume)
         self._handled_interrupts: dict[str, set[str]] = {}
+        # task_id -> count of sub-thread messages already streamed as progress
+        # (so each cycle only emits the *new* steps). Cleared on terminal.
+        self._progress_seen: dict[str, int] = {}
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -247,10 +334,19 @@ class AsyncTaskHealthWatcher:
             task_id = thread_id
             if self._mirror.get(task_id) is not None:
                 continue
-            # We don't know the agent_name from runs.list alone; try to read
-            # it from thread metadata if available, otherwise mark unknown.
-            agent_name = await self._guess_agent_name(thread_id, run_dict) or "unknown-bg"
+            # We don't know the agent_name from runs.list alone; try thread
+            # metadata, then fall back to the run's assistant/graph id (e.g.
+            # "general-purpose" / "file-organizer") instead of an opaque label.
+            agent_name = (
+                await self._guess_agent_name(thread_id, run_dict)
+                or _clean_agent_name(run_dict.get("assistant_id"))
+                or "background task"
+            )
             now = time.time()
+            # Link back to the launching conversation when the orchestrator
+            # recorded it (improves bg-ask routing + lets us wake the master on
+            # the original thread at completion).
+            rec = self._launch_index.get(task_id) if self._launch_index else None
             await self._mirror.upsert(MirroredTask(
                 task_id=task_id,
                 agent_name=agent_name,
@@ -260,6 +356,8 @@ class AsyncTaskHealthWatcher:
                 started_at=now,
                 last_update_at=now,
                 sub_thread_id=thread_id,
+                parent_thread_id=rec.parent_thread_id if rec else None,
+                origin=rec.origin if rec else None,
             ))
             await self._emit(ChannelEvent(payload=AsyncTaskStartedPayload(
                 task_id=task_id,
@@ -308,10 +406,13 @@ class AsyncTaskHealthWatcher:
             run_status = run.get("status") or task.status
             run_id = run.get("run_id")
 
-            # If the latest run is still in flight, we just observe and move on.
+            # If the latest run is still in flight, observe status + stream any
+            # new subagent steps so the task reports progress instead of going
+            # dark between start and completion.
             if run_status in _NON_TERMINAL:
                 if task.status != run_status:
                     await self._mirror.set_status(task.task_id, run_status)
+                await self._emit_progress(task)
                 continue
 
             # Run reached a terminal phase. Fetch the thread to disambiguate
@@ -338,6 +439,40 @@ class AsyncTaskHealthWatcher:
 
             # Unknown — record and re-check next cycle.
             await self._mirror.set_status(task.task_id, run_status)
+
+    async def _emit_progress(self, task: MirroredTask) -> None:
+        """Stream any new subagent steps as ``AsyncTaskProgressPayload`` events.
+
+        Polls the sub-thread's message history and emits one progress event per
+        new tool call / assistant-text step since the last cycle, so background
+        subagents report step-by-step through the same channel the foreground
+        task uses. Best-effort: failures are logged and skipped.
+        """
+        assert self._client is not None
+        if not task.sub_thread_id:
+            return
+        try:
+            thread = await self._client.threads.get(thread_id=task.sub_thread_id)
+        except Exception:
+            logger.debug("threads.get for progress failed for %s", task.task_id, exc_info=True)
+            return
+        values = (
+            thread.get("values") if isinstance(thread, dict)
+            else getattr(thread, "values", None)
+        )
+        seen = self._progress_seen.get(task.task_id, 0)
+        steps, total = _new_progress_steps(values, seen)
+        if total == seen:
+            return
+        self._progress_seen[task.task_id] = total
+        for kind_hint, text in steps:
+            await self._emit(ChannelEvent(payload=AsyncTaskProgressPayload(
+                task_id=task.task_id,
+                agent_name=task.agent_name,
+                kind_hint=kind_hint,
+                text=text,
+                ts=time.time(),
+            )))
 
     # ------------------------------------------------------------------
     # Interrupt handling
@@ -388,6 +523,11 @@ class AsyncTaskHealthWatcher:
             await self._mirror.set_status(task.task_id, "interrupted")
             return
 
+        # Ask the user for each pending interrupt, then resume ONCE with a map
+        # keyed by interrupt id. LangGraph requires the keyed form whenever more
+        # than one interrupt is pending (a bare ``{"resume": value}`` raises
+        # "you must specify the interrupt id when resuming").
+        replies: dict[str, str] = {}
         for it_id, value in pending:
             ask_id = str(uuid.uuid4())
             ask = self._build_ask(task, ask_id, it_id, value)
@@ -407,33 +547,36 @@ class AsyncTaskHealthWatcher:
                 logger.exception("ask_handler raised; auto-rejecting")
                 reply = "reject"
             already.add(it_id)
-            try:
-                await self._client.runs.create(
-                    thread_id=task.sub_thread_id,
-                    assistant_id=task.graph_id,
-                    command={"resume": reply},
-                    multitask_strategy="interrupt",
-                )
-            except Exception:
-                logger.exception("runs.create(resume=...) failed for %s", task.task_id)
-                await self._mirror.set_status(task.task_id, "error", error="resume_failed")
-                await self._emit(ChannelEvent(payload=AsyncTaskCompletedPayload(
-                    task_id=task.task_id,
-                    agent_name=task.agent_name,
-                    ok=False,
-                    summary="resume_failed",
-                    duration_sec=time.time() - task.started_at,
-                    ts=time.time(),
-                )))
-                return
-            await self._mirror.set_status(task.task_id, "running", pending_ask_id=None)
-            await self._emit(ChannelEvent(payload=AsyncTaskProgressPayload(
+            replies[it_id] = reply
+
+        try:
+            await self._client.runs.create(
+                thread_id=task.sub_thread_id,
+                assistant_id=task.graph_id,
+                command={"resume": replies},
+                multitask_strategy="interrupt",
+            )
+        except Exception:
+            logger.exception("runs.create(resume=...) failed for %s", task.task_id)
+            updated = await self._mirror.set_status(task.task_id, "error", error="resume_failed")
+            await self._emit(ChannelEvent(payload=AsyncTaskCompletedPayload(
                 task_id=task.task_id,
                 agent_name=task.agent_name,
-                kind_hint="resumed",
-                text=f"resumed after user reply ({len(reply)} chars)",
+                ok=False,
+                summary="resume_failed",
+                duration_sec=time.time() - task.started_at,
                 ts=time.time(),
             )))
+            await self._notify_complete(updated or task, False, "resume_failed")
+            return
+        await self._mirror.set_status(task.task_id, "running", pending_ask_id=None)
+        await self._emit(ChannelEvent(payload=AsyncTaskProgressPayload(
+            task_id=task.task_id,
+            agent_name=task.agent_name,
+            kind_hint="resumed",
+            text=f"resumed after {len(replies)} user repl{'y' if len(replies) == 1 else 'ies'}",
+            ts=time.time(),
+        )))
 
     def _build_ask(
         self,
@@ -442,33 +585,23 @@ class AsyncTaskHealthWatcher:
         interrupt_id: str,
         value: Any,
     ) -> AskPrompt:
-        # Reuse the same shape the orchestrator already passes to ChannelRouter.
-        # We delegate title/body formatting to whoever owns ``_title_for_interrupt``
-        # in the daemon's existing helpers — but we can't import that without a
-        # circular dep on orchestrator_loop, so we replicate the minimal logic.
+        # Format identically to foreground asks via the shared formatter, so the
+        # CLI prompt and the UI AskCard get a clean title/body (no raw-JSON blob).
+        # Preserve the interrupt's real ``type`` (task_runner_permission /
+        # permission_request / user_question) so the formatter dispatches right —
+        # only wrap as a free-text question when the value isn't a dict.
         if isinstance(value, dict):
             iv: dict[str, Any] = dict(value)
         else:
-            iv = {"question": str(value)}
+            iv = {"type": "user_question", "question": str(value)}
         # Carry interrupt_id so consumers can correlate if they want.
-        iv.setdefault("type", "user_question")
         iv["interrupt_id"] = interrupt_id
         iv.setdefault("agent_path", f"{self._agent_path_root}/{task.agent_name}#bg")
-        title = _first_str(
-            iv.get("title") if isinstance(iv.get("title"), str) else None,
-            f"Background task: {task.agent_name}",
-        )
-        body = _first_str(
-            iv.get("body") if isinstance(iv.get("body"), str) else None,
-            iv.get("question") if isinstance(iv.get("question"), str) else None,
-            f"task_id={task.task_id[:8]}",
-        )
-        options = iv.get("options") if isinstance(iv.get("options"), list) else ["approve", "reject"]
         return AskPrompt(
             ask_id=ask_id,
-            title=title,
-            body=body,
-            options=options or [],
+            title=title_for_interrupt(iv),
+            body=body_for_interrupt(iv),
+            options=options_for_interrupt(iv),
             interrupt_value=iv,
             session_id=task.parent_thread_id or task.task_id,
             agent_path=iv["agent_path"],
@@ -499,7 +632,8 @@ class AsyncTaskHealthWatcher:
 
         ok = status == "success"
         duration = time.time() - task.started_at
-        await self._mirror.set_status(
+        self._progress_seen.pop(task.task_id, None)
+        updated = await self._mirror.set_status(
             task.task_id, status, summary=summary, error=error_text,
         )
         await self._emit(ChannelEvent(payload=AsyncTaskCompletedPayload(
@@ -510,6 +644,25 @@ class AsyncTaskHealthWatcher:
             duration_sec=duration,
             ts=time.time(),
         )))
+        await self._notify_complete(updated or task, ok, summary)
+
+    async def _notify_complete(self, task: MirroredTask, ok: bool, summary: str) -> None:
+        """Hand a finished task to the completion sink, exactly once.
+
+        A task reaches a terminal status only once (it then drops out of
+        ``list_non_terminal``), so this is naturally called once per task; the
+        ``notified`` re-check is defensive. The sink (bootstrap) decides whether
+        a master wake-up is possible and flips ``notified`` when it enqueues one.
+        """
+        if self._completion_sink is None:
+            return
+        cur = self._mirror.get(task.task_id) or task
+        if cur.notified:
+            return
+        try:
+            await self._completion_sink(cur, ok, summary)
+        except Exception:
+            logger.exception("completion_sink failed for %s", task.task_id)
 
     async def _enforce_timeout(self, task: MirroredTask) -> None:
         """Cancel a task that exceeded the wall-clock timeout."""
@@ -524,16 +677,19 @@ class AsyncTaskHealthWatcher:
                     await self._client.runs.cancel(thread_id=task.sub_thread_id, run_id=rid)
         except Exception:
             logger.debug("timeout cancel failed", exc_info=True)
-        await self._mirror.set_status(
+        self._progress_seen.pop(task.task_id, None)
+        updated = await self._mirror.set_status(
             task.task_id, "timeout",
             error=f"per_task_timeout ({int(self._task_timeout)}s)",
             summary="task exceeded wall-clock timeout",
         )
+        summary = f"timeout after {int(self._task_timeout)}s"
         await self._emit(ChannelEvent(payload=AsyncTaskCompletedPayload(
             task_id=task.task_id,
             agent_name=task.agent_name,
             ok=False,
-            summary=f"timeout after {int(self._task_timeout)}s",
+            summary=summary,
             duration_sec=time.time() - task.started_at,
             ts=time.time(),
         )))
+        await self._notify_complete(updated or task, False, summary)

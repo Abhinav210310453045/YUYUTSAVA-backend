@@ -148,16 +148,38 @@ class SourceRegistry:
         self._tasks.pop(name, None)
         self._cancelled.pop(name, None)
 
-    async def reload(self, new_config: EventsConfig) -> None:
-        """Hot-swap to *new_config*.
+    async def reload(self, new_config: EventsConfig) -> bool:
+        """Hot-swap to *new_config*, restarting only what actually changed.
 
-        Sources present in *new_config* with the same params keep running;
-        all others are stopped and re-started with the new params. This is
-        coarse but matches the user's mental model: "I changed the config —
-        restart the watchers."
+        Diffs against the active config: a source whose ``SourceConfig`` is
+        unchanged (and still enabled) keeps running untouched. Sources that were
+        removed, disabled, or whose params changed are stopped; sources that are
+        newly enabled or changed are (re)started. This avoids tearing down every
+        watcher — and re-logging "starting source …" — on no-op reloads.
+
+        Returns ``True`` if the config actually differed (so callers can skip a
+        "config reload" log line on identical reloads).
         """
+        if new_config == self._config:
+            return False
+        old = self._config.sources
+        new = new_config.sources
         self._config = new_config
-        # Stop everything currently running, then start what's enabled.
+
+        # Stop sources that are gone, newly disabled, or whose config changed.
         for name in list(self._sources.keys()):
-            await self._stop_one(name)
-        await self.start_all()
+            new_cfg = new.get(name)
+            if new_cfg is None or not new_cfg.enabled or new_cfg != old.get(name):
+                await self._stop_one(name)
+
+        # Start sources that are enabled in the new config but not running
+        # (either brand-new or just restarted above because their config changed).
+        for name, src_cfg in new.items():
+            if not src_cfg.enabled or name in self._sources:
+                continue
+            factory = _SOURCE_FACTORIES.get(name)
+            if factory is None:
+                logger.warning("source %s in config but no factory registered", name)
+                continue
+            await self._start_one(name, src_cfg, factory)
+        return True

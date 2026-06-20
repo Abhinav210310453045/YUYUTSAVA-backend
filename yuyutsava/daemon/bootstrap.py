@@ -27,8 +27,10 @@ from yuyutsava.agents.general_purpose.agent import GeneralPurposeAgent
 from yuyutsava.agents.orchestrator.agent import OrchestratorDeps
 from yuyutsava.agents.orchestrator.capabilities import render_capabilities_block
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
-from yuyutsava.agents.task_runner.tools import set_default_policy
+from yuyutsava.agents.task_runner.tools import set_default_consent, set_default_policy
+from yuyutsava.consent import ConsentRegistry
 from yuyutsava.agents.triage.agent import TriageAgent
+from yuyutsava.async_subagents.launch_index import LaunchIndex
 from yuyutsava.async_subagents.session_origin import SessionOriginMap
 from yuyutsava.channels.config import ChannelsConfig
 from yuyutsava.channels.plugin import InboundSink
@@ -37,6 +39,7 @@ from yuyutsava.context.artifacts import PgArtifactStore, SqliteArtifactStore
 from yuyutsava.context.config import ContextSettings
 from yuyutsava.context.injector import MemoryInjector
 from yuyutsava.context.summary_store import PgThreadSummaryStore, SqliteThreadSummaryStore
+from yuyutsava.context.transcript_store import PgTranscriptStore, SqliteTranscriptStore
 from yuyutsava.core.config import (
     DaemonConfig, EventsConfig, LlmSettings, SearchConfig, SourceConfig,
     _env, llm_settings_from_env,
@@ -71,6 +74,7 @@ from yuyutsava.storage.paths import blobs_dir, checkpoints_db_path, state_db_pat
 from yuyutsava.storage.pg import migrations as pg_migrations
 from yuyutsava.storage.pg.pool import PgPool
 from yuyutsava.storage.prefs import PrefsStore
+from yuyutsava.storage.sessions import PgSessionStore, set_default_session_store
 from yuyutsava.storage.sweeper import BlobSweepTarget, SweeperConfig, UnifiedSweeper
 
 logger = logging.getLogger("yuyutsava.daemon.bootstrap")
@@ -137,6 +141,7 @@ class DaemonSubsystems:
     pg_pool: object | None
     artifact_store: object
     summary_store: object
+    transcript_store: object
     memory_store: object | None
     embedder: object | None
 
@@ -285,9 +290,15 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     if pg_pool is not None:
         artifact_store = PgArtifactStore(pg_pool)
         summary_store = PgThreadSummaryStore(pg_pool)
+        transcript_store = PgTranscriptStore(pg_pool)
+        # Sessions move to Postgres too (migration v6). Inject the shared pool
+        # so the web router's get_default_session_store() reuses it; migrations
+        # already ran above, so the store skips its own lazy schema-ensure.
+        set_default_session_store(PgSessionStore(storage, pool=pg_pool))
     else:
         artifact_store = SqliteArtifactStore(state_db_path())
         summary_store = SqliteThreadSummaryStore(state_db_path())
+        transcript_store = SqliteTranscriptStore(state_db_path())
 
     # ── task registry (Phase 2: first-class task tracking) -----------------
     task_store = (
@@ -337,6 +348,13 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     if policy.entries:
         logger.info("  policy    : %d rule(s) from permissions.json", len(policy.entries))
 
+    # ── consent / allowlist registry (Tier-2: "allow for session/project") -
+    # One DI singleton shared by every tr_* tool call (via set_default_consent)
+    # and the explicit TaskRunner gateway below. Persisted PROJECT grants are
+    # loaded from state.db; SESSION grants live in memory for the process.
+    consent_registry = ConsentRegistry(store=store)
+    set_default_consent(consent_registry)
+
     # ── MCP servers -------------------------------------------------------
     mcp_manager = MCPClientManager()
     mcp_cfg = MCPConfig.from_file()
@@ -363,6 +381,25 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
                 ttl_sec=3600,
                 glob="*.jpg",
             ),
+            # deepagents scratch under the daemon workspace: the eviction cache
+            # (large tool results) and the summarization transcript dumps. The
+            # durable copies live in the DB (artifacts + transcript_messages),
+            # so these files are disposable. 24h TTL outlives any single task
+            # that might still read_file() an evicted result mid-run, while
+            # bounding accumulation in the long-lived shared workspace. The CLI
+            # deletes the same dirs synchronously via cleanup_local_sandbox.
+            BlobSweepTarget(
+                name="large_tool_results",
+                directory=workspace / "large_tool_results",
+                ttl_sec=24 * 3600,
+                glob="*",
+            ),
+            BlobSweepTarget(
+                name="conversation_history",
+                directory=workspace / "conversation_history",
+                ttl_sec=24 * 3600,
+                glob="*",
+            ),
         ],
         config=SweeperConfig(),
         artifact_store=artifact_store,
@@ -378,9 +415,10 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     async def _hot_reload_events_config() -> None:
         """Re-read events_config.json and rebind sources in place."""
         new_cfg = _inject_heartbeat(EventsConfig.from_file(), daemon_cfg.heartbeat_sec)
-        await registry.reload(new_cfg)
-        logger.info("config reload: events sources now %s",
-                    ", ".join(new_cfg.sources.keys()) or "(none)")
+        changed = await registry.reload(new_cfg)
+        if changed:
+            logger.info("config reload: events sources now %s",
+                        ", ".join(new_cfg.sources.keys()) or "(none)")
 
     # ── channels ----------------------------------------------------------
     channels = ChannelRouter(channels=[], primary_name="web")
@@ -445,9 +483,17 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     triage_settings = llm_settings_from_env("triage")
     orchestrator_settings = llm_settings_from_env("orchestrator")
     subagent_settings = llm_settings_from_env("subagent")
-    triage_model = chat_model(triage_settings, temperature=0.0)
+    # Triage is a single-shot classifier — reasoning is wasteful here and (on
+    # thinking models like gemini-2.5-flash) eats the token budget, truncating
+    # the decision JSON. Disable it so the structured output always completes.
+    triage_model = chat_model(triage_settings, temperature=0.0, disable_reasoning=True)
     orchestrator_model = chat_model(orchestrator_settings, temperature=0.0)
     subagent_model = chat_model(subagent_settings, temperature=0.1)
+
+    # Warm the Langfuse reachability probe now — before the async host installs
+    # blockbuster — so the runtime path never does urllib on the event loop.
+    from yuyutsava.core.tracing import warm_reachability_cache
+    await asyncio.to_thread(warm_reachability_cache)
 
     # Compaction model: role "compaction" so a cheap/local model can own
     # summarization (COMPACTION_LLM_PROVIDER=ollama …); falls back to the
@@ -476,7 +522,9 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         logger.info("  search    : %s", ", ".join(p for p, ok in available.items() if ok))
 
     # ── subagents ---------------------------------------------------------
-    task_runner = TaskRunnerAgent(workspace_root=workspace, policy=policy)
+    task_runner = TaskRunnerAgent(
+        workspace_root=workspace, policy=policy, consent=consent_registry,
+    )
     subagent_list = [
         FileOrganizerAgent(
             task_runner, store,
@@ -503,6 +551,12 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     ]
     subagents = {sa.name: sa for sa in subagent_list}
 
+    # Orchestrator work queue + the launch index that links a background task
+    # back to the conversation that started it. Created before the async block so
+    # the watcher's completion sink can enqueue master wake-ups onto the queue.
+    task_queue: asyncio.Queue[OrchestratorTask] = asyncio.Queue()
+    launch_index = LaunchIndex()
+
     # ── async (background) subagent host + mirror + watcher --------------
     # Gated by env so this is opt-in for v1. To enable:
     #   export YUYUTSAVA_ASYNC_SUBAGENTS=1
@@ -514,27 +568,44 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     async_watcher = None
     async_host_attachment = None
     if os.environ.get("YUYUTSAVA_ASYNC_SUBAGENTS", "").lower() in ("1", "true", "yes"):
-        from yuyutsava.async_subagents.host import AsyncSubagentHost
+        from yuyutsava.async_subagents.host import (
+            AsyncSubagentHost,
+            resolve_allow_blocking,
+        )
         from yuyutsava.async_subagents.host_lock import (
             acquire_or_attach_host,
             register_host_cleanup,
         )
         from yuyutsava.async_subagents.mirror import AsyncTaskMirror
         from yuyutsava.async_subagents.watcher import AsyncTaskHealthWatcher
-        from yuyutsava.daemon.orchestrator_loop import make_ask_handler
 
         logger.info("  async subs: enabled (YUYUTSAVA_ASYNC_SUBAGENTS=1)")
 
         # First-come-wins shared host. If another process (typically a CLI
         # chat started before the daemon) already owns the LangGraph dev
         # server, attach to it instead of starting a second one.
+        # Permissive (warn-only) by default. Strict mode (blockbuster) is NOT yet
+        # viable as a default: the events Store (yuyutsava/storage/events/store.py)
+        # is a synchronous sqlite3 store driven on the event loop (writer loop +
+        # consent/prefs reads), and the task_runner path canonicalization
+        # (agents/task_runner/zones.py: os.path.realpath → os.readlink) runs inside
+        # subagent tools — both raise under blockbuster. Set YUYUTSAVA_ALLOW_BLOCKING=0
+        # to opt into strict mode (e.g. to hunt remaining blocking calls in dev);
+        # the bootstrap/web/resource paths are already wrapped for that.
+        allow_blocking = resolve_allow_blocking(default=True)
+
         def _build_host() -> AsyncSubagentHost:
             return AsyncSubagentHost.from_subagents(
                 subagent_list,
                 model=subagent_model,
                 checkpointer=checkpointer,
+                allow_blocking=allow_blocking,
             )
 
+        # NOTE: once the host owner starts, it installs blockbuster (unless
+        # allow_blocking). From here on, any synchronous blocking I/O run on this
+        # event loop (os.replace/mkdir/scandir/socket/sqlite) raises BlockingError
+        # — wrap such calls in asyncio.to_thread.
         attachment = await asyncio.to_thread(
             acquire_or_attach_host, factory=_build_host
         )
@@ -551,16 +622,51 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
 
         async_mirror = AsyncTaskMirror()
 
+        async def _wake_master_on_completion(
+            task: "MirroredTask", ok: bool, summary: str
+        ) -> None:
+            """Re-enter the orchestrator queue when a bg subagent finishes.
+
+            Resolves the launching conversation (so the master continues that
+            thread and the reply routes to the right surface) and enqueues a
+            ``subagent_completed`` wake-up. When no parent is known we leave the
+            task un-notified so ``mirror.render_block`` surfaces it on the next
+            organic turn instead.
+            """
+            rec = launch_index.get(task.task_id)
+            parent = task.parent_thread_id or (rec.parent_thread_id if rec else None)
+            origin = task.origin or (rec.origin if rec else None) or ""
+            if not parent:
+                return
+            await task_queue.put(OrchestratorTask(
+                proposal_id="", event_id="", topic="subagent_completion",
+                summary=f"{task.agent_name} {'ok' if ok else 'failed'}",
+                instruction="", subagent_hint="", urgency=2,
+                kind="subagent_completed",
+                origin=origin,
+                parent_thread_id=parent,
+                completion={
+                    "task_id": task.task_id,
+                    "agent_name": task.agent_name,
+                    "ok": ok,
+                    "summary": summary,
+                },
+            ))
+            await async_mirror.mark_notified(task.task_id)
+
         async_watcher = AsyncTaskHealthWatcher(
             mirror=async_mirror,
             host_url=async_host_url,
-            ask_handler=make_ask_handler(
-                channels,
-                default_session_id="bg-orphan",
-                default_agent_path="orchestrator",
-            ),
+            # The watcher builds a fully-formatted AskPrompt (clean title/body via
+            # the shared interrupt formatter) and hands it straight to the channel
+            # router. (make_ask_handler is for the orchestrator's streaming loop,
+            # where the interrupt arrives as a raw dict — passing an AskPrompt to
+            # it would stringify the object into the body.)
+            ask_handler=channels.post_ask,
             event_sink=channels.post_event,
             agent_path_root="orchestrator",
+            completion_sink=_wake_master_on_completion,
+            launch_index=launch_index,
         )
         await async_watcher.start()
         logger.info("  async watcher: running")
@@ -574,7 +680,7 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
 
     # ── triage agent + loop ----------------------------------------------
     triage = TriageAgent(triage_model)
-    task_queue: asyncio.Queue[OrchestratorTask] = asyncio.Queue()
+    # task_queue + launch_index created above (before the async block).
 
     # ── task submission (POST /tasks; channel plugins in Phase 3) ---------
     # Direct submissions skip triage, so a light-tier call scores their
@@ -618,6 +724,7 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         artifact_store=artifact_store,
         summary_store=summary_store,
         memory_store=memory_store,
+        transcript_store=transcript_store,
         context_settings=context_settings,
         compaction_model=compaction_model,
         usage_store=usage_store,
@@ -635,6 +742,7 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         task_registry=task_registry,
         model_router=model_router,
         admission=admission,
+        launch_index=launch_index,
     )
 
     # ── channel plugins (Phase 3) ------------------------------------------
@@ -670,7 +778,11 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
 
     # ── web server -------------------------------------------------------
     if web_hub is not None:
-        auth_settings = AuthSettings.from_env(host=daemon_cfg.web_host)
+        # from_env may mkdir + write the api_token file on a non-loopback bind →
+        # off-loop (this runs after the subagent host activates blockbuster).
+        auth_settings = await asyncio.to_thread(
+            AuthSettings.from_env, host=daemon_cfg.web_host
+        )
         if auth_settings.enforce:
             logger.info("  web auth  : bearer token enforced (non-loopback bind %s)",
                         daemon_cfg.web_host)
@@ -732,6 +844,7 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         pg_pool=pg_pool,
         artifact_store=artifact_store,
         summary_store=summary_store,
+        transcript_store=transcript_store,
         memory_store=memory_store,
         embedder=embedder,
         task_queue=task_queue,

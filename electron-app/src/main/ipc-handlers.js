@@ -61,19 +61,23 @@ function register(win) {
   })
   ipcMain.handle('daemon:start', async () => {
     const port = daemon.getPort()
-    if (await daemon.ping(port)) return { ok: true, alreadyRunning: true }
+    if (await daemon.ping(port)) { tray.refreshMenu(true); return { ok: true, alreadyRunning: true } }
     daemon.start(process.cwd())
+    tray.refreshMenu(true)
     return { ok: true }
   })
   ipcMain.handle('daemon:stop', async () => {
     await daemon.stop()
+    tray.refreshMenu(false)
     return { ok: true }
   })
   ipcMain.handle('daemon:restart', async () => {
     await daemon.stop()
     // daemon.stop() already polls /health until it stops responding, so the
-    // port is free. Start a fresh process.
+    // port is free. Start a fresh process. In-flight tasks resume from their
+    // last checkpoint on the fresh daemon (resume_interrupted_tasks).
     daemon.start(process.cwd())
+    tray.refreshMenu(true)
     return { ok: true }
   })
 

@@ -32,6 +32,7 @@ from ulid import ULID
 
 from yuyutsava.storage.base import BaseSqliteStore
 from yuyutsava.storage.pg.pool import PgPool
+from yuyutsava.storage.pg.threads import ensure_thread
 
 logger = logging.getLogger("yuyutsava.daemon.task_registry")
 
@@ -246,6 +247,9 @@ class PgTaskStore(TaskStore):
 
     async def insert(self, rec: TaskRecord) -> None:
         async with self._pool.connection() as conn:
+            # tasks.thread_id FKs to threads; a queued task usually has none yet
+            # (set at mark_running). No-op when None, upsert otherwise.
+            await ensure_thread(conn, rec.thread_id, origin=rec.origin)
             await conn.execute(
                 "INSERT INTO tasks (task_id, origin, instruction, status, "
                 "thread_id, complexity, model, created_ts, started_ts, "
@@ -261,6 +265,9 @@ class PgTaskStore(TaskStore):
         _check_fields(fields)
         cols = ", ".join(f"{k} = %s" for k in fields)
         async with self._pool.connection() as conn:
+            # mark_running patches thread_id — upsert the parent first so
+            # tasks_thread_fk holds.
+            await ensure_thread(conn, fields.get("thread_id"))
             cur = await conn.execute(
                 f"UPDATE tasks SET {cols} WHERE task_id = %s",  # noqa: S608 — cols from _MUTABLE_COLUMNS
                 (*fields.values(), task_id),

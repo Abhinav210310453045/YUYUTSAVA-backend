@@ -57,8 +57,39 @@ class OrchestratorTask:
     # 1-5 complexity score (Phase 4 model routing). Triage self-scores
     # organic events; direct submissions are scored at submit time.
     complexity: int = 3
+    # Durable resume after a daemon reload: when set, this task is a re-run of
+    # an interrupted task and the orchestrator loop reuses this persisted
+    # thread_id (rather than minting a fresh one) so the graph continues from
+    # its last checkpoint. Empty/None for normal first runs.
+    resume_thread_id: str | None = None
+    # Task kind. "normal" = an instruction to act on. "subagent_completed" = a
+    # wake-up telling the master a background subagent finished, so it can plan
+    # next steps and report back to the user. See ``completion``/``parent_thread_id``.
+    kind: str = "normal"
+    # Originating channel name ("cli"/"web"/…) for origin-aware HITL routing.
+    origin: str = ""
+    # For ``subagent_completed`` wake-ups: append this turn to the conversation
+    # thread that launched the task (so the master keeps full context) instead of
+    # minting a fresh thread. None → fresh thread (message is self-contained).
+    parent_thread_id: str | None = None
+    # For ``subagent_completed``: {task_id, agent_name, ok, summary}.
+    completion: dict | None = None
 
     def render_to_message(self) -> str:
+        if self.kind == "subagent_completed" and self.completion:
+            c = self.completion
+            verdict = "succeeded" if c.get("ok") else "did NOT succeed"
+            return (
+                f"[background-task-update] A background subagent you started has "
+                f"finished — this is a system notification, not a new user request.\n"
+                f"  agent: {c.get('agent_name', '?')}\n"
+                f"  task_id: {c.get('task_id', '?')}\n"
+                f"  result: {verdict}\n"
+                f"  summary: {c.get('summary', '') or '(no summary)'}\n\n"
+                f"Tell the user, in your own words, what happened and decide whether "
+                f"any follow-up is needed. Do NOT start new work unless it is clearly "
+                f"required to finish what the user originally asked for."
+            )
         return (
             f"[event] {self.topic} | event_id={self.event_id}\n"
             f"Summary: {self.summary}\n"

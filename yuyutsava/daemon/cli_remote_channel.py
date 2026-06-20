@@ -65,7 +65,9 @@ class CliRemoteChannel(UserChannel):
         except asyncio.TimeoutError:
             return ProposalDecision(decision="expired")
         finally:
-            self._hub.pending_proposals.pop(p.proposal_id, None)
+            # Mirror WebChannel: broadcast the resolution so the UI card clears
+            # even when this CLI-owned proposal is answered from another surface.
+            await self._hub.resolve_proposal(p.proposal_id, p.session_id)
 
     async def post_ask(self, a: AskPrompt) -> str:
         loop = asyncio.get_running_loop()
@@ -75,4 +77,9 @@ class CliRemoteChannel(UserChannel):
         try:
             return await fut
         finally:
-            self._hub.pending_asks.pop(a.ask_id, None)
+            # Mirror WebChannel: broadcast ``ask_resolved`` so both the CLI
+            # prompt and the UI AskCard clear regardless of where the answer
+            # came from. Without this, a CLI-originated background-task ask
+            # (which this channel owns via origin-preferred routing) resumes the
+            # agent but leaves stale prompts on every surface.
+            await self._hub.resolve_ask(a.ask_id, a.session_id)

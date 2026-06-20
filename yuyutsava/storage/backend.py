@@ -6,10 +6,10 @@ memories) live. The events store (``state.db``: proposals / decisions /
 rules / prefs) stays on SQLite regardless; it is small, working, and
 ``BaseSqliteStore``-backed.
 
-Postgres mode expects the pgvector-enabled container from
-``docker-compose.postgres.yml``::
+Postgres mode expects the pgvector-enabled container from the unified
+``docker-compose.yml`` (Postgres always runs; Langfuse is opt-in)::
 
-    docker compose -f docker-compose.postgres.yml up -d
+    docker compose up -d
     export YUYUTSAVA_STORAGE_BACKEND=postgres
 
 When Postgres is unreachable at boot the daemon falls back to SQLite and

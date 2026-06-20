@@ -1,0 +1,185 @@
+# YUYUTSAVA — unified stack: ONE Postgres server (two databases) + optional Langfuse.
+#
+# The Postgres server always runs (the app's primary store). Langfuse is a
+# heavy, optional observability stack (web + worker + ClickHouse + Redis +
+# MinIO) gated behind the "langfuse" compose profile AND the LANGFUSE_ENABLED
+# env flag (see .env / yuyutsava/core/tracing.py).
+#
+#   docker compose up -d                      # app Postgres only
+#   docker compose --profile langfuse up -d   # + full Langfuse observability stack
+#
+# One server, two databases:
+#   - "yuyutsava"  app + pgvector. Default DSN already matches:
+#                  postgresql://yuyutsava:yuyutsava@127.0.0.1:5433/yuyutsava
+#   - "langfuse"   vendor-managed Langfuse metadata (created on demand; never
+#                  co-mingled with the app schema). Langfuse's trace/cost
+#                  analytics still live in ClickHouse, not here.
+#
+# Host port 5433 (not 5432) so a system Postgres install never clashes.
+#
+# Stop:  docker compose --profile langfuse down
+# Wipe:  docker compose --profile langfuse down -v
+
+x-langfuse-env: &langfuse-env
+  DATABASE_URL: postgresql://yuyutsava:yuyutsava@postgres:5432/langfuse
+  NEXTAUTH_SECRET: yuyutsava-langfuse-secret
+  SALT: yuyutsava-langfuse-salt
+  ENCRYPTION_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
+  NEXTAUTH_URL: http://localhost:3000
+  TELEMETRY_ENABLED: "false"
+  CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
+  CLICKHOUSE_URL: http://clickhouse:8123
+  CLICKHOUSE_USER: clickhouse
+  CLICKHOUSE_PASSWORD: clickhouse
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  MINIO_ENDPOINT: minio
+  MINIO_PORT: "9000"
+  MINIO_ACCESS_KEY_ID: minio
+  MINIO_SECRET_ACCESS_KEY: miniosecret
+  LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+  LANGFUSE_S3_EVENT_UPLOAD_REGION: us-east-1
+  LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://minio:9000
+  LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: minio
+  LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: miniosecret
+  LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+
+# Langfuse services wait for the shared Postgres, the langfuse-DB bootstrap,
+# and the analytics datastores. All in the "langfuse" profile too.
+x-langfuse-depends-on: &langfuse-depends-on
+  depends_on:
+    postgres:
+      condition: service_healthy
+    pg-ensure-langfuse-db:
+      condition: service_completed_successfully
+    clickhouse:
+      condition: service_healthy
+    redis:
+      condition: service_started
+    minio:
+      condition: service_healthy
+
+services:
+  # ---------------------------------------------------------------------------
+  # Primary store — always on. Hosts both the "yuyutsava" and (on demand)
+  # "langfuse" databases in a single pgvector-enabled Postgres 16 cluster.
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: yuyutsava-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: yuyutsava
+      POSTGRES_PASSWORD: yuyutsava
+      POSTGRES_DB: yuyutsava
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - yuyutsava_pg_data:/var/lib/postgresql/data
+      # Runs ONLY on a fresh data volume — creates the "langfuse" DB up front.
+      - ./scripts/pg-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U yuyutsava -d yuyutsava"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ---------------------------------------------------------------------------
+  # One-shot bootstrap: ensure the "langfuse" database exists. The initdb
+  # script above only fires on a brand-new volume; this idempotent job covers
+  # pre-existing clusters (e.g. an upgrade from the old two-container setup).
+  # ---------------------------------------------------------------------------
+  pg-ensure-langfuse-db:
+    image: pgvector/pgvector:pg16
+    profiles: ["langfuse"]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: yuyutsava
+    entrypoint:
+      - sh
+      - -c
+      - >
+        psql -h postgres -U yuyutsava -d yuyutsava -tc
+        "SELECT 1 FROM pg_database WHERE datname='langfuse'" | grep -q 1
+        || createdb -h postgres -U yuyutsava langfuse
+
+  langfuse-web:
+    image: langfuse/langfuse:3
+    profiles: ["langfuse"]
+    <<: *langfuse-depends-on
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      <<: *langfuse-env
+      # Pre-seed org + project so keys are ready immediately (matches .env).
+      LANGFUSE_INIT_ORG_ID: yuyutsava-org
+      LANGFUSE_INIT_ORG_NAME: YUYUTSAVA
+      LANGFUSE_INIT_PROJECT_ID: yuyutsava-project
+      LANGFUSE_INIT_PROJECT_NAME: YUYUTSAVA
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: pk-lf-REPLACE_ME
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: sk-lf-REPLACE_ME
+      LANGFUSE_INIT_USER_EMAIL: admin@yuyutsava.local
+      LANGFUSE_INIT_USER_NAME: admin
+      LANGFUSE_INIT_USER_PASSWORD: yuyutsava
+
+  langfuse-worker:
+    image: langfuse/langfuse-worker:3
+    profiles: ["langfuse"]
+    <<: *langfuse-depends-on
+    restart: unless-stopped
+    environment:
+      <<: *langfuse-env
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.3
+    profiles: ["langfuse"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--host", "127.0.0.1", "--query", "SELECT 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse
+    volumes:
+      - langfuse_clickhouse:/var/lib/clickhouse
+      - langfuse_clickhouse_logs:/var/log/clickhouse-server
+      - ./clickhouse-config/keeper.xml:/etc/clickhouse-server/config.d/keeper.xml:ro
+
+  redis:
+    image: redis:7-alpine
+    profiles: ["langfuse"]
+    restart: unless-stopped
+    volumes:
+      - langfuse_redis:/data
+
+  minio:
+    image: minio/minio
+    profiles: ["langfuse"]
+    restart: unless-stopped
+    entrypoint: sh
+    command: -c 'mkdir -p /data/langfuse && minio server /data --console-address ":9001"'
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: miniosecret
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - langfuse_minio:/data
+
+volumes:
+  yuyutsava_pg_data:
+  langfuse_clickhouse:
+  langfuse_clickhouse_logs:
+  langfuse_redis:
+  langfuse_minio:

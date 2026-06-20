@@ -1,6 +1,39 @@
 import React, { useState } from 'react'
 import { respondAsk } from '../../api/client'
 
+// Defensive: the server now formats ask bodies into readable text, but if a body
+// still arrives as a raw JSON object/string, render it as indented key lines
+// instead of a one-line blob. Plain strings pass through unchanged.
+function prettyBody(body) {
+  if (body == null) return ''
+  if (typeof body !== 'string') {
+    try { return JSON.stringify(body, null, 2) } catch { return String(body) }
+  }
+  const trimmed = body.trim()
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    try { return JSON.stringify(JSON.parse(trimmed), null, 2) } catch { /* not JSON */ }
+  }
+  return body
+}
+
+// Consent option metadata: nicer labels + whether the option is affirmative
+// (green) vs. a rejection (red). Scope options (session/project) map to the
+// Claude/Cursor-style "allow for this session/project" allowlist choices.
+const OPTION_META = {
+  approve: { label: 'Approve once', affirmative: true },
+  session: { label: 'Allow for session', affirmative: true },
+  project: { label: 'Allow for project', affirmative: true },
+  reject: { label: 'Reject', affirmative: false },
+}
+
+function optMeta(opt) {
+  const key = String(opt).toLowerCase()
+  if (OPTION_META[key]) return OPTION_META[key]
+  // Fallback for legacy/custom options.
+  const affirmative = /allow|approve|yes|session|project/.test(key)
+  return { label: opt, affirmative }
+}
+
 export default function AskCard({ ask, onResolved }) {
   const [loading, setLoading] = useState(null)
   const [freeText, setFreeText] = useState('')
@@ -85,7 +118,7 @@ export default function AskCard({ ask, onResolved }) {
           </span>
         )}
         <span style={{ color: 'var(--text-primary)', fontWeight: 600, fontSize: 13 }}>
-          {ask.title}
+          {ask.title || 'Permission request'}
         </span>
         {ask.agent_path && (
           <span
@@ -131,27 +164,30 @@ export default function AskCard({ ask, onResolved }) {
         wordBreak: 'break-word',
         margin: 0,
       }}>
-        {ask.body}
+        {prettyBody(ask.body)}
       </pre>
 
       {/* Response */}
       {hasOptions ? (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {ask.options.map(opt => (
-            <button
-              key={opt}
-              onClick={() => respond(opt)}
-              disabled={!!loading}
-              style={{
-                ...btnBase,
-                color: opt.toLowerCase().includes('allow') ? 'var(--neon-green)' : 'var(--neon-red)',
-                borderColor: opt.toLowerCase().includes('allow') ? 'rgba(0,255,136,0.3)' : 'rgba(255,51,102,0.3)',
-                background: opt.toLowerCase().includes('allow') ? 'rgba(0,255,136,0.06)' : 'rgba(255,51,102,0.06)',
-              }}
-            >
-              {loading === opt ? '...' : opt}
-            </button>
-          ))}
+          {ask.options.map(opt => {
+            const meta = optMeta(opt)
+            return (
+              <button
+                key={opt}
+                onClick={() => respond(opt)}
+                disabled={!!loading}
+                style={{
+                  ...btnBase,
+                  color: meta.affirmative ? 'var(--neon-green)' : 'var(--neon-red)',
+                  borderColor: meta.affirmative ? 'rgba(0,255,136,0.3)' : 'rgba(255,51,102,0.3)',
+                  background: meta.affirmative ? 'rgba(0,255,136,0.06)' : 'rgba(255,51,102,0.06)',
+                }}
+              >
+                {loading === opt ? '...' : meta.label}
+              </button>
+            )
+          })}
         </div>
       ) : (
         <div style={{ display: 'flex', gap: 8 }}>

@@ -123,10 +123,28 @@ CREATE TABLE IF NOT EXISTS user_prefs (
     value_json TEXT NOT NULL,
     updated_ts REAL NOT NULL
 );
+
+-- Unified consent grants (yuyutsava.consent). One row per remembered decision:
+-- "allow READ in EXTERNAL under /path for this session/project". Generic on
+-- purpose (subject_key + scope + scope_ref) so tool-permissions, events,
+-- proposals and future flows all reuse one allowlist engine. SESSION grants are
+-- never persisted (they live in the registry's memory); only PROJECT/PERSISTENT
+-- land here.
+CREATE TABLE IF NOT EXISTS consent_grants (
+    grant_id    TEXT PRIMARY KEY,
+    domain      TEXT NOT NULL,
+    subject_key TEXT NOT NULL,
+    decision    TEXT NOT NULL,
+    scope       TEXT NOT NULL,
+    scope_ref   TEXT NOT NULL,
+    created_ts  REAL NOT NULL,
+    expires_ts  REAL
+);
+CREATE INDEX IF NOT EXISTS idx_consent_grants_domain ON consent_grants(domain, scope_ref);
 """
 
 
-_SCHEMA_VERSION = 2
+_SCHEMA_VERSION = 3
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
@@ -280,6 +298,22 @@ class Store:
              rule.created_ts, rule.expires_ts),
         ))
 
+    # --- unified consent grants (yuyutsava.consent.ConsentStore) --------------
+
+    async def put_consent_grant(self, grant: "Grant") -> None:
+        await self._write_q.put((
+            "INSERT OR REPLACE INTO consent_grants"
+            "(grant_id, domain, subject_key, decision, scope, scope_ref, created_ts, expires_ts) "
+            "VALUES(?,?,?,?,?,?,?,?)",
+            (grant.grant_id, grant.domain, grant.subject_key, grant.decision,
+             grant.scope, grant.scope_ref, grant.created_ts, grant.expires_ts),
+        ))
+
+    async def delete_consent_grant(self, grant_id: str) -> None:
+        await self._write_q.put((
+            "DELETE FROM consent_grants WHERE grant_id=?", (grant_id,),
+        ))
+
     # --- atomic status flip (synchronous; used by web POST handler) ----------
 
     def try_set_proposal_status(
@@ -358,6 +392,22 @@ class Store:
             "SELECT * FROM consent_rules ORDER BY created_ts DESC"
         ).fetchall()
         return [_row_to_consent_rule(r) for r in rows]
+
+    def list_consent_grants(self) -> list["Grant"]:
+        # Persisted (PROJECT/PERSISTENT) grants only; SESSION grants are never
+        # written here. Loaded once into the ConsentRegistry cache at boot.
+        from yuyutsava.consent.models import Grant
+        if self._conn is None:
+            return []
+        rows = self._conn.execute("SELECT * FROM consent_grants").fetchall()
+        return [
+            Grant(
+                grant_id=r["grant_id"], domain=r["domain"], subject_key=r["subject_key"],
+                decision=r["decision"], scope=r["scope"], scope_ref=r["scope_ref"],
+                created_ts=r["created_ts"], expires_ts=r["expires_ts"],
+            )
+            for r in rows
+        ]
 
     def list_decisions(
         self, limit: int = 50, cursor: float | None = None,

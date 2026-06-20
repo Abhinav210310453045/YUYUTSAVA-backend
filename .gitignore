@@ -78,6 +78,12 @@ workspace/
 sandbox/
 playground/
 
+# deepagents on-disk scratch (durable copies live in the DB:
+# artifacts + transcript_messages tables). CLI deletes these on exit;
+# the daemon TTL-sweeps them — never commit them.
+large_tool_results/
+conversation_history/
+
 # Diagrams (generated artifacts)
 diagrams/
 

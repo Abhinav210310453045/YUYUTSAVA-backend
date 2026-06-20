@@ -31,6 +31,7 @@ from ulid import ULID
 from yuyutsava.core.model_router import estimate_cost_usd, load_price_table
 from yuyutsava.storage.base import BaseSqliteStore
 from yuyutsava.storage.pg.pool import PgPool
+from yuyutsava.storage.pg.threads import ensure_thread
 
 logger = logging.getLogger("yuyutsava.daemon.usage")
 
@@ -112,8 +113,11 @@ _SELECT_COLS = (
 
 def _row_to_record(row: Any) -> UsageRow:
     vals = tuple(row)
+    # thread_id/task_id are NULL on Postgres for thread-less / task-less rows
+    # (v4 normalized the old '' sentinels). Coerce back to '' so both backends
+    # present the same wire contract that callers/tests have always seen.
     return UsageRow(
-        id=vals[0], ts=vals[1], thread_id=vals[2], task_id=vals[3],
+        id=vals[0], ts=vals[1], thread_id=vals[2] or "", task_id=vals[3] or "",
         role=vals[4], model=vals[5], input_tokens=vals[6],
         output_tokens=vals[7], est_cost_usd=vals[8],
     )
@@ -213,12 +217,17 @@ class PgUsageStore(UsageStore):
         self._pool = pool
 
     async def add(self, row: UsageRow) -> None:
+        # '' -> NULL so the nullable FKs (llm_usage_thread_fk / llm_usage_task_fk)
+        # are satisfied for thread-less / task-less rows (e.g. raw CLI calls).
+        thread_id = row.thread_id or None
+        task_id = row.task_id or None
         async with self._pool.connection() as conn:
+            await ensure_thread(conn, thread_id)  # parent must exist for the FK
             await conn.execute(
                 "INSERT INTO llm_usage (id, ts, thread_id, task_id, role, "
                 "model, input_tokens, output_tokens, est_cost_usd) "
                 "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
-                (row.id, row.ts, row.thread_id, row.task_id, row.role,
+                (row.id, row.ts, thread_id, task_id, row.role,
                  row.model, row.input_tokens, row.output_tokens,
                  row.est_cost_usd),
             )
@@ -267,7 +276,10 @@ def _aggregate_sql(
 ) -> tuple[str, tuple[Any, ...]]:
     """One GROUP BY statement shared by both backends (placeholder differs)."""
     key_expr = {
-        "task": "task_id", "model": "model", "day": day_expr, None: "'all'",
+        # COALESCE keeps task-less rows (NULL task_id on Postgres) grouping
+        # under '' exactly as the SQLite twin (NOT NULL DEFAULT '') always has.
+        "task": "COALESCE(task_id, '')", "model": "model",
+        "day": day_expr, None: "'all'",
     }[group_by]
     where = f"WHERE ts >= {ph}" if since is not None else ""
     args: tuple[Any, ...] = (since,) if since is not None else ()

@@ -43,3 +43,7 @@ export const deleteSession = (id) => _json('DELETE', `/sessions/${encodeURICompo
 
 export const getLogLevel = () => _json('GET', '/logs/level')
 export const setLogLevel = (level) => _json('PUT', '/logs/level', { level })
+
+// Config-variable catalog for the Settings UI (grouped/typed; reload_class
+// per var). Served by the daemon so the form never drifts from the backend.
+export const getConfigSchema = () => _json('GET', '/config/schema')

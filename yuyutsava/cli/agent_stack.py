@@ -24,9 +24,12 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 
 from yuyutsava.agents.general_purpose.agent import GeneralPurposeAgent
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
+from yuyutsava.agents.task_runner.tools import set_default_consent
+from yuyutsava.consent import ConsentRegistry
 from yuyutsava.context.artifacts import SqliteArtifactStore
 from yuyutsava.context.config import ContextSettings
 from yuyutsava.context.summary_store import SqliteThreadSummaryStore
+from yuyutsava.context.transcript_store import SqliteTranscriptStore
 from yuyutsava.core.config import DockerSettings, LlmSettings, LocalSettings, SearchConfig, _env
 from yuyutsava.core.engine import AgentBundle, build_cli_deepagent
 from yuyutsava.core.llm import chat_model
@@ -72,6 +75,7 @@ async def build_cli_agent_stack(
     # honor the postgres backend via build_checkpointer.
     artifact_store = SqliteArtifactStore(state_db_path())
     summary_store = SqliteThreadSummaryStore(state_db_path())
+    transcript_store = SqliteTranscriptStore(state_db_path())
     context_settings = ContextSettings.from_env(
         "cli", provider=_env("LLM_PROVIDER", None, "groq"),
     )
@@ -87,9 +91,14 @@ async def build_cli_agent_stack(
         if local_settings.sandbox_dir is not None
         else (workspace / "_sandbox").resolve()
     )
+    # Consent (allowlist) registry — session-scoped only in standalone CLI mode
+    # (no events store here; PROJECT grants persist only in the daemon path).
+    consent_registry = ConsentRegistry()
+    set_default_consent(consent_registry)
     task_runner = TaskRunnerAgent(
         workspace_root=workspace,
         sandbox_root=sandbox_root_for_tr,
+        consent=consent_registry,
     )
     general_purpose = GeneralPurposeAgent(
         task_runner=task_runner,
@@ -105,12 +114,19 @@ async def build_cli_agent_stack(
 
     if _async_enabled():
         # Local imports keep langgraph_api off the import path when async is off.
-        from yuyutsava.async_subagents.host import AsyncSubagentHost
+        from yuyutsava.async_subagents.host import (
+            AsyncSubagentHost,
+            resolve_allow_blocking,
+        )
         from yuyutsava.async_subagents.host_lock import acquire_or_attach_host
         from yuyutsava.async_subagents.mirror import AsyncTaskMirror
 
         model = chat_model(settings)
         async_subagents = [general_purpose]
+
+        # The interactive CLI REPL has its own (intentional) blocking I/O, so it
+        # stays permissive by default; YUYUTSAVA_ALLOW_BLOCKING still overrides.
+        allow_blocking = resolve_allow_blocking(default=True)
 
         # First-come-wins shared host. If a daemon (or another chat) is
         # already running and owns the LangGraph dev server, attach to its
@@ -120,6 +136,7 @@ async def build_cli_agent_stack(
                 async_subagents,
                 model=model,
                 checkpointer=checkpointer,
+                allow_blocking=allow_blocking,
             )
 
         attachment = await asyncio.to_thread(
@@ -156,6 +173,7 @@ async def build_cli_agent_stack(
         artifact_store=artifact_store,
         summary_store=summary_store,
         memory_store=memory_store,
+        transcript_store=transcript_store,
         context_settings=context_settings,
         compaction_model=compaction_model,
     )

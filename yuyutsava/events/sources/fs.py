@@ -42,6 +42,16 @@ logger = logging.getLogger("yuyutsava.events.sources.fs")
 
 _DEFAULT_IGNORE = ("*.tmp", ".DS_Store", "*.crdownload", "*.part", "*~")
 
+# Directory names skipped wherever they appear in a watched tree — the daemon's
+# own scratch/state dirs plus VCS noise. Without this, watching a root that
+# contains the daemon workspace (e.g. ~/Desktop when the workspace lives at
+# ~/Desktop/YUYUTSAVA-backend) feeds the daemon's own writes back in as fs
+# events, creating an event → triage → write feedback loop.
+_IGNORED_DIR_COMPONENTS = frozenset({
+    ".git", ".langgraph_api", ".yuyutsava",
+    "large_tool_results", "conversation_history",
+})
+
 
 class _CoalescingHandler(FileSystemEventHandler):
     """Watchdog callback running on Observer thread; trampolines into asyncio."""
@@ -101,7 +111,7 @@ class FsSource(EventSource):
         for root in roots:
             if not root.exists():
                 logger.warning("fs source: watch root %s does not exist; creating", root)
-                root.mkdir(parents=True, exist_ok=True)
+                await asyncio.to_thread(root.mkdir, parents=True, exist_ok=True)
             observer.schedule(handler, str(root), recursive=True)
             logger.info("[fs] watching %s (ignore=%s)", root, list(ignore))
         observer.start()
@@ -157,6 +167,8 @@ class FsSource(EventSource):
         if not path_str:
             return
         path = Path(path_str)
+        if _IGNORED_DIR_COMPONENTS.intersection(path.parts):
+            return
         name = path.name
         if any(fnmatch.fnmatchcase(name, pat) for pat in ignore):
             return

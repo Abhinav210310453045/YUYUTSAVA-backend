@@ -17,6 +17,7 @@ from dataclasses import dataclass
 
 from yuyutsava.storage.base import BaseSqliteStore
 from yuyutsava.storage.pg.pool import PgPool
+from yuyutsava.storage.pg.threads import ensure_thread
 
 logger = logging.getLogger("yuyutsava.context.summary_store")
 
@@ -128,6 +129,7 @@ class PgThreadSummaryStore(ThreadSummaryStore):
         task_id: str | None = None,
     ) -> int:
         async with self._pool.connection() as conn:
+            await ensure_thread(conn, thread_id)  # satisfy thread_summaries_thread_fk
             cur = await conn.execute(
                 """
                 INSERT INTO thread_summaries

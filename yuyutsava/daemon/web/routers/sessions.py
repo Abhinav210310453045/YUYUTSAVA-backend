@@ -1,8 +1,10 @@
 """HTTP endpoints for persistent CLI sessions.
 
-Backed by the same ``SqliteSessionStore`` the CLI writes to. The daemon and CLI
-share one SQLite file via WAL; ``get_default_session_store`` is a process
-singleton so no app-state wiring is needed.
+Backed by the same session store the CLI writes to — the SQLite twin (shared
+via WAL) in zero-config mode, or the Postgres ``sessions`` table when
+``YUYUTSAVA_STORAGE_BACKEND=postgres`` (then the index JOINs threads/tasks/
+usage). ``get_default_session_store`` is a process singleton, so no app-state
+wiring is needed; the daemon injects its pooled :class:`PgSessionStore` at boot.
 """
 
 from __future__ import annotations

@@ -30,6 +30,7 @@ from yuyutsava.agents.task_runner.permissions import (
     get_risk_level,
 )
 from yuyutsava.agents.task_runner.zones import classify_zone
+from yuyutsava.consent.models import parse_consent_decision as _parse_consent_decision
 from yuyutsava.models.operations import (
     FilesystemZone,
     OperationRequest,
@@ -73,6 +74,7 @@ class TaskRunnerAgent:
         workspace_root: Path,
         sandbox_root: Path | None = None,
         policy: object | None = None,  # PermissionsPolicy; untyped to avoid daemon-side import
+        consent: object | None = None,  # consent.ConsentRegistry; duck-typed (allowlist)
     ) -> None:
         self.workspace_root: Path = workspace_root.resolve()
         self.sandbox_root: Path = (
@@ -80,6 +82,7 @@ class TaskRunnerAgent:
             else (self.workspace_root / "_sandbox").resolve()
         )
         self._policy = policy
+        self._consent = consent
 
     @staticmethod
     def _policy_tool_name(op: OperationType) -> str:
@@ -99,6 +102,48 @@ class TaskRunnerAgent:
             OperationType.LIST:    "tr_ls",
             OperationType.GLOB:    "tr_glob",
         }.get(op, "tr_unknown")
+
+    # ------------------------------------------------------------------
+    # Consent (allowlist) helpers
+    # ------------------------------------------------------------------
+
+    def _consent_verdict(self, request: OperationRequest, zone: FilesystemZone) -> str:
+        """Return 'allow' / 'deny' / 'prompt' from the consent registry."""
+        from yuyutsava.core.agent_context import current_context
+
+        session_id = current_context().get("session_id")
+        try:
+            return self._consent.check_tool_permission(  # type: ignore[attr-defined]
+                operation=request.operation.value, zone=zone.value,
+                paths=request.paths, session_id=session_id,
+                workspace=str(self.workspace_root),
+            )
+        except Exception:
+            logger.exception("consent check failed; falling through to prompt")
+            return "prompt"
+
+    async def _record_consent_grant(
+        self, request: OperationRequest, zone: FilesystemZone, scope: str
+    ) -> None:
+        """Persist/remember an 'allow for <scope>' grant for this op+zone.
+
+        For in-workspace operations the grant is widened to the **workspace root**
+        so one approval covers the operation type everywhere under the workspace
+        (no per-subfolder re-asks). External paths (e.g. the ``/host`` sentinel
+        used by bash/``tr_execute``) keep their auto-derived directory.
+        """
+        from yuyutsava.core.agent_context import current_context
+
+        session_id = current_context().get("session_id")
+        directory = str(self.workspace_root) if zone == FilesystemZone.WORKSPACE else None
+        try:
+            await self._consent.grant_tool_permission(  # type: ignore[attr-defined]
+                operation=request.operation.value, zone=zone.value,
+                paths=request.paths, scope=scope, session_id=session_id,
+                workspace=str(self.workspace_root), directory=directory,
+            )
+        except Exception:
+            logger.exception("consent grant failed (continuing)")
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -172,11 +217,36 @@ class TaskRunnerAgent:
                         request.operation.value.upper(), primary_path,
                     )
                     action = PermissionAction.ALLOW  # fall through to execute
+            # Allowlist (consent) check: a prior "allow for session/project" grant
+            # covering this op+zone+directory skips the prompt entirely. This is
+            # what stops the per-file re-approval storm.
+            if action == PermissionAction.PROMPT and self._consent is not None:
+                verdict = self._consent_verdict(request, zone)
+                if verdict == "allow":
+                    logger.info(
+                        "TaskRunner | CONSENT allow (grant) | %s | %s",
+                        request.operation.value.upper(), primary_path,
+                    )
+                    action = PermissionAction.ALLOW
+                elif verdict == "deny":
+                    error_msg = (
+                        f"A standing rule denies {request.operation.value.upper()} "
+                        f"on '{primary_path}'."
+                    )
+                    self._log_denied(request, zone, action, error_msg, user_decision="reject")
+                    return self._denied(
+                        request, operation_id, error=error_msg,
+                        error_code=_EC_USER_DENIED, zone=zone,
+                        alternatives=get_alternatives(zone, request.operation),
+                    )
             if action == PermissionAction.PROMPT:
                 payload = build_interrupt_payload(request, zone)
                 decision: str = interrupt(payload.to_interrupt_dict())
 
-                if decision != "approve":
+                # The resume token carries both the verdict and the scope the user
+                # chose (once / session / project). Record a grant when asked.
+                allow, scope = _parse_consent_decision(decision)
+                if not allow:
                     error_msg = (
                         f"User denied permission for {request.operation.value.upper()} "
                         f"on '{primary_path}'."
@@ -189,10 +259,12 @@ class TaskRunnerAgent:
                         zone=zone,
                         alternatives=get_alternatives(zone, request.operation),
                     )
+                if scope is not None and self._consent is not None:
+                    await self._record_consent_grant(request, zone, scope)
 
                 logger.info(
-                    "TaskRunner | APPROVED by user | %s | %s",
-                    request.operation.value.upper(), primary_path,
+                    "TaskRunner | APPROVED by user (%s) | %s | %s",
+                    scope or "once", request.operation.value.upper(), primary_path,
                 )
 
         # 5. ALLOW (or user-approved) — execute

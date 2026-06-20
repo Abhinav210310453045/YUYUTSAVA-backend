@@ -8,6 +8,7 @@ ChannelPluginRegistry — no daemon restart.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from fastapi import APIRouter, Depends
@@ -52,6 +53,8 @@ async def list_channels(registry=Depends(get_channel_plugins)) -> ChannelListOut
 
 
 def _persist_enabled(registry, name: str, enabled: bool) -> None:
+    # Runs off-loop via asyncio.to_thread: to_file does mkdir + os.replace, which
+    # blockbuster flags on the event loop (allow_blocking=False).
     new_cfg = registry.config.with_enabled(name, enabled)
     registry.set_config(new_cfg)
     new_cfg.to_file()
@@ -73,7 +76,7 @@ async def enable_channel(
         # Misconfiguration (missing bot token, bad chat ids…) — the user
         # can fix env/config and retry without touching the daemon.
         raise ValidationError(str(exc)) from exc
-    _persist_enabled(registry, name, True)
+    await asyncio.to_thread(_persist_enabled, registry, name, True)
     return ChannelToggleOut(ok=True, name=name, running=True, changed=changed)
 
 
@@ -86,5 +89,5 @@ async def disable_channel(
     name: str, registry=Depends(get_channel_plugins),
 ) -> ChannelToggleOut:
     changed = await registry.disable(name)
-    _persist_enabled(registry, name, False)
+    await asyncio.to_thread(_persist_enabled, registry, name, False)
     return ChannelToggleOut(ok=True, name=name, running=False, changed=changed)

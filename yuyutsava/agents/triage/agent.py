@@ -81,16 +81,29 @@ class TriageAgent:
             capabilities_block=capabilities_block,
             skills_index=skills_index,
         )
-        try:
-            _lf_cb = get_callback(run_name=f"triage:{envelope.topic}")
-            _invoke_cfg = {"callbacks": [_lf_cb]} if _lf_cb else {}
-            decision: TriageDecision = await self._runnable.ainvoke(
-                [SystemMessage(content=TRIAGE_SYSTEM_PROMPT), HumanMessage(content=msg)],
-                config=_invoke_cfg,
-            )  # type: ignore[assignment]
-        except Exception as exc:
-            logger.warning("triage LLM call failed (%s); defaulting to drop", exc)
-            return TriageDecision(action="drop", reason=f"triage error: {exc}", urgency=0)
+        _lf_cb = get_callback(run_name=f"triage:{envelope.topic}")
+        _invoke_cfg = {"callbacks": [_lf_cb]} if _lf_cb else {}
+        messages = [SystemMessage(content=TRIAGE_SYSTEM_PROMPT), HumanMessage(content=msg)]
+        # One retry: a structured-output parse failure (e.g. a truncated/garbled
+        # JSON response) is not retried by LangChain, so do it here. The raised
+        # exception text already carries the offending raw output for diagnosis.
+        last_exc: Exception | None = None
+        for attempt in range(2):
+            try:
+                decision: TriageDecision = await self._runnable.ainvoke(
+                    messages, config=_invoke_cfg,
+                )  # type: ignore[assignment]
+                break
+            except Exception as exc:
+                last_exc = exc
+                logger.warning(
+                    "triage LLM call failed (attempt %d/2): %s", attempt + 1, exc,
+                )
+        else:
+            logger.warning("triage LLM call failed after retry; defaulting to drop")
+            return TriageDecision(
+                action="drop", reason=f"triage error: {last_exc}", urgency=0,
+            )
 
         # Defensive: validate that 'propose' carries the required fields.
         if decision.action == "propose" and (

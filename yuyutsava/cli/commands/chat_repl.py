@@ -37,6 +37,7 @@ from prompt_toolkit.patch_stdout import patch_stdout
 
 from yuyutsava.cli.agent_stack import build_cli_agent_stack
 from yuyutsava.cli.stream_smoother import TokenSmoother
+from yuyutsava.consent import decision_token as _decision_token
 from yuyutsava.core.config import DockerSettings, LlmSettings, LocalSettings, SearchConfig
 from yuyutsava.core.engine import cleanup_local_sandbox, silence_plumbing_loggers
 from yuyutsava.core.streaming import StreamEvent, _normalize_yes_no, astream_agent_iter
@@ -749,19 +750,32 @@ async def _ask_handler(interrupt_value: Any) -> str:
 
     print(f"{_YELLOW}▣ {title}{_RESET}", file=sys.stderr)
     _render_permission_payload(payload)
-    print(
-        f"  {_DIM}[y]es / [n]o  (also: approve / reject){_RESET}",
-        file=sys.stderr,
-    )
+    # Offer the allowlist scopes for every task-runner operation type (matches the
+    # daemon's options_for_interrupt). Choosing [s]ession / [p]roject remembers the
+    # op for the whole workspace so it isn't re-asked per file/subfolder.
+    if itype == "task_runner_permission":
+        hint = "[y]es / [n]o / [s]ession / [p]roject"
+    else:
+        hint = "[y]es / [n]o  (also: approve / reject)"
+    print(f"  {_DIM}{hint}{_RESET}", file=sys.stderr)
 
     loop = asyncio.get_running_loop()
-    try:
-        raw = await loop.run_in_executor(None, lambda: input("approve/reject> ").strip())
-    except (EOFError, KeyboardInterrupt):
-        return "reject"
-    if not raw:
-        return "reject"
-    return _normalize_yes_no(raw)
+    # Re-prompt on a blank / unrecognized line instead of silently rejecting:
+    # with several parallel asks under prompt_toolkit, a stray buffered line could
+    # otherwise be misread as a rejection. Explicit reject words and EOF/Ctrl-C
+    # still reject; we cap retries so a closed stdin can't spin forever.
+    for _ in range(3):
+        try:
+            raw = await loop.run_in_executor(None, lambda: input("approve/reject> ").strip())
+        except (EOFError, KeyboardInterrupt):
+            return "reject"
+        if not raw:
+            continue
+        token = _decision_token(raw)
+        if token is not None:
+            return token
+        print(f"  {_DIM}please answer: [y]es / [n]o / [s]ession / [p]roject{_RESET}", file=sys.stderr)
+    return "reject"
 
 
 # ---------------------------------------------------------------------------
@@ -771,6 +785,51 @@ async def _ask_handler(interrupt_value: Any) -> str:
 
 _SLASH_QUIT = object()
 _SLASH_HANDLED = object()
+
+
+def _loopback_url(url: str) -> str:
+    """Rewrite a daemon web URL to loopback so the CLI is auth-exempt.
+
+    The daemon may advertise a non-loopback bind (e.g. ``http://0.0.0.0:7654``)
+    with bearer auth enforced; connecting from 127.0.0.1 is exempt.
+    """
+    return url.replace("://0.0.0.0", "://127.0.0.1").replace("://[::]", "://127.0.0.1")
+
+
+async def _handle_ask_command(cmd: str, remote: Any) -> bool:
+    """Handle background-approval slash commands against the daemon (async).
+
+    Returns True if *cmd* was an ask command (and was handled), else False so
+    the caller falls through to the normal slash handler / agent turn.
+    """
+    c = cmd.strip()
+    if not c.startswith("/"):
+        return False
+    parts = c.split()
+    head = parts[0].lower()
+    if head == "/asks":
+        pending = remote.list_pending()
+        if not pending:
+            print(f"  {_DIM}no pending approvals{_RESET}", file=sys.stderr)
+        else:
+            for a in pending:
+                print(f"  {a.get('ask_id', '')[:8]}  {a.get('title', '')}", file=sys.stderr)
+        return True
+    if head in ("/approve", "/reject"):
+        # No id → answer the active (oldest) pending ask. The id is resolved in
+        # code so the user never has to type it; an explicit id still works for
+        # answering out of order.
+        target = parts[1] if len(parts) >= 2 else ""
+        resp = "approve" if head == "/approve" else "reject"
+        print(f"  {await remote.answer(target, resp)}", file=sys.stderr)
+        return True
+    if head == "/reply":
+        if len(parts) < 3:
+            print(f"  {_DIM}usage: /reply <id> <text>{_RESET}", file=sys.stderr)
+            return True
+        print(f"  {await remote.answer(parts[1], ' '.join(parts[2:]))}", file=sys.stderr)
+        return True
+    return False
 
 
 def _handle_slash(
@@ -912,24 +971,43 @@ async def run_chat_repl(
             # uvicorn handlers, so re-silence after the build.
             silence_plumbing_loggers()
 
-        # Wire the async-subagent HITL bridge if the bundle has a host URL —
-        # this works whether the chat process owns the host or attached to
-        # one started by the daemon / another chat.
+        # Async-subagent HITL wiring.
+        #   Preferred: when a daemon is running it owns the async host and the
+        #   single, idempotent decision pipeline. The chat defers to it — consume
+        #   the daemon's SSE and answer over REST — so a background approval can be
+        #   answered from the CLI OR the UI and stays in sync, and the prompt never
+        #   freezes (no competing stdin reader, no double-resume).
+        #   Fallback: only when this chat OWNS the host (no daemon) do we run the
+        #   legacy in-process watcher that prompts locally.
         cli_bridge = None
         cli_watcher = None
-        if bundle.async_host_url is not None and bundle.async_task_mirror is not None:
-            from yuyutsava.async_subagents.watcher import AsyncTaskHealthWatcher
-            from yuyutsava.cli.async_hitl import CliHitlBridge
+        cli_remote = None
+        if bundle.async_host_url is not None:
+            from yuyutsava.daemon.singleton import read_daemon_discovery
+            disco = read_daemon_discovery()
+            daemon_web = disco.get("web_url") if isinstance(disco, dict) else None
+            if daemon_web:
+                from yuyutsava.cli.async_hitl import CliRemoteHitl
+                from yuyutsava.cli.remote_attach import CliAttachClient
 
-            cli_bridge = CliHitlBridge()
-            cli_watcher = AsyncTaskHealthWatcher(
-                mirror=bundle.async_task_mirror,
-                host_url=bundle.async_host_url,
-                ask_handler=cli_bridge.post_ask,
-                event_sink=cli_bridge.post_event,
-                agent_path_root="cli",
-            )
-            await cli_watcher.start()
+                cli_remote = CliRemoteHitl(
+                    CliAttachClient(base_url=_loopback_url(str(daemon_web)),
+                                    label="yuyutsava-chat")
+                )
+                await cli_remote.start()
+            elif bundle.async_task_mirror is not None:
+                from yuyutsava.async_subagents.watcher import AsyncTaskHealthWatcher
+                from yuyutsava.cli.async_hitl import CliHitlBridge
+
+                cli_bridge = CliHitlBridge()
+                cli_watcher = AsyncTaskHealthWatcher(
+                    mirror=bundle.async_task_mirror,
+                    host_url=bundle.async_host_url,
+                    ask_handler=cli_bridge.post_ask,
+                    event_sink=cli_bridge.post_event,
+                    agent_path_root="cli",
+                )
+                await cli_watcher.start()
 
         try:
             # Resolve initial session: --resume / --continue / fresh.
@@ -1001,6 +1079,24 @@ async def run_chat_repl(
                 if not user_input:
                     continue
 
+                # Background-approval commands (/asks, /approve, /reject, /reply)
+                # are answered against the daemon — non-blocking, synced with the UI.
+                if cli_remote is not None:
+                    if await _handle_ask_command(user_input, cli_remote):
+                        continue
+                    # A bare decision word (y/n/yes/no/approve/reject/session/
+                    # project/s/p) answers the ACTIVE (oldest) pending approval —
+                    # the id is resolved in code. Only intercepted when something
+                    # is actually pending, so normal messages pass through.
+                    tok = _decision_token(user_input)
+                    if tok is not None and cli_remote.list_pending():
+                        print(f"  {await cli_remote.answer('', tok)}", file=sys.stderr)
+                        remaining = len(cli_remote.list_pending())
+                        if remaining:
+                            print(f"  {_DIM}{remaining} more pending — "
+                                  f"answer with y/n/s/p{_RESET}", file=sys.stderr)
+                        continue
+
                 slash_result = _handle_slash(
                     user_input, session_id=session.id, workspace=workspace, renderer=renderer,
                 )
@@ -1065,6 +1161,9 @@ async def run_chat_repl(
                     await cli_watcher.shutdown()
                 except Exception:
                     pass
+            if cli_remote is not None:
+                with contextlib.suppress(Exception):
+                    await cli_remote.stop()
             if execution_mode == "local" and bundle.sandbox_root is not None:
                 try:
                     cleanup_local_sandbox(workspace, bundle.sandbox_root)

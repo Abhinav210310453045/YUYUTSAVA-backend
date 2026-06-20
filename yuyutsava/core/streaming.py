@@ -282,6 +282,24 @@ class StreamEvent:
     data: dict
 
 
+async def _has_resumable_state(agent: CompiledStateGraph, cfg: RunnableConfig) -> bool:
+    """True when ``cfg``'s thread has a checkpoint with messages to resume.
+
+    Used by :func:`astream_agent_iter` to decide between continuing an
+    interrupted run (``input=None``) and a fresh run. Never raises — a missing
+    or unreadable checkpoint just means "not resumable".
+    """
+    try:
+        snap = await agent.aget_state(cfg)
+    except Exception:
+        logger.exception("aget_state failed while checking for resumable state")
+        return False
+    values = getattr(snap, "values", None)
+    if not isinstance(values, dict):
+        return False
+    return bool(values.get("messages"))
+
+
 async def astream_agent_iter(
     agent: CompiledStateGraph,
     task: str,
@@ -292,6 +310,7 @@ async def astream_agent_iter(
     run_name: str = "agent",
     agent_path: str = "orchestrator",
     keep_full_payloads: bool = False,
+    resume: bool = False,
 ):
     """Async generator that yields ``StreamEvent``s instead of printing them.
 
@@ -310,6 +329,11 @@ async def astream_agent_iter(
     ``preview``. The chat REPL passes True so its ``/expand`` slash command
     can show full output. Default False keeps daemon SSE frames small.
 
+    ``resume``: durable resume after a daemon reload. When True (and a
+    checkpoint exists for ``thread_id``), the graph continues from its last
+    committed checkpoint instead of starting a new turn — ``task`` is only
+    used as the fresh-run fallback when no resumable state is found.
+
     Yields events; the final yielded event is always ``StreamEvent("final", {"text": ...})``.
     """
     _tid = thread_id or str(uuid.uuid4())
@@ -323,6 +347,17 @@ async def astream_agent_iter(
 
     final_messages: list[Any] = []
     current_input: Any = {"messages": [HumanMessage(content=task)]}
+    if resume:
+        # Continue this thread from its last committed checkpoint. If the
+        # checkpoint is missing or lives in an incompatible backend (e.g. the
+        # storage backend was switched on reload), fall back to a fresh run.
+        if await _has_resumable_state(agent, cfg):
+            current_input = None
+        else:
+            logger.warning(
+                "resume requested for thread %s but no checkpoint state found; "
+                "starting a fresh run", _tid,
+            )
 
     while True:
         # pending: every interrupt fired in this pass, in arrival order.
@@ -422,12 +457,18 @@ async def astream_agent_iter(
 
         if len(decisions) == 1:
             current_input = Command(resume=decisions[0][1])
+        elif all(it_id is None for it_id, _ in decisions):
+            # No ids at all (older LangGraph / single resumable task): the map
+            # form can't route, so fall back to a scalar resume with the first
+            # decision rather than dropping every answer and effectively rejecting.
+            current_input = Command(resume=decisions[0][1])
         else:
             resume_map: dict[str, Any] = {}
             for it_id, decision in decisions:
                 if it_id is None:
-                    # Should not happen with current LangGraph, but be defensive:
-                    # without an id we cannot route the decision, so reject.
+                    # Mixed id/no-id is unexpected; skipping would silently reject
+                    # this op, so leave it out of the map and let LangGraph re-emit
+                    # the interrupt on the next pass (re-prompt, not auto-reject).
                     continue
                 resume_map[it_id] = decision
             current_input = Command(resume=resume_map)

@@ -6,6 +6,12 @@ and LANGFUSE_SECRET_KEY are all set in the environment; otherwise returns
 None so tracing is a no-op.  Errors are silently swallowed — tracing must
 never break agent execution.
 
+A single ``LANGFUSE_ENABLED`` kill-switch overrides everything: set it to an
+explicit off value (``0``/``false``/``no``/``off``) to force tracing off even
+when the keys are present and the server is up — the in-code twin of *not*
+starting the ``langfuse`` compose profile. Leaving it unset preserves the
+historical behaviour (active iff the three keys are set).
+
 Usage::
 
     from yuyutsava.core.tracing import get_callback
@@ -28,7 +34,21 @@ logger = logging.getLogger("yuyutsava.core.tracing")
 _reachable: bool | None = None
 
 
+def _explicitly_disabled() -> bool:
+    """True only when ``LANGFUSE_ENABLED`` is set to an explicit off value.
+
+    Unset returns False so existing setups (keys present, no flag) keep tracing
+    on without touching their env.
+    """
+    raw = os.getenv("LANGFUSE_ENABLED")
+    if raw is None:
+        return False
+    return raw.strip().lower() in ("0", "false", "no", "off", "")
+
+
 def is_configured() -> bool:
+    if _explicitly_disabled():
+        return False
     return bool(
         os.getenv("LANGFUSE_HOST")
         and os.getenv("LANGFUSE_PUBLIC_KEY")
@@ -40,6 +60,19 @@ def reset_reachability_cache() -> None:
     """Clear the cached reachability result (mainly for tests)."""
     global _reachable
     _reachable = None
+
+
+def warm_reachability_cache() -> None:
+    """Probe Langfuse once at startup so the runtime path never blocks.
+
+    ``_langfuse_reachable`` does a synchronous ``urllib`` call. Calling it once
+    during boot (before the LangGraph runtime installs blockbuster) populates the
+    process-wide cache, so the later on-loop ``get_callback`` calls reuse it
+    instead of doing socket I/O on the event loop. No-op unless Langfuse is
+    configured (otherwise the probe is never reached).
+    """
+    if is_configured():
+        _langfuse_reachable()
 
 
 def _langfuse_reachable() -> bool:

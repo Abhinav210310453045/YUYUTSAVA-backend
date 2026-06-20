@@ -244,17 +244,38 @@ def _row_to_session(row: Any) -> Session:
 # Process-level default store factory
 # ---------------------------------------------------------------------------
 
-_DEFAULT_STORE: SqliteSessionStore | None = None
+from yuyutsava.storage.backend import StorageSettings  # noqa: E402 — avoid cycle at import time
+from yuyutsava.storage.sessions.store import SessionStore  # noqa: E402
+
+_DEFAULT_STORE: SessionStore | None = None
 
 
-def get_default_session_store() -> SqliteSessionStore:
-    """Lazy singleton — one store per process, ``~/.yuyutsava/sessions.db`` by default.
+def set_default_session_store(store: SessionStore) -> None:
+    """Override the process-wide default (the daemon injects a pool-backed
+    :class:`PgSessionStore` at boot so the web router reuses its pool)."""
+    global _DEFAULT_STORE
+    _DEFAULT_STORE = store
 
-    Both the CLI and the daemon resolve to the same instance for their own
-    process; cross-process coordination falls back to SQLite's WAL lock.
+
+def get_default_session_store() -> SessionStore:
+    """Lazy singleton — one store per process, backend chosen from env.
+
+    Postgres mode (``YUYUTSAVA_STORAGE_BACKEND=postgres`` or
+    ``YUYUTSAVA_SESSIONS_BACKEND=postgres``) yields a :class:`PgSessionStore`
+    so the CLI and daemon share one durable, JOINable ``sessions`` table;
+    otherwise the SQLite twin in ``~/.yuyutsava/sessions.db`` (cross-process
+    coordination via SQLite's WAL lock). Override via
+    :func:`set_default_session_store`.
     """
     global _DEFAULT_STORE
     if _DEFAULT_STORE is None:
         s = SessionsSettings.from_env()
-        _DEFAULT_STORE = SqliteSessionStore(s.db_path, busy_timeout_ms=s.busy_timeout_ms)
+        storage = StorageSettings.from_env()
+        if storage.is_postgres() or s.backend == "postgres":
+            from yuyutsava.storage.sessions.pg_impl import PgSessionStore
+            _DEFAULT_STORE = PgSessionStore(storage)
+        else:
+            _DEFAULT_STORE = SqliteSessionStore(
+                s.db_path, busy_timeout_ms=s.busy_timeout_ms
+            )
     return _DEFAULT_STORE

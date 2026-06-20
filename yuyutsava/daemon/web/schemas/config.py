@@ -35,3 +35,29 @@ class AddRootIn(BaseModel):
 
 class RootsOut(BaseModel):
     roots: list[str]
+
+
+class ConfigVarDTO(BaseModel):
+    """One configurable env variable's metadata (no value — secrets never ride
+    over the wire; the renderer overlays the user's local value)."""
+
+    key: str
+    label: str
+    type: str = "text"  # text | number | password | select | toggle
+    default: str = ""
+    secret: bool = False
+    reload_class: str = "restart_resume"  # hot | restart_resume | restart_no_resume
+    options: list[str] = Field(default_factory=list)
+    placeholder: str = ""
+    help: str = ""
+    depends_key: str = ""
+    depends_value: str = ""
+
+
+class ConfigGroupDTO(BaseModel):
+    name: str
+    vars: list[ConfigVarDTO]
+
+
+class ConfigSchemaOut(BaseModel):
+    groups: list[ConfigGroupDTO]

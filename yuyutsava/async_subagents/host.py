@@ -40,6 +40,37 @@ from yuyutsava.async_subagents import _lg_graphs
 
 logger = logging.getLogger("yuyutsava.async_subagents.host")
 
+# Env override for the LangGraph runtime's blocking-I/O strictness. Unset →
+# caller's default. Set → wins. ``True`` keeps the permissive (warn-only) mode;
+# ``False`` installs blockbuster, which raises on synchronous blocking I/O run on
+# an event loop (see resolve_allow_blocking).
+_ALLOW_BLOCKING_ENV = "YUYUTSAVA_ALLOW_BLOCKING"
+_TRUE = frozenset({"1", "true", "yes", "on"})
+_FALSE = frozenset({"0", "false", "no", "off"})
+
+
+def resolve_allow_blocking(*, default: bool) -> bool:
+    """Resolve the effective ``allow_blocking`` flag for the embedded LangGraph
+    runtime: ``YUYUTSAVA_ALLOW_BLOCKING`` wins when set to a recognized value,
+    otherwise ``default``.
+
+    The daemon passes ``default=False`` (strict — its loop is non-blocking), and
+    ``YUYUTSAVA_ALLOW_BLOCKING=1`` is the instant escape hatch back to permissive.
+    """
+    raw = os.getenv(_ALLOW_BLOCKING_ENV)
+    if raw is None:
+        return default
+    val = raw.strip().lower()
+    if val in _TRUE:
+        return True
+    if val in _FALSE:
+        return False
+    logger.warning(
+        "%s=%r not understood (use 1/0/true/false); falling back to default=%s",
+        _ALLOW_BLOCKING_ENV, raw, default,
+    )
+    return default
+
 
 def _pick_free_port() -> int:
     with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
@@ -74,6 +105,16 @@ class AsyncSubagentHost:
         server_log_level: str = "WARNING",
         allow_blocking: bool = True,
     ) -> None:
+        # ``allow_blocking`` is intentionally True. Disabling it makes LangGraph
+        # install ``blockbuster``, which monkeypatches blocking I/O *process-wide*
+        # (not just inside this server's thread). The daemon's own main loop does
+        # small synchronous local-file ops by design — singleton discovery
+        # (os.replace), events-config persistence, etc. — which are cheap and not
+        # worth converting to threads. Only the hot/heavy path (Postgres) needs to
+        # be async, and it already is (psycopg3 AsyncConnectionPool,
+        # AsyncPostgresSaver). With blocking disallowed those benign file writes
+        # raise BlockingError and crash the daemon, so we accept the one-line
+        # "--allow-blocking" startup notice instead.
         if not graphs:
             raise ValueError("AsyncSubagentHost requires at least one graph")
         if any(not gid for gid in graphs):

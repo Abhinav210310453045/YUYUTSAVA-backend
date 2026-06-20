@@ -23,6 +23,7 @@ the live saver.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import AsyncExitStack
 from pathlib import Path
@@ -91,7 +92,7 @@ class CheckpointerSaver:
         return saver
 
     async def _start_sqlite(self) -> BaseCheckpointSaver:
-        self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(self._db_path.parent.mkdir, parents=True, exist_ok=True)
         saver = await self._stack.enter_async_context(
             AsyncSqliteSaver.from_conn_string(str(self._db_path)),
         )

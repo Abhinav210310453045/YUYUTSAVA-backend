@@ -82,6 +82,7 @@ class OrchestratorDeps:
     artifact_store: object | None = None
     summary_store: object | None = None
     memory_store: object | None = None
+    transcript_store: object | None = None
     context_settings: object | None = None
     compaction_model: BaseChatModel | None = None
 

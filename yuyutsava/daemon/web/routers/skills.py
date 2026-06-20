@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import shutil
 from typing import Any
 
@@ -15,9 +16,11 @@ router = APIRouter(tags=["skills"])
 async def list_skills(reg=Depends(get_skill_registry)) -> list[dict[str, Any]]:
     if reg is None:
         return []
+    # scan() walks dirs (os.scandir) and may mkdir → off-loop (blockbuster-safe).
+    skills = await asyncio.to_thread(reg.scan)
     return [
         {"name": s.name, "description": s.description, "scope": s.scope, "agent": s.agent}
-        for s in reg.scan()
+        for s in skills
     ]
 
 
@@ -28,6 +31,7 @@ async def delete_skill(name: str, reg=Depends(get_skill_registry)) -> dict[str, 
     personal_dir = reg._home_dir / name  # type: ignore[attr-defined]
     if not personal_dir.exists():
         raise NotFoundError(f"personal skill {name!r} not found")
-    shutil.rmtree(personal_dir)
+    # rmtree does scandir + unlink + rmdir → off-loop (blockbuster-safe).
+    await asyncio.to_thread(shutil.rmtree, personal_dir)
     reg._cache = None  # type: ignore[attr-defined]
     return {"deleted": name}

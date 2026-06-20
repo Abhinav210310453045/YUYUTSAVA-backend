@@ -1,8 +1,20 @@
 import React from 'react'
+import { navIcons, NAV_ITEMS, PanelToggleIcon } from './navIcons.jsx'
 
 const LEVELS = ['DEBUG', 'INFO', 'WARNING']
 
-export default function Titlebar({ connected, logsEnabled, onToggleLogs, logLevel, onChangeLogLevel }) {
+export default function Titlebar({
+  connected,
+  logsEnabled,
+  onToggleLogs,
+  logLevel,
+  onChangeLogLevel,
+  activePanel,
+  onNav,
+  pendingCount,
+  activityOpen,
+  onToggleActivity,
+}) {
   return (
     <div style={{
       height: 'var(--titlebar-h)',
@@ -51,7 +63,7 @@ export default function Titlebar({ connected, logsEnabled, onToggleLogs, logLeve
         {connected ? 'daemon connected' : 'disconnected'}
       </span>
 
-      {/* right-aligned cluster: log level + logs toggle */}
+      {/* right-aligned cluster: nav · panel toggle · log level · logs toggle */}
       <div style={{
         marginLeft: 'auto',
         display: 'flex',
@@ -59,6 +71,83 @@ export default function Titlebar({ connected, logsEnabled, onToggleLogs, logLeve
         gap: 8,
         WebkitAppRegion: 'no-drag',
       }}>
+        {/* Nav icons (moved here from the old left rail). */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          {NAV_ITEMS.map((item) => {
+            const isActive = activePanel === item.id
+            return (
+              <button
+                key={item.id}
+                onClick={() => onNav?.(item.id)}
+                title={item.label}
+                style={{
+                  position: 'relative',
+                  width: 28,
+                  height: 28,
+                  borderRadius: 6,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: isActive ? 'var(--neon-green)' : 'var(--text-muted)',
+                  background: isActive ? 'rgba(0,255,136,0.08)' : 'transparent',
+                  boxShadow: isActive ? 'var(--glow-green)' : 'none',
+                  border: `1px solid ${isActive ? 'rgba(0,255,136,0.2)' : 'transparent'}`,
+                  transition: 'all 0.2s',
+                }}
+              >
+                {navIcons[item.id]}
+                {item.id === 'proposals' && pendingCount > 0 && (
+                  <span style={{
+                    position: 'absolute',
+                    top: 1,
+                    right: 1,
+                    minWidth: 12,
+                    height: 12,
+                    borderRadius: 6,
+                    background: 'var(--neon-red)',
+                    color: '#fff',
+                    fontSize: 8,
+                    fontWeight: 700,
+                    fontFamily: 'var(--font-mono)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '0 2px',
+                    boxShadow: 'var(--glow-red)',
+                    lineHeight: 1,
+                  }}>
+                    {pendingCount > 99 ? '99+' : pendingCount}
+                  </span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+
+        <span style={{ width: 1, height: 18, background: 'var(--border-subtle)' }} />
+
+        {/* VS Code-style toggle for the right Activity panel. */}
+        <button
+          onClick={() => onToggleActivity?.(!activityOpen)}
+          title={activityOpen ? 'Hide activity panel' : 'Show activity panel'}
+          style={{
+            width: 28,
+            height: 28,
+            borderRadius: 6,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: activityOpen ? 'var(--neon-green)' : 'var(--text-muted)',
+            background: activityOpen ? 'rgba(0,255,136,0.08)' : 'transparent',
+            border: `1px solid ${activityOpen ? 'rgba(0,255,136,0.2)' : 'transparent'}`,
+            transition: 'all 0.2s',
+          }}
+        >
+          <PanelToggleIcon open={activityOpen} />
+        </button>
+
+        <span style={{ width: 1, height: 18, background: 'var(--border-subtle)' }} />
+
         <select
           value={logLevel || 'INFO'}
           onChange={(e) => onChangeLogLevel?.(e.target.value)}

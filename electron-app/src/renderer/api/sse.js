@@ -40,6 +40,16 @@ export class SSEClient {
       try { this.handlers.onAsk?.(JSON.parse(e.data)) } catch {}
     })
 
+    // Resolution events: an ask/proposal was answered (here or on the CLI) or
+    // expired — remove the corresponding card so surfaces stay in sync.
+    this._es.addEventListener('ask_resolved', (e) => {
+      try { this.handlers.onAskResolved?.(JSON.parse(e.data)) } catch {}
+    })
+
+    this._es.addEventListener('proposal_resolved', (e) => {
+      try { this.handlers.onProposalResolved?.(JSON.parse(e.data)) } catch {}
+    })
+
     this._es.onerror = () => {
       this._es?.close()
       this._es = null

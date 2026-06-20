@@ -303,15 +303,18 @@ def _context_middleware(
     context_settings: Any | None,
     summary_store: Any | None = None,
     memory_store: Any | None = None,
+    transcript_store: Any | None = None,
     compaction_model: BaseChatModel | None = None,
     role: str = "agent",
 ) -> list:
-    """Build the context-controller middleware pair for one agent.
+    """Build the context-controller middleware for one agent.
 
     Order matters downstream: offload must run on the tool path before the
     compactor ever counts tokens, and both sit before BudgetMiddleware (the
-    absolute spend ceiling) in the caller's list. Returns [] when the
-    context controller is not wired (stores absent), preserving the
+    absolute spend ceiling) in the caller's list. The transcript recorder is
+    appended last — it only reads ``state["messages"]`` and never rewrites
+    state, so its position is immaterial. Returns [] when the context
+    controller is not wired (stores absent), preserving the
     pre-context-controller behaviour exactly.
     """
     from yuyutsava.context.compaction import YuyutsavaCompactionMiddleware
@@ -330,6 +333,10 @@ def _context_middleware(
                 role=role,
             )
         )
+    if transcript_store is not None:
+        from yuyutsava.context.transcript_middleware import TranscriptRecorderMiddleware
+
+        out.append(TranscriptRecorderMiddleware(transcript_store))
     return out
 
 
@@ -355,6 +362,7 @@ def build_cli_deepagent(
     artifact_store: Any | None = None,
     summary_store: Any | None = None,
     memory_store: Any | None = None,
+    transcript_store: Any | None = None,
     context_settings: Any | None = None,
     compaction_model: BaseChatModel | None = None,
 ) -> AgentBundle:
@@ -394,9 +402,12 @@ def build_cli_deepagent(
         async_max_concurrent: Cap for in-flight bg tasks. Defaults to ``8``.
         async_host: Optional ``AsyncSubagentHost`` reference recorded on the
             returned bundle so ``AgentBundle.close`` can tear it down.
-        artifact_store / summary_store / memory_store / context_settings /
-            compaction_model: context-controller wiring (see
+        artifact_store / summary_store / memory_store / transcript_store /
+            context_settings / compaction_model: context-controller wiring (see
             ``yuyutsava.context``). All optional; None disables the layer.
+            ``transcript_store`` persists the full verbatim conversation to the
+            DB (durable beyond checkpoint sweeps); see
+            ``yuyutsava.context.transcript_store``.
             CLI chat threads are the longest-lived in the system, so the
             stack factory (``cli/agent_stack.py``) wires these by default.
     """
@@ -413,6 +424,7 @@ def build_cli_deepagent(
         context_settings=context_settings,
         summary_store=summary_store,
         memory_store=memory_store,
+        transcript_store=transcript_store,
         compaction_model=compaction_model,
         role="cli",
     ))
@@ -601,6 +613,7 @@ def build_orchestrator(
             context_settings=deps.context_settings,
             summary_store=deps.summary_store,
             memory_store=deps.memory_store,
+            transcript_store=getattr(deps, "transcript_store", None),
             compaction_model=deps.compaction_model,
             role=role,
         )
@@ -746,12 +759,22 @@ def export_agent_state_graph_png(
 
 
 def cleanup_local_sandbox(workspace_root: Path, sandbox_root: Path) -> None:
-    """Delete sandbox and large_tool_results after a local task completes.
+    """Delete sandbox + deepagents scratch dirs after a local task completes.
 
     - sandbox_root: deleted entirely (temp work; output files go to output_dir)
-    - workspace_root/large_tool_results: deleted (deepagents eviction cache)
+    - workspace_root/large_tool_results: deepagents eviction cache (the durable
+      copy is in the artifacts DB table)
+    - workspace_root/conversation_history: deepagents summarization transcript
+      dumps (the durable copy is in the transcript_messages DB table)
+
+    The daemon cleans the same scratch dirs via the UnifiedSweeper's TTL
+    targets instead, since its workspace is long-lived and shared across tasks.
     """
-    for target in (sandbox_root, workspace_root / "large_tool_results"):
+    for target in (
+        sandbox_root,
+        workspace_root / "large_tool_results",
+        workspace_root / "conversation_history",
+    ):
         if target.exists():
             try:
                 shutil.rmtree(target)

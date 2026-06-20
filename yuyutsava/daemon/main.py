@@ -38,6 +38,7 @@ except ImportError:  # pragma: no cover
 from yuyutsava.core.engine import silence_plumbing_loggers
 from yuyutsava.daemon.bootstrap import DaemonOptions, DaemonSubsystems, build_daemon
 from yuyutsava.daemon.lifecycle import install_reload_handler, install_signal_handlers
+from yuyutsava.daemon.orchestrator_loop import resume_interrupted_tasks
 from yuyutsava.daemon.singleton import (
     acquire_daemon_lock,
     read_daemon_discovery,
@@ -46,9 +47,13 @@ from yuyutsava.daemon.singleton import (
     write_daemon_discovery,
 )
 from yuyutsava.mcp.config import MCPConfig
-from yuyutsava.storage.paths import ensure_state_dirs
+from yuyutsava.storage.paths import ensure_state_dirs, state_dir
 
 logger = logging.getLogger("yuyutsava.daemon")
+
+# _async_main returns this to main() to ask for a graceful self-reexec after
+# ordered teardown (config hot-reload for standalone/CLI daemons).
+_REEXEC_RETCODE = 75
 
 
 _LOG_LEVEL_NAMES = ("DEBUG", "INFO", "WARNING")
@@ -231,7 +236,10 @@ async def _open_electron_when_ready(url: str) -> None:
     electron_app_dir = Path(__file__).resolve().parent.parent.parent / "electron-app"
     if electron_app_dir.is_dir():
         try:
-            subprocess.Popen(
+            # Off-loop: Popen's fork/exec handshake uses os.read/os.write, which
+            # blockbuster flags on the event loop under allow_blocking=False.
+            await asyncio.to_thread(
+                subprocess.Popen,
                 ["npm", "run", "dev"],
                 cwd=electron_app_dir,
                 stdout=subprocess.DEVNULL,
@@ -286,7 +294,14 @@ def _log_ready_banner(subs: DaemonSubsystems) -> None:
 
 async def _async_main(argv: list[str] | None = None) -> int:
     if load_dotenv:
-        load_dotenv()
+        load_dotenv()  # project-dir .env (developer defaults)
+        # ~/.yuyutsava/.env is the app-managed config the Settings UI writes;
+        # it is authoritative, so load it last with override=True. This is what
+        # lets a self-reexec reload (which inherits the previous process's stale
+        # environment) pick up freshly-changed values.
+        _home_env = state_dir() / ".env"
+        if _home_env.is_file():
+            load_dotenv(_home_env, override=True)
 
     args = _build_parser().parse_args(argv)
     _setup_logging(args.verbose, debug_plumbing=args.debug_plumbing)
@@ -325,21 +340,35 @@ async def _async_main(argv: list[str] | None = None) -> int:
     async_host_url = None
     if subs.async_host_attachment is not None:
         async_host_url = getattr(subs.async_host_attachment, "url", None)
-    write_daemon_discovery(
+    # Off-loop: write_daemon_discovery does os.replace, which blockbuster flags
+    # when run on the event loop (allow_blocking=False).
+    await asyncio.to_thread(
+        write_daemon_discovery,
         pid=os.getpid(),
         web_url=subs.web_url,
         async_host_url=async_host_url,
     )
 
     # Re-apply logging with any persisted runtime level (CLI --verbose wins).
-    persisted_level = subs.prefs_store.get("daemon.log_level", None)
+    # prefs_store.get is a synchronous sqlite read → off-loop.
+    persisted_level = await asyncio.to_thread(subs.prefs_store.get, "daemon.log_level", None)
     if not args.verbose and isinstance(persisted_level, str):
         _setup_logging(args.verbose, persisted_level, debug_plumbing=args.debug_plumbing)
 
     stop_event = asyncio.Event()
     reload_event = asyncio.Event()
+    reexec_event = asyncio.Event()
     install_signal_handlers(stop_event)
     install_reload_handler(reload_event)
+
+    # Let POST /system/reload trigger a graceful self-reexec (for standalone /
+    # CLI daemons not managed by the Electron app, which restarts via its own
+    # supervisor). Setting reexec + stop makes _async_main return _REEXEC_RETCODE
+    # after ordered teardown; main() then re-execs to pick up new config.
+    if subs.web_server is not None:
+        _web_app = subs.web_server.config.app
+        _web_app.state.lifecycle_stop = stop_event
+        _web_app.state.lifecycle_reexec = reexec_event
 
     _log_ready_banner(subs)
 
@@ -358,6 +387,14 @@ async def _async_main(argv: list[str] | None = None) -> int:
         tasks.append(asyncio.create_task(
             _run_uvicorn(subs.web_server, stop_event), name="web-server",
         ))
+
+    # Durable resume: re-enqueue tasks a previous instance left unfinished
+    # (e.g. after a config hot-reload restart). The orchestrator loop above is
+    # already draining the queue; ``running`` tasks continue from their last
+    # checkpoint, ``queued`` tasks re-run fresh.
+    resumed = await resume_interrupted_tasks(subs.task_registry, subs.task_queue)
+    if resumed:
+        logger.info("startup: resumed %d task(s) from a previous run", resumed)
 
     try:
         # Wait for stop_event; if any task crashes, also stop.
@@ -431,7 +468,9 @@ async def _async_main(argv: list[str] | None = None) -> int:
         # Release the daemon singleton lock + discovery file.
         release_daemon_lock(lock_fd)
         logger.info("bye")
-    return 0
+    # When a reload was requested, ask main() to re-exec now that the lock and
+    # all resources are released, so the fresh process can re-acquire cleanly.
+    return _REEXEC_RETCODE if reexec_event.is_set() else 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -444,9 +483,15 @@ def main(argv: list[str] | None = None) -> int:
     if getattr(pre_args, "stop", False):
         return _cmd_stop()
     try:
-        return asyncio.run(_async_main(argv))
+        rc = asyncio.run(_async_main(argv))
     except KeyboardInterrupt:
         return 0
+    if rc == _REEXEC_RETCODE:
+        # Graceful self-reexec to apply a config reload. The singleton lock was
+        # released during teardown, so the replacement image re-acquires it.
+        logger.info("re-executing daemon to apply config reload")
+        os.execv(sys.executable, [sys.executable, *sys.argv])
+    return rc
 
 
 if __name__ == "__main__":

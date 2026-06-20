@@ -108,7 +108,44 @@ class StreamAskItem:
         }
 
 
-StreamItem = StreamEventItem | StreamProposalItem | StreamAskItem
+@dataclass(frozen=True)
+class StreamAskResolvedItem:
+    """Broadcast when a pending ask is resolved (by ANY surface, or expiry) so
+    every connected client (UI + CLI) clears its prompt. Carries ``session_id``
+    to mirror the original ask's scoping for session-filtered streams."""
+
+    ask_id: str
+    session_id: str | None = None
+    type: Literal["ask_resolved"] = "ask_resolved"
+
+    def to_wire_dict(self) -> dict[str, Any]:
+        return {"type": self.type, "ask_id": self.ask_id, "session_id": self.session_id}
+
+
+@dataclass(frozen=True)
+class StreamProposalResolvedItem:
+    """Broadcast when a pending proposal is resolved/expired — clears the card
+    on every surface regardless of where it was answered."""
+
+    proposal_id: str
+    session_id: str | None = None
+    type: Literal["proposal_resolved"] = "proposal_resolved"
+
+    def to_wire_dict(self) -> dict[str, Any]:
+        return {
+            "type": self.type,
+            "proposal_id": self.proposal_id,
+            "session_id": self.session_id,
+        }
+
+
+StreamItem = (
+    StreamEventItem
+    | StreamProposalItem
+    | StreamAskItem
+    | StreamAskResolvedItem
+    | StreamProposalResolvedItem
+)
 
 
 # ---------------------------------------------------------------------------
@@ -176,6 +213,30 @@ class WebHub:
         """
         return list(self._task_rings.get(task_id, ()))
 
+    async def resolve_ask(self, ask_id: str, session_id: str | None) -> None:
+        """Drop the pending ask future and tell every surface it's resolved.
+
+        Shared by ``WebChannel`` and ``CliRemoteChannel`` so an ask answered on
+        any surface clears the CLI prompt **and** the UI AskCard in sync — this
+        is what makes "answer from anywhere" actually stay consistent.
+        """
+        self.pending_asks.pop(ask_id, None)
+        await self.broadcast(StreamAskResolvedItem(
+            ask_id=ask_id, session_id=session_id,
+        ))
+
+    async def resolve_proposal(
+        self, proposal_id: str, session_id: str | None
+    ) -> None:
+        """Drop the pending proposal future and broadcast its resolution.
+
+        Counterpart to :meth:`resolve_ask` for Tier-1 proposals.
+        """
+        self.pending_proposals.pop(proposal_id, None)
+        await self.broadcast(StreamProposalResolvedItem(
+            proposal_id=proposal_id, session_id=session_id,
+        ))
+
 
 class WebChannel(UserChannel):
     name = "web"
@@ -199,7 +260,9 @@ class WebChannel(UserChannel):
         except asyncio.TimeoutError:
             return ProposalDecision(decision="expired")
         finally:
-            self._hub.pending_proposals.pop(p.proposal_id, None)
+            # Tell every surface the proposal is no longer pending (answered
+            # here or elsewhere, or expired) so cards/prompts clear in sync.
+            await self._hub.resolve_proposal(p.proposal_id, p.session_id)
 
     async def post_ask(self, a: AskPrompt) -> str:
         loop = asyncio.get_running_loop()
@@ -209,4 +272,7 @@ class WebChannel(UserChannel):
         try:
             return await fut
         finally:
-            self._hub.pending_asks.pop(a.ask_id, None)
+            # Tell every surface the ask is resolved (answered here or on another
+            # surface) so the CLI prompt and the UI AskCard both clear — this is
+            # what makes "answer from anywhere" stay in sync.
+            await self._hub.resolve_ask(a.ask_id, a.session_id)

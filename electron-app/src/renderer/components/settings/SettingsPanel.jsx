@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import SettingsSection from './SettingsSection'
 import SettingsField from './SettingsField'
 import WatchedDirsEditor from './WatchedDirsEditor'
+import { getConfigSchema } from '../../api/client'
 
 function DaemonBtn({ label, color, borderColor, bg, disabled, onClick }) {
   return (
@@ -30,27 +31,53 @@ function DaemonBtn({ label, color, borderColor, bg, disabled, onClick }) {
   )
 }
 
-const LLM_PROVIDERS = [
-  { value: 'groq', label: 'Groq' },
-  { value: 'openrouter', label: 'OpenRouter' },
-  { value: 'anthropic', label: 'Anthropic' },
-  { value: 'ollama', label: 'Ollama (local)' },
-]
+// Minimal fallback so the form is usable before the daemon's first boot
+// (the schema endpoint is unreachable then). Mirrors the daemon's Core group.
+const FALLBACK_SCHEMA = {
+  groups: [
+    {
+      name: 'LLM Provider',
+      vars: [
+        { key: 'LLM_PROVIDER', label: 'Provider', type: 'select', default: 'groq',
+          options: ['groq', 'openrouter', 'anthropic', 'ollama'], reload_class: 'restart_resume' },
+        { key: 'GROQ_API_KEY', label: 'Groq API key', type: 'password', secret: true,
+          placeholder: 'gsk_...', reload_class: 'restart_resume',
+          depends_key: 'LLM_PROVIDER', depends_value: 'groq' },
+        { key: 'GROQ_MODEL', label: 'Groq model', type: 'text',
+          placeholder: 'llama-3.3-70b-versatile', reload_class: 'restart_resume',
+          depends_key: 'LLM_PROVIDER', depends_value: 'groq' },
+      ],
+    },
+    {
+      name: 'Daemon',
+      vars: [
+        { key: 'YUYUTSAVA_DAEMON_PORT', label: 'Port', type: 'number', default: '7654',
+          placeholder: '7654', reload_class: 'restart_no_resume' },
+      ],
+    },
+  ],
+}
 
 export default function SettingsPanel() {
   const [settings, setSettings] = useState({})
+  const [initial, setInitial] = useState({})
+  const [schema, setSchema] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saved, setSaved] = useState(false)
   const [daemonStatus, setDaemonStatus] = useState(null)
   const [daemonBusy, setDaemonBusy] = useState(false)
+  const [reloadPrompt, setReloadPrompt] = useState(null)  // { keys: [...], noResume: bool }
 
   useEffect(() => {
     Promise.all([
       window.electronAPI?.getSettings() || Promise.resolve({}),
       window.electronAPI?.getDaemonStatus() || Promise.resolve(null),
-    ]).then(([s, status]) => {
+      getConfigSchema().catch(() => FALLBACK_SCHEMA),
+    ]).then(([s, status, sch]) => {
       setSettings(s || {})
+      setInitial(s || {})
       setDaemonStatus(status)
+      setSchema(sch && Array.isArray(sch.groups) && sch.groups.length ? sch : FALLBACK_SCHEMA)
       setLoading(false)
     })
 
@@ -61,6 +88,22 @@ export default function SettingsPanel() {
     }, 3000)
     return () => clearInterval(id)
   }, [])
+
+  // key → reload_class / label lookups built from the active schema.
+  const { reloadClassOf, labelOf } = useMemo(() => {
+    const rc = new Map()
+    const lb = new Map()
+    for (const g of schema?.groups || []) {
+      for (const v of g.vars) {
+        rc.set(v.key, v.reload_class || 'restart_resume')
+        lb.set(v.key, v.label || v.key)
+      }
+    }
+    return {
+      reloadClassOf: (k) => rc.get(k) || 'restart_resume',
+      labelOf: (k) => lb.get(k) || k,
+    }
+  }, [schema])
 
   async function refreshStatus() {
     const status = await window.electronAPI?.getDaemonStatus()
@@ -73,9 +116,26 @@ export default function SettingsPanel() {
 
   async function save() {
     await window.electronAPI?.saveSettings(settings)
+    const changed = Object.keys(settings).filter(k => (settings[k] ?? '') !== (initial[k] ?? ''))
+    const restartKeys = changed.filter(k => reloadClassOf(k) !== 'hot')
+    const noResume = restartKeys.some(k => reloadClassOf(k) === 'restart_no_resume')
+    setInitial({ ...settings })  // new baseline
+    await refreshStatus()
+    if (restartKeys.length && daemonStatus?.running) {
+      setReloadPrompt({ keys: restartKeys, noResume })
+    } else {
+      setSaved(true)
+      setTimeout(() => setSaved(false), 4000)
+    }
+  }
+
+  async function applyReload() {
+    setReloadPrompt(null)
+    setDaemonBusy(true)
+    await window.electronAPI?.restartDaemon()
     setSaved(true)
     setTimeout(() => setSaved(false), 4000)
-    await refreshStatus()
+    setTimeout(async () => { await refreshStatus(); setDaemonBusy(false) }, 2500)
   }
 
   async function startDaemon() {
@@ -96,7 +156,25 @@ export default function SettingsPanel() {
     setTimeout(async () => { await refreshStatus(); setDaemonBusy(false) }, 2000)
   }
 
-  const provider = settings['LLM_PROVIDER'] || ''
+  function renderField(v) {
+    // Conditional visibility (e.g. provider-specific keys, postgres-only fields).
+    if (v.depends_key && (settings[v.depends_key] ?? '') !== v.depends_value) return null
+    const options = (v.options && v.options.length)
+      ? v.options.map(o => ({ value: o, label: o === '' ? '(default)' : o }))
+      : undefined
+    return (
+      <SettingsField
+        key={v.key}
+        label={v.label}
+        envKey={v.key}
+        type={v.type || 'text'}
+        value={settings[v.key]}
+        onChange={onChange}
+        placeholder={v.placeholder || v.default || ''}
+        options={options}
+      />
+    )
+  }
 
   if (loading) {
     return (
@@ -144,7 +222,49 @@ export default function SettingsPanel() {
           color: 'var(--neon-green)',
           fontFamily: 'var(--font-mono)',
         }}>
-          ✓ Settings saved — restart the daemon above to apply changes.
+          ✓ Settings saved.
+        </div>
+      )}
+
+      {/* Reload prompt: changed vars need a daemon restart to take effect. */}
+      {reloadPrompt && (
+        <div style={{
+          background: 'rgba(251,191,36,0.07)',
+          border: '1px solid rgba(251,191,36,0.3)',
+          borderRadius: 'var(--radius-card)',
+          padding: '12px 14px',
+          fontSize: 11,
+          color: 'var(--neon-amber)',
+          fontFamily: 'var(--font-mono)',
+          display: 'flex', flexDirection: 'column', gap: 8,
+        }}>
+          <div>
+            Restart the daemon to apply changes to{' '}
+            <strong>{reloadPrompt.keys.map(labelOf).join(', ')}</strong>.
+          </div>
+          <div style={{ color: reloadPrompt.noResume ? 'var(--neon-red)' : 'var(--text-muted)' }}>
+            {reloadPrompt.noResume
+              ? '⚠ A running task will restart from the beginning (storage/port change).'
+              : 'A running task will resume from its last checkpoint.'}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <DaemonBtn
+              label="Restart now"
+              color="var(--neon-amber)"
+              borderColor="rgba(251,191,36,0.3)"
+              bg="rgba(251,191,36,0.06)"
+              disabled={daemonBusy}
+              onClick={applyReload}
+            />
+            <DaemonBtn
+              label="Later"
+              color="var(--text-muted)"
+              borderColor="var(--border-card)"
+              bg="var(--bg-elevated)"
+              disabled={daemonBusy}
+              onClick={() => setReloadPrompt(null)}
+            />
+          </div>
         </div>
       )}
 
@@ -215,54 +335,16 @@ export default function SettingsPanel() {
         <WatchedDirsEditor />
       </SettingsSection>
 
-      <SettingsSection title="Daemon" defaultOpen={true}>
-        <SettingsField label="Port" envKey="YUYUTSAVA_DAEMON_PORT" type="number" value={settings['YUYUTSAVA_DAEMON_PORT']} onChange={onChange} placeholder="7654" />
-        <SettingsField label="Proposal expiry (seconds)" envKey="YUYUTSAVA_PROPOSAL_EXPIRY_SEC" type="number" value={settings['YUYUTSAVA_PROPOSAL_EXPIRY_SEC']} onChange={onChange} placeholder="300" />
-        <SettingsField label="Orchestrator token budget" envKey="YUYUTSAVA_ORCHESTRATOR_TOKEN_BUDGET" type="number" value={settings['YUYUTSAVA_ORCHESTRATOR_TOKEN_BUDGET']} onChange={onChange} placeholder="8000" />
-        <SettingsField label="Subagent token budget" envKey="YUYUTSAVA_SUBAGENT_TOKEN_BUDGET" type="number" value={settings['YUYUTSAVA_SUBAGENT_TOKEN_BUDGET']} onChange={onChange} placeholder="30000" />
-        <SettingsField label="Heartbeat interval (seconds)" envKey="YUYUTSAVA_HEARTBEAT_SEC" type="number" value={settings['YUYUTSAVA_HEARTBEAT_SEC']} onChange={onChange} placeholder="30" />
-        <SettingsField label="Home directory" envKey="YUYUTSAVA_HOME" value={settings['YUYUTSAVA_HOME']} onChange={onChange} placeholder="~/.yuyutsava" />
-        <SettingsField label="Output directory" envKey="YUYUTSAVA_OUTPUT_DIR" value={settings['YUYUTSAVA_OUTPUT_DIR']} onChange={onChange} />
-        <SettingsField label="Managed by app" envKey="YUYUTSAVA_DAEMON_MANAGED" type="toggle" value={settings['YUYUTSAVA_DAEMON_MANAGED'] ?? 'true'} onChange={onChange} />
-      </SettingsSection>
-
-      <SettingsSection title="LLM Provider" defaultOpen={true}>
-        <SettingsField label="Provider" envKey="LLM_PROVIDER" type="select" value={settings['LLM_PROVIDER']} onChange={onChange} options={LLM_PROVIDERS} />
-
-        {(!provider || provider === 'groq') && <>
-          <SettingsField label="Groq API Key" envKey="GROQ_API_KEY" type="password" value={settings['GROQ_API_KEY']} onChange={onChange} placeholder="gsk_..." />
-          <SettingsField label="Groq Model" envKey="GROQ_MODEL" value={settings['GROQ_MODEL']} onChange={onChange} placeholder="llama-3.1-8b-instant" />
-        </>}
-
-        {provider === 'openrouter' && <>
-          <SettingsField label="OpenRouter API Key" envKey="OPENROUTER_API_KEY" type="password" value={settings['OPENROUTER_API_KEY']} onChange={onChange} placeholder="sk-or-..." />
-          <SettingsField label="OpenRouter Model" envKey="OPENROUTER_MODEL" value={settings['OPENROUTER_MODEL']} onChange={onChange} placeholder="anthropic/claude-3-haiku" />
-        </>}
-
-        {provider === 'anthropic' && <>
-          <SettingsField label="Anthropic API Key" envKey="ANTHROPIC_API_KEY" type="password" value={settings['ANTHROPIC_API_KEY']} onChange={onChange} placeholder="sk-ant-..." />
-          <SettingsField label="Anthropic Model" envKey="ANTHROPIC_MODEL" value={settings['ANTHROPIC_MODEL']} onChange={onChange} placeholder="claude-haiku-4-5-20251001" />
-        </>}
-
-        {provider === 'ollama' && <>
-          <SettingsField label="Ollama Host" envKey="OLLAMA_HOST" value={settings['OLLAMA_HOST']} onChange={onChange} placeholder="http://localhost:11434" />
-          <SettingsField label="Ollama Model" envKey="OLLAMA_MODEL" value={settings['OLLAMA_MODEL']} onChange={onChange} placeholder="llama3.2:3b" />
-        </>}
-      </SettingsSection>
-
-      <SettingsSection title="Search" defaultOpen={false}>
-        <SettingsField label="Tavily API Key" envKey="TAVILY_API_KEY" type="password" value={settings['TAVILY_API_KEY']} onChange={onChange} placeholder="tvly-..." />
-        <SettingsField label="Exa API Key" envKey="EXA_API_KEY" type="password" value={settings['EXA_API_KEY']} onChange={onChange} />
-      </SettingsSection>
-
-      <SettingsSection title="Docker Sandbox" defaultOpen={false}>
-        <SettingsField label="Image" envKey="YUYUTSAVA_DOCKER_IMAGE" value={settings['YUYUTSAVA_DOCKER_IMAGE']} onChange={onChange} placeholder="python:3.12-slim" />
-        <SettingsField label="Network" envKey="YUYUTSAVA_DOCKER_NETWORK" type="select" value={settings['YUYUTSAVA_DOCKER_NETWORK']} onChange={onChange} options={[{ value: 'bridge', label: 'bridge' }, { value: 'none', label: 'none' }]} />
-        <SettingsField label="Memory limit" envKey="YUYUTSAVA_DOCKER_MEMORY" value={settings['YUYUTSAVA_DOCKER_MEMORY']} onChange={onChange} placeholder="512m" />
-        <SettingsField label="CPU limit" envKey="YUYUTSAVA_DOCKER_CPUS" value={settings['YUYUTSAVA_DOCKER_CPUS']} onChange={onChange} placeholder="1.0" />
-        <SettingsField label="PIDs limit" envKey="YUYUTSAVA_DOCKER_PIDS_LIMIT" type="number" value={settings['YUYUTSAVA_DOCKER_PIDS_LIMIT']} onChange={onChange} placeholder="64" />
-        <SettingsField label="Export directory" envKey="YUYUTSAVA_DOCKER_EXPORT_DIR" value={settings['YUYUTSAVA_DOCKER_EXPORT_DIR']} onChange={onChange} />
-      </SettingsSection>
+      {/* Schema-driven config groups (served by the daemon). */}
+      {(schema?.groups || []).map((g, idx) => {
+        const fields = g.vars.map(renderField).filter(Boolean)
+        if (!fields.length) return null
+        return (
+          <SettingsSection key={g.name} title={g.name} defaultOpen={idx < 2}>
+            {fields}
+          </SettingsSection>
+        )
+      })}
     </div>
   )
 }

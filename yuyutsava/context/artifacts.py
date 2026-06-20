@@ -30,6 +30,7 @@ from ulid import ULID
 
 from yuyutsava.storage.base import BaseSqliteStore
 from yuyutsava.storage.pg.pool import PgPool
+from yuyutsava.storage.pg.threads import ensure_thread
 
 logger = logging.getLogger("yuyutsava.context.artifacts")
 
@@ -175,6 +176,7 @@ class PgArtifactStore(ArtifactStore):
     async def put(self, thread_id: str, tool_name: str, content: str) -> str:
         artifact_id = mint_artifact_id()
         async with self._pool.connection() as conn:
+            await ensure_thread(conn, thread_id)  # satisfy artifacts_thread_fk
             await conn.execute(
                 "INSERT INTO artifacts "
                 "(artifact_id, thread_id, tool_name, content, size_chars) "

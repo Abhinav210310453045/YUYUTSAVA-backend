@@ -126,14 +126,14 @@ class CliAttachClient:
 
 async def prompt_user_for_ask(frame_data: dict) -> str:
     """Print the ask + options to stderr, read a reply from stdin."""
-    from yuyutsava.core.streaming import _normalize_yes_no
+    from yuyutsava.consent import decision_token, is_permission_ask
 
     ask_id = frame_data.get("ask_id") or ""
     title = frame_data.get("title") or "Question"
     body = frame_data.get("body") or ""
     options = frame_data.get("options") or []
     agent_path = frame_data.get("agent_path") or ""
-    is_permission = set(options) == {"approve", "reject"}
+    is_permission = is_permission_ask(options)
 
     tag = " [background]" if agent_path.endswith("#bg") else ""
     print(f"\n\033[36m▣ {title}{tag}\033[0m  \033[2m(ask={ask_id[:8]})\033[0m", file=sys.stderr)
@@ -141,10 +141,11 @@ async def prompt_user_for_ask(frame_data: dict) -> str:
         print(f"  \033[2mfrom: {agent_path}\033[0m", file=sys.stderr)
     if body:
         print(f"  {body}", file=sys.stderr)
-    if options:
-        print(f"  options: {' / '.join(options)}", file=sys.stderr)
     if is_permission:
-        print("  \033[2m[y]es / [n]o  (also: approve / reject)\033[0m", file=sys.stderr)
+        scope = " / [s]ession / [p]roject" if ("session" in options or "project" in options) else ""
+        print(f"  \033[2m[y]es / [n]o{scope}\033[0m", file=sys.stderr)
+    elif options:
+        print(f"  options: {' / '.join(options)}", file=sys.stderr)
     sys.stderr.flush()
     prompt = "approve/reject> " if is_permission else "> "
     try:
@@ -154,7 +155,7 @@ async def prompt_user_for_ask(frame_data: dict) -> str:
     except (EOFError, KeyboardInterrupt):
         return "reject"
     if is_permission:
-        return _normalize_yes_no(line)
+        return decision_token(line) or "reject"
     return line or "reject"
 
 

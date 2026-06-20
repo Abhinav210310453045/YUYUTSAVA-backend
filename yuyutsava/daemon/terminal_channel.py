@@ -14,7 +14,6 @@ import json
 import sys
 import time
 
-from yuyutsava.core.streaming import _normalize_yes_no
 from yuyutsava.daemon.channels import (
     AskPrompt,
     ChannelEvent,
@@ -90,23 +89,27 @@ class TerminalChannel(UserChannel):
         return ProposalDecision(decision="skip")
 
     async def post_ask(self, a: AskPrompt) -> str:
-        # An ask is a permission prompt when its options are the canonical
-        # ["approve","reject"] pair; anything else (free-text or custom
-        # options) is a user_question and the raw answer is passed through.
-        is_permission = set(a.options or []) == {"approve", "reject"}
+        # An ask is a permission prompt when its options include the
+        # approve/reject pair (plus optional session/project scopes); anything
+        # else (free-text / custom options) is a user_question passed through.
+        from yuyutsava.consent import decision_token, is_permission_ask
+
+        options = a.options or []
+        is_permission = is_permission_ask(options)
 
         print(f"\n\033[33m{_SEP}\033[0m", file=sys.stderr)
         print(f"\033[33m🛑 {a.title}\033[0m", file=sys.stderr)
         print(f"\033[33m{_SEP}\033[0m", file=sys.stderr)
         print(f"  {a.body}", file=sys.stderr)
-        if a.options:
-            print(f"  Options: {' | '.join(a.options)}", file=sys.stderr)
         if is_permission:
-            print("  \033[2m[y]es / [n]o  (also: approve / reject)\033[0m", file=sys.stderr)
+            scope = " / [s]ession / [p]roject" if ("session" in options or "project" in options) else ""
+            print(f"  \033[2m[y]es / [n]o{scope}\033[0m", file=sys.stderr)
+        elif options:
+            print(f"  Options: {' | '.join(options)}", file=sys.stderr)
         print(f"\033[33m{_SEP}\033[0m", file=sys.stderr)
 
         prompt = "  Allow? [y/N]: " if is_permission else "  Response: "
         answer = await asyncio.to_thread(input, prompt)
         if is_permission:
-            return _normalize_yes_no(answer)
+            return decision_token(answer) or "reject"
         return (answer or "").strip() or "reject"

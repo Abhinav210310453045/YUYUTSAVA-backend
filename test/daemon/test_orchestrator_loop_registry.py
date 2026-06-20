@@ -130,6 +130,34 @@ class OrchestratorLoopRegistryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(rows[0].origin, "event:user.task.submitted")
         self.assertEqual(rows[0].status, "done")
 
+    async def test_subagent_completed_runs_on_parent_thread(self) -> None:
+        # A bg-completion wake-up must append a turn to the LAUNCHING thread
+        # (so the master keeps context) and feed it the completion summary.
+        seen: dict = {}
+
+        async def fake_stream(graph, message, *, thread_id=None, resume=False, **kw):
+            seen["message"] = message
+            seen["thread_id"] = thread_id
+            seen["resume"] = resume
+            yield StreamEvent(kind="final", data={"text": "Told the user. Done."})
+
+        self._patch_stream(fake_stream)
+        completion_task = OrchestratorTask(
+            proposal_id="", event_id="", topic="subagent_completion",
+            summary="file-organizer ok", instruction="", subagent_hint="",
+            urgency=2, kind="subagent_completed", parent_thread_id="orch-PARENT",
+            completion={
+                "task_id": "th-1", "agent_name": "file-organizer",
+                "ok": True, "summary": "moved 8 files",
+            },
+        )
+        await self.loop._run_task(completion_task)
+
+        self.assertEqual(seen["thread_id"], "orch-PARENT")  # reused, not minted
+        self.assertFalse(seen["resume"])                    # appended as a new turn
+        self.assertIn("background-task-update", seen["message"])
+        self.assertIn("moved 8 files", seen["message"])
+
     async def test_cancel_between_stream_events(self) -> None:
         task_id = self.registry.mint_task_id()
         await self.registry.create(task_id=task_id, origin="api", instruction="x")

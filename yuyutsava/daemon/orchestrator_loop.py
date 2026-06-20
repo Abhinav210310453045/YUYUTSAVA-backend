@@ -17,6 +17,7 @@ import logging
 import uuid
 
 from yuyutsava.agents.orchestrator.agent import OrchestratorDeps
+from yuyutsava.async_subagents.launch_index import parse_async_task_id
 from yuyutsava.core.engine import build_orchestrator
 from yuyutsava.core.streaming import StreamEvent, astream_agent_iter
 from yuyutsava.daemon.channels import (
@@ -40,55 +41,14 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 logger = logging.getLogger("yuyutsava.daemon.orchestrator_loop")
 
 
-# ---------------------------------------------------------------------------
-# Interrupt formatting helpers (used by the ask_handler factory)
-# ---------------------------------------------------------------------------
-
-def _title_for_interrupt(iv: dict) -> str:
-    if not isinstance(iv, dict):
-        return "Permission request"
-    t = iv.get("type", "")
-    if t == "task_runner_permission":
-        op = (iv.get("operation") or "").upper()
-        return f"Permission: {op}"
-    if t == "user_question":
-        return "Subagent question"
-    return iv.get("title") or "Permission request"
-
-
-def _body_for_interrupt(iv: dict) -> str:
-    if not isinstance(iv, dict):
-        return str(iv)
-    t = iv.get("type", "")
-    if t == "task_runner_permission":
-        paths = iv.get("paths", [])
-        op = iv.get("operation", "?")
-        reason = iv.get("reason", "")
-        risk = iv.get("risk_level", "")
-        zone = iv.get("zone", "")
-        path_str = ", ".join(paths) if isinstance(paths, list) else str(paths)
-        return f"{op} {path_str}\nzone: {zone}  risk: {risk}\n\n{reason}"
-    if t == "user_question":
-        return iv.get("question", "")
-    # PermissionMiddleware (raw execute) — show both command and reason so
-    # the Electron card carries the same "what / why" that the CLI prompts
-    # already include.
-    if t == "permission_request":
-        command = iv.get("command", "")
-        reason = iv.get("reason", "")
-        if command and reason:
-            return f"{command}\n\n{reason}"
-        return command or reason or json.dumps(iv)[:300]
-    return iv.get("command") or iv.get("reason") or json.dumps(iv)[:300]
-
-
-def _options_for_interrupt(iv: dict) -> list[str]:
-    if not isinstance(iv, dict):
-        return ["approve", "reject"]
-    t = iv.get("type", "")
-    if t == "user_question":
-        return list(iv.get("options") or [])
-    return ["approve", "reject"]
+# Interrupt formatting now lives in a shared, dependency-free module so the
+# background AsyncTaskHealthWatcher can reuse the exact same logic (no raw-JSON
+# blobs in background asks). Aliased here for backward compatibility.
+from yuyutsava.daemon.interrupt_format import (  # noqa: E402
+    body_for_interrupt as _body_for_interrupt,
+    options_for_interrupt as _options_for_interrupt,
+    title_for_interrupt as _title_for_interrupt,
+)
 
 
 def make_ask_handler(
@@ -137,6 +97,7 @@ class OrchestratorLoop:
         task_registry: object | None = None,  # yuyutsava.daemon.task_registry.TaskRegistry
         model_router: object | None = None,  # yuyutsava.core.model_router.ModelRouter
         admission: object | None = None,  # yuyutsava.daemon.resources.AdmissionController
+        launch_index: object | None = None,  # yuyutsava.async_subagents.launch_index.LaunchIndex
     ) -> None:
         self._queue = task_queue
         self._channels = channels
@@ -150,6 +111,7 @@ class OrchestratorLoop:
         self._registry = task_registry
         self._model_router = model_router
         self._admission = admission
+        self._launch_index = launch_index
 
     async def run(self, stop_event: asyncio.Event) -> None:
         while not stop_event.is_set():
@@ -177,7 +139,7 @@ class OrchestratorLoop:
             return task.task_id
         task_id = self._registry.mint_task_id()
         await self._registry.create(
-            task_id=task_id, origin=f"event:{task.topic}",
+            task_id=task_id, origin=task.origin or f"event:{task.topic}",
             instruction=task.instruction,
         )
         return task_id
@@ -189,7 +151,19 @@ class OrchestratorLoop:
             await self._cancel_before_start(task_id)
             return
 
-        thread_id = _mint_thread_id("orch")
+        # Thread selection:
+        #  - subagent_completed wake-up → append a NEW turn to the conversation
+        #    that launched the bg task (resume=False so the message is delivered,
+        #    but the checkpointer still loads that thread's prior context).
+        #  - durable resume (config hot-reload) → continue the persisted thread
+        #    from its last checkpoint (resume=True).
+        #  - normal → a fresh thread.
+        if task.kind == "subagent_completed" and task.parent_thread_id:
+            thread_id = task.parent_thread_id
+            resume = False
+        else:
+            resume = bool(task.resume_thread_id)
+            thread_id = task.resume_thread_id or _mint_thread_id("orch")
         # Resource governor (Phase 5): heavy tasks (complexity ≥ threshold or
         # a configured heavy subagent_hint) wait inside the slot for a free
         # heavy-task semaphore + an unloaded system before anything starts;
@@ -228,7 +202,8 @@ class OrchestratorLoop:
                 mapped_origin = await self._map_session_origin(task_id, thread_id)
                 await self._execute(
                     task, task_id=task_id, thread_id=thread_id,
-                    model=model, deps=deps,
+                    model=model, deps=deps, resume=resume,
+                    origin=mapped_origin or task.origin or None,
                 )
         except Exception as exc:
             if self._registry is not None and task_id:
@@ -250,6 +225,24 @@ class OrchestratorLoop:
             ),
             task_id=task_id,
         ))
+
+    def _record_async_launch(
+        self, ev: StreamEvent, *, thread_id: str, origin: str | None
+    ) -> None:
+        """Record ``start_async_task`` launches so the watcher can wake us later.
+
+        The orchestrator already streams the tool result (which carries the new
+        ``task_id``); we sniff it out and link it to this thread + origin in the
+        shared ``LaunchIndex``. No-op when async subagents are disabled.
+        """
+        if self._launch_index is None or ev.kind != "tool_result":
+            return
+        if ev.data.get("name") != "start_async_task":
+            return
+        text = ev.data.get("full") or ev.data.get("preview") or ""
+        tid = parse_async_task_id(text)
+        if tid:
+            self._launch_index.record(tid, thread_id, origin)
 
     def _select_models(self, task: OrchestratorTask):
         """Resolve (master model, deps) for one task via the ModelRouter.
@@ -295,6 +288,8 @@ class OrchestratorLoop:
         thread_id: str,
         model: BaseChatModel | None = None,
         deps: OrchestratorDeps | None = None,
+        resume: bool = False,
+        origin: str | None = None,
     ) -> None:
         model = model if model is not None else self._model
         deps = deps if deps is not None else self._deps
@@ -345,9 +340,13 @@ class OrchestratorLoop:
         cancelled = False
         async for ev in astream_agent_iter(
             graph, message, thread_id=thread_id, recursion_limit=40,
-            ask_handler=ask_handler, run_name="orchestrator",
+            ask_handler=ask_handler, run_name="orchestrator", resume=resume,
         ):
             await _broadcast(self._channels, ev, task_id=task_id or None, session_id=thread_id)
+            # Link any background task this turn launched back to THIS thread +
+            # origin, so the watcher can wake us on the right conversation when
+            # the task finishes. (deepagents' start_async_task records no parent.)
+            self._record_async_launch(ev, thread_id=thread_id, origin=origin)
             if ev.kind == "final":
                 final_text = ev.data.get("text", "") or ""
             # Coarse v1 cancellation: honored between stream events. An
@@ -401,6 +400,66 @@ class OrchestratorLoop:
             ),
             task_id=task_id or None, session_id=thread_id,
         ))
+
+
+async def resume_interrupted_tasks(
+    registry: object | None,
+    task_queue: asyncio.Queue[OrchestratorTask],
+    *,
+    limit: int = 200,
+) -> int:
+    """Re-enqueue tasks a previous daemon instance left unfinished.
+
+    Called once at startup. The orchestrator queue lives only in memory, so a
+    restart (e.g. a config hot-reload) drops every ``queued`` task and orphans
+    the one ``running`` task — its row stays ``running`` because the loop's
+    asyncio cancellation raises ``CancelledError`` (not caught as a failure).
+    The daemon singleton lock guarantees no *other* process owns these rows,
+    so any non-terminal task at boot is ours to resume.
+
+    Each row is re-pushed as an :class:`OrchestratorTask`:
+
+    - ``running`` rows carry their persisted ``thread_id`` + ``resume`` flag so
+      the orchestrator continues them from their last LangGraph checkpoint.
+    - ``queued`` rows never started, so they re-run fresh on a new thread.
+
+    Returns the number of tasks re-enqueued.
+    """
+    if registry is None:
+        return 0
+    rows: list = []
+    for status in ("running", "queued"):
+        try:
+            page, _cursor = await registry.list(status=status, limit=limit)
+        except Exception:
+            logger.exception("resume: listing %s tasks failed", status)
+            continue
+        rows.extend(page)
+
+    count = 0
+    for rec in rows:
+        resume_tid = rec.thread_id or None
+        if rec.status == "running" and not resume_tid:
+            logger.info(
+                "resume: task %s was running but has no thread_id; re-running fresh",
+                rec.task_id,
+            )
+        await task_queue.put(OrchestratorTask(
+            proposal_id="",
+            event_id="",
+            topic=rec.origin or "resume",
+            summary=(rec.instruction or "")[:120],
+            instruction=rec.instruction or "",
+            subagent_hint="general-purpose",
+            urgency=2,
+            task_id=rec.task_id,
+            complexity=rec.complexity if rec.complexity is not None else 3,
+            resume_thread_id=resume_tid,
+        ))
+        count += 1
+    if count:
+        logger.info("resume: re-enqueued %d interrupted task(s) from previous run", count)
+    return count
 
 
 async def _broadcast(
