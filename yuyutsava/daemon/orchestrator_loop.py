@@ -94,6 +94,8 @@ class OrchestratorLoop:
         checkpointer: BaseCheckpointSaver | None = None,
         prefs_injector: object | None = None,  # yuyutsava.prefs.injector.PrefsInjector
         memory_injector: object | None = None,  # yuyutsava.context.injector.MemoryInjector
+        skill_injector: object | None = None,  # yuyutsava.skills.injector.SkillInjector
+        skill_store: object | None = None,  # yuyutsava.skills.store.SkillStore (dual-write)
         task_registry: object | None = None,  # yuyutsava.daemon.task_registry.TaskRegistry
         model_router: object | None = None,  # yuyutsava.core.model_router.ModelRouter
         admission: object | None = None,  # yuyutsava.daemon.resources.AdmissionController
@@ -108,6 +110,8 @@ class OrchestratorLoop:
         self._checkpointer = checkpointer
         self._prefs_injector = prefs_injector
         self._memory_injector = memory_injector
+        self._skill_injector = skill_injector
+        self._skill_store = skill_store
         self._registry = task_registry
         self._model_router = model_router
         self._admission = admission
@@ -297,15 +301,20 @@ class OrchestratorLoop:
         # Relevant past context (summaries, outcomes, saved facts) recalled
         # by similarity to the task text — same informational-block contract
         # as prefs. Empty when memory is disabled or nothing matches.
+        task_text = f"{task.summary}\n{task.instruction}"
         memory_block = ""
         if self._memory_injector is not None:
-            memory_block = await self._memory_injector.build_block(
-                f"{task.summary}\n{task.instruction}"
-            )
-        blocks = "\n\n".join(b for b in (prefs_block, memory_block) if b)
+            memory_block = await self._memory_injector.build_block(task_text)
+        # Skills relevant to this task, retrieved semantically (only the matches
+        # enter the prompt, not the whole catalogue). Same informational block.
+        skill_block = ""
+        if self._skill_injector is not None:
+            skill_block = await self._skill_injector.build_block(task_text)
+        blocks = "\n\n".join(b for b in (prefs_block, memory_block, skill_block) if b)
         graph = build_orchestrator(
             model=model, deps=deps, budget_tokens=self._budget,
             skill_registry=deps.skill_registry,
+            skill_store=self._skill_store,
             checkpointer=self._checkpointer,
             prefs_block=blocks,
             usage_context=UsageContext(task_id=task_id, thread_id=thread_id),

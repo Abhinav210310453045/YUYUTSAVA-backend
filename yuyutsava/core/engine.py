@@ -196,6 +196,22 @@ class AgentBundle:
     async_host_url: str | None = None
     async_host_attachment: Any | None = None  # HostAttachment
     async_task_mirror: Any | None = None   # AsyncTaskMirror
+    pg_pool: Any | None = None             # PgPool owned by the CLI (closed in aclose)
+    embedder: Any | None = None            # memory.Embedder owned by the CLI
+
+    async def aclose(self) -> None:
+        """Async teardown: close the CLI-owned pool + embedder, then close()."""
+        if self.embedder is not None:
+            try:
+                await self.embedder.aclose()
+            except Exception:
+                logger.exception("AgentBundle: embedder.aclose failed")
+        if self.pg_pool is not None:
+            try:
+                await self.pg_pool.close()
+            except Exception:
+                logger.exception("AgentBundle: pg_pool.close failed")
+        self.close()
 
     def close(self) -> None:
         if self.docker_backend is not None:
@@ -267,6 +283,7 @@ def _build_tool_registry_and_tools(
     search_config: SearchConfig | None,
     skill_registry: SkillRegistry | None,
     extra_tools: list | None = None,
+    skill_store: Any | None = None,
 ) -> tuple[list, Any]:
     """Build a ToolRegistry and return (startup_tools, registry).
 
@@ -279,7 +296,7 @@ def _build_tool_registry_and_tools(
     from yuyutsava.agents.db_tools import make_db_tools
 
     search_tools = make_search_tools(search_config) if search_config else []
-    skill_tools = make_skill_tools(skill_registry) if skill_registry else []
+    skill_tools = make_skill_tools(skill_registry, skill_store) if skill_registry else []
     db_tools = make_db_tools()  # always available — read-only by construction
     all_custom_tools = (
         task_runner_tools + search_tools + skill_tools + db_tools + (extra_tools or [])
@@ -365,6 +382,7 @@ def build_cli_deepagent(
     transcript_store: Any | None = None,
     context_settings: Any | None = None,
     compaction_model: BaseChatModel | None = None,
+    skill_store: Any | None = None,
 ) -> AgentBundle:
     """Build the CLI deepagent.
 
@@ -431,6 +449,22 @@ def build_cli_deepagent(
     if permission_check:
         middleware.append(PermissionMiddleware(workspace_root=workspace_root.resolve()))
 
+    # Per-turn retrieval injection: surface the memory + skills relevant to the
+    # user's latest message into the prompt (the CLI is a persistent graph, so
+    # it can't inject at build time the way the daemon orchestrator does).
+    _injectors: list = []
+    if memory_store is not None:
+        from yuyutsava.context.injector import MemoryInjector
+        _injectors.append(MemoryInjector(memory_store))
+    if skill_store is not None:
+        from yuyutsava.skills.injector import SkillInjector
+        _injectors.append(SkillInjector(skill_store))
+    if _injectors:
+        from yuyutsava.core.retrieval_injection_middleware import (
+            RetrievalInjectionMiddleware,
+        )
+        middleware.append(RetrievalInjectionMiddleware(_injectors))
+
     context_tools: list = []
     if artifact_store is not None:
         from yuyutsava.context.tools import make_context_tools
@@ -495,7 +529,7 @@ def build_cli_deepagent(
         )
         startup_tools, _ = _build_tool_registry_and_tools(
             _bind_task_runner_tools(ws), search_config, skill_registry,
-            extra_tools=context_tools,
+            extra_tools=context_tools, skill_store=skill_store,
         )
         graph = create_deep_agent(
             model=model,
@@ -519,7 +553,7 @@ def build_cli_deepagent(
     backend = _local_shell_backend_factory(workspace_root, bash_timeout_sec)
     startup_tools, _ = _build_tool_registry_and_tools(
         _bind_task_runner_tools(ws, sandbox_root), search_config, skill_registry,
-        extra_tools=context_tools,
+        extra_tools=context_tools, skill_store=skill_store,
     )
     graph = create_deep_agent(
         model=model,
@@ -554,6 +588,7 @@ def build_orchestrator(
     deps: "OrchestratorDeps",
     budget_tokens: int,
     skill_registry: "SkillRegistry | None" = None,
+    skill_store: Any | None = None,
     checkpointer: BaseCheckpointSaver | None = None,
     prefs_block: str = "",
     usage_context: "Any | None" = None,
@@ -584,7 +619,15 @@ def build_orchestrator(
         async_subagents=getattr(deps, "async_subagents", None),
         remote_async_subagents=getattr(deps, "remote_async_subagents", None),
     )
-    skills_index = skill_registry.index_block(agent="orchestrator") if skill_registry else ""
+    # When a semantic skill store is wired, the SkillInjector adds only the
+    # task-relevant skills at runtime (via prefs_block), so suppress the static
+    # dump-everything catalogue to avoid context bloat. Fall back to index_block
+    # only when there's no store (keyword-less / no-pgvector deployments).
+    skills_index = (
+        ""
+        if skill_store is not None
+        else (skill_registry.index_block(agent="orchestrator") if skill_registry else "")
+    )
     system_prompt = render_system_prompt(capabilities, skills_index=skills_index, prefs_block=prefs_block)
 
     master_tools: list = [
@@ -594,7 +637,7 @@ def build_orchestrator(
         # delegates dynamic tasks to the `general-purpose` subagent instead.
     ]
     if skill_registry:
-        master_tools.extend(make_skill_tools(skill_registry))
+        master_tools.extend(make_skill_tools(skill_registry, skill_store))
     if deps.search_config is not None:
         master_tools.extend(make_search_tools(deps.search_config, cap_enforcer=deps.cap_enforcer))
     if deps.mcp_manager is not None:

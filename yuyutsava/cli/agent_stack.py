@@ -45,6 +45,89 @@ def _async_enabled() -> bool:
     return os.environ.get("YUYUTSAVA_ASYNC_SUBAGENTS", "").lower() in ("1", "true", "yes")
 
 
+async def _build_retrieval_stores(skill_registry: SkillRegistry):
+    """Construct the memory + skill stores for the CLI.
+
+    Returns ``(memory_store, skill_store, pg_pool, embedder)``. On the Postgres
+    backend the CLI opens its own pool (returned for teardown) and builds the
+    pgvector stores for true semantic recall; on any failure (or the SQLite
+    backend) it falls back to the keyword twins in ``state.db``. After the
+    stores exist, on-disk skills are indexed so a skill saved in a previous
+    session is retrievable now, and NULL-embedding rows are backfilled.
+    """
+    from yuyutsava.skills.store import SkillIndexer
+    from yuyutsava.storage.backend import StorageSettings
+
+    storage = StorageSettings.from_env()
+    mem_settings = MemorySettings.from_env(default_enabled=True)
+
+    memory_store = None
+    skill_store = None
+    pg_pool = None
+    embedder = None
+
+    if storage.is_postgres():
+        from yuyutsava.memory.embedder import Embedder
+        from yuyutsava.memory.store import PgMemoryStore
+        from yuyutsava.skills.store import PgSkillStore
+        from yuyutsava.storage.pg import migrations as pg_migrations
+        from yuyutsava.storage.pg.pool import PgPool
+
+        try:
+            pg_pool = PgPool(storage)
+            await pg_pool.open()
+            await pg_migrations.apply(pg_pool)
+            embedder = Embedder(mem_settings)
+            if not await embedder.healthcheck():
+                logger.warning(
+                    "CLI: embedder unreachable — memory/skills degrade to "
+                    "keyword search until it recovers"
+                )
+            skill_store = PgSkillStore(pg_pool, embedder, min_score=mem_settings.min_score)
+            if mem_settings.enabled:
+                memory_store = PgMemoryStore(
+                    pg_pool, embedder,
+                    min_score=mem_settings.min_score,
+                    dedup_threshold=mem_settings.dedup_threshold,
+                )
+        except Exception:
+            logger.warning(
+                "CLI: Postgres unavailable — falling back to SQLite stores",
+                exc_info=True,
+            )
+            if embedder is not None:
+                await embedder.aclose()
+            if pg_pool is not None:
+                await pg_pool.close()
+            memory_store = skill_store = pg_pool = embedder = None
+
+    if skill_store is None:
+        from yuyutsava.skills.store import SqliteSkillStore
+        skill_store = SqliteSkillStore(state_db_path())
+    if memory_store is None and mem_settings.enabled:
+        from yuyutsava.memory.store import SqliteMemoryStore
+        memory_store = SqliteMemoryStore(state_db_path())
+
+    # Catch the store up to on-disk skills (previous sessions, bundled,
+    # workspace) so they're retrievable this session — best-effort.
+    try:
+        await SkillIndexer.sync(skill_registry, skill_store)
+    except Exception:
+        logger.warning("CLI: skill index sync failed", exc_info=True)
+
+    # Re-embed any rows that landed without a vector (Pg only).
+    if pg_pool is not None and embedder is not None:
+        for store in (memory_store, skill_store):
+            backfill = getattr(store, "backfill_embeddings", None)
+            if backfill is not None:
+                try:
+                    await backfill()
+                except Exception:
+                    logger.warning("CLI: embedding backfill failed", exc_info=True)
+
+    return memory_store, skill_store, pg_pool, embedder
+
+
 async def build_cli_agent_stack(
     workspace: Path,
     settings: LlmSettings,
@@ -80,12 +163,18 @@ async def build_cli_agent_stack(
         "cli", provider=_env("LLM_PROVIDER", None, "groq"),
     )
     compaction_model = chat_model(llm_settings_from_env("compaction"), temperature=0.0)
-    memory_store = None
-    if MemorySettings.from_env().enabled:
-        from yuyutsava.memory.store import SqliteMemoryStore
-        memory_store = SqliteMemoryStore(state_db_path())
 
     skill_registry = SkillRegistry(workspace_dir=workspace)
+
+    # Long-term memory + skill retrieval. On the Postgres backend the CLI owns
+    # its own pool (the daemon owns one; the CLI didn't until now) so memory and
+    # skills get *semantic* recall via pgvector; otherwise both fall back to the
+    # SQLite keyword twins. Memory defaults ON in the CLI — these are the
+    # longest-lived threads in the system — but an explicit
+    # YUYUTSAVA_MEMORY_ENABLED=0 still disables it.
+    memory_store, skill_store, pg_pool, embedder = await _build_retrieval_stores(
+        skill_registry
+    )
     sandbox_root_for_tr = (
         local_settings.sandbox_dir.resolve()
         if local_settings.sandbox_dir is not None
@@ -176,5 +265,9 @@ async def build_cli_agent_stack(
         transcript_store=transcript_store,
         context_settings=context_settings,
         compaction_model=compaction_model,
+        skill_store=skill_store,
     )
+    # Hand the CLI-owned pool + embedder to the bundle so teardown closes them.
+    bundle.pg_pool = pg_pool
+    bundle.embedder = embedder
     return bundle

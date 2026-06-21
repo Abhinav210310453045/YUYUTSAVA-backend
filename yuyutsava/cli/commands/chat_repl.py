@@ -1169,7 +1169,7 @@ async def run_chat_repl(
                     cleanup_local_sandbox(workspace, bundle.sandbox_root)
                 except Exception:
                     pass
-            bundle.close()
+            await bundle.aclose()
 
     print(f"{_DIM}— chat closed —{_RESET}", file=sys.stderr)
     return exit_code

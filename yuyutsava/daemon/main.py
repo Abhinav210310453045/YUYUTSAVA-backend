@@ -252,6 +252,26 @@ async def _open_electron_when_ready(url: str) -> None:
         logger.warning("Electron app not found at %s; visit %s manually", electron_app_dir, url)
 
 
+async def _run_memory_backfill(subs: DaemonSubsystems) -> None:
+    """One-shot at startup: probe the embedder, then re-embed memory rows left
+    vectorless by a prior embedder outage so they rejoin vector search.
+
+    No-op unless the pgvector store is active (the SQLite twin has no
+    embeddings). The probe gives one clear warning if the embedder is down
+    (instead of a storm of per-operation tracebacks) and skips the backfill so
+    we don't hammer a dead endpoint. Never fatal — memory is an enhancement.
+    """
+    backfill = getattr(subs.memory_store, "backfill_embeddings", None)
+    if backfill is None or subs.embedder is None:
+        return
+    if not await subs.embedder.healthcheck():
+        return  # warning already logged by healthcheck
+    try:
+        await backfill()
+    except Exception:
+        logger.exception("memory: startup backfill failed")
+
+
 async def _reload_loop(
     subs: DaemonSubsystems, stop_event: asyncio.Event, reload_event: asyncio.Event,
 ) -> None:
@@ -374,6 +394,14 @@ async def _async_main(argv: list[str] | None = None) -> int:
 
     if subs.web_server is not None and not args.no_ui:
         asyncio.create_task(_open_electron_when_ready(subs.web_url))
+
+    # Detached one-shot: rescue any memories left vectorless by an earlier
+    # embedder outage. Kept out of the ``tasks`` wait-set below — it completes
+    # quickly and must not trip the FIRST_COMPLETED shutdown. The reference is
+    # held for the lifetime of this function so the task isn't GC'd mid-run.
+    _backfill_task = asyncio.create_task(  # noqa: F841 — anchor against GC
+        _run_memory_backfill(subs), name="memory-backfill",
+    )
 
     # ── concurrent loops --------------------------------------------------
     tasks: list[asyncio.Task[None]] = [

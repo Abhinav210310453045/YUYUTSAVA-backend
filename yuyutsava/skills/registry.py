@@ -71,8 +71,20 @@ class SkillRegistry:
                     return f"error reading skill {name!r}: {exc}"
         return f"skill {name!r} not found"
 
-    def write_skill(self, name: str, description: str, body: str) -> None:
-        """Write a new skill to the personal scope (~/.yuyutsava/skills/)."""
+    def get_meta(self, name: str) -> SkillMeta | None:
+        """Return the :class:`SkillMeta` for a skill by name, or None."""
+        slug = _slugify(name)
+        for skill in self._load_all():
+            if skill.name == slug:
+                return skill
+        return None
+
+    def write_skill(self, name: str, description: str, body: str) -> str:
+        """Write a new skill to the personal scope (~/.yuyutsava/skills/).
+
+        Returns the slug the skill was written under, so callers can index it
+        into the semantic store (see skills/tools.py dual-write).
+        """
         slug = _slugify(name)
         skill_dir = self._home_dir / slug
         skill_dir.mkdir(parents=True, exist_ok=True)
@@ -81,6 +93,7 @@ class SkillRegistry:
         (skill_dir / "SKILL.md").write_text(content, encoding="utf-8")
         self._cache = None  # invalidate cache
         logger.info("skills: wrote personal skill %r → %s", slug, skill_dir)
+        return slug
 
     def index_block(self, agent: str | None = None) -> str:
         """Build an XML index block for injection into a system prompt."""

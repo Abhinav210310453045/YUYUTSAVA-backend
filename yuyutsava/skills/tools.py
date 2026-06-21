@@ -3,17 +3,35 @@ LangChain tools that expose the SkillRegistry to agents.
 
 read_skill  — load a full SKILL.md body on demand (agent-invoked)
 write_skill — save a compact pattern to personal scope (orchestrator-only)
+
+When a :class:`~yuyutsava.skills.store.SkillStore` is supplied, ``sk_write_skill``
+dual-writes: the on-disk ``SKILL.md`` stays the source of truth, and the store is
+updated as the semantic index so the skill is retrievable in later sessions. A
+store failure never loses the on-disk skill.
 """
 
 from __future__ import annotations
+
+import logging
+from typing import TYPE_CHECKING
 
 from langchain_core.tools import BaseTool, tool
 
 from yuyutsava.skills.registry import SkillRegistry
 
+if TYPE_CHECKING:
+    # Import only for typing — skills.store pulls in the memory.embedder chain,
+    # and skills.tools is imported during core init (base_sub_agent), so a
+    # runtime import here would be circular.
+    from yuyutsava.skills.store import SkillStore
 
-def make_skill_tools(registry: SkillRegistry) -> list[BaseTool]:
-    """Return [sk_read_skill, sk_write_skill] bound to registry."""
+logger = logging.getLogger("yuyutsava.skills.tools")
+
+
+def make_skill_tools(
+    registry: SkillRegistry, store: SkillStore | None = None
+) -> list[BaseTool]:
+    """Return [sk_read_skill, sk_write_skill] bound to registry (+ optional store)."""
 
     @tool
     def sk_read_skill(name: str) -> str:
@@ -26,7 +44,7 @@ def make_skill_tools(registry: SkillRegistry) -> list[BaseTool]:
         return registry.get_body(name)
 
     @tool
-    def sk_write_skill(name: str, description: str, body: str) -> str:
+    async def sk_write_skill(name: str, description: str, body: str) -> str:
         """Save a reusable task pattern as a personal skill.
 
         Call this after completing a task whose pattern is NOT already in the
@@ -39,10 +57,22 @@ def make_skill_tools(registry: SkillRegistry) -> list[BaseTool]:
             body:        Compact markdown instructions. Max 150 words.
         """
         try:
-            registry.write_skill(name=name, description=description, body=body)
-            return f"skill {name!r} saved to personal scope"
+            slug = registry.write_skill(name=name, description=description, body=body)
         except Exception as exc:
             return f"error saving skill {name!r}: {exc}"
+        # Index into the semantic store so it's retrievable later. Best-effort:
+        # the disk file is authoritative; a store failure must not lose the skill.
+        if store is not None:
+            meta = registry.get_meta(slug)
+            if meta is not None:
+                try:
+                    await store.upsert(meta, registry.get_body(slug))
+                except Exception:
+                    logger.warning(
+                        "skills: wrote %r to disk but failed to index it", slug,
+                        exc_info=True,
+                    )
+        return f"skill {slug!r} saved to personal scope"
 
     return [sk_read_skill, sk_write_skill]
 

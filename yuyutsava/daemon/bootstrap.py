@@ -67,7 +67,9 @@ from yuyutsava.memory.config import MemorySettings
 from yuyutsava.memory.embedder import Embedder
 from yuyutsava.memory.store import MemoryStore, PgMemoryStore, SqliteMemoryStore
 from yuyutsava.prefs.injector import PrefsInjector
+from yuyutsava.skills.injector import SkillInjector
 from yuyutsava.skills.registry import SkillRegistry
+from yuyutsava.skills.store import PgSkillStore, SkillIndexer, SqliteSkillStore
 from yuyutsava.storage.backend import StorageSettings
 from yuyutsava.storage.events import Store
 from yuyutsava.storage.paths import blobs_dir, checkpoints_db_path, state_db_path, state_dir
@@ -319,11 +321,16 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     # ── semantic memory (default-on when postgres is live) -----------------
     mem_settings = MemorySettings.from_env(default_enabled=pg_pool is not None)
     memory_store: MemoryStore | None = None
-    embedder: Embedder | None = None
+    # One embedder per process, shared by memory AND skills. Built whenever
+    # Postgres is live (skills want semantic recall even if memory is disabled).
+    embedder: Embedder | None = Embedder(mem_settings) if pg_pool is not None else None
     if mem_settings.enabled:
-        if pg_pool is not None:
-            embedder = Embedder(mem_settings)
-            memory_store = PgMemoryStore(pg_pool, embedder)
+        if pg_pool is not None and embedder is not None:
+            memory_store = PgMemoryStore(
+                pg_pool, embedder,
+                min_score=mem_settings.min_score,
+                dedup_threshold=mem_settings.dedup_threshold,
+            )
             logger.info("  memory    : pgvector (embed=%s)", mem_settings.embed_model)
         else:
             memory_store = SqliteMemoryStore(state_db_path())
@@ -514,6 +521,21 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     skill_registry = SkillRegistry(home_dir=home / "skills")
     logger.info("  skills    : %d bundled, scanning personal + workspace",
                 len([s for s in skill_registry.scan() if s.scope == "bundled"]))
+
+    # Semantic skill index — shares the memory embedder. pgvector when live,
+    # else the SQLite keyword twin. Caught up to on-disk skills at boot so a
+    # skill saved in a prior session is retrievable now.
+    if pg_pool is not None and embedder is not None:
+        skill_store: object = PgSkillStore(pg_pool, embedder, min_score=mem_settings.min_score)
+    else:
+        skill_store = SqliteSkillStore(state_db_path())
+    try:
+        await SkillIndexer.sync(skill_registry, skill_store)
+    except Exception:
+        logger.warning("skills: index sync failed", exc_info=True)
+    skill_injector = SkillInjector(
+        skill_store, agent="orchestrator", top_k=mem_settings.top_k
+    )
 
     # ── search config (ws_* tools) ---------------------------------------
     search_config = SearchConfig.from_env()
@@ -739,6 +761,8 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         checkpointer=checkpointer,
         prefs_injector=prefs_injector,
         memory_injector=memory_injector,
+        skill_injector=skill_injector,
+        skill_store=skill_store,
         task_registry=task_registry,
         model_router=model_router,
         admission=admission,

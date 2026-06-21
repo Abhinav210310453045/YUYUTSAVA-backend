@@ -1,5 +1,11 @@
 """Memory store: pgvector-backed semantic search with a SQLite keyword twin.
 
+The retrieval mechanics (cosine search, keyword fallback, dedup probe, backfill)
+live in the reusable :mod:`yuyutsava.retrieval` package and are shared with the
+skills store. This module keeps only *memory policy*: valid kinds, the
+``RELEVANT MEMORY`` write contract, thread linkage, and the public
+``MemoryStore``/``MemoryHit`` surface that the rest of the system depends on.
+
 Write contract: ``add`` never raises out to agent code paths *for embedding
 failures* — a memory row without an embedding is still keyword-findable and
 strictly better than a lost memory. Database failures do raise; callers on
@@ -21,6 +27,9 @@ from typing import Any
 from ulid import ULID
 
 from yuyutsava.memory.embedder import Embedder
+from yuyutsava.retrieval.keyword import keyword_tokens as _keyword_tokens
+from yuyutsava.retrieval.pg import PgVectorSearch, PgVectorTable
+from yuyutsava.retrieval.vector import vector_literal as _vector_literal
 from yuyutsava.storage.base import BaseSqliteStore
 from yuyutsava.storage.pg.pool import PgPool
 from yuyutsava.storage.pg.threads import ensure_thread
@@ -28,6 +37,14 @@ from yuyutsava.storage.pg.threads import ensure_thread
 logger = logging.getLogger("yuyutsava.memory.store")
 
 VALID_KINDS = ("task_outcome", "summary", "fact", "preference")
+
+# Column map for the shared pgvector engine. ``kind`` rides along in the payload.
+_MEMORIES_TABLE = PgVectorTable(
+    table="memories",
+    id_col="memory_id",
+    text_col="text",
+    extra_cols=("kind",),
+)
 
 
 def mint_memory_id() -> str:
@@ -61,16 +78,29 @@ class MemoryStore(ABC):
         """Top-k most relevant memories for ``query``."""
 
 
-def _vector_literal(vec: list[float]) -> str:
-    return "[" + ",".join(f"{v:.7g}" for v in vec) + "]"
+def _kind_filter(kinds: tuple[str, ...] | None) -> tuple[str, list]:
+    """Build the ``AND kind = ANY(%s)`` clause + params for the pg engine."""
+    if kinds:
+        return "AND kind = ANY(%s)", [list(kinds)]
+    return "", []
 
 
 class PgMemoryStore(MemoryStore):
     """pgvector cosine search (schema in storage/pg/migrations.py)."""
 
-    def __init__(self, pool: PgPool, embedder: Embedder) -> None:
+    def __init__(
+        self,
+        pool: PgPool,
+        embedder: Embedder,
+        *,
+        min_score: float = 0.0,
+        dedup_threshold: float = 1.1,
+    ) -> None:
         self._pool = pool
         self._embedder = embedder
+        # > 1.0 disables dedup (default when constructed bare, e.g. in tests).
+        self._dedup_threshold = dedup_threshold
+        self._search = PgVectorSearch(pool, _MEMORIES_TABLE, min_score=min_score)
 
     async def add(
         self,
@@ -85,13 +115,29 @@ class PgMemoryStore(MemoryStore):
         memory_id = mint_memory_id()
         embedding: str | None = None
         try:
-            embedding = _vector_literal(await self._embedder.embed_one(text))
+            embedding = _vector_literal(
+                await self._embedder.embed_one(text, mode="document")
+            )
         except Exception:
             logger.warning(
                 "memory: embedding failed — storing %s without vector", memory_id,
                 exc_info=True,
             )
         async with self._pool.connection() as conn:
+            # Near-duplicate suppression: skip writing when a same-kind memory
+            # is already near-identical (cosine >= threshold). Keeps repeated
+            # compaction summaries / task outcomes from crowding top-k recall.
+            if embedding is not None and self._dedup_threshold <= 1.0:
+                dup = await self._search.find_duplicate(
+                    conn, embedding, self._dedup_threshold,
+                    where="AND kind = %s", params=[kind],
+                )
+                if dup is not None:
+                    logger.debug(
+                        "memory: near-duplicate of %s (kind=%s) — skipping insert",
+                        dup, kind,
+                    )
+                    return dup
             # source_thread_id FKs to threads (ON DELETE SET NULL); upsert the
             # parent first so the constraint holds. No-op when it's None.
             await ensure_thread(conn, source_thread_id)
@@ -106,57 +152,41 @@ class PgMemoryStore(MemoryStore):
             )
         return memory_id
 
+    async def backfill_embeddings(
+        self, *, batch_size: int = 64, max_rows: int = 2000
+    ) -> int:
+        """Re-embed rows stored without a vector and return how many were fixed."""
+        return await self._search.backfill(
+            self._embedder, batch_size=batch_size, max_rows=max_rows
+        )
+
     async def search(
         self, query: str, k: int = 5, kinds: tuple[str, ...] | None = None
     ) -> list[MemoryHit]:
         try:
-            qvec = _vector_literal(await self._embedder.embed_one(query))
+            qvec = _vector_literal(await self._embedder.embed_one(query, mode="query"))
         except Exception:
             logger.warning("memory: query embedding failed — keyword fallback", exc_info=True)
             return await self._keyword_search(query, k, kinds)
 
-        kind_clause = "AND kind = ANY(%s)" if kinds else ""
-        params: list[Any] = [qvec]
-        if kinds:
-            params.append(list(kinds))
-        params.extend([qvec, k])
+        where, params = _kind_filter(kinds)
         async with self._pool.connection() as conn:
-            cur = await conn.execute(
-                f"""
-                SELECT memory_id, kind, text,
-                       1 - (embedding <=> %s::vector) AS score
-                FROM memories
-                WHERE embedding IS NOT NULL {kind_clause}
-                ORDER BY embedding <=> %s::vector
-                LIMIT %s
-                """,
-                params,
-            )
-            rows = await cur.fetchall()
+            hits = await self._search.vector_search(conn, qvec, k, where=where, params=params)
         return [
-            MemoryHit(memory_id=r[0], kind=r[1], text=r[2], score=float(r[3]))
-            for r in rows
+            MemoryHit(memory_id=h.id, kind=h.payload["kind"], text=h.text, score=h.score)
+            for h in hits
         ]
 
     async def _keyword_search(
         self, query: str, k: int, kinds: tuple[str, ...] | None
     ) -> list[MemoryHit]:
-        kind_clause = "AND kind = ANY(%s)" if kinds else ""
-        params: list[Any] = [f"%{query[:200]}%"]
-        if kinds:
-            params.append(list(kinds))
-        params.append(k)
+        where, params = _kind_filter(kinds)
         async with self._pool.connection() as conn:
-            cur = await conn.execute(
-                f"""
-                SELECT memory_id, kind, text FROM memories
-                WHERE text ILIKE %s {kind_clause}
-                ORDER BY created_ts DESC LIMIT %s
-                """,
-                params,
-            )
-            rows = await cur.fetchall()
-        return [MemoryHit(memory_id=r[0], kind=r[1], text=r[2], score=0.0) for r in rows]
+            hits = await self._search.keyword_search(conn, query, k, where=where, params=params)
+        return [
+            MemoryHit(memory_id=h.id, kind=h.payload["kind"], text=h.text, score=0.0)
+            for h in hits
+        ]
 
 
 class SqliteMemoryStore(BaseSqliteStore, MemoryStore):
@@ -215,9 +245,7 @@ class SqliteMemoryStore(BaseSqliteStore, MemoryStore):
         self, query: str, k: int = 5, kinds: tuple[str, ...] | None = None
     ) -> list[MemoryHit]:
         await self._ensure_schema()
-        words = [w for w in query.lower().split() if len(w) >= 3][:8]
-        if not words:
-            words = [query.lower()[:80]]
+        words = _keyword_tokens(query)
 
         clauses = " + ".join("(LOWER(text) LIKE ?)" for _ in words)
         like_params = [f"%{w}%" for w in words]

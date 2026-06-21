@@ -126,5 +126,5 @@ async def run_chat(
                     await cli_watcher.shutdown()
                 except Exception:
                     pass
-            bundle.close()
+            await bundle.aclose()
     return 0

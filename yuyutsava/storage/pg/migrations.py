@@ -303,6 +303,35 @@ MIGRATIONS: list[tuple[int, str]] = [
         ALTER TABLE transcript_messages VALIDATE CONSTRAINT transcript_messages_thread_fk;
         """,
     ),
+    (
+        8,
+        # Skills become semantically retrievable, sharing the memories pgvector
+        # machinery (yuyutsava/retrieval). The on-disk SKILL.md files stay the
+        # source of truth (portable, git-committable); this table is the search
+        # index. PK is the slug `name` (unique across the registry's scope
+        # precedence merge) so a re-write is a natural upsert. No thread FK —
+        # skills are user/agent-scoped, not thread-scoped. `embedding` is
+        # nullable: a skill written while the embedder was down is still
+        # keyword-findable and gets backfilled on recovery (same contract as
+        # memories). Same vector(768) nomic-embed-text dimensionality.
+        """
+        CREATE TABLE IF NOT EXISTS skills (
+            name           TEXT PRIMARY KEY,
+            scope          TEXT NOT NULL,
+            agent          TEXT,
+            description    TEXT NOT NULL,
+            body           TEXT NOT NULL,
+            embedding      vector(768),
+            requires_tools JSONB NOT NULL DEFAULT '[]'::jsonb,
+            source_path    TEXT NOT NULL,
+            created_ts     TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_ts     TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS skills_embedding_idx
+            ON skills USING hnsw (embedding vector_cosine_ops);
+        CREATE INDEX IF NOT EXISTS skills_agent_idx ON skills (agent);
+        """,
+    ),
 ]
 
 

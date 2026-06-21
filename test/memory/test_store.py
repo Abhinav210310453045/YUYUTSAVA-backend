@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from yuyutsava.memory.store import SqliteMemoryStore
+from yuyutsava.memory.store import SqliteMemoryStore, _keyword_tokens
 
 
 class SqliteMemoryStoreTests(unittest.IsolatedAsyncioTestCase):
@@ -45,6 +45,22 @@ class SqliteMemoryStoreTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_no_match_returns_empty(self) -> None:
         self.assertEqual(await self.store.search("zzz unfindable"), [])
+
+
+class KeywordTokenTests(unittest.TestCase):
+    """The shared tokenizer that both backends' keyword paths now rank on."""
+
+    def test_filters_short_words(self) -> None:
+        toks = _keyword_tokens("the organize downloads folder by type")
+        self.assertIn("organize", toks)
+        self.assertNotIn("by", toks)  # < 3 chars dropped
+
+    def test_fallback_when_all_short(self) -> None:
+        self.assertEqual(_keyword_tokens("a b"), ["a b"])
+
+    def test_caps_at_eight(self) -> None:
+        toks = _keyword_tokens(" ".join(f"word{i}" for i in range(20)))
+        self.assertEqual(len(toks), 8)
 
 
 if __name__ == "__main__":
