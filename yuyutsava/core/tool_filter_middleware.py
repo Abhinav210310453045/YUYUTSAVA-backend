@@ -9,14 +9,16 @@ Two suppression layers:
    because their virtual-path mode silently returns [] for any real path
    outside the workspace (see tr_ls / tr_glob, which are zone-checked).
 
-2. Our custom tool prefixes (tr_*, ws_*, sk_*, fo_*, ev_*)
+2. Our custom tool prefixes (tr_*, ws_*, sk_*, fo_*, ev_*, db_*, mem_*)
    — these are injected into the graph for execution but hidden from the LLM's
-   initial view. The agent discovers them on demand via tool_search('tr_*') etc.
-   This is the ToolRegistry lazy-discovery pattern: only tool_search is visible
-   upfront, all others are served on request to save context tokens.
+   initial view. The model sees their NAMES in the always-visible catalog
+   (built by ToolRegistry.catalog_block, injected into the system prompt) and
+   loads a schema on demand via tool_search('select:<name>') or a keyword
+   search. This is the ToolRegistry progressive-discovery pattern: names are
+   cheap and always shown, full schemas are served on request to save tokens.
 
 Tools still exist in the graph (ToolMessage handlers work); the model just
-never sees their schemas until it calls tool_search.
+never sees their schemas until it pulls them with tool_search.
 """
 
 from __future__ import annotations
@@ -37,8 +39,8 @@ _SUPPRESS_NAMES: frozenset[str] = frozenset({
 })
 
 # Prefix suppression: all our custom-prefixed tools are hidden from the LLM
-# upfront. The agent calls tool_search('tr_*') / tool_search('ws_*') to
-# discover their schemas on demand.
+# upfront. Their names stay visible in the system-prompt catalog; the agent
+# pulls a schema on demand via tool_search('select:<name>') or a keyword search.
 #
 # ctx_* is deliberately NOT here: offload digests reference
 # ctx_fetch_artifact / ctx_grep_artifact directly, so the model must always

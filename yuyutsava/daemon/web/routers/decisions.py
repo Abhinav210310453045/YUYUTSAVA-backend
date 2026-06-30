@@ -18,4 +18,4 @@ async def list_decisions(
     ),
     hub=Depends(get_hub),
 ) -> list[dict[str, Any]]:
-    return [asdict(d) for d in hub.store.list_decisions(limit=limit, cursor=cursor)]
+    return [asdict(d) for d in await hub.store.list_decisions(limit=limit, cursor=cursor)]

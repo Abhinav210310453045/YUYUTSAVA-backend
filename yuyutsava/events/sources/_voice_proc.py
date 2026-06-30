@@ -58,41 +58,33 @@ def _fatal(msg: str, code: int = 1) -> None:
     sys.exit(code)
 
 
-def _build_stt(provider: str):
-    """Return an STT instance or None if provider == 'none'."""
-    if provider == "none":
-        return None
-    # Import here — subprocess inherits the parent venv.
-    from yuyutsava.io.stt import stt_from_env
-    os.environ.setdefault("STT_PROVIDER", provider)
-    try:
-        return stt_from_env()
-    except Exception as exc:
-        logger.warning("STT setup failed (%s): %s — transcripts will be empty", provider, exc)
-        return None
-
-
-def _transcribe_sync(stt, wav_path: Path) -> str:
-    """Run STT synchronously (we're in a subprocess, no event loop)."""
-    if stt is None:
-        return ""
-    try:
-        import asyncio
-        return asyncio.run(stt.transcribe(wav_path))
-    except Exception as exc:
-        logger.warning("STT transcription failed: %s", exc)
-        return ""
-
-
 def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--blob-dir", required=True)
     p.add_argument("--capture-sec", type=float, default=8.0)
     p.add_argument("--stt-provider", default="faster_whisper")
     p.add_argument("--sample-rate", type=int, default=16000)
+    # Wake config may arrive via events_config params (lets the Settings UI /
+    # onboarding hot-apply a new wake word) or fall back to WAKE_WORDS env.
+    p.add_argument("--wake-words", default=None,
+                   help="comma-separated openwakeword model names (overrides WAKE_WORDS)")
+    p.add_argument("--wake-threshold", default=None,
+                   help="detection threshold 0..1 (overrides WAKE_THRESHOLD)")
     args = p.parse_args(argv)
 
-    logging.basicConfig(level=logging.INFO, stream=sys.stderr,
+    # Params take precedence over env so a hot-reloaded events config wins.
+    if args.wake_words:
+        os.environ["WAKE_WORDS"] = args.wake_words
+    if args.wake_threshold:
+        os.environ["WAKE_THRESHOLD"] = args.wake_threshold
+
+    # Log level for this subprocess. Set YUYUTSAVA_VOICE_LOG_LEVEL=DEBUG in the
+    # daemon env (e.g. .env) to surface the live wake-score readout and other
+    # DEBUG diagnostics; defaults to INFO. The parent forwards our stderr to its
+    # own logger, so these lines appear in the daemon log either way.
+    _level_name = os.environ.get("YUYUTSAVA_VOICE_LOG_LEVEL", "INFO").upper()
+    _level = getattr(logging, _level_name, logging.INFO)
+    logging.basicConfig(level=_level, stream=sys.stderr,
                         format="voice_proc: %(message)s")
 
     # Check deps before anything else.
@@ -112,7 +104,6 @@ def main(argv: list[str] | None = None) -> None:
     blob_dir = Path(args.blob_dir).expanduser()
     blob_dir.mkdir(parents=True, exist_ok=True)
     sample_rate = args.sample_rate
-    capture_frames = int(args.capture_sec * sample_rate)
 
     # Load wake detector (lazy — first process() call loads the model).
     try:
@@ -121,8 +112,10 @@ def main(argv: list[str] | None = None) -> None:
         _fatal(f"Failed to build wake detector: {exc}")
         return
 
-    # Load STT (may be None if provider == "none").
-    stt = _build_stt(args.stt_provider)
+    # NOTE: no STT is loaded here. This subprocess only DETECTS the wake word and
+    # emits an instant signal; the UI overlay's live mic + the WS voice pipeline
+    # own all capture/transcription. (Loading a second whisper here starved the
+    # pipeline's STT of CPU — the cause of the 10–20s transcription lag.)
 
     # SIGTERM / SIGINT → clean exit.
     stopping = {"v": False}
@@ -134,10 +127,7 @@ def main(argv: list[str] | None = None) -> None:
     signal.signal(signal.SIGINT, _stop)
 
     _emit({"kind": "ready"})
-    logger.info(
-        "voice source ready — sample_rate=%d capture_sec=%.1f stt=%s",
-        sample_rate, args.capture_sec, args.stt_provider,
-    )
+    logger.info("voice source ready — sample_rate=%d (wake-detection only)", sample_rate)
 
     last_heartbeat = time.time()
 
@@ -150,6 +140,7 @@ def main(argv: list[str] | None = None) -> None:
             blocksize=_CHUNK_FRAMES,
         ) as stream:
             chunk_buf = b""
+            detector_errors = 0  # consecutive process() failures
             while not stopping["v"]:
                 now = time.time()
                 if now - last_heartbeat >= _HEARTBEAT_SEC:
@@ -161,54 +152,41 @@ def main(argv: list[str] | None = None) -> None:
 
                 try:
                     fired = detector.process(chunk)
+                    detector_errors = 0
                 except Exception as exc:
+                    # A failure here is almost always a broken/missing model, not
+                    # a transient audio glitch — and it would repeat every chunk
+                    # (~80ms), flooding the log. Give up after a few in a row.
+                    detector_errors += 1
+                    if detector_errors >= 5:
+                        _fatal(f"wake detector unusable, giving up: {exc}")
+                        break
                     logger.warning("wake detector error: %s", exc)
                     continue
 
                 if fired is None:
                     continue
 
-                # ── Wake fired! Capture utterance ────────────────────────────
-                logger.info("wake word '%s' detected; capturing utterance", fired)
+                # ── Wake fired! ──────────────────────────────────────────────
+                # Emit the wake signal IMMEDIATELY so the UI overlay pops with
+                # sub-second latency, then go straight back to listening for the
+                # next wake word. This subprocess does NOT capture or transcribe
+                # the utterance: the UI overlay opens its own live mic the instant
+                # it pops and (with the WS voice pipeline) owns the whole
+                # conversation, including a same-breath command. The old code
+                # captured a fixed 8s window and ran STT here first — seconds of
+                # lag, a transcript the overlay discarded, AND a second whisper
+                # that starved the pipeline's STT of CPU (the 10–20s lag).
+                logger.info("wake word '%s' detected; popping overlay", fired)
                 detector.reset()
-
-                ts_int = int(time.time() * 1000)
-                wav_path = blob_dir / f"voice-{ts_int}.wav"
-
-                try:
-                    utterance_raw, _ = stream.read(capture_frames)
-                    utterance_bytes = bytes(utterance_raw)
-                except Exception as exc:
-                    logger.warning("utterance capture failed: %s", exc)
-                    continue
-
-                # Write WAV.
-                try:
-                    import wave
-                    with wave.open(str(wav_path), "wb") as wf:
-                        wf.setnchannels(1)
-                        wf.setsampwidth(2)  # int16
-                        wf.setframerate(sample_rate)
-                        wf.writeframes(utterance_bytes)
-                except Exception as exc:
-                    logger.warning("failed to write WAV: %s", exc)
-                    continue
-
-                duration_sec = len(utterance_bytes) / (2 * sample_rate)
-                transcript = _transcribe_sync(stt, wav_path)
-
                 _emit({
                     "kind": "wake",
                     "ts": time.time(),
-                    "blob_path": str(wav_path),
-                    "transcript": transcript,
                     "wake_word": fired,
-                    "duration_sec": duration_sec,
+                    "transcript": "",
+                    "blob_path": None,
+                    "duration_sec": 0.0,
                 })
-
-                # Emit a heartbeat immediately after so the parent's watchdog
-                # doesn't count the STT latency as a missed heartbeat.
-                _emit({"kind": "heartbeat", "ts": time.time()})
                 last_heartbeat = time.time()
 
     except Exception as exc:

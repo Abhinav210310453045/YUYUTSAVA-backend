@@ -30,8 +30,26 @@ class STT(ABC):
 class FasterWhisperSTT(STT):
     """Local transcription via ``faster-whisper``. No network or API key needed."""
 
-    def __init__(self, model_size: str = "base") -> None:
+    def __init__(
+        self,
+        model_size: str = "base",
+        language: str | None = "en",
+        *,
+        vad_filter: bool = True,
+        vad_threshold: float = 0.5,
+    ) -> None:
         self._model_size = model_size
+        # Pinning the language stops faster-whisper from mis-detecting short,
+        # quiet wake-utterances as Hindi/Norwegian/etc. and hallucinating
+        # transcripts ("1kg 1kg 1kg"). None = auto-detect (multilingual users).
+        self._language = language or None
+        # faster-whisper's built-in Silero VAD drops non-speech before decoding.
+        # Its default threshold (0.5) discards quiet/soft speech — the "I have to
+        # talk loudly or it transcribes nothing / empty" symptom. Lower the
+        # threshold (e.g. 0.2–0.3) to keep softer speech, or turn the filter off
+        # entirely and rely on the pipeline VAD for boundaries.
+        self._vad_filter = vad_filter
+        self._vad_threshold = vad_threshold
         self._model = None
 
     def _load(self):
@@ -50,7 +68,21 @@ class FasterWhisperSTT(STT):
 
         def _run() -> str:
             model = self._load()
-            segments, _ = model.transcribe(str(wav_path), beam_size=5)
+            segments, _ = model.transcribe(
+                str(wav_path),
+                beam_size=5,
+                language=self._language,
+                # Drop non-speech before decoding so trailing silence in the
+                # capture window doesn't get hallucinated into text. Threshold is
+                # tunable: lower it to keep softer speech (FASTER_WHISPER_VAD_*).
+                vad_filter=self._vad_filter,
+                vad_parameters=(
+                    {"threshold": self._vad_threshold} if self._vad_filter else None
+                ),
+                # Each utterance is independent — don't carry context across
+                # them, which otherwise feeds repetition loops ("1kg 1kg 1kg").
+                condition_on_previous_text=False,
+            )
             return " ".join(s.text.strip() for s in segments).strip()
 
         return await loop.run_in_executor(None, _run)
@@ -58,7 +90,22 @@ class FasterWhisperSTT(STT):
     @classmethod
     def from_env(cls) -> FasterWhisperSTT:
         size = os.environ.get("FASTER_WHISPER_MODEL", "base").strip() or "base"
-        return cls(model_size=size)
+        # FASTER_WHISPER_LANGUAGE="" → auto-detect; unset → English default.
+        lang = os.environ.get("FASTER_WHISPER_LANGUAGE", "en").strip() or None
+        # FASTER_WHISPER_VAD_FILTER=0 disables the Silero pre-filter entirely;
+        # FASTER_WHISPER_VAD_THRESHOLD lowers/raises its speech sensitivity
+        # (default 0.5; try 0.2–0.3 if soft speech is being dropped).
+        vad_filter = os.environ.get("FASTER_WHISPER_VAD_FILTER", "1").strip() not in (
+            "0", "false", "no", "off", ""
+        )
+        try:
+            vad_threshold = float(os.environ.get("FASTER_WHISPER_VAD_THRESHOLD", "0.5"))
+        except ValueError:
+            vad_threshold = 0.5
+        return cls(
+            model_size=size, language=lang,
+            vad_filter=vad_filter, vad_threshold=vad_threshold,
+        )
 
 
 class GroqWhisperSTT(STT):

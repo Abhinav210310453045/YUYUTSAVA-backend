@@ -28,7 +28,7 @@ from yuyutsava.daemon.web.services.stream_service import (
 
 
 class _FakeStore:
-    def try_set_proposal_status(self, *a, **k) -> bool:  # noqa: D401, ANN002
+    async def try_set_proposal_status(self, *a, **k) -> bool:  # noqa: D401, ANN002
         return True
 
 

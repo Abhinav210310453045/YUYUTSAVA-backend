@@ -26,6 +26,14 @@ export const navIcons = {
       <line x1="12" y1="10" x2="12" y2="10" strokeWidth="3"/>
     </svg>
   ),
+  voice: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="9" y="2" width="6" height="11" rx="3"/>
+      <path d="M5 10v1a7 7 0 0 0 14 0v-1"/>
+      <line x1="12" y1="18" x2="12" y2="22"/>
+      <line x1="8" y1="22" x2="16" y2="22"/>
+    </svg>
+  ),
 }
 
 // VS Code-style "toggle right panel" glyph: a rounded window with the right
@@ -45,4 +53,5 @@ export const NAV_ITEMS = [
   { id: 'sessions', label: 'Sessions' },
   { id: 'settings', label: 'Settings' },
   { id: 'chat', label: 'Chat' },
+  { id: 'voice', label: 'Voice' },
 ]

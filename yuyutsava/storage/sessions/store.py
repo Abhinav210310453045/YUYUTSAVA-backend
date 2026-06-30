@@ -24,6 +24,7 @@ class SessionStore(Protocol):
         workspace: Path,
         task: str,
         thread_id: str | None = None,
+        origin: str = "cli",
     ) -> Session: ...
 
     async def get(self, session_id: str) -> Session: ...
@@ -35,6 +36,7 @@ class SessionStore(Protocol):
         limit: int = 100,
         order_by: str = "updated_at",
         cursor: float | None = None,
+        origin: str | None = None,
     ) -> list[Session]: ...
 
     async def touch(

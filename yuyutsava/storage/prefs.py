@@ -3,14 +3,12 @@
 Each preference is a small JSON blob keyed by a dot-namespaced string:
 ``interaction.style``, ``media.tone``, ``spotify.prefs``, etc.
 
-Reads are synchronous (same thread that owns the SQLite connection).
-Writes go through the underlying :class:`Store`'s async writer queue so they
-never block the loop.
+Reads and writes are both ``async`` — the backing :class:`Store` may be
+Postgres-backed, where a synchronous read would block the event loop.
 
 This module is the typed wrapper that callers should depend on. The actual
-``user_prefs`` table lives in :mod:`yuyutsava.storage.events.store` for now
-because the daemon constructs one :class:`Store` covering all tables — a
-future per-table split is documented in the package ``__init__``.
+``user_prefs`` table is owned by the :class:`PrefsBackend` twin behind the
+:class:`Store` facade (:mod:`yuyutsava.storage.events`).
 
 CLI:
     ``yuyutsava prefs set <key> <json>``
@@ -53,13 +51,13 @@ class PrefsStore:
         logger.debug("prefs: deleted %s", key)
 
     # ------------------------------------------------------------------ #
-    # Read (sync — straight off the shared connection)                    #
+    # Read (async — a Postgres-backed store must not block the loop)       #
     # ------------------------------------------------------------------ #
 
-    def get(self, key: str, default: Any = None) -> Any:
+    async def get(self, key: str, default: Any = None) -> Any:
         """Return the stored value for ``key``, or ``default`` if absent."""
-        return self._store.get_pref(key, default)
+        return await self._store.get_pref(key, default)
 
-    def all(self) -> dict[str, Any]:
+    async def all(self) -> dict[str, Any]:
         """Return all stored preferences as a ``{key: value}`` dict."""
-        return self._store.list_prefs()
+        return await self._store.list_prefs()

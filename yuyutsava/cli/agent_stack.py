@@ -128,7 +128,7 @@ async def _build_retrieval_stores(skill_registry: SkillRegistry):
     return memory_store, skill_store, pg_pool, embedder
 
 
-async def build_cli_agent_stack(
+async def build_agent_stack(
     workspace: Path,
     settings: LlmSettings,
     *,
@@ -140,7 +140,12 @@ async def build_cli_agent_stack(
     search_config: SearchConfig,
     checkpointer: BaseCheckpointSaver,
 ) -> AgentBundle:
-    """Build the CLI deepagent + its subagent stack.
+    """Build the conversational deepagent + its subagent stack.
+
+    Not CLI-specific despite the historical name: this is the same stack the
+    daemon-hosted text/voice conversations build (see
+    :class:`yuyutsava.conversation.ConversationService`). The legacy alias
+    ``build_cli_agent_stack`` is kept below for existing callers.
 
     The current sync subagent list is just ``GeneralPurposeAgent`` — passing
     it causes deepagents to name-match-override its built-in default with our
@@ -271,3 +276,8 @@ async def build_cli_agent_stack(
     bundle.pg_pool = pg_pool
     bundle.embedder = embedder
     return bundle
+
+
+# Back-compat alias: the stack is no longer CLI-only (the daemon hosts text +
+# voice conversations on the same builder), but existing imports keep working.
+build_cli_agent_stack = build_agent_stack

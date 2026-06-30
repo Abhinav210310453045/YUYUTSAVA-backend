@@ -12,13 +12,22 @@ when the keys are present and the server is up — the in-code twin of *not*
 starting the ``langfuse`` compose profile. Leaving it unset preserves the
 historical behaviour (active iff the three keys are set).
 
+Session id, trace name and tags are *not* set on the handler in langfuse v4 — the
+LangChain ``CallbackHandler`` reads them off the root run's ``metadata`` under the
+``langfuse_session_id`` / ``langfuse_trace_name`` / ``langfuse_tags`` keys. Use
+``trace_metadata`` to build that block and merge it into the RunnableConfig.
+
 Usage::
 
-    from yuyutsava.core.tracing import get_callback
+    from yuyutsava.core.tracing import get_callback, trace_metadata
 
-    cb = get_callback(session_id=thread_id, trace_name="orchestrator")
+    cb = get_callback()
     if cb:
         cfg["callbacks"] = [cb]
+        cfg["metadata"] = {
+            **(cfg.get("metadata") or {}),
+            **trace_metadata(session_id=thread_id, trace_name="orchestrator"),
+        }
 """
 
 from __future__ import annotations
@@ -101,36 +110,48 @@ def _langfuse_reachable() -> bool:
     return ok
 
 
-def get_callback(
-    *,
-    session_id: str | None = None,
-    trace_name: str | None = None,
-    run_name: str | None = None,  # alias — callers may pass either
-):
+def get_callback():
     """Return a LangFuse CallbackHandler, or None if not configured / not installed.
 
     In langfuse v4 credentials are read from LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY /
-    LANGFUSE_HOST env vars.  Session and trace name go via TraceContext.
+    LANGFUSE_HOST env vars. The handler carries no per-run state — session id, trace
+    name and tags are passed through the RunnableConfig ``metadata`` (see
+    ``trace_metadata``).
     """
     if not is_configured():
         return None
     if not _langfuse_reachable():
         return None
-    name = trace_name or run_name
     try:
         from langfuse.langchain import CallbackHandler
-        from langfuse.types import TraceContext
 
-        ctx: dict = {}
-        if session_id:
-            ctx["session_id"] = session_id
-        if name:
-            ctx["trace_name"] = name
-
-        return CallbackHandler(trace_context=TraceContext(**ctx) if ctx else None)
+        return CallbackHandler()
     except ImportError:
         logger.warning("langfuse is not installed — tracing disabled. Run: uv add langfuse")
         return None
     except Exception as exc:
         logger.warning("LangFuse callback init failed (%s) — tracing disabled", exc)
         return None
+
+
+def trace_metadata(
+    *,
+    session_id: str | None = None,
+    trace_name: str | None = None,
+    tags: list[str] | None = None,
+) -> dict:
+    """Langfuse v4 trace attributes for a RunnableConfig ``metadata`` dict.
+
+    In langfuse v4 these are read off the root run's metadata by the LangChain
+    CallbackHandler (keys: ``langfuse_session_id`` / ``langfuse_trace_name`` /
+    ``langfuse_tags``). Returns only the keys that have values, so it is safe to
+    splat into a metadata dict unconditionally.
+    """
+    md: dict = {}
+    if session_id:
+        md["langfuse_session_id"] = session_id
+    if trace_name:
+        md["langfuse_trace_name"] = trace_name
+    if tags:
+        md["langfuse_tags"] = tags
+    return md

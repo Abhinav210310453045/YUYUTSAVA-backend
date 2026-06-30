@@ -12,6 +12,8 @@ to read each tool's schema before calling it.
 
 from __future__ import annotations
 
+from langchain_core.tools import BaseTool
+
 from yuyutsava.agents.base_sub_agent import BaseSubAgent
 
 
@@ -23,18 +25,23 @@ shown to the user.
 
 ## TOOL DISCOVERY
 
-You start with an essentially empty toolbelt — only ``tool_search`` and
-``tr_ask_user`` are visible upfront. For anything else, discover schemas with
-``tool_search`` *before* calling:
+Your tool schemas are not preloaded — their NAMES are listed in the AVAILABLE
+TOOLS catalog below. Load the schema for the one(s) you need with ``tool_search``
+*before* calling, and load only what you need:
 
-  tool_search('tr_*')   → read/write/delete/execute_in_sandbox/grep/execute
-  tool_search('ws_*')   → web search (Tavily / Exa, only if API keys set)
-  tool_search('sk_*')   → skills (read reusable patterns)
-  tool_search('db_*')   → introspect daemon state DBs (read-only)
-  tool_search('ev_*')   → recall recent events / decisions
+  tool_search('select:tr_write_file')      → load exactly that tool
+  tool_search('select:tr_grep,tr_read_file') → load several by name
+  tool_search('run a shell command')       → find a tool by what it does (ranked)
 
 Read the schema returned by ``tool_search``, then call the tool with the
-parameters it documents. Never guess parameter names.
+parameters it documents. Never guess parameter names. Do NOT load whole
+namespaces you won't use.
+
+You HAVE internet access via ``ws_tavily_search`` / ``ws_exa_search`` (no
+approval needed). For current events, web lookups, live data, or unfamiliar
+terms, run ``tool_search('select:ws_tavily_search,ws_exa_search')`` and use
+them. NEVER report that you "can't browse the web" — that is false; tool_search
+first and only declare a capability missing if no matching tool turns up.
 
 ## TOOL CALL CONTRACT (non-negotiable)
 
@@ -79,3 +86,23 @@ class GeneralPurposeAgent(BaseSubAgent):
     @property
     def system_prompt(self) -> str:
         return _SYSTEM_PROMPT
+
+    def search_tools(self) -> list[BaseTool]:
+        """Generalist fallback: always expose every configured ws_* tool.
+
+        Unlike the base class (which only attaches ws_* tools a *visible skill*
+        declares via ``requires_tools``), the general-purpose agent is the
+        orchestrator's capable fallback for internet-search tasks, so it gets
+        the full set whenever a provider is configured. Skill-driven tools from
+        the base impl are merged in too, deduped by name (ToolRegistry keys by
+        name, but we dedupe here so ``all_tools()`` stays clean).
+        """
+        if self._search_config is None:
+            return []
+        from yuyutsava.tools.search import make_search_tools
+
+        tools = make_search_tools(self._search_config, cap_enforcer=self._cap_enforcer)
+        by_name = {t.name: t for t in tools}
+        for t in super().search_tools():  # forward-compat: skill-declared ws_* tools
+            by_name.setdefault(t.name, t)
+        return list(by_name.values())

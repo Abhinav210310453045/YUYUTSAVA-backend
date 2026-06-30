@@ -26,7 +26,7 @@ class _FakeStore:
         self.flip_ok = flip_ok
         self.flips: list[tuple[str, str, str]] = []
 
-    def try_set_proposal_status(
+    async def try_set_proposal_status(
         self, proposal_id: str, *, from_status: str, to_status: str,
     ) -> bool:
         self.flips.append((proposal_id, from_status, to_status))

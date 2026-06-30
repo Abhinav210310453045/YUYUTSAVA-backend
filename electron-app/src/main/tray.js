@@ -18,8 +18,9 @@ function init(win, daemonModule) {
     icon = nativeImage.createFromPath(iconPath)
     if (icon.isEmpty()) throw new Error('empty')
     icon = icon.resize({ width: 16, height: 16 })
-    // On macOS a template image adapts to light/dark menu bars automatically.
-    if (process.platform === 'darwin') icon.setTemplateImage(true)
+    // Render the actual logo pixels. (Do NOT mark it a template image — macOS
+    // draws template images as a monochrome mask, which collapsed the logo to a
+    // solid white blob on dark menu bars.)
   } catch {
     // fallback: tiny transparent icon so the tray still works without an asset
     icon = nativeImage.createEmpty()
@@ -30,7 +31,13 @@ function init(win, daemonModule) {
   _daemonRunning = _daemon ? _daemon.isRunning() : false
   refreshMenu()
 
-  _tray.on('click', () => _showWindow())
+  // Clicking the tray icon should only reveal the menu of options — never the
+  // window (that's what "Open YUYUTSAVA" is for, mirroring Docker Desktop /
+  // Ollama). On macOS the context menu opens automatically on click; on other
+  // platforms pop it up explicitly so we still show options, not the window.
+  if (process.platform !== 'darwin') {
+    _tray.on('click', () => _tray.popUpContextMenu())
+  }
 
   // Intercept close → hide to tray instead of quitting Electron, so the UI
   // can be reopened from the tray while the daemon keeps running.
@@ -65,23 +72,27 @@ function _maybeShowHideHint() {
 
 // Daemon controls invoked from the tray. They mirror the IPC handlers but are
 // driven straight off the daemon module so the menu works without the window.
-function _startDaemon() {
+async function _startDaemon() {
   if (!_daemon) return
-  _daemon.start(process.cwd())
-  setTimeout(() => refreshMenu(true), 800)
-}
-
-async function _stopDaemon() {
-  if (!_daemon) return
-  await _daemon.stop()
-  refreshMenu(false)
+  await _daemon.start(process.cwd())
+  refreshMenu(await _daemon.isAlive())
 }
 
 async function _restartDaemon() {
   if (!_daemon) return
-  await _daemon.stop()
-  _daemon.start(process.cwd())
-  setTimeout(() => refreshMenu(true), 800)
+  // Use the daemon module's restart() — it flags itself as restarting so the
+  // index.js status poll won't mistake the brief stop phase for a crash and
+  // quit the whole app, and it waits until the new daemon is healthy.
+  const ready = await _daemon.restart(process.cwd())
+  refreshMenu(await _daemon.isAlive())
+  // Re-bootstrap the renderer against the fresh daemon. The SSE client
+  // auto-reconnects, but its EventSource (and any initial REST fetches) can get
+  // wedged while the backend is down — a reload guarantees the UI loads back
+  // instead of sitting blank. Only reload once the daemon answered /health so
+  // we don't reload into another dead-backend state.
+  if (ready && _win && !_win.isDestroyed()) {
+    try { _win.webContents.reload() } catch { /* window may be gone */ }
+  }
 }
 
 // Rebuild the context menu. ``running`` overrides the cached state (e.g. from
@@ -100,12 +111,13 @@ function refreshMenu(running) {
   ]
   if (_daemonRunning) {
     template.push({ label: 'Restart Daemon', click: () => { _restartDaemon() } })
-    template.push({ label: 'Stop Daemon', click: () => { _stopDaemon() } })
   } else {
     template.push({ label: 'Start Daemon', click: () => { _startDaemon() } })
   }
   template.push({ type: 'separator' })
-  // before-quit in index.js handles the "what about the daemon?" dialog.
+  // Quitting stops the daemon (which closes the UI with it); the before-quit
+  // handler in index.js handles the confirmation dialog. No separate "Stop
+  // Daemon" item — killing the daemon tears down the UI anyway.
   template.push({ label: 'Quit YUYUTSAVA', click: () => app.quit() })
 
   _tray.setContextMenu(Menu.buildFromTemplate(template))

@@ -5,6 +5,7 @@ import ProposalsPanel from './components/proposals/ProposalsPanel'
 import SessionsPanel from './components/sessions/SessionsPanel'
 import SettingsPanel from './components/settings/SettingsPanel'
 import ChatPanel from './components/chat/ChatPanel'
+import VoicePanel from './components/voice/VoicePanel'
 import InWindowToast from './components/notifications/InWindowToast'
 import { useSSE, getLogsEnabled, setLogsEnabled } from './hooks/useSSE.jsx'
 import { NotificationsProvider } from './hooks/useNotifications.jsx'
@@ -43,7 +44,33 @@ function ResizeHandle({ onMouseDown, side }) {
 
 export default function App() {
   const [activePanel, setActivePanel] = useState('proposals')
+  // Thread id to resume when the Chat panel opens from a session row. Cleared on
+  // any plain navigation so the Chat nav icon always starts a fresh UI session.
+  const [chatResumeId, setChatResumeId] = useState(null)
   const { proposals, asks, eventLines, logLines, bgTasks, connected, pendingCount, removeProposal, removeAsk } = useSSE()
+
+  const navTo = useCallback((target) => {
+    setChatResumeId(null)
+    setActivePanel(target)
+  }, [])
+
+  // Open the Chat panel resuming a specific UI thread (from a Sessions row).
+  const onOpenChat = useCallback((resumeId) => {
+    setChatResumeId(resumeId)
+    setActivePanel('chat')
+  }, [])
+
+  // Hotkey/wake while the window is focused: switch to the Voice panel and bump
+  // a nonce so the panel auto-starts the mic (even if it was already mounted).
+  const [voiceAutoStart, setVoiceAutoStart] = useState(0)
+  useEffect(() => {
+    const off = window.electronAPI?.onVoiceActivate?.(() => {
+      setChatResumeId(null)
+      setActivePanel('voice')
+      setVoiceAutoStart((n) => n + 1)
+    })
+    return () => off && off()
+  }, [])
 
   const [logsEnabled, setLogsEnabledState] = useState(getLogsEnabled())
   const [logLevel, setLogLevelState] = useState('INFO')
@@ -67,19 +94,19 @@ export default function App() {
   // which consumes highlightId from NotificationsProvider.
   useEffect(() => {
     const off = window.electronAPI?.onNotificationClick?.(() => {
-      setActivePanel('proposals')
+      navTo('proposals')
     })
     return () => off && off()
-  }, [])
+  }, [navTo])
 
   // Tray menu navigation (tray → "Open"/"Settings"). 'dashboard' maps to the
   // proposals home view; other targets map straight to a panel id.
   useEffect(() => {
     const off = window.electronAPI?.onNavigate?.((target) => {
-      setActivePanel(target === 'dashboard' ? 'proposals' : target)
+      navTo(target === 'dashboard' ? 'proposals' : target)
     })
     return () => off && off()
-  }, [])
+  }, [navTo])
 
   const [activityW, setActivityW] = useState(300)
   const [activityOpen, setActivityOpen] = useState(true)
@@ -124,7 +151,7 @@ export default function App() {
           logLevel={logLevel}
           onChangeLogLevel={onChangeLogLevel}
           activePanel={activePanel}
-          onNav={setActivePanel}
+          onNav={navTo}
           pendingCount={pendingCount}
           activityOpen={activityOpen}
           onToggleActivity={setActivityOpen}
@@ -145,9 +172,10 @@ export default function App() {
                   onRemoveAsk={removeAsk}
                 />
               )}
-              {activePanel === 'sessions' && <SessionsPanel />}
+              {activePanel === 'sessions' && <SessionsPanel onOpenChat={onOpenChat} />}
               {activePanel === 'settings' && <SettingsPanel />}
-              {activePanel === 'chat' && <ChatPanel />}
+              {activePanel === 'chat' && <ChatPanel resumeId={chatResumeId} />}
+              {activePanel === 'voice' && <VoicePanel onOpenSettings={() => navTo('settings')} autoStartSignal={voiceAutoStart} />}
             </div>
           </div>
 

@@ -167,13 +167,13 @@ class StorePolicyCapEnforcer:
         self._policy = policy
         self._store = store  # yuyutsava.storage.events.Store, kept untyped to avoid cycle
 
-    def check_and_incr(self, tool_name: str) -> tuple[bool, str]:
+    async def check_and_incr(self, tool_name: str) -> tuple[bool, str]:
         cap = self._policy.daily_cap_for(tool_name)
         if cap is None:
             return True, ""
         day = today_utc()
         try:
-            new_count = self._store.incr_tool_call(tool_name, day)  # type: ignore[attr-defined]
+            new_count = await self._store.incr_tool_call(tool_name, day)  # type: ignore[attr-defined]
         except Exception as exc:  # noqa: BLE001 — counter failure should not block work
             logger.warning("policy: counter incr failed for %s: %s — allowing", tool_name, exc)
             return True, ""

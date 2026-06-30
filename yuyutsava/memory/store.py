@@ -123,7 +123,10 @@ class PgMemoryStore(MemoryStore):
                 "memory: embedding failed — storing %s without vector", memory_id,
                 exc_info=True,
             )
-        async with self._pool.connection() as conn:
+        # Atomic dedup-probe + ensure_thread + insert: the three statements
+        # commit together (or roll back together) so a crash can't leave the
+        # thread row without its memory or vice-versa.
+        async with self._pool.transaction() as conn:
             # Near-duplicate suppression: skip writing when a same-kind memory
             # is already near-identical (cosine >= threshold). Keeps repeated
             # compaction summaries / task outcomes from crowding top-k recall.

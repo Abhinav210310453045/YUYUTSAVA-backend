@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Awaitable, Callable
@@ -40,6 +41,7 @@ from yuyutsava.context.config import ContextSettings
 from yuyutsava.context.injector import MemoryInjector
 from yuyutsava.context.summary_store import PgThreadSummaryStore, SqliteThreadSummaryStore
 from yuyutsava.context.transcript_store import PgTranscriptStore, SqliteTranscriptStore
+from yuyutsava.storage.voice_store import PgVoiceMessageStore, SqliteVoiceMessageStore
 from yuyutsava.core.config import (
     DaemonConfig, EventsConfig, LlmSettings, SearchConfig, SourceConfig,
     _env, llm_settings_from_env,
@@ -75,6 +77,8 @@ from yuyutsava.storage.events import Store
 from yuyutsava.storage.paths import blobs_dir, checkpoints_db_path, state_db_path, state_dir
 from yuyutsava.storage.pg import migrations as pg_migrations
 from yuyutsava.storage.pg.pool import PgPool
+from yuyutsava.storage.routing.health import StorageHealth
+from yuyutsava.storage.routing.reconcile import Reconciler
 from yuyutsava.storage.prefs import PrefsStore
 from yuyutsava.storage.sessions import PgSessionStore, set_default_session_store
 from yuyutsava.storage.sweeper import BlobSweepTarget, SweeperConfig, UnifiedSweeper
@@ -141,6 +145,7 @@ class DaemonSubsystems:
     # ``embedder`` are owned here for teardown; the stores are borrowed by
     # OrchestratorDeps / the sweeper. All None/sqlite in zero-config mode.
     pg_pool: object | None
+    storage_health: object | None
     artifact_store: object
     summary_store: object
     transcript_store: object
@@ -293,6 +298,7 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         artifact_store = PgArtifactStore(pg_pool)
         summary_store = PgThreadSummaryStore(pg_pool)
         transcript_store = PgTranscriptStore(pg_pool)
+        voice_store = PgVoiceMessageStore(pg_pool)
         # Sessions move to Postgres too (migration v6). Inject the shared pool
         # so the web router's get_default_session_store() reuses it; migrations
         # already ran above, so the store skips its own lazy schema-ensure.
@@ -301,6 +307,7 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         artifact_store = SqliteArtifactStore(state_db_path())
         summary_store = SqliteThreadSummaryStore(state_db_path())
         transcript_store = SqliteTranscriptStore(state_db_path())
+        voice_store = SqliteVoiceMessageStore(state_db_path())
 
     # ── task registry (Phase 2: first-class task tracking) -----------------
     task_store = (
@@ -340,8 +347,13 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         if memory_store is not None else None
     )
 
-    # ── store --------------------------------------------------------------
-    store = Store()
+    # ── store (events DB: postgres-primary + sqlite spillover buffer) ------
+    # On the Postgres backend each domain becomes a RoutedStore that fails over
+    # to a SQLite buffer when Postgres is unreachable; the health probe drains
+    # the buffer back on recovery (storage/routing). SQLite mode keeps the
+    # SQLite twins as the permanent primary.
+    storage_health = StorageHealth(pg_pool) if pg_pool is not None else None
+    store = Store.for_backend(storage, pg_pool, storage_health)
     await store.start()
 
     # ── user prefs store --------------------------------------------------
@@ -453,7 +465,7 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
             vc = voice_channel_from_env()
             channels.channels.append(vc)
             logger.info("  voice     : enabled (TTS=%s STT=%s)",
-                        type(vc._tts).__name__, type(vc._stt).__name__)
+                        os.environ.get("TTS_PROVIDER", "piper"), type(vc._stt).__name__)
         except Exception:
             logger.warning("voice channel init failed — running without voice", exc_info=True)
 
@@ -537,6 +549,33 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         skill_store, agent="orchestrator", top_k=mem_settings.top_k
     )
 
+    # ── storage spillover recovery -----------------------------------------
+    # On Postgres recovery the health probe drains the buffered SQLite rows back
+    # into Postgres (drain-and-delete: no duplication) and re-embeds any
+    # vector-less memory/skill rows via their backfill(). The degrade notifier
+    # surfaces the outage on the user timeline (never silently divergent).
+    if storage_health is not None and pg_pool is not None:
+        _backfills = []
+        for _store_with_vectors in (memory_store, skill_store):
+            _bf = getattr(_store_with_vectors, "backfill_embeddings", None)
+            if _bf is not None:
+                _backfills.append(_bf)
+        _reconciler = Reconciler(store.sqlite_backend, pg_pool, backfills=_backfills)
+        storage_health.set_recover(_reconciler.reconcile)
+
+        def _on_storage_degraded(reason: str) -> None:
+            try:
+                asyncio.create_task(channels.post_event(ChannelEvent(
+                    payload=TimelinePayload(
+                        line=f"storage: postgres unreachable — buffering to SQLite ({reason})",
+                        cls="event-error",
+                    ),
+                )))
+            except RuntimeError:
+                pass
+
+        storage_health.set_degrade(_on_storage_degraded)
+
     # ── search config (ws_* tools) ---------------------------------------
     search_config = SearchConfig.from_env()
     available = search_config.is_available()
@@ -583,7 +622,8 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     # Gated by env so this is opt-in for v1. To enable:
     #   export YUYUTSAVA_ASYNC_SUBAGENTS=1
     # Subagents are exposed as `<name>-bg` peers alongside their sync entries.
-    import os
+    # (``os`` is already imported at module scope — a second local import here
+    # made ``os`` function-local, breaking its earlier use in the voice block.)
     async_host = None
     async_host_url: str | None = None
     async_mirror = None
@@ -810,6 +850,18 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         if auth_settings.enforce:
             logger.info("  web auth  : bearer token enforced (non-loopback bind %s)",
                         daemon_cfg.web_host)
+        # Lazy host for interactive text/voice conversations (Electron/mobile).
+        # Builds its shared deepagent bundle on first /ws/converse use and
+        # attaches to this daemon's async-subagent host (no second host).
+        from yuyutsava.daemon.conversation_manager import ConversationManager
+        conversation_manager = ConversationManager(
+            workspace=workspace,
+            checkpointer=checkpointer,
+            settings=orchestrator_settings,
+            search_config=search_config,
+            voice_store=voice_store,
+        )
+
         app = make_app(
             web_hub,
             host=daemon_cfg.web_host,
@@ -827,6 +879,9 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
             admission_controller=admission,
             model_router=model_router,
             memory_store=memory_store,
+            conversation_manager=conversation_manager,
+            voice_store=voice_store,
+            transcript_store=transcript_store,
             async_subagents=async_host_url is not None,
         )
         uvicorn_level = logging.getLevelName(
@@ -866,6 +921,7 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         checkpointer_saver=checkpointer_saver,
         sweeper=sweeper,
         pg_pool=pg_pool,
+        storage_health=storage_health,
         artifact_store=artifact_store,
         summary_store=summary_store,
         transcript_store=transcript_store,

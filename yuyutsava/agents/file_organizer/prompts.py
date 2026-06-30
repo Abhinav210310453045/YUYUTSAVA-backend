@@ -22,8 +22,9 @@ Never use /home/user or ~ — always the full absolute path: {home}
 
 Workflow:
 1. Call fetch_event(event_id) ONCE to get the file's current path and metadata.
-2. Discover the shell/filesystem tools you need with tool_search('tr_*').
-   Read the returned schemas before calling.
+2. Load only the filesystem tools you need with tool_search, e.g.
+   tool_search('select:tr_ls,tr_write_file') (or a keyword search like
+   tool_search('move a file')). Read the returned schemas before calling.
 3. Decide the destination directory:
    - Default: {inbox}/
    - Current year is {year}. Do NOT use any other year.

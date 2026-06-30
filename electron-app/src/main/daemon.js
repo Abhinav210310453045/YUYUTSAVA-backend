@@ -1,10 +1,19 @@
 const { spawn } = require('child_process')
 const http = require('http')
+const fs = require('fs')
+const os = require('os')
+const path = require('path')
 const { readSettings } = require('./settings')
 
 let _proc = null
 let _logCallback = null
 let _managed = true  // default: app manages the daemon
+let _restarting = false  // true while restart() tears down + brings back up
+
+// True during the stop→start window of a restart. The status poll in index.js
+// checks this so the transient "daemon down" state doesn't get mistaken for a
+// crash and quit the whole app.
+function isRestarting() { return _restarting }
 
 function getPort() {
   const s = readSettings()
@@ -18,31 +27,129 @@ function isRunning() {
   return _proc !== null && _proc.exitCode === null
 }
 
+// --- Daemon discovery (mirrors yuyutsava/daemon/singleton.py) -------------
+// The Python daemon writes <state_dir>/daemon.json with {pid, web_url, ...} on
+// startup and unlinks it on clean shutdown. state_dir() is YUYUTSAVA_HOME or
+// ~/.yuyutsava (see yuyutsava/storage/paths.py). Reading this lets us control a
+// daemon launched by the terminal — not just one we spawned ourselves.
+function stateDir() {
+  const raw = (process.env.YUYUTSAVA_HOME || '').trim()
+  if (raw) {
+    return raw.startsWith('~') ? path.join(os.homedir(), raw.slice(1)) : raw
+  }
+  return path.join(os.homedir(), '.yuyutsava')
+}
+
+function discoveryPath() { return path.join(stateDir(), 'daemon.json') }
+function lockPath() { return path.join(stateDir(), 'daemon.lock') }
+
+function readDiscovery() {
+  try {
+    return JSON.parse(fs.readFileSync(discoveryPath(), 'utf8'))
+  } catch (_) {
+    return null  // missing or malformed
+  }
+}
+
+// Mirror of singleton.py:_is_pid_alive — ESRCH→dead, EPERM→alive.
+function pidAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (e) {
+    return e.code === 'EPERM'
+  }
+}
+
+// PID of the actual daemon: prefer the discovery file (authoritative across
+// launch modes), fall back to a process we own.
+function getDaemonPid() {
+  const disco = readDiscovery()
+  if (disco && pidAlive(disco.pid)) return disco.pid
+  if (_proc && _proc.exitCode === null) return _proc.pid
+  return null
+}
+
+// Single source of truth for "is a daemon up", regardless of who launched it.
+async function isAlive() {
+  if (isRunning()) return true
+  const disco = readDiscovery()
+  if (disco && pidAlive(disco.pid)) return true
+  return ping(getPort())
+}
+
+function _unlinkStaleFiles() {
+  for (const p of [discoveryPath(), lockPath()]) {
+    try { fs.unlinkSync(p) } catch (_) {}
+  }
+}
+
 function onLog(cb) { _logCallback = cb }
 
 function _log(line) {
   if (_logCallback) _logCallback(line)
 }
 
-function start(workspacePath) {
-  if (isRunning()) return
+// Project root that holds pyproject.toml: this file is at
+// <root>/electron-app/src/main/daemon.js, so go up three levels. Used as the
+// daemon's cwd + workspace — the Electron main process's own cwd is
+// electron-app/, which has no pyproject.toml for `uv run` to resolve.
+function repoRoot() {
+  return path.resolve(__dirname, '../../..')
+}
 
+// PATH that finds `uv` regardless of how Electron was launched (shell vs Dock,
+// which starts with a minimal PATH). Covers uv's standalone (~/.local/bin) and
+// brew (/opt/homebrew/bin) install locations.
+function _spawnPath() {
+  const extra = [
+    '/opt/homebrew/bin',
+    '/usr/local/bin',
+    path.join(os.homedir(), '.local/bin'),
+    path.join(os.homedir(), '.cargo/bin'),
+  ]
+  return [...extra, process.env.PATH].filter(Boolean).join(path.delimiter)
+}
+
+async function start(workspacePath) {
+  if (isRunning()) return
+  // Idempotent: never spawn a duplicate. A daemon launched from the terminal
+  // (or a prior session) already holds the singleton lock — a second spawn
+  // would just die on it. Detect it via the discovery file / health probe.
+  const disco = readDiscovery()
+  if ((disco && pidAlive(disco.pid)) || await ping(getPort())) {
+    _log('[daemon] already running; not spawning a duplicate\n')
+    return
+  }
+  // No live daemon: clear any lock/discovery left by an ungraceful prior exit
+  // so it can't block the new daemon's singleton lock or fool the guard above.
+  _unlinkStaleFiles()
+
+  const root = workspacePath || repoRoot()
   const settings = readSettings()
   const env = { ...process.env, ...Object.fromEntries(Object.entries(settings)) }
+  env.PATH = _spawnPath()
 
   // detached:true puts the child in its own process group on POSIX so we can
   // signal `uv` AND its python grandchild together via `kill(-pid, ...)`.
   // Without this, SIGTERM reaches `uv` but not the python process it spawns.
   const isPosix = process.platform !== 'win32'
-  _proc = spawn('uv', ['run', 'yuyutsava', 'daemon', '--no-ui', '--workspace', workspacePath || process.cwd()], {
+  _proc = spawn('uv', ['run', 'yuyutsava', 'daemon', '--no-ui', '--workspace', root], {
     env,
-    cwd: workspacePath || process.cwd(),
+    cwd: root,
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: isPosix,
   })
 
   _proc.stdout.on('data', d => _log(d.toString()))
   _proc.stderr.on('data', d => _log(d.toString()))
+  // Without this handler a failed spawn (e.g. `uv` not on PATH → ENOENT) is
+  // swallowed and "Start Daemon" silently does nothing.
+  _proc.on('error', (err) => {
+    _log(`[daemon] failed to start: ${err.message}\n`)
+    _proc = null
+  })
   _proc.on('exit', (code) => {
     _log(`[daemon] exited with code ${code}`)
     _proc = null
@@ -66,28 +173,56 @@ function _killGroup(proc, signal) {
 }
 
 async function stop() {
-  if (!_proc) return
-  _killGroup(_proc, 'SIGTERM')
-  await new Promise(resolve => {
-    const t = setTimeout(() => {
-      _killGroup(_proc, 'SIGKILL')
-      resolve()
-    }, 5000)
-    const check = setInterval(() => {
-      if (!_proc || _proc.exitCode !== null) {
-        clearTimeout(t)
-        clearInterval(check)
-        resolve()
-      }
-    }, 100)
-  })
-  // Belt-and-suspenders: poll /health until it stops responding so callers
-  // (e.g. restart) don't race the OS releasing the port.
+  // Target the real daemon, whoever launched it. The discovery file carries the
+  // python PID (which owns the SIGTERM handler); falling back to _proc covers
+  // the brief window before discovery is written.
+  const pid = getDaemonPid()
+  if (pid === null) { _proc = null; return }
+
+  if (_proc && _proc.exitCode === null) {
+    // We own it: kill the whole group so the `uv` wrapper is reaped too.
+    _killGroup(_proc, 'SIGTERM')
+  } else {
+    // Externally launched (e.g. terminal). Signal only the daemon PID — its
+    // process group includes this Electron process, so a group kill would take
+    // the UI down with it. The python SIGTERM handler tears down + unlinks the
+    // lock/discovery files itself.
+    try { process.kill(pid, 'SIGTERM') } catch (_) {}
+  }
+
+  // Wait for the daemon to actually go away: /health stops responding AND the
+  // discovery file is gone (mirrors `yuyutsava daemon --stop`). SIGKILL fallback.
   const port = getPort()
-  const deadline = Date.now() + 3000
+  const deadline = Date.now() + 5000
+  let stopped = false
   while (Date.now() < deadline) {
-    if (!(await ping(port))) break
+    const gone = !(await ping(port)) && !pidAlive(pid)
+    if (gone || (_proc && _proc.exitCode !== null)) { stopped = true; break }
     await new Promise(r => setTimeout(r, 150))
+  }
+
+  if (!stopped) {
+    if (_proc && _proc.exitCode === null) _killGroup(_proc, 'SIGKILL')
+    else { try { process.kill(pid, 'SIGKILL') } catch (_) {} }
+    // Best-effort cleanup of files the dying process couldn't unlink.
+    _unlinkStaleFiles()
+  }
+  _proc = null
+}
+
+// Stop the current daemon and bring a fresh one up on the same port, then wait
+// until it is healthy so the UI reconnects to it. Flags itself as restarting so
+// index.js's status poll won't auto-quit during the brief down window.
+async function restart(workspacePath) {
+  _restarting = true
+  try {
+    await stop()
+    await start(workspacePath)
+    // Generous timeout: a fresh `uv run` cold-starts the heavy langgraph stack,
+    // which can take well over the default 10s before /health responds.
+    return await waitUntilReady(getPort(), 45000)
+  } finally {
+    _restarting = false
   }
 }
 
@@ -110,4 +245,4 @@ async function waitUntilReady(port, maxMs = 10000) {
   return false
 }
 
-module.exports = { start, stop, isRunning, isManaged, setManaged, getPort, onLog, waitUntilReady, ping }
+module.exports = { start, stop, restart, isRestarting, isRunning, isAlive, isManaged, setManaged, getPort, onLog, waitUntilReady, ping }

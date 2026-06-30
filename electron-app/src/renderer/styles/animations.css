@@ -58,6 +58,40 @@
   50%       { opacity: 0; }
 }
 
+/* Voice mic — heart-beat scale + a bluish aura that breathes outward. Runs
+   only while the mic is listening (applied via inline animation in VoicePanel). */
+@keyframes voice-beat {
+  0%, 100% { transform: scale(1); }
+  18%      { transform: scale(1.08); }
+  36%      { transform: scale(1.0); }
+  54%      { transform: scale(1.05); }
+}
+@keyframes voice-aura {
+  0%   { box-shadow: 0 0 0 0 rgba(120,160,255,0.45), 0 0 24px 4px rgba(120,160,255,0.35); }
+  70%  { box-shadow: 0 0 0 22px rgba(120,160,255,0), 0 0 40px 10px rgba(120,160,255,0.18); }
+  100% { box-shadow: 0 0 0 0 rgba(120,160,255,0), 0 0 24px 4px rgba(120,160,255,0.0); }
+}
+/* Gentle idle shimmer when not listening so the mic still feels alive. */
+@keyframes voice-idle {
+  0%, 100% { box-shadow: 0 0 16px 2px rgba(120,160,255,0.12); }
+  50%      { box-shadow: 0 0 26px 6px rgba(120,160,255,0.22); }
+}
+/* Soft equaliser bars while the agent is speaking. */
+@keyframes voice-bar {
+  0%, 100% { transform: scaleY(0.4); }
+  50%      { transform: scaleY(1); }
+}
+
+/* Mini overlay enters by sliding up + scaling in from below, exits in reverse. */
+@keyframes overlay-in {
+  from { transform: translateY(40px) scale(0.9); opacity: 0; }
+  to   { transform: translateY(0) scale(1); opacity: 1; }
+}
+@keyframes overlay-out {
+  from { transform: translateY(0) scale(1); opacity: 1; }
+  to   { transform: translateY(40px) scale(0.9); opacity: 0; }
+}
+
 /* Brief flash on a proposal card when the user clicks the OS notification
    banner that referenced it. Removed after ~1.8s. */
 .proposal-flash {

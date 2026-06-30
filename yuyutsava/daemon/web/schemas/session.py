@@ -19,6 +19,7 @@ class SessionOut(BaseModel):
     db_row_bytes: int
     task_preview: str
     schema_version: int
+    origin: str = "cli"
 
     @classmethod
     def from_session(cls, s: Session) -> "SessionOut":
@@ -34,4 +35,5 @@ class SessionOut(BaseModel):
             db_row_bytes=s.db_row_bytes,
             task_preview=s.task_preview,
             schema_version=s.schema_version,
+            origin=s.origin,
         )

@@ -70,6 +70,23 @@ class PgPool:
         async with self._pool.connection() as conn:
             yield conn
 
+    @asynccontextmanager
+    async def transaction(self) -> AsyncIterator[psycopg.AsyncConnection]:
+        """Borrow a connection wrapped in an explicit ``BEGIN``/``COMMIT`` block.
+
+        The pool is autocommit, so single statements commit on their own. Use
+        this for multi-statement writes that must be atomic (dedup-probe +
+        insert, proposal → decision sequences): psycopg's ``transaction()``
+        issues ``BEGIN`` on entry and ``COMMIT`` on clean exit / ``ROLLBACK``
+        if the body raises, even on an autocommit connection. Scope it tightly
+        with ``async with`` — a held-open transaction pins a pool connection.
+        """
+        if self._pool is None:
+            raise RuntimeError("PgPool.open() must be called first")
+        async with self._pool.connection() as conn:
+            async with conn.transaction():
+                yield conn
+
     @property
     def dsn(self) -> str:
         return self._settings.pg_dsn

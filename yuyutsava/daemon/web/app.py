@@ -30,6 +30,7 @@ from yuyutsava.daemon.web.routers import (
     channels as channels_router,
     cli_attach as cli_attach_router,
     config as config_router,
+    converse as converse_router,
     db as db_router,
     decisions as decisions_router,
     health as health_router,
@@ -82,6 +83,9 @@ def create_app(
     admission_controller: "object | None" = None,  # daemon.resources.AdmissionController; duck-typed
     model_router: "object | None" = None,       # core.model_router.ModelRouter; duck-typed
     memory_store: "object | None" = None,       # memory.store.MemoryStore; duck-typed
+    conversation_manager: "object | None" = None,  # daemon.conversation_manager.ConversationManager
+    voice_store: "object | None" = None,        # storage.voice_store.VoiceMessageStore; duck-typed
+    transcript_store: "object | None" = None,   # context.transcript_store.TranscriptStore; duck-typed
     async_subagents: bool = False,              # background subagent host enabled
 ) -> FastAPI:
     if auth is None:
@@ -133,6 +137,9 @@ def create_app(
     app.state.admission_controller = admission_controller
     app.state.model_router = model_router
     app.state.memory_store = memory_store
+    app.state.conversation_manager = conversation_manager
+    app.state.voice_store = voice_store
+    app.state.transcript_store = transcript_store
     app.state.async_subagents = async_subagents
 
     # Auth first so CORSMiddleware (added after → wraps outside) answers
@@ -195,6 +202,7 @@ def create_app(
         channels_router.router,
         usage_router.router,
         system_router.router,
+        converse_router.router,
     ]
     # Read-only DB introspection. Opt-out via env (defaults on).
     if os.environ.get("YUYUTSAVA_DB_API_ENABLED", "true").lower() not in {"0", "false", "no"}:

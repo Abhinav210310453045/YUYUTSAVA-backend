@@ -21,7 +21,7 @@ from langchain_core.messages import ToolMessage
 from langgraph.graph.state import CompiledStateGraph
 
 from yuyutsava.core.streaming import astream_agent
-from yuyutsava.storage.interrupts import InterruptsStore
+from yuyutsava.storage.interrupts import InterruptsStore, SqliteInterruptsStore
 from yuyutsava.storage.models import Session
 from yuyutsava.storage.sessions import SessionNotFound, SessionStore, SessionsSettings
 
@@ -166,6 +166,7 @@ async def _resolve_session(
     task: str,
     resume_id: str | None,
     continue_latest: bool,
+    origin: str = "cli",
 ) -> tuple[Session, bool]:
     """Return ``(session, resuming)``. Raises if --resume id is unknown.
 
@@ -197,7 +198,7 @@ async def _resolve_session(
             await store.update_status(rows[0].id, "running")
             return rows[0], True
 
-    fresh = await store.create(workspace=workspace, task=task)
+    fresh = await store.create(workspace=workspace, task=task, origin=origin)
     return fresh, False
 
 
@@ -211,6 +212,7 @@ async def run_session(
     continue_latest: bool = False,
     recursion_limit: int = 200,
     agent_path: str = "cli",
+    origin: str = "cli",
     interrupts_store: InterruptsStore | None = None,
 ) -> str:
     """Persist + run + bookkeep one CLI session.
@@ -220,7 +222,7 @@ async def run_session(
     """
     session, resuming = await _resolve_session(
         store, workspace=workspace, task=task,
-        resume_id=resume_id, continue_latest=continue_latest,
+        resume_id=resume_id, continue_latest=continue_latest, origin=origin,
     )
     _print_start_banner(session, resuming=resuming)
 
@@ -230,7 +232,7 @@ async def run_session(
         try:
             settings = SessionsSettings.from_env()
             if settings.interrupts_db_path is not None:
-                interrupts_store = InterruptsStore(
+                interrupts_store = SqliteInterruptsStore(
                     settings.interrupts_db_path,
                     busy_timeout_ms=settings.busy_timeout_ms,
                 )

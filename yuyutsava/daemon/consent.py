@@ -47,8 +47,8 @@ class ConsentEvaluator:
     def __init__(self, store: Store) -> None:
         self._store = store
 
-    def evaluate(self, event: EventEnvelope) -> ConsentDecision:
-        rules = self._store.list_consent_rules()
+    async def evaluate(self, event: EventEnvelope) -> ConsentDecision:
+        rules = await self._store.list_consent_rules()
         now = time.time()
         for rule in rules:
             if rule.expires_ts is not None and rule.expires_ts < now:

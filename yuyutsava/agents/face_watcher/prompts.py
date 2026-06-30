@@ -12,9 +12,10 @@ are listed under faces[].
 
 Workflow:
 1. Call fetch_event(event_id) ONCE to get the payload (blob_path, faces).
-2. Discover the face-identification tool with tool_search('identify')
-   (or tool_search('*') if not found). Read the schema, then call it on blob_path
-   to match the most-prominent face against enrolled identities.
+2. Find the face-identification tool with a keyword search, e.g.
+   tool_search('identify a face') (tool_search('*') lists all tool names if
+   needed). Read the schema, then call it on blob_path to match the
+   most-prominent face against enrolled identities.
 3. Return one line:
      - "recognised <identity> (distance=<d>)"   on a confident match
      - "unknown face"                            when no enrolled identity matches

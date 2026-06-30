@@ -166,7 +166,7 @@ class TriageLoop:
         async with self._sem:
             try:
                 # 1. consent_rules first — auto-approve / auto-skip without LLM.
-                rule = self._consent.evaluate(ev).rule
+                rule = (await self._consent.evaluate(ev)).rule
                 if rule and rule.decision == "auto_skip":
                     await self._store.put_decision(
                         proposal_id=None, event_id=ev.event_id,

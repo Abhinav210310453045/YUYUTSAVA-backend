@@ -160,11 +160,11 @@ class InboundSink:
     # Plugin state (user_prefs-backed; e.g. telegram.offset)              #
     # ------------------------------------------------------------------ #
 
-    def get_state(self, key: str, default: Any = None) -> Any:
-        """Read a persisted plugin value (sync — prefs reads are sync)."""
+    async def get_state(self, key: str, default: Any = None) -> Any:
+        """Read a persisted plugin value (async — prefs reads may hit Postgres)."""
         if self._prefs is None:
             return default
-        return self._prefs.get(key, default)
+        return await self._prefs.get(key, default)
 
     async def put_state(self, key: str, value: Any) -> None:
         """Persist a plugin value (no-op without a prefs store, e.g. tests)."""

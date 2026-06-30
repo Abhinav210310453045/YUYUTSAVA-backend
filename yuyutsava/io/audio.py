@@ -109,3 +109,17 @@ async def play_wav(path: Path) -> None:
         sd.wait()
 
     await loop.run_in_executor(None, _play)
+
+
+def stop_playback() -> None:
+    """Immediately stop any audio currently playing on the output device.
+
+    Synchronous and cheap (PortAudio ``sd.stop()``); used for barge-in so a new
+    utterance / earcon can cut off the current one. No-op when audio is
+    unavailable.
+    """
+    try:
+        sd = _require_sd()
+    except AudioUnavailableError:
+        return
+    sd.stop()

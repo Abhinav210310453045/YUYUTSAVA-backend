@@ -332,6 +332,186 @@ MIGRATIONS: list[tuple[int, str]] = [
         CREATE INDEX IF NOT EXISTS skills_agent_idx ON skills (agent);
         """,
     ),
+    (
+        9,
+        # Phase 2: give the events DB (events/store.py) and the interrupts audit
+        # log (storage/interrupts.py) a Postgres home so the SQLite-only tables
+        # can fail over to a SQLite *buffer* and drain back here on recovery
+        # (storage/routing). Mirrors the SQLite DDL exactly so the two backends
+        # are wire-identical: TEXT-JSON -> JSONB, REAL (epoch seconds) -> DOUBLE
+        # PRECISION (NOT timestamptz — values must round-trip unchanged through
+        # the buffer). FKs: proposals.event_id -> event_payloads CASCADE;
+        # decisions.proposal_id -> proposals SET NULL; decisions.event_id is
+        # deliberately loose (the blob sweeper deletes event payloads);
+        # interrupts.thread_id -> threads CASCADE (ensure_thread() before insert).
+        """
+        CREATE TABLE IF NOT EXISTS event_payloads (
+            event_id     TEXT PRIMARY KEY,
+            topic        TEXT NOT NULL,
+            ts           DOUBLE PRECISION NOT NULL,
+            payload_json JSONB NOT NULL,
+            blob_path    TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_event_payloads_ts ON event_payloads (ts);
+
+        CREATE TABLE IF NOT EXISTS proposals (
+            proposal_id  TEXT PRIMARY KEY,
+            event_id     TEXT NOT NULL,
+            topic        TEXT NOT NULL,
+            summary      TEXT NOT NULL,
+            proposed     TEXT NOT NULL,
+            subagent     TEXT NOT NULL,
+            urgency      INTEGER NOT NULL,
+            created_ts   DOUBLE PRECISION NOT NULL,
+            expires_ts   DOUBLE PRECISION NOT NULL,
+            status       TEXT NOT NULL CHECK (status IN ('pending','approved','skipped','expired','modified')),
+            session_id   TEXT,
+            agent_path   TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_proposals_status ON proposals (status, expires_ts);
+        CREATE INDEX IF NOT EXISTS idx_proposals_session ON proposals (session_id);
+
+        CREATE TABLE IF NOT EXISTS decisions (
+            decision_id    TEXT PRIMARY KEY,
+            proposal_id    TEXT,
+            event_id       TEXT NOT NULL,
+            outcome        TEXT NOT NULL,
+            action_summary TEXT,
+            ts             DOUBLE PRECISION NOT NULL,
+            session_id     TEXT,
+            agent_path     TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_decisions_ts ON decisions (ts);
+
+        CREATE TABLE IF NOT EXISTS consent_rules (
+            rule_id     TEXT PRIMARY KEY,
+            topic_glob  TEXT NOT NULL,
+            match_json  JSONB NOT NULL,
+            decision    TEXT NOT NULL CHECK (decision IN ('auto_approve','auto_skip')),
+            created_ts  DOUBLE PRECISION NOT NULL,
+            expires_ts  DOUBLE PRECISION
+        );
+        CREATE INDEX IF NOT EXISTS idx_consent_rules_topic ON consent_rules (topic_glob);
+
+        CREATE TABLE IF NOT EXISTS tool_call_counters (
+            tool_name  TEXT NOT NULL,
+            day        TEXT NOT NULL,
+            count      INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (tool_name, day)
+        );
+
+        CREATE TABLE IF NOT EXISTS user_prefs (
+            key        TEXT PRIMARY KEY,
+            value_json JSONB NOT NULL,
+            updated_ts DOUBLE PRECISION NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS consent_grants (
+            grant_id    TEXT PRIMARY KEY,
+            domain      TEXT NOT NULL,
+            subject_key TEXT NOT NULL,
+            decision    TEXT NOT NULL,
+            scope       TEXT NOT NULL,
+            scope_ref   TEXT NOT NULL,
+            created_ts  DOUBLE PRECISION NOT NULL,
+            expires_ts  DOUBLE PRECISION
+        );
+        CREATE INDEX IF NOT EXISTS idx_consent_grants_domain ON consent_grants (domain, scope_ref);
+
+        CREATE TABLE IF NOT EXISTS interrupts (
+            id                TEXT PRIMARY KEY,
+            session_id        TEXT NOT NULL,
+            thread_id         TEXT NOT NULL,
+            agent_path        TEXT NOT NULL,
+            requesting_agent  TEXT,
+            parent_agent      TEXT,
+            invocation_mode   TEXT NOT NULL,
+            kind              TEXT NOT NULL,
+            operation         TEXT,
+            paths_json        JSONB,
+            zone              TEXT,
+            risk_level        TEXT,
+            reason            TEXT,
+            question          TEXT,
+            payload_json      JSONB NOT NULL,
+            outcome           TEXT,
+            user_response     TEXT,
+            created_at        DOUBLE PRECISION NOT NULL,
+            resolved_at       DOUBLE PRECISION
+        );
+        CREATE INDEX IF NOT EXISTS idx_interrupts_session ON interrupts (session_id);
+        CREATE INDEX IF NOT EXISTS idx_interrupts_agent_path ON interrupts (agent_path);
+        CREATE INDEX IF NOT EXISTS idx_interrupts_created_at ON interrupts (created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_interrupts_unresolved ON interrupts (session_id, resolved_at);
+
+        DO $$ BEGIN
+            ALTER TABLE proposals ADD CONSTRAINT proposals_event_fk
+                FOREIGN KEY (event_id) REFERENCES event_payloads (event_id)
+                ON DELETE CASCADE NOT VALID;
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+        ALTER TABLE proposals VALIDATE CONSTRAINT proposals_event_fk;
+
+        DO $$ BEGIN
+            ALTER TABLE decisions ADD CONSTRAINT decisions_proposal_fk
+                FOREIGN KEY (proposal_id) REFERENCES proposals (proposal_id)
+                ON DELETE SET NULL NOT VALID;
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+        ALTER TABLE decisions VALIDATE CONSTRAINT decisions_proposal_fk;
+
+        DO $$ BEGIN
+            ALTER TABLE interrupts ADD CONSTRAINT interrupts_thread_fk
+                FOREIGN KEY (thread_id) REFERENCES threads (thread_id)
+                ON DELETE CASCADE NOT VALID;
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+        ALTER TABLE interrupts VALIDATE CONSTRAINT interrupts_thread_fk;
+        """,
+    ),
+    (
+        10,
+        # Voice interface: tag each session row with the interface that created
+        # it ("cli" | "voice") so the Sessions UI splits voice vs CLI off a DB
+        # column. Mirrors SqliteSessionStore v2 (storage/sessions/sqlite_impl.py).
+        # The threads table already carries an origin; this denormalizes it onto
+        # sessions so the list query needs no JOIN.
+        """
+        ALTER TABLE sessions ADD COLUMN IF NOT EXISTS origin TEXT NOT NULL DEFAULT 'cli';
+        CREATE INDEX IF NOT EXISTS sessions_origin_updated_idx
+            ON sessions (origin, updated_at DESC);
+        """,
+    ),
+    (
+        11,
+        # Phase 6b: voice-conversation surface. One row per spoken turn (role +
+        # text + a reference to the synthesized TTS audio) so a resumed voice
+        # session can be re-rendered AND replayed. Distinct from
+        # transcript_messages (which carries the verbatim LangChain record incl.
+        # tool calls) — this is the thin chat-bubble list the Voice UI renders.
+        # Mirrors SqliteVoiceMessageStore._SCHEMA_SQL (storage/voice_store.py).
+        # Audio bytes live on disk (blobs/voice/); the row holds the path. These
+        # are session-scoped user history, dropped on session delete via the
+        # thread FK CASCADE — NOT aged out by the blob TTL sweeper.
+        """
+        CREATE TABLE IF NOT EXISTS voice_messages (
+            seq             BIGSERIAL PRIMARY KEY,
+            thread_id       TEXT NOT NULL,
+            role            TEXT NOT NULL,
+            modality        TEXT NOT NULL,
+            text            TEXT NOT NULL DEFAULT '',
+            audio_blob_path TEXT,
+            sample_rate     INTEGER,
+            created_ts      TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS voice_messages_thread_idx
+            ON voice_messages (thread_id, seq);
+
+        DO $$ BEGIN
+            ALTER TABLE voice_messages ADD CONSTRAINT voice_messages_thread_fk
+                FOREIGN KEY (thread_id) REFERENCES threads (thread_id)
+                ON DELETE CASCADE NOT VALID;
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+        ALTER TABLE voice_messages VALIDATE CONSTRAINT voice_messages_thread_fk;
+        """,
+    ),
 ]
 
 

@@ -31,13 +31,13 @@ import shutil
 import tempfile
 from pathlib import Path
 
+from yuyutsava.audio_io import Announcer
 from yuyutsava.daemon.channels import (
     AskPrompt, ChannelEvent, LogPayload, ProposalDecision, UserChannel,
 )
 from yuyutsava.storage.events import Proposal
-from yuyutsava.io.audio import AudioUnavailableError, capture_wav, play_wav
+from yuyutsava.io.audio import AudioUnavailableError, capture_wav
 from yuyutsava.io.stt import STT
-from yuyutsava.io.tts import TTS
 
 logger = logging.getLogger("yuyutsava.daemon.voice_channel")
 
@@ -61,8 +61,11 @@ class VoiceChannel(UserChannel):
 
     name = "voice"
 
-    def __init__(self, tts: TTS, stt: STT) -> None:
-        self._tts = tts
+    def __init__(self, announcer: Announcer, stt: STT) -> None:
+        # Output (speaking + earcons) goes through the shared Announcer so the
+        # sound layer is decoupled and reusable; this channel only adds the STT
+        # *input* side on top.
+        self._announcer = announcer
         self._stt = stt
         self._tmp = Path(tempfile.mkdtemp(prefix="yuyutsava_voice_"))
 
@@ -71,15 +74,11 @@ class VoiceChannel(UserChannel):
     # ------------------------------------------------------------------ #
 
     async def _speak(self, text: str) -> None:
-        """Synthesize ``text`` to a temp WAV and play it. Logs but never raises."""
+        """Speak ``text`` via the shared Announcer. Logs but never raises."""
         if not text.strip():
             return
-        out = self._tmp / f"tts_{id(text)}.wav"
         try:
-            await self._tts.synthesize(text, out)
-            await play_wav(out)
-        except AudioUnavailableError:
-            logger.debug("audio unavailable for TTS — silent")
+            await self._announcer.say(text)
         except Exception:
             logger.warning("TTS speak failed", exc_info=True)
 
@@ -153,6 +152,10 @@ class VoiceChannel(UserChannel):
 
     async def shutdown(self) -> None:
         try:
+            await self._announcer.aclose()
+        except Exception:
+            pass
+        try:
             shutil.rmtree(self._tmp, ignore_errors=True)
         except Exception:
             pass
@@ -167,9 +170,13 @@ def voice_channel_from_env() -> VoiceChannel:
     """Build a VoiceChannel from environment variables.
 
     STT_PROVIDER / TTS_PROVIDER select backends (default: faster_whisper / piper).
-    Raises RuntimeError if required env vars (e.g. PIPER_MODEL) are absent.
+    Raises RuntimeError if required env vars (e.g. PIPER_MODEL) are absent — so a
+    misconfigured voice channel fails fast at startup rather than going silent.
     """
     from yuyutsava.io.stt import stt_from_env
     from yuyutsava.io.tts import tts_from_env
 
-    return VoiceChannel(tts=tts_from_env(), stt=stt_from_env())
+    # Build TTS eagerly to validate config, then hand it to the Announcer.
+    tts = tts_from_env()
+    announcer = Announcer(tts_factory=lambda: tts)
+    return VoiceChannel(announcer=announcer, stt=stt_from_env())

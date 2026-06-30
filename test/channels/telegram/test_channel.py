@@ -95,7 +95,7 @@ class _FakeTaskRegistry:
 
 
 class _FakeDecisionStore:
-    def try_set_proposal_status(self, proposal_id, *, from_status, to_status):
+    async def try_set_proposal_status(self, proposal_id, *, from_status, to_status):
         return True
 
 
@@ -103,7 +103,7 @@ class _FakePrefs:
     def __init__(self) -> None:
         self.data: dict = {}
 
-    def get(self, key, default=None):
+    async def get(self, key, default=None):
         return self.data.get(key, default)
 
     async def set(self, key, value) -> None:

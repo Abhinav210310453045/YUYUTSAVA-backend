@@ -11,8 +11,9 @@ Public factory:
     Returns only the tools whose provider API key is configured.
     Returns an empty list if no keys are present — safe to call unconditionally.
 
-Tool naming follows the ws_* prefix convention so agents can discover them via:
-  tool_search('ws_*')
+Tool naming follows the ws_* prefix convention; agents discover them via the
+tool catalog and load a schema on demand, e.g. tool_search('select:ws_tavily_search')
+or a keyword search like tool_search('web search').
 """
 
 from __future__ import annotations
@@ -33,8 +34,9 @@ logger = logging.getLogger("yuyutsava.tools.search")
 class _CapEnforcer(Protocol):
     """Anything that can decide whether a tool may be called and record it."""
 
-    def check_and_incr(self, tool_name: str) -> tuple[bool, str]:
+    async def check_and_incr(self, tool_name: str) -> tuple[bool, str]:
         """Return ``(allowed, reason)``. ``reason`` empty when ``allowed=True``."""
+        ...
 
 
 # ---------------------------------------------------------------------------
@@ -88,7 +90,7 @@ def _wrap_with_cap(inner: BaseTool, cap: _CapEnforcer) -> BaseTool:
     original_func = getattr(inner, "func", None)
 
     async def _gated(**kwargs: Any) -> str:
-        allowed, reason = cap.check_and_incr(name)
+        allowed, reason = await cap.check_and_incr(name)
         if not allowed:
             logger.info("search: %s blocked by cap: %s", name, reason)
             return json.dumps({"error": "rate_limited", "tool": name, "reason": reason})
@@ -125,7 +127,7 @@ def _make_tavily_search(api_key: str) -> BaseTool:
     ) -> str:
         """Search the web using Tavily and return results as JSON.
 
-        Use tool_search('ws_*') to confirm this tool is available before calling.
+        Discover via the tool catalog; this tool's prefix is ws_.
 
         Args:
             query:          The search query.
@@ -192,7 +194,7 @@ def _make_exa_tools(api_key: str) -> list[BaseTool]:
     ) -> str:
         """Search the web using Exa's neural or keyword search.
 
-        Use tool_search('ws_*') to confirm this tool is available before calling.
+        Discover via the tool catalog; this tool's prefix is ws_.
         Follow with ws_exa_get_contents to fetch full page text for top results.
 
         Args:

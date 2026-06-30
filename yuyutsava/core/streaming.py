@@ -32,7 +32,7 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 
 from yuyutsava.core.tool_result import guard_tool_result, is_tool_error
-from yuyutsava.core.tracing import get_callback
+from yuyutsava.core.tracing import get_callback, trace_metadata
 from yuyutsava.models.interrupts import (
     PermissionRequestInterrupt,
     TaskRunnerPermissionInterrupt,
@@ -341,9 +341,17 @@ async def astream_agent_iter(
         "recursion_limit": recursion_limit,
         "configurable": {"thread_id": _tid, "agent_path": agent_path},
     }
-    _lf_cb = get_callback(session_id=_tid, run_name=run_name)
+    _lf_cb = get_callback()
     if _lf_cb is not None:
         cfg["callbacks"] = [_lf_cb]
+        cfg["metadata"] = {
+            **(cfg.get("metadata") or {}),
+            **trace_metadata(
+                session_id=_tid,
+                trace_name=run_name,
+                tags=["mode:daemon", f"agent:{agent_path}"],
+            ),
+        }
 
     final_messages: list[Any] = []
     current_input: Any = {"messages": [HumanMessage(content=task)]}
@@ -504,9 +512,13 @@ async def astream_agent(
         "recursion_limit": recursion_limit,
         "configurable": {"thread_id": _tid, "agent_path": agent_path},
     }
-    _lf_cb = get_callback(session_id=_tid, run_name="cli")
+    _lf_cb = get_callback()
     if _lf_cb is not None:
         cfg["callbacks"] = [_lf_cb]
+        cfg["metadata"] = {
+            **(cfg.get("metadata") or {}),
+            **trace_metadata(session_id=_tid, trace_name="cli", tags=["mode:cli"]),
+        }
 
     logger.info(_SEP)
     logger.info("YUYUTSAVA  starting task  thread_id=%s", cfg["configurable"]["thread_id"])

@@ -173,6 +173,22 @@ export function SSEProvider({ children }) {
       // Resolved elsewhere (CLI answer, expiry, watcher auto-reject): drop the card.
       onAskResolved: (data) => dispatch({ type: 'REMOVE_ASK', id: data.ask_id }),
       onProposalResolved: (data) => dispatch({ type: 'REMOVE_PROPOSAL', id: data.proposal_id }),
+      // Wake word detected by the daemon → ask main to pop the voice overlay
+      // (or route to the in-app Voice panel if the window is focused). Main owns
+      // that decision; the renderer just forwards the signal + wake word.
+      onWake: (data) => {
+        // Two-stage wake: stage "open" fires instantly on detection → pop the
+        // overlay; stage "command" carries the same-breath trailing command →
+        // main relays it to the (already-open) overlay to seed the first turn
+        // instead of re-popping. Main owns the overlay-vs-panel decision.
+        try {
+          window.electronAPI?.notifyVoiceWake?.({
+            wakeWord: data?.wake_word || '',
+            stage: data?.stage || 'open',
+            command: data?.command || '',
+          })
+        } catch {}
+      },
       onEvent: (data) => {
         const kind = data.kind || 'log'
         const d = data.data || {}

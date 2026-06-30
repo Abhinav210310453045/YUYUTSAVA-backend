@@ -35,7 +35,9 @@ _TASK_PREVIEW_MAX = 200
 class SqliteSessionStore(BaseSqliteStore):
     """``SessionStore`` impl backed by a single sqlite file via aiosqlite."""
 
-    _SCHEMA_VERSION: ClassVar[int] = 1
+    # v2: added the `origin` column (cli|voice) so the Sessions UI can split
+    # voice vs CLI conversations off a DB column rather than a UI heuristic.
+    _SCHEMA_VERSION: ClassVar[int] = 2
     _META_TABLE: ClassVar[str] = "sessions_meta"
     _SCHEMA_SQL: ClassVar[str] = """
     CREATE TABLE IF NOT EXISTS sessions_meta (
@@ -54,7 +56,8 @@ class SqliteSessionStore(BaseSqliteStore):
         memory_files_count INTEGER NOT NULL DEFAULT 0,
         db_row_bytes       INTEGER NOT NULL DEFAULT 0,
         task_preview       TEXT NOT NULL DEFAULT '',
-        schema_version     INTEGER NOT NULL DEFAULT 1
+        schema_version     INTEGER NOT NULL DEFAULT 1,
+        origin             TEXT NOT NULL DEFAULT 'cli'
     );
 
     CREATE INDEX IF NOT EXISTS idx_sessions_workspace_updated
@@ -62,6 +65,44 @@ class SqliteSessionStore(BaseSqliteStore):
     CREATE INDEX IF NOT EXISTS idx_sessions_updated
         ON sessions(updated_at DESC);
     """
+    # NOTE: the origin index is created in _migrate (not here): _SCHEMA_SQL runs
+    # before _migrate, and on a legacy v1 DB the `origin` column doesn't exist
+    # yet, so an index on it here would fail before the ALTER had a chance to run.
+
+    async def _migrate(self, conn: aiosqlite.Connection) -> None:
+        """Forward-only migrations for existing session DBs.
+
+        v1 -> v2 adds the `origin` column. ``CREATE TABLE IF NOT EXISTS`` in
+        ``_SCHEMA_SQL`` covers fresh DBs; this ALTER covers DBs created before
+        the column existed. We tolerate a duplicate-column error defensively.
+        The origin index is (re)created here, after the column is guaranteed to
+        exist, for both fresh and migrated DBs.
+        """
+        cur = await conn.execute(
+            f"SELECT value FROM {self._META_TABLE} WHERE key=?",
+            (self._META_VERSION_KEY,),
+        )
+        row = await cur.fetchone()
+        await cur.close()
+        current = int(row[0]) if row else 0
+        if current < 2:
+            try:
+                await conn.execute(
+                    "ALTER TABLE sessions ADD COLUMN origin TEXT NOT NULL DEFAULT 'cli'"
+                )
+            except sqlite3.OperationalError as exc:
+                if "duplicate column" not in str(exc).lower():
+                    raise
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sessions_origin_updated "
+            "ON sessions(origin, updated_at DESC)"
+        )
+        if current < self._SCHEMA_VERSION:
+            await conn.execute(
+                f"UPDATE {self._META_TABLE} SET value=? WHERE key=?",
+                (str(self._SCHEMA_VERSION), self._META_VERSION_KEY),
+            )
+        await conn.commit()
 
     # ------------------------------------------------------------------
     # Writes
@@ -73,20 +114,24 @@ class SqliteSessionStore(BaseSqliteStore):
         workspace: Path,
         task: str,
         thread_id: str | None = None,
+        origin: str = "cli",
     ) -> Session:
-        tid = thread_id or mint_thread_id("cli")
+        tid = thread_id or mint_thread_id(origin)
         now = time.time()
         preview = (task or "").strip().replace("\n", " ")[:_TASK_PREVIEW_MAX]
         ws = str(workspace.resolve())
-        row = (tid, tid, ws, "running", now, now, 0, 0, 0, preview, self._SCHEMA_VERSION)
+        row = (
+            tid, tid, ws, "running", now, now, 0, 0, 0, preview,
+            self._SCHEMA_VERSION, origin,
+        )
 
         async def _do(conn: aiosqlite.Connection) -> None:
             await conn.execute(
                 """INSERT INTO sessions
                    (id, thread_id, workspace, status, created_at, updated_at,
                     message_count, memory_files_count, db_row_bytes,
-                    task_preview, schema_version)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    task_preview, schema_version, origin)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 row,
             )
 
@@ -95,7 +140,7 @@ class SqliteSessionStore(BaseSqliteStore):
             id=tid, thread_id=tid, workspace=Path(ws), status="running",
             created_at=now, updated_at=now, message_count=0,
             memory_files_count=0, db_row_bytes=0, task_preview=preview,
-            schema_version=self._SCHEMA_VERSION,
+            schema_version=self._SCHEMA_VERSION, origin=origin,
         )
 
     async def touch(
@@ -177,7 +222,7 @@ class SqliteSessionStore(BaseSqliteStore):
             cur = await conn.execute(
                 "SELECT id, thread_id, workspace, status, created_at, updated_at, "
                 "message_count, memory_files_count, db_row_bytes, task_preview, "
-                "schema_version FROM sessions WHERE id=?",
+                "schema_version, origin FROM sessions WHERE id=?",
                 (session_id,),
             )
             row = await cur.fetchone()
@@ -193,6 +238,7 @@ class SqliteSessionStore(BaseSqliteStore):
         limit: int = 100,
         order_by: str = "updated_at",
         cursor: float | None = None,
+        origin: str | None = None,
     ) -> list[Session]:
         await self._ensure_schema()
         if order_by not in ("updated_at", "created_at"):
@@ -202,13 +248,16 @@ class SqliteSessionStore(BaseSqliteStore):
         sql = (
             "SELECT id, thread_id, workspace, status, created_at, updated_at, "
             "message_count, memory_files_count, db_row_bytes, task_preview, "
-            "schema_version FROM sessions"
+            "schema_version, origin FROM sessions"
         )
         clauses: list[str] = []
         params: tuple[Any, ...] = ()
         if workspace is not None:
             clauses.append("workspace=?")
             params = (*params, str(workspace.resolve()))
+        if origin is not None:
+            clauses.append("origin=?")
+            params = (*params, origin)
         if cursor is not None:
             clauses.append(f"{order_by} < ?")
             params = (*params, float(cursor))
@@ -230,13 +279,14 @@ def _row_to_session(row: Any) -> Session:
     reads return rows that support both tuple-unpacking and key lookup.
     """
     (
-        sid, tid, ws, status, created, updated, msgs, mems, dbbytes, preview, ver,
+        sid, tid, ws, status, created, updated, msgs, mems, dbbytes, preview,
+        ver, origin,
     ) = row
     return Session(
         id=sid, thread_id=tid, workspace=Path(ws), status=status,
         created_at=created, updated_at=updated, message_count=msgs,
         memory_files_count=mems, db_row_bytes=dbbytes, task_preview=preview,
-        schema_version=ver,
+        schema_version=ver, origin=origin,
     )
 
 

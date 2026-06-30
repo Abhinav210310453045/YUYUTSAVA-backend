@@ -72,6 +72,18 @@ class VoiceSource(EventSource):
             "--stt-provider", stt_provider,
             "--sample-rate", str(sample_rate),
         ]
+
+        # Wake config from params (set by the Settings UI / onboarding) wins over
+        # the WAKE_WORDS env, so a hot-reloaded events config applies the chosen
+        # wake word without a daemon restart. Accept a list or comma string.
+        wake_words = ctx.params.get("wake_words")
+        if isinstance(wake_words, (list, tuple)):
+            wake_words = ",".join(str(w).strip() for w in wake_words if str(w).strip())
+        if wake_words:
+            cmd += ["--wake-words", str(wake_words)]
+        wake_threshold = ctx.params.get("wake_threshold")
+        if wake_threshold not in (None, ""):
+            cmd += ["--wake-threshold", str(wake_threshold)]
         logger.info(
             "voice source: spawning subprocess (capture=%.1fs stt=%s)",
             capture_sec, stt_provider,
@@ -148,29 +160,51 @@ class VoiceSource(EventSource):
         if kind == "error":
             logger.error("voice subprocess error: %s", msg.get("msg"))
             return
-        if kind != "wake":
+        # Two-stage wake protocol:
+        #   "wake"         — fired instantly on detection; pops the overlay.
+        #   "wake_command" — the trailing same-breath command (may be empty); the
+        #                    overlay seeds it as the first turn (or just listens).
+        # Both ride the ``voice.wake`` topic, differentiated by the ``stage`` hint
+        # so the wake bridge can pop vs. seed without a second bus topic.
+        if kind not in ("wake", "wake_command"):
             logger.debug("voice: unknown kind %r", kind)
             return
 
+        stage = "command" if kind == "wake_command" else "open"
         blob_path = msg.get("blob_path")
         transcript = msg.get("transcript") or ""
         wake_word = msg.get("wake_word") or ""
         duration_sec = msg.get("duration_sec") or 0.0
 
-        summary = f"voice wake: {transcript!r}" if transcript else f"voice wake ({wake_word})"
+        if stage == "command":
+            summary = f"voice command: {transcript!r}" if transcript else "voice command (none)"
+        else:
+            summary = f"voice wake ({wake_word})"
         payload = {
+            "stage": stage,
             "blob_path": blob_path,
             "transcript": transcript,
             "wake_word": wake_word,
             "duration_sec": duration_sec,
             "ts": msg.get("ts"),
         }
+        hints = {
+            "wake_word": wake_word,
+            "stage": stage,
+            "has_transcript": "1" if transcript else "0",
+        }
+        # The wake bridge consumes only the (small) bus envelope — summary + hints,
+        # not the persisted payload — so the trailing command text must ride in
+        # hints to reach the overlay without a payload-store round-trip. Bounded so
+        # the envelope stays prompt-sized.
+        if stage == "command" and transcript:
+            hints["command"] = transcript[:200]
         await ctx.emit(
             topic="voice.wake",
             summary=summary,
             payload=payload,
             severity=2,
-            hints={"wake_word": wake_word, "has_transcript": "1" if transcript else "0"},
+            hints=hints,
             blob_path=blob_path,
         )
 

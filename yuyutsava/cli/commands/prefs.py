@@ -31,7 +31,7 @@ def run_prefs(argv: list[str]) -> int:
         prefs = PrefsStore(store)
         try:
             if sub == "list":
-                all_prefs = prefs.all()
+                all_prefs = await prefs.all()
                 if not all_prefs:
                     print("(no preferences set)")
                 else:
@@ -43,7 +43,7 @@ def run_prefs(argv: list[str]) -> int:
                 if len(argv) < 2:
                     print("Usage: yuyutsava prefs get <key>", file=sys.stderr)
                     return 2
-                val = prefs.get(argv[1])
+                val = await prefs.get(argv[1])
                 if val is None:
                     print(f"(not set: {argv[1]})")
                 else:

@@ -47,6 +47,35 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('tray:navigate', handler)
   },
 
+  // ── Voice overlay / hotkey ──────────────────────────────────────────
+  // Renderer (SSE) tells main a wake word fired → main pops overlay or routes
+  // to the Voice panel.
+  notifyVoiceWake: (payload) => ipcRenderer.send('voice:wake', payload || {}),
+  // Overlay renderer asks main to hide it (auto-dismiss / user gesture).
+  closeOverlay: () => ipcRenderer.send('overlay:close'),
+  // Ask main to re-register the global hotkey (after a settings change).
+  rebindVoiceHotkey: () => ipcRenderer.send('voice:rebindHotkey'),
+  // Overlay: main signals "you are visible now, start listening".
+  onOverlayActivate: (cb) => {
+    const handler = (_event, payload) => cb(payload)
+    ipcRenderer.on('overlay:activate', handler)
+    return () => ipcRenderer.removeListener('overlay:activate', handler)
+  },
+  // Main window: a hotkey/wake while focused routes here (open + start voice).
+  onVoiceActivate: (cb) => {
+    const handler = (_event, payload) => cb(payload)
+    ipcRenderer.on('voice:activate', handler)
+    return () => ipcRenderer.removeListener('voice:activate', handler)
+  },
+  // Overlay: main relays the same-breath trailing command (stage "command") so
+  // the overlay seeds it as the first turn, then starts its mic. An empty
+  // command means "no same-breath speech — just start listening".
+  onOverlayCommand: (cb) => {
+    const handler = (_event, payload) => cb(payload)
+    ipcRenderer.on('overlay:command', handler)
+    return () => ipcRenderer.removeListener('overlay:command', handler)
+  },
+
   // Daemon log stream
   onDaemonLog: (cb) => {
     ipcRenderer.on('daemon:log', (_event, line) => cb(line))

@@ -42,6 +42,10 @@ class Session:
     db_row_bytes: int
     task_preview: str
     schema_version: int = 1
+    # Which human↔agent interface produced this session: "cli" (terminal /
+    # Electron text chat) or "voice" (the voice agent). The Sessions UI splits
+    # on this column, so the distinction is DB-backed, not a UI artifact.
+    origin: str = "cli"
 
 
 # ---------------------------------------------------------------------------

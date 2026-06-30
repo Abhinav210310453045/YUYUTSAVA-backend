@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react'
 import SettingsSection from './SettingsSection'
 import SettingsField from './SettingsField'
 import WatchedDirsEditor from './WatchedDirsEditor'
+import WakeWordsEditor from './WakeWordsEditor'
 import { getConfigSchema } from '../../api/client'
 
 function DaemonBtn({ label, color, borderColor, bg, disabled, onClick }) {
@@ -159,6 +160,23 @@ export default function SettingsPanel() {
   function renderField(v) {
     // Conditional visibility (e.g. provider-specific keys, postgres-only fields).
     if (v.depends_key && (settings[v.depends_key] ?? '') !== v.depends_value) return null
+    // Wake words get a dedicated list editor (add/remove + presets) instead of a
+    // raw comma-separated text box; it hot-applies via the voice events source.
+    if (v.key === 'WAKE_WORDS') {
+      return (
+        <div key={v.key} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <label style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', letterSpacing: '0.04em' }}>
+            {v.label}
+            <span style={{ color: 'var(--text-dim)', marginLeft: 6, fontSize: 10 }}>{v.key}</span>
+          </label>
+          <WakeWordsEditor
+            value={settings.WAKE_WORDS}
+            threshold={settings.WAKE_THRESHOLD}
+            onChange={onChange}
+          />
+        </div>
+      )
+    }
     const options = (v.options && v.options.length)
       ? v.options.map(o => ({ value: o, label: o === '' ? '(default)' : o }))
       : undefined

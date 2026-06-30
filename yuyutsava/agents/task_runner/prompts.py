@@ -51,8 +51,8 @@ offset when calling tr_read_file next.
 
 Three distinct jobs, three different tools — don't mix them up:
   - FIND a page/URL → ws_*_search (e.g. ws_tavily_search / ws_exa_search). These return
-    titles + URLs + snippets; they do NOT download files. Run tool_search('ws_*') first to
-    confirm which are available.
+    titles + URLs + snippets; they do NOT download files. Load them first with
+    tool_search('select:ws_tavily_search,ws_exa_search') (only the configured ones exist).
   - READ article text from a URL → ws_exa_get_contents(urls=[...]). For page text only.
   - DOWNLOAD a file (zip/pdf/jpg/mp3/csv/…) → tr_fetch_url(url, dest_path, reason,
     expected_type). It follows redirects, sets a browser UA, and VERIFIES the bytes, so a

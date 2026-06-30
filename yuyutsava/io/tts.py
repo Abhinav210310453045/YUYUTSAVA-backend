@@ -15,7 +15,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import shutil
 import subprocess
+import sys
 from abc import ABC, abstractmethod
 from pathlib import Path
 
@@ -122,9 +124,63 @@ class ElevenLabsTTS(TTS):
         return cls(api_key=key, voice_id=voice_id)
 
 
+class MacSayTTS(TTS):
+    """Zero-config local TTS via the macOS ``say`` command.
+
+    Writes a 16-bit mono WAV (decoded by the stdlib ``wave`` path), so it needs
+    no model download or extra deps — the sensible default on macOS when no
+    Piper model is configured. Voice via ``MAC_SAY_VOICE`` (e.g. "Samantha").
+    """
+
+    def __init__(self, voice: str | None = None, sample_rate: int = 22_050) -> None:
+        self._voice = voice
+        self._sample_rate = sample_rate
+
+    async def synthesize(self, text: str, output_path: Path) -> None:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        cmd = ["say", "-o", str(output_path),
+               "--data-format", f"LEI16@{self._sample_rate}",
+               "--file-format", "WAVE"]
+        if self._voice:
+            cmd += ["-v", self._voice]
+
+        loop = asyncio.get_running_loop()
+
+        def _run() -> None:
+            proc = subprocess.run(cmd, input=text.encode("utf-8"), capture_output=True, timeout=30)
+            if proc.returncode != 0:
+                raise RuntimeError(
+                    f"say exited {proc.returncode}: "
+                    f"{proc.stderr.decode('utf-8', 'replace')[:200]}"
+                )
+
+        await loop.run_in_executor(None, _run)
+
+    @classmethod
+    def from_env(cls) -> MacSayTTS:
+        voice = os.environ.get("MAC_SAY_VOICE", "").strip() or None
+        return cls(voice=voice)
+
+
+def _say_available() -> bool:
+    return sys.platform == "darwin" and shutil.which("say") is not None
+
+
 def tts_from_env() -> TTS:
-    """Build a TTS instance from the environment. Default: ``piper`` (local)."""
+    """Build a TTS instance from the environment.
+
+    ``TTS_PROVIDER`` selects the backend (``piper`` default, ``elevenlabs``,
+    ``say``/``macos``). When the default ``piper`` is selected but no
+    ``PIPER_MODEL`` is set, fall back to the macOS ``say`` command if available
+    (zero-config spoken replies) before erroring.
+    """
     provider = os.environ.get("TTS_PROVIDER", "piper").strip().lower()
     if provider == "elevenlabs":
         return ElevenLabsTTS.from_env()
+    if provider in ("say", "macos", "mac"):
+        return MacSayTTS.from_env()
+    # provider == "piper" (default)
+    if not os.environ.get("PIPER_MODEL", "").strip() and _say_available():
+        logger.info("PIPER_MODEL unset — using macOS 'say' for TTS (set PIPER_MODEL or TTS_PROVIDER to override)")
+        return MacSayTTS.from_env()
     return PiperTTS.from_env()

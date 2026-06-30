@@ -50,6 +50,11 @@ export class SSEClient {
       try { this.handlers.onProposalResolved?.(JSON.parse(e.data)) } catch {}
     })
 
+    // Wake word fired on the daemon — surface to the voice overlay/panel.
+    this._es.addEventListener('wake', (e) => {
+      try { this.handlers.onWake?.(JSON.parse(e.data)) } catch {}
+    })
+
     this._es.onerror = () => {
       this._es?.close()
       this._es = null

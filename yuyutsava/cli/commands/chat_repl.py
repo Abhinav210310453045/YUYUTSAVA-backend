@@ -40,7 +40,7 @@ from yuyutsava.cli.stream_smoother import TokenSmoother
 from yuyutsava.consent import decision_token as _decision_token
 from yuyutsava.core.config import DockerSettings, LlmSettings, LocalSettings, SearchConfig
 from yuyutsava.core.engine import cleanup_local_sandbox, silence_plumbing_loggers
-from yuyutsava.core.streaming import StreamEvent, _normalize_yes_no, astream_agent_iter
+from yuyutsava.core.streaming import StreamEvent
 from yuyutsava.storage.paths import state_dir
 from yuyutsava.storage.sessions import (
     SessionsSettings,
@@ -1010,16 +1010,25 @@ async def run_chat_repl(
                 await cli_watcher.start()
 
         try:
-            # Resolve initial session: --resume / --continue / fresh.
-            from yuyutsava.sessions.runner import _resolve_session  # internal but stable
+            # Resolve initial session (--resume / --continue / fresh) and wrap
+            # it in the shared conversation engine. The terminal is just one IO
+            # adapter over ConversationService — the daemon's text/voice chats
+            # are others. ``ChatRenderer`` + ``_ask_handler`` below are this
+            # adapter's output + HITL bridge.
+            from yuyutsava.conversation import ConversationService
 
-            session, resuming = await _resolve_session(
-                store,
+            convo, resuming = await ConversationService.resolve(
+                store=store,
+                bundle=bundle,
                 workspace=workspace,
-                task="(interactive chat)",
+                origin="cli",
                 resume_id=resume_id,
                 continue_latest=continue_latest,
+                agent_path="cli",
+                recursion_limit=recursion_limit,
+                task="(interactive chat)",
             )
+            session = convo.session
 
             # Surface any langgraph-api upgrade/support notice once, cleanly,
             # right above the banner rather than mid-chat.
@@ -1106,32 +1115,23 @@ async def run_chat_repl(
                     continue
                 if slash_result == "new":
                     # Rotate to a brand-new session row + thread_id in-process.
-                    await store.update_status(session.id, "done")
-                    session, _ = await _resolve_session(
-                        store,
-                        workspace=workspace,
-                        task="(interactive chat)",
-                        resume_id=None,
-                        continue_latest=False,
-                    )
+                    session = await convo.new_session(task="(interactive chat)")
                     _print_banner(
                         session_id=session.id, workspace=workspace, resuming=False
                     )
                     continue
 
-                # Run one turn through the structured-event stream.
+                # Run one turn through the shared conversation engine. The
+                # renderer is the terminal output adapter; _ask_handler is the
+                # terminal HITL bridge.
                 try:
-                    async for ev in astream_agent_iter(
-                        bundle.agent,
+                    await convo.run_turn(
                         user_input,
-                        thread_id=session.thread_id,
-                        recursion_limit=recursion_limit,
+                        on_event=renderer.render,
                         ask_handler=_ask_handler,
                         run_name="cli-chat",
-                        agent_path="cli",
                         keep_full_payloads=True,
-                    ):
-                        await renderer.render(ev)
+                    )
                 except KeyboardInterrupt:
                     await renderer.end_of_turn()
                     print(
@@ -1146,9 +1146,9 @@ async def run_chat_repl(
 
                 await renderer.end_of_turn()
 
-            # Loop exited — mark the session done.
+            # Loop exited — flush bookkeeping and mark the session done.
             try:
-                await store.update_status(session.id, "done")
+                await convo.finish("done")
             except Exception:
                 pass
 

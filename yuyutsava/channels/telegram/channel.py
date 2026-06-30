@@ -149,7 +149,7 @@ class TelegramChannelPlugin(ChannelPlugin):
     async def start(self, inbound: InboundSink) -> None:
         self._sink = inbound
         self._stopped.clear()
-        stored = inbound.get_state(OFFSET_STATE_KEY, None)
+        stored = await inbound.get_state(OFFSET_STATE_KEY, None)
         self._offset = int(stored) if isinstance(stored, (int, float, str)) and str(stored).strip() else None
         self._poll_task = asyncio.create_task(self._poll_loop(), name="telegram-poll")
         self._flush_task = asyncio.create_task(self._flush_loop(), name="telegram-flush")

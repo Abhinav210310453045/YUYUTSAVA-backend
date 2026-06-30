@@ -15,17 +15,46 @@ import json
 import logging
 import time
 import uuid
-from typing import ClassVar
+from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING, ClassVar
 
 import aiosqlite
 
 from yuyutsava.storage.base import BaseSqliteStore
 from yuyutsava.storage.models import InterruptRecord
 
+if TYPE_CHECKING:
+    from yuyutsava.storage.pg.pool import PgPool
+
 logger = logging.getLogger("yuyutsava.storage.interrupts")
 
 
-class InterruptsStore(BaseSqliteStore):
+class InterruptsStore(ABC):
+    """Backend-agnostic interface for the HITL audit log."""
+
+    @abstractmethod
+    async def record(self, record: InterruptRecord) -> str: ...
+
+    @abstractmethod
+    async def resolve(
+        self, row_id: str, *, outcome: str, user_response: str | None = None
+    ) -> None: ...
+
+    @abstractmethod
+    async def mark_orphaned_for_session(self, session_id: str) -> int: ...
+
+    @abstractmethod
+    async def list_for_session(
+        self, session_id: str, *, limit: int = 100
+    ) -> list[InterruptRecord]: ...
+
+    @abstractmethod
+    async def list_recent(
+        self, *, agent_path_prefix: str | None = None, limit: int = 50
+    ) -> list[InterruptRecord]: ...
+
+
+class SqliteInterruptsStore(BaseSqliteStore, InterruptsStore):
     """Async SQLite store for the HITL audit log."""
 
     _SCHEMA_VERSION: ClassVar[int] = 1
@@ -262,4 +291,144 @@ def _row_to_record(row: aiosqlite.Row) -> InterruptRecord:
         user_response=row["user_response"],
         created_at=row["created_at"],
         resolved_at=row["resolved_at"],
+    )
+
+
+# ---------------------------------------------------------------------------
+# Postgres twin
+# ---------------------------------------------------------------------------
+
+_INTERRUPT_COLS = (
+    "id", "session_id", "thread_id", "agent_path", "requesting_agent", "parent_agent",
+    "invocation_mode", "kind", "operation", "paths_json", "zone", "risk_level",
+    "reason", "question", "payload_json", "outcome", "user_response",
+    "created_at", "resolved_at",
+)
+
+
+class PgInterruptsStore(InterruptsStore):
+    """Postgres twin of :class:`SqliteInterruptsStore` (migration v9 ``interrupts``).
+
+    Mirrors the SQLite behaviour, including the best-effort ``record``/``resolve``
+    contract (a store failure never blocks the user prompt). ``thread_id`` is FK'd
+    to ``threads``; :func:`ensure_thread` runs before insert.
+    """
+
+    def __init__(self, pool: "PgPool") -> None:
+        self._pool = pool
+
+    async def record(self, record: InterruptRecord) -> str:
+        from yuyutsava.storage.pg.threads import ensure_thread
+
+        row_id = str(uuid.uuid4())
+        try:
+            paths_json = json.dumps(record.paths) if record.paths is not None else None
+        except (TypeError, ValueError):
+            paths_json = None
+        try:
+            payload_json = json.dumps(record.payload, default=str)
+        except (TypeError, ValueError):
+            payload_json = "{}"
+        now = time.time()
+        try:
+            async with self._pool.connection() as conn:
+                await ensure_thread(conn, record.thread_id)
+                await conn.execute(
+                    """
+                    INSERT INTO interrupts (
+                        id, session_id, thread_id, agent_path,
+                        requesting_agent, parent_agent, invocation_mode, kind,
+                        operation, paths_json, zone, risk_level, reason, question,
+                        payload_json, outcome, user_response, created_at, resolved_at
+                    ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s,%s::jsonb,NULL,NULL,%s,NULL)
+                    """,
+                    (
+                        row_id, record.session_id, record.thread_id, record.agent_path,
+                        record.requesting_agent, record.parent_agent,
+                        record.invocation_mode, record.kind,
+                        record.operation, paths_json, record.zone, record.risk_level,
+                        record.reason, record.question, payload_json, now,
+                    ),
+                )
+            return row_id
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("PgInterruptsStore.record failed: %s", exc)
+            return ""
+
+    async def resolve(
+        self, row_id: str, *, outcome: str, user_response: str | None = None
+    ) -> None:
+        if not row_id:
+            return
+        try:
+            async with self._pool.connection() as conn:
+                await conn.execute(
+                    "UPDATE interrupts SET outcome=%s, user_response=%s, resolved_at=%s WHERE id=%s",
+                    (outcome, user_response, time.time(), row_id),
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("PgInterruptsStore.resolve failed: %s", exc)
+
+    async def mark_orphaned_for_session(self, session_id: str) -> int:
+        if not session_id:
+            return 0
+        try:
+            async with self._pool.connection() as conn:
+                cur = await conn.execute(
+                    "UPDATE interrupts SET outcome='orphaned', resolved_at=%s "
+                    "WHERE session_id=%s AND resolved_at IS NULL",
+                    (time.time(), session_id),
+                )
+                return cur.rowcount or 0
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("PgInterruptsStore.mark_orphaned_for_session failed: %s", exc)
+            return 0
+
+    async def list_for_session(
+        self, session_id: str, *, limit: int = 100
+    ) -> list[InterruptRecord]:
+        async with self._pool.connection() as conn:
+            cur = await conn.execute(
+                f"SELECT {', '.join(_INTERRUPT_COLS)} FROM interrupts "
+                "WHERE session_id=%s ORDER BY created_at DESC LIMIT %s",
+                (session_id, int(limit)),
+            )
+            rows = await cur.fetchall()
+        return [_pg_row_to_record(r) for r in rows]
+
+    async def list_recent(
+        self, *, agent_path_prefix: str | None = None, limit: int = 50
+    ) -> list[InterruptRecord]:
+        async with self._pool.connection() as conn:
+            if agent_path_prefix:
+                cur = await conn.execute(
+                    f"SELECT {', '.join(_INTERRUPT_COLS)} FROM interrupts "
+                    "WHERE agent_path LIKE %s ORDER BY created_at DESC LIMIT %s",
+                    (f"{agent_path_prefix}%", int(limit)),
+                )
+            else:
+                cur = await conn.execute(
+                    f"SELECT {', '.join(_INTERRUPT_COLS)} FROM interrupts "
+                    "ORDER BY created_at DESC LIMIT %s",
+                    (int(limit),),
+                )
+            rows = await cur.fetchall()
+        return [_pg_row_to_record(r) for r in rows]
+
+
+def _pg_row_to_record(row: tuple) -> InterruptRecord:
+    """Rehydrate from a positional ``_INTERRUPT_COLS`` Postgres row (jsonb parsed)."""
+    d = dict(zip(_INTERRUPT_COLS, row))
+    payload = d["payload_json"] if isinstance(d["payload_json"], dict) else {}
+    paths_raw = d["paths_json"]
+    paths = list(paths_raw) if isinstance(paths_raw, (list, tuple)) else None
+    return InterruptRecord(
+        session_id=d["session_id"], thread_id=d["thread_id"],
+        invocation_mode=d["invocation_mode"], payload=payload, kind=d["kind"],
+        agent_path=d["agent_path"], requesting_agent=d["requesting_agent"],
+        parent_agent=d["parent_agent"], operation=d["operation"], paths=paths,
+        zone=d["zone"], risk_level=d["risk_level"], reason=d["reason"],
+        question=d["question"], id=d["id"], outcome=d["outcome"],
+        user_response=d["user_response"], created_at=d["created_at"],
+        resolved_at=d["resolved_at"],
     )

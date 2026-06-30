@@ -4,15 +4,123 @@ import SessionRow from './SessionRow'
 
 const POLL_MS = 5000
 
-export default function SessionsPanel() {
-  const [sessions, setSessions] = useState([])
+// Column definitions — the split is DB-backed via the session `origin` field.
+const COLUMNS = [
+  { key: 'cli', title: 'CLI', hint: 'terminal sessions', empty: 'uv run yuyutsava <task>' },
+  { key: 'ui', title: 'UI Chats', hint: 'chats from this app', empty: 'start a chat in the Chat tab' },
+  { key: 'voice', title: 'Voice', hint: 'voice conversations', empty: 'talk in the Voice tab' },
+]
+
+function ColumnHeader({ title, count }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+      <h2 style={{
+        fontSize: 13,
+        fontWeight: 600,
+        fontFamily: 'var(--font-mono)',
+        color: 'var(--text-primary)',
+        textTransform: 'uppercase',
+        letterSpacing: '0.1em',
+        margin: 0,
+      }}>
+        {title}
+      </h2>
+      {count > 0 && (
+        <span style={{
+          fontFamily: 'var(--font-mono)',
+          fontSize: 10,
+          color: 'var(--neon-green)',
+          background: 'rgba(0,255,136,0.08)',
+          border: '1px solid rgba(0,255,136,0.2)',
+          borderRadius: 10,
+          padding: '1px 7px',
+        }}>
+          {count}
+        </span>
+      )}
+    </div>
+  )
+}
+
+function SessionColumn({ col, sessions, loaded, error, onDeleted, onOpenChat }) {
+  const isEmpty = loaded && sessions.length === 0
+  return (
+    <div style={{
+      flex: 1,
+      minWidth: 0,
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 12,
+      overflow: 'hidden',
+    }}>
+      <ColumnHeader title={col.title} count={sessions.length} />
+
+      <div style={{
+        flex: 1,
+        overflowY: 'auto',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 12,
+        paddingRight: 4,
+        scrollbarWidth: 'thin',
+      }}>
+        {error && (
+          <div style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: 11,
+            color: 'var(--neon-red)',
+            padding: '6px 10px',
+            border: '1px solid rgba(255,51,102,0.25)',
+            borderRadius: 6,
+            background: 'rgba(255,51,102,0.05)',
+          }}>
+            {`> sessions endpoint: ${error}`}
+          </div>
+        )}
+
+        {isEmpty && !error && (
+          <div style={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 12,
+            color: 'var(--text-muted)',
+            fontFamily: 'var(--font-mono)',
+            fontSize: 12,
+            padding: '24px 8px',
+          }}>
+            <div style={{ fontSize: 28, opacity: 0.3 }}>⏱</div>
+            <div>{'> none yet'}</div>
+            <div style={{ fontSize: 11, color: 'var(--text-dim)', textAlign: 'center' }}>
+              {col.empty}
+            </div>
+          </div>
+        )}
+
+        {sessions.map((s) => (
+          <SessionRow key={s.id} session={s} onDeleted={onDeleted} onOpenChat={onOpenChat} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+export default function SessionsPanel({ onOpenChat }) {
+  // One bucket per origin column.
+  const [byOrigin, setByOrigin] = useState({ cli: [], ui: [], voice: [] })
   const [error, setError] = useState(null)
   const [loaded, setLoaded] = useState(false)
 
   const refresh = useCallback(async () => {
     try {
-      const rows = await listSessions(null, 100)
-      setSessions(rows)
+      const results = await Promise.all(
+        COLUMNS.map((c) => listSessions(null, 100, null, c.key)),
+      )
+      const next = {}
+      COLUMNS.forEach((c, i) => { next[c.key] = results[i] })
+      setByOrigin(next)
       setError(null)
     } catch (e) {
       setError(e.message)
@@ -28,88 +136,31 @@ export default function SessionsPanel() {
   }, [refresh])
 
   const onDeleted = useCallback((id) => {
-    setSessions((cur) => cur.filter((s) => s.id !== id))
+    setByOrigin((cur) => {
+      const next = {}
+      for (const k of Object.keys(cur)) next[k] = cur[k].filter((s) => s.id !== id)
+      return next
+    })
   }, [])
-
-  const isEmpty = loaded && sessions.length === 0
 
   return (
     <div style={{
       flex: 1,
-      overflowY: 'auto',
+      overflow: 'hidden',
       padding: '20px 24px',
       display: 'flex',
-      flexDirection: 'column',
-      gap: 12,
+      gap: 24,
     }}>
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 10,
-        marginBottom: 4,
-      }}>
-        <h2 style={{
-          fontSize: 13,
-          fontWeight: 600,
-          fontFamily: 'var(--font-mono)',
-          color: 'var(--text-primary)',
-          textTransform: 'uppercase',
-          letterSpacing: '0.1em',
-          margin: 0,
-        }}>
-          Sessions
-        </h2>
-        {sessions.length > 0 && (
-          <span style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: 10,
-            color: 'var(--neon-green)',
-            background: 'rgba(0,255,136,0.08)',
-            border: '1px solid rgba(0,255,136,0.2)',
-            borderRadius: 10,
-            padding: '1px 7px',
-          }}>
-            {sessions.length}
-          </span>
-        )}
-      </div>
-
-      {error && (
-        <div style={{
-          fontFamily: 'var(--font-mono)',
-          fontSize: 11,
-          color: 'var(--neon-red)',
-          padding: '6px 10px',
-          border: '1px solid rgba(255,51,102,0.25)',
-          borderRadius: 6,
-          background: 'rgba(255,51,102,0.05)',
-        }}>
-          {`> sessions endpoint: ${error}`}
-        </div>
-      )}
-
-      {isEmpty && !error && (
-        <div style={{
-          flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 12,
-          color: 'var(--text-muted)',
-          fontFamily: 'var(--font-mono)',
-          fontSize: 12,
-        }}>
-          <div style={{ fontSize: 32, opacity: 0.3 }}>⏱</div>
-          <div>{'> no sessions yet'}</div>
-          <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>
-            run <span style={{ color: 'var(--neon-green)' }}>uv run yuyutsava &lt;task&gt;</span> in your terminal
-          </div>
-        </div>
-      )}
-
-      {sessions.map((s) => (
-        <SessionRow key={s.id} session={s} onDeleted={onDeleted} />
+      {COLUMNS.map((col) => (
+        <SessionColumn
+          key={col.key}
+          col={col}
+          sessions={byOrigin[col.key] || []}
+          loaded={loaded}
+          error={error}
+          onDeleted={onDeleted}
+          onOpenChat={onOpenChat}
+        />
       ))}
     </div>
   )

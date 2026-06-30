@@ -72,8 +72,10 @@ specific task and an explicit, narrow toolset.
 
 ## TOOLS
 
-You have a fixed toolset (no more, no less). Call ``tool_search('*')`` once
-upfront to see what's available, read each schema, then execute.
+You have a fixed toolset (no more, no less), listed below:
+{tool_catalog}
+Use ``tool_search('select:<name>')`` to load a tool's full schema before
+calling it (do NOT guess parameters). Then execute.
 
 ## CONTRACT
 
@@ -228,7 +230,7 @@ def make_spawn_subagent_tool(
         child = create_react_agent(
             model=model,
             tools=child_tools,
-            prompt=_SPAWN_PROMPT,
+            prompt=_SPAWN_PROMPT.format(tool_catalog=registry.catalog_block()),
             checkpointer=MemorySaver(),
         )
 

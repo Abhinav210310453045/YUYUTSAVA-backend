@@ -31,7 +31,14 @@ logger = logging.getLogger("yuyutsava.skills.tools")
 def make_skill_tools(
     registry: SkillRegistry, store: SkillStore | None = None
 ) -> list[BaseTool]:
-    """Return [sk_read_skill, sk_write_skill] bound to registry (+ optional store)."""
+    """Return skill tools bound to registry (+ optional store).
+
+    Always: ``sk_read_skill`` (Tier-2 full body) and ``sk_write_skill``.
+    When a ``store`` is supplied, also ``sk_search_skill`` — a semantic search
+    over the skill index built from the same shared discovery factory as
+    ``tool_search``, so the agent can actively find a skill beyond the
+    per-turn relevant-skills injection.
+    """
 
     @tool
     def sk_read_skill(name: str) -> str:
@@ -74,7 +81,25 @@ def make_skill_tools(
                     )
         return f"skill {slug!r} saved to personal scope"
 
-    return [sk_read_skill, sk_write_skill]
+    tools: list[BaseTool] = [sk_read_skill, sk_write_skill]
+
+    if store is not None:
+        from yuyutsava.discovery import VectorStoreProvider, make_discovery_search_tool
+
+        provider = VectorStoreProvider(store, loader=registry.get_body, group="skill")
+        tools.append(
+            make_discovery_search_tool(
+                provider,
+                name="sk_search_skill",
+                noun="skill",
+                examples=(
+                    "Returns the names + descriptions of the closest skills; then "
+                    "call sk_read_skill('<name>') to load the full body."
+                ),
+            )
+        )
+
+    return tools
 
 
 def make_read_skill_tool(registry: SkillRegistry) -> BaseTool:

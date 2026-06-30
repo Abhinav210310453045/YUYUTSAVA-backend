@@ -21,7 +21,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from yuyutsava.agents.triage.prompts import TRIAGE_SYSTEM_PROMPT, render_event_message
-from yuyutsava.core.tracing import get_callback
+from yuyutsava.core.tracing import get_callback, trace_metadata
 from yuyutsava.events.bus import EventEnvelope
 
 logger = logging.getLogger("yuyutsava.agents.triage")
@@ -81,8 +81,18 @@ class TriageAgent:
             capabilities_block=capabilities_block,
             skills_index=skills_index,
         )
-        _lf_cb = get_callback(run_name=f"triage:{envelope.topic}")
-        _invoke_cfg = {"callbacks": [_lf_cb]} if _lf_cb else {}
+        _lf_cb = get_callback()
+        _invoke_cfg = (
+            {
+                "callbacks": [_lf_cb],
+                "metadata": trace_metadata(
+                    trace_name=f"triage:{envelope.topic}",
+                    tags=["mode:triage", f"topic:{envelope.topic}"],
+                ),
+            }
+            if _lf_cb
+            else {}
+        )
         messages = [SystemMessage(content=TRIAGE_SYSTEM_PROMPT), HumanMessage(content=msg)]
         # One retry: a structured-output parse failure (e.g. a truncated/garbled
         # JSON response) is not retried by LangChain, so do it here. The raised

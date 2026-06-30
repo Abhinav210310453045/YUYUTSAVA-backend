@@ -25,7 +25,11 @@
       "enabled": false
     },
     "voice": {
-      "enabled": false
+      "enabled": true,
+      "wake_words": [
+        "Yuyutsava",
+        "hey_jarvis"
+      ]
     },
     "webcam": {
       "enabled": false

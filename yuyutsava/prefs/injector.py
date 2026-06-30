@@ -47,9 +47,9 @@ class PrefsInjector:
         self._store = prefs_store
         self._whitelist = whitelist if whitelist is not None else DEFAULT_WHITELIST
 
-    def build_block(self) -> str:
+    async def build_block(self) -> str:
         """Return the prefs block string, or empty string if no relevant prefs."""
-        all_prefs: dict[str, Any] = self._store.all()
+        all_prefs: dict[str, Any] = await self._store.all()
         filtered = {k: v for k, v in all_prefs.items() if k in self._whitelist}
         if not filtered:
             return ""

@@ -16,7 +16,13 @@ from __future__ import annotations
 from pathlib import Path
 
 
-_TOOL_DISCOVERY_SECTION = """\
+def _tool_discovery_section(tool_catalog: str = "") -> str:
+    catalog = (
+        f"\nAvailable tools (names only — load a schema before calling it):\n{tool_catalog}\n"
+        if tool_catalog.strip()
+        else ""
+    )
+    return f"""\
 ## TOOL DISCOVERY
 
 For ALL file and shell operations you MUST use the tr_* tools. The built-in
@@ -25,31 +31,37 @@ available — calling them will fail. Every filesystem operation, including
 directory listing and globbing, goes through the zone-checked tr_* family
 with real absolute paths.
 
-tr_* tool schemas are not preloaded; discover them with tool_search.
-First action of every task that touches the filesystem or shell:
-  tool_search('tr_*')        → read, write, delete, execute_in_sandbox, grep, ls, glob, ask_user, execute
-Other discovery patterns:
-  tool_search('ws_*')        → Web search tools (Tavily, Exa — only if API keys configured)
-  tool_search('sk_*')        → Skills tools (read/write reusable patterns)
-  tool_search('tr_execute')  → host shell, permission-gated, full network
-
+Tool schemas are not preloaded — only their names are listed below. Load the
+full schema for the one(s) you need with tool_search, then call them:
+  tool_search('select:tr_write_file')   → load exactly that tool's schema
+  tool_search('select:tr_read_file,tr_ls') → load several by name at once
+  tool_search('run a shell command')    → find a tool by what it does (ranked)
+Do NOT load tools you don't need. A bare tool_search('*') lists names only
+(the same list below) — it never returns schemas.
+{catalog}
 Read the returned schema before calling the tool — do NOT guess parameters.
 
 tr_ask_user(question, options) — exempt from discovery; call directly whenever
 you need clarification, a decision, or confirmation before acting.
 
-Internet access: tr_execute (host shell, asks user) OR ws_tavily_search /
-ws_exa_search (no approval needed, structured results). tr_execute_in_sandbox
-has NO network — only use it for offline commands.
+INTERNET ACCESS — you HAVE it. Use ws_tavily_search / ws_exa_search (no
+approval needed, structured results) for any current events, web lookups, live
+data, or unfamiliar terms; tr_execute (host shell, asks user) is the fallback.
+tr_execute_in_sandbox has NO network — only use it for offline commands.
+NEVER tell the user you "can't browse the web", "can't access the internet", or
+"only do filesystem/code" — that is FALSE. Before claiming you cannot do
+something, FIRST run tool_search('select:ws_tavily_search,ws_exa_search') (or
+tool_search('web search')) to load the search tools, then use them. Only say a
+capability is missing after a tool_search confirms no matching tool exists.
 
 Writing a file: Do not attempt write_file. If you find yourself
 about to call write_file / read_file / edit_file / execute / grep / ls / glob,
-STOP and call tool_search('tr_*') instead.
+STOP and load the tr_* tool you need with tool_search('select:...') instead.
 
 ## CALLING tr_* TOOLS (non-negotiable)
 
 EVERY tr_* call REQUIRES a non-empty `reason` string. Missing `reason` returns
-{"status":"error","error_code":"TR000_VALIDATION"} — re-call with reason filled.
+{{"status":"error","error_code":"TR000_VALIDATION"}} — re-call with reason filled.
 
 After EVERY tool call, parse the JSON result and read `status`:
   - "success" → use `result`, continue.
@@ -115,12 +127,13 @@ def local_system_prompt(
     workspace_root: Path,
     sandbox_root: Path | None = None,
     output_dir: Path | None = None,
+    tool_catalog: str = "",
 ) -> str:
     root = workspace_root.resolve()
     sb = sandbox_root.resolve() if sandbox_root is not None else root / "_sandbox"
     out = output_dir.resolve() if output_dir is not None else root / "_output"
     return f"""\
-{_TOOL_DISCOVERY_SECTION}
+{_tool_discovery_section(tool_catalog)}
 {_rules_section(root, sb, out)}
 
 ## WORKSPACE CONTEXT
@@ -157,7 +170,9 @@ def async_subagent_guidance() -> str:
     return ASYNC_SUBAGENT_GUIDANCE
 
 
-def docker_system_prompt(workspace_root: Path, export_host: Path | None) -> str:
+def docker_system_prompt(
+    workspace_root: Path, export_host: Path | None, tool_catalog: str = ""
+) -> str:
     root = workspace_root.resolve()
     sandbox = root / "_sandbox"
     out = export_host.resolve() if export_host is not None else root / "_output"
@@ -165,7 +180,7 @@ def docker_system_prompt(workspace_root: Path, export_host: Path | None) -> str:
     if export_host is not None:
         extra = f" Host {out} → /output in container — write deliverables to /output/."
     return f"""\
-{_TOOL_DISCOVERY_SECTION}
+{_tool_discovery_section(tool_catalog)}
 {_rules_section(root, sandbox, out)}
 
 ## WORKSPACE CONTEXT

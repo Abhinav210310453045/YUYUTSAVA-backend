@@ -179,7 +179,7 @@ class UnifiedSweeper:
         """Run every sweep once and return a typed counter report."""
         checkpoints_deleted = await self._sweep_checkpoints()
         blob_files_deleted, blob_rows_deleted = await self._sweep_blobs()
-        event_rows_deleted = self._sweep_events()
+        event_rows_deleted = await self._sweep_events()
         artifact_rows_deleted = await self._sweep_artifacts()
         return SweepReport(
             checkpoints_deleted=checkpoints_deleted,
@@ -263,7 +263,7 @@ class UnifiedSweeper:
             removed_files = await loop.run_in_executor(
                 None, self._sweep_target_files, target,
             )
-            removed_rows = self._store.delete_event_payloads_with_blob_prefix(
+            removed_rows = await self._store.delete_event_payloads_with_blob_prefix(
                 str(target.directory) + "/",
                 time.time() - target.ttl_sec,
             )
@@ -302,7 +302,7 @@ class UnifiedSweeper:
             logger.exception("sweeper: artifact sweep failed")
             return 0
 
-    def _sweep_events(self) -> int:
+    async def _sweep_events(self) -> int:
         """Delete non-blob ``event_payloads`` rows older than the retention window.
 
         Blob-backed rows (``blob_path IS NOT NULL``) are skipped — those are
@@ -310,4 +310,4 @@ class UnifiedSweeper:
         file removal.
         """
         cutoff = time.time() - self._config.event_ttl_sec
-        return self._store.delete_event_payloads_older_than(cutoff)
+        return await self._store.delete_event_payloads_older_than(cutoff)

@@ -70,14 +70,21 @@ function CopyButton({ label, command, accent = 'var(--neon-green)' }) {
   )
 }
 
-export default function SessionRow({ session, onDeleted }) {
+export default function SessionRow({ session, onDeleted, onOpenChat }) {
   const [deleting, setDeleting] = useState(false)
   const [idExpanded, setIdExpanded] = useState(false)
 
   const shortId = session.id.length > 8 ? `${session.id.slice(0, 8)}…` : session.id
   const wsBase = session.workspace.split('/').filter(Boolean).pop() || session.workspace
   const dotColor = STATUS_COLOR[session.status] || 'var(--text-muted)'
-  const isChat = (session.task_preview || '').trim() === CHAT_PREVIEW_MARKER
+  // origin is the DB-backed discriminator: UI chats & Voice convos resume in-app,
+  // CLI rows expose copy-resume commands for the terminal. Voice rows get both —
+  // click→continue-in-UI *and* a copy-resume-in-CLI button.
+  const isUi = session.origin === 'ui'
+  const isVoice = session.origin === 'voice'
+  const isResumableInUi = isUi || isVoice
+  const isChat = isResumableInUi || (session.task_preview || '').trim() === CHAT_PREVIEW_MARKER
+  const onRowClick = isResumableInUi ? () => onOpenChat?.(session.id) : undefined
 
   const cliResumeCmd =
     `uv run yuyutsava --verbose --workspace ${shellQuote(session.workspace)} ` +
@@ -100,18 +107,23 @@ export default function SessionRow({ session, onDeleted }) {
   }
 
   return (
-    <div style={{
-      background: 'var(--bg-card, #11131c)',
-      border: '1px solid var(--border-subtle, #1f2233)',
-      borderRadius: 8,
-      padding: '12px 14px',
-      fontFamily: 'var(--font-mono)',
-      fontSize: 12,
-      color: 'var(--text-primary)',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 8,
-    }}>
+    <div
+      onClick={onRowClick}
+      title={isResumableInUi ? 'click to continue this conversation in the UI' : undefined}
+      style={{
+        background: 'var(--bg-card, #11131c)',
+        border: '1px solid var(--border-subtle, #1f2233)',
+        borderRadius: 8,
+        padding: '12px 14px',
+        fontFamily: 'var(--font-mono)',
+        fontSize: 12,
+        color: 'var(--text-primary)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
+        cursor: isResumableInUi ? 'pointer' : 'default',
+      }}
+    >
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <span
           aria-label={session.status}
@@ -124,7 +136,7 @@ export default function SessionRow({ session, onDeleted }) {
           }}
         />
         <span
-          onClick={() => setIdExpanded((v) => !v)}
+          onClick={(e) => { e.stopPropagation(); setIdExpanded((v) => !v) }}
           title={idExpanded ? 'click to collapse' : session.id}
           style={{
             color: 'var(--neon-green)',
@@ -152,7 +164,7 @@ export default function SessionRow({ session, onDeleted }) {
             textTransform: 'uppercase',
             letterSpacing: '0.05em',
           }}>
-            chat
+            {isVoice ? 'voice' : 'chat'}
           </span>
         )}
         <span style={{ color: 'var(--text-dim)' }}>·</span>
@@ -194,8 +206,36 @@ export default function SessionRow({ session, onDeleted }) {
       )}
 
       <div style={{ display: 'flex', gap: 8, marginTop: 2 }}>
-        <CopyButton label="Copy chat resume" command={chatResumeCmd} />
-        <CopyButton label="Copy CLI resume" command={cliResumeCmd} accent="rgba(255,200,80,0.95)" />
+        {isResumableInUi ? (
+          <>
+            <button
+              onClick={(e) => { e.stopPropagation(); onOpenChat?.(session.id) }}
+              style={{
+                flex: 1,
+                fontFamily: 'var(--font-mono)',
+                fontSize: 11,
+                padding: '6px 10px',
+                background: 'rgba(120,160,255,0.10)',
+                color: '#9bb8ff',
+                border: '1px solid rgba(120,160,255,0.3)',
+                borderRadius: 6,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              Continue in UI
+            </button>
+            {/* Voice convos can also be resumed from the terminal as a chat. */}
+            {isVoice && (
+              <CopyButton label="Copy CLI resume" command={chatResumeCmd} accent="rgba(255,200,80,0.95)" />
+            )}
+          </>
+        ) : (
+          <>
+            <CopyButton label="Copy chat resume" command={chatResumeCmd} />
+            <CopyButton label="Copy CLI resume" command={cliResumeCmd} accent="rgba(255,200,80,0.95)" />
+          </>
+        )}
         <button
           onClick={onDelete}
           disabled={deleting}

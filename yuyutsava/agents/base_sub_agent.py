@@ -258,11 +258,20 @@ class BaseSubAgent(ABC):
             graph = create_deep_agent(model=model, backend=backend,
                                       subagents=[agent_spec], ...)
         """
+        # Under the orchestrator these specs run with ToolFilterMiddleware, which
+        # hides the prefixed tools. Register them behind a tool_search gateway and
+        # list their names in the prompt so the subagent can discover schemas on
+        # demand instead of being blind to its own toolset.
+        registry = self.build_tool_registry()
+        prompt = self.rendered_system_prompt()
+        catalog = registry.catalog_block()
+        if catalog:
+            prompt = f"{prompt}\n\n## AVAILABLE TOOLS (load a schema with tool_search before calling)\n{catalog}"
         return {
             "name": self.name,
             "description": self.description,
-            "system_prompt": self.rendered_system_prompt(),
-            "tools": self.all_tools(),
+            "system_prompt": prompt,
+            "tools": [registry.make_tool_search_tool(), *self.all_tools()],
         }
 
     # ------------------------------------------------------------------

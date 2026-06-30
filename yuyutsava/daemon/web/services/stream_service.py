@@ -139,12 +139,43 @@ class StreamProposalResolvedItem:
         }
 
 
+@dataclass(frozen=True)
+class StreamWakeItem:
+    """Broadcast when a wake word fires (``voice.wake`` on the bus).
+
+    Surfaced so a connected UI can open its voice overlay and start a converse
+    session. Carries only the small wake metadata — the captured utterance blob
+    is not relayed here (the overlay opens a fresh live-mic session).
+    """
+
+    wake_word: str = ""
+    transcript: str = ""
+    ts: float | None = None
+    # Two-stage wake: "open" fires instantly on detection (the UI pops its
+    # overlay); "command" carries the same-breath trailing command (may be empty)
+    # which the overlay seeds as the first turn. ``command`` holds that text.
+    stage: str = "open"
+    command: str = ""
+    type: Literal["wake"] = "wake"
+
+    def to_wire_dict(self) -> dict[str, Any]:
+        return {
+            "type": self.type,
+            "wake_word": self.wake_word,
+            "transcript": self.transcript,
+            "stage": self.stage,
+            "command": self.command,
+            "ts": self.ts,
+        }
+
+
 StreamItem = (
     StreamEventItem
     | StreamProposalItem
     | StreamAskItem
     | StreamAskResolvedItem
     | StreamProposalResolvedItem
+    | StreamWakeItem
 )
 
 

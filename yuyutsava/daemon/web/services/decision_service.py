@@ -105,7 +105,7 @@ class DecisionService:
         """
         if decision not in RESPONDABLE_DECISIONS:
             raise ValueError(f"invalid decision {decision!r}")
-        flipped = self._store.try_set_proposal_status(
+        flipped = await self._store.try_set_proposal_status(
             proposal_id, from_status="pending", to_status=_target_status(decision),
         )
         if not flipped:

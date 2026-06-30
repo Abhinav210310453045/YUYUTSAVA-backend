@@ -297,7 +297,7 @@ class OrchestratorLoop:
     ) -> None:
         model = model if model is not None else self._model
         deps = deps if deps is not None else self._deps
-        prefs_block = self._prefs_injector.build_block() if self._prefs_injector else ""
+        prefs_block = await self._prefs_injector.build_block() if self._prefs_injector else ""
         # Relevant past context (summaries, outcomes, saved facts) recalled
         # by similarity to the task text — same informational-block contract
         # as prefs. Empty when memory is disabled or nothing matches.

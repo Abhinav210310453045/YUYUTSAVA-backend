@@ -44,14 +44,14 @@ _RULES = [ConsentRule(rule_id="rul_1", topic_glob="fs.*", match_json="{}",
 class _EventsStore:
     """The slice of the events Store the wired routers/services touch."""
 
-    def list_decisions(self, limit: int = 50, cursor: float | None = None):
+    async def list_decisions(self, limit: int = 50, cursor: float | None = None):
         rows = [d for d in _DECISIONS if cursor is None or d.ts < cursor]
         return rows[:limit]
 
-    def list_consent_rules(self):
+    async def list_consent_rules(self):
         return list(_RULES)
 
-    def try_set_proposal_status(self, proposal_id, *, from_status, to_status):
+    async def try_set_proposal_status(self, proposal_id, *, from_status, to_status):
         return True
 
     async def put_event_payload(self, **kw) -> None: ...

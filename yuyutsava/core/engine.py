@@ -395,7 +395,7 @@ def build_cli_deepagent(
         permission_check: When ``True`` (default), attaches ``PermissionMiddleware`` so
             the agent pauses and asks the user before running dangerous shell commands.
         search_config: When provided, ws_* web search tools are added and made
-            discoverable via tool_search('ws_*').
+            discoverable via the tool catalog (load with tool_search('select:ws_tavily_search')).
         checkpointer: Optional persistent checkpointer. When omitted, falls back
             to in-process ``MemorySaver()``.
         subagents: Optional list of ``BaseSubAgent`` instances. Each is converted
@@ -527,7 +527,7 @@ def build_cli_deepagent(
             cpus=docker_cfg.cpus,
             pids_limit=docker_cfg.pids_limit,
         )
-        startup_tools, _ = _build_tool_registry_and_tools(
+        startup_tools, _registry = _build_tool_registry_and_tools(
             _bind_task_runner_tools(ws), search_config, skill_registry,
             extra_tools=context_tools, skill_store=skill_store,
         )
@@ -535,7 +535,9 @@ def build_cli_deepagent(
             model=model,
             tools=startup_tools,
             backend=docker_backend,
-            system_prompt=docker_system_prompt(workspace_root, docker_cfg.export_dir),
+            system_prompt=docker_system_prompt(
+                workspace_root, docker_cfg.export_dir, _registry.catalog_block()
+            ),
             checkpointer=checkpointer,
             middleware=middleware,
             subagents=final_subagent_specs,
@@ -551,7 +553,7 @@ def build_cli_deepagent(
         )
 
     backend = _local_shell_backend_factory(workspace_root, bash_timeout_sec)
-    startup_tools, _ = _build_tool_registry_and_tools(
+    startup_tools, _registry = _build_tool_registry_and_tools(
         _bind_task_runner_tools(ws, sandbox_root), search_config, skill_registry,
         extra_tools=context_tools, skill_store=skill_store,
     )
@@ -559,7 +561,9 @@ def build_cli_deepagent(
         model=model,
         tools=startup_tools,
         backend=backend,
-        system_prompt=local_system_prompt(workspace_root, sandbox_root, output_dir),
+        system_prompt=local_system_prompt(
+            workspace_root, sandbox_root, output_dir, _registry.catalog_block()
+        ),
         checkpointer=checkpointer,
         middleware=middleware,
         subagents=final_subagent_specs,
@@ -648,6 +652,17 @@ def build_orchestrator(
     if deps.memory_store is not None:
         from yuyutsava.memory.tools import make_memory_tools
         master_tools.extend(make_memory_tools(deps.memory_store))
+
+    # Lazy discovery: ToolFilterMiddleware hides the prefixed master tools
+    # (sk_/ws_/mem_/…) from the model. Register them so the model can pull a
+    # schema on demand via tool_search, and surface the always-visible name
+    # catalog in the system prompt so it knows what exists.
+    _master_registry = ToolRegistry()
+    _master_registry.register_many(master_tools)
+    master_tools = [_master_registry.make_tool_search_tool(), *master_tools]
+    _catalog = _master_registry.catalog_block()
+    if _catalog:
+        system_prompt = f"{system_prompt}\n\n## AVAILABLE TOOLS (load a schema with tool_search before calling)\n{_catalog}"
 
     def _ctx_mw(agent_model: BaseChatModel, role: str) -> list:
         return _context_middleware(

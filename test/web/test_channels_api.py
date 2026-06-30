@@ -22,7 +22,7 @@ from yuyutsava.daemon.web.services.stream_service import WebHub
 
 
 class _NullStore:
-    def try_set_proposal_status(self, *a, **kw) -> bool:
+    async def try_set_proposal_status(self, *a, **kw) -> bool:
         return False
 
 

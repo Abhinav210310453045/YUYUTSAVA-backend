@@ -21,7 +21,7 @@ def make_fetch_event_tool(store: Store) -> BaseTool:
     """Bind the store to a fresh ``fetch_event`` tool. Per-subagent binding."""
 
     @tool
-    def fetch_event(event_id: str) -> str:
+    async def fetch_event(event_id: str) -> str:
         """Fetch the full payload for an event by its event_id.
 
         Returns a JSON string with keys: ``topic``, ``ts``, ``payload`` (full
@@ -31,7 +31,7 @@ def make_fetch_event_tool(store: Store) -> BaseTool:
         Call this **once** per task to get the details you need; do not
         repeatedly poll.
         """
-        rec = store.get_event_payload(event_id)
+        rec = await store.get_event_payload(event_id)
         if rec is None:
             return json.dumps({"error": "event_not_found", "event_id": event_id})
         return json.dumps(
@@ -57,7 +57,7 @@ def make_recall_tool(store: Store) -> BaseTool:
     """
 
     @tool
-    def recall(topic: str, since: str = "1d") -> str:
+    async def recall(topic: str, since: str = "1d") -> str:
         """Recall recent decisions matching a topic glob (e.g. 'fs.*').
 
         ``since`` accepts ``Nh`` / ``Nd`` (default ``1d``). Returns up to 20
@@ -66,7 +66,7 @@ def make_recall_tool(store: Store) -> BaseTool:
         filesystem and the event store.
         """
         secs = _parse_since(since)
-        rows = store.recall(topic, since_sec=secs, limit=20)
+        rows = await store.recall(topic, since_sec=secs, limit=20)
         return json.dumps(rows, default=str)
 
     return recall

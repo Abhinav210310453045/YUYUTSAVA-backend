@@ -29,6 +29,9 @@ def make_app(
     admission_controller=None,
     model_router=None,
     memory_store=None,
+    conversation_manager=None,
+    voice_store=None,
+    transcript_store=None,
     async_subagents=False,
 ):
     """Backwards-compatible alias of :func:`create_app`.
@@ -59,6 +62,9 @@ def make_app(
         admission_controller=admission_controller,
         model_router=model_router,
         memory_store=memory_store,
+        conversation_manager=conversation_manager,
+        voice_store=voice_store,
+        transcript_store=transcript_store,
         async_subagents=async_subagents,
     )
 

@@ -24,6 +24,7 @@ import argparse
 import asyncio
 import logging
 import os
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -231,25 +232,73 @@ async def _run_uvicorn(server: uvicorn.Server, stop_event: asyncio.Event) -> Non
                 pass
 
 
-async def _open_electron_when_ready(url: str) -> None:
+async def _open_electron_when_ready(
+    url: str, holder: dict[str, subprocess.Popen] | None = None,
+) -> None:
     await asyncio.sleep(0.4)
     electron_app_dir = Path(__file__).resolve().parent.parent.parent / "electron-app"
     if electron_app_dir.is_dir():
         try:
             # Off-loop: Popen's fork/exec handshake uses os.read/os.write, which
             # blockbuster flags on the event loop under allow_blocking=False.
-            await asyncio.to_thread(
+            #
+            # Detach the UI subtree from our controlling terminal:
+            #   stdin=DEVNULL       → vite sees no TTY, so it never puts the
+            #                         user's terminal into raw mode (otherwise an
+            #                         orphaned vite leaves the shell printing
+            #                         ^[[A after the daemon is stopped).
+            #   start_new_session   → own session/process group, off our terminal,
+            #                         so killing the daemon can't strand
+            #                         terminal-attached children.
+            #
+            # The new session also means a Ctrl+C on the daemon does NOT reach
+            # the UI subtree — so we keep the Popen handle and tear the whole
+            # process group down explicitly on shutdown (see _shutdown_ui).
+            # Otherwise an orphaned vite keeps holding port 5173 and the next
+            # `yuyutsava daemon` races a stale dev server → the UI fails to open.
+            proc = await asyncio.to_thread(
                 subprocess.Popen,
                 ["npm", "run", "dev"],
                 cwd=electron_app_dir,
+                stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
+                start_new_session=True,
             )
+            if holder is not None:
+                holder["proc"] = proc
             return
         except Exception:
             logger.warning("Could not launch Electron app; visit %s manually", url)
     else:
         logger.warning("Electron app not found at %s; visit %s manually", electron_app_dir, url)
+
+
+def _shutdown_ui(holder: dict[str, subprocess.Popen]) -> None:
+    """Tear down the detached UI subtree (concurrently → vite + electron).
+
+    Launched with ``start_new_session=True``, the UI is its own process-group
+    leader, so signalling that group reaches every child (vite, electron) in
+    one shot. Without this the UI is orphaned on daemon stop, leaving vite
+    holding port 5173 and breaking the next launch.
+    """
+    proc = holder.get("proc")
+    if proc is None or proc.poll() is not None:
+        return
+    try:
+        pgid = os.getpgid(proc.pid)
+    except ProcessLookupError:
+        return
+    try:
+        os.killpg(pgid, signal.SIGTERM)
+        try:
+            proc.wait(timeout=5.0)
+        except subprocess.TimeoutExpired:
+            os.killpg(pgid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    except Exception:
+        logger.exception("failed to tear down UI subprocess")
 
 
 async def _run_memory_backfill(subs: DaemonSubsystems) -> None:
@@ -392,8 +441,9 @@ async def _async_main(argv: list[str] | None = None) -> int:
 
     _log_ready_banner(subs)
 
+    ui_holder: dict[str, subprocess.Popen] = {}
     if subs.web_server is not None and not args.no_ui:
-        asyncio.create_task(_open_electron_when_ready(subs.web_url))
+        asyncio.create_task(_open_electron_when_ready(subs.web_url, ui_holder))
 
     # Detached one-shot: rescue any memories left vectorless by an earlier
     # embedder outage. Kept out of the ``tasks`` wait-set below — it completes
@@ -414,6 +464,12 @@ async def _async_main(argv: list[str] | None = None) -> int:
     if subs.web_server is not None:
         tasks.append(asyncio.create_task(
             _run_uvicorn(subs.web_server, stop_event), name="web-server",
+        ))
+    if subs.web_hub is not None:
+        # Relay wake-word detections to the UI so it can open the voice overlay.
+        from yuyutsava.daemon.wake_bridge import run_wake_bridge
+        tasks.append(asyncio.create_task(
+            run_wake_bridge(subs.bus, subs.web_hub, stop_event), name="wake-bridge",
         ))
 
     # Durable resume: re-enqueue tasks a previous instance left unfinished
@@ -454,6 +510,11 @@ async def _async_main(argv: list[str] | None = None) -> int:
             await asyncio.gather(*tasks, return_exceptions=True)
     finally:
         logger.info("shutting down…")
+        # Tear down the UI subtree we spawned (vite + electron). It runs in its
+        # own session, so it survives our SIGINT unless we kill its group here —
+        # otherwise an orphaned vite holds port 5173 and the next daemon start
+        # races a stale dev server, so the UI fails to open.
+        _shutdown_ui(ui_holder)
         # Async subagents teardown: watcher first (cancels in-flight runs on
         # the lg server via SDK + marks mirror entries cancelled), then the
         # host attachment (unlinks the host lockfile + discovery if we were
@@ -481,6 +542,12 @@ async def _async_main(argv: list[str] | None = None) -> int:
         # closing the saver here releases the checkpoints.db lock.
         await subs.checkpointer_saver.stop()
         await subs.store.stop()
+        # Stop the storage health probe before the pool closes (it polls the pool).
+        if subs.storage_health is not None:
+            try:
+                await subs.storage_health.stop()
+            except Exception:
+                logger.exception("storage_health.stop failed")
         # Postgres-backed runs: embedder's httpx client, then the pool —
         # last, because every pg store borrows connections from it.
         if subs.embedder is not None:

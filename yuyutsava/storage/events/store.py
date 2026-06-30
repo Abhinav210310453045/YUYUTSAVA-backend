@@ -1,587 +1,235 @@
-"""SQLite-backed persistent store for event payloads, proposals, decisions,
-consent rules, tool-call quotas, and user preferences.
+"""Composition facade over the per-domain events stores.
 
-The daemon owns a single SQLite file at the path returned by
-:func:`yuyutsava.storage.paths.state_db_path`. All writes go through a single
-writer task draining a bounded queue — sources never call SQLite directly.
-Reads happen on the asyncio thread under the same connection (SQLite
-supports concurrent readers; we don't need a pool for MVP).
+Historically one monolithic ``Store`` owned every table on a single SQLite
+connection. Phase 2 split each table into an ABC (:mod:`abc`) with a SQLite
+twin (:mod:`sqlite_backend`) and a Postgres twin (:mod:`pg_stores`). This
+:class:`Store` keeps the *old method names* and threads them to the right
+domain store so call sites barely change — but every DB method is now ``async``
+(a Postgres call must never block the loop) with one exception:
+:meth:`list_consent_grants`, pinned synchronous by the ``ConsentStore``
+Protocol and served from a cache filled at :meth:`start`.
 
-Tables (created on first connect):
+Construction:
 
-- event_payloads(event_id PK, topic, ts, payload_json, blob_path)
-- proposals(proposal_id PK, event_id, topic, summary, proposed, subagent,
-            urgency, created_ts, expires_ts, status, session_id, agent_path)
-- decisions(decision_id PK, proposal_id, event_id, outcome, action_summary,
-            ts, session_id, agent_path)
-- consent_rules(rule_id PK, topic_glob, match_json, decision, created_ts,
-                expires_ts)
-- tool_call_counters(tool_name, day PK, count)
-- user_prefs(key PK, value_json, updated_ts)
-
-The plan calls for splitting this into per-table stores
-(:class:`EventStore`, :class:`ProposalStore`, …); that split is deferred
-until a caller actually needs only one table. The :class:`Store` class
-stays the single public entry point for now, but every read returns a
-typed model from :mod:`yuyutsava.storage.models` — no more
-``dict[str, Any]`` leaking out.
+- ``Store()`` / ``Store(db_path)`` — SQLite-only (CLI ``prefs`` subcommand,
+  tests). SQLite is the permanent primary.
+- ``Store.for_backend(storage, pg_pool, health)`` — on the Postgres backend
+  each domain is a :class:`~yuyutsava.storage.routing.RoutedStore` wrapping the
+  Pg twin (primary) over the SQLite twin (failover buffer); on the SQLite
+  backend it is the plain SQLite twin.
 """
 
 from __future__ import annotations
 
-import asyncio
-import fnmatch
-import json
 import logging
-import sqlite3
-import time
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from ulid import ULID
-
-from yuyutsava.storage.models import (
-    ConsentRule,
-    Decision,
-    EventRecord,
-    Proposal,
+from yuyutsava.storage.events.schema import SCHEMA_SQL, SCHEMA_VERSION, migrate  # noqa: F401
+from yuyutsava.storage.events.sqlite_backend import (
+    SqliteConsentGrantStore,
+    SqliteConsentRuleStore,
+    SqliteDecisionStore,
+    SqliteEventsBackend,
+    SqliteEventStore,
+    SqlitePrefsBackend,
+    SqliteProposalStore,
+    SqliteToolCounterStore,
 )
-from yuyutsava.storage.paths import state_db_path
+from yuyutsava.storage.models import ConsentRule, Decision, EventRecord, Proposal
+
+if TYPE_CHECKING:
+    from yuyutsava.consent.models import Grant
+    from yuyutsava.storage.backend import StorageSettings
+    from yuyutsava.storage.pg.pool import PgPool
+    from yuyutsava.storage.routing.health import StorageHealth
 
 logger = logging.getLogger("yuyutsava.storage.events.store")
 
 
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS event_payloads (
-    event_id     TEXT PRIMARY KEY,
-    topic        TEXT NOT NULL,
-    ts           REAL NOT NULL,
-    payload_json TEXT NOT NULL,
-    blob_path    TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_event_payloads_ts ON event_payloads(ts);
-
-CREATE TABLE IF NOT EXISTS proposals (
-    proposal_id  TEXT PRIMARY KEY,
-    event_id     TEXT NOT NULL,
-    topic        TEXT NOT NULL,
-    summary      TEXT NOT NULL,
-    proposed     TEXT NOT NULL,
-    subagent     TEXT NOT NULL,
-    urgency      INTEGER NOT NULL,
-    created_ts   REAL NOT NULL,
-    expires_ts   REAL NOT NULL,
-    status       TEXT NOT NULL CHECK (status IN ('pending','approved','skipped','expired','modified')),
-    session_id   TEXT,
-    agent_path   TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_proposals_status ON proposals(status, expires_ts);
--- idx_proposals_session is created in _migrate() AFTER the ALTER adds the column on v0 DBs
-
-CREATE TABLE IF NOT EXISTS decisions (
-    decision_id    TEXT PRIMARY KEY,
-    proposal_id    TEXT,
-    event_id       TEXT NOT NULL,
-    outcome        TEXT NOT NULL,
-    action_summary TEXT,
-    ts             REAL NOT NULL,
-    session_id     TEXT,
-    agent_path     TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_decisions_ts ON decisions(ts);
-
--- Schema version anchor for forward migrations. Current schema is v2
--- (added session_id/agent_path to proposals & decisions).
-CREATE TABLE IF NOT EXISTS schema_meta (
-    key   TEXT PRIMARY KEY,
-    value TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS consent_rules (
-    rule_id     TEXT PRIMARY KEY,
-    topic_glob  TEXT NOT NULL,
-    match_json  TEXT NOT NULL,
-    decision    TEXT NOT NULL CHECK (decision IN ('auto_approve','auto_skip')),
-    created_ts  REAL NOT NULL,
-    expires_ts  REAL
-);
-CREATE INDEX IF NOT EXISTS idx_consent_rules_topic ON consent_rules(topic_glob);
-
--- Per-tool daily call counters (for the permissions policy's daily_cap).
--- One row per (tool_name, utc_date); count increments on every call.
-CREATE TABLE IF NOT EXISTS tool_call_counters (
-    tool_name  TEXT NOT NULL,
-    day        TEXT NOT NULL,   -- YYYY-MM-DD (UTC)
-    count      INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (tool_name, day)
-);
-
--- User preferences: small JSON blobs keyed by a dot-namespaced string.
--- e.g. key = "interaction.style", value_json = '"be terse and direct"'
-CREATE TABLE IF NOT EXISTS user_prefs (
-    key        TEXT PRIMARY KEY,
-    value_json TEXT NOT NULL,
-    updated_ts REAL NOT NULL
-);
-
--- Unified consent grants (yuyutsava.consent). One row per remembered decision:
--- "allow READ in EXTERNAL under /path for this session/project". Generic on
--- purpose (subject_key + scope + scope_ref) so tool-permissions, events,
--- proposals and future flows all reuse one allowlist engine. SESSION grants are
--- never persisted (they live in the registry's memory); only PROJECT/PERSISTENT
--- land here.
-CREATE TABLE IF NOT EXISTS consent_grants (
-    grant_id    TEXT PRIMARY KEY,
-    domain      TEXT NOT NULL,
-    subject_key TEXT NOT NULL,
-    decision    TEXT NOT NULL,
-    scope       TEXT NOT NULL,
-    scope_ref   TEXT NOT NULL,
-    created_ts  REAL NOT NULL,
-    expires_ts  REAL
-);
-CREATE INDEX IF NOT EXISTS idx_consent_grants_domain ON consent_grants(domain, scope_ref);
-"""
-
-
-_SCHEMA_VERSION = 3
-
-
-def _migrate(conn: sqlite3.Connection) -> None:
-    """Idempotent migrations for existing DBs.
-
-    ``CREATE TABLE IF NOT EXISTS`` won't add columns to a pre-existing table, so
-    forward migrations need explicit ALTER statements gated on the schema
-    version anchor.
-    """
-    row = conn.execute(
-        "SELECT value FROM schema_meta WHERE key='version'"
-    ).fetchone()
-    current = int(row["value"]) if row else 0
-
-    if current < 2:
-        existing_proposal_cols = {
-            r["name"] for r in conn.execute("PRAGMA table_info(proposals)").fetchall()
-        }
-        if "session_id" not in existing_proposal_cols:
-            conn.execute("ALTER TABLE proposals ADD COLUMN session_id TEXT")
-        if "agent_path" not in existing_proposal_cols:
-            conn.execute("ALTER TABLE proposals ADD COLUMN agent_path TEXT")
-
-        existing_decision_cols = {
-            r["name"] for r in conn.execute("PRAGMA table_info(decisions)").fetchall()
-        }
-        if "session_id" not in existing_decision_cols:
-            conn.execute("ALTER TABLE decisions ADD COLUMN session_id TEXT")
-        if "agent_path" not in existing_decision_cols:
-            conn.execute("ALTER TABLE decisions ADD COLUMN agent_path TEXT")
-
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_proposals_session ON proposals(session_id)")
-
-    conn.execute(
-        "INSERT INTO schema_meta(key, value) VALUES('version', ?) "
-        "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-        (str(_SCHEMA_VERSION),),
-    )
-
-
-# ---------------------------------------------------------------------------
-# Store
-# ---------------------------------------------------------------------------
-
-
 class Store:
-    """Owns the sqlite connection and the writer task.
-
-    Lifecycle: ``await store.start()`` once at daemon boot, ``await store.stop()``
-    at shutdown. The store stays usable for reads after stop; pending writes
-    are drained best-effort with a 5-second timeout.
-    """
+    """Backend-agnostic facade re-exposing the historical ``Store`` surface."""
 
     def __init__(self, db_path: Path | None = None, *, write_queue_size: int = 1024) -> None:
-        self.db_path = db_path or state_db_path()
-        self._conn: sqlite3.Connection | None = None
-        self._write_q: asyncio.Queue[tuple[str, tuple[Any, ...]] | None] = asyncio.Queue(
-            maxsize=write_queue_size
-        )
-        self._writer_task: asyncio.Task[None] | None = None
+        # ``write_queue_size`` retained for call-site compatibility (the writer
+        # queue is gone; writes serialise inside the SQLite backend now).
+        self._backend = SqliteEventsBackend(db_path)
+        self.db_path = self._backend._db_path
+        self._events = SqliteEventStore(self._backend)
+        self._proposals = SqliteProposalStore(self._backend)
+        self._decisions = SqliteDecisionStore(self._backend)
+        self._consent_rules = SqliteConsentRuleStore(self._backend)
+        self._counters = SqliteToolCounterStore(self._backend)
+        self._prefs = SqlitePrefsBackend(self._backend)
+        self._grants = SqliteConsentGrantStore(self._backend)
+        self._grants_cache: list[Grant] = []
+
+    @classmethod
+    def for_backend(
+        cls,
+        storage: "StorageSettings",
+        pg_pool: "PgPool | None" = None,
+        health: "StorageHealth | None" = None,
+    ) -> "Store":
+        """Build the facade for the active backend.
+
+        Postgres backend → each domain is a ``RoutedStore`` (Pg primary, SQLite
+        buffer). SQLite backend (or no pool) → the SQLite twins built in
+        ``__init__`` are kept as the permanent primary.
+        """
+        self = cls()
+        if pg_pool is not None and storage.is_postgres() and health is not None:
+            from yuyutsava.storage.events.pg_stores import (
+                PgConsentGrantStore,
+                PgConsentRuleStore,
+                PgDecisionStore,
+                PgEventStore,
+                PgPrefsBackend,
+                PgProposalStore,
+                PgToolCounterStore,
+            )
+            from yuyutsava.storage.routing.facade import RoutedStore
+
+            b = self._backend
+            self._events = RoutedStore(PgEventStore(pg_pool), SqliteEventStore(b), health, name="event_payloads")
+            self._proposals = RoutedStore(PgProposalStore(pg_pool), SqliteProposalStore(b), health, name="proposals")
+            self._decisions = RoutedStore(PgDecisionStore(pg_pool), SqliteDecisionStore(b), health, name="decisions")
+            self._consent_rules = RoutedStore(PgConsentRuleStore(pg_pool), SqliteConsentRuleStore(b), health, name="consent_rules")
+            self._counters = RoutedStore(PgToolCounterStore(pg_pool), SqliteToolCounterStore(b), health, name="tool_call_counters")
+            self._prefs = RoutedStore(PgPrefsBackend(pg_pool), SqlitePrefsBackend(b), health, name="user_prefs")
+            self._grants = RoutedStore(PgConsentGrantStore(pg_pool), SqliteConsentGrantStore(b), health, name="consent_grants")
+        return self
+
+    # ------------------------------------------------------------------ #
+    # Lifecycle                                                           #
+    # ------------------------------------------------------------------ #
 
     async def start(self) -> None:
-        from yuyutsava.storage.base import migration_lock
-
-        self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
-        self._conn.row_factory = sqlite3.Row
-        # WAL keeps readers non-blocking against the single writer.
-        self._conn.executescript("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")
-        # Cross-process migration lock: prevents two processes (daemon + chat)
-        # from racing on CREATE TABLE / ALTER TABLE during simultaneous startup.
-        with migration_lock():
-            self._conn.executescript(_SCHEMA)
-            _migrate(self._conn)
-            self._conn.commit()
-        self._writer_task = asyncio.create_task(self._writer_loop(), name="store-writer")
+        """Open the SQLite backend (always — it is the failover buffer on PG)
+        and pre-load the consent-grant cache so ``list_consent_grants`` stays
+        synchronous for the ``ConsentRegistry`` boot read."""
+        await self._backend.open()
+        try:
+            self._grants_cache = await self._grants.load()
+        except Exception:  # noqa: BLE001
+            logger.exception("events: consent-grant cache preload failed")
+            self._grants_cache = []
 
     async def stop(self) -> None:
-        if self._writer_task is not None:
-            await self._write_q.put(None)  # sentinel
-            try:
-                await asyncio.wait_for(self._writer_task, timeout=5.0)
-            except asyncio.TimeoutError:
-                logger.warning("Store writer didn't drain in 5s; cancelling")
-                self._writer_task.cancel()
-        if self._conn is not None:
-            self._conn.close()
-            self._conn = None
+        await self._backend.close()
 
-    async def _writer_loop(self) -> None:
-        assert self._conn is not None
-        while True:
-            item = await self._write_q.get()
-            if item is None:
-                return
-            sql, args = item
-            try:
-                self._conn.execute(sql, args)
-                self._conn.commit()
-            except Exception:
-                logger.exception("Store write failed: %s", sql.split()[0:3])
+    @property
+    def sqlite_backend(self) -> SqliteEventsBackend:
+        """The SQLite buffer backend — used by the reconciler to drain it."""
+        return self._backend
 
-    # --- writes (queued) -----------------------------------------------------
+    # ------------------------------------------------------------------ #
+    # event_payloads                                                      #
+    # ------------------------------------------------------------------ #
 
     async def put_event_payload(
-        self,
-        *,
-        event_id: str,
-        topic: str,
-        ts: float,
-        payload: dict[str, Any],
-        blob_path: str | None = None,
+        self, *, event_id: str, topic: str, ts: float,
+        payload: dict[str, Any], blob_path: str | None = None,
     ) -> None:
-        await self._write_q.put((
-            "INSERT OR REPLACE INTO event_payloads(event_id, topic, ts, payload_json, blob_path) "
-            "VALUES(?,?,?,?,?)",
-            (event_id, topic, ts, json.dumps(payload, default=str), blob_path),
-        ))
+        await self._events.put_event_payload(
+            event_id=event_id, topic=topic, ts=ts, payload=payload, blob_path=blob_path,
+        )
+
+    async def get_event_payload(self, event_id: str) -> EventRecord | None:
+        return await self._events.get_event_payload(event_id)
+
+    async def delete_event_payloads_with_blob_prefix(self, prefix: str, older_than_ts: float) -> int:
+        return await self._events.delete_event_payloads_with_blob_prefix(prefix, older_than_ts)
+
+    async def delete_event_payloads_older_than(self, older_than_ts: float) -> int:
+        return await self._events.delete_event_payloads_older_than(older_than_ts)
+
+    # ------------------------------------------------------------------ #
+    # proposals                                                           #
+    # ------------------------------------------------------------------ #
 
     async def put_proposal(self, p: Proposal) -> None:
-        await self._write_q.put((
-            "INSERT INTO proposals(proposal_id, event_id, topic, summary, proposed, subagent, "
-            "urgency, created_ts, expires_ts, status, session_id, agent_path) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-            (p.proposal_id, p.event_id, p.topic, p.summary, p.proposed, p.subagent,
-             p.urgency, p.created_ts, p.expires_ts, p.status, p.session_id, p.agent_path),
-        ))
+        await self._proposals.put(p)
 
-    async def put_decision(
-        self,
-        *,
-        proposal_id: str | None,
-        event_id: str,
-        outcome: str,
-        action_summary: str | None = None,
-        ts: float | None = None,
-        session_id: str | None = None,
-        agent_path: str | None = None,
-    ) -> None:
-        await self._write_q.put((
-            "INSERT INTO decisions(decision_id, proposal_id, event_id, outcome, action_summary, ts, "
-            "session_id, agent_path) VALUES(?,?,?,?,?,?,?,?)",
-            (str(ULID()), proposal_id, event_id, outcome, action_summary, ts or time.time(),
-             session_id, agent_path),
-        ))
+    async def get_proposal(self, proposal_id: str) -> Proposal | None:
+        return await self._proposals.get(proposal_id)
 
-    async def put_consent_rule(self, rule: ConsentRule) -> None:
-        await self._write_q.put((
-            "INSERT INTO consent_rules(rule_id, topic_glob, match_json, decision, created_ts, expires_ts) "
-            "VALUES(?,?,?,?,?,?)",
-            (rule.rule_id, rule.topic_glob, rule.match_json, rule.decision,
-             rule.created_ts, rule.expires_ts),
-        ))
-
-    # --- unified consent grants (yuyutsava.consent.ConsentStore) --------------
-
-    async def put_consent_grant(self, grant: "Grant") -> None:
-        await self._write_q.put((
-            "INSERT OR REPLACE INTO consent_grants"
-            "(grant_id, domain, subject_key, decision, scope, scope_ref, created_ts, expires_ts) "
-            "VALUES(?,?,?,?,?,?,?,?)",
-            (grant.grant_id, grant.domain, grant.subject_key, grant.decision,
-             grant.scope, grant.scope_ref, grant.created_ts, grant.expires_ts),
-        ))
-
-    async def delete_consent_grant(self, grant_id: str) -> None:
-        await self._write_q.put((
-            "DELETE FROM consent_grants WHERE grant_id=?", (grant_id,),
-        ))
-
-    # --- atomic status flip (synchronous; used by web POST handler) ----------
-
-    def try_set_proposal_status(
+    async def try_set_proposal_status(
         self, proposal_id: str, *, from_status: str, to_status: str
     ) -> bool:
-        """Atomically flip pending → approved/skipped/modified. Returns True on success."""
-        assert self._conn is not None
-        cur = self._conn.execute(
-            "UPDATE proposals SET status=? WHERE proposal_id=? AND status=?",
-            (to_status, proposal_id, from_status),
-        )
-        self._conn.commit()
-        return cur.rowcount == 1
-
-    # --- tool-call counters (synchronous; used by permission policy) ---------
-
-    def incr_tool_call(self, tool_name: str, day: str) -> int:
-        """Increment ``tool_call_counters`` and return the new count for the day."""
-        assert self._conn is not None
-        self._conn.execute(
-            "INSERT INTO tool_call_counters(tool_name, day, count) VALUES(?,?,1) "
-            "ON CONFLICT(tool_name, day) DO UPDATE SET count = count + 1",
-            (tool_name, day),
-        )
-        self._conn.commit()
-        row = self._conn.execute(
-            "SELECT count FROM tool_call_counters WHERE tool_name=? AND day=?",
-            (tool_name, day),
-        ).fetchone()
-        return int(row["count"]) if row else 1
-
-    def get_tool_call_count(self, tool_name: str, day: str) -> int:
-        """Return the current per-day count for *tool_name* without incrementing."""
-        assert self._conn is not None
-        row = self._conn.execute(
-            "SELECT count FROM tool_call_counters WHERE tool_name=? AND day=?",
-            (tool_name, day),
-        ).fetchone()
-        return int(row["count"]) if row else 0
-
-    # --- reads (return typed records, not dicts) -----------------------------
-
-    def get_event_payload(self, event_id: str) -> EventRecord | None:
-        assert self._conn is not None
-        row = self._conn.execute(
-            "SELECT topic, ts, payload_json, blob_path FROM event_payloads WHERE event_id=?",
-            (event_id,),
-        ).fetchone()
-        if row is None:
-            return None
-        try:
-            payload = json.loads(row["payload_json"])
-        except (json.JSONDecodeError, TypeError):
-            payload = {}
-        if not isinstance(payload, dict):
-            payload = {}
-        return EventRecord(
-            event_id=event_id,
-            topic=row["topic"],
-            ts=row["ts"],
-            payload=payload,
-            blob_path=row["blob_path"],
+        return await self._proposals.try_set_status(
+            proposal_id, from_status=from_status, to_status=to_status
         )
 
-    def get_proposal(self, proposal_id: str) -> Proposal | None:
-        assert self._conn is not None
-        row = self._conn.execute(
-            "SELECT * FROM proposals WHERE proposal_id=?",
-            (proposal_id,),
-        ).fetchone()
-        return _row_to_proposal(row) if row else None
+    # ------------------------------------------------------------------ #
+    # decisions                                                           #
+    # ------------------------------------------------------------------ #
 
-    def list_consent_rules(self) -> list[ConsentRule]:
-        assert self._conn is not None
-        rows = self._conn.execute(
-            "SELECT * FROM consent_rules ORDER BY created_ts DESC"
-        ).fetchall()
-        return [_row_to_consent_rule(r) for r in rows]
-
-    def list_consent_grants(self) -> list["Grant"]:
-        # Persisted (PROJECT/PERSISTENT) grants only; SESSION grants are never
-        # written here. Loaded once into the ConsentRegistry cache at boot.
-        from yuyutsava.consent.models import Grant
-        if self._conn is None:
-            return []
-        rows = self._conn.execute("SELECT * FROM consent_grants").fetchall()
-        return [
-            Grant(
-                grant_id=r["grant_id"], domain=r["domain"], subject_key=r["subject_key"],
-                decision=r["decision"], scope=r["scope"], scope_ref=r["scope_ref"],
-                created_ts=r["created_ts"], expires_ts=r["expires_ts"],
-            )
-            for r in rows
-        ]
-
-    def list_decisions(
-        self, limit: int = 50, cursor: float | None = None,
-    ) -> list[Decision]:
-        """Newest-first decisions; *cursor* is the ``ts`` of the previous
-        page's last row (keyset pagination, same shape as the sessions
-        store's ``updated_at`` cursor)."""
-        assert self._conn is not None
-        if cursor is not None:
-            rows = self._conn.execute(
-                "SELECT * FROM decisions WHERE ts < ? ORDER BY ts DESC LIMIT ?",
-                (float(cursor), limit),
-            ).fetchall()
-        else:
-            rows = self._conn.execute(
-                "SELECT * FROM decisions ORDER BY ts DESC LIMIT ?", (limit,)
-            ).fetchall()
-        return [_row_to_decision(r) for r in rows]
-
-    def recall(
-        self,
-        topic_glob: str,
-        since_sec: float,
-        limit: int = 20,
-    ) -> list[dict[str, Any]]:
-        """Recent decisions matching a topic glob. Used by orchestrator's ``recall`` tool.
-
-        Returns dict rows (not :class:`Decision`) because the orchestrator's
-        recall tool projects only a subset of columns (``outcome``,
-        ``action_summary``, ``ts``, ``topic``) and renders them as JSON for the
-        LLM. Building :class:`Decision` instances here just to discard most
-        fields is wasted work.
-        """
-        assert self._conn is not None
-        cutoff = time.time() - since_sec
-        # Join via event_payloads to get the topic.
-        rows = self._conn.execute(
-            """
-            SELECT d.outcome, d.action_summary, d.ts, ep.topic
-              FROM decisions d
-              JOIN event_payloads ep ON ep.event_id = d.event_id
-             WHERE d.ts >= ?
-             ORDER BY d.ts DESC LIMIT ?
-            """,
-            (cutoff, limit),
-        ).fetchall()
-        out = []
-        for r in rows:
-            if fnmatch.fnmatchcase(r["topic"], topic_glob):
-                out.append(dict(r))
-        return out
-
-    def delete_event_payloads_with_blob_prefix(self, prefix: str, older_than_ts: float) -> int:
-        """Delete ``event_payloads`` rows whose ``blob_path`` starts with *prefix*
-        and whose ``ts`` is older than *older_than_ts*. Returns row count.
-
-        Used by the blob sweeper to keep the event DB and the on-disk blob dir
-        in sync. Synchronous because the sweeper batches one call per tick.
-        """
-        assert self._conn is not None
-        cur = self._conn.execute(
-            "DELETE FROM event_payloads WHERE blob_path LIKE ? AND ts < ?",
-            (prefix + "%", older_than_ts),
+    async def put_decision(
+        self, *, proposal_id: str | None, event_id: str, outcome: str,
+        action_summary: str | None = None, ts: float | None = None,
+        session_id: str | None = None, agent_path: str | None = None,
+    ) -> None:
+        await self._decisions.put(
+            proposal_id=proposal_id, event_id=event_id, outcome=outcome,
+            action_summary=action_summary, ts=ts, session_id=session_id, agent_path=agent_path,
         )
-        self._conn.commit()
-        return cur.rowcount
 
-    def delete_event_payloads_older_than(self, older_than_ts: float) -> int:
-        """Delete non-blob ``event_payloads`` rows whose ``ts`` is older than
-        *older_than_ts*. Returns row count.
+    async def list_decisions(self, limit: int = 50, cursor: float | None = None) -> list[Decision]:
+        return await self._decisions.list(limit, cursor)
 
-        Blob-backed rows (``blob_path IS NOT NULL``) are skipped — those are
-        owned by the blob sweeper, which ties their deletion to on-disk file
-        removal.
-        """
-        assert self._conn is not None
-        cur = self._conn.execute(
-            "DELETE FROM event_payloads WHERE blob_path IS NULL AND ts < ?",
-            (older_than_ts,),
-        )
-        self._conn.commit()
-        return cur.rowcount
+    async def recall(self, topic_glob: str, since_sec: float, limit: int = 20) -> list[dict[str, Any]]:
+        return await self._decisions.recall(topic_glob, since_sec, limit)
 
-    # --- user_prefs (async write, sync read) ---------------------------------
-    #
-    # These live here for now alongside the other tables. ``PrefsStore`` in
-    # ``yuyutsava.storage.prefs`` is a typed wrapper that callers should use
-    # instead of calling these directly.
+    # ------------------------------------------------------------------ #
+    # consent_rules                                                       #
+    # ------------------------------------------------------------------ #
+
+    async def put_consent_rule(self, rule: ConsentRule) -> None:
+        await self._consent_rules.put(rule)
+
+    async def list_consent_rules(self) -> list[ConsentRule]:
+        return await self._consent_rules.list()
+
+    # ------------------------------------------------------------------ #
+    # tool_call_counters                                                  #
+    # ------------------------------------------------------------------ #
+
+    async def incr_tool_call(self, tool_name: str, day: str) -> int:
+        return await self._counters.incr(tool_name, day)
+
+    async def get_tool_call_count(self, tool_name: str, day: str) -> int:
+        return await self._counters.get(tool_name, day)
+
+    # ------------------------------------------------------------------ #
+    # user_prefs                                                          #
+    # ------------------------------------------------------------------ #
 
     async def put_pref(self, key: str, value: Any) -> None:
-        """Upsert a preference. ``value`` must be JSON-serialisable."""
-        await self._write_q.put((
-            "INSERT INTO user_prefs(key, value_json, updated_ts) VALUES(?,?,?) "
-            "ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json, "
-            "updated_ts=excluded.updated_ts",
-            (key, json.dumps(value, ensure_ascii=False), time.time()),
-        ))
+        await self._prefs.put(key, value)
 
     async def delete_pref(self, key: str) -> None:
-        """Remove a preference key. No-op if the key doesn't exist."""
-        await self._write_q.put((
-            "DELETE FROM user_prefs WHERE key=?",
-            (key,),
-        ))
+        await self._prefs.delete(key)
 
-    def get_pref(self, key: str, default: Any = None) -> Any:
-        """Return the stored value for ``key``, or ``default`` if absent."""
-        assert self._conn is not None
-        row = self._conn.execute(
-            "SELECT value_json FROM user_prefs WHERE key=?", (key,)
-        ).fetchone()
-        if row is None:
-            return default
-        try:
-            return json.loads(row["value_json"])
-        except Exception:
-            return default
+    async def get_pref(self, key: str, default: Any = None) -> Any:
+        return await self._prefs.get(key, default)
 
-    def list_prefs(self) -> dict[str, Any]:
-        """Return all stored preferences as a ``{key: value}`` dict."""
-        assert self._conn is not None
-        rows = self._conn.execute(
-            "SELECT key, value_json FROM user_prefs ORDER BY key"
-        ).fetchall()
-        out: dict[str, Any] = {}
-        for r in rows:
-            try:
-                out[r["key"]] = json.loads(r["value_json"])
-            except Exception:
-                pass
-        return out
+    async def list_prefs(self) -> dict[str, Any]:
+        return await self._prefs.list()
 
+    # ------------------------------------------------------------------ #
+    # consent_grants (yuyutsava.consent.ConsentStore Protocol)            #
+    # ------------------------------------------------------------------ #
 
-# ---------------------------------------------------------------------------
-# Row → model helpers
-# ---------------------------------------------------------------------------
+    async def put_consent_grant(self, grant: "Grant") -> None:
+        await self._grants.put(grant)
+        self._grants_cache.append(grant)
 
+    async def delete_consent_grant(self, grant_id: str) -> None:
+        await self._grants.delete(grant_id)
+        self._grants_cache = [g for g in self._grants_cache if g.grant_id != grant_id]
 
-def _row_to_proposal(row: sqlite3.Row) -> Proposal:
-    return Proposal(
-        proposal_id=row["proposal_id"],
-        event_id=row["event_id"],
-        topic=row["topic"],
-        summary=row["summary"],
-        proposed=row["proposed"],
-        subagent=row["subagent"],
-        urgency=row["urgency"],
-        created_ts=row["created_ts"],
-        expires_ts=row["expires_ts"],
-        status=row["status"],
-        session_id=row["session_id"],
-        agent_path=row["agent_path"],
-    )
-
-
-def _row_to_consent_rule(row: sqlite3.Row) -> ConsentRule:
-    return ConsentRule(
-        rule_id=row["rule_id"],
-        topic_glob=row["topic_glob"],
-        match_json=row["match_json"],
-        decision=row["decision"],
-        created_ts=row["created_ts"],
-        expires_ts=row["expires_ts"],
-    )
-
-
-def _row_to_decision(row: sqlite3.Row) -> Decision:
-    return Decision(
-        decision_id=row["decision_id"],
-        proposal_id=row["proposal_id"],
-        event_id=row["event_id"],
-        outcome=row["outcome"],
-        action_summary=row["action_summary"],
-        ts=row["ts"],
-        session_id=row["session_id"],
-        agent_path=row["agent_path"],
-    )
+    def list_consent_grants(self) -> list["Grant"]:
+        # Persisted (PROJECT/PERSISTENT) grants only, cached at start(). The
+        # ConsentRegistry reads this once at boot into its own cache.
+        return list(self._grants_cache)

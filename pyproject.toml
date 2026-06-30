@@ -48,7 +48,18 @@ voice = [
     "soundfile>=0.12.1",
     "numpy>=1.26.0",
     "openwakeword>=0.6.0",
+    # openwakeword 0.6.0's pretrained ONNX models silently produce garbage
+    # classifier scores (~0.0 for everything, no error) under onnxruntime >=1.20
+    # — wake-word detection never fires. 1.19.x is the last working line; pin
+    # below 1.20 until openwakeword ships models compatible with newer runtimes.
+    # faster-whisper accepts onnxruntime>=1.14,<2 so this satisfies both.
+    "onnxruntime>=1.16,<1.20",
     "faster-whisper>=1.0.0",
+    # Maintained fork with prebuilt wheels; the original `webrtcvad` does
+    # `import pkg_resources` at import time, which setuptools>=81 no longer
+    # provides — so it silently failed and the VAD fell back to a noisy
+    # energy gate that transcribed ambient sound nonstop.
+    "webrtcvad-wheels>=2.0.14",
 ]
 memory = [
     "pgvector>=0.3.0",

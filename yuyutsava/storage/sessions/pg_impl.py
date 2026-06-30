@@ -40,7 +40,7 @@ _SCHEMA_VERSION = 1
 _SELECT_COLS = (
     "id, thread_id, workspace, status, created_at, updated_at, "
     "message_count, memory_files_count, db_row_bytes, task_preview, "
-    "schema_version"
+    "schema_version, origin"
 )
 
 
@@ -100,28 +100,29 @@ class PgSessionStore:
         workspace: Path,
         task: str,
         thread_id: str | None = None,
+        origin: str = "cli",
     ) -> Session:
         await self._ensure_ready()
-        tid = thread_id or mint_thread_id("cli")
+        tid = thread_id or mint_thread_id(origin)
         now = time.time()
         preview = (task or "").strip().replace("\n", " ")[:_TASK_PREVIEW_MAX]
         ws = str(workspace.resolve())
         async with self._conn() as conn:
             # sessions.thread_id FKs to threads — upsert the parent first.
             await ensure_thread(
-                conn, tid, origin="cli", workspace=ws, status="running"
+                conn, tid, origin=origin, workspace=ws, status="running"
             )
             await conn.execute(
                 f"INSERT INTO sessions ({_SELECT_COLS}) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (tid, tid, ws, "running", now, now, 0, 0, 0, preview,
-                 _SCHEMA_VERSION),
+                 _SCHEMA_VERSION, origin),
             )
         return Session(
             id=tid, thread_id=tid, workspace=Path(ws), status="running",
             created_at=now, updated_at=now, message_count=0,
             memory_files_count=0, db_row_bytes=0, task_preview=preview,
-            schema_version=_SCHEMA_VERSION,
+            schema_version=_SCHEMA_VERSION, origin=origin,
         )
 
     async def touch(
@@ -213,6 +214,7 @@ class PgSessionStore:
         limit: int = 100,
         order_by: str = "updated_at",
         cursor: float | None = None,
+        origin: str | None = None,
     ) -> list[Session]:
         await self._ensure_ready()
         if order_by not in ("updated_at", "created_at"):
@@ -225,6 +227,9 @@ class PgSessionStore:
         if workspace is not None:
             clauses.append("workspace = %s")
             params.append(str(workspace.resolve()))
+        if origin is not None:
+            clauses.append("origin = %s")
+            params.append(origin)
         if cursor is not None:
             clauses.append(f"{order_by} < %s")
             params.append(float(cursor))
@@ -240,12 +245,13 @@ class PgSessionStore:
 
 def _row_to_session(row: Any) -> Session:
     (
-        sid, tid, ws, status, created, updated, msgs, mems, dbbytes, preview, ver,
+        sid, tid, ws, status, created, updated, msgs, mems, dbbytes, preview,
+        ver, origin,
     ) = tuple(row)
     return Session(
         id=sid, thread_id=tid, workspace=Path(ws), status=status,
         created_at=float(created), updated_at=float(updated),
         message_count=int(msgs), memory_files_count=int(mems),
         db_row_bytes=int(dbbytes), task_preview=preview,
-        schema_version=int(ver),
+        schema_version=int(ver), origin=origin,
     )
