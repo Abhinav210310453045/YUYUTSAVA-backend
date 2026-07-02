@@ -48,4 +48,47 @@
   --activity-w:   300px;
   --radius-card:  8px;
   --radius-btn:   4px;
+
+  /* Gradients (GenZ accents) */
+  --grad-accent: linear-gradient(135deg, #00ff88 0%, #00d4ff 50%, #8b5cf6 100%);
+  --grad-user:   linear-gradient(135deg, rgba(0,255,136,0.22), rgba(0,212,255,0.16));
+  --grad-mesh:   radial-gradient(60% 60% at 15% 10%, rgba(0,255,136,0.10), transparent 60%),
+                 radial-gradient(50% 50% at 85% 20%, rgba(139,92,246,0.10), transparent 60%),
+                 radial-gradient(60% 60% at 70% 90%, rgba(0,212,255,0.08), transparent 60%);
+
+  /* Glassmorphism */
+  --glass-bg:      rgba(255, 255, 255, 0.045);
+  --glass-bg-user: rgba(0, 255, 136, 0.06);
+  --glass-border:  rgba(255, 255, 255, 0.10);
+  --glass-blur:    14px;
+}
+
+/* Light theme — token overrides only. The redesigned Chat/Voice panels consume
+   these tokens so they flip fully; panels with hardcoded rgba are best-effort. */
+:root[data-theme="light"] {
+  --bg-deep:     #f4f6fb;
+  --bg-panel:    #eef1f8;
+  --bg-card:     #ffffff;
+  --bg-elevated: #ffffff;
+  --bg-hover:    #e9edf5;
+
+  --text-primary:   #0f172a;
+  --text-secondary: #334155;
+  --text-muted:     #64748b;
+  --text-code:      #0a7d4f;
+  --text-dim:       #94a3b8;
+
+  --border-subtle: rgba(15, 23, 42, 0.08);
+  --border-card:   rgba(15, 23, 42, 0.12);
+
+  --glow-green:  0 0 18px rgba(0, 200, 120, 0.18);
+  --shadow-card: 0 4px 20px rgba(15, 23, 42, 0.10), 0 1px 3px rgba(15, 23, 42, 0.08);
+
+  --glass-bg:      rgba(15, 23, 42, 0.04);
+  --glass-bg-user: rgba(0, 200, 120, 0.10);
+  --glass-border:  rgba(15, 23, 42, 0.10);
+  --grad-user:     linear-gradient(135deg, rgba(0,200,120,0.16), rgba(0,170,220,0.12));
+  --grad-mesh:     radial-gradient(60% 60% at 15% 10%, rgba(0,200,120,0.08), transparent 60%),
+                   radial-gradient(50% 50% at 85% 20%, rgba(139,92,246,0.07), transparent 60%),
+                   radial-gradient(60% 60% at 70% 90%, rgba(0,170,220,0.06), transparent 60%);
 }

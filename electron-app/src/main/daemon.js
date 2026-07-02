@@ -99,16 +99,27 @@ function repoRoot() {
   return path.resolve(__dirname, '../../..')
 }
 
-// PATH that finds `uv` regardless of how Electron was launched (shell vs Dock,
-// which starts with a minimal PATH). Covers uv's standalone (~/.local/bin) and
-// brew (/opt/homebrew/bin) install locations.
+// PATH that finds `uv` regardless of how Electron was launched (shell vs Dock/
+// Explorer, which start with a minimal PATH). Covers uv's standalone
+// (~/.local/bin), brew (/opt/homebrew/bin) and Windows (WinGet Links,
+// %LOCALAPPDATA%\Programs) install locations.
 function _spawnPath() {
-  const extra = [
-    '/opt/homebrew/bin',
-    '/usr/local/bin',
-    path.join(os.homedir(), '.local/bin'),
-    path.join(os.homedir(), '.cargo/bin'),
-  ]
+  const home = os.homedir()
+  const extra = process.platform === 'win32'
+    ? [
+        path.join(home, '.local', 'bin'), // uv standalone installer
+        path.join(home, '.cargo', 'bin'),
+        path.join(process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local'),
+                  'Microsoft', 'WinGet', 'Links'),
+        path.join(process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local'),
+                  'Programs', 'uv'),
+      ]
+    : [
+        '/opt/homebrew/bin',
+        '/usr/local/bin',
+        path.join(home, '.local/bin'),
+        path.join(home, '.cargo/bin'),
+      ]
   return [...extra, process.env.PATH].filter(Boolean).join(path.delimiter)
 }
 

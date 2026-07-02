@@ -26,34 +26,22 @@ from langchain.agents.middleware import AgentMiddleware
 from langchain.agents.middleware.types import ToolCallRequest
 from langchain_core.messages import ToolMessage
 
-from yuyutsava.context.artifacts import ArtifactStore
+from yuyutsava.context.artifacts import ArtifactStore, thread_id_from_runtime
 from yuyutsava.context.config import ContextSettings
+from yuyutsava.context.digests import build_digest
 
 logger = logging.getLogger("yuyutsava.context.offload")
-
-_HEAD_CHARS = 1_500
-_TAIL_CHARS = 500
 
 # Tools whose output must never be offloaded: the ctx_* readers themselves
 # (offloading a fetch would loop), and small structured built-ins.
 DEFAULT_EXCLUDE_TOOLS: frozenset[str] = frozenset({
     "ctx_fetch_artifact",
     "ctx_grep_artifact",
+    "ctx_recall",
     "tool_search",
     "write_todos",
     "task",
 })
-
-
-def _thread_id_from_runtime() -> str:
-    """Best-effort thread id from the active LangGraph run config."""
-    try:
-        from langgraph.config import get_config
-
-        cfg = get_config() or {}
-        return str(cfg.get("configurable", {}).get("thread_id", "") or "unknown")
-    except Exception:
-        return "unknown"
 
 
 class ToolResultOffloadMiddleware(AgentMiddleware):
@@ -69,7 +57,18 @@ class ToolResultOffloadMiddleware(AgentMiddleware):
         super().__init__()
         self._store = store
         self._threshold = settings.offload_threshold_chars
+        self._always_prefixes = tuple(settings.always_offload_prefixes)
         self._exclude = exclude_tools
+
+    def _should_offload(self, tool_name: str, content: str) -> bool:
+        """Offload when over the size threshold OR a reference-class tool.
+
+        ``always_offload_prefixes`` (default ``("ws_",)``) forces offload of
+        small-but-accumulating results (web search) regardless of size; every
+        other tool keeps the original size-gated behaviour exactly."""
+        if len(content) > self._threshold:
+            return True
+        return any(tool_name.startswith(p) for p in self._always_prefixes)
 
     async def awrap_tool_call(
         self,
@@ -80,15 +79,17 @@ class ToolResultOffloadMiddleware(AgentMiddleware):
         if not isinstance(result, ToolMessage):
             return result  # Command and friends pass through untouched
         content = result.content
-        if not isinstance(content, str) or len(content) <= self._threshold:
+        if not isinstance(content, str):
             return result
         tool_name = request.tool_call.get("name", "") or (result.name or "tool")
         if tool_name in self._exclude:
             return result
+        if not self._should_offload(tool_name, content):
+            return result
 
         try:
             artifact_id = await self._store.put(
-                _thread_id_from_runtime(), tool_name, content
+                thread_id_from_runtime(), tool_name, content
             )
         except Exception:
             # Storage failure must not fail the agent turn; the display-side
@@ -96,19 +97,7 @@ class ToolResultOffloadMiddleware(AgentMiddleware):
             logger.exception("offload: artifact put failed for %s — passing through", tool_name)
             return result
 
-        digest = json.dumps({
-            "offloaded": True,
-            "artifact_id": artifact_id,
-            "tool": tool_name,
-            "size_chars": len(content),
-            "head": content[:_HEAD_CHARS],
-            "tail": content[-_TAIL_CHARS:],
-            "hint": (
-                "Full output stored. Use ctx_fetch_artifact(artifact_id, offset, "
-                "length) to page through it or ctx_grep_artifact(artifact_id, "
-                "pattern) to search it."
-            ),
-        })
+        digest = json.dumps(build_digest(tool_name, artifact_id, content))
         logger.debug(
             "offload: %s result %d chars → %s (%d-char digest)",
             tool_name, len(content), artifact_id, len(digest),

@@ -62,6 +62,14 @@ PRICES: dict[str, tuple[float, float]] = {
     "gpt-4.1": (2.00, 8.00),
     "llama-3.3-70b": (0.59, 0.79),
     "llama-3.1-8b": (0.05, 0.08),
+    # Cloud models reachable via the new providers (approximate list prices —
+    # longest-prefix wins, so these override the generic local-Ollama zeros
+    # below, e.g. "mistral-large-latest" → mistral-large, not mistral).
+    "gemini-2.5-flash": (0.30, 2.50),
+    "gemini-2.5-pro": (1.25, 10.00),
+    "mistral-large": (2.00, 6.00),
+    "command-r-plus": (2.50, 10.00),
+    "command-r": (0.15, 0.60),
     # Common local-Ollama families — explicit zeros so a price-table reader
     # can tell "known free" from "unknown".
     "llama3": (0.0, 0.0),

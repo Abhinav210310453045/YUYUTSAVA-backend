@@ -1,5 +1,6 @@
 import React from 'react'
-import { navIcons, NAV_ITEMS, PanelToggleIcon } from './navIcons.jsx'
+import { navIcons, NAV_ITEMS, PanelToggleIcon, ThemeIcon } from './navIcons.jsx'
+import { useTheme } from '../../hooks/useTheme'
 
 const LEVELS = ['DEBUG', 'INFO', 'WARNING']
 
@@ -15,6 +16,7 @@ export default function Titlebar({
   activityOpen,
   onToggleActivity,
 }) {
+  const { theme, toggle: toggleTheme } = useTheme()
   return (
     <div style={{
       height: 'var(--titlebar-h)',
@@ -125,6 +127,20 @@ export default function Titlebar({
         </div>
 
         <span style={{ width: 1, height: 18, background: 'var(--border-subtle)' }} />
+
+        {/* Light / dark theme toggle. */}
+        <button
+          onClick={toggleTheme}
+          title={theme === 'light' ? 'Switch to dark' : 'Switch to light'}
+          style={{
+            width: 28, height: 28, borderRadius: 6,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: 'var(--text-muted)', background: 'transparent',
+            border: '1px solid transparent', transition: 'all 0.2s', cursor: 'pointer',
+          }}
+        >
+          <ThemeIcon theme={theme} />
+        </button>
 
         {/* VS Code-style toggle for the right Activity panel. */}
         <button

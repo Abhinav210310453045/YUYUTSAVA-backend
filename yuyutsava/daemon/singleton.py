@@ -2,8 +2,8 @@
 
 Two files live in ``state_dir()`` while a daemon is running:
 
-* ``daemon.lock`` — held exclusive via ``fcntl.flock`` for the daemon's
-  lifetime. A second ``yuyutsava daemon`` invocation tries to acquire it,
+* ``daemon.lock`` — held exclusive via a cross-platform ``FileLock`` for the
+  daemon's lifetime. A second ``yuyutsava daemon`` invocation tries to acquire it,
   fails non-blockingly, and exits cleanly.
 * ``daemon.json`` — discovery payload (``{pid, web_url, async_host_url,
   started_at}``). Read by ``yuyutsava daemon --status``, ``--stop``, and
@@ -14,14 +14,12 @@ Stale-lock recovery: if the lockfile is held but the recorded PID is
 gone (process died without releasing), the helpers detect that on the
 next ``acquire`` and unlink the leftover files once before retrying.
 
-POSIX-only (``fcntl``). The Electron app runs on macOS + Linux only
-today; Windows support would mean swapping in ``portalocker`` /
-``msvcrt.locking``.
+Cross-platform: the lock is a :class:`yuyutsava.platform.FileLock`
+(portalocker under the hood — msvcrt on Windows, flock on POSIX).
 """
 
 from __future__ import annotations
 
-import fcntl
 import json
 import logging
 import os
@@ -29,6 +27,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from yuyutsava.platform import FileLock, pid_alive
 from yuyutsava.storage.paths import state_dir
 
 logger = logging.getLogger("yuyutsava.daemon.singleton")
@@ -43,16 +42,7 @@ def daemon_discovery_path() -> Path:
 
 
 def _is_pid_alive(pid: int) -> bool:
-    if pid <= 0:
-        return False
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        # PID exists, owned by another user — still "alive" for our purposes.
-        return True
-    return True
+    return pid_alive(pid)
 
 
 def read_daemon_discovery() -> dict[str, Any] | None:
@@ -100,67 +90,62 @@ def _unlink_safe(path: Path) -> None:
         logger.debug("could not unlink %s", path, exc_info=True)
 
 
-def acquire_daemon_lock() -> int | None:
+# Module-level handle so a fd-less ``release_daemon_lock()`` (e.g. from an
+# atexit hook that lost the reference) can still find and drop the lock.
+_HELD_LOCK: FileLock | None = None
+
+
+def acquire_daemon_lock() -> FileLock | None:
     """Try to take exclusive ownership of the daemon lockfile.
 
-    Returns the held fd (caller MUST keep it open for the daemon's
-    lifetime) or ``None`` if another live daemon already owns the lock.
-    The caller is expected to call :func:`release_daemon_lock` on exit;
+    Returns the held :class:`FileLock` (caller MUST keep it alive for the
+    daemon's lifetime) or ``None`` if another live daemon already owns the
+    lock. The caller is expected to call :func:`release_daemon_lock` on exit;
     cleanup also runs via ``atexit`` registration in
     :func:`register_daemon_cleanup`.
     """
+    global _HELD_LOCK
     path = daemon_lock_path()
     path.parent.mkdir(parents=True, exist_ok=True)
 
     for attempt in (1, 2):
-        fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
-        try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            os.close(fd)
-            # Lock held — but by a live PID?
-            disco = read_daemon_discovery()
-            if disco is not None:
-                # Live daemon — refuse.
-                return None
-            # Stale lockfile from a dead PID. Unlink both and retry once.
-            if attempt == 1:
-                _unlink_safe(daemon_discovery_path())
-                _unlink_safe(path)
-                logger.warning("cleared stale daemon lock; retrying")
-                continue
+        lock = FileLock(path)
+        if lock.acquire(blocking=False):
+            # Acquired: record our pid in the lockfile body for postmortem.
+            lock.stamp(f"{os.getpid()}\n")
+            _HELD_LOCK = lock
+            return lock
+        # Lock held — but by a live PID?
+        if read_daemon_discovery() is not None:
+            # Live daemon — refuse.
             return None
-        # Acquired: record our pid in the lockfile body for postmortem.
-        try:
-            os.ftruncate(fd, 0)
-            os.write(fd, f"{os.getpid()}\n".encode())
-        except OSError:
-            pass
-        return fd
+        # Stale lockfile from a dead PID. Unlink both and retry once.
+        if attempt == 1:
+            _unlink_safe(daemon_discovery_path())
+            _unlink_safe(path)
+            logger.warning("cleared stale daemon lock; retrying")
+            continue
+        return None
     return None
 
 
-def release_daemon_lock(fd: int | None) -> None:
-    """Release the lock fd and remove the lock + discovery files.
+def release_daemon_lock(lock: FileLock | None) -> None:
+    """Release the lock and remove the lock + discovery files.
 
     Safe to call multiple times — both unlink steps tolerate missing files.
     """
-    if fd is None:
-        return
-    try:
-        fcntl.flock(fd, fcntl.LOCK_UN)
-    except OSError:
-        pass
-    try:
-        os.close(fd)
-    except OSError:
-        pass
+    global _HELD_LOCK
+    if lock is None:
+        lock = _HELD_LOCK
+    if lock is not None:
+        lock.release()
+    _HELD_LOCK = None
     _unlink_safe(daemon_discovery_path())
     _unlink_safe(daemon_lock_path())
 
 
-def register_daemon_cleanup(fd: int) -> None:
+def register_daemon_cleanup(lock: FileLock) -> None:
     """Register an ``atexit`` cleanup so SIGTERM / crashes also unlink files."""
     import atexit
 
-    atexit.register(release_daemon_lock, fd)
+    atexit.register(release_daemon_lock, lock)

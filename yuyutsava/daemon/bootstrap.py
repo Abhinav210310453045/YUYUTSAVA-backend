@@ -78,7 +78,7 @@ from yuyutsava.storage.paths import blobs_dir, checkpoints_db_path, state_db_pat
 from yuyutsava.storage.pg import migrations as pg_migrations
 from yuyutsava.storage.pg.pool import PgPool
 from yuyutsava.storage.routing.health import StorageHealth
-from yuyutsava.storage.routing.reconcile import Reconciler
+from yuyutsava.storage.routing.reconcile import CONTENT_TABLE_SPECS, Reconciler
 from yuyutsava.storage.prefs import PrefsStore
 from yuyutsava.storage.sessions import PgSessionStore, set_default_session_store
 from yuyutsava.storage.sweeper import BlobSweepTarget, SweeperConfig, UnifiedSweeper
@@ -293,9 +293,21 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     else:
         logger.info("  storage   : sqlite (set YUYUTSAVA_STORAGE_BACKEND=postgres for durable mode)")
 
+    # ── embedder (shared by memory, skills, and the artifact recall index) --
+    # Built here, before the stores, so PgArtifactStore can opt into the
+    # semantic index (Context REPL) when Postgres + an embedder are live. One
+    # embedder per process; memory/skills below reuse this same instance.
+    mem_settings = MemorySettings.from_env(default_enabled=pg_pool is not None)
+    embedder: Embedder | None = Embedder(mem_settings) if pg_pool is not None else None
+    _semantic_recall = ContextSettings.from_env().semantic_recall
+
     # ── context controller stores ------------------------------------------
     if pg_pool is not None:
-        artifact_store = PgArtifactStore(pg_pool)
+        artifact_store = PgArtifactStore(
+            pg_pool, embedder=embedder, semantic_recall=_semantic_recall
+        )
+        if artifact_store.supports_recall:
+            logger.info("  ctx recall: pgvector artifact index enabled (ctx_recall)")
         summary_store = PgThreadSummaryStore(pg_pool)
         transcript_store = PgTranscriptStore(pg_pool)
         voice_store = PgVoiceMessageStore(pg_pool)
@@ -303,6 +315,8 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         # so the web router's get_default_session_store() reuses it; migrations
         # already ran above, so the store skips its own lazy schema-ensure.
         set_default_session_store(PgSessionStore(storage, pool=pg_pool))
+        # Visuals + feedback default stores are injected below, after
+        # storage_health exists, wrapped in RoutedStore for spillover failover.
     else:
         artifact_store = SqliteArtifactStore(state_db_path())
         summary_store = SqliteThreadSummaryStore(state_db_path())
@@ -326,11 +340,9 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         logger.info("  routing   : complexity-based model routing enabled")
 
     # ── semantic memory (default-on when postgres is live) -----------------
-    mem_settings = MemorySettings.from_env(default_enabled=pg_pool is not None)
+    # mem_settings + embedder were built above (shared with the artifact recall
+    # index); memory and skills reuse the same embedder instance.
     memory_store: MemoryStore | None = None
-    # One embedder per process, shared by memory AND skills. Built whenever
-    # Postgres is live (skills want semantic recall even if memory is disabled).
-    embedder: Embedder | None = Embedder(mem_settings) if pg_pool is not None else None
     if mem_settings.enabled:
         if pg_pool is not None and embedder is not None:
             memory_store = PgMemoryStore(
@@ -355,6 +367,30 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     storage_health = StorageHealth(pg_pool) if pg_pool is not None else None
     store = Store.for_backend(storage, pg_pool, storage_health)
     await store.start()
+
+    # ── visuals + feedback default stores (Postgres-primary, spillover) ----
+    # These are the REST-path stores written OUTSIDE a checkpointed turn (the
+    # 👍/👎 endpoint, the /visuals API), so a Postgres blip here would otherwise
+    # lose the write. Wrap the Pg store + SQLite twin in the shared RoutedStore
+    # so an outage buffers to SQLite and the Reconciler (below) drains it back on
+    # recovery. On the SQLite backend the getters fall back to the twins lazily.
+    if pg_pool is not None and storage_health is not None:
+        from yuyutsava.storage.feedback_store import (
+            PgFeedbackStore, SqliteFeedbackStore, set_default_feedback_store,
+        )
+        from yuyutsava.storage.routing.facade import RoutedStore
+        from yuyutsava.visuals.store import (
+            PgVisualStore, SqliteVisualStore, set_default_visual_store,
+        )
+
+        set_default_visual_store(RoutedStore(
+            PgVisualStore(pg_pool), SqliteVisualStore(state_db_path()),
+            storage_health, name="visual",
+        ))
+        set_default_feedback_store(RoutedStore(
+            PgFeedbackStore(pg_pool), SqliteFeedbackStore(state_db_path()),
+            storage_health, name="feedback",
+        ))
 
     # ── user prefs store --------------------------------------------------
     prefs_store = PrefsStore(store)
@@ -560,7 +596,10 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
             _bf = getattr(_store_with_vectors, "backfill_embeddings", None)
             if _bf is not None:
                 _backfills.append(_bf)
-        _reconciler = Reconciler(store.sqlite_backend, pg_pool, backfills=_backfills)
+        _reconciler = Reconciler(
+            store.sqlite_backend, pg_pool, backfills=_backfills,
+            content_specs=CONTENT_TABLE_SPECS,  # visuals + feedback (RoutedStore-wrapped)
+        )
         storage_health.set_recover(_reconciler.reconcile)
 
         def _on_storage_degraded(reason: str) -> None:
@@ -590,24 +629,33 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         FileOrganizerAgent(
             task_runner, store,
             skill_registry=skill_registry,
+            can_write_skills=True,
             mcp_manager=mcp_manager,
             search_config=search_config,
             cap_enforcer=cap_enforcer,
+            memory_store=memory_store,
+            skill_store=skill_store,
         ),
         FaceWatcherAgent(
             task_runner, store,
             skill_registry=skill_registry,
+            can_write_skills=True,
             mcp_manager=mcp_manager,
             search_config=search_config,
             cap_enforcer=cap_enforcer,
+            memory_store=memory_store,
+            skill_store=skill_store,
         ),
         # name="general-purpose" suppresses deepagents' built-in default.
         GeneralPurposeAgent(
             task_runner,
             skill_registry=skill_registry,
+            can_write_skills=True,
             mcp_manager=mcp_manager,
             search_config=search_config,
             cap_enforcer=cap_enforcer,
+            memory_store=memory_store,
+            skill_store=skill_store,
         ),
     ]
     subagents = {sa.name: sa for sa in subagent_list}
@@ -883,6 +931,7 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
             voice_store=voice_store,
             transcript_store=transcript_store,
             async_subagents=async_host_url is not None,
+            async_task_watcher=async_watcher,
         )
         uvicorn_level = logging.getLevelName(
             logging.getLogger("yuyutsava").getEffectiveLevel()

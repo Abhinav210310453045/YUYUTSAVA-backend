@@ -33,6 +33,7 @@ from yuyutsava.daemon.web.routers import (
     converse as converse_router,
     db as db_router,
     decisions as decisions_router,
+    feedback as feedback_router,
     health as health_router,
     logs as logs_router,
     proposals as proposals_router,
@@ -45,6 +46,7 @@ from yuyutsava.daemon.web.routers import (
     system as system_router,
     tasks as tasks_router,
     usage as usage_router,
+    visuals as visuals_router,
 )
 from yuyutsava.daemon.channels import HttpLogPayload
 from yuyutsava.daemon.web.services.decision_service import DecisionService
@@ -87,6 +89,7 @@ def create_app(
     voice_store: "object | None" = None,        # storage.voice_store.VoiceMessageStore; duck-typed
     transcript_store: "object | None" = None,   # context.transcript_store.TranscriptStore; duck-typed
     async_subagents: bool = False,              # background subagent host enabled
+    async_task_watcher: "object | None" = None,  # async_subagents.watcher.AsyncTaskHealthWatcher
 ) -> FastAPI:
     if auth is None:
         auth = AuthSettings.from_env(host=host)
@@ -141,6 +144,7 @@ def create_app(
     app.state.voice_store = voice_store
     app.state.transcript_store = transcript_store
     app.state.async_subagents = async_subagents
+    app.state.async_task_watcher = async_task_watcher
 
     # Auth first so CORSMiddleware (added after → wraps outside) answers
     # preflight OPTIONS before the bearer check can 401 them.
@@ -203,6 +207,8 @@ def create_app(
         usage_router.router,
         system_router.router,
         converse_router.router,
+        visuals_router.router,
+        feedback_router.router,
     ]
     # Read-only DB introspection. Opt-out via env (defaults on).
     if os.environ.get("YUYUTSAVA_DB_API_ENABLED", "true").lower() not in {"0", "false", "no"}:

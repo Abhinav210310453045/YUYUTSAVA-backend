@@ -12,11 +12,14 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query
 
 from yuyutsava.daemon.task_registry import TASK_STATUSES
-from yuyutsava.daemon.web.deps import get_hub, get_task_registry, get_task_submission
-from yuyutsava.daemon.web.exceptions import ConflictError, NotFoundError
+from yuyutsava.daemon.web.deps import (
+    get_async_watcher, get_hub, get_task_registry, get_task_submission,
+)
+from yuyutsava.daemon.web.exceptions import ConflictError, NotFoundError, ServiceUnavailableError
 from yuyutsava.daemon.web.schemas.proposal import OkOut
 from yuyutsava.daemon.web.schemas.task import (
-    TaskEventsOut, TaskListOut, TaskOut, TaskSubmitIn, TaskSubmitOut,
+    TaskEventsOut, TaskListOut, TaskLogMessage, TaskLogsOut,
+    TaskOut, TaskSubmitIn, TaskSubmitOut,
 )
 
 router = APIRouter(tags=["tasks"])
@@ -85,6 +88,23 @@ async def cancel_task(task_id: str, registry=Depends(get_task_registry)) -> OkOu
     if outcome == "conflict":
         raise ConflictError("task already finished")
     return OkOut(ok=True, note="cancellation requested; honored at the next stream event")
+
+
+@router.get(
+    "/tasks/{task_id}/logs",
+    response_model=TaskLogsOut,
+    summary="Full transcript of a background (async-subagent) task, on demand",
+)
+async def task_logs(
+    task_id: str,
+    watcher=Depends(get_async_watcher),
+) -> TaskLogsOut:
+    if watcher is None:
+        raise ServiceUnavailableError("background subagents are not enabled")
+    rows = await watcher.get_task_transcript(task_id)
+    if rows is None:
+        raise NotFoundError(f"no background task {task_id!r}")
+    return TaskLogsOut(task_id=task_id, messages=[TaskLogMessage(**r) for r in rows])
 
 
 @router.get(

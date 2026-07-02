@@ -59,16 +59,22 @@ class FaceWatcherAgent(BaseSubAgent):
         task_runner: TaskRunnerAgent,
         store: Store,
         skill_registry: SkillRegistry | None = None,
+        can_write_skills: bool = False,
         mcp_manager: MCPClientManager | None = None,
         search_config: SearchConfig | None = None,
         cap_enforcer: object | None = None,
+        memory_store: object | None = None,
+        skill_store: object | None = None,
     ) -> None:
         super().__init__(
             task_runner,
             skill_registry=skill_registry,
+            can_write_skills=can_write_skills,
             mcp_manager=mcp_manager,
             search_config=search_config,
             cap_enforcer=cap_enforcer,
+            memory_store=memory_store,
+            skill_store=skill_store,
         )
         self._store = store
 

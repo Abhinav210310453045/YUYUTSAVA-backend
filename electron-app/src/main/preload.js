@@ -18,6 +18,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   addWatchedDir: (path) => ipcRenderer.invoke('daemon:addWatchedDir', path),
   removeWatchedDir: (path) => ipcRenderer.invoke('daemon:removeWatchedDir', path),
   pickDirectory: () => ipcRenderer.invoke('dialog:pickDirectory'),
+  // Save-as: pop a native dialog seeded with `name`, then write `data` (a
+  // Uint8Array/ArrayBuffer of the file bytes) to the chosen path. Returns the
+  // saved path, or null if the user cancelled. Used by the artifact Download
+  // button so the user picks where their copy lands.
+  saveFile: (name, data) => ipcRenderer.invoke('dialog:saveFile', { name, data }),
 
   // Window controls (frameless)
   minimizeWindow: () => ipcRenderer.send('window:minimize'),

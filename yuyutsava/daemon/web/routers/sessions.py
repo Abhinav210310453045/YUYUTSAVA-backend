@@ -22,10 +22,9 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 
 from yuyutsava.daemon.web.schemas.session import SessionOut
+from yuyutsava.storage.purge import purge_session
 from yuyutsava.storage.sessions import (
     SessionNotFound,
-    SessionsSettings,
-    build_checkpointer,
     get_default_session_store,
 )
 
@@ -148,28 +147,19 @@ async def get_session_audio(session_id: str, seq: int, request: Request) -> File
     return FileResponse(msg.audio_blob_path, media_type="audio/wav")
 
 
-@router.delete("/sessions/{session_id}", summary="Delete a session + its checkpoint rows")
-async def delete_session(session_id: str, request: Request) -> dict[str, int]:
-    store = get_default_session_store()
+@router.delete("/sessions/{session_id}", summary="Delete a session + all its data")
+async def delete_session(session_id: str) -> dict[str, int]:
+    """Purge every row + file tied to the session (checkpoints, transcript,
+    artifacts, summaries, voice history + audio blobs, tasks, usage,
+    proposals/decisions, interrupts, and the ephemeral memories), then the
+    session row itself. See :func:`yuyutsava.storage.purge.purge_session` for the
+    full teardown + atomicity model."""
     try:
-        s = await store.get(session_id)
+        report = await purge_session(session_id)
     except SessionNotFound:
         raise HTTPException(status_code=404, detail=f"no session with id {session_id!r}")
-    # Free both the metadata row and the LangGraph checkpoint rows.
-    async with build_checkpointer(SessionsSettings.from_env()) as saver:
-        await saver.adelete_thread(s.thread_id)
-    await store.delete(session_id)
-    # Drop the replayable voice history + its on-disk clips (session-scoped user
-    # data, not swept by TTL). Best-effort; FK CASCADE also covers the PG rows.
-    voice_store = getattr(request.app.state, "voice_store", None)
-    if voice_store is not None:
-        try:
-            await voice_store.delete_for_thread(s.thread_id)
-        except Exception:  # noqa: BLE001
-            logger.debug("delete: voice_messages cleanup failed", exc_info=True)
-    try:
-        from yuyutsava.audio_io.blobs import delete_thread_voice_blobs
-        delete_thread_voice_blobs(s.thread_id)
-    except Exception:  # noqa: BLE001
-        logger.debug("delete: voice blob cleanup failed", exc_info=True)
-    return {"deleted": 1}
+    return {
+        "deleted": 1,
+        "rows_purged": report.total_rows,
+        "voice_blobs_deleted": report.voice_blobs_deleted,
+    }

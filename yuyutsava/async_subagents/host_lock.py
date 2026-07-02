@@ -8,7 +8,7 @@ existed on different ports — pure waste.
 This module makes the host a profile-wide singleton via a lockfile +
 discovery file under ``state_dir()``:
 
-* ``async_host.lock`` — held exclusive (``fcntl.flock``) by whichever
+* ``async_host.lock`` — held exclusive (cross-platform ``FileLock``) by whichever
   process owns the host.
 * ``async_host.json`` — ``{pid, url, started_at, graph_ids}``. Other
   processes read this to attach.
@@ -27,12 +27,12 @@ Stale-lock recovery
 If the lockfile exists but the recorded PID is dead, the helpers unlink
 both files once and retry the acquisition.
 
-POSIX-only (``fcntl``).
+Cross-platform: the lock is a :class:`yuyutsava.platform.FileLock`
+(portalocker under the hood).
 """
 
 from __future__ import annotations
 
-import fcntl
 import json
 import logging
 import os
@@ -43,6 +43,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from yuyutsava.platform import FileLock, pid_alive
 from yuyutsava.storage.paths import state_dir
 
 logger = logging.getLogger("yuyutsava.async_subagents.host_lock")
@@ -57,15 +58,7 @@ def host_discovery_path() -> Path:
 
 
 def _is_pid_alive(pid: int) -> bool:
-    if pid <= 0:
-        return False
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
+    return pid_alive(pid)
 
 
 def _unlink_safe(path: Path) -> None:
@@ -123,13 +116,13 @@ class HostAttachment:
     Owner mode: ``host`` and ``fd`` are set; caller must call
     :func:`release_host_lock` on shutdown.
 
-    Attacher mode: ``host`` and ``fd`` are both ``None``; ``url`` points
+    Attacher mode: ``host`` and ``lock`` are both ``None``; ``url`` points
     at a running host owned by another process. Caller must not call
     ``host.shutdown()`` (it doesn't own one).
     """
     url: str
     host: Any | None      # AsyncSubagentHost — duck-typed to avoid cycle
-    fd: int | None
+    lock: FileLock | None
 
 
 def acquire_or_attach_host(*, factory: Callable[[], Any]) -> HostAttachment:
@@ -147,17 +140,14 @@ def acquire_or_attach_host(*, factory: Callable[[], Any]) -> HostAttachment:
     lock_path.parent.mkdir(parents=True, exist_ok=True)
 
     for attempt in (1, 2):
-        fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o644)
-        try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            os.close(fd)
+        lock = FileLock(lock_path)
+        if not lock.acquire(blocking=False):
             # Lock held — check discovery + health.
             disco = read_host_discovery()
             if disco is not None and _ping_ok(str(disco.get("url", ""))):
                 logger.info("attaching to existing async host at %s (pid=%s)",
                             disco.get("url"), disco.get("pid"))
-                return HostAttachment(url=str(disco["url"]), host=None, fd=None)
+                return HostAttachment(url=str(disco["url"]), host=None, lock=None)
             # Stale lock or dead host — clean up once and retry.
             if attempt == 1:
                 _unlink_safe(host_discovery_path())
@@ -180,20 +170,12 @@ def acquire_or_attach_host(*, factory: Callable[[], Any]) -> HostAttachment:
                 graph_ids=list(getattr(host, "graph_ids", []) or []),
             )
             # Record our pid in the lock body for postmortem.
-            try:
-                os.ftruncate(fd, 0)
-                os.write(fd, f"{os.getpid()}\n".encode())
-            except OSError:
-                pass
+            lock.stamp(f"{os.getpid()}\n")
             logger.info("acquired async host ownership on %s", url)
-            return HostAttachment(url=url, host=host, fd=fd)
+            return HostAttachment(url=url, host=host, lock=lock)
         except Exception:
             # Roll back: release the lock, unlink, surface the error.
-            try:
-                fcntl.flock(fd, fcntl.LOCK_UN)
-            except OSError:
-                pass
-            os.close(fd)
+            lock.release()
             _unlink_safe(host_discovery_path())
             _unlink_safe(lock_path)
             raise
@@ -212,15 +194,8 @@ def release_host_lock(attachment: HostAttachment) -> None:
             attachment.host.shutdown()
         except Exception:  # noqa: BLE001
             logger.exception("async host shutdown failed (continuing)")
-    if attachment.fd is not None:
-        try:
-            fcntl.flock(attachment.fd, fcntl.LOCK_UN)
-        except OSError:
-            pass
-        try:
-            os.close(attachment.fd)
-        except OSError:
-            pass
+    if attachment.lock is not None:
+        attachment.lock.release()
         _unlink_safe(host_discovery_path())
         _unlink_safe(host_lock_path())
 

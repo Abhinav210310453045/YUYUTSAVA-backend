@@ -22,6 +22,7 @@ runs first; this middleware only does work when the tool actually proceeds.
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any, Awaitable, Callable, Iterable
 
 from langchain.agents.middleware.types import AgentMiddleware
@@ -29,6 +30,13 @@ from langchain.agents.middleware.types import AgentMiddleware
 logger = logging.getLogger("yuyutsava.async_subagents.interrupt_middleware")
 
 _INTERRUPT_TOOLS = frozenset({"update_async_task", "cancel_async_task"})
+
+# Content used for synthetic ToolMessages that heal an orphaned tool call.
+SYNTHETIC_TOOL_CONTENT = "[interrupted by user update — tool was cancelled mid-run]"
+
+# Run statuses that mean the run is no longer executing (so a dangling
+# tool_call, if any, is now committed to thread state and safe to patch).
+_SETTLED_RUN_STATUSES = frozenset({"success", "error", "interrupted", "cancelled", "timeout"})
 
 
 class AsyncTaskInterruptPatchMiddleware(AgentMiddleware):
@@ -131,60 +139,82 @@ class AsyncTaskInterruptPatchMiddleware(AgentMiddleware):
             )
         return self._async_clients[agent_name]
 
-    @staticmethod
-    def _find_pending_tool_calls(messages: list[Any]) -> list[tuple[str, str]]:
-        """Return ``[(tool_call_id, tool_name)]`` for unresolved tool_calls.
+    def _settle_active_run_sync(self, client: Any, thread_id: str) -> None:
+        """Cancel the latest in-flight run and wait until it settles.
 
-        Walks messages in order; an AIMessage's tool_call is "resolved" by any
-        later ToolMessage with the matching ``tool_call_id``.
+        Without this, a tool call still executing when we read thread state is
+        not yet persisted, so ``find_pending_tool_calls`` sees nothing — the
+        interrupt then orphans it *after* our patch. Cancelling first and
+        waiting for the run to leave the executing state forces the dangling
+        ``AIMessage(tool_calls)`` to be committed so the patch below catches it.
         """
-        pending: dict[str, str] = {}
-        for m in messages:
-            mtype = _msg_type(m)
-            if mtype == "ai":
-                for tc in _ai_tool_calls(m):
-                    tc_id = tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", None)
-                    tc_name = (
-                        tc.get("name", "") if isinstance(tc, dict) else getattr(tc, "name", "")
-                    )
-                    if tc_id:
-                        pending[tc_id] = tc_name or ""
-            elif mtype == "tool":
-                tc_id = (
-                    m.get("tool_call_id") if isinstance(m, dict) else getattr(m, "tool_call_id", None)
-                )
-                if tc_id:
-                    pending.pop(tc_id, None)
-        return list(pending.items())
+        try:
+            runs = client.runs.list(thread_id=thread_id, limit=1)
+        except Exception:  # noqa: BLE001
+            return
+        run = _first_run(runs)
+        if run is None:
+            return
+        status = run.get("status") or ""
+        run_id = run.get("run_id")
+        if status in _SETTLED_RUN_STATUSES or not run_id:
+            return
+        try:
+            client.runs.cancel(thread_id=thread_id, run_id=run_id)
+        except Exception:  # noqa: BLE001
+            pass
+        # Poll briefly for the run to settle (cap ~3s).
+        for _ in range(15):
+            time.sleep(0.2)
+            try:
+                cur = client.runs.get(thread_id=thread_id, run_id=run_id)
+            except Exception:  # noqa: BLE001
+                break
+            if (cur.get("status") or "") in _SETTLED_RUN_STATUSES:
+                break
 
-    @staticmethod
-    def _build_synthetic(pending: list[tuple[str, str]]) -> list[dict]:
-        return [
-            {
-                "type": "tool",
-                "tool_call_id": tc_id,
-                "name": tc_name or "tool",
-                "content": "[interrupted by user update — tool was cancelled mid-run]",
-                "status": "error",
-            }
-            for tc_id, tc_name in pending
-        ]
+    async def _settle_active_run_async(self, client: Any, thread_id: str) -> None:
+        import asyncio
+        try:
+            runs = await client.runs.list(thread_id=thread_id, limit=1)
+        except Exception:  # noqa: BLE001
+            return
+        run = _first_run(runs)
+        if run is None:
+            return
+        status = run.get("status") or ""
+        run_id = run.get("run_id")
+        if status in _SETTLED_RUN_STATUSES or not run_id:
+            return
+        try:
+            await client.runs.cancel(thread_id=thread_id, run_id=run_id)
+        except Exception:  # noqa: BLE001
+            pass
+        for _ in range(15):
+            await asyncio.sleep(0.2)
+            try:
+                cur = await client.runs.get(thread_id=thread_id, run_id=run_id)
+            except Exception:  # noqa: BLE001
+                break
+            if (cur.get("status") or "") in _SETTLED_RUN_STATUSES:
+                break
 
     def _patch_pending_sync(self, agent_name: str, thread_id: str) -> int:
         try:
             client = self._get_sync_client(agent_name)
+            self._settle_active_run_sync(client, thread_id)
             thread = client.threads.get(thread_id=thread_id)
         except Exception as e:  # noqa: BLE001  # SDK raises untyped
             logger.warning("interrupt-patch: cannot fetch thread %s: %s", thread_id, e)
             return 0
         messages = (thread.get("values") or {}).get("messages") or []
-        pending = self._find_pending_tool_calls(messages)
+        pending = find_pending_tool_calls(messages)
         if not pending:
             return 0
         try:
             client.threads.update_state(
                 thread_id=thread_id,
-                values={"messages": self._build_synthetic(pending)},
+                values={"messages": build_synthetic_toolmessages(pending)},
             )
         except Exception as e:  # noqa: BLE001
             logger.warning("interrupt-patch: cannot update thread %s: %s", thread_id, e)
@@ -198,18 +228,19 @@ class AsyncTaskInterruptPatchMiddleware(AgentMiddleware):
     async def _patch_pending_async(self, agent_name: str, thread_id: str) -> int:
         try:
             client = self._get_async_client(agent_name)
+            await self._settle_active_run_async(client, thread_id)
             thread = await client.threads.get(thread_id=thread_id)
         except Exception as e:  # noqa: BLE001
             logger.warning("interrupt-patch: cannot fetch thread %s: %s", thread_id, e)
             return 0
         messages = (thread.get("values") or {}).get("messages") or []
-        pending = self._find_pending_tool_calls(messages)
+        pending = find_pending_tool_calls(messages)
         if not pending:
             return 0
         try:
             await client.threads.update_state(
                 thread_id=thread_id,
-                values={"messages": self._build_synthetic(pending)},
+                values={"messages": build_synthetic_toolmessages(pending)},
             )
         except Exception as e:  # noqa: BLE001
             logger.warning("interrupt-patch: cannot update thread %s: %s", thread_id, e)
@@ -219,6 +250,61 @@ class AsyncTaskInterruptPatchMiddleware(AgentMiddleware):
             len(pending), thread_id,
         )
         return len(pending)
+
+
+def _first_run(runs: Any) -> dict | None:
+    """Normalize ``runs.list`` output to the first run as a dict, or None."""
+    if not runs:
+        return None
+    r = runs[0]
+    if isinstance(r, dict):
+        return r
+    return getattr(r, "__dict__", None)
+
+
+def find_pending_tool_calls(messages: list[Any]) -> list[tuple[str, str]]:
+    """Return ``[(tool_call_id, tool_name)]`` for unresolved tool_calls.
+
+    Walks messages in order; an AIMessage's tool_call is "resolved" by any
+    later ToolMessage with the matching ``tool_call_id``. Shared by the master
+    interrupt-patch middleware and the watcher's self-heal so both agree on
+    what "orphaned" means.
+    """
+    pending: dict[str, str] = {}
+    for m in messages:
+        mtype = _msg_type(m)
+        if mtype == "ai":
+            for tc in _ai_tool_calls(m):
+                tc_id = tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", None)
+                tc_name = (
+                    tc.get("name", "") if isinstance(tc, dict) else getattr(tc, "name", "")
+                )
+                if tc_id:
+                    pending[tc_id] = tc_name or ""
+        elif mtype == "tool":
+            tc_id = (
+                m.get("tool_call_id") if isinstance(m, dict) else getattr(m, "tool_call_id", None)
+            )
+            if tc_id:
+                pending.pop(tc_id, None)
+    return list(pending.items())
+
+
+def build_synthetic_toolmessages(
+    pending: list[tuple[str, str]],
+    content: str = SYNTHETIC_TOOL_CONTENT,
+) -> list[dict]:
+    """Build synthetic error ToolMessages that resolve orphaned tool calls."""
+    return [
+        {
+            "type": "tool",
+            "tool_call_id": tc_id,
+            "name": tc_name or "tool",
+            "content": content,
+            "status": "error",
+        }
+        for tc_id, tc_name in pending
+    ]
 
 
 def _msg_type(m: Any) -> str | None:

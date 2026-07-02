@@ -15,9 +15,7 @@ keep their hand-rolled patterns until Step 2 swaps them over.
 from __future__ import annotations
 
 import asyncio
-import fcntl
 import logging
-import os
 import sqlite3
 from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
@@ -25,6 +23,7 @@ from typing import Any, AsyncIterator, Awaitable, Callable, ClassVar, Iterator
 
 import aiosqlite
 
+from yuyutsava.platform import FileLock
 from yuyutsava.storage.paths import state_dir
 
 logger = logging.getLogger("yuyutsava.storage.base")
@@ -45,52 +44,25 @@ def migration_lock() -> Iterator[None]:
     migration block with this and only one process will run migrations
     at a time; the other waits.
 
-    Blocking ``flock`` — every caller will eventually get the lock. The
-    body is expected to be fast (milliseconds) so blocking is fine.
+    Blocking lock — every caller will eventually get it. The body is
+    expected to be fast (milliseconds) so blocking is fine. Cross-platform
+    via :class:`yuyutsava.platform.FileLock` (portalocker under the hood).
     """
-    path = _migrations_lock_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
-    try:
-        fcntl.flock(fd, fcntl.LOCK_EX)
+    with FileLock(_migrations_lock_path()):
         yield
-    finally:
-        try:
-            fcntl.flock(fd, fcntl.LOCK_UN)
-        except OSError:
-            pass
-        os.close(fd)
 
 
 @asynccontextmanager
 async def amigration_lock() -> AsyncIterator[None]:
     """Async wrapper around :func:`migration_lock` that runs the blocking
-    ``flock`` on a worker thread so the asyncio loop stays responsive.
+    lock acquisition on a worker thread so the asyncio loop stays responsive.
     """
-    fd = await asyncio.to_thread(_acquire_migration_lock_fd)
+    lock = FileLock(_migrations_lock_path())
+    await asyncio.to_thread(lock.acquire)
     try:
         yield
     finally:
-        await asyncio.to_thread(_release_migration_lock_fd, fd)
-
-
-def _acquire_migration_lock_fd() -> int:
-    path = _migrations_lock_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
-    fcntl.flock(fd, fcntl.LOCK_EX)
-    return fd
-
-
-def _release_migration_lock_fd(fd: int) -> None:
-    try:
-        fcntl.flock(fd, fcntl.LOCK_UN)
-    except OSError:
-        pass
-    try:
-        os.close(fd)
-    except OSError:
-        pass
+        await asyncio.to_thread(lock.release)
 
 
 class BaseSqliteStore:

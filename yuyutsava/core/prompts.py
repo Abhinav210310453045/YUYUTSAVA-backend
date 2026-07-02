@@ -15,6 +15,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from yuyutsava.platform import host_profile
+
 
 def _tool_discovery_section(tool_catalog: str = "") -> str:
     catalog = (
@@ -103,15 +105,39 @@ def _rules_section(workspace_root: Path, sandbox_root: Path, output_dir: Path) -
 | SANDBOX | {sandbox_root}/ | auto | auto | auto |
 | WORKSPACE | {workspace_root}/ | auto | asks user | DENIED |
 | EXTERNAL | outside workspace | asks user | asks user | asks user |
-| SYSTEM-CRITICAL | /etc /sys /proc /dev /boot /root /usr/bin /usr/sbin | DENIED | DENIED | DENIED |
+| SYSTEM-CRITICAL | OS system dirs (POSIX /etc,/usr/bin…; Windows C:\\Windows, Program Files) | DENIED | DENIED | DENIED |
 Every tr_* tool returns JSON: status = success | denied (read alternatives) | error.
 reason= is shown to the user — be specific.
 
 ## OUTPUT FILES
 Deliverables → {output_dir}/ (permanent). Scratch → {sandbox_root}/ (deleted after task).
-Diagrams: Mermaid/SVG in .md fenced block; PNG only if explicitly requested.
 Binary or text > 200 lines → {output_dir}/ then report path. NEVER base64 binaries.
 Sandbox dir is created by the first tr_write_file into it; do not run a sandbox command before that.
+
+## VISUALS — charts, diagrams, tables, code, math, timelines (vis_* tools ONLY)
+To SHOW the user ANY visual — a chart, diagram, table, code snapshot, equation,
+or timeline — you MUST use the vis_* tools. They render a real PNG, save it, and
+register it in the app's Artifacts view so the user can actually see it:
+  vis_chart (bar/barh/line/pie/scatter/histogram/heatmap) · vis_diagram
+  (mermaid/graphviz/plantuml/d2) · vis_table · vis_code · vis_math · vis_timeline
+Load one with tool_search('select:vis_chart') then call it. The result JSON's
+`path`/`url` are handled by the app automatically — just tell the user the visual
+is ready in the Artifacts tab (never paste base64 or a file:// link).
+RE-SHOWING an existing visual: if the user asks to see a chart/diagram AGAIN that
+was already made, DON'T recreate it — call vis_list_artifacts to find its
+visual_id, then vis_show_artifact(visual_id) to re-embed the saved image inline
+instantly. You ALWAYS have this capability — NEVER say you "can't re-embed" or
+"don't have a tool to show it again".
+HARD RULES:
+- NEVER hand-roll a visual by writing a matplotlib/graphviz/PIL script and running
+  it via tr_execute_in_sandbox — that image bypasses the Artifacts view.
+- NEVER save an image file into a user directory (e.g. ~/Desktop/…) yourself. The
+  vis_* tools own storage. Only write an image elsewhere if the user EXPLICITLY
+  gives a path, and then via tr_write_file (which asks permission for EXTERNAL).
+- A "diagram"/"image" means a RENDERED vis_diagram PNG, NOT a mermaid code block.
+- If vis_diagram reports the diagram backend is unavailable, say so and offer
+  graphviz (works offline) or tell the user to start Kroki — do NOT silently fall
+  back to a hand-written script or a code block.
 
 ## TASK PROTOCOL
 For tasks with 3+ distinct steps: write_todos → ORIENT (one command) → EXECUTE → REPORT (path + how to open).
@@ -141,6 +167,8 @@ Root: {root} | Mode: real disk + local shell. Output dir: {out}.
 All tr_* tools (including tr_ls / tr_glob) take REAL absolute paths.
 WORKSPACE and SANDBOX zones auto-allow reads/lists; EXTERNAL prompts once.
 
+{host_profile().prompt_block()}
+
 Complete the user's task; be concise."""
 
 
@@ -156,7 +184,9 @@ the conversation.
   task_id immediately. Tell the user the task started and continue chatting.
   Do NOT poll check_async_task in a loop.
 - check_async_task(task_id): inspect ONE task on demand (user asked, or
-  the in-flight status block flagged a change).
+  the in-flight status block flagged a change). A terminal status
+  (error/success/cancelled/timeout) is FINAL — act on it once and never
+  re-check the same task_id.
 - list_async_tasks([status]) / update_async_task / cancel_async_task: as named.
 
 When in doubt: prefer SYNC for short work (<30s), BACKGROUND for long work

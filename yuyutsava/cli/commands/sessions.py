@@ -11,10 +11,9 @@ import sys
 import time
 from pathlib import Path
 
+from yuyutsava.storage.purge import purge_session
 from yuyutsava.storage.sessions import (
     SessionNotFound,
-    SessionsSettings,
-    build_checkpointer,
     get_default_session_store,
 )
 
@@ -110,8 +109,11 @@ async def print_sessions_table(workspace_filter: Path | None = None) -> int:
 
 
 async def delete_session(session_id: str) -> int:
-    """``--delete-session`` handler. Removes the session row AND its
-    checkpoint rows. Prints a one-line confirmation or error.
+    """``--delete-session`` handler. Purges the session and everything tied to
+    its thread (checkpoints, transcript, artifacts, summaries, voice history +
+    audio clips, tasks, usage, proposals/decisions, interrupts, and ephemeral
+    memories) via the shared :func:`yuyutsava.storage.purge.purge_session`, so
+    the CLI and the daemon delete identically. Prints a one-line summary.
     """
     store = get_default_session_store()
     try:
@@ -119,9 +121,9 @@ async def delete_session(session_id: str) -> int:
     except SessionNotFound:
         print(f"Error: no session with id {session_id!r}", file=sys.stderr)
         return 2
-    settings = SessionsSettings.from_env()
-    async with build_checkpointer(settings) as saver:
-        await saver.adelete_thread(s.thread_id)
-    await store.delete(session_id)
-    print(f"Deleted session {session_id} (workspace: {s.workspace})")
+    report = await purge_session(session_id)
+    print(
+        f"Deleted session {session_id} (workspace: {s.workspace}) — "
+        f"purged {report.total_rows} rows, {report.voice_blobs_deleted} audio clip(s)"
+    )
     return 0

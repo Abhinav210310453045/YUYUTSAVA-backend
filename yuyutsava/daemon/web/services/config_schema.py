@@ -125,6 +125,15 @@ _GROUPS: list[ConfigGroup] = [
         ConfigVar("YUYUTSAVA_CONTEXT_OFFLOAD_THRESHOLD_CHARS",
                   "Tool-result offload threshold (chars)", "number",
                   default="20000", placeholder="20000"),
+        ConfigVar("YUYUTSAVA_CONTEXT_ALWAYS_OFFLOAD_PREFIXES",
+                  "Always-offload tool prefixes", default="ws_", placeholder="ws_,db_",
+                  help="Comma-separated tool-name prefixes whose results are always "
+                       "offloaded regardless of size (the Context REPL). Default ws_ "
+                       "covers web search."),
+        ConfigVar("YUYUTSAVA_CONTEXT_SEMANTIC_RECALL", "Semantic recall (ctx_recall)",
+                  "toggle", default="on",
+                  help="Index offloaded artifacts into pgvector so agents can "
+                       "ctx_recall relevant slices. Postgres-only; no-op on SQLite."),
         ConfigVar("YUYUTSAVA_CONTEXT_PIN_FIRST_MESSAGES", "Pin first messages", "number",
                   default="2", placeholder="2"),
         ConfigVar("YUYUTSAVA_CONTEXT_SUMMARIZER_INPUT_TOKENS", "Summarizer input tokens",
@@ -200,6 +209,11 @@ _GROUPS: list[ConfigGroup] = [
         ConfigVar("GROQ_WHISPER_MODEL", "Groq Whisper model",
                   default="whisper-large-v3", placeholder="whisper-large-v3",
                   depends_key="STT_PROVIDER", depends_value="groq"),
+        ConfigVar("YUYUTSAVA_STT_MIN_CONFIDENCE", "Min ASR confidence", "number",
+                  default="0.35", placeholder="0.35",
+                  help="Below this faster-whisper confidence (0–1) the user is "
+                       "asked to repeat instead of running the agent on a garbled "
+                       "transcript. Set 0 to disable. Ignored by Groq (no signal)."),
         ConfigVar("TTS_PROVIDER", "Text-to-speech", "select", default="piper",
                   options=["piper", "elevenlabs"]),
         ConfigVar("PIPER_MODEL", "Piper model",
@@ -214,6 +228,11 @@ _GROUPS: list[ConfigGroup] = [
         ConfigVar("WAKE_WORDS", "Wake words", default="hey_jarvis",
                   reload_class=HOT, placeholder="comma-separated"),
         ConfigVar("WAKE_THRESHOLD", "Wake threshold", default="0.5", placeholder="0.5"),
+        ConfigVar("YUYUTSAVA_MIC_TUNE_LOG", "Mic tune score logging", "toggle",
+                  default="0",
+                  help="Log periodic wake-word peak scores to the voice log for "
+                       "tuning the mic threshold. Off by default; these lines "
+                       "flood the log when enabled."),
     ]),
     ConfigGroup("Notifications", [
         ConfigVar("YUYUTSAVA_TELEGRAM_BOT_TOKEN", "Telegram bot token", "password",

@@ -33,6 +33,9 @@ export class AudioPlayer {
     this._pcmCursor = 0
     // Live nodes we may need to stop() for barge-in.
     this._active = new Set()
+    // Shared analyser tapping the output — feeds the Voice orb/waveform while
+    // the agent is speaking. Sources connect through it to the destination.
+    this._analyser = null
   }
 
   // Lazily create + resume the context. Browsers block audio until a user
@@ -42,11 +45,25 @@ export class AudioPlayer {
       const Ctx = window.AudioContext || window.webkitAudioContext
       this._ctx = new Ctx()
     }
+    if (!this._analyser) {
+      this._analyser = this._ctx.createAnalyser()
+      this._analyser.fftSize = 256
+      this._analyser.smoothingTimeConstant = 0.8
+      this._analyser.connect(this._ctx.destination)
+    }
     if (this._ctx.state === 'suspended') {
       try { await this._ctx.resume() } catch { /* ignore */ }
     }
     return this._ctx
   }
+
+  // AnalyserNode for the agent's TTS output, or null before first playback.
+  // Consumers (VoiceOrb) call getByteFrequencyData/getByteTimeDomainData on it.
+  getAnalyser() { return this._analyser }
+
+  // Where playback sources should connect: through the analyser when present so
+  // the visualizer sees the audio, else straight to the speakers.
+  _out() { return this._analyser || this._ctx.destination }
 
   // Play a named earcon. Unknown names are a no-op (logged).
   async playEarcon(name) {
@@ -83,7 +100,7 @@ export class AudioPlayer {
 
     const src = ctx.createBufferSource()
     src.buffer = buffer
-    src.connect(ctx.destination)
+    src.connect(this._out())
 
     // Schedule after whatever is already queued (gapless), but never in the past.
     const startAt = Math.max(ctx.currentTime, this._pcmCursor)
@@ -103,11 +120,25 @@ export class AudioPlayer {
     const buffer = await ctx.decodeAudioData(await resp.arrayBuffer())
     const src = ctx.createBufferSource()
     src.buffer = buffer
-    src.connect(ctx.destination)
+    src.connect(this._out())
     const startAt = Math.max(ctx.currentTime, this._pcmCursor)
     src.start(startAt)
     this._pcmCursor = startAt + buffer.duration
     this._track(src)
+  }
+
+  // True while queued TTS audio is still scheduled to play. The daemon finishes
+  // synthesizing a whole reply long before the client finishes *playing* it, so
+  // only the client (via this scheduling cursor) knows when the voice reply is
+  // truly done — used to mute the mic and ignore interrupt-y events until then.
+  isPlaying() {
+    return !!this._ctx && this._pcmCursor > this._ctx.currentTime + 0.05
+  }
+
+  // Seconds of audio still queued ahead of the playback cursor (0 when idle).
+  secondsRemaining() {
+    if (!this._ctx) return 0
+    return Math.max(0, this._pcmCursor - this._ctx.currentTime)
   }
 
   // Barge-in: stop everything currently playing/queued and reset the cursor.

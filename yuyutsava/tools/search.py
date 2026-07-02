@@ -122,7 +122,7 @@ def _make_tavily_search(api_key: str) -> BaseTool:
         query: str,
         max_results: int = 5,
         search_depth: str = "basic",
-        include_answer: bool = True,
+        include_answer: bool = False,
         topic: str = "general",
     ) -> str:
         """Search the web using Tavily and return results as JSON.
@@ -133,7 +133,10 @@ def _make_tavily_search(api_key: str) -> BaseTool:
             query:          The search query.
             max_results:    Number of results to return (1–10, default 5).
             search_depth:   "basic" (faster, cheaper) or "advanced" (deeper crawl).
-            include_answer: Include a synthesized answer above the results.
+            include_answer: Include Tavily's synthesized answer. Off by default —
+                            it is an unverified provider gloss (frequently wrong);
+                            ground answers in the result URLs instead. When on, it
+                            is surfaced only as ``provider_answer_unverified``.
             topic:          "general" or "news" (news biases toward recent content).
 
         Returns:

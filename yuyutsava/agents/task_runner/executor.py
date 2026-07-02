@@ -8,8 +8,14 @@ No permission logic lives here — only I/O.
 from __future__ import annotations
 
 import asyncio
+import os
+import re
 import shutil
+import sys
+import zipfile
 from pathlib import Path
+
+import httpx
 
 
 async def execute_read(
@@ -72,16 +78,38 @@ async def execute_run(
     command: str,
     cwd: Path,
     timeout: int = 120,
+    *,
+    elevated: bool = False,
 ) -> dict:
     """
-    Run *command* in a subprocess within *cwd*.
+    Run *command* in this host's native shell within *cwd*.
+
+    The shell is chosen by the HostProfile — ``bash -c`` on POSIX,
+    ``powershell -Command`` on Windows (never ``cmd.exe``) — so the model's
+    OS-native command syntax runs correctly everywhere. We use
+    ``create_subprocess_exec`` with an explicit argv (not ``_shell``) so there
+    is no second layer of shell-quoting to get wrong.
+
+    When *elevated* is True the command is routed through the platform
+    elevation provider (UAC / admin osascript / pkexec) instead. The caller
+    MUST have taken fresh CRITICAL consent first — this layer only executes.
 
     Returns a dict with keys: ``stdout``, ``stderr``, ``exit_code``.
     Raises ``asyncio.TimeoutError`` if the command exceeds *timeout* seconds.
     """
     cwd.mkdir(parents=True, exist_ok=True)
-    proc = await asyncio.create_subprocess_shell(
-        command,
+
+    if elevated:
+        from yuyutsava.platform.elevation import get_elevation_provider
+
+        res = await get_elevation_provider().run_elevated(command, timeout=timeout)
+        return {"stdout": res.stdout, "stderr": res.stderr, "exit_code": res.exit_code}
+
+    from yuyutsava.platform import host_profile
+
+    argv = host_profile().shell_command(command)
+    proc = await asyncio.create_subprocess_exec(
+        *argv,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         cwd=str(cwd),
@@ -98,6 +126,101 @@ async def execute_run(
     return {
         "stdout": stdout_bytes.decode(errors="replace").strip(),
         "stderr": stderr_bytes.decode(errors="replace").strip(),
+        "exit_code": proc.returncode,
+    }
+
+
+async def execute_grep(
+    pattern: str,
+    path: Path,
+    *,
+    context_lines: int = 3,
+    case_insensitive: bool = False,
+    max_matches: int = 100,
+) -> dict:
+    """Pure-Python recursive regex search — replaces shelling out to ``grep -rn``.
+
+    Returns a ShellResult-shaped dict (``stdout``/``stderr``/``exit_code``) so
+    the tool contract is unchanged. ``stdout`` lines are ``relpath:lineno:text``
+    for matches and ``relpath-lineno-text`` for context (mirrors ``grep -n``),
+    so returned line numbers still feed ``tr_read_file`` offsets. ``exit_code``
+    follows grep: 0 = matches found, 1 = none, 2 = error.
+    """
+    return await asyncio.to_thread(
+        _sync_grep, pattern, path, context_lines, case_insensitive, max_matches
+    )
+
+
+async def execute_fetch(
+    url: str,
+    dest: Path,
+    *,
+    user_agent: str,
+    timeout: int = 120,
+) -> dict:
+    """Download *url* to *dest* with httpx — replaces shelling out to ``curl -fSL``.
+
+    Follows redirects, sends a browser User-Agent, streams to disk, retries a
+    couple of times on transport errors. Returns a ShellResult-shaped dict so
+    ``tr_fetch_url``'s existing verification (which reads ``exit_code`` and
+    ``stderr``) works unchanged. ``exit_code`` mirrors curl: 0 ok, 22 HTTP
+    error, 7 connect/transport failure.
+    """
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    headers = {"User-Agent": user_agent}
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=timeout) as client:
+            last_err = "unreachable"
+            for attempt in (1, 2, 3):
+                try:
+                    async with client.stream("GET", url, headers=headers) as resp:
+                        if resp.status_code >= 400:
+                            last_err = f"HTTP {resp.status_code}"
+                            if attempt < 3 and resp.status_code >= 500:
+                                continue
+                            return {"stdout": "", "stderr": last_err, "exit_code": 22}
+                        with dest.open("wb") as fh:
+                            async for chunk in resp.aiter_bytes():
+                                fh.write(chunk)
+                        return {"stdout": str(dest), "stderr": "", "exit_code": 0}
+                except (httpx.TransportError, httpx.TimeoutException) as exc:
+                    last_err = str(exc)
+                    if attempt == 3:
+                        return {"stdout": "", "stderr": last_err, "exit_code": 7}
+            return {"stdout": "", "stderr": last_err, "exit_code": 7}
+    except Exception as exc:  # noqa: BLE001 — surface any client-construction failure
+        return {"stdout": "", "stderr": str(exc), "exit_code": 1}
+
+
+async def execute_python(script_path: Path, cwd: Path, timeout: int = 120) -> dict:
+    """Run a ``.py`` file with THIS interpreter (``sys.executable``) — portable.
+
+    Uses ``create_subprocess_exec`` with an explicit argv (script path as a
+    single arg), so there is ZERO shell quoting/escaping to get wrong on any
+    OS. This is the portable-scripting primitive behind ``tr_run_python``: the
+    model writes Python (identical on Windows/macOS/Linux) instead of a bash
+    script.
+
+    Returns a dict with keys ``stdout``, ``stderr``, ``exit_code``.
+    Raises ``asyncio.TimeoutError`` if the script exceeds *timeout* seconds.
+    """
+    cwd.mkdir(parents=True, exist_ok=True)
+    proc = await asyncio.create_subprocess_exec(
+        sys.executable,
+        str(script_path),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        cwd=str(cwd),
+    )
+    try:
+        out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except asyncio.TimeoutError:
+        proc.kill()
+        await proc.communicate()
+        raise
+    return {
+        "stdout": out.decode(errors="replace").strip(),
+        "stderr": err.decode(errors="replace").strip(),
         "exit_code": proc.returncode,
     }
 
@@ -194,3 +317,68 @@ def _sync_glob(root: Path, pattern: str, max_entries: int) -> dict:
         "total": total,
         "has_more": total > max_entries,
     }
+
+
+# Dirs never worth scanning + a per-file size cap. Skipping these (not being
+# written in C) is what keeps the pure-Python search fast on real trees.
+_GREP_IGNORE_DIRS: frozenset[str] = frozenset({
+    ".git", "node_modules", "__pycache__", ".venv", "venv", ".mypy_cache",
+    ".pytest_cache", ".tox", ".ruff_cache", "dist", "build", ".idea", ".DS_Store",
+})
+_GREP_MAX_FILE_BYTES = 5 * 1024 * 1024
+
+
+def _sync_grep(
+    pattern: str,
+    path: Path,
+    context_lines: int,
+    case_insensitive: bool,
+    max_matches: int,
+) -> dict:
+    try:
+        rx = re.compile(pattern, re.IGNORECASE if case_insensitive else 0)
+    except re.error as exc:
+        return {"stdout": "", "stderr": f"invalid regex: {exc}", "exit_code": 2}
+
+    if path.is_file():
+        files: list[Path] = [path]
+        base = path.parent
+    elif path.is_dir():
+        files = []
+        for root, dirs, names in os.walk(path):
+            dirs[:] = [d for d in dirs if d not in _GREP_IGNORE_DIRS]
+            files.extend(Path(root) / n for n in names)
+        base = path
+    else:
+        return {"stdout": "", "stderr": f"path not found: {path}", "exit_code": 2}
+
+    out: list[str] = []
+    count = 0
+    for fp in files:
+        if count >= max_matches:
+            break
+        try:
+            if fp.stat().st_size > _GREP_MAX_FILE_BYTES:
+                continue
+            raw = fp.read_bytes()
+            if b"\x00" in raw[:8192]:  # binary sniff — skip
+                continue
+            lines = raw.decode("utf-8", "replace").splitlines()
+        except OSError:
+            continue
+        rel = os.path.relpath(fp, base)
+        for i, line in enumerate(lines):
+            if count >= max_matches:
+                break
+            if rx.search(line):
+                lo = max(0, i - context_lines)
+                hi = min(len(lines), i + context_lines + 1)
+                for j in range(lo, hi):
+                    sep = ":" if j == i else "-"
+                    out.append(f"{rel}{sep}{j + 1}{sep}{lines[j]}")
+                out.append("--")
+                count += 1
+
+    while out and out[-1] == "--":
+        out.pop()
+    return {"stdout": "\n".join(out), "stderr": "", "exit_code": 0 if count else 1}

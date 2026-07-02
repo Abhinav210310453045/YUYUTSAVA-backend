@@ -107,7 +107,13 @@ class VadSegmenter:
             energy_threshold=_env_float("YUYUTSAVA_VAD_ENERGY", 1000.0),
             barge_energy_threshold=_env_float("YUYUTSAVA_VAD_BARGE_ENERGY", 4000.0),
             barge_start_frames=_env_int("YUYUTSAVA_VAD_BARGE_FRAMES", 15),
-            silence_ms=_env_int("YUYUTSAVA_VAD_SILENCE_MS", 700),
+            # Conversational pause window: a hands-free voice session stays
+            # listening through natural mid-thought pauses and only ends the
+            # utterance after ~1.5 s of continuous silence, so the user isn't
+            # chopped off and fed to the agent in fragments. Raise it
+            # (YUYUTSAVA_VAD_SILENCE_MS) for more forgiving pauses, lower it for
+            # snappier push-to-talk turns.
+            silence_ms=_env_int("YUYUTSAVA_VAD_SILENCE_MS", 1500),
             min_utterance_ms=_env_int("YUYUTSAVA_VAD_MIN_UTTERANCE_MS", 300),
         )
 

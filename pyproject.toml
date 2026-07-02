@@ -24,7 +24,8 @@ dependencies = [
     "langgraph-checkpoint-sqlite>=3.0.3",
     "pyperclip>=1.11.0",
     "pynput>=1.8.1",
-    "pyobjc-framework-cocoa>=12.1",
+    "pyobjc-framework-cocoa>=12.1 ; sys_platform == 'darwin'",
+    "portalocker>=2.10",
     "langfuse>=4",
     "aiosqlite>=0.20.0",
     "sqlglot>=25.0.0",
@@ -60,9 +61,40 @@ voice = [
     # provides — so it silently failed and the VAD fell back to a noisy
     # energy gate that transcribed ambient sound nonstop.
     "webrtcvad-wheels>=2.0.14",
+    # Zero-config TTS fallback off-macOS (SAPI5 on Windows, espeak on Linux);
+    # macOS keeps the built-in `say` fallback instead.
+    "pyttsx3>=2.90 ; sys_platform != 'darwin'",
 ]
 memory = [
     "pgvector>=0.3.0",
+]
+visuals = [
+    # Delivery-agnostic rendering library (yuyutsava/visuals/). Charts, styled
+    # tables, math and code images all render in-process; diagrams go out to a
+    # Kroki HTTP service (no extra dep — uses the base `requests`).
+    "matplotlib>=3.8.0",
+    "seaborn>=0.13.0",
+    "pandas>=2.0.0",
+    "pygments>=2.17.0",
+    "pillow>=10.0.0",
+]
+# ── LLM provider SDKs ────────────────────────────────────────────────────────
+# Each is lazily imported in yuyutsava/core/llm.py; install only the ones you use
+# (or `all-providers` for everything). Floors target the langchain-core 1.x line.
+# Azure OpenAI needs no extra — AzureChatOpenAI ships with langchain-openai.
+anthropic = ["langchain-anthropic>=1.4"]
+google = ["langchain-google-genai>=4.2"]
+vertex = ["langchain-google-vertexai>=3.2"]
+bedrock = ["langchain-aws>=1.6"]
+mistral = ["langchain-mistralai>=1.1"]
+cohere = ["langchain-cohere>=0.6"]
+all-providers = [
+    "langchain-anthropic>=1.4",
+    "langchain-google-genai>=4.2",
+    "langchain-google-vertexai>=3.2",
+    "langchain-aws>=1.6",
+    "langchain-mistralai>=1.1",
+    "langchain-cohere>=0.6",
 ]
 
 [project.scripts]

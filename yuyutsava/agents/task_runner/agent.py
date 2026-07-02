@@ -207,9 +207,13 @@ class TaskRunnerAgent:
 
         # 4. PROMPT — ask the user via LangGraph interrupt()
         if action == PermissionAction.PROMPT:
+            # Elevated (admin/root) commands are CRITICAL: never satisfied by a
+            # policy auto_approve or a cached consent grant — always ask fresh,
+            # and never widen a grant afterwards.
+            elevated = bool((request.additional_context or {}).get("elevated"))
             # Tier-1.5 policy override: a matching ``auto_approve`` entry in
             # ~/.yuyutsava/permissions.json bypasses the prompt entirely.
-            if self._policy is not None:
+            if self._policy is not None and not elevated:
                 tool_name = self._policy_tool_name(request.operation)
                 if self._policy.policy_for(tool_name) == "auto_approve":  # type: ignore[attr-defined]
                     logger.info(
@@ -220,7 +224,7 @@ class TaskRunnerAgent:
             # Allowlist (consent) check: a prior "allow for session/project" grant
             # covering this op+zone+directory skips the prompt entirely. This is
             # what stops the per-file re-approval storm.
-            if action == PermissionAction.PROMPT and self._consent is not None:
+            if action == PermissionAction.PROMPT and self._consent is not None and not elevated:
                 verdict = self._consent_verdict(request, zone)
                 if verdict == "allow":
                     logger.info(
@@ -259,7 +263,7 @@ class TaskRunnerAgent:
                         zone=zone,
                         alternatives=get_alternatives(zone, request.operation),
                     )
-                if scope is not None and self._consent is not None:
+                if scope is not None and self._consent is not None and not elevated:
                     await self._record_consent_grant(request, zone, scope)
 
                 logger.info(
@@ -344,12 +348,51 @@ class TaskRunnerAgent:
                 return DeleteResult(deleted=str(path))
 
             case OperationType.EXECUTE:
+                # tr_grep / tr_fetch_url route pure-Python ops through EXECUTE so
+                # the zone/permission path is byte-identical to a shell command;
+                # the executor implementation is selected by additional_context.
+                if "search" in ctx:
+                    sc = ctx["search"]
+                    raw = await _exec.execute_grep(
+                        str(sc["pattern"]),
+                        Path(str(sc["path"])),
+                        context_lines=int(sc.get("context_lines", 3)),
+                        case_insensitive=bool(sc.get("case_insensitive", False)),
+                        max_matches=int(sc.get("max_matches", 100)),
+                    )
+                    return ShellResult(
+                        stdout=raw["stdout"], stderr=raw["stderr"], exit_code=raw["exit_code"],
+                    )
+                if "fetch" in ctx:
+                    fc = ctx["fetch"]
+                    raw = await _exec.execute_fetch(
+                        str(fc["url"]),
+                        Path(str(fc["dest"])),
+                        user_agent=str(fc["user_agent"]),
+                        timeout=int(fc.get("timeout", 120)),
+                    )
+                    return ShellResult(
+                        stdout=raw["stdout"], stderr=raw["stderr"], exit_code=raw["exit_code"],
+                    )
+                if "python" in ctx:
+                    pc = ctx["python"]
+                    raw = await _exec.execute_python(
+                        Path(str(pc["script_path"])),
+                        Path(str(pc.get("cwd", self.sandbox_root))),
+                        timeout=int(pc.get("timeout", 120)),
+                    )
+                    return ShellResult(
+                        stdout=raw["stdout"], stderr=raw["stderr"], exit_code=raw["exit_code"],
+                    )
+                # default: a real command in the host's native shell (L3 channel)
                 command = str(ctx.get("command", ""))
                 _timeout = ctx.get("timeout", 120)
                 timeout = int(_timeout) if isinstance(_timeout, (int, float, str)) else 120
                 _cwd = ctx.get("cwd")
                 cwd = Path(str(_cwd)) if _cwd is not None else self.sandbox_root
-                raw = await _exec.execute_run(command, cwd, timeout)
+                raw = await _exec.execute_run(
+                    command, cwd, timeout, elevated=bool(ctx.get("elevated", False))
+                )
                 return ShellResult(
                     stdout=raw["stdout"],
                     stderr=raw["stderr"],

@@ -1,0 +1,14 @@
+# Optional diagram backend for the visuals library (vis_diagram / Mermaid,
+# PlantUML, D2, ...). Charts, tables, code and math render in-process and do
+# NOT need this. Graphviz works via a local `dot` if installed.
+#
+#   docker compose -f docker-compose.kroki.yml up -d
+#
+# Then point the app at it (this is also the default):
+#   export YUYUTSAVA_KROKI_URL=http://localhost:8000
+services:
+  kroki:
+    image: yuzutech/kroki:latest
+    ports:
+      - "8000:8000"
+    restart: unless-stopped

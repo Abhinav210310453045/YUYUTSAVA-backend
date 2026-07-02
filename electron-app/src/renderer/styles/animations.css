@@ -92,6 +92,17 @@
   to   { transform: translateY(40px) scale(0.9); opacity: 0; }
 }
 
+/* Task-detail drawer slides in from the right edge. */
+@keyframes drawer-slide-in {
+  from { transform: translateX(40px); opacity: 0; }
+  to   { transform: translateX(0); opacity: 1; }
+}
+/* Live "working" node on the task timeline — a soft pulsing glow. */
+@keyframes task-node-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(34,211,238,0.5); }
+  70%      { box-shadow: 0 0 0 8px rgba(34,211,238,0); }
+}
+
 /* Brief flash on a proposal card when the user clicks the OS notification
    banner that referenced it. Removed after ~1.8s. */
 .proposal-flash {
@@ -102,4 +113,74 @@
   0%   { box-shadow: 0 0 0 2px var(--neon-green), 0 0 18px rgba(0,255,136,0.55); }
   60%  { box-shadow: 0 0 0 2px rgba(0,255,136,0.4), 0 0 8px rgba(0,255,136,0.25); }
   100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+/* ── Chat / Voice "GenZ" motion ──────────────────────────────────────── */
+
+/* Springy message entrance (overshoot pop). */
+@keyframes bubble-pop {
+  0%   { opacity: 0; transform: translateY(8px) scale(0.94); }
+  60%  { opacity: 1; transform: translateY(-1px) scale(1.015); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Three-dot "typing" indicator (replaces the plain caret while streaming). */
+.typing-dots { display: inline-flex; gap: 4px; align-items: center; vertical-align: middle; }
+.typing-dots > i {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--neon-green);
+  display: inline-block; animation: typing-dots 1.1s ease-in-out infinite;
+}
+.typing-dots > i:nth-child(2) { animation-delay: 0.15s; }
+.typing-dots > i:nth-child(3) { animation-delay: 0.30s; }
+@keyframes typing-dots {
+  0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
+  40%           { transform: translateY(-4px); opacity: 1; }
+}
+
+/* Animated gradient position — used for gradient borders / mesh / send button. */
+@keyframes gradient-shift {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+.grad-animated { background-size: 200% 200%; animation: gradient-shift 6s ease infinite; }
+
+/* Sweep of light across streaming text. */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* Slow drift for the background gradient mesh behind the message thread. */
+@keyframes mesh-drift {
+  0%   { transform: translate(0, 0) scale(1); }
+  50%  { transform: translate(-2%, 1.5%) scale(1.04); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+
+/* Quick tap feedback for icon buttons (copy / reactions). */
+@keyframes tap-pop {
+  0% { transform: scale(1); }
+  50% { transform: scale(0.86); }
+  100% { transform: scale(1); }
+}
+.tap-pop:active { animation: tap-pop 0.18s ease; }
+
+/* Confirmation pulse when a reaction is selected. */
+@keyframes react-pulse {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.35); }
+  100% { transform: scale(1); }
+}
+.react-selected { animation: react-pulse 0.32s cubic-bezier(0.34,1.56,0.64,1); }
+
+/* Respect the OS "reduce motion" setting: keep entrance opacity but drop the
+   bold/looping animations that could distract or nauseate. */
+@media (prefers-reduced-motion: reduce) {
+  .grad-animated, .typing-dots > i { animation: none !important; }
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }

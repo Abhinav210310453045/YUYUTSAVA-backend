@@ -24,7 +24,6 @@ import argparse
 import asyncio
 import logging
 import os
-import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -36,6 +35,7 @@ try:
 except ImportError:  # pragma: no cover
     load_dotenv = None  # type: ignore[assignment]
 
+from yuyutsava import platform as yplatform
 from yuyutsava.core.engine import silence_plumbing_loggers
 from yuyutsava.daemon.bootstrap import DaemonOptions, DaemonSubsystems, build_daemon
 from yuyutsava.daemon.lifecycle import install_reload_handler, install_signal_handlers
@@ -161,10 +161,15 @@ def _cmd_status() -> int:
 
 
 def _cmd_stop() -> int:
-    """Send SIGTERM to the running daemon and wait up to 5s for cleanup."""
-    import signal
-    import time as _time
+    """Stop the running daemon (graceful terminate, escalate to kill) — cross-platform."""
     from yuyutsava.daemon.singleton import daemon_lock_path, daemon_discovery_path
+
+    def _cleanup_files() -> None:
+        for p in (daemon_lock_path(), daemon_discovery_path()):
+            try:
+                p.unlink()
+            except FileNotFoundError:
+                pass
 
     disco = read_daemon_discovery()
     if disco is None:
@@ -174,45 +179,23 @@ def _cmd_stop() -> int:
     if not isinstance(pid, int):
         print("yuyutsava daemon: discovery file is malformed", file=sys.stderr)
         return 1
-    try:
-        os.kill(pid, signal.SIGTERM)
-    except ProcessLookupError:
+
+    if not yplatform.pid_alive(pid):
         print(f"yuyutsava daemon: pid {pid} not alive; cleaning up stale files",
               file=sys.stderr)
-        for p in (daemon_lock_path(), daemon_discovery_path()):
-            try:
-                p.unlink()
-            except FileNotFoundError:
-                pass
+        _cleanup_files()
         return 0
-    except PermissionError:
-        print(f"yuyutsava daemon: no permission to signal pid {pid}", file=sys.stderr)
-        return 1
 
-    print(f"yuyutsava daemon: SIGTERM sent to pid {pid}, waiting for clean shutdown…",
+    print(f"yuyutsava daemon: stopping pid {pid}…", file=sys.stderr)
+    # terminate_pid sends SIGTERM (TerminateProcess on Windows), waits up to
+    # 5s, then escalates to a hard kill. The daemon's atexit hook normally
+    # unlinks the lock/discovery files; we sweep them best-effort regardless.
+    ok = yplatform.terminate_pid(pid, timeout=5.0)
+    _cleanup_files()
+    print("yuyutsava daemon: stopped" if ok else
+          "yuyutsava daemon: could not confirm stop (check for a stuck process)",
           file=sys.stderr)
-    deadline = _time.time() + 5.0
-    while _time.time() < deadline:
-        if not daemon_lock_path().exists():
-            print("yuyutsava daemon: stopped", file=sys.stderr)
-            return 0
-        _time.sleep(0.1)
-
-    print(
-        f"yuyutsava daemon: did not exit within 5s; sending SIGKILL",
-        file=sys.stderr,
-    )
-    try:
-        os.kill(pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
-    # Best-effort cleanup of files the dying process couldn't unlink.
-    for p in (daemon_lock_path(), daemon_discovery_path()):
-        try:
-            p.unlink()
-        except FileNotFoundError:
-            pass
-    return 0
+    return 0 if ok else 1
 
 
 async def _run_uvicorn(server: uvicorn.Server, stop_event: asyncio.Event) -> None:
@@ -242,28 +225,19 @@ async def _open_electron_when_ready(
             # Off-loop: Popen's fork/exec handshake uses os.read/os.write, which
             # blockbuster flags on the event loop under allow_blocking=False.
             #
-            # Detach the UI subtree from our controlling terminal:
-            #   stdin=DEVNULL       → vite sees no TTY, so it never puts the
-            #                         user's terminal into raw mode (otherwise an
-            #                         orphaned vite leaves the shell printing
-            #                         ^[[A after the daemon is stopped).
-            #   start_new_session   → own session/process group, off our terminal,
-            #                         so killing the daemon can't strand
-            #                         terminal-attached children.
-            #
-            # The new session also means a Ctrl+C on the daemon does NOT reach
-            # the UI subtree — so we keep the Popen handle and tear the whole
-            # process group down explicitly on shutdown (see _shutdown_ui).
+            # spawn_detached gives the UI subtree stdin=DEVNULL (vite sees no TTY,
+            # so it never puts the user's terminal into raw mode) and its own
+            # session/process group (new session on POSIX, new process group on
+            # Windows), off our terminal — so killing the daemon can't strand
+            # terminal-attached children. Because a Ctrl+C on the daemon then does
+            # NOT reach the UI subtree, we keep the handle and tear the whole tree
+            # down explicitly on shutdown (see _shutdown_ui via kill_tree).
             # Otherwise an orphaned vite keeps holding port 5173 and the next
             # `yuyutsava daemon` races a stale dev server → the UI fails to open.
             proc = await asyncio.to_thread(
-                subprocess.Popen,
+                yplatform.spawn_detached,
                 ["npm", "run", "dev"],
                 cwd=electron_app_dir,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True,
             )
             if holder is not None:
                 holder["proc"] = proc
@@ -275,28 +249,20 @@ async def _open_electron_when_ready(
 
 
 def _shutdown_ui(holder: dict[str, subprocess.Popen]) -> None:
-    """Tear down the detached UI subtree (concurrently → vite + electron).
+    """Tear down the detached UI subtree (vite + electron).
 
-    Launched with ``start_new_session=True``, the UI is its own process-group
-    leader, so signalling that group reaches every child (vite, electron) in
-    one shot. Without this the UI is orphaned on daemon stop, leaving vite
-    holding port 5173 and breaking the next launch.
+    The UI was launched via ``yplatform.spawn_detached`` (own session/process
+    group), so ``kill_tree`` reaps every descendant in one shot. Without this
+    the UI is orphaned on daemon stop, leaving vite holding port 5173 and
+    breaking the next launch.
     """
     proc = holder.get("proc")
     if proc is None or proc.poll() is not None:
         return
+    # spawn_detached gave the UI its own session/process group (POSIX) or
+    # process group (Windows); kill_tree reaps the whole subtree (vite + electron).
     try:
-        pgid = os.getpgid(proc.pid)
-    except ProcessLookupError:
-        return
-    try:
-        os.killpg(pgid, signal.SIGTERM)
-        try:
-            proc.wait(timeout=5.0)
-        except subprocess.TimeoutExpired:
-            os.killpg(pgid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
+        yplatform.kill_tree(proc.pid, timeout=5.0)
     except Exception:
         logger.exception("failed to tear down UI subprocess")
 

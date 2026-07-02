@@ -26,10 +26,10 @@ from yuyutsava.agents.general_purpose.agent import GeneralPurposeAgent
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
 from yuyutsava.agents.task_runner.tools import set_default_consent
 from yuyutsava.consent import ConsentRegistry
-from yuyutsava.context.artifacts import SqliteArtifactStore
+from yuyutsava.context.artifacts import PgArtifactStore, SqliteArtifactStore
 from yuyutsava.context.config import ContextSettings
-from yuyutsava.context.summary_store import SqliteThreadSummaryStore
-from yuyutsava.context.transcript_store import SqliteTranscriptStore
+from yuyutsava.context.summary_store import PgThreadSummaryStore, SqliteThreadSummaryStore
+from yuyutsava.context.transcript_store import PgTranscriptStore, SqliteTranscriptStore
 from yuyutsava.core.config import DockerSettings, LlmSettings, LocalSettings, SearchConfig, _env
 from yuyutsava.core.engine import AgentBundle, build_cli_deepagent
 from yuyutsava.core.llm import chat_model
@@ -157,13 +157,7 @@ async def build_agent_stack(
     ``CliHitlBridge`` for routing interrupts to stdin.
     """
     # Context controller: CLI chat threads are the longest-lived in the
-    # system, so offload + compaction are always on. Stores are the SQLite
-    # twins in state.db regardless of YUYUTSAVA_STORAGE_BACKEND — the CLI
-    # has no pool lifecycle owner yet (the daemon does); checkpoints still
-    # honor the postgres backend via build_checkpointer.
-    artifact_store = SqliteArtifactStore(state_db_path())
-    summary_store = SqliteThreadSummaryStore(state_db_path())
-    transcript_store = SqliteTranscriptStore(state_db_path())
+    # system, so offload + compaction are always on.
     context_settings = ContextSettings.from_env(
         "cli", provider=_env("LLM_PROVIDER", None, "groq"),
     )
@@ -180,6 +174,47 @@ async def build_agent_stack(
     memory_store, skill_store, pg_pool, embedder = await _build_retrieval_stores(
         skill_registry
     )
+
+    # Context-controller stores follow the ACTIVE backend, not a hardcoded twin:
+    # when a pgvector pool exists (Postgres backend) they live in Postgres so a
+    # daemon-hosted conversation persists to the SAME place the HTTP history
+    # endpoint reads — otherwise the SQLite twins (zero-config fallback). Mirrors
+    # the daemon's own selection in daemon/bootstrap.py. Postgres is primary;
+    # SQLite is only the fallback when no pool is available.
+    # These three are written only INSIDE a checkpointed turn; if Postgres is
+    # down the LangGraph checkpointer (also PG) fails the turn anyway, so a
+    # SQLite write-buffer would never be reached — they stay PG-primary /
+    # SQLite-fallback-at-boot (not RoutedStore). Spillover failover is applied to
+    # the REST-path stores (feedback, visuals) in the daemon instead.
+    if pg_pool is not None:
+        artifact_store = PgArtifactStore(
+            pg_pool, embedder=embedder, semantic_recall=context_settings.semantic_recall
+        )
+        summary_store = PgThreadSummaryStore(pg_pool)
+        transcript_store = PgTranscriptStore(pg_pool)
+    else:
+        artifact_store = SqliteArtifactStore(state_db_path())
+        summary_store = SqliteThreadSummaryStore(state_db_path())
+        transcript_store = SqliteTranscriptStore(state_db_path())
+
+    # Best-effort: fetch the active model's live price from its provider and cache
+    # it into ~/.yuyutsava/model_prices.json so the cost ledger (and Langfuse)
+    # price this model correctly instead of falling to $0. Off the loop, TTL-cached,
+    # never fatal.
+    try:
+        from yuyutsava.core.pricing import refresh_price_cache
+        await asyncio.to_thread(refresh_price_cache, settings)
+    except Exception:  # noqa: BLE001 — pricing must never block a stack build
+        logger.debug("price cache refresh failed", exc_info=True)
+
+    # Per-conversation transcript recall (Postgres only): index each turn so a
+    # resumed session recalls prior topics after its checkpoint is swept. Requires
+    # the pgvector pool + embedder; None on the SQLite fallback (no-op downstream).
+    transcript_index = None
+    if pg_pool is not None and embedder is not None:
+        from yuyutsava.context.transcript_index import PgTranscriptIndex
+        transcript_index = PgTranscriptIndex(pg_pool, embedder=embedder)
+
     sandbox_root_for_tr = (
         local_settings.sandbox_dir.resolve()
         if local_settings.sandbox_dir is not None
@@ -197,7 +232,10 @@ async def build_agent_stack(
     general_purpose = GeneralPurposeAgent(
         task_runner=task_runner,
         skill_registry=skill_registry,
+        can_write_skills=True,
         search_config=search_config,
+        memory_store=memory_store,
+        skill_store=skill_store,
     )
 
     async_subagents = None
@@ -271,6 +309,7 @@ async def build_agent_stack(
         context_settings=context_settings,
         compaction_model=compaction_model,
         skill_store=skill_store,
+        transcript_index=transcript_index,
     )
     # Hand the CLI-owned pool + embedder to the bundle so teardown closes them.
     bundle.pg_pool = pg_pool

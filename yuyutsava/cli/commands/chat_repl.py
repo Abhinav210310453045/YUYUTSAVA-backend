@@ -581,11 +581,13 @@ class ChatRenderer:
         return f"  {colour}[{zone}]{_RESET}"
 
     def _classify_zone(self, path: str) -> str:
+        from yuyutsava.platform import host_profile
+
         if self._workspace is not None and path.startswith(str(self._workspace)):
             return "workspace"
-        if path.startswith(("/tmp", "/var/folders", "/private/tmp")):
+        if path.startswith(host_profile().temp_zone_prefixes()):
             return "sandbox"
-        if path.startswith("/"):
+        if os.path.isabs(path):
             return "external"
         return ""
 

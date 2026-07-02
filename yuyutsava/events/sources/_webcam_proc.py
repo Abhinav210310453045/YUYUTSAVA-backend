@@ -31,7 +31,6 @@ import argparse
 import json
 import logging
 import os
-import signal
 import sys
 import time
 from pathlib import Path
@@ -75,11 +74,13 @@ def main(argv: list[str] | None = None) -> None:
     # SIGTERM/SIGINT → clean exit. Parent sends SIGTERM on shutdown.
     stopping = {"v": False}
 
-    def _stop(_sig, _frm):  # noqa: ANN001
+    def _stop() -> None:
         stopping["v"] = True
 
-    signal.signal(signal.SIGTERM, _stop)
-    signal.signal(signal.SIGINT, _stop)
+    # Cross-platform: registers SIGINT + (SIGTERM on POSIX / SIGBREAK on Windows).
+    # Bare signal.signal(SIGTERM, …) raises ValueError on Windows.
+    from yuyutsava.platform import install_terminate_handler
+    install_terminate_handler(_stop)
 
     cap = cv2.VideoCapture(args.camera_index)
     if not cap.isOpened():

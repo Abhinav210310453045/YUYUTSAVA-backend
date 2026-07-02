@@ -89,6 +89,14 @@ def get_admission_controller(request: Request):
     return getattr(request.app.state, "admission_controller", None)
 
 
+def get_async_watcher(request: Request):
+    """The ``AsyncTaskHealthWatcher``; ``None`` when async subagents disabled.
+
+    Backs ``GET /tasks/{id}/logs`` (per-task background-subagent transcript).
+    """
+    return getattr(request.app.state, "async_task_watcher", None)
+
+
 def get_channel_plugins(request: Request):
     """The daemon's ``ChannelPluginRegistry`` (enable/disable at runtime)."""
     registry = getattr(request.app.state, "channel_plugins", None)

@@ -57,9 +57,14 @@ export class MicCapture {
     this._node = null
     this._source = null
     this._workletUrl = null
+    this._analyser = null
   }
 
   get active() { return this._ctx != null }
+
+  // AnalyserNode tapping the live mic, or null when not capturing. Drives the
+  // Voice orb/waveform while the user is speaking.
+  getAnalyser() { return this._analyser }
 
   async start() {
     if (this._ctx) return
@@ -74,6 +79,11 @@ export class MicCapture {
     await this._ctx.audioWorklet.addModule(this._workletUrl)
 
     this._source = this._ctx.createMediaStreamSource(this._stream)
+    // Analyser for the visualizer — a read-only tap; no onward connection needed.
+    this._analyser = this._ctx.createAnalyser()
+    this._analyser.fftSize = 256
+    this._analyser.smoothingTimeConstant = 0.75
+    this._source.connect(this._analyser)
     this._node = new AudioWorkletNode(this._ctx, 'pcm-capture', {
       processorOptions: { frameSamples: FRAME_SAMPLES },
     })
@@ -94,6 +104,6 @@ export class MicCapture {
     try { this._stream && this._stream.getTracks().forEach((t) => t.stop()) } catch { /* ignore */ }
     try { this._ctx && (await this._ctx.close()) } catch { /* ignore */ }
     if (this._workletUrl) { try { URL.revokeObjectURL(this._workletUrl) } catch { /* ignore */ } }
-    this._stream = this._ctx = this._node = this._source = this._workletUrl = null
+    this._stream = this._ctx = this._node = this._source = this._workletUrl = this._analyser = null
   }
 }

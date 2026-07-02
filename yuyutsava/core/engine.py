@@ -35,6 +35,7 @@ from yuyutsava.core.config import DockerSettings, LocalSettings, LlmSettings, Se
 from yuyutsava.core.docker_sandbox_backend import DockerSandboxBackend
 from yuyutsava.core.llm import chat_model
 from yuyutsava.core.filesystem_prompt_middleware import FilesystemPromptOverrideMiddleware
+from yuyutsava.core.voice_style_middleware import VoiceStyleMiddleware
 from yuyutsava.core.permission_middleware import PermissionMiddleware
 from yuyutsava.core.prompts import docker_system_prompt, local_system_prompt
 from yuyutsava.core.tool_filter_middleware import ToolFilterMiddleware
@@ -321,6 +322,7 @@ def _context_middleware(
     summary_store: Any | None = None,
     memory_store: Any | None = None,
     transcript_store: Any | None = None,
+    transcript_index: Any | None = None,
     compaction_model: BaseChatModel | None = None,
     role: str = "agent",
 ) -> list:
@@ -353,7 +355,14 @@ def _context_middleware(
     if transcript_store is not None:
         from yuyutsava.context.transcript_middleware import TranscriptRecorderMiddleware
 
-        out.append(TranscriptRecorderMiddleware(transcript_store))
+        out.append(TranscriptRecorderMiddleware(transcript_store, index=transcript_index))
+
+    # Observability (no-op unless YUYUTSAVA_DEBUG_PROMPT). Last in the list so
+    # its before_model hook reports the message list AFTER offload + compaction
+    # — i.e. exactly what the model receives. Never mutates state.
+    from yuyutsava.context.prompt_inspector import PromptInspectorMiddleware
+
+    out.append(PromptInspectorMiddleware(role=role))
     return out
 
 
@@ -383,6 +392,7 @@ def build_cli_deepagent(
     context_settings: Any | None = None,
     compaction_model: BaseChatModel | None = None,
     skill_store: Any | None = None,
+    transcript_index: Any | None = None,
 ) -> AgentBundle:
     """Build the CLI deepagent.
 
@@ -435,7 +445,11 @@ def build_cli_deepagent(
     # block: those built-in tools are filtered out by ToolFilterMiddleware and our
     # own prompt routes filesystem ops through tr_*, so the block only misleads the
     # model and wastes cache-prefix tokens. Pass replacement="..." to reword instead.
-    middleware = [ToolFilterMiddleware(), FilesystemPromptOverrideMiddleware()]
+    middleware = [
+        ToolFilterMiddleware(),
+        FilesystemPromptOverrideMiddleware(),
+        VoiceStyleMiddleware(),
+    ]
     middleware.extend(_context_middleware(
         model=model,
         artifact_store=artifact_store,
@@ -443,6 +457,7 @@ def build_cli_deepagent(
         summary_store=summary_store,
         memory_store=memory_store,
         transcript_store=transcript_store,
+        transcript_index=transcript_index,
         compaction_model=compaction_model,
         role="cli",
     ))
@@ -459,6 +474,10 @@ def build_cli_deepagent(
     if skill_store is not None:
         from yuyutsava.skills.injector import SkillInjector
         _injectors.append(SkillInjector(skill_store))
+    if transcript_index is not None:
+        # Recall this conversation's own earlier turns (survives checkpoint sweep).
+        from yuyutsava.context.conversation_injector import ConversationInjector
+        _injectors.append(ConversationInjector(transcript_index))
     if _injectors:
         from yuyutsava.core.retrieval_injection_middleware import (
             RetrievalInjectionMiddleware,
@@ -477,6 +496,12 @@ def build_cli_deepagent(
     ws = workspace_root.resolve()
     sandbox_root = (loc.sandbox_dir.resolve() if loc.sandbox_dir else ws / "_sandbox")
     output_dir   = (loc.output_dir.resolve()  if loc.output_dir  else ws / "_output")
+
+    # Visual tools (vis_*): always available, like ctx_*/mem_*. Files land in the
+    # workspace _output/visuals so the CLI can point the user at them; the daemon
+    # serves them by id from the same SQLite index.
+    from yuyutsava.visuals.tools import make_visual_tools
+    context_tools.extend(make_visual_tools(output_dir=output_dir))
 
     skill_registry = SkillRegistry(workspace_dir=ws)
 
@@ -509,8 +534,10 @@ def build_cli_deepagent(
 
     if async_subagents or remote_async_subagents:
         from yuyutsava.async_subagents.interrupt_middleware import AsyncTaskInterruptPatchMiddleware
+        from yuyutsava.async_subagents.check_guard_middleware import CheckAsyncTaskGuardMiddleware
         async_specs = [s for s in subagent_specs if "graph_id" in s and "url" in s]
         middleware.append(AsyncTaskInterruptPatchMiddleware(async_specs))
+        middleware.append(CheckAsyncTaskGuardMiddleware())
 
     final_subagent_specs = subagent_specs or None
 
@@ -742,6 +769,7 @@ def build_orchestrator(
     # usage recorder (passive accounting, sees the same final usage).
     master_middleware: list = [
         ToolFilterMiddleware(),
+        VoiceStyleMiddleware(),
         *_ctx_mw(model, "orchestrator"),
         budget,
         *_usage_mw(model, "orchestrator"),
@@ -756,8 +784,10 @@ def build_orchestrator(
 
     if async_subagents or getattr(deps, "remote_async_subagents", None):
         from yuyutsava.async_subagents.interrupt_middleware import AsyncTaskInterruptPatchMiddleware
+        from yuyutsava.async_subagents.check_guard_middleware import CheckAsyncTaskGuardMiddleware
         async_specs = [s for s in subagent_specs if "graph_id" in s and "url" in s]
         master_middleware.append(AsyncTaskInterruptPatchMiddleware(async_specs))
+        master_middleware.append(CheckAsyncTaskGuardMiddleware())
 
     return create_deep_agent(
         model=model,

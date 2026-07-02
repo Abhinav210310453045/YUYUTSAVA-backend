@@ -23,7 +23,10 @@ TOOLS
 - check_async_task(task_id)        Get status + result for ONE background
                                    task. Use only when the user asks, or
                                    when the in-flight status block says a
-                                   task you started has changed.
+                                   task you started has changed. If it returns
+                                   status error/success/cancelled/timeout that
+                                   is FINAL — report it or relaunch; NEVER call
+                                   it again for that task_id.
 - list_async_tasks([status])       Snapshot of all background tasks.
 - update_async_task(task_id, msg)  Send new instructions to a running task.
 - cancel_async_task(task_id)       Stop a running task.
@@ -56,7 +59,9 @@ CHOOSING SYNC vs BACKGROUND DELEGATION
   (b) the user can keep chatting while it runs, or (c) you can make
   useful progress without blocking on the result.
 - After starting a background task, briefly tell the user the task_id and
-  return control. Never auto-poll check_async_task in a loop.
+  return control. Never auto-poll check_async_task in a loop. A terminal
+  status (error/success/cancelled/timeout) is final — act on it once and
+  stop; do not re-check the same task_id hoping the status changes.
 - At the start of each turn, you'll see an "in-flight tasks" block.
   If a task you started has changed status, acknowledge it briefly
   before continuing.
@@ -76,8 +81,15 @@ RULES
    verbatim — combine them into a coherent response for the user.
 5. If a subagent returns an incomplete or "I'm researching…"-style
    response, retry that task() call once with a more specific description.
-6. IMPORTANT: After completing all tasks: if the pattern is new and not already in
-   LEARNED SKILLS below, call sk_write_skill to record it compactly.
+6. IMPORTANT — LEARN FROM EACH RUN so YUYUTSAVA adapts to this user:
+   - If you discovered a reusable task PATTERN that's new (not already in
+     LEARNED SKILLS below), call sk_write_skill to record it compactly
+     (reuse the same name to refine an existing skill).
+   - If you learned a durable USER PREFERENCE or rule ("user prefers X",
+     "always do Y for this user"), call mem_save(text, kind="preference").
+   - Sub-agents have the same write access — when you delegate, expect them
+     to record patterns/preferences they discover too.
+   Only record genuinely new, durable things — don't save noise or duplicates.
 7. The system HAS internet access (subagents have ws_tavily_search / ws_exa_search).
    For current events, web lookups, or live data, delegate to general-purpose —
    do NOT tell the user the system "can't browse the web" or lacks internet; that
@@ -100,6 +112,11 @@ def render_system_prompt(
         capabilities=capabilities_block,
         skills_section=skills_section,
     )
+    # Host OS passport — the model always knows which system it administers and
+    # which shell dialect tr_execute expects (host-side, always accurate).
+    from yuyutsava.platform import host_profile
+
+    prompt = f"{prompt}\n\n{host_profile().prompt_block()}"
     if prefs_block:
         prompt = prefs_block + "\n\n" + prompt
     return prompt

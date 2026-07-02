@@ -30,12 +30,15 @@ from langchain.agents.middleware.types import AgentMiddleware
 from langgraph.types import interrupt
 
 from yuyutsava.models.interrupts import PermissionRequestInterrupt
+from yuyutsava.platform import host_profile
 
 # ---------------------------------------------------------------------------
-# Dangerous-command pattern detection (pattern check)
+# Dangerous-command pattern detection (pattern check).
+# Two tables — the active one is selected by the host OS (POSIX shells vs
+# PowerShell/cmd) so Windows-destructive shapes are caught natively.
 # ---------------------------------------------------------------------------
 
-_DANGEROUS_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+_POSIX_DANGEROUS_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     # find-based deletion (added previously)
     (re.compile(r"\bfind\b.*-delete\b", re.IGNORECASE), "find -delete (bulk file deletion)"),
     (re.compile(r"\bfind\b.*-exec\s+(rm|unlink)\b", re.IGNORECASE), "find -exec rm/unlink (bulk file deletion)"),
@@ -68,6 +71,28 @@ _DANGEROUS_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r">\s*/(bin|sbin|lib)/"), "Write to system binary directory"),
 ]
 
+# Windows / PowerShell destructive shapes (native admin surface).
+_WINDOWS_DANGEROUS_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"\bformat\b\s+[a-z]:", re.IGNORECASE), "Disk format"),
+    (re.compile(r"\bdel\b.*\s/[sq]", re.IGNORECASE), "Recursive/forced delete (del /s /q)"),
+    (re.compile(r"\brmdir\b.*\s/s", re.IGNORECASE), "Recursive directory delete (rmdir /s)"),
+    (re.compile(r"Remove-Item\b.*-Recurse\b.*-Force\b", re.IGNORECASE), "PowerShell recursive force delete"),
+    (re.compile(r"\breg\b\s+delete\b.*HK(LM|EY_LOCAL_MACHINE)", re.IGNORECASE), "Registry delete (HKLM)"),
+    (re.compile(r"\bbcdedit\b", re.IGNORECASE), "Boot configuration edit (bcdedit)"),
+    (re.compile(r"\bvssadmin\b.*delete\b.*shadows", re.IGNORECASE), "Delete volume shadow copies"),
+    (re.compile(r"\bdiskpart\b", re.IGNORECASE), "Disk partitioning (diskpart)"),
+    (re.compile(r"Set-ExecutionPolicy\b.*(Bypass|Unrestricted)", re.IGNORECASE), "Weaken PowerShell execution policy"),
+    (re.compile(r"(iex|Invoke-Expression)\b.*(Invoke-WebRequest|iwr|curl|DownloadString)", re.IGNORECASE),
+     "Remote code execution (IEX from web)"),
+    (re.compile(r"\b(Stop-Computer|Restart-Computer|shutdown)\b", re.IGNORECASE), "System shutdown or restart"),
+    (re.compile(r"\btakeown\b|\bicacls\b.*\/grant", re.IGNORECASE), "Ownership / ACL change"),
+]
+
+
+def _dangerous_patterns() -> list[tuple[re.Pattern[str], str]]:
+    """The dangerous-pattern table for the current host OS."""
+    return _WINDOWS_DANGEROUS_PATTERNS if host_profile().is_windows else _POSIX_DANGEROUS_PATTERNS
+
 # Protected subdirectories inside the workspace — deletion/modification triggers a prompt
 _PROTECTED_SUBDIRS: frozenset[str] = frozenset({
     ".venv", ".git", "node_modules", "__pycache__",
@@ -92,7 +117,7 @@ def classify_command(command: str) -> str | None:
     When a match is found and the command references protected subdirectories,
     the reason is enriched with their names.
     """
-    for pattern, reason in _DANGEROUS_PATTERNS:
+    for pattern, reason in _dangerous_patterns():
         if pattern.search(command):
             protected = _affected_protected_subdirs(command)
             if protected:
@@ -112,11 +137,9 @@ _ABS_PATH_RE: re.Pattern[str] = re.compile(
     re.MULTILINE,
 )
 
-# System-critical prefixes — hard block, no user prompt
-_SYSTEM_CRITICAL_PREFIXES: tuple[str, ...] = (
-    "/etc", "/sys", "/proc", "/dev", "/boot",
-    "/root", "/usr/bin", "/usr/sbin", "/var/log",
-)
+# System-critical prefixes — hard block, no user prompt. Per-OS via HostProfile.
+def _system_critical_prefixes() -> tuple[str, ...]:
+    return host_profile().system_critical_prefixes
 
 # Commands that modify or delete filesystem state
 _DESTRUCTIVE_COMMAND_RE: re.Pattern[str] = re.compile(
@@ -138,14 +161,18 @@ def _resolve(path: str) -> str:
 
 
 def _is_system_critical(canonical: str) -> bool:
-    """Return True if the canonical path is inside a system-critical directory."""
-    for prefix in _SYSTEM_CRITICAL_PREFIXES:
-        # also resolve the prefix itself (handles macOS /etc → /private/etc)
-        resolved_prefix = _resolve(prefix)
-        if canonical == resolved_prefix or canonical.startswith(resolved_prefix + "/"):
-            return True
-        if canonical == prefix or canonical.startswith(prefix + "/"):
-            return True
+    """Return True if the canonical path is inside a system-critical directory.
+
+    Case/separator-normalized so it holds on Windows (``C:\\Windows`` with
+    backslashes, case-insensitive) as well as POSIX.
+    """
+    ncanon = os.path.normcase(canonical)
+    for prefix in _system_critical_prefixes():
+        # check the raw prefix AND its resolved form (macOS /etc → /private/etc)
+        for candidate in (prefix, _resolve(prefix)):
+            npre = os.path.normcase(candidate)
+            if ncanon == npre or ncanon.startswith(npre + os.sep):
+                return True
     return False
 
 

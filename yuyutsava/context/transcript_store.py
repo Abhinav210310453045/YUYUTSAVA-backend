@@ -38,6 +38,8 @@ from dataclasses import dataclass
 
 from langchain_core.messages import BaseMessage, message_to_dict
 
+from yuyutsava.core.text_utils import sanitize_message_metadata
+
 from yuyutsava.storage.base import BaseSqliteStore
 from yuyutsava.storage.pg.pool import PgPool
 from yuyutsava.storage.pg.threads import ensure_thread
@@ -69,6 +71,11 @@ def _encode(message: BaseMessage) -> tuple[str, str, str] | None:
     message_id = getattr(message, "id", None)
     if not message_id:
         return None
+    # Backstop for the streamed-metadata accretion bug (OpenRouter echoes
+    # finish_reason/model_name per chunk; LangChain's chunk merge concatenates
+    # them). Streaming already sanitizes, but persist a clean record even for
+    # messages that reach the store via other paths. No-op on clean values.
+    sanitize_message_metadata(message)
     return str(message_id), message.type, json.dumps(message_to_dict(message))
 
 

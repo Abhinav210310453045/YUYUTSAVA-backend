@@ -33,6 +33,14 @@ const STATUS_COLOR = {
 
 const CHAT_PREVIEW_MARKER = '(interactive chat)'
 
+// Per-origin accent used for the card's left bar, border tint, and glow so the
+// three columns are distinguishable at a glance. Keyed by session.origin.
+const ORIGIN_ACCENT = {
+  ui:    { bar: '#00ff88', border: 'rgba(0, 255, 136, 0.30)', glow: 'rgba(0, 255, 136, 0.10)', hover: 'rgba(0, 255, 136, 0.28)' },
+  voice: { bar: '#7aa2ff', border: 'rgba(120, 160, 255, 0.34)', glow: 'rgba(120, 160, 255, 0.12)', hover: 'rgba(120, 160, 255, 0.32)' },
+  cli:   { bar: '#fbbf24', border: 'rgba(251, 191, 36, 0.30)', glow: 'rgba(251, 191, 36, 0.10)', hover: 'rgba(251, 191, 36, 0.28)' },
+}
+
 function CopyButton({ label, command, accent = 'var(--neon-green)' }) {
   const [copied, setCopied] = useState(false)
   const onCopy = async (e) => {
@@ -70,7 +78,7 @@ function CopyButton({ label, command, accent = 'var(--neon-green)' }) {
   )
 }
 
-export default function SessionRow({ session, onDeleted, onOpenChat }) {
+export default function SessionRow({ session, onDeleted, onOpenSession }) {
   const [deleting, setDeleting] = useState(false)
   const [idExpanded, setIdExpanded] = useState(false)
 
@@ -84,7 +92,10 @@ export default function SessionRow({ session, onDeleted, onOpenChat }) {
   const isVoice = session.origin === 'voice'
   const isResumableInUi = isUi || isVoice
   const isChat = isResumableInUi || (session.task_preview || '').trim() === CHAT_PREVIEW_MARKER
-  const onRowClick = isResumableInUi ? () => onOpenChat?.(session.id) : undefined
+  const accent = ORIGIN_ACCENT[session.origin] || ORIGIN_ACCENT.cli
+  // Pass the whole session so the parent can route by origin (voice→Voice panel,
+  // ui/chat→Chat panel) instead of always opening chat.
+  const onRowClick = isResumableInUi ? () => onOpenSession?.(session) : undefined
 
   const cliResumeCmd =
     `uv run yuyutsava --verbose --workspace ${shellQuote(session.workspace)} ` +
@@ -108,12 +119,19 @@ export default function SessionRow({ session, onDeleted, onOpenChat }) {
 
   return (
     <div
+      className="hover-bulge"
       onClick={onRowClick}
       title={isResumableInUi ? 'click to continue this conversation in the UI' : undefined}
       style={{
-        background: 'var(--bg-card, #11131c)',
-        border: '1px solid var(--border-subtle, #1f2233)',
+        // Elevated above the page so cards read as distinct surfaces, with a
+        // per-origin left accent bar + tinted border + soft glow (green=chat,
+        // blue=voice, amber=cli). --bulge-glow drives the hover glow (globals.css).
+        background: 'var(--bg-elevated, #1a1a2e)',
+        border: `1px solid ${accent.border}`,
+        borderLeft: `3px solid ${accent.bar}`,
         borderRadius: 8,
+        boxShadow: `0 2px 10px rgba(0, 0, 0, 0.45), 0 0 16px ${accent.glow}`,
+        '--bulge-glow': accent.hover,
         padding: '12px 14px',
         fontFamily: 'var(--font-mono)',
         fontSize: 12,
@@ -209,7 +227,7 @@ export default function SessionRow({ session, onDeleted, onOpenChat }) {
         {isResumableInUi ? (
           <>
             <button
-              onClick={(e) => { e.stopPropagation(); onOpenChat?.(session.id) }}
+              onClick={(e) => { e.stopPropagation(); onOpenSession?.(session) }}
               style={{
                 flex: 1,
                 fontFamily: 'var(--font-mono)',

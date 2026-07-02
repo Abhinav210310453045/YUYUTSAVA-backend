@@ -48,6 +48,28 @@ export const getSessionMessages = (id) =>
 export const sessionAudioUrl = (id, seq) =>
   `${_base}/sessions/${encodeURIComponent(id)}/audio/${seq}`
 
+// Message feedback (👍/👎). Stores the reacted-to (user, assistant) pair for a
+// future feedback agent; survives session deletion. Re-rating upserts.
+export const submitFeedback = (body) => _json('POST', '/feedback', body)
+export const listFeedback = (sessionId = null) =>
+  _json('GET', sessionId ? `/feedback?session_id=${encodeURIComponent(sessionId)}` : '/feedback')
+
+// Rendered visuals (charts/diagrams/tables/...) for the Artifacts panel.
+// listVisuals returns metadata; visualUrl builds the absolute image URL the
+// <img> tag (Artifacts grid + inline chat) points at.
+export const listVisuals = (sessionId) =>
+  _json('GET', `/sessions/${encodeURIComponent(sessionId)}/visuals`)
+export const visualUrl = (url) => `${_base}${url}`
+// Delete a visual everywhere the agent saved it (DB row + on-disk image). A
+// copy the user downloaded via the Download button lives elsewhere and survives.
+export const deleteVisual = (visualId) =>
+  _json('DELETE', `/visuals/${encodeURIComponent(visualId)}`)
+
+// Full transcript of a background (async-subagent) task, fetched on demand
+// (tool calls, results, and text) for the TASKS panel's expandable log view.
+export const getTaskLogs = (taskId) =>
+  _json('GET', `/tasks/${encodeURIComponent(taskId)}/logs`)
+
 export const getLogLevel = () => _json('GET', '/logs/level')
 export const setLogLevel = (level) => _json('PUT', '/logs/level', { level })
 

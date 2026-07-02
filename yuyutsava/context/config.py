@@ -47,6 +47,16 @@ class ContextSettings:
     # Tool results larger than this are offloaded to the artifact store.
     offload_threshold_chars: int = 20_000
 
+    # Tool-name prefixes whose results are *always* offloaded regardless of
+    # size — reference-class tools (web search, bulk reads) whose raw payload is
+    # never worth keeping inline. The compact digest stays in context; the full
+    # body is fetched on demand via ctx_fetch_artifact/ctx_grep_artifact/ctx_recall.
+    always_offload_prefixes: tuple[str, ...] = ("ws_",)
+
+    # Index offloaded artifacts into the pgvector artifact_chunks table so the
+    # agent can ctx_recall relevant slices. Postgres-only; a no-op on SQLite.
+    semantic_recall: bool = True
+
     # Leading Human/System messages never summarized away (the task).
     pin_first_messages: int = 2
 
@@ -69,6 +79,19 @@ class ContextSettings:
             except ValueError:
                 return default
 
+        def _csv(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
+            raw = _env(name, role)
+            if not raw:
+                return default
+            parts = tuple(p.strip() for p in raw.split(",") if p.strip())
+            return parts or default
+
+        def _bool(name: str, default: bool) -> bool:
+            raw = _env(name, role)
+            if raw is None or raw == "":
+                return default
+            return raw.strip().lower() in ("1", "true", "yes", "on")
+
         return cls(
             max_input_tokens=_int(
                 "YUYUTSAVA_CONTEXT_MAX_INPUT_TOKENS",
@@ -79,6 +102,10 @@ class ContextSettings:
             offload_threshold_chars=_int(
                 "YUYUTSAVA_CONTEXT_OFFLOAD_THRESHOLD_CHARS", 20_000
             ),
+            always_offload_prefixes=_csv(
+                "YUYUTSAVA_CONTEXT_ALWAYS_OFFLOAD_PREFIXES", ("ws_",)
+            ),
+            semantic_recall=_bool("YUYUTSAVA_CONTEXT_SEMANTIC_RECALL", True),
             pin_first_messages=_int("YUYUTSAVA_CONTEXT_PIN_FIRST_MESSAGES", 2),
             summarizer_input_tokens=_int(
                 "YUYUTSAVA_CONTEXT_SUMMARIZER_INPUT_TOKENS", 12_000

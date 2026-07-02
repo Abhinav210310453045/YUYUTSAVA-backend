@@ -65,6 +65,8 @@ class BaseSubAgent(ABC):
         search_config: SearchConfig | None = None,
         mcp_manager: MCPClientManager | None = None,
         cap_enforcer: object | None = None,  # tools.search._CapEnforcer; untyped to avoid cycle
+        memory_store: object | None = None,  # memory.store.MemoryStore; untyped to avoid cycle
+        skill_store: object | None = None,   # skills.store.SkillStore; for dual-write indexing
     ) -> None:
         self._task_runner = task_runner
         self._skill_registry = skill_registry
@@ -72,6 +74,8 @@ class BaseSubAgent(ABC):
         self._search_config = search_config
         self._mcp_manager = mcp_manager
         self._cap_enforcer = cap_enforcer
+        self._memory_store = memory_store
+        self._skill_store = skill_store
 
     # ------------------------------------------------------------------
     # Required overrides
@@ -134,9 +138,13 @@ class BaseSubAgent(ABC):
         )
 
     def rendered_system_prompt(self) -> str:
-        """``system_prompt`` with the workspace-context block appended."""
+        """``system_prompt`` with the workspace-context block + host passport appended."""
+        from yuyutsava.platform import host_profile
+
         base = self.system_prompt.rstrip()
-        return f"{base}\n\n{self.workspace_context_block()}"
+        return (
+            f"{base}\n\n{self.workspace_context_block()}\n\n{host_profile().prompt_block()}"
+        )
 
     def task_runner_tools(self) -> list[BaseTool]:
         """Return the four tr_* tools bound to this agent's TaskRunnerAgent.
@@ -156,8 +164,21 @@ class BaseSubAgent(ABC):
             return []
         if self._can_write_skills:
             from yuyutsava.skills.tools import make_skill_tools
-            return make_skill_tools(self._skill_registry)
+            # Pass the store so sk_write_skill dual-writes (disk + semantic
+            # index), making a skill learned this run recallable immediately.
+            return make_skill_tools(self._skill_registry, self._skill_store)
         return [make_read_skill_tool(self._skill_registry)]
+
+    def memory_tools(self) -> list[BaseTool]:
+        """Return mem_search / mem_save when a memory store is wired.
+
+        Lets a subagent persist a durable user preference/rule it learns
+        (``mem_save(..., kind="preference")``) so YUYUTSAVA adapts across runs.
+        """
+        if self._memory_store is None:
+            return []
+        from yuyutsava.memory.tools import make_memory_tools
+        return make_memory_tools(self._memory_store)
 
     def search_tools(self) -> list[BaseTool]:
         """Return ws_* tools required by this subagent's visible skills.
@@ -190,13 +211,26 @@ class BaseSubAgent(ABC):
             return []
         return self._mcp_manager.tools_for(self.name)
 
+    def visual_tools(self) -> list[BaseTool]:
+        """Return the vis_* tools so background subagents can produce visuals too.
+
+        Files land in the same workspace ``_output/visuals`` dir and are indexed
+        in the shared SQLite store, so a chart made by a subagent shows up in the
+        UI Artifacts panel exactly like one made by the master.
+        """
+        from yuyutsava.visuals.tools import make_visual_tools
+        out = (self._task_runner.workspace_root / "_output").resolve()
+        return make_visual_tools(output_dir=out)
+
     def all_tools(self) -> list[BaseTool]:
-        """Combined list: TaskRunner + skill + search + MCP + extra_tools()."""
+        """Combined list: TaskRunner + skill + memory + search + MCP + visual + extra_tools()."""
         return (
             self.task_runner_tools()
             + self.skill_tools()
+            + self.memory_tools()
             + self.search_tools()
             + self.mcp_tools()
+            + self.visual_tools()
             + self.extra_tools()
         )
 

@@ -34,6 +34,30 @@ export const navIcons = {
       <line x1="8" y1="22" x2="16" y2="22"/>
     </svg>
   ),
+  artifacts: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="18" height="18" rx="2"/>
+      <circle cx="8.5" cy="8.5" r="1.5"/>
+      <polyline points="21 15 16 10 5 21"/>
+    </svg>
+  ),
+}
+
+// Sun / moon glyphs for the light/dark theme toggle.
+export function ThemeIcon({ theme }) {
+  if (theme === 'light') {
+    return (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="4" />
+        <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+      </svg>
+    )
+  }
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+    </svg>
+  )
 }
 
 // VS Code-style "toggle right panel" glyph: a rounded window with the right
@@ -51,6 +75,7 @@ export function PanelToggleIcon({ open }) {
 export const NAV_ITEMS = [
   { id: 'proposals', label: 'Proposals' },
   { id: 'sessions', label: 'Sessions' },
+  { id: 'artifacts', label: 'Artifacts' },
   { id: 'settings', label: 'Settings' },
   { id: 'chat', label: 'Chat' },
   { id: 'voice', label: 'Voice' },

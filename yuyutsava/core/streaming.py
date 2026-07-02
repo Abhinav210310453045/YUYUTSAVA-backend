@@ -31,6 +31,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 
+from yuyutsava.core.text_utils import sanitize_message_metadata
 from yuyutsava.core.tool_result import guard_tool_result, is_tool_error
 from yuyutsava.core.tracing import get_callback, trace_metadata
 from yuyutsava.models.interrupts import (
@@ -274,12 +275,35 @@ class StreamEvent:
       - ``token``       data={"text": str}
       - ``tool_call``   data={"name": str, "args": dict}
       - ``tool_result`` data={"name": str, "preview": str}
+      - ``image``       data={"visual_id","url","kind","title","mime"}
       - ``log``         data={"text": str}
       - ``final``       data={"text": str}   (last assistant message)
     """
 
     kind: str
     data: dict
+
+
+def _image_event_from_result(body: str) -> dict | None:
+    """Extract an ``image`` event payload from a ``vis_*`` tool result, or None.
+
+    ``vis_*`` tools return JSON like ``{"status":"ok","visual_id":...,"url":...}``.
+    A rendered visual becomes a typed ``image`` frame so the UI can show it inline
+    (and any SSE consumer gets structured image data, not opaque text).
+    """
+    try:
+        data = json.loads(body)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(data, dict) or data.get("status") != "ok" or not data.get("visual_id"):
+        return None
+    return {
+        "visual_id": data["visual_id"],
+        "url": data.get("url"),
+        "kind": data.get("kind"),
+        "title": data.get("title"),
+        "mime": data.get("mime", "image/png"),
+    }
 
 
 async def _has_resumable_state(agent: CompiledStateGraph, cfg: RunnableConfig) -> bool:
@@ -311,6 +335,7 @@ async def astream_agent_iter(
     agent_path: str = "orchestrator",
     keep_full_payloads: bool = False,
     resume: bool = False,
+    modality: str = "text",
 ):
     """Async generator that yields ``StreamEvent``s instead of printing them.
 
@@ -323,6 +348,11 @@ async def astream_agent_iter(
     ``agent_path`` is seeded into ``configurable`` so downstream interrupts can
     attribute themselves (``"orchestrator"`` by default — daemon-style;
     ``"cli"`` for direct CLI runs).
+
+    ``modality`` is seeded into ``configurable`` (``"text"`` by default,
+    ``"voice"`` for spoken turns) so a middleware can style the reply for the
+    channel — e.g. ``VoiceStyleMiddleware`` makes voice replies short and
+    spoken. The same agent graph serves both; only the per-turn value differs.
 
     ``keep_full_payloads``: when True, tool_result payloads include a
     ``full`` field with the untruncated body alongside the 600-char
@@ -339,7 +369,7 @@ async def astream_agent_iter(
     _tid = thread_id or str(uuid.uuid4())
     cfg: RunnableConfig = {
         "recursion_limit": recursion_limit,
-        "configurable": {"thread_id": _tid, "agent_path": agent_path},
+        "configurable": {"thread_id": _tid, "agent_path": agent_path, "modality": modality},
     }
     _lf_cb = get_callback()
     if _lf_cb is not None:
@@ -412,6 +442,8 @@ async def astream_agent_iter(
                     if not isinstance(msgs, list):
                         continue
                     for m in msgs:
+                        if isinstance(m, AIMessage):
+                            sanitize_message_metadata(m)
                         final_messages.append(m)
                         _steps_this_pass += 1
                         if isinstance(m, AIMessage) and m.tool_calls:
@@ -430,6 +462,10 @@ async def astream_agent_iter(
                             if keep_full_payloads:
                                 payload["full"] = safe_body
                             yield StreamEvent("tool_result", payload)
+                            if tn.startswith("vis_"):
+                                img = _image_event_from_result(safe_body)
+                                if img is not None:
+                                    yield StreamEvent("image", img)
 
         if not pending:
             final_text = last_assistant_text(final_messages)
@@ -609,6 +645,8 @@ async def astream_agent(
                         continue
 
                     for m in msgs:
+                        if isinstance(m, AIMessage):
+                            sanitize_message_metadata(m)
                         final_messages.append(m)
                         _steps_this_pass += 1
 

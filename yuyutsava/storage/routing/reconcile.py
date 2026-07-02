@@ -18,6 +18,7 @@ from typing import Awaitable, Callable, Sequence
 
 from yuyutsava.storage.events.sqlite_backend import SqliteEventsBackend
 from yuyutsava.storage.pg.pool import PgPool
+from yuyutsava.storage.pg.threads import ensure_thread
 
 logger = logging.getLogger("yuyutsava.storage.routing.reconcile")
 
@@ -33,6 +34,10 @@ class TableSpec:
     columns: tuple[str, ...]
     order: int                       # FK drain order (lower drains first)
     jsonb: frozenset[str] = frozenset()
+    # Content-table extensions (empty/False for the events tables → no change):
+    ts_cols: frozenset[str] = frozenset()   # epoch REAL → to_timestamp() for TIMESTAMPTZ
+    thread_fk: bool = False                  # ensure_thread(thread_id) before insert
+    any_conflict: bool = False               # bare ON CONFLICT DO NOTHING (any unique)
 
 
 # FK order: event_payloads → proposals → decisions; the rest are independent.
@@ -61,14 +66,35 @@ EVENT_TABLE_SPECS: tuple[TableSpec, ...] = (
 )
 
 
+# Content/REST-path tables written OUTSIDE a checkpointed turn (feedback, visuals)
+# — the ones that genuinely benefit from write-failover. Unlike the events tables
+# (DOUBLE PRECISION timestamps), these use TIMESTAMPTZ, so created_ts (epoch REAL
+# in the SQLite buffer) is wrapped in to_timestamp() on drain. visual_artifacts
+# has a threads FK; message_feedback deliberately has none (survives deletion) and
+# uses a bare ON CONFLICT (its natural key is a secondary unique index).
+CONTENT_TABLE_SPECS: tuple[TableSpec, ...] = (
+    TableSpec("visual_artifacts", ("visual_id",),
+              ("visual_id", "thread_id", "kind", "title", "mime", "path", "source", "created_ts"),
+              order=5, ts_cols=frozenset({"created_ts"}), thread_fk=True, any_conflict=True),
+    TableSpec("message_feedback", ("feedback_id",),
+              ("feedback_id", "thread_id", "session_id", "workspace", "message_ref",
+               "rating", "note", "user_text", "assistant_text", "created_ts"),
+              order=5, ts_cols=frozenset({"created_ts"}), any_conflict=True),
+)
+
+
 def _insert_sql(spec: TableSpec) -> str:
-    placeholders = ", ".join(
-        f"%s::jsonb" if c in spec.jsonb else "%s" for c in spec.columns
-    )
+    def _ph(c: str) -> str:
+        if c in spec.ts_cols:
+            return "to_timestamp(%s)"
+        return "%s::jsonb" if c in spec.jsonb else "%s"
+
+    placeholders = ", ".join(_ph(c) for c in spec.columns)
+    conflict = "ON CONFLICT DO NOTHING" if spec.any_conflict \
+        else f"ON CONFLICT ({', '.join(spec.pk)}) DO NOTHING"
     return (
         f"INSERT INTO {spec.table} ({', '.join(spec.columns)}) "
-        f"VALUES ({placeholders}) "
-        f"ON CONFLICT ({', '.join(spec.pk)}) DO NOTHING"
+        f"VALUES ({placeholders}) {conflict}"
     )
 
 
@@ -81,11 +107,12 @@ class Reconciler:
     pool: PgPool
     extra_drains: list[Callable[[], Awaitable[int]]] = field(default_factory=list)
     backfills: list[Callable[[], Awaitable[int]]] = field(default_factory=list)
+    content_specs: tuple[TableSpec, ...] = ()
 
     async def reconcile(self) -> int:
         """Drain everything; return the total rows moved. Never raises."""
         total = 0
-        for spec in sorted(EVENT_TABLE_SPECS, key=lambda s: s.order):
+        for spec in sorted((*EVENT_TABLE_SPECS, *self.content_specs), key=lambda s: s.order):
             try:
                 total += await self._drain_table(spec)
             except Exception:  # noqa: BLE001
@@ -105,6 +132,13 @@ class Reconciler:
         return total
 
     async def _drain_table(self, spec: TableSpec) -> int:
+        # A content twin table only exists once an outage actually buffered to it;
+        # skip quietly otherwise (avoids noisy errors every recovery).
+        exists = await self.backend.fetchall(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (spec.table,)
+        )
+        if not exists:
+            return 0
         insert_sql = _insert_sql(spec)
         select_cols = ", ".join(spec.columns)
         moved = 0
@@ -114,9 +148,12 @@ class Reconciler:
             )
             if not rows:
                 break
-            # Insert this batch into Postgres (idempotent).
+            # Insert this batch into Postgres (idempotent). Tables with a threads
+            # FK need the parent row to exist first (buffered turns may predate it).
             async with self.pool.connection() as conn:
                 for row in rows:
+                    if spec.thread_fk and row["thread_id"]:
+                        await ensure_thread(conn, row["thread_id"])
                     await conn.execute(insert_sql, tuple(row[c] for c in spec.columns))
             # Delete exactly the drained rows from the SQLite buffer.
             pk_clause = " AND ".join(f"{c}=?" for c in spec.pk)
@@ -131,4 +168,4 @@ class Reconciler:
         return moved
 
 
-__all__ = ["Reconciler", "TableSpec", "EVENT_TABLE_SPECS"]
+__all__ = ["Reconciler", "TableSpec", "EVENT_TABLE_SPECS", "CONTENT_TABLE_SPECS"]

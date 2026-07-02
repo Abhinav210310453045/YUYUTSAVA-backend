@@ -37,6 +37,7 @@ class SkillMeta:
     scope: str   # "bundled" | "personal" | "workspace"
     agent: str | None = None  # which agent this skill belongs to (bundled only)
     requires_tools: tuple[str, ...] = ()  # e.g. ("ws_*",) — picked up by BaseSubAgent
+    platforms: tuple[str, ...] = ()  # OS families this skill applies to; empty = all
 
 
 class SkillRegistry:
@@ -143,7 +144,14 @@ class SkillRegistry:
                     for skill in _scan_dir(agent_dir, scope="bundled", agent=agent_dir.name):
                         seen.setdefault(skill.name, skill)
 
-        self._cache = list(seen.values())
+        # Drop skills tagged for other OS families — a Windows triage playbook
+        # must never surface (index, recall, or get_body) on macOS/Linux.
+        from yuyutsava.platform import host_profile
+
+        fam = host_profile().os_family
+        self._cache = [
+            s for s in seen.values() if not s.platforms or fam in s.platforms
+        ]
         return self._cache
 
 
@@ -204,6 +212,16 @@ def _parse_frontmatter(path: Path, *, scope: str, agent: str | None) -> SkillMet
         str(r).strip() for r in raw_req if isinstance(r, (str, int, float)) and str(r).strip()
     )
 
+    # ``platforms`` — optional list of OS families ("windows"/"macos"/"linux")
+    # this skill applies to. Empty means all. Filtered against the host in
+    # SkillRegistry._load_all so a Windows playbook never surfaces on macOS.
+    raw_plat = fm.get("platforms") or []
+    if isinstance(raw_plat, str):
+        raw_plat = [raw_plat]
+    platforms: tuple[str, ...] = tuple(
+        str(p).strip().lower() for p in raw_plat if str(p).strip()
+    )
+
     return SkillMeta(
         name=_slugify(name),
         description=description,
@@ -211,6 +229,7 @@ def _parse_frontmatter(path: Path, *, scope: str, agent: str | None) -> SkillMet
         scope=scope,
         agent=agent,
         requires_tools=requires_tools,
+        platforms=platforms,
     )
 
 

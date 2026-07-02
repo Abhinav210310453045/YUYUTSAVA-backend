@@ -162,6 +162,35 @@ class MacSayTTS(TTS):
         return cls(voice=voice)
 
 
+class Pyttsx3TTS(TTS):
+    """Cross-platform offline TTS via ``pyttsx3``.
+
+    Wraps the OS speech engine — SAPI5 on Windows, NSSpeechSynthesizer on macOS,
+    espeak on Linux. This is the zero-config fallback when no ``PIPER_MODEL`` is
+    set and the macOS ``say`` binary isn't available (i.e. Windows / Linux), so
+    the voice interface still speaks out of the box off-macOS.
+    """
+
+    async def synthesize(self, text: str, output_path: Path) -> None:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        def _run() -> None:
+            import pyttsx3  # lazy: optional dep, only imported for this backend
+
+            engine = pyttsx3.init()
+            try:
+                engine.save_to_file(text, str(output_path))
+                engine.runAndWait()
+            finally:
+                engine.stop()
+
+        await asyncio.get_running_loop().run_in_executor(None, _run)
+
+    @classmethod
+    def from_env(cls) -> Pyttsx3TTS:
+        return cls()
+
+
 def _say_available() -> bool:
     return sys.platform == "darwin" and shutil.which("say") is not None
 
@@ -179,8 +208,16 @@ def tts_from_env() -> TTS:
         return ElevenLabsTTS.from_env()
     if provider in ("say", "macos", "mac"):
         return MacSayTTS.from_env()
+    if provider in ("pyttsx3", "sapi", "espeak", "nsss"):
+        return Pyttsx3TTS.from_env()
     # provider == "piper" (default)
-    if not os.environ.get("PIPER_MODEL", "").strip() and _say_available():
-        logger.info("PIPER_MODEL unset — using macOS 'say' for TTS (set PIPER_MODEL or TTS_PROVIDER to override)")
-        return MacSayTTS.from_env()
+    if not os.environ.get("PIPER_MODEL", "").strip():
+        # Zero-config spoken replies when no Piper model is configured: macOS
+        # 'say' (built-in) if available, else pyttsx3 (SAPI5 on Windows, espeak
+        # on Linux) so Windows/Linux still speak without extra setup.
+        if _say_available():
+            logger.info("PIPER_MODEL unset — using macOS 'say' for TTS (set PIPER_MODEL or TTS_PROVIDER to override)")
+            return MacSayTTS.from_env()
+        logger.info("PIPER_MODEL unset — using pyttsx3 for TTS (set PIPER_MODEL or TTS_PROVIDER to override)")
+        return Pyttsx3TTS.from_env()
     return PiperTTS.from_env()

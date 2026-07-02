@@ -2,15 +2,23 @@
 Build a LangChain chat model for the configured provider.
 
 Supported providers (set LLM_PROVIDER env var):
-- groq       → ChatOpenAI pointed at Groq
-- openrouter → ChatOpenAI pointed at OpenRouter
-- anthropic  → ChatAnthropic (enables prompt caching via AnthropicPromptCachingMiddleware)
-- ollama     → ChatOpenAI pointed at local Ollama server (http://localhost:11434/v1)
 
-Groq:       https://console.groq.com/docs/overview
-OpenRouter: https://openrouter.ai/docs/quickstart
-Anthropic:  https://console.anthropic.com/
-Ollama:     https://ollama.com/
+OpenAI-compatible (default ``ChatOpenAI`` path, no dedicated branch):
+- groq              → ChatOpenAI pointed at Groq
+- openrouter        → ChatOpenAI pointed at OpenRouter
+- ollama            → ChatOpenAI pointed at local Ollama (http://localhost:11434/v1)
+- openai            → ChatOpenAI pointed at OpenAI
+- openai_compatible → ChatOpenAI pointed at any OpenAI-compatible host
+                      (xAI, DeepSeek, Together, Fireworks, Perplexity, …)
+
+Native provider SDKs (lazy-imported; install the matching extra):
+- anthropic → ChatAnthropic (prompt caching via AnthropicPromptCachingMiddleware)
+- google    → ChatGoogleGenerativeAI          [yuyutsava[google]]
+- vertex    → ChatVertexAI                     [yuyutsava[vertex]]
+- bedrock   → ChatBedrockConverse              [yuyutsava[bedrock]]
+- azure     → AzureChatOpenAI                  (langchain-openai, already installed)
+- mistral   → ChatMistralAI                    [yuyutsava[mistral]]
+- cohere    → ChatCohere                       [yuyutsava[cohere]]
 """
 
 from __future__ import annotations
@@ -19,16 +27,27 @@ from langchain_core.language_models import BaseChatModel
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 
-from yuyutsava.core.config import AnthropicSettings, LlmSettings
+from yuyutsava.core.config import (
+    AnthropicSettings,
+    AzureOpenAISettings,
+    BedrockSettings,
+    CohereSettings,
+    GoogleSettings,
+    LlmSettings,
+    MistralSettings,
+    VertexSettings,
+)
 
 
 def model_name_of(model: BaseChatModel | object) -> str:
     """Best-effort model identifier for logging / usage rows.
 
-    ``ChatOpenAI`` exposes ``model_name``, ``ChatAnthropic`` exposes
-    ``model``; fakes and stubs typically expose neither → "".
+    ``ChatOpenAI`` exposes ``model_name``, ``ChatAnthropic``/``ChatVertexAI``/
+    ``ChatGoogleGenerativeAI``/``ChatMistralAI``/``ChatCohere`` expose ``model``,
+    ``ChatBedrockConverse`` exposes ``model_id``; fakes and stubs typically expose
+    none → "".
     """
-    for attr in ("model_name", "model"):
+    for attr in ("model_name", "model", "model_id"):
         v = getattr(model, attr, None)
         if isinstance(v, str) and v:
             return v
@@ -62,6 +81,95 @@ def chat_model(
             model_name=settings.model,
             temperature=temperature,
             max_tokens_to_sample=4096
+        )
+
+    if isinstance(settings, GoogleSettings):
+        try:
+            from langchain_google_genai import ChatGoogleGenerativeAI
+        except ImportError as exc:
+            raise RuntimeError(
+                "langchain-google-genai is required for LLM_PROVIDER=google. "
+                "Run: pip install 'yuyutsava[google]'"
+            ) from exc
+        return ChatGoogleGenerativeAI(
+            api_key=SecretStr(settings.api_key),
+            model=settings.model,
+            temperature=temperature,
+            max_output_tokens=4096,
+        )
+
+    if isinstance(settings, VertexSettings):
+        try:
+            from langchain_google_vertexai import ChatVertexAI
+        except ImportError as exc:
+            raise RuntimeError(
+                "langchain-google-vertexai is required for LLM_PROVIDER=vertex. "
+                "Run: pip install 'yuyutsava[vertex]'"
+            ) from exc
+        return ChatVertexAI(
+            model=settings.model,
+            project=settings.project,
+            location=settings.location,
+            temperature=temperature,
+            max_output_tokens=4096,
+        )
+
+    if isinstance(settings, BedrockSettings):
+        try:
+            from langchain_aws import ChatBedrockConverse
+        except ImportError as exc:
+            raise RuntimeError(
+                "langchain-aws is required for LLM_PROVIDER=bedrock. "
+                "Run: pip install 'yuyutsava[bedrock]'"
+            ) from exc
+        return ChatBedrockConverse(
+            model=settings.model,
+            region_name=settings.region,
+            temperature=temperature,
+            max_tokens=4096,
+        )
+
+    if isinstance(settings, AzureOpenAISettings):
+        # AzureChatOpenAI ships with langchain-openai (already a core dep).
+        from langchain_openai import AzureChatOpenAI
+
+        return AzureChatOpenAI(
+            api_key=SecretStr(settings.api_key),
+            azure_endpoint=settings.azure_endpoint,
+            azure_deployment=settings.azure_deployment,
+            api_version=settings.api_version,
+            temperature=temperature,
+            max_tokens=4096,
+        )
+
+    if isinstance(settings, MistralSettings):
+        try:
+            from langchain_mistralai import ChatMistralAI
+        except ImportError as exc:
+            raise RuntimeError(
+                "langchain-mistralai is required for LLM_PROVIDER=mistral. "
+                "Run: pip install 'yuyutsava[mistral]'"
+            ) from exc
+        return ChatMistralAI(
+            api_key=SecretStr(settings.api_key),
+            model_name=settings.model,
+            temperature=temperature,
+            max_tokens=4096,
+        )
+
+    if isinstance(settings, CohereSettings):
+        try:
+            from langchain_cohere import ChatCohere
+        except ImportError as exc:
+            raise RuntimeError(
+                "langchain-cohere is required for LLM_PROVIDER=cohere. "
+                "Run: pip install 'yuyutsava[cohere]'"
+            ) from exc
+        return ChatCohere(
+            cohere_api_key=SecretStr(settings.api_key),
+            model=settings.model,
+            temperature=temperature,
+            max_tokens=4096,
         )
 
     headers = getattr(settings, "default_headers", None)

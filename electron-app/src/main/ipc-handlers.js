@@ -1,5 +1,6 @@
 const { ipcMain, dialog } = require('electron')
 const http = require('http')
+const fs = require('fs')
 const settings = require('./settings')
 const daemon = require('./daemon')
 const tray = require('./tray')
@@ -99,6 +100,16 @@ function register(win) {
     const r = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] })
     if (r.canceled || !r.filePaths || !r.filePaths[0]) return null
     return r.filePaths[0]
+  })
+  ipcMain.handle('dialog:saveFile', async (_e, { name, data }) => {
+    const r = await dialog.showSaveDialog(win, {
+      defaultPath: name || 'download',
+      properties: ['createDirectory', 'showOverwriteConfirmation'],
+    })
+    if (r.canceled || !r.filePath) return null
+    // `data` arrives as a Uint8Array/ArrayBuffer over IPC (structured clone).
+    await fs.promises.writeFile(r.filePath, Buffer.from(data))
+    return r.filePath
   })
 
   // Window controls

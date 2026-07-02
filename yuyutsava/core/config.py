@@ -3,10 +3,24 @@ Load LLM, Docker, events, and daemon settings from environment / config files.
 
 Supported LLM providers (set ``LLM_PROVIDER``):
 
-- Groq:        https://console.groq.com/docs/overview
-- OpenRouter:  https://openrouter.ai/docs/quickstart
-- Anthropic:   https://console.anthropic.com/
-- Ollama:      https://ollama.com/  (local, no API key required)
+OpenAI-compatible (handled by ``ChatOpenAI`` + ``base_url``):
+
+- Groq:              https://console.groq.com/docs/overview
+- OpenRouter:        https://openrouter.ai/docs/quickstart
+- Ollama:            https://ollama.com/  (local, no API key required)
+- OpenAI:            https://platform.openai.com/  (``openai``)
+- OpenAI-compatible: any host (xAI, DeepSeek, Together, Fireworks, Perplexity,
+                     Cerebras, DeepInfra, …) via ``openai_compatible`` + base_url
+
+Native provider SDKs (lazy-imported; install the matching extra):
+
+- Anthropic:    https://console.anthropic.com/                  (``anthropic``)
+- Google Gemini:https://ai.google.dev/                          (``google``/``gemini``)
+- Vertex AI:    https://cloud.google.com/vertex-ai              (``vertex``)
+- AWS Bedrock:  https://aws.amazon.com/bedrock/                 (``bedrock``/``aws``)
+- Azure OpenAI: https://learn.microsoft.com/azure/ai-services/  (``azure``/``azure_openai``)
+- Mistral:      https://docs.mistral.ai/                        (``mistral``)
+- Cohere:       https://docs.cohere.com/                        (``cohere``)
 
 Role-prefixed overrides
 -----------------------
@@ -35,6 +49,16 @@ from yuyutsava.storage.paths import events_config_path
 GROQ_OPENAI_BASE_URL = "https://api.groq.com/openai/v1"
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 OLLAMA_BASE_URL = "http://localhost:11434/v1"
+OPENAI_BASE_URL = "https://api.openai.com/v1"
+
+# OpenAI-compatible long-tail providers reachable through the generic
+# ``openai_compatible`` entry — the user just points the base_url at one of these
+# (or any other OpenAI-compatible host) and sets the model:
+#   xAI/Grok    https://api.x.ai/v1
+#   DeepSeek    https://api.deepseek.com/v1
+#   Together    https://api.together.xyz/v1
+#   Fireworks   https://api.fireworks.ai/inference/v1
+#   Perplexity  https://api.perplexity.ai
 
 
 # ---------------------------------------------------------------------------
@@ -229,6 +253,260 @@ class OllamaSettings:
         return cls(base_url=base, model=model)
 
 
+@dataclass(frozen=True)
+class OpenAISettings:
+    """Native OpenAI API (OpenAI-compatible chat completions).
+
+    Handled by the default ``ChatOpenAI`` path in ``yuyutsava.core.llm`` — no
+    dedicated factory branch needed. See https://platform.openai.com/
+    """
+
+    api_key: str
+    base_url: str = OPENAI_BASE_URL
+    model: str = "gpt-4o-mini"
+
+    @classmethod
+    def from_env(cls, role: str | None = None) -> OpenAISettings:
+        key = _env("OPENAI_API_KEY", role)
+        if not key:
+            raise RuntimeError(
+                "Set OPENAI_API_KEY in the environment (or .env loaded by the CLI). "
+                "See https://platform.openai.com/api-keys"
+            )
+        base = _env("OPENAI_BASE_URL", role, OPENAI_BASE_URL)
+        model = _env("OPENAI_MODEL", role, "gpt-4o-mini")
+        return cls(api_key=key, base_url=base, model=model)
+
+
+@dataclass(frozen=True)
+class OpenAICompatibleSettings:
+    """Generic OpenAI-compatible endpoint (xAI, DeepSeek, Together, Fireworks,
+    Perplexity, Cerebras, DeepInfra, …).
+
+    Point ``OPENAI_COMPATIBLE_BASE_URL`` at the provider and set the model. Handled
+    by the default ``ChatOpenAI`` path — no dedicated factory branch needed.
+    """
+
+    api_key: str
+    base_url: str
+    model: str
+    default_headers: dict[str, str] | None = None
+
+    @classmethod
+    def from_env(cls, role: str | None = None) -> OpenAICompatibleSettings:
+        base = _env("OPENAI_COMPATIBLE_BASE_URL", role)
+        if not base:
+            raise RuntimeError(
+                "Set OPENAI_COMPATIBLE_BASE_URL for LLM_PROVIDER=openai_compatible "
+                "(e.g. https://api.x.ai/v1, https://api.deepseek.com/v1, "
+                "https://api.together.xyz/v1)."
+            )
+        key = _env("OPENAI_COMPATIBLE_API_KEY", role)
+        if not key:
+            raise RuntimeError(
+                "Set OPENAI_COMPATIBLE_API_KEY for LLM_PROVIDER=openai_compatible."
+            )
+        model = _env("OPENAI_COMPATIBLE_MODEL", role)
+        if not model:
+            raise RuntimeError(
+                "Set OPENAI_COMPATIBLE_MODEL for LLM_PROVIDER=openai_compatible."
+            )
+        return cls(api_key=key, base_url=base.rstrip("/"), model=model)
+
+
+@dataclass(frozen=True)
+class GoogleSettings:
+    """Google Gemini via the AI Studio (Developer) API — ``ChatGoogleGenerativeAI``.
+
+    Needs ``langchain-google-genai`` (``pip install 'yuyutsava[google]'``).
+    See https://ai.google.dev/
+    """
+
+    api_key: str
+    model: str = "gemini-2.5-flash"
+
+    @property
+    def base_url(self) -> str:  # structural LlmSettings conformance (n/a here)
+        return ""
+
+    @classmethod
+    def from_env(cls, role: str | None = None) -> GoogleSettings:
+        key = _env("GOOGLE_API_KEY", role) or _env("GEMINI_API_KEY", role)
+        if not key:
+            raise RuntimeError(
+                "Set GOOGLE_API_KEY (or GEMINI_API_KEY) in the environment. "
+                "See https://ai.google.dev/gemini-api/docs/api-key"
+            )
+        model = _env("GOOGLE_MODEL", role, "gemini-2.5-flash")
+        return cls(api_key=key, model=model)
+
+
+@dataclass(frozen=True)
+class VertexSettings:
+    """Google Gemini on Vertex AI — ``ChatVertexAI``.
+
+    Auth is Google Application Default Credentials (``gcloud auth
+    application-default login``); no API key. Needs ``langchain-google-vertexai``
+    (``pip install 'yuyutsava[vertex]'``). See https://cloud.google.com/vertex-ai
+    """
+
+    project: str
+    location: str = "us-central1"
+    model: str = "gemini-2.5-flash"
+
+    @property
+    def api_key(self) -> str:  # ADC auth — no key
+        return ""
+
+    @property
+    def base_url(self) -> str:  # structural LlmSettings conformance (n/a here)
+        return ""
+
+    @classmethod
+    def from_env(cls, role: str | None = None) -> VertexSettings:
+        project = _env("VERTEX_PROJECT", role) or _env("GOOGLE_CLOUD_PROJECT", role)
+        if not project:
+            raise RuntimeError(
+                "Set VERTEX_PROJECT (or GOOGLE_CLOUD_PROJECT) for LLM_PROVIDER=vertex, "
+                "and run `gcloud auth application-default login`."
+            )
+        location = _env("VERTEX_LOCATION", role, "us-central1")
+        model = _env("VERTEX_MODEL", role, "gemini-2.5-flash")
+        return cls(project=project, location=location, model=model)
+
+
+@dataclass(frozen=True)
+class BedrockSettings:
+    """AWS Bedrock via the Converse API — ``ChatBedrockConverse``.
+
+    Auth is the standard boto3 credential chain (env vars, shared config, IAM
+    role). Needs ``langchain-aws`` (``pip install 'yuyutsava[bedrock]'``).
+    See https://aws.amazon.com/bedrock/
+    """
+
+    region: str
+    model: str = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+
+    @property
+    def api_key(self) -> str:  # boto3 credential chain — no key here
+        return ""
+
+    @property
+    def base_url(self) -> str:  # structural LlmSettings conformance (n/a here)
+        return ""
+
+    @classmethod
+    def from_env(cls, role: str | None = None) -> BedrockSettings:
+        region = _env("BEDROCK_REGION", role) or _env("AWS_REGION", role, "us-east-1")
+        model = _env(
+            "BEDROCK_MODEL", role, "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+        )
+        return cls(region=region, model=model)
+
+
+@dataclass(frozen=True)
+class AzureOpenAISettings:
+    """Azure OpenAI Service — ``AzureChatOpenAI`` (from the installed
+    ``langchain-openai``; no extra needed).
+
+    See https://learn.microsoft.com/azure/ai-services/openai/
+    """
+
+    api_key: str
+    azure_endpoint: str
+    azure_deployment: str
+    api_version: str = "2024-10-21"
+    model: str = ""  # deployment name is authoritative; model is informational
+
+    @property
+    def base_url(self) -> str:  # structural LlmSettings conformance
+        return self.azure_endpoint
+
+    @classmethod
+    def from_env(cls, role: str | None = None) -> AzureOpenAISettings:
+        key = _env("AZURE_OPENAI_API_KEY", role)
+        if not key:
+            raise RuntimeError(
+                "Set AZURE_OPENAI_API_KEY for LLM_PROVIDER=azure. "
+                "See https://learn.microsoft.com/azure/ai-services/openai/"
+            )
+        endpoint = _env("AZURE_OPENAI_ENDPOINT", role)
+        if not endpoint:
+            raise RuntimeError(
+                "Set AZURE_OPENAI_ENDPOINT (e.g. https://<resource>.openai.azure.com) "
+                "for LLM_PROVIDER=azure."
+            )
+        deployment = _env("AZURE_OPENAI_DEPLOYMENT", role)
+        if not deployment:
+            raise RuntimeError(
+                "Set AZURE_OPENAI_DEPLOYMENT (your model deployment name) for "
+                "LLM_PROVIDER=azure."
+            )
+        api_version = _env("AZURE_OPENAI_API_VERSION", role, "2024-10-21")
+        model = _env("AZURE_OPENAI_MODEL", role, deployment)
+        return cls(
+            api_key=key,
+            azure_endpoint=endpoint,
+            azure_deployment=deployment,
+            api_version=api_version,
+            model=model,
+        )
+
+
+@dataclass(frozen=True)
+class MistralSettings:
+    """Mistral AI — ``ChatMistralAI``.
+
+    Needs ``langchain-mistralai`` (``pip install 'yuyutsava[mistral]'``).
+    See https://docs.mistral.ai/
+    """
+
+    api_key: str
+    model: str = "mistral-large-latest"
+
+    @property
+    def base_url(self) -> str:  # structural LlmSettings conformance (n/a here)
+        return ""
+
+    @classmethod
+    def from_env(cls, role: str | None = None) -> MistralSettings:
+        key = _env("MISTRAL_API_KEY", role)
+        if not key:
+            raise RuntimeError(
+                "Set MISTRAL_API_KEY in the environment. "
+                "See https://console.mistral.ai/api-keys/"
+            )
+        model = _env("MISTRAL_MODEL", role, "mistral-large-latest")
+        return cls(api_key=key, model=model)
+
+
+@dataclass(frozen=True)
+class CohereSettings:
+    """Cohere — ``ChatCohere``.
+
+    Needs ``langchain-cohere`` (``pip install 'yuyutsava[cohere]'``).
+    See https://docs.cohere.com/
+    """
+
+    api_key: str
+    model: str = "command-r-plus"
+
+    @property
+    def base_url(self) -> str:  # structural LlmSettings conformance (n/a here)
+        return ""
+
+    @classmethod
+    def from_env(cls, role: str | None = None) -> CohereSettings:
+        key = _env("COHERE_API_KEY", role)
+        if not key:
+            raise RuntimeError(
+                "Set COHERE_API_KEY in the environment. "
+                "See https://dashboard.cohere.com/api-keys"
+            )
+        model = _env("COHERE_MODEL", role, "command-r-plus")
+        return cls(api_key=key, model=model)
+
+
 def llm_settings_from_env(role: str | None = None) -> LlmSettings:
     """Pick provider via ``<ROLE>_LLM_PROVIDER`` (falls back to ``LLM_PROVIDER``).
 
@@ -239,16 +517,36 @@ def llm_settings_from_env(role: str | None = None) -> LlmSettings:
     """
     effective_role = None if role in (None, "main") else role
     provider = _env("LLM_PROVIDER", effective_role, "groq").lower()
-    if provider == "openrouter":
-        return OpenRouterSettings.from_env(effective_role)
+    # OpenAI-compatible providers (default ChatOpenAI path)
     if provider == "groq":
         return GroqSettings.from_env(effective_role)
-    if provider == "anthropic":
-        return AnthropicSettings.from_env(effective_role)
+    if provider == "openrouter":
+        return OpenRouterSettings.from_env(effective_role)
     if provider == "ollama":
         return OllamaSettings.from_env(effective_role)
+    if provider == "openai":
+        return OpenAISettings.from_env(effective_role)
+    if provider in ("openai_compatible", "custom"):
+        return OpenAICompatibleSettings.from_env(effective_role)
+    # Native-SDK providers (dedicated factory branch, lazy-imported package)
+    if provider == "anthropic":
+        return AnthropicSettings.from_env(effective_role)
+    if provider in ("google", "gemini"):
+        return GoogleSettings.from_env(effective_role)
+    if provider == "vertex":
+        return VertexSettings.from_env(effective_role)
+    if provider in ("bedrock", "aws"):
+        return BedrockSettings.from_env(effective_role)
+    if provider in ("azure", "azure_openai"):
+        return AzureOpenAISettings.from_env(effective_role)
+    if provider == "mistral":
+        return MistralSettings.from_env(effective_role)
+    if provider == "cohere":
+        return CohereSettings.from_env(effective_role)
     raise RuntimeError(
-        f"Unknown LLM_PROVIDER={provider!r}; use 'groq', 'openrouter', 'anthropic', or 'ollama'."
+        f"Unknown LLM_PROVIDER={provider!r}; use one of: groq, openrouter, ollama, "
+        "openai, openai_compatible, anthropic, google, vertex, bedrock, azure, "
+        "mistral, cohere."
     )
 
 

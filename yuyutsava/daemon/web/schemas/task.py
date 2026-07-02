@@ -65,3 +65,20 @@ class TaskEventsOut(BaseModel):
         description="Replay of the task's StreamItems in wire format "
                     "(same envelopes the /stream SSE emits)",
     )
+
+
+class TaskLogMessage(BaseModel):
+    role: str = Field(description="assistant | user | tool_call | tool_result | …")
+    text: str = ""
+    tool_name: str | None = None
+    tool_args: str | None = None
+    status: str | None = None
+
+
+class TaskLogsOut(BaseModel):
+    task_id: str
+    messages: list[TaskLogMessage] = Field(
+        default_factory=list,
+        description="Full transcript of the background subagent's thread "
+                    "(tool calls, results, and text), fetched on demand.",
+    )

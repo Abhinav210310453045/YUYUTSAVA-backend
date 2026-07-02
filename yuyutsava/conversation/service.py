@@ -189,6 +189,7 @@ class ConversationService:
         run_name: str = "conversation",
         keep_full_payloads: bool = True,
         recursion_limit: int | None = None,
+        modality: str = "text",
     ) -> str:
         """Run one user turn end-to-end, returning the final assistant text.
 
@@ -210,6 +211,7 @@ class ConversationService:
             run_name=run_name,
             agent_path=self.agent_path,
             keep_full_payloads=keep_full_payloads,
+            modality=modality,
         ):
             if ev.kind == "final":
                 final = ev.data.get("text", "") or final

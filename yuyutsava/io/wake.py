@@ -21,6 +21,12 @@ logger = logging.getLogger("yuyutsava.io.wake")
 # OpenWakeWordDetector._load), not bundled with the package.
 DEFAULT_WAKE_WORDS = ["hey_jarvis"]
 
+# Mic-tuning diagnostic toggle. The periodic "wake: peak score …" readout is a
+# tuning aid (see OpenWakeWordDetector.process); it floods the voice log when
+# left on, so it is OFF by default and only emitted when this flag is truthy.
+# Mirrors the YUYUTSAVA_DEBUG_* env-flag idiom used elsewhere.
+MIC_TUNE_LOG = os.environ.get("YUYUTSAVA_MIC_TUNE_LOG", "").lower() in ("1", "true", "yes")
+
 
 class WakeWordDetector(ABC):
     """ABC for synchronous streaming wake-word detectors.
@@ -150,7 +156,7 @@ class OpenWakeWordDetector(WakeWordDetector):
         # ~0.000 while speaking almost always means the process has no mic audio
         # (grant Terminal/the app Microphone permission in System Settings).
         now = time.time()
-        if now - self._last_score_log >= self._score_log_every:
+        if MIC_TUNE_LOG and now - self._last_score_log >= self._score_log_every:
             self._last_score_log = now
             logger.debug(
                 "wake: peak score %.3f (%s) — fires at >= %.2f",

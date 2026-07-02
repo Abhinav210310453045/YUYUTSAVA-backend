@@ -3,6 +3,7 @@ import Titlebar from './components/layout/Titlebar'
 import ActivityLog from './components/layout/ActivityLog'
 import ProposalsPanel from './components/proposals/ProposalsPanel'
 import SessionsPanel from './components/sessions/SessionsPanel'
+import ArtifactsPanel from './components/artifacts/ArtifactsPanel'
 import SettingsPanel from './components/settings/SettingsPanel'
 import ChatPanel from './components/chat/ChatPanel'
 import VoicePanel from './components/voice/VoicePanel'
@@ -47,17 +48,33 @@ export default function App() {
   // Thread id to resume when the Chat panel opens from a session row. Cleared on
   // any plain navigation so the Chat nav icon always starts a fresh UI session.
   const [chatResumeId, setChatResumeId] = useState(null)
+  // Thread id to resume when the Voice panel opens from a voice session row.
+  const [voiceResumeId, setVoiceResumeId] = useState(null)
+  // Chat & Voice are mounted once visited and then kept alive (just hidden) so
+  // navigating away — e.g. to Settings mid-conversation — and back preserves the
+  // live WebSocket, messages, and audio instead of destroying them.
+  const [visited, setVisited] = useState({ chat: false, voice: false })
   const { proposals, asks, eventLines, logLines, bgTasks, connected, pendingCount, removeProposal, removeAsk } = useSSE()
 
+  // Plain navigation no longer resets the chat thread — returning to Chat/Voice
+  // shows the last conversation. A fresh thread is started explicitly via the
+  // per-view "New" button, or by opening a session from the Sessions list.
   const navTo = useCallback((target) => {
-    setChatResumeId(null)
     setActivePanel(target)
+    if (target === 'chat' || target === 'voice') {
+      setVisited((v) => (v[target] ? v : { ...v, [target]: true }))
+    }
   }, [])
 
-  // Open the Chat panel resuming a specific UI thread (from a Sessions row).
-  const onOpenChat = useCallback((resumeId) => {
-    setChatResumeId(resumeId)
-    setActivePanel('chat')
+  // Open a session from a Sessions row, routing by its origin: voice sessions
+  // resume in the Voice panel, chat/ui sessions in the Chat panel. Both reuse
+  // the session's own thread_id so the backend continues the same conversation.
+  const onOpenSession = useCallback((session) => {
+    const target = session?.origin === 'voice' ? 'voice' : 'chat'
+    if (target === 'voice') setVoiceResumeId(session.id)
+    else setChatResumeId(session.id)
+    setActivePanel(target)
+    setVisited((v) => (v[target] ? v : { ...v, [target]: true }))
   }, [])
 
   // Hotkey/wake while the window is focused: switch to the Voice panel and bump
@@ -65,8 +82,8 @@ export default function App() {
   const [voiceAutoStart, setVoiceAutoStart] = useState(0)
   useEffect(() => {
     const off = window.electronAPI?.onVoiceActivate?.(() => {
-      setChatResumeId(null)
       setActivePanel('voice')
+      setVisited((v) => (v.voice ? v : { ...v, voice: true }))
       setVoiceAutoStart((n) => n + 1)
     })
     return () => off && off()
@@ -158,25 +175,38 @@ export default function App() {
         />
 
         <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-          {/* Main panel — re-keyed so switching replays the entry animation. */}
-          <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minWidth: 0 }}>
-            <div
-              key={activePanel}
-              style={{ flex: 1, display: 'flex', overflow: 'hidden', animation: 'fade-in 0.2s ease' }}
-            >
-              {activePanel === 'proposals' && (
-                <ProposalsPanel
-                  proposals={proposals}
-                  asks={asks}
-                  onRemoveProposal={removeProposal}
-                  onRemoveAsk={removeAsk}
-                />
-              )}
-              {activePanel === 'sessions' && <SessionsPanel onOpenChat={onOpenChat} />}
-              {activePanel === 'settings' && <SettingsPanel />}
-              {activePanel === 'chat' && <ChatPanel resumeId={chatResumeId} />}
-              {activePanel === 'voice' && <VoicePanel onOpenSettings={() => navTo('settings')} autoStartSignal={voiceAutoStart} />}
-            </div>
+          {/* Main panel. Stateless views remount (re-keyed) so switching replays
+              the entry animation; Chat & Voice stay mounted once visited and are
+              only hidden, preserving their live conversation across navigation. */}
+          <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minWidth: 0, position: 'relative' }}>
+            {(activePanel === 'proposals' || activePanel === 'sessions' || activePanel === 'artifacts' || activePanel === 'settings') && (
+              <div
+                key={activePanel}
+                style={{ flex: 1, display: 'flex', overflow: 'hidden', animation: 'fade-in 0.2s ease' }}
+              >
+                {activePanel === 'proposals' && (
+                  <ProposalsPanel
+                    proposals={proposals}
+                    asks={asks}
+                    onRemoveProposal={removeProposal}
+                    onRemoveAsk={removeAsk}
+                  />
+                )}
+                {activePanel === 'sessions' && <SessionsPanel onOpenSession={onOpenSession} />}
+                {activePanel === 'artifacts' && <ArtifactsPanel />}
+                {activePanel === 'settings' && <SettingsPanel />}
+              </div>
+            )}
+            {visited.chat && (
+              <div style={{ flex: 1, display: activePanel === 'chat' ? 'flex' : 'none', overflow: 'hidden', minWidth: 0 }}>
+                <ChatPanel resumeId={chatResumeId} active={activePanel === 'chat'} />
+              </div>
+            )}
+            {visited.voice && (
+              <div style={{ flex: 1, display: activePanel === 'voice' ? 'flex' : 'none', overflow: 'hidden', minWidth: 0 }}>
+                <VoicePanel onOpenSettings={() => navTo('settings')} autoStartSignal={voiceAutoStart} resumeId={voiceResumeId} active={activePanel === 'voice'} />
+              </div>
+            )}
           </div>
 
           {activityOpen && <ResizeHandle onMouseDown={startDrag} side="right" />}

@@ -512,6 +512,148 @@ MIGRATIONS: list[tuple[int, str]] = [
         ALTER TABLE voice_messages VALIDATE CONSTRAINT voice_messages_thread_fk;
         """,
     ),
+    (
+        12,
+        # Context REPL: semantic index over offloaded tool results. One row per
+        # chunk of an artifact's body, embedded so an agent can ctx_recall the
+        # relevant slice instead of paging blindly or re-running a search.
+        # char_offset maps a chunk back to ctx_fetch_artifact(offset=…) for the
+        # full body. Same vector(768) nomic-embed-text dimensionality as
+        # memories/skills. Lifecycle is free: ON DELETE CASCADE from artifacts
+        # means the existing 7-day artifact TTL sweep also clears these chunks —
+        # no new sweeper logic. embedding is nullable (rows written while the
+        # embedder is down are re-embedded by PgVectorSearch.backfill).
+        """
+        CREATE TABLE IF NOT EXISTS artifact_chunks (
+            chunk_id    TEXT PRIMARY KEY,
+            artifact_id TEXT NOT NULL,
+            thread_id   TEXT NOT NULL,
+            seq         INTEGER NOT NULL,
+            char_offset INTEGER NOT NULL,
+            text        TEXT NOT NULL,
+            embedding   vector(768),
+            created_ts  TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS artifact_chunks_embedding_idx
+            ON artifact_chunks USING hnsw (embedding vector_cosine_ops);
+        CREATE INDEX IF NOT EXISTS artifact_chunks_thread_idx
+            ON artifact_chunks (thread_id);
+        CREATE INDEX IF NOT EXISTS artifact_chunks_artifact_idx
+            ON artifact_chunks (artifact_id);
+
+        DO $$ BEGIN
+            ALTER TABLE artifact_chunks ADD CONSTRAINT artifact_chunks_artifact_fk
+                FOREIGN KEY (artifact_id) REFERENCES artifacts (artifact_id)
+                ON DELETE CASCADE NOT VALID;
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+        ALTER TABLE artifact_chunks VALIDATE CONSTRAINT artifact_chunks_artifact_fk;
+
+        DO $$ BEGIN
+            ALTER TABLE artifact_chunks ADD CONSTRAINT artifact_chunks_thread_fk
+                FOREIGN KEY (thread_id) REFERENCES threads (thread_id)
+                ON DELETE CASCADE NOT VALID;
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+        ALTER TABLE artifact_chunks VALIDATE CONSTRAINT artifact_chunks_thread_fk;
+        """,
+    ),
+    (
+        13,
+        # Per-conversation semantic recall over the verbatim transcript. One row
+        # per chunk of a human/assistant turn, embedded so a resumed session can
+        # recall what was said even after its LangGraph checkpoint (the agent's
+        # working memory) is swept at 1h. ``source_id`` is the message identity
+        # (transcript message_id, or "<thread>:<seq>" for voice turns) — indexing
+        # skips a source already present, so backfilling old history and live
+        # write-through never duplicate. Same vector(768) nomic-embed-text dim as
+        # memories/skills/artifact_chunks. Lifecycle is free: ON DELETE CASCADE
+        # from threads means deleting a session also clears its chunks. embedding
+        # is nullable (rows written while the embedder is down are re-embedded by
+        # PgVectorSearch.backfill).
+        """
+        CREATE TABLE IF NOT EXISTS transcript_chunks (
+            chunk_id    TEXT PRIMARY KEY,
+            thread_id   TEXT NOT NULL,
+            source_id   TEXT NOT NULL,
+            role        TEXT NOT NULL,
+            seq         INTEGER NOT NULL,
+            text        TEXT NOT NULL,
+            embedding   vector(768),
+            created_ts  TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS transcript_chunks_embedding_idx
+            ON transcript_chunks USING hnsw (embedding vector_cosine_ops);
+        CREATE INDEX IF NOT EXISTS transcript_chunks_thread_idx
+            ON transcript_chunks (thread_id);
+        CREATE INDEX IF NOT EXISTS transcript_chunks_source_idx
+            ON transcript_chunks (thread_id, source_id);
+
+        DO $$ BEGIN
+            ALTER TABLE transcript_chunks ADD CONSTRAINT transcript_chunks_thread_fk
+                FOREIGN KEY (thread_id) REFERENCES threads (thread_id)
+                ON DELETE CASCADE NOT VALID;
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+        ALTER TABLE transcript_chunks VALIDATE CONSTRAINT transcript_chunks_thread_fk;
+        """,
+    ),
+    (
+        14,
+        # Rendered-visual metadata index (charts/diagrams/tables/…). The PNG bytes
+        # live on disk (blobs/visuals or the workspace _output/visuals); this row
+        # holds the path + kind/title so the Artifacts panel and vis_show_artifact
+        # can list/serve them. Mirrors SqliteVisualStore._SCHEMA_SQL
+        # (yuyutsava/visuals/store.py). Session-scoped output: ON DELETE CASCADE
+        # from threads drops the row when a session is purged (purge_session
+        # unlinks the files first, before the thread hub is dropped).
+        """
+        CREATE TABLE IF NOT EXISTS visual_artifacts (
+            visual_id   TEXT PRIMARY KEY,
+            thread_id   TEXT NOT NULL,
+            kind        TEXT NOT NULL,
+            title       TEXT,
+            mime        TEXT NOT NULL,
+            path        TEXT NOT NULL,
+            source      TEXT,
+            created_ts  TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS visual_artifacts_thread_idx
+            ON visual_artifacts (thread_id, created_ts);
+
+        DO $$ BEGIN
+            ALTER TABLE visual_artifacts ADD CONSTRAINT visual_artifacts_thread_fk
+                FOREIGN KEY (thread_id) REFERENCES threads (thread_id)
+                ON DELETE CASCADE NOT VALID;
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+        ALTER TABLE visual_artifacts VALIDATE CONSTRAINT visual_artifacts_thread_fk;
+        """,
+    ),
+    (
+        15,
+        # Message feedback (👍/👎). Mines a future feedback agent for prompt tuning.
+        # DELIBERATELY has NO thread FK / CASCADE: feedback is durable insight data
+        # that must SURVIVE session deletion (like fact/preference memories). The
+        # (user, assistant) text is snapshotted into the row so it stays meaningful
+        # after the source transcript is gone. Mirrors SqliteFeedbackStore
+        # (yuyutsava/storage/feedback_store.py); re-rating upserts on
+        # (thread_id, message_ref).
+        """
+        CREATE TABLE IF NOT EXISTS message_feedback (
+            feedback_id    TEXT PRIMARY KEY,
+            thread_id      TEXT NOT NULL,
+            session_id     TEXT NOT NULL,
+            workspace      TEXT,
+            message_ref    TEXT NOT NULL,
+            rating         TEXT NOT NULL,
+            note           TEXT,
+            user_text      TEXT NOT NULL DEFAULT '',
+            assistant_text TEXT NOT NULL DEFAULT '',
+            created_ts     TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS message_feedback_target_idx
+            ON message_feedback (thread_id, message_ref);
+        CREATE INDEX IF NOT EXISTS message_feedback_recent_idx
+            ON message_feedback (created_ts);
+        """,
+    ),
 ]
 
 

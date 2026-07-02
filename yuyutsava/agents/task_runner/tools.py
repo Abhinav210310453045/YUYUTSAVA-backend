@@ -16,7 +16,6 @@ import contextlib
 import json
 import logging
 import os
-import shlex
 import uuid
 from pathlib import Path
 from typing import Any
@@ -376,6 +375,48 @@ def bind_tools(
         return response.model_dump_json()
 
     # ------------------------------------------------------------------ #
+    # tr_run_python                                                        #
+    # ------------------------------------------------------------------ #
+
+    @tool
+    async def tr_run_python(script_path: str, reason: str, timeout: int = 120) -> str:
+        """Run a Python script in the sandbox with the daemon's own interpreter (auto-allowed).
+
+        PORTABLE — runs identically on Windows/macOS/Linux (uses sys.executable,
+        no shell, no quoting). Prefer this over writing a bash/.sh script for ANY
+        custom multi-step logic (file wrangling, parsing, batch ops, moving/copying/
+        unzipping files). Returns JSON {status, result: {stdout, stderr, exit_code}, error}.
+
+        Lifecycle: tr_write_file('script.py', ...) → tr_run_python('script.py') →
+        read result.stdout → tr_delete_file. CWD = sandbox dir; reference workspace
+        files by absolute path, write outputs with relative paths. Do NOT tr_read_file
+        the script you just wrote — read the execution result.
+
+        Args:
+            script_path: Path to the .py file to run (absolute, or relative to workspace).
+            reason: Why you are running this script.
+            timeout: Max seconds (default 120).
+        """
+        real = _resolve_path(script_path, workspace_root)
+        sandbox_path = str(agent.sandbox_root)
+        _log.debug("[tr_run_python] script=%s", real)
+        request = OperationRequest(
+            request_id=str(uuid.uuid4()),
+            requesting_agent=agent_name,
+            task_id=str(uuid.uuid4()),
+            task_description=reason,
+            operation=OperationType.EXECUTE,
+            paths=[sandbox_path],
+            reason=reason,
+            additional_context={
+                "python": {"script_path": real, "cwd": sandbox_path, "timeout": timeout},
+            },
+        )
+        response = await agent.handle(request)
+        _log.debug("[tr_run_python] status=%s", response.status)
+        return response.model_dump_json()
+
+    # ------------------------------------------------------------------ #
     # tr_grep                                                              #
     # ------------------------------------------------------------------ #
 
@@ -403,14 +444,9 @@ def bind_tools(
         """
         real_path = _resolve_path(path, workspace_root)
         _log.debug("[tr_grep] pattern=%r path=%s", pattern, real_path)
-        flags = "-rn"
-        if case_insensitive:
-            flags += "i"
-        cmd = (
-            f"grep {flags} -C {context_lines} -m {max_matches} "
-            f"--color=never -- {json.dumps(pattern)} {json.dumps(real_path)}"
-        )
         sandbox_path = str(agent.sandbox_root)
+        # Pure-Python search (executor.execute_grep) — routed through EXECUTE so
+        # the sandbox zone check is unchanged; no `grep` binary, no shell.
         request = OperationRequest(
             request_id=str(uuid.uuid4()),
             requesting_agent=agent_name,
@@ -420,8 +456,13 @@ def bind_tools(
             paths=[sandbox_path],
             reason=reason,
             additional_context={
-                "command": cmd,
-                "timeout": 30,
+                "search": {
+                    "pattern": pattern,
+                    "path": real_path,
+                    "context_lines": context_lines,
+                    "case_insensitive": case_insensitive,
+                    "max_matches": max_matches,
+                },
                 "cwd": sandbox_path,
             },
         )
@@ -551,18 +592,28 @@ def bind_tools(
         command: str,
         reason: str,
         timeout: int = 120,
+        elevated: bool = False,
     ) -> str:
-        """Run a shell command on the host (workspace cwd, full network, asks user every time).
+        """Run a native shell command on the host (workspace cwd, full network, asks every time).
 
-        Use for internet-required commands (curl/wget/API). For local-only,
-        use tr_execute_in_sandbox (no approval prompt, no network).
+        The command runs in the host's NATIVE shell — PowerShell on Windows,
+        bash on macOS/Linux — so write OS-native syntax for the current host
+        (call tr_sysinfo if unsure which OS this is). Use this for OS-native
+        administration (services, installs, diagnostics) and internet-required
+        commands. For portable multi-step logic prefer tr_run_python; for
+        local-only work with no network use tr_execute_in_sandbox.
+
+        Set elevated=True for commands needing admin/root — this triggers the OS
+        elevation prompt (UAC on Windows, admin auth on macOS, pkexec/sudo on
+        Linux). Elevated runs are CRITICAL: the user is asked fresh every time.
 
         Args:
-            command: Shell command to run (e.g. "curl -s https://example.com").
+            command: Native shell command (PowerShell on Windows, bash on POSIX).
             reason:  Why you need to run this (shown to user in permission prompt).
             timeout: Max seconds (default 120).
+            elevated: Run with admin/root via the OS elevation prompt.
         """
-        _log.debug("[tr_execute] cmd=%s", command[:200])
+        _log.debug("[tr_execute] cmd=%s elevated=%s", command[:200], elevated)
         # Use "/host" as the sentinel path — it is outside workspace and sandbox,
         # so classify_zone() returns EXTERNAL, and EXTERNAL + EXECUTE = PROMPT.
         # This forces a user permission check before every execution.
@@ -578,6 +629,7 @@ def bind_tools(
                 "command": command,
                 "timeout": timeout,
                 "cwd": str(workspace_root),
+                "elevated": elevated,
             },
         )
         response = await agent.handle(request)
@@ -610,11 +662,9 @@ def bind_tools(
             timeout:       Max seconds (default 120).
         """
         dest = _resolve_path(dest_path, workspace_root)
-        command = (
-            f"curl -fSL --retry 2 --max-time {int(timeout)} "
-            f"-A {shlex.quote(_FETCH_UA)} "
-            f"-o {shlex.quote(dest)} {shlex.quote(url)}"
-        )
+        # Pure-Python download (executor.execute_fetch via httpx) — routed through
+        # EXECUTE on the /host sentinel so it still prompts the user once; no curl,
+        # no shell quoting. The verification below is unchanged.
         request = OperationRequest(
             request_id=str(uuid.uuid4()),
             requesting_agent=agent_name,
@@ -623,7 +673,15 @@ def bind_tools(
             operation=OperationType.EXECUTE,
             paths=["/host"],
             reason=reason,
-            additional_context={"command": command, "timeout": timeout, "cwd": str(workspace_root)},
+            additional_context={
+                "fetch": {
+                    "url": url,
+                    "dest": dest,
+                    "user_agent": _FETCH_UA,
+                    "timeout": timeout,
+                },
+                "cwd": str(workspace_root),
+            },
         )
         response = await agent.handle(request)
         # Denied / rule error — pass the structured response straight through.
@@ -640,7 +698,7 @@ def bind_tools(
             return json.dumps({
                 "status": "error",
                 "error_code": "TR_FETCH_HTTP",
-                "error": f"Download failed (curl exit {exit_code}). {stderr}".strip(),
+                "error": f"Download failed (exit {exit_code}). {stderr}".strip(),
                 "url": url,
                 "hint": "URL may be dead, blocked, or need auth. Try a direct/raw host "
                         "(e.g. raw.githubusercontent.com, archive.org).",
@@ -672,10 +730,43 @@ def bind_tools(
             "url": url,
         })
 
+    # ------------------------------------------------------------------ #
+    # tr_sysinfo                                                           #
+    # ------------------------------------------------------------------ #
+
+    @tool
+    async def tr_sysinfo(reason: str) -> str:
+        """Report the host OS passport — OS/version/arch, native shell, package
+        managers, service manager, elevation mechanism, and key paths.
+
+        Call this before writing native tr_execute commands so you use the right
+        dialect and tools (PowerShell vs bash, winget vs brew, SCM vs launchd).
+
+        Args:
+            reason: Why you need the host info (shown in the activity log).
+        """
+        from yuyutsava.platform import host_profile
+
+        hp = host_profile()
+        return json.dumps({
+            "status": "success",
+            "result": {
+                "os_family": hp.os_family,
+                "os_version": hp.os_version,
+                "arch": hp.arch,
+                "shell": hp.shell_kind,
+                "package_managers": list(hp.package_managers),
+                "service_manager": hp.service_manager,
+                "elevation": hp.elevation_mechanism,
+                "home": hp.home_dir,
+                "temp": hp.temp_dir,
+            },
+        })
+
     all_tools: list[BaseTool] = [
         tr_read_file, tr_write_file, tr_delete_file,
-        tr_execute_in_sandbox, tr_grep, tr_ls, tr_glob,
-        tr_ask_user, tr_execute, tr_fetch_url,
+        tr_execute_in_sandbox, tr_run_python, tr_grep, tr_ls, tr_glob,
+        tr_ask_user, tr_execute, tr_fetch_url, tr_sysinfo,
     ]
     # Convert pydantic arg-validation failures (missing reason=, wrong type, etc.)
     # into a structured JSON ToolMessage instead of langchain's opaque

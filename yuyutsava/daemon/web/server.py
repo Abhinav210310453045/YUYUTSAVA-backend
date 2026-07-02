@@ -33,6 +33,7 @@ def make_app(
     voice_store=None,
     transcript_store=None,
     async_subagents=False,
+    async_task_watcher=None,
 ):
     """Backwards-compatible alias of :func:`create_app`.
 
@@ -66,6 +67,7 @@ def make_app(
         voice_store=voice_store,
         transcript_store=transcript_store,
         async_subagents=async_subagents,
+        async_task_watcher=async_task_watcher,
     )
 
 

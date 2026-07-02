@@ -11,6 +11,18 @@ module.exports = {
     icon: 'assets/icon.icns',
     darkModeSupport: true,
   },
+  win: {
+    target: [
+      { target: 'nsis', arch: ['x64', 'arm64'] },
+      { target: 'portable', arch: ['x64'] },
+    ],
+    icon: 'assets/icon.ico',
+  },
+  nsis: {
+    oneClick: false,
+    perMachine: false,
+    allowToChangeInstallationDirectory: true,
+  },
   files: [
     'dist/renderer/**',
     'src/main/**',

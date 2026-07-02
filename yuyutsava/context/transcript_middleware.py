@@ -45,9 +45,13 @@ def _current_thread_id() -> str:
 class TranscriptRecorderMiddleware(AgentMiddleware):
     """Persist conversation messages to the transcript store as they appear."""
 
-    def __init__(self, store: TranscriptStore) -> None:
+    def __init__(self, store: TranscriptStore, *, index: Any | None = None) -> None:
         super().__init__()
         self._store = store
+        # Optional semantic index (PgTranscriptIndex): each newly-recorded turn is
+        # also embedded so a resumed session can recall it after checkpoint sweep.
+        # Fire-and-forget on the index side — never adds latency to the turn.
+        self._index = index
         # thread_id -> message_ids already persisted this process. Bounds DB
         # writes to genuinely-new messages; the store dedups across processes.
         self._seen: dict[str, set[str]] = {}
@@ -71,6 +75,11 @@ class TranscriptRecorderMiddleware(AgentMiddleware):
             logger.exception("transcript: failed to persist %d messages", len(fresh))
             return
         seen.update(m.id for m in fresh)
+        if self._index is not None:
+            try:
+                self._index.index_messages(thread_id, fresh)
+            except Exception:
+                logger.debug("transcript: semantic index enqueue failed", exc_info=True)
 
     async def abefore_model(self, state: Any, runtime: Any) -> dict[str, Any] | None:
         await self._record(state)

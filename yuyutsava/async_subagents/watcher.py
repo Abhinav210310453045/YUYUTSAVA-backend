@@ -42,6 +42,10 @@ from yuyutsava.daemon.channels import (
     ChannelEvent,
 )
 from yuyutsava.async_subagents.launch_index import LaunchIndex
+from yuyutsava.async_subagents.interrupt_middleware import (
+    build_synthetic_toolmessages,
+    find_pending_tool_calls,
+)
 from yuyutsava.async_subagents.mirror import (
     AsyncTaskMirror,
     MirroredTask,
@@ -90,6 +94,16 @@ def _extract_thread_id(thread_obj: Any) -> str | None:
     return getattr(thread_obj, "thread_id", None)
 
 
+def _first_run_status(runs: Any) -> str:
+    """Status of the latest (newest-first) run, or '' when there are none."""
+    if not runs:
+        return ""
+    r = runs[0]
+    if isinstance(r, dict):
+        return r.get("status") or ""
+    return getattr(r, "status", "") or ""
+
+
 def _last_message_text(values: Any) -> str:
     """Best-effort extraction of the final assistant message text.
 
@@ -130,6 +144,108 @@ def _content_text(content: Any) -> str:
                 out.append(block)
         return "\n".join(out)
     return str(content) if content is not None else ""
+
+
+_COMPACT_ERROR_CAP = 300
+
+
+def compact_error(raw: str | None) -> str:
+    """Reduce a possibly-huge error/traceback to a short, single-line reason.
+
+    Background-task errors get injected into the launching agent's context, so a
+    multi-line traceback would bloat it. We keep only the most meaningful line —
+    the final ``Type: message`` of a Python traceback, else the last non-empty
+    line — and hard-cap the length. The full text stays available via the
+    per-task logs endpoint.
+    """
+    if not raw:
+        return "(no error detail)"
+    text = str(raw).strip()
+    if not text:
+        return "(no error detail)"
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    chosen = text
+    if lines:
+        # A Python traceback ends with the exception line ("ValueError: ...").
+        # That is the most useful single line; fall back to the last line.
+        for ln in reversed(lines):
+            if not ln.startswith(("File \"", "Traceback", "  ", "during", "During")):
+                chosen = ln
+                break
+        else:
+            chosen = lines[-1]
+    chosen = " ".join(chosen.split())
+    if len(chosen) > _COMPACT_ERROR_CAP:
+        chosen = chosen[: _COMPACT_ERROR_CAP - 1].rstrip() + "…"
+    return chosen
+
+
+def _error_text_from_thread(values: Any) -> str:
+    """Best-effort error reason from a failed sub-thread's messages.
+
+    Used when the run object carries no ``error`` field. Prefers the most recent
+    ToolMessage with an error status/content, else the last assistant text.
+    """
+    if not isinstance(values, dict):
+        return ""
+    msgs = values.get("messages") or []
+    for m in reversed(msgs):
+        mtype = m.get("type") or m.get("role") if isinstance(m, dict) else getattr(m, "type", "")
+        status = m.get("status") if isinstance(m, dict) else getattr(m, "status", None)
+        content = m.get("content") if isinstance(m, dict) else getattr(m, "content", "")
+        if mtype == "tool" and (status == "error" or "error" in str(content).lower()):
+            txt = _content_text(content).strip()
+            if txt:
+                return txt
+    # Fall back to the last assistant text.
+    return _last_message_text(values)
+
+
+def _transcript_rows(values: Any) -> list[dict]:
+    """Flatten a sub-thread's ``messages`` into UI-friendly transcript rows.
+
+    Each row is ``{role, text, tool_name?, tool_args?, status?}``. Tool calls
+    surface their name + args; tool results and assistant/human text surface
+    their flattened content. Shares ``_content_text`` with the live progress
+    stream so the on-demand transcript and the streamed steps agree.
+    """
+    if not isinstance(values, dict):
+        return []
+    rows: list[dict] = []
+    for m in values.get("messages") or []:
+        if isinstance(m, dict):
+            mtype = m.get("type") or m.get("role") or ""
+            content = m.get("content", "")
+            tcs = m.get("tool_calls")
+            status = m.get("status")
+            name = m.get("name")
+        else:
+            mtype = getattr(m, "type", "") or ""
+            content = getattr(m, "content", "")
+            tcs = getattr(m, "tool_calls", None)
+            status = getattr(m, "status", None)
+            name = getattr(m, "name", None)
+        role = "assistant" if mtype in ("ai", "assistant") else (
+            "user" if mtype in ("human", "user") else (mtype or "message")
+        )
+        text = _content_text(content).strip()
+        if text:
+            rows.append({"role": role, "text": text})
+        for tc in tcs or []:
+            tc_name = tc.get("name", "?") if isinstance(tc, dict) else getattr(tc, "name", "?")
+            tc_args = tc.get("args", {}) if isinstance(tc, dict) else getattr(tc, "args", {})
+            try:
+                args_str = json.dumps(tc_args, ensure_ascii=False) if tc_args else ""
+            except (TypeError, ValueError):
+                args_str = str(tc_args)
+            rows.append({"role": "tool_call", "tool_name": tc_name, "tool_args": args_str, "text": ""})
+        if mtype == "tool" and text:
+            rows[-1]["role"] = "tool_result"
+            if name:
+                rows[-1]["tool_name"] = name
+            if status:
+                rows[-1]["status"] = status
+    return rows
 
 
 def _new_progress_steps(values: Any, seen: int) -> tuple[list[tuple[str, str]], int]:
@@ -238,6 +354,9 @@ class AsyncTaskHealthWatcher:
         # task_id -> count of sub-thread messages already streamed as progress
         # (so each cycle only emits the *new* steps). Cleared on terminal.
         self._progress_seen: dict[str, int] = {}
+        # sub_thread_ids we've already healed once (orphaned tool_call repair),
+        # so a persistently-failing thread isn't patched on every poll cycle.
+        self._healed_threads: set[str] = set()
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -317,11 +436,22 @@ class AsyncTaskHealthWatcher:
             await self._ingest_thread_runs(tid)
 
     async def _ingest_thread_runs(self, thread_id: str) -> None:
-        """For a freshly-discovered thread, mirror its non-terminal runs."""
+        """For a freshly-discovered thread, mirror only its *still-running* runs.
+
+        Threads whose latest run is already terminal are tasks from a previous
+        session that have finished — we mark them known (done in the caller) but
+        do NOT re-announce them as ``[bg started] (discovered)`` on every boot.
+        Only genuinely in-flight tasks are surfaced/tracked, so the orchestrator
+        and CLI still know about background work that is actually still running.
+        """
         assert self._client is not None
         try:
             runs = await self._client.runs.list(thread_id=thread_id, limit=5)
         except Exception:
+            return
+        # The latest run (newest-first) decides whether this thread is live.
+        latest = _first_run_status(runs)
+        if latest not in _NON_TERMINAL:
             return
         for r in runs or []:
             run_dict = r if isinstance(r, dict) else r.__dict__
@@ -431,6 +561,13 @@ class AsyncTaskHealthWatcher:
                 await self._handle_interrupt(task, run_id, thread)
                 continue
 
+            # Self-heal: a run that errored on an orphaned tool_call leaves the
+            # thread wedged (every later read/op fails _validate_chat_history).
+            # Patch it once so the thread is valid for the logs endpoint and any
+            # future operation, then report the (now compact) error normally.
+            if run_status == "error" and task.sub_thread_id not in self._healed_threads:
+                await self._heal_orphaned_tool_calls(task, thread)
+
             # Otherwise the run is genuinely done — propagate run.status to the
             # mirror as the terminal verdict.
             if run_status in TERMINAL_STATUSES or run_status in ("success", "error"):
@@ -473,6 +610,33 @@ class AsyncTaskHealthWatcher:
                 text=text,
                 ts=time.time(),
             )))
+
+    # ------------------------------------------------------------------
+    # Transcript (for the UI logs endpoint)
+    # ------------------------------------------------------------------
+
+    async def get_task_transcript(self, task_id: str) -> list[dict] | None:
+        """Return a background task's full message transcript, or None.
+
+        Looks up the task in the mirror, fetches its sub-thread state from the
+        langgraph host, and flattens ``messages`` into UI-friendly rows. Returns
+        ``None`` when the task is unknown; ``[]`` when it has no messages yet.
+        """
+        if self._client is None:
+            return None
+        task = self._mirror.get(task_id)
+        if task is None or not task.sub_thread_id:
+            return None
+        try:
+            thread = await self._client.threads.get(thread_id=task.sub_thread_id)
+        except Exception:
+            logger.debug("get_task_transcript threads.get failed for %s", task_id, exc_info=True)
+            return []
+        values = (
+            thread.get("values") if isinstance(thread, dict)
+            else getattr(thread, "values", None)
+        )
+        return _transcript_rows(values)
 
     # ------------------------------------------------------------------
     # Interrupt handling
@@ -611,6 +775,37 @@ class AsyncTaskHealthWatcher:
     # Terminal status handling
     # ------------------------------------------------------------------
 
+    async def _heal_orphaned_tool_calls(self, task: MirroredTask, thread: Any) -> None:
+        """Inject synthetic ToolMessages for any unresolved tool_calls.
+
+        Defensive net for the case the master-side interrupt patch missed: an
+        errored thread carrying an ``AIMessage(tool_calls)`` with no matching
+        ``ToolMessage`` is otherwise unreadable. Done at most once per thread.
+        """
+        assert self._client is not None
+        if not task.sub_thread_id:
+            return
+        values = (
+            thread.get("values") if isinstance(thread, dict)
+            else getattr(thread, "values", None)
+        ) or {}
+        messages = values.get("messages") if isinstance(values, dict) else None
+        pending = find_pending_tool_calls(messages or [])
+        if not pending:
+            return
+        try:
+            await self._client.threads.update_state(
+                thread_id=task.sub_thread_id,
+                values={"messages": build_synthetic_toolmessages(pending)},
+            )
+            self._healed_threads.add(task.sub_thread_id)
+            logger.info(
+                "watcher self-heal: patched %d orphaned tool_call(s) on thread %s",
+                len(pending), task.sub_thread_id,
+            )
+        except Exception:
+            logger.debug("watcher self-heal update_state failed", exc_info=True)
+
     async def _handle_terminal(self, task: MirroredTask, run: dict, status: str) -> None:
         assert self._client is not None
         summary = ""
@@ -625,7 +820,19 @@ class AsyncTaskHealthWatcher:
                 summary = "(completed with no readable output)"
         elif status == "error":
             err = run.get("error") if isinstance(run, dict) else getattr(run, "error", None)
-            error_text = str(err) if err else "(no error detail)"
+            raw = str(err) if err else ""
+            if not raw:
+                # Run object carries no error — recover the real reason from the
+                # thread instead of the old "(no error detail)" placeholder.
+                try:
+                    thread = await self._client.threads.get(thread_id=task.sub_thread_id)
+                    values = thread.get("values") if isinstance(thread, dict) else getattr(thread, "values", None)
+                    raw = _error_text_from_thread(values)
+                except Exception:
+                    logger.debug("threads.get for terminal error failed", exc_info=True)
+            # Compact so it never bloats the launching agent's context; the full
+            # text remains available via GET /tasks/{id}/logs.
+            error_text = compact_error(raw)
             summary = error_text
         else:  # cancelled / timeout
             summary = status

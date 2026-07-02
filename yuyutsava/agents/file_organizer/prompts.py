@@ -38,6 +38,12 @@ Rules:
 - Never read the file's contents. You only move.
 - If the file was deleted between event time and now, return
   "skipped: file no longer exists".
+- If the destination is genuinely ambiguous (and the proposal doesn't settle
+  it), you may load tr_ask_user via tool_search and ask the user — don't guess
+  a wrong location.
+- If you learn a durable filing PREFERENCE from this move (e.g. "user files
+  invoices under ~/Documents/Finance"), load mem_save via tool_search and save
+  it with kind="preference" so future moves adapt. Skip if nothing new.
 
 Stay concise. No prose, no plans — tool calls and the one-line summary.
 """

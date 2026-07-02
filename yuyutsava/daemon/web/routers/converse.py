@@ -18,7 +18,7 @@ Client → server:
 
 Server → client:
   * ``{"type":"hello","session_id":...,"thread_id":...,"resuming":bool}``
-  * StreamEvent frames: ``token`` / ``tool_call`` / ``tool_result`` / ``log`` / ``final``
+  * StreamEvent frames: ``token`` / ``tool_call`` / ``tool_result`` / ``image`` / ``log`` / ``final``
   * ``{"type":"speech_started"}``          — VAD detected the user talking
   * ``{"type":"transcript","text":...}``   — final STT of the user's utterance
   * ``{"type":"speaking_start"}`` / ``{"type":"speaking_end"}`` — TTS bracketing
@@ -83,6 +83,47 @@ def _barge_grace_sec() -> float:
 _BARGE_GRACE_SEC = _barge_grace_sec()
 
 
+# Minimum ASR confidence (0..1) below which a transcript is treated as garbled:
+# the user is asked to repeat instead of running the agent on a bad transcript.
+# Only backends that expose a confidence (faster-whisper) are gated; Groq and
+# any backend returning None are never gated. Set 0 to disable the gate.
+def _stt_min_confidence() -> float:
+    try:
+        return max(0.0, min(1.0, float(os.environ.get("YUYUTSAVA_STT_MIN_CONFIDENCE", "0.35"))))
+    except ValueError:
+        return 0.35
+
+
+_STT_MIN_CONFIDENCE = _stt_min_confidence()
+
+
+# Barge-in (interrupting the agent's spoken reply by talking over it). DISABLED by
+# default: while the agent is speaking, mic input is ignored so its own TTS echo
+# and room noise can't chop the reply off mid-sentence — the answer is always
+# heard in full, and the user stops it with the UI Stop button. Set
+# YUYUTSAVA_VOICE_BARGE_IN=1 to opt into voice interruption; even then it only ever
+# triggers on a real, transcribed utterance (never a bare onset), and echo/noise
+# that transcribes to nothing is ignored.
+def _barge_in_enabled() -> bool:
+    return os.environ.get("YUYUTSAVA_VOICE_BARGE_IN", "0").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
+
+
+_BARGE_IN_ENABLED = _barge_in_enabled()
+
+# How long after the agent stops speaking we keep ignoring mic input, so the tail
+# of buffered playback (still audible, still hitting the mic) can't self-trigger.
+def _post_speak_grace_sec() -> float:
+    try:
+        return max(0.0, float(os.environ.get("YUYUTSAVA_VOICE_POST_SPEAK_GRACE_SEC", "1.2")))
+    except ValueError:
+        return 1.2
+
+
+_POST_SPEAK_GRACE_SEC = _post_speak_grace_sec()
+
+
 @router.websocket("/ws/converse")
 async def converse(ws: WebSocket) -> None:
     manager = getattr(ws.app.state, "conversation_manager", None)
@@ -113,8 +154,10 @@ async def converse(ws: WebSocket) -> None:
         return
 
     logger.info(
-        "converse: WS open origin=%s resume_id=%s → session=%s resuming=%s",
+        "converse: WS open origin=%s resume_id=%s → session=%s resuming=%s "
+        "voice_barge_in=%s (post_speak_grace=%.1fs)",
         origin, resume_id, convo.session_id, resuming,
+        _BARGE_IN_ENABLED, _POST_SPEAK_GRACE_SEC,
     )
     await ws.send_text(json.dumps({
         "type": "hello",
@@ -122,6 +165,10 @@ async def converse(ws: WebSocket) -> None:
         "thread_id": convo.thread_id,
         "origin": origin,
         "resuming": resuming,
+        # Tell the client the voice interruption policy so it can match: when
+        # barge-in is off (default) the client runs half-duplex — it mutes the
+        # mic while the reply is still playing so noise can't cut it off.
+        "barge_in": _BARGE_IN_ENABLED,
     }))
 
     # Shared per-connection state, mutated by the single receive loop below.
@@ -145,9 +192,12 @@ async def converse(ws: WebSocket) -> None:
         _spawn_bg(convo.prewarm())
     # Barge-in guard: True while the agent's TTS is playing, with the monotonic
     # time it started, so the audio handler can ignore self-echo during the grace
-    # window (set in the TTS worker below).
+    # window (set in the TTS worker below). ``speaking_ended_at`` marks when the
+    # last reply finished so we keep ignoring mic input for a short grace after —
+    # the client is still draining buffered audio and the mic still hears it.
     agent_speaking = False
     speaking_since = 0.0
+    speaking_ended_at = 0.0
     # True while an ACTUAL agent turn is executing (a non-empty transcript has
     # started run_turn), as opposed to merely transcribing an utterance that may
     # turn out to be empty noise. The audio handler protects an active turn from
@@ -272,7 +322,7 @@ async def converse(ws: WebSocket) -> None:
                 })
 
         async def _tts_worker() -> None:
-            nonlocal audio_rate, agent_speaking, speaking_since
+            nonlocal audio_rate, agent_speaking, speaking_since, speaking_ended_at
             spoke = False
             while True:
                 sentence = await tts_queue.get()
@@ -305,6 +355,7 @@ async def converse(ws: WebSocket) -> None:
             if spoke:
                 await _send({"type": "speaking_end"})
             agent_speaking = False
+            speaking_ended_at = time.monotonic()
             if voice is not None:
                 voice.set_speaking(False)
 
@@ -329,6 +380,7 @@ async def converse(ws: WebSocket) -> None:
                 ask_handler=_ask_handler,
                 run_name=f"{origin}-voice",
                 keep_full_payloads=True,
+                modality="voice",
             )
         except asyncio.CancelledError:
             cancel.set()
@@ -360,13 +412,33 @@ async def converse(ws: WebSocket) -> None:
         assert voice is not None
         logger.info("voice[%s]: utterance %d bytes → transcribing", origin, len(pcm))
         try:
-            text = await voice.transcribe(pcm)
+            result = await voice.transcribe_detailed(pcm)
         except asyncio.CancelledError:
             raise
+        text = result.text
         if not text:
             # Nothing intelligible — release the UI without a turn. Logged so a
             # "no response" symptom is traceable to empty STT vs. a failed turn.
             logger.info("voice[%s]: empty transcript — no turn run", origin)
+            await _send({"type": "turn_end"})
+            return
+        # Confidence gate: a low-confidence transcript is likely garbled ASR
+        # (the "welcome to the general" failure). Ask the user to repeat rather
+        # than feed the agent a bad query. Only gates backends that report a
+        # confidence; None (e.g. Groq) always passes.
+        conf = result.confidence
+        if conf is not None and _STT_MIN_CONFIDENCE > 0 and conf < _STT_MIN_CONFIDENCE:
+            logger.info(
+                "voice[%s]: low-confidence transcript (%.2f < %.2f) %r — asking to repeat",
+                origin, conf, _STT_MIN_CONFIDENCE, text[:120],
+            )
+            await _send({
+                "type": "clarify",
+                "reason": "low_confidence",
+                "confidence": round(conf, 3),
+                "heard": text,
+                "message": "I didn't quite catch that — could you say it again?",
+            })
             await _send({"type": "turn_end"})
             return
         logger.info("voice[%s]: transcript=%r → running turn", origin, text[:120])
@@ -375,6 +447,76 @@ async def converse(ws: WebSocket) -> None:
         # intentionally not stored by default — privacy + size.
         await _persist_voice_message(role="user", modality="text", text=text)
         await _run_voice_turn(text)
+
+    # Continuous (hands-free) voice: the mic stays live across turns, so the
+    # user can keep talking while the agent is mid-answer. A completed utterance
+    # spoken during a running turn is queued (latest wins) and run the moment the
+    # current turn ends, instead of being dropped — so nothing the user says is
+    # lost and they never wait for the mic to "stop".
+    queued_utterance: bytes | None = None
+
+    def _on_turn_done(t: asyncio.Task) -> None:
+        nonlocal queued_utterance
+        utt = queued_utterance
+        queued_utterance = None
+        if utt is None or t.cancelled():
+            # A cancelled turn is a barge-in that already started a fresh turn;
+            # don't double-run.
+            return
+        _spawn_turn(_voice_turn_from_utterance(utt))
+
+    def _spawn_turn(coro) -> None:
+        nonlocal turn_task
+        turn_task = asyncio.create_task(coro)
+        turn_task.add_done_callback(_on_turn_done)
+
+    # True while a candidate barge-in utterance is being transcribed, so we don't
+    # evaluate several overlapping talk-over guesses at once.
+    barge_pending = False
+
+    async def _maybe_barge_in(pcm: bytes) -> None:
+        """Interrupt the agent's spoken reply only for genuine talk-over.
+
+        Called when a full utterance is captured *while the agent is speaking*.
+        Instead of cancelling the reply on a raw VAD onset (which room noise or
+        the agent's own TTS echo trips constantly — the reply cutting out
+        mid-sentence), we transcribe the utterance first and only interrupt when
+        it yields real, confident words. Otherwise the agent is left to finish.
+        """
+        nonlocal barge_pending
+        if not _BARGE_IN_ENABLED or barge_pending or voice is None:
+            return
+        barge_pending = True
+        try:
+            try:
+                result = await voice.transcribe_detailed(pcm)
+            except asyncio.CancelledError:
+                raise
+            except Exception:  # noqa: BLE001
+                logger.debug("voice[%s]: barge transcription failed", origin, exc_info=True)
+                return
+            text = (result.text or "").strip()
+            if not text:
+                logger.info("voice[%s]: talk-over ignored — noise/echo while speaking", origin)
+                return
+            conf = result.confidence
+            if conf is not None and _STT_MIN_CONFIDENCE > 0 and conf < _STT_MIN_CONFIDENCE:
+                logger.info(
+                    "voice[%s]: talk-over ignored — low confidence (%.2f) %r",
+                    origin, conf, text[:80],
+                )
+                return
+            # Real talk-over: stop the agent's audio + turn, then answer the new
+            # utterance. speech_started tells the client to drop the stale audio.
+            logger.info("voice[%s]: barge-in confirmed → %r", origin, text[:80])
+            await _send({"type": "speech_started"})
+            if turn_task is not None and not turn_task.done():
+                turn_task.cancel()
+            await _send({"type": "transcript", "text": text})
+            await _persist_voice_message(role="user", modality="text", text=text)
+            _spawn_turn(_run_voice_turn(text))
+        finally:
+            barge_pending = False
 
     try:
         while True:
@@ -420,42 +562,52 @@ async def converse(ws: WebSocket) -> None:
                 except (ValueError, TypeError):
                     continue
                 vp = _ensure_voice()
-                res = vp.feed_audio(pcm)
+                # Unless voice barge-in is explicitly enabled, ignore mic input for
+                # the WHOLE duration of an active turn (thinking + speaking + a
+                # short tail while buffered audio drains) so the agent's own TTS
+                # echo / room noise can't cut the reply off or queue a spurious
+                # follow-up turn. The answer is always heard in full; the user
+                # interrupts with the UI Stop button instead. (The client also
+                # mutes its mic while the reply is still PLAYING — see hello
+                # barge_in — which is the authoritative guard, since only the
+                # client knows when playback truly ends.)
                 turn_running = turn_task is not None and not turn_task.done()
+                if not _BARGE_IN_ENABLED:
+                    turn_active = (
+                        turn_running
+                        or agent_active
+                        or agent_speaking
+                        or (time.monotonic() - speaking_ended_at) < _POST_SPEAK_GRACE_SEC
+                    )
+                    if turn_active:
+                        continue
+                res = vp.feed_audio(pcm)
                 if res.speech_started:
-                    # Barge-in is ONLY allowed while the agent is actually
-                    # SPEAKING. While it is THINKING (turn running, no TTS yet) or
-                    # idle, a speech onset must NOT cancel the turn — otherwise the
-                    # user's own trailing words or background noise kill the answer
-                    # before it arrives (the "stuck, no response" symptom). A short
-                    # grace after speaking-start still ignores the agent's own TTS
-                    # echo.
-                    if agent_speaking:
-                        in_grace = (time.monotonic() - speaking_since) < _BARGE_GRACE_SEC
-                        if not in_grace:
-                            await _send({"type": "speech_started"})
-                            if turn_running:
-                                turn_task.cancel()
-                    else:
-                        # Surface the listening indicator, but leave any thinking
-                        # turn alone.
+                    # A raw speech ONSET never interrupts the agent. While it is
+                    # SPEAKING, an onset is almost always room noise or the agent's
+                    # own TTS echo — cutting the reply here is exactly the "it stops
+                    # mid-sentence" bug. A genuine talk-over is handled below, once a
+                    # full utterance is captured AND transcribes to real words. While
+                    # the agent is THINKING or idle we only surface the listening
+                    # indicator (also non-cancelling) so the user sees they're heard.
+                    if not agent_speaking:
                         await _send({"type": "speech_started"})
                 if res.utterance is not None:
                     if agent_speaking:
-                        # Real barge-in: the user talked over the spoken reply —
-                        # drop it and run the new utterance.
-                        if turn_running:
-                            turn_task.cancel()
-                        turn_task = asyncio.create_task(
-                            _voice_turn_from_utterance(res.utterance)
-                        )
+                        # Possible talk-over. Don't cancel yet — verify it's real
+                        # speech (transcribe-before-cancel) so noise/echo can't chop
+                        # the reply off. Runs off to the side while the agent keeps
+                        # speaking; only confirmed words actually interrupt.
+                        _spawn_bg(_maybe_barge_in(res.utterance))
                     elif agent_active:
-                        # The agent is mid-answer (thinking) — don't interrupt it.
-                        # Ignore this utterance (trailing words / noise) so the
-                        # in-flight turn can finish; a follow-up spoken AFTER it
-                        # ends starts a fresh turn.
+                        # The agent is mid-answer (thinking) — don't interrupt it,
+                        # but don't drop what the user just said either. Queue this
+                        # completed utterance (latest wins) so it runs as the next
+                        # turn the moment the current one ends. Keeps the mic
+                        # continuously useful without killing the in-flight answer.
+                        queued_utterance = res.utterance
                         logger.info(
-                            "voice[%s]: utterance ignored — agent is answering",
+                            "voice[%s]: utterance queued — runs after current turn",
                             origin,
                         )
                     else:
@@ -464,9 +616,7 @@ async def converse(ws: WebSocket) -> None:
                         # stale transcription and run this one.
                         if turn_running:
                             turn_task.cancel()
-                        turn_task = asyncio.create_task(
-                            _voice_turn_from_utterance(res.utterance)
-                        )
+                        _spawn_turn(_voice_turn_from_utterance(res.utterance))
                 continue
 
             if mtype == "audio_end":
@@ -476,7 +626,7 @@ async def converse(ws: WebSocket) -> None:
                     if utt:
                         if turn_task is not None and not turn_task.done():
                             turn_task.cancel()
-                        turn_task = asyncio.create_task(_voice_turn_from_utterance(utt))
+                        _spawn_turn(_voice_turn_from_utterance(utt))
                 continue
 
             await _send({"type": "error", "message": f"unknown message type {mtype!r}"})

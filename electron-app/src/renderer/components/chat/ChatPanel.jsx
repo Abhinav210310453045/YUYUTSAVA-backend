@@ -1,5 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useConverse } from '../../hooks/useConverse'
+import NewSessionButton from '../common/NewSessionButton'
+import Markdown from './Markdown'
+import MessageImages from './MessageImages'
+import MessageActions from './MessageActions'
 
 function ToolEvents({ events }) {
   if (!events || events.length === 0) return null
@@ -31,36 +35,78 @@ function ToolEvents({ events }) {
   )
 }
 
-function Bubble({ m }) {
+// Three-dot typing indicator shown while a reply streams in.
+const TypingDots = () => (
+  <span className="typing-dots" style={{ marginLeft: 2 }}><i /><i /><i /></span>
+)
+
+function Bubble({ m, userText, sessionId, onRegenerate, onFeedback }) {
   const isUser = m.role === 'user'
+  const [hover, setHover] = useState(false)
+  const empty = !m.text && (!m.images || m.images.length === 0)
+
   return (
-    <div style={{ display: 'flex', justifyContent: isUser ? 'flex-end' : 'flex-start' }}>
-      <div style={{
-        maxWidth: '78%',
-        background: isUser ? 'rgba(0,255,136,0.08)' : 'var(--bg-card)',
-        border: `1px solid ${m.error ? 'rgba(255,51,102,0.4)' : isUser ? 'rgba(0,255,136,0.2)' : 'var(--border-card)'}`,
-        borderRadius: 'var(--radius-card)',
-        padding: '10px 14px',
-        color: m.error ? 'var(--neon-red)' : 'var(--text-primary)',
-        fontSize: 13,
-        lineHeight: 1.6,
-        whiteSpace: 'pre-wrap',
-        wordBreak: 'break-word',
-      }}>
-        {m.text}{m.streaming ? <span style={{ color: 'var(--neon-green)' }}>▋</span> : null}
-        {!isUser && <ToolEvents events={m.events} />}
+    <div
+      style={{ display: 'flex', justifyContent: isUser ? 'flex-end' : 'flex-start' }}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+    >
+      <div
+        className="hover-bulge"
+        style={{
+          maxWidth: '82%',
+          background: isUser ? 'var(--grad-user)' : 'var(--glass-bg)',
+          backdropFilter: 'blur(var(--glass-blur))',
+          WebkitBackdropFilter: 'blur(var(--glass-blur))',
+          border: `1px solid ${m.error ? 'var(--border-red)' : isUser ? 'transparent' : 'var(--glass-border)'}`,
+          borderLeft: isUser ? undefined : (m.error ? undefined : '2px solid transparent'),
+          borderImage: (!isUser && !m.error) ? 'var(--grad-accent) 1' : undefined,
+          borderRadius: 16,
+          padding: '10px 14px',
+          color: m.error ? 'var(--neon-red)' : 'var(--text-primary)',
+          fontSize: 13,
+          lineHeight: 1.6,
+          fontFamily: 'var(--font-ui)',
+          wordBreak: 'break-word',
+          animation: 'bubble-pop 0.28s cubic-bezier(0.34,1.56,0.64,1)',
+          '--bulge-glow': isUser ? 'rgba(0,255,136,0.28)' : 'rgba(0,212,255,0.22)',
+          boxShadow: 'var(--shadow-card)',
+        }}
+      >
+        {isUser ? (
+          <span style={{ whiteSpace: 'pre-wrap' }}>{m.text}</span>
+        ) : (
+          <>
+            {empty && m.streaming ? <TypingDots /> : <Markdown>{m.text}</Markdown>}
+            {m.text && m.streaming ? <TypingDots /> : null}
+            <MessageImages images={m.images} />
+            <ToolEvents events={m.events} />
+            {!m.streaming && !m.error && !empty && (
+              <div style={{ opacity: hover || m.feedback ? 1 : 0.55, transition: 'opacity 0.15s' }}>
+                <MessageActions
+                  message={m}
+                  userText={userText}
+                  sessionId={sessionId}
+                  onRegenerate={onRegenerate}
+                  onFeedback={onFeedback}
+                />
+              </div>
+            )}
+          </>
+        )}
       </div>
     </div>
   )
 }
 
-export default function ChatPanel({ resumeId = null }) {
+export default function ChatPanel({ resumeId = null, active = true }) {
   const {
-    messages, connected, busy, pendingAsk, listening, speaking,
-    send, answerAsk, interrupt, startVoice, stopVoice,
+    messages, connected, busy, pendingAsk, hello, listening, speaking,
+    send, answerAsk, interrupt, startVoice, stopVoice, newSession,
   } = useConverse({ origin: 'ui', resumeId })
   const [draft, setDraft] = useState('')
   const [askDraft, setAskDraft] = useState('')
+  const [fb, setFb] = useState({}) // messageId -> 'up' | 'down' (local selection)
   const scrollRef = useRef(null)
 
   useEffect(() => {
@@ -68,9 +114,22 @@ export default function ChatPanel({ resumeId = null }) {
     if (el) el.scrollTop = el.scrollHeight
   }, [messages, pendingAsk])
 
+  // Panel stays mounted when hidden — don't leave the push-to-talk mic hot.
+  useEffect(() => {
+    if (!active && listening) stopVoice()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active])
+
   const onSubmit = () => { send(draft); setDraft('') }
   const onKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSubmit() }
+  }
+
+  // Text of the user turn immediately preceding message index i (for feedback
+  // snapshot + regenerate).
+  const precedingUserText = (i) => {
+    for (let j = i - 1; j >= 0; j--) if (messages[j].role === 'user') return messages[j].text
+    return ''
   }
 
   const askBody = pendingAsk?.payload?.body || pendingAsk?.payload?.question
@@ -79,7 +138,7 @@ export default function ChatPanel({ resumeId = null }) {
     || (pendingAsk?.payload?.type === 'task_runner_permission' ? 'Permission requested' : 'Question')
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
       {/* header */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8,
@@ -94,29 +153,50 @@ export default function ChatPanel({ resumeId = null }) {
           fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.1em',
           textTransform: 'uppercase', color: 'var(--text-primary)', fontWeight: 600,
         }}>Chat — orchestrator</span>
+        <NewSessionButton onClick={newSession} label="New chat" />
       </div>
+
+      {/* animated gradient mesh behind the thread */}
+      <div aria-hidden style={{
+        position: 'absolute', inset: 0, top: 50, background: 'var(--grad-mesh)',
+        opacity: 0.7, pointerEvents: 'none', animation: 'mesh-drift 18s ease-in-out infinite',
+        zIndex: 0,
+      }} />
 
       {/* messages */}
       <div ref={scrollRef} style={{
-        flex: 1, overflowY: 'auto', padding: '20px 24px',
+        flex: 1, overflowY: 'auto', padding: '20px 24px', position: 'relative', zIndex: 1,
         display: 'flex', flexDirection: 'column', gap: 12,
       }}>
         {messages.length === 0 && (
           <div style={{
             flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
-            justifyContent: 'center', gap: 8, color: 'var(--text-muted)',
+            justifyContent: 'center', gap: 10, color: 'var(--text-muted)',
             fontFamily: 'var(--font-mono)', fontSize: 12,
           }}>
-            <div style={{ fontSize: 28, opacity: 0.3 }}>◈</div>
-            <div>{'> talk to YUYUTSAVA — it can run tasks and delegate to subagents'}</div>
+            <div style={{
+              fontSize: 40, fontWeight: 700,
+              background: 'var(--grad-accent)', backgroundClip: 'text', WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+            }} className="grad-animated">◈</div>
+            <div>{'> talk to YUYUTSAVA — it can run tasks, make visuals, and delegate'}</div>
           </div>
         )}
-        {messages.map((m) => <Bubble key={m.id} m={m} />)}
+        {messages.map((m, i) => (
+          <Bubble
+            key={m.id}
+            m={{ ...m, feedback: fb[m.id] }}
+            userText={precedingUserText(i)}
+            sessionId={hello?.session_id || null}
+            onRegenerate={m.role === 'assistant' && !busy ? () => send(precedingUserText(i)) : null}
+            onFeedback={(rating) => setFb((p) => ({ ...p, [m.id]: rating }))}
+          />
+        ))}
 
         {pendingAsk && (
           <div style={{
             border: '1px solid var(--neon-amber)', borderRadius: 'var(--radius-card)',
-            padding: '12px 14px', background: 'rgba(255,176,0,0.06)',
+            padding: '12px 14px', background: 'rgba(255,176,0,0.06)', backdropFilter: 'blur(8px)',
           }}>
             <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--neon-amber)', marginBottom: 6 }}>
               ▣ {askTitle}
@@ -142,7 +222,7 @@ export default function ChatPanel({ resumeId = null }) {
 
       {/* composer */}
       <div style={{
-        display: 'flex', gap: 8, padding: '12px 24px 18px',
+        display: 'flex', gap: 8, padding: '12px 24px 18px', position: 'relative', zIndex: 1,
         borderTop: '1px solid var(--border-subtle)',
       }}>
         <textarea
@@ -152,27 +232,29 @@ export default function ChatPanel({ resumeId = null }) {
           rows={1}
           placeholder={busy ? 'agent is working…' : 'message the orchestrator (Enter to send, Shift+Enter for newline)'}
           style={{
-            flex: 1, resize: 'none', background: 'var(--bg-card)', color: 'var(--text-primary)',
-            border: '1px solid var(--border-card)', borderRadius: 8, padding: '10px 12px',
-            fontSize: 13, fontFamily: 'inherit', maxHeight: 120,
+            flex: 1, resize: 'none', background: 'var(--glass-bg)', color: 'var(--text-primary)',
+            border: '1px solid var(--glass-border)', borderRadius: 22, padding: '11px 16px',
+            fontSize: 13, fontFamily: 'var(--font-ui)', maxHeight: 120,
+            backdropFilter: 'blur(var(--glass-blur))', outline: 'none',
           }}
         />
         <button
           onClick={() => (listening ? stopVoice() : startVoice())}
           title={listening ? 'stop microphone' : 'talk to the agent'}
+          className="tap-pop"
           style={micBtnStyle(listening)}
         >
           {listening ? '● mic' : '🎙 mic'}
         </button>
         {busy ? (
-          <button onClick={interrupt} style={btnStyle(false)}>stop</button>
+          <button onClick={interrupt} className="tap-pop" style={btnStyle(false)}>stop</button>
         ) : (
-          <button onClick={onSubmit} disabled={!draft.trim()} style={btnStyle(true)}>send</button>
+          <button onClick={onSubmit} disabled={!draft.trim()} className="grad-animated tap-pop" style={sendStyle(!!draft.trim())}>send</button>
         )}
       </div>
       {(listening || speaking) && (
         <div style={{
-          padding: '0 24px 10px', fontFamily: 'var(--font-mono)', fontSize: 10,
+          padding: '0 24px 10px', fontFamily: 'var(--font-mono)', fontSize: 10, position: 'relative', zIndex: 1,
           color: speaking ? 'var(--neon-green)' : 'var(--neon-amber)',
         }}>
           {speaking ? '▸ agent speaking…' : '● listening — speak, then pause (or stop the mic)'}
@@ -185,17 +267,28 @@ export default function ChatPanel({ resumeId = null }) {
 function btnStyle(primary) {
   return {
     fontFamily: 'var(--font-mono)', fontSize: 12, cursor: 'pointer',
-    padding: '8px 14px', borderRadius: 8,
+    padding: '8px 14px', borderRadius: 10,
     background: primary ? 'rgba(0,255,136,0.1)' : 'rgba(255,51,102,0.08)',
     border: `1px solid ${primary ? 'rgba(0,255,136,0.3)' : 'rgba(255,51,102,0.3)'}`,
     color: primary ? 'var(--neon-green)' : 'var(--neon-red)',
   }
 }
 
+function sendStyle(enabled) {
+  return {
+    fontFamily: 'var(--font-mono)', fontSize: 12, fontWeight: 700, cursor: enabled ? 'pointer' : 'default',
+    padding: '8px 18px', borderRadius: 22, border: 'none',
+    background: enabled ? 'var(--grad-accent)' : 'var(--glass-bg)',
+    color: enabled ? '#04120a' : 'var(--text-dim)',
+    opacity: enabled ? 1 : 0.6,
+    boxShadow: enabled ? '0 2px 14px rgba(0,255,136,0.3)' : 'none',
+  }
+}
+
 function micBtnStyle(active) {
   return {
     fontFamily: 'var(--font-mono)', fontSize: 12, cursor: 'pointer',
-    padding: '8px 12px', borderRadius: 8,
+    padding: '8px 12px', borderRadius: 22,
     background: active ? 'rgba(120,160,255,0.18)' : 'rgba(120,160,255,0.06)',
     border: `1px solid rgba(120,160,255,${active ? 0.5 : 0.3})`,
     color: '#9bb8ff',

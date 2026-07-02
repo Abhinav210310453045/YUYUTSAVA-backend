@@ -34,7 +34,6 @@ import asyncio
 import json
 import logging
 import os
-import signal
 import sys
 from pathlib import Path
 
@@ -221,7 +220,7 @@ class VoiceSource(EventSource):
         if proc.returncode is not None:
             return
         try:
-            proc.send_signal(signal.SIGTERM)
+            proc.terminate()  # SIGTERM on POSIX, TerminateProcess on Windows
         except ProcessLookupError:
             return
         try:

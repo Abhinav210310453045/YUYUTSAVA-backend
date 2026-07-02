@@ -78,7 +78,22 @@ class OrchestratorTask:
     def render_to_message(self) -> str:
         if self.kind == "subagent_completed" and self.completion:
             c = self.completion
-            verdict = "succeeded" if c.get("ok") else "did NOT succeed"
+            ok = c.get("ok")
+            verdict = "succeeded" if ok else "did NOT succeed"
+            # The summary is already compacted upstream (watcher.compact_error),
+            # so this stays a short line and never dumps a raw traceback here.
+            decision = (
+                "Tell the user, in your own words, what happened and decide whether "
+                "any follow-up is needed. Do NOT start new work unless it is clearly "
+                "required to finish what the user originally asked for."
+            )
+            if not ok:
+                decision = (
+                    "Decide the next step yourself: either relaunch the task with "
+                    "start_async_task (if it's worth retrying), or report the failure "
+                    "to the user in your own words. Use check the task logs only if "
+                    "you need more detail than the summary above."
+                )
             return (
                 f"[background-task-update] A background subagent you started has "
                 f"finished — this is a system notification, not a new user request.\n"
@@ -86,9 +101,7 @@ class OrchestratorTask:
                 f"  task_id: {c.get('task_id', '?')}\n"
                 f"  result: {verdict}\n"
                 f"  summary: {c.get('summary', '') or '(no summary)'}\n\n"
-                f"Tell the user, in your own words, what happened and decide whether "
-                f"any follow-up is needed. Do NOT start new work unless it is clearly "
-                f"required to finish what the user originally asked for."
+                f"{decision}"
             )
         return (
             f"[event] {self.topic} | event_id={self.event_id}\n"

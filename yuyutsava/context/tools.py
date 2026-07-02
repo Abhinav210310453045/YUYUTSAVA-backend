@@ -18,7 +18,11 @@ import logging
 
 from langchain_core.tools import BaseTool, tool
 
-from yuyutsava.context.artifacts import DEFAULT_SLICE_CHARS, ArtifactStore
+from yuyutsava.context.artifacts import (
+    DEFAULT_SLICE_CHARS,
+    ArtifactStore,
+    thread_id_from_runtime,
+)
 
 logger = logging.getLogger("yuyutsava.context.tools")
 
@@ -69,4 +73,34 @@ def make_context_tools(store: ArtifactStore) -> list[BaseTool]:
         body = "\n".join(matches)
         return f"[artifact {artifact_id} — {len(matches)} match(es) for {pattern!r}]\n{body}"
 
-    return [ctx_fetch_artifact, ctx_grep_artifact]
+    tools: list[BaseTool] = [ctx_fetch_artifact, ctx_grep_artifact]
+
+    # ctx_recall is only meaningful when the store maintains a semantic index
+    # (Postgres + embedder). On SQLite the tool is simply not offered, so the
+    # surface degrades cleanly rather than exposing a dead tool.
+    if getattr(store, "supports_recall", False):
+
+        @tool
+        async def ctx_recall(query: str, k: int = 5) -> str:
+            """Semantically recall relevant slices of earlier offloaded results.
+
+            Searches everything offloaded in *this* conversation (web searches,
+            large reads) for passages related to ``query`` and returns the best
+            matches with their ``artifact_id`` and ``char_offset``. Use this when
+            you need detail from an earlier tool result instead of re-running the
+            tool; then ctx_fetch_artifact(artifact_id, offset=char_offset) for the
+            full surrounding text.
+            """
+            hits = await store.recall(thread_id_from_runtime(), query, k=k)  # type: ignore[attr-defined]
+            if not hits:
+                return f"[no offloaded results matched {query!r}]"
+            lines = [
+                f"{i}. artifact={h.artifact_id} offset={h.char_offset} "
+                f"score={h.score:.3f}\n   {h.snippet}"
+                for i, h in enumerate(hits)
+            ]
+            return "[ctx_recall hits — fetch full text via ctx_fetch_artifact(artifact_id, offset)]\n" + "\n".join(lines)
+
+        tools.append(ctx_recall)
+
+    return tools

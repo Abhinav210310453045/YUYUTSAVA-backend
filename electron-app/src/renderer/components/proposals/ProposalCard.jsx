@@ -42,7 +42,7 @@ export default function ProposalCard({ proposal, onResolved }) {
   }
 
   return (
-    <div style={{
+    <div className="hover-bulge" style={{
       background: 'var(--bg-card)',
       border: '1px solid var(--border-neon)',
       borderRadius: 'var(--radius-card)',

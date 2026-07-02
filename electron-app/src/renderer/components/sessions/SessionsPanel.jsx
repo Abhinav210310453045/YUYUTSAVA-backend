@@ -42,7 +42,7 @@ function ColumnHeader({ title, count }) {
   )
 }
 
-function SessionColumn({ col, sessions, loaded, error, onDeleted, onOpenChat }) {
+function SessionColumn({ col, sessions, loaded, error, onDeleted, onOpenSession }) {
   const isEmpty = loaded && sessions.length === 0
   return (
     <div style={{
@@ -100,14 +100,14 @@ function SessionColumn({ col, sessions, loaded, error, onDeleted, onOpenChat }) 
         )}
 
         {sessions.map((s) => (
-          <SessionRow key={s.id} session={s} onDeleted={onDeleted} onOpenChat={onOpenChat} />
+          <SessionRow key={s.id} session={s} onDeleted={onDeleted} onOpenSession={onOpenSession} />
         ))}
       </div>
     </div>
   )
 }
 
-export default function SessionsPanel({ onOpenChat }) {
+export default function SessionsPanel({ onOpenSession }) {
   // One bucket per origin column.
   const [byOrigin, setByOrigin] = useState({ cli: [], ui: [], voice: [] })
   const [error, setError] = useState(null)
@@ -159,7 +159,7 @@ export default function SessionsPanel({ onOpenChat }) {
           loaded={loaded}
           error={error}
           onDeleted={onDeleted}
-          onOpenChat={onOpenChat}
+          onOpenSession={onOpenSession}
         />
       ))}
     </div>

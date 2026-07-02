@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import TaskRow from '../background-tasks/TaskRow'
+import TaskDetail from '../background-tasks/TaskDetail'
 
 const KIND_STYLE = {
   log:            { color: '#5eead4' },
@@ -93,6 +94,9 @@ const TABS = [
 
 export default function ActivityLog({ events = [], logs = [], bgTasks = EMPTY_MAP, width }) {
   const [tab, setTab] = useState('events')
+  // Task whose full timeline drawer is open (null = closed). Kept fresh from the
+  // live bgTasks map below so status/summary update while the drawer is open.
+  const [detailId, setDetailId] = useState(null)
   // Tasks render as rows, not log lines — keep `lines` empty for that tab so the
   // auto-scroll effect below is a no-op there.
   const lines = tab === 'logs' ? logs : tab === 'events' ? events : []
@@ -135,6 +139,10 @@ export default function ActivityLog({ events = [], logs = [], bgTasks = EMPTY_MA
   }
 
   const emptyText = TABS.find((t) => t.id === tab)?.emptyText || '> awaiting...'
+  // Resolve the open drawer's task from the live map so it keeps updating; if the
+  // task disappears, close the drawer.
+  const detailTask = detailId ? bgTasks?.get?.(detailId) || null : null
+  useEffect(() => { if (detailId && !detailTask) setDetailId(null) }, [detailId, detailTask])
 
   return (
     <div style={{
@@ -220,11 +228,11 @@ export default function ActivityLog({ events = [], logs = [], bgTasks = EMPTY_MA
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '4px 10px', position: 'relative', zIndex: 1 }}>
-              {activeTasks.map(t => <TaskRow key={t.task_id} task={t} />)}
+              {activeTasks.map(t => <TaskRow key={t.task_id} task={t} onOpen={() => setDetailId(t.task_id)} />)}
               {doneTasks.length > 0 && activeTasks.length > 0 && (
                 <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', margin: '4px 0 0', paddingTop: 4 }} />
               )}
-              {doneTasks.map(t => <TaskRow key={t.task_id} task={t} />)}
+              {doneTasks.map(t => <TaskRow key={t.task_id} task={t} onOpen={() => setDetailId(t.task_id)} />)}
             </div>
           )
         ) : (
@@ -263,6 +271,10 @@ export default function ActivityLog({ events = [], logs = [], bgTasks = EMPTY_MA
         >
           ↓ latest
         </button>
+      )}
+
+      {detailTask && (
+        <TaskDetail task={detailTask} onClose={() => setDetailId(null)} />
       )}
     </div>
   )

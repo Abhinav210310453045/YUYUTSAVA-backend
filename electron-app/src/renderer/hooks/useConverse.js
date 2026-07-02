@@ -9,7 +9,8 @@ import { MicCapture } from '../audio/capture'
 // ChatPanel and (later) the voice UI — both speak the same protocol; voice just
 // layers audio capture/playback on top. Returns a small, transport-agnostic API.
 //
-// message shape: { id, role: 'user'|'assistant', text, events: [...], streaming }
+// message shape: { id, role: 'user'|'assistant', text, events: [...], streaming,
+//                  images: [{visual_id, url, kind, title}], feedback: 'up'|'down' }
 let _mid = 0
 const nextId = () => `m${++_mid}`
 
@@ -21,8 +22,27 @@ export function useConverse({ origin = 'cli', resumeId = null } = {}) {
   const [hello, setHello] = useState(null)            // { session_id, thread_id, ... }
   const [listening, setListening] = useState(false)   // mic capture active
   const [speaking, setSpeaking] = useState(false)     // agent TTS playing
+  // Id of the message whose spoken audio is currently audible — the live reply
+  // while it plays, or a past turn while it's being replayed. Drives the
+  // play↔stop toggle on the voice bubbles so a long clip can be cut off.
+  const [playingId, setPlayingId] = useState(null)
+  // The thread we actually connect to. Seeded from the `resumeId` prop (used
+  // when opening a past session from history) but overridable in-place: the
+  // per-view "New" button clears it to start a brand-new thread without
+  // remounting the panel. `resetNonce` forces a reconnect even when the id is
+  // unchanged (e.g. New pressed on an already-fresh chat).
+  const [activeResumeId, setActiveResumeId] = useState(resumeId)
+  const [resetNonce, setResetNonce] = useState(0)
   const clientRef = useRef(null)
   const micRef = useRef(null)
+  // Latest playingId (for stale-closure-free reads in callbacks) + the interval
+  // that watches the shared audioPlayer and flips the toggle back to ▶ when the
+  // clip drains on its own.
+  const playingIdRef = useRef(null)
+  const playPollRef = useRef(null)
+  // Server's barge-in policy (from the hello frame). Off by default → half-duplex:
+  // the mic is muted while the agent's reply is playing.
+  const bargeInRef = useRef(false)
   // Id of the assistant message currently being streamed into.
   const streamingId = useRef(null)
   // Paces incoming prose tokens to a smooth typewriter cadence (mirrors the CLI
@@ -35,6 +55,17 @@ export function useConverse({ origin = 'cli', resumeId = null } = {}) {
       if (!id) return cur
       return cur.map((m) => (m.id === id ? patch(m) : m))
     })
+  }, [])
+
+  // Mark the streaming message done and stop pointing at it. Captures the id
+  // NOW and patches by that explicit id — must not go through appendToStreaming,
+  // whose updater reads streamingId.current at flush time (after we've nulled it),
+  // which would silently drop the streaming:false patch and leave the typing
+  // dots spinning + hide the message actions forever.
+  const finalizeStreaming = useCallback(() => {
+    const id = streamingId.current
+    streamingId.current = null
+    if (id) setMessages((cur) => cur.map((m) => (m.id === id ? { ...m, streaming: false } : m)))
   }, [])
 
   // Reveal buffered prose immediately — call before rendering any non-prose
@@ -58,10 +89,41 @@ export function useConverse({ origin = 'cli', resumeId = null } = {}) {
     smootherRef.current.feed(text)
   }, [appendToStreaming])
 
+  // Mark `id` as the audible message and (re)arm a poll that flips the toggle
+  // back once the shared player drains. Called on every audio chunk of a live
+  // reply and once when a replay is queued — the frequent re-affirm keeps the
+  // Stop button steady across the tiny gaps between streamed chunks, while the
+  // poll clears it the moment the audio truly finishes.
+  const watchPlayback = useCallback((id) => {
+    playingIdRef.current = id
+    setPlayingId(id)
+    if (playPollRef.current) return
+    playPollRef.current = setInterval(() => {
+      if (!audioPlayer.isPlaying()) {
+        clearInterval(playPollRef.current)
+        playPollRef.current = null
+        playingIdRef.current = null
+        setPlayingId(null)
+      }
+    }, 250)
+  }, [])
+
+  // Cut off whatever is playing and reset the toggle to ▶.
+  const stopPlayback = useCallback(() => {
+    if (playPollRef.current) { clearInterval(playPollRef.current); playPollRef.current = null }
+    audioPlayer.stop()
+    playingIdRef.current = null
+    setPlayingId(null)
+  }, [])
+
   const onMessage = useCallback((msg) => {
     switch (msg.type) {
       case 'hello':
         setHello(msg)
+        // Whether the server allows voice barge-in (talk-over). Default off:
+        // while off we mute the mic and ignore interrupt-y events until the
+        // reply finishes PLAYING, so background noise can't cut it off.
+        bargeInRef.current = !!msg.barge_in
         // Pin the live thread so a reconnect (socket drop / daemon restart)
         // resumes THIS conversation instead of starting a fresh one — keeps the
         // chat history (typed + spoken turns) intact across drops.
@@ -71,9 +133,27 @@ export function useConverse({ origin = 'cli', resumeId = null } = {}) {
         if (!streamingId.current) {
           const id = nextId()
           streamingId.current = id
-          setMessages((cur) => [...cur, { id, role: 'assistant', text: '', events: [], streaming: true }])
+          setMessages((cur) => [...cur, { id, role: 'assistant', text: '', events: [], images: [], streaming: true }])
         }
         feedSmoother(msg.text || '')
+        break
+      }
+      case 'image': {
+        // Inline artifact (chart/diagram/table/…) rendered by a vis_* tool this
+        // turn. Attach it to the streaming assistant message so it renders inside
+        // the bubble; create the message if the image somehow arrives first.
+        flushSmoother()
+        if (!streamingId.current) {
+          const id = nextId()
+          streamingId.current = id
+          setMessages((cur) => [...cur, { id, role: 'assistant', text: '', events: [], images: [], streaming: true }])
+        }
+        appendToStreaming((m) => ({
+          ...m,
+          images: [...(m.images || []), {
+            visual_id: msg.visual_id, url: msg.url, kind: msg.kind, title: msg.title, mime: msg.mime,
+          }],
+        }))
         break
       }
       case 'tool_call':
@@ -99,7 +179,11 @@ export function useConverse({ origin = 'cli', resumeId = null } = {}) {
         break
       case 'speech_started':
         // The user is talking — cut off any agent audio still playing (barge-in).
-        audioPlayer.stop()
+        // But with barge-in off, a "speech onset" during playback is almost
+        // always the agent's own audio echo / room noise: DON'T stop a reply
+        // that's still playing, or it gets chopped mid-sentence. A real user
+        // interrupt goes through the Stop button (interrupt()).
+        if (bargeInRef.current || !audioPlayer.isPlaying()) stopPlayback()
         break
       case 'transcript':
         // STT of the user's spoken utterance becomes the user turn.
@@ -115,6 +199,9 @@ export function useConverse({ origin = 'cli', resumeId = null } = {}) {
           // can offer a ▶ replay of this turn's spoken reply (in-session only;
           // cross-restart persistence is Phase 6).
           appendToStreaming((m) => ({ ...m, audioChunks: [...(m.audioChunks || []), pcm], audioSampleRate: sr }))
+          // The live reply is now audible — light up this message's Stop toggle
+          // and let the poll flip it back to ▶ when playback finishes draining.
+          if (streamingId.current) watchPlayback(streamingId.current)
         } catch { /* ignore */ }
         break
       case 'speaking_start':
@@ -126,26 +213,43 @@ export function useConverse({ origin = 'cli', resumeId = null } = {}) {
       case 'turn_end':
         flushSmoother()
         stopSmoother()
-        if (streamingId.current) appendToStreaming((m) => ({ ...m, streaming: false }))
-        streamingId.current = null
+        finalizeStreaming()
         setBusy(false)
         setSpeaking(false)
         setPendingAsk(null)
         break
+      case 'clarify':
+        // Low-confidence ASR: the agent turn was skipped on purpose. Show a
+        // gentle re-prompt instead of running on a garbled transcript. A
+        // turn_end follows to release the busy/speaking state. Never let a stray
+        // low-confidence "utterance" (usually background noise) stop a reply
+        // that's still playing.
+        if (bargeInRef.current || !audioPlayer.isPlaying()) stopPlayback()
+        setMessages((cur) => [...cur, {
+          id: nextId(),
+          role: 'assistant',
+          text: msg.message || "I didn't quite catch that — could you say it again?",
+          events: [],
+          clarify: true,
+        }])
+        break
       case 'error':
         flushSmoother()
         stopSmoother()
-        audioPlayer.stop()
+        stopPlayback()
         setMessages((cur) => [...cur, { id: nextId(), role: 'assistant', text: `⚠ ${msg.message}`, events: [], error: true }])
-        if (streamingId.current) appendToStreaming((m) => ({ ...m, streaming: false }))
-        streamingId.current = null
+        finalizeStreaming()
         setBusy(false)
         setSpeaking(false)
         break
       default:
         break
     }
-  }, [appendToStreaming, feedSmoother, flushSmoother, stopSmoother])
+  }, [appendToStreaming, finalizeStreaming, feedSmoother, flushSmoother, stopSmoother, watchPlayback, stopPlayback])
+
+  // Keep the connected thread in sync when the caller changes the prop (e.g.
+  // opening a specific past session from the Sessions list).
+  useEffect(() => { setActiveResumeId(resumeId) }, [resumeId])
 
   useEffect(() => {
     // Fresh transport per origin/thread — clear any prior thread's bubbles.
@@ -159,8 +263,8 @@ export function useConverse({ origin = 'cli', resumeId = null } = {}) {
     // replay; text chats are prose only. Runs alongside the WS connect — the
     // user hasn't sent anything yet, so there's no ordering race with new turns.
     let cancelled = false
-    if (resumeId) {
-      getSessionMessages(resumeId)
+    if (activeResumeId) {
+      getSessionMessages(activeResumeId)
         .then((res) => {
           if (cancelled || !res?.messages?.length) return
           setMessages(res.messages.map((m) => ({
@@ -168,7 +272,7 @@ export function useConverse({ origin = 'cli', resumeId = null } = {}) {
             role: m.role,
             text: m.text || '',
             events: [],
-            audioUrl: m.audio_url ? sessionAudioUrl(resumeId, m.seq) : null,
+            audioUrl: m.audio_url ? sessionAudioUrl(activeResumeId, m.seq) : null,
           })))
         })
         .catch(() => { /* history is best-effort — a fresh thread is fine */ })
@@ -189,12 +293,12 @@ export function useConverse({ origin = 'cli', resumeId = null } = {}) {
           setPendingAsk(null)
         },
       },
-      { origin, resumeId },
+      { origin, resumeId: activeResumeId },
     )
     clientRef.current = client
     client.connect()
     return () => { cancelled = true; client.disconnect(); stopSmoother(); clientRef.current = null }
-  }, [origin, resumeId, onMessage, flushSmoother, stopSmoother])
+  }, [origin, activeResumeId, resetNonce, onMessage, flushSmoother, stopSmoother])
 
   const send = useCallback((text) => {
     const t = (text || '').trim()
@@ -219,7 +323,17 @@ export function useConverse({ origin = 'cli', resumeId = null } = {}) {
     if (micRef.current) return
     // ensureContext() must run from a user gesture to unlock playback.
     try { await audioPlayer.ensureContext() } catch { /* ignore */ }
-    const mic = new MicCapture({ onFrame: (int16) => clientRef.current?.sendAudio(int16) })
+    // Half-duplex mic: while the agent's reply is still PLAYING (client-side
+    // playback lags server synthesis by seconds), don't stream mic frames to the
+    // server — otherwise its own audio echo / room noise forms a "new utterance"
+    // that interrupts the reply. Resumes the instant playback drains. When the
+    // server enables barge-in, stream continuously so talk-over works.
+    const mic = new MicCapture({
+      onFrame: (int16) => {
+        if (!bargeInRef.current && audioPlayer.isPlaying()) return
+        clientRef.current?.sendAudio(int16)
+      },
+    })
     micRef.current = mic
     try {
       await mic.start()
@@ -244,11 +358,17 @@ export function useConverse({ origin = 'cli', resumeId = null } = {}) {
 
   // Stop the mic when the conversation transport tears down (unmount / thread
   // switch) so we never leave a hot mic behind.
-  useEffect(() => () => { micRef.current?.stop(); micRef.current = null }, [])
+  useEffect(() => () => {
+    micRef.current?.stop(); micRef.current = null
+    if (playPollRef.current) { clearInterval(playPollRef.current); playPollRef.current = null }
+  }, [])
 
-  // Replay a turn's spoken reply. In-session turns retain raw PCM chunks; a
-  // resumed turn instead carries an audio_url to the persisted WAV (Phase 6b).
+  // Play / stop a turn's spoken reply. Acts as a toggle: clicking the control on
+  // the message that's currently audible cuts it off (so a long clip isn't a
+  // hostage). In-session turns retain raw PCM chunks; a resumed turn instead
+  // carries an audio_url to the persisted WAV (Phase 6b).
   const replay = useCallback(async (message) => {
+    if (playingIdRef.current === message.id) { stopPlayback(); return }
     try { await audioPlayer.ensureContext() } catch { /* ignore */ }
     const chunks = message?.audioChunks
     if (chunks && chunks.length > 0) {
@@ -257,32 +377,51 @@ export function useConverse({ origin = 'cli', resumeId = null } = {}) {
       const merged = new Int16Array(total)
       let off = 0
       for (const c of chunks) { merged.set(c, off); off += c.length }
-      audioPlayer.enqueuePcm(merged, message.audioSampleRate || 22050)
+      await audioPlayer.enqueuePcm(merged, message.audioSampleRate || 22050)
+      watchPlayback(message.id)
       return
     }
     if (message?.audioUrl) {
       audioPlayer.stop()
-      try { await audioPlayer.playUrl(message.audioUrl) } catch { /* ignore */ }
+      try { await audioPlayer.playUrl(message.audioUrl); watchPlayback(message.id) } catch { /* ignore */ }
     }
-  }, [])
+  }, [stopPlayback, watchPlayback])
 
   const interrupt = useCallback(() => {
     clientRef.current?.interrupt()
-    audioPlayer.stop()
+    stopPlayback()
     flushSmoother()
     stopSmoother()
     // Fallback: if the server doesn't ack within a moment (e.g. socket wedged),
     // release the UI so the user isn't stuck on "working".
     setTimeout(() => {
-      if (streamingId.current) appendToStreaming((m) => ({ ...m, streaming: false }))
-      streamingId.current = null
+      finalizeStreaming()
       setBusy(false)
     }, 1500)
-  }, [appendToStreaming, flushSmoother, stopSmoother])
+  }, [finalizeStreaming, flushSmoother, stopSmoother, stopPlayback])
+
+  // Start a brand-new conversation in-place (per-view "New" button): stop any
+  // audio/mic, drop the pinned/resumed thread, and reconnect fresh. The panel
+  // stays mounted, so the rest of the app is untouched.
+  const newSession = useCallback(() => {
+    stopPlayback()
+    flushSmoother()
+    stopSmoother()
+    if (micRef.current) { micRef.current.stop(); micRef.current = null }
+    setListening(false)
+    setSpeaking(false)
+    setActiveResumeId(null)
+    setResetNonce((n) => n + 1)
+  }, [flushSmoother, stopSmoother, stopPlayback])
+
+  // Live mic AnalyserNode for the Voice visualizer (null when not capturing).
+  // The agent-speaking analyser lives on the shared audioPlayer singleton.
+  const getMicAnalyser = useCallback(() => micRef.current?.getAnalyser() || null, [])
 
   return {
     messages, connected, busy, pendingAsk, hello,
-    listening, speaking,
-    send, answerAsk, interrupt, startVoice, stopVoice, replay,
+    listening, speaking, playingId,
+    send, answerAsk, interrupt, startVoice, stopVoice, replay, newSession,
+    getMicAnalyser,
   }
 }

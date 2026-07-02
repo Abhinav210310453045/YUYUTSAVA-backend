@@ -25,7 +25,7 @@ from typing import Callable
 
 from yuyutsava.audio_io.synth import synthesize_pcm
 from yuyutsava.audio_io.vad import VadResult, VadSegmenter
-from yuyutsava.io.stt import STT, stt_from_env
+from yuyutsava.io.stt import STT, TranscriptResult, stt_from_env
 from yuyutsava.io.tts import TTS, tts_from_env
 
 logger = logging.getLogger("yuyutsava.daemon.web.voice_pipeline")
@@ -95,17 +95,22 @@ class VoicePipeline:
 
     async def transcribe(self, pcm: bytes) -> str:
         """Transcribe an utterance (16 kHz mono int16 PCM). '' on failure."""
+        return (await self.transcribe_detailed(pcm)).text
+
+    async def transcribe_detailed(self, pcm: bytes) -> TranscriptResult:
+        """Transcribe with confidence. Empty text + ``None`` conf on failure."""
         stt = self._get_stt()
         if stt is None or not pcm or len(pcm) < _MIN_TRANSCRIBE_BYTES:
-            return ""
+            return TranscriptResult(text="", confidence=None)
         self._seq += 1
         wav = self._tmp / f"utt_{self._seq}.wav"
         try:
             await asyncio.get_running_loop().run_in_executor(None, _write_wav, wav, pcm)
-            return (await stt.transcribe(wav)).strip()
+            result = await stt.transcribe_detailed(wav)
+            return TranscriptResult(text=result.text.strip(), confidence=result.confidence)
         except Exception:  # noqa: BLE001
             logger.warning("voice: transcription failed", exc_info=True)
-            return ""
+            return TranscriptResult(text="", confidence=None)
 
     # -- TTS ---------------------------------------------------------------
 

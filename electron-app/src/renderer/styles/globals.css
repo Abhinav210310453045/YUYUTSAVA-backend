@@ -11,20 +11,46 @@ html, body, #root {
   font-family: var(--font-ui);
   font-size: 13px;
   -webkit-font-smoothing: antialiased;
-  user-select: none;
+  /* App-wide text selection: content is selectable with the touchpad by
+     default; interactive chrome (buttons, nav, drag regions) opts out below. */
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: default;
 }
 
-/* Scrollbars */
-::-webkit-scrollbar { width: 4px; height: 4px; }
+/* Interactive chrome shouldn't be selectable — dragging over it should act,
+   not select text. Individual content still opts back in where needed. */
+button, [role="button"], .no-select {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Scrollbars — wider and neon-tinted so every scroll area shows one. */
+::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 255, 136, 0.3);
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(0, 255, 136, 0.55); background-clip: padding-box; }
 
 /* Selection */
-::selection { background: rgba(0, 255, 136, 0.2); }
+::selection { background: rgba(0, 255, 136, 0.28); }
 
-/* Allow text selection in specific areas */
-.selectable { user-select: text; }
+/* Opt-in helper kept for explicit callers; selection is on by default now. */
+.selectable { user-select: text; -webkit-user-select: text; }
+
+/* Reusable hover-bulge for cards — lift + scale + soft neon shadow. Elements
+   that set their own inline transform manage the effect themselves. */
+.hover-bulge { transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease; }
+.hover-bulge:hover {
+  transform: translateY(-2px) scale(1.02);
+  /* Glow color is overridable per-card via --bulge-glow (defaults to neon green
+     so existing callers are unchanged); session cards set it per session type. */
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4), 0 0 18px var(--bulge-glow, rgba(0, 255, 136, 0.18));
+}
 
 /* Utility */
 .mono { font-family: var(--font-mono); }
