@@ -180,11 +180,69 @@ def compact_error(raw: str | None) -> str:
     return chosen
 
 
+def _run_error_text(run: Any) -> str:
+    """Extract an error string from a run object across SDK shapes.
+
+    langgraph-api serializes a run failure as
+    ``{"error": <ExceptionType>, "message": <detail>}`` and masks the message to
+    ``"An internal error occurred"`` for any exception type outside its allow-list
+    (serde.py). The exception *type* survives that masking and is often the only
+    diagnostic clue — ``RateLimitError`` vs ``TimeoutError`` vs a real bug — so we
+    surface both type and message rather than the message alone.
+    """
+    if isinstance(run, dict):
+        err = run.get("error")
+    else:
+        err = getattr(run, "error", None)
+    if not err:
+        return ""
+    if isinstance(err, dict):
+        etype = str(err.get("error") or "").strip()
+        msg = str(err.get("message") or "").strip()
+        if etype and msg:
+            return f"{etype}: {msg}"
+        return etype or msg
+    return str(err).strip()
+
+
+def _tool_message_is_error(status: Any, content: Any) -> bool:
+    """Whether a ToolMessage genuinely represents a failure.
+
+    The message-level ``status == "error"`` is authoritative. Otherwise, if the
+    content is a JSON tool envelope, trust its own ``status``/``error`` fields: a
+    successful ``{"status": "success", "error": null}`` result must NOT count as
+    an error merely because the literal word ``"error"`` appears as a key. Only
+    non-JSON content falls back to a traceback/exception keyword sniff.
+    """
+    if status == "error":
+        return True
+    text = _content_text(content).strip()
+    if not text:
+        return False
+    try:
+        envelope = json.loads(text)
+    except (ValueError, TypeError):
+        envelope = None
+    if isinstance(envelope, dict):
+        if str(envelope.get("status", "")).lower() == "error":
+            return True
+        if envelope.get("error"):
+            return True
+        # A well-formed envelope that declares its own status/error is trusted:
+        # having reached here it did not fail, so it is a success, not an error.
+        if "status" in envelope or "error" in envelope:
+            return False
+    low = text.lower()
+    return any(kw in low for kw in ("traceback (most recent call last)", "exception:", "error:"))
+
+
 def _error_text_from_thread(values: Any) -> str:
     """Best-effort error reason from a failed sub-thread's messages.
 
-    Used when the run object carries no ``error`` field. Prefers the most recent
-    ToolMessage with an error status/content, else the last assistant text.
+    Used when the run object carries no ``error`` field. Returns the most recent
+    ToolMessage that *genuinely* failed, or "" when none is found — so the caller
+    can substitute a clear generic reason instead of mislabeling a benign success
+    payload or completion summary as the error.
     """
     if not isinstance(values, dict):
         return ""
@@ -193,12 +251,11 @@ def _error_text_from_thread(values: Any) -> str:
         mtype = m.get("type") or m.get("role") if isinstance(m, dict) else getattr(m, "type", "")
         status = m.get("status") if isinstance(m, dict) else getattr(m, "status", None)
         content = m.get("content") if isinstance(m, dict) else getattr(m, "content", "")
-        if mtype == "tool" and (status == "error" or "error" in str(content).lower()):
+        if mtype == "tool" and _tool_message_is_error(status, content):
             txt = _content_text(content).strip()
             if txt:
                 return txt
-    # Fall back to the last assistant text.
-    return _last_message_text(values)
+    return ""
 
 
 def _transcript_rows(values: Any) -> list[dict]:
@@ -806,6 +863,24 @@ class AsyncTaskHealthWatcher:
         except Exception:
             logger.debug("watcher self-heal update_state failed", exc_info=True)
 
+    async def _fetch_run_error(self, task: MirroredTask, run: Any) -> str:
+        """Pull the error detail from the full run record, if the SDK exposes it.
+
+        The run object from ``runs.list`` frequently omits ``error``; fetching the
+        run by id often returns the populated field. Best-effort and defensive:
+        any failure (or an SDK that never surfaces it) just yields "".
+        """
+        assert self._client is not None
+        run_id = run.get("run_id") if isinstance(run, dict) else getattr(run, "run_id", None)
+        if not (task.sub_thread_id and run_id):
+            return ""
+        try:
+            full = await self._client.runs.get(thread_id=task.sub_thread_id, run_id=run_id)
+        except Exception:
+            logger.debug("runs.get for terminal error failed for %s", task.task_id, exc_info=True)
+            return ""
+        return _run_error_text(full)
+
     async def _handle_terminal(self, task: MirroredTask, run: dict, status: str) -> None:
         assert self._client is not None
         summary = ""
@@ -819,17 +894,27 @@ class AsyncTaskHealthWatcher:
                 logger.debug("threads.get for terminal summary failed", exc_info=True)
                 summary = "(completed with no readable output)"
         elif status == "error":
-            err = run.get("error") if isinstance(run, dict) else getattr(run, "error", None)
-            raw = str(err) if err else ""
+            raw = _run_error_text(run)
             if not raw:
-                # Run object carries no error — recover the real reason from the
-                # thread instead of the old "(no error detail)" placeholder.
+                # The list-view run object often omits the error detail; the full
+                # run record usually carries it (e.g. langgraph-api's generic
+                # "An internal error occurred").
+                raw = await self._fetch_run_error(task, run)
+            if not raw:
+                # Still nothing — recover a genuine tool failure from the thread.
                 try:
                     thread = await self._client.threads.get(thread_id=task.sub_thread_id)
                     values = thread.get("values") if isinstance(thread, dict) else getattr(thread, "values", None)
                     raw = _error_text_from_thread(values)
                 except Exception:
                     logger.debug("threads.get for terminal error failed", exc_info=True)
+            if not raw:
+                # No detail anywhere: say so plainly rather than surfacing an
+                # unrelated success payload or completion summary as the "error".
+                raw = (
+                    "run ended in error status with no error detail "
+                    "(likely an internal langgraph-api run failure); see task logs"
+                )
             # Compact so it never bloats the launching agent's context; the full
             # text remains available via GET /tasks/{id}/logs.
             error_text = compact_error(raw)
