@@ -45,7 +45,7 @@ _SUPPRESS_NAMES: frozenset[str] = frozenset({
 # ctx_* is deliberately NOT here: offload digests reference
 # ctx_fetch_artifact / ctx_grep_artifact directly, so the model must always
 # see their schemas (same always-visible treatment as tool_search itself).
-_SUPPRESS_PREFIXES: tuple[str, ...] = ("tr_", "ws_", "sk_", "fo_", "ev_", "db_", "mem_")
+_SUPPRESS_PREFIXES: tuple[str, ...] = ("tr_", "ws_", "sk_", "fo_", "ev_", "db_", "mem_", "todo_")
 
 
 def _should_suppress(name: str) -> bool:

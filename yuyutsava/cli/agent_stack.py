@@ -197,6 +197,14 @@ async def build_agent_stack(
         summary_store = SqliteThreadSummaryStore(state_db_path())
         transcript_store = SqliteTranscriptStore(state_db_path())
 
+    # TODO board: point the todo_* capture tools at the SAME board the daemon
+    # serves. With a pool the Pg store is primary (get_default_todo_store()
+    # would otherwise lazily fall back to the SQLite twin and split the board);
+    # without one the lazy SQLite fallback is correct, so leave it unset.
+    if pg_pool is not None:
+        from yuyutsava.todoboard.store import PgTodoStore, set_default_todo_store
+        set_default_todo_store(PgTodoStore(pg_pool))
+
     # Best-effort: fetch the active model's live price from its provider and cache
     # it into ~/.yuyutsava/model_prices.json so the cost ledger (and Langfuse)
     # price this model correctly instead of falling to $0. Off the loop, TTL-cached,

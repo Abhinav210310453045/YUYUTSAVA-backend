@@ -45,6 +45,7 @@ from yuyutsava.daemon.web.routers import (
     stream as stream_router,
     system as system_router,
     tasks as tasks_router,
+    todos as todos_router,
     usage as usage_router,
     visuals as visuals_router,
 )
@@ -209,6 +210,7 @@ def create_app(
         converse_router.router,
         visuals_router.router,
         feedback_router.router,
+        todos_router.router,
     ]
     # Read-only DB introspection. Opt-out via env (defaults on).
     if os.environ.get("YUYUTSAVA_DB_API_ENABLED", "true").lower() not in {"0", "false", "no"}:

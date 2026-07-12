@@ -80,6 +80,22 @@ CONTENT_TABLE_SPECS: tuple[TableSpec, ...] = (
               ("feedback_id", "thread_id", "session_id", "workspace", "message_ref",
                "rating", "note", "user_text", "assistant_text", "created_ts"),
               order=5, ts_cols=frozenset({"created_ts"}), any_conflict=True),
+    # TODO board (pg/migrations v16): durable user data, no thread FK. Cards
+    # drain before their FK children. pinned is INTEGER on both sides so the
+    # replay needs no bool cast.
+    TableSpec("todo_cards", ("card_id",),
+              ("card_id", "title", "status", "pinned", "tags", "workspace_path",
+               "created_ts", "updated_ts"),
+              order=6, jsonb=frozenset({"tags"}),
+              ts_cols=frozenset({"created_ts", "updated_ts"}), any_conflict=True),
+    TableSpec("todo_notes", ("note_id",),
+              ("note_id", "card_id", "body", "author", "created_ts", "updated_ts"),
+              order=7, ts_cols=frozenset({"created_ts", "updated_ts"}), any_conflict=True),
+    TableSpec("todo_attachments", ("attachment_id",),
+              ("attachment_id", "card_id", "kind", "path", "url", "mime", "title",
+               "meta", "created_ts"),
+              order=7, jsonb=frozenset({"meta"}),
+              ts_cols=frozenset({"created_ts"}), any_conflict=True),
 )
 
 

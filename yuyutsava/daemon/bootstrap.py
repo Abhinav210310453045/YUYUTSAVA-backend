@@ -391,6 +391,15 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
             PgFeedbackStore(pg_pool), SqliteFeedbackStore(state_db_path()),
             storage_health, name="feedback",
         ))
+        # TODO board: also a REST-path store (the /todos router + todo_* tools),
+        # same spillover treatment; its TableSpecs drain via CONTENT_TABLE_SPECS.
+        from yuyutsava.todoboard.store import (
+            PgTodoStore, SqliteTodoStore, set_default_todo_store,
+        )
+        set_default_todo_store(RoutedStore(
+            PgTodoStore(pg_pool), SqliteTodoStore(state_db_path()),
+            storage_health, name="todo",
+        ))
 
     # ── user prefs store --------------------------------------------------
     prefs_store = PrefsStore(store)

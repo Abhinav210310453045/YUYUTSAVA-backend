@@ -1,0 +1,210 @@
+"""todo_* tools: agent-facing access to the TODO board via the exchange.
+
+Hidden behind the normal ``tool_search`` discovery flow (the ``todo_`` prefix
+is in ``ToolFilterMiddleware._SUPPRESS_PREFIXES``) — their names stay visible
+in the system-prompt catalog and a schema is pulled on demand, like mem_*/ws_*.
+
+Two scopes:
+  * ``capture`` — master/CLI subset (todo_add, todo_list, todo_get) so "assign
+    this as a TODO" works from any chat/voice surface;
+  * ``full``   — everything, for the TinkerAgent working ON a card.
+
+Every tool catches :class:`TodoError` and returns a structured error string —
+a board failure must never crash an agent loop.
+"""
+
+from __future__ import annotations
+
+import functools
+import logging
+from typing import Any, Awaitable, Callable, Literal
+
+from langchain_core.tools import BaseTool, tool
+
+from yuyutsava.todoboard.exchange import (
+    TodoError,
+    TodoExchange,
+    get_default_exchange,
+)
+from yuyutsava.todoboard.models import (
+    ATTACHMENT_KINDS,
+    CARD_STATUSES,
+    TodoCardSummaryV1,
+    TodoCardV1,
+)
+
+logger = logging.getLogger("yuyutsava.todoboard.tools")
+
+ToolScope = Literal["capture", "full"]
+
+
+def _safe(fn: Callable[..., Awaitable[str]]) -> Callable[..., Awaitable[str]]:
+    """Turn TodoError into a structured error string the model can act on."""
+
+    @functools.wraps(fn)
+    async def wrapper(*args: Any, **kwargs: Any) -> str:
+        try:
+            return await fn(*args, **kwargs)
+        except TodoError as exc:
+            return f"todo-board error [{type(exc).__name__}]: {exc}"
+
+    return wrapper
+
+
+def _render_summary(c: TodoCardSummaryV1) -> str:
+    pin = "📌 " if c.pinned else ""
+    tags = f" #{' #'.join(c.tags)}" if c.tags else ""
+    return (
+        f"- {pin}{c.card_id} [{c.status}] {c.title}{tags} "
+        f"({c.note_count} note(s), {c.attachment_count} attachment(s))"
+    )
+
+
+def _render_card(c: TodoCardV1) -> str:
+    lines = [
+        f"{'📌 ' if c.pinned else ''}{c.title}",
+        f"id: {c.card_id} | status: {c.status}"
+        + (f" | tags: {', '.join(c.tags)}" if c.tags else ""),
+    ]
+    if c.workspace_path:
+        lines.append(f"workspace: {c.workspace_path}")
+    if c.notes:
+        lines.append("notes:")
+        lines.extend(f"  [{n.author}] ({n.note_id}) {n.body}" for n in c.notes)
+    if c.attachments:
+        lines.append("attachments:")
+        lines.extend(
+            f"  [{a.kind}] ({a.attachment_id}) {a.title or ''} {a.path or a.url or ''}".rstrip()
+            for a in c.attachments
+        )
+    if not c.notes and not c.attachments:
+        lines.append("(no notes or attachments yet)")
+    return "\n".join(lines)
+
+
+def make_todo_tools(
+    exchange: TodoExchange | None = None,
+    *,
+    scope: ToolScope = "capture",
+    author: str = "master",
+) -> list[BaseTool]:
+    """Build the todo_* family bound to one exchange.
+
+    ``author`` labels notes written through these tools (``master`` for the
+    orchestrator/CLI deepagent, ``tinker`` for the TinkerAgent).
+    """
+    ex = exchange or get_default_exchange()
+
+    @tool
+    @_safe
+    async def todo_add(
+        title: str,
+        note: str | None = None,
+        tags: list[str] | None = None,
+        status: str = "inbox",
+    ) -> str:
+        """Add a card to the user's global TODO board.
+
+        Use when the user asks to remember, plan, or track a task/idea
+        ("add this as a TODO", "put it on my board"). ``title`` is a short
+        renamable headline; put any detail/context into ``note``. ``status``
+        is one of: inbox, active, done, archived (default inbox).
+        """
+        card = await ex.add_card(
+            title, status=status, tags=tags, note=note, note_author=author
+        )
+        return f"created TODO card {card.card_id}: {card.title!r} [{card.status}]"
+
+    @tool
+    @_safe
+    async def todo_list(
+        status: str | None = None,
+        tag: str | None = None,
+        limit: int = 25,
+    ) -> str:
+        """List cards on the user's global TODO board (pinned first, then most
+        recently updated).
+
+        Filter with ``status`` (inbox/active/done/archived) and/or ``tag``.
+        Returns one line per card with its id — use todo_get for details.
+        """
+        cards = await ex.query_board(status=status, tag=tag, limit=limit)
+        if not cards:
+            return "the TODO board has no matching cards"
+        return "\n".join(_render_summary(c) for c in cards)
+
+    @tool
+    @_safe
+    async def todo_get(card_id: str) -> str:
+        """Read one TODO card in full: title, status, tags, all notes and
+        attachments, and the card's workspace directory path."""
+        return _render_card(await ex.get_card(card_id))
+
+    capture_tools: list[BaseTool] = [todo_add, todo_list, todo_get]
+    if scope == "capture":
+        return capture_tools
+
+    @tool
+    @_safe
+    async def todo_update(
+        card_id: str,
+        title: str | None = None,
+        status: str | None = None,
+        pinned: bool | None = None,
+        tags: list[str] | None = None,
+    ) -> str:
+        """Update a TODO card's title, status, pinned flag, or tags. Only the
+        fields you pass change; the rest stay as they are."""
+        card = await ex.update_card(
+            card_id, title=title, status=status, pinned=pinned, tags=tags
+        )
+        return f"updated {card.card_id}: {card.title!r} [{card.status}]"
+
+    @tool
+    @_safe
+    async def todo_set_status(card_id: str, status: str) -> str:
+        """Move a TODO card to a new status: inbox, active, done, or archived."""
+        card = await ex.update_card(card_id, status=status)
+        return f"{card.card_id} is now [{card.status}]"
+
+    @tool
+    @_safe
+    async def todo_add_note(card_id: str, body: str) -> str:
+        """Append a note to a TODO card — an idea, finding, decision, or next
+        step worth keeping on the card."""
+        note = await ex.add_note(card_id, body, author=author)
+        return f"added note {note.note_id} to {card_id}"
+
+    @tool
+    @_safe
+    async def todo_attach_artifact(
+        card_id: str,
+        kind: str,
+        path: str | None = None,
+        url: str | None = None,
+        title: str | None = None,
+        mime: str | None = None,
+    ) -> str:
+        """Attach something you produced (or found) to a TODO card.
+
+        ``kind`` is one of: file, image, video, link, diagram, artifact.
+        ``link`` needs ``url``; every other kind needs ``path`` to an existing
+        file — write files into the card's workspace directory (see todo_get).
+        """
+        if kind not in ATTACHMENT_KINDS:
+            return f"todo-board error [TodoValidationError]: kind must be one of {ATTACHMENT_KINDS}"
+        att = await ex.attach(
+            card_id, kind, path=path, url=url, title=title, mime=mime
+        )
+        return f"attached {att.kind} {att.attachment_id} to {card_id}"
+
+    return [
+        *capture_tools,
+        todo_update,
+        todo_set_status,
+        todo_add_note,
+        todo_attach_artifact,
+    ]
+
+
+__all__ = ["make_todo_tools", "ToolScope", "CARD_STATUSES"]

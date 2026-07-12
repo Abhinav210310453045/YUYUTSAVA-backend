@@ -654,6 +654,78 @@ MIGRATIONS: list[tuple[int, str]] = [
             ON message_feedback (created_ts);
         """,
     ),
+    (
+        16,
+        # TODO board (docs/TODO_BOARD_PLAN.md). Cards are the user's GLOBAL
+        # planning/thinking surface — durable user data like message_feedback:
+        # DELIBERATELY no thread FK and NOT listed in purge_session's tables, so
+        # the board survives session deletion. Notes/attachments hang off a card
+        # via FK CASCADE (deleting a card is one row delete; the exchange layer
+        # unlinks the card's blob dir). workspace_path is the card's tr_*/blob
+        # workspace (blobs/todoboard/<card_id>/). pinned is INTEGER 0/1, not
+        # BOOLEAN, so the spillover drain (reconcile.py) can replay SQLite twin
+        # rows without a type cast. todo_note_chunks is the pgvector recall
+        # index over note bodies (same vector(768) nomic-embed-text dim as
+        # memories/skills); embedding is nullable for backfill — recall wiring
+        # lands in a later phase, the schema ships now. Mirrors
+        # SqliteTodoStore._SCHEMA_SQL (yuyutsava/todoboard/store.py).
+        """
+        CREATE TABLE IF NOT EXISTS todo_cards (
+            card_id        TEXT PRIMARY KEY,
+            title          TEXT NOT NULL,
+            status         TEXT NOT NULL DEFAULT 'inbox'
+                           CHECK (status IN ('inbox','active','done','archived')),
+            pinned         INTEGER NOT NULL DEFAULT 0,
+            tags           JSONB NOT NULL DEFAULT '[]'::jsonb,
+            workspace_path TEXT,
+            created_ts     TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_ts     TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS todo_cards_status_idx
+            ON todo_cards (status, updated_ts DESC);
+
+        CREATE TABLE IF NOT EXISTS todo_notes (
+            note_id     TEXT PRIMARY KEY,
+            card_id     TEXT NOT NULL REFERENCES todo_cards (card_id) ON DELETE CASCADE,
+            body        TEXT NOT NULL,
+            author      TEXT NOT NULL DEFAULT 'user'
+                        CHECK (author IN ('user','tinker','master')),
+            created_ts  TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_ts  TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS todo_notes_card_idx
+            ON todo_notes (card_id, created_ts);
+
+        CREATE TABLE IF NOT EXISTS todo_attachments (
+            attachment_id TEXT PRIMARY KEY,
+            card_id       TEXT NOT NULL REFERENCES todo_cards (card_id) ON DELETE CASCADE,
+            kind          TEXT NOT NULL
+                          CHECK (kind IN ('file','image','video','link','diagram','artifact')),
+            path          TEXT,
+            url           TEXT,
+            mime          TEXT,
+            title         TEXT,
+            meta          JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_ts    TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS todo_attachments_card_idx
+            ON todo_attachments (card_id, created_ts);
+
+        CREATE TABLE IF NOT EXISTS todo_note_chunks (
+            chunk_id    TEXT PRIMARY KEY,
+            card_id     TEXT NOT NULL,
+            note_id     TEXT NOT NULL REFERENCES todo_notes (note_id) ON DELETE CASCADE,
+            seq         INTEGER NOT NULL,
+            text        TEXT NOT NULL,
+            embedding   vector(768),
+            created_ts  TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS todo_note_chunks_embedding_idx
+            ON todo_note_chunks USING hnsw (embedding vector_cosine_ops);
+        CREATE INDEX IF NOT EXISTS todo_note_chunks_card_idx
+            ON todo_note_chunks (card_id);
+        """,
+    ),
 ]
 
 

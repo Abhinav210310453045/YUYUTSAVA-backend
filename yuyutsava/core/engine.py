@@ -503,6 +503,11 @@ def build_cli_deepagent(
     from yuyutsava.visuals.tools import make_visual_tools
     context_tools.extend(make_visual_tools(output_dir=output_dir))
 
+    # TODO board capture (todo_add/todo_list/todo_get): the user can file/read
+    # TODOs from any chat; the full editing set belongs to the TinkerAgent.
+    from yuyutsava.todoboard.tools import make_todo_tools
+    context_tools.extend(make_todo_tools(scope="capture"))
+
     skill_registry = SkillRegistry(workspace_dir=ws)
 
     subagent_specs: list[dict] = []
@@ -679,6 +684,9 @@ def build_orchestrator(
     if deps.memory_store is not None:
         from yuyutsava.memory.tools import make_memory_tools
         master_tools.extend(make_memory_tools(deps.memory_store))
+    # TODO board capture — same subset as the CLI deepagent.
+    from yuyutsava.todoboard.tools import make_todo_tools
+    master_tools.extend(make_todo_tools(scope="capture"))
 
     # Lazy discovery: ToolFilterMiddleware hides the prefixed master tools
     # (sk_/ws_/mem_/…) from the model. Register them so the model can pull a
