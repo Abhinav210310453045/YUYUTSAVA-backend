@@ -6,6 +6,7 @@ import {
 import { STATUS_ACCENT, TagChips, PinIcon, humanAge } from './shared'
 import { resolveBlock } from './artifactBlocks'
 import ChatPanel from '../chat/ChatPanel'
+import { useDictation } from '../../hooks/useDictation'
 
 const STATUSES = ['inbox', 'active', 'done', 'archived']
 
@@ -277,6 +278,17 @@ export default function TodoCardView({ cardId, onBack }) {
     patch({ title: t })
   }
 
+  // STT dictation into the note draft (never auto-submitted): each utterance's
+  // transcript is appended where the user is already typing, so they edit and
+  // save it themselves with the normal + Add note flow.
+  const dictation = useDictation({
+    onText: (text) => setNewNote((cur) => {
+      if (!cur) return text
+      return /\s$/.test(cur) ? cur + text : `${cur} ${text}`
+    }),
+    onError: (e) => alert(`Dictation failed: ${e?.message || e}`),
+  })
+
   const onAddNote = async () => {
     const body = newNote.trim()
     if (!body || addingNote) return
@@ -488,7 +500,32 @@ export default function TodoCardView({ cardId, onBack }) {
                   resize: 'vertical', outline: 'none',
                 }}
               />
-              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {/* Dictate into the draft — same mic-blue as the chat voice
+                    toggle. Transcripts land in the textarea above for the user
+                    to edit; saving is always the explicit + Add note. */}
+                <button
+                  onClick={dictation.toggle}
+                  disabled={dictation.finishing}
+                  title={dictation.dictating ? 'stop dictating' : 'dictate a note (speech-to-text)'}
+                  style={{
+                    fontFamily: 'var(--font-mono)', fontSize: 11, padding: '6px 12px',
+                    background: dictation.dictating ? 'rgba(120,160,255,0.18)' : 'rgba(120,160,255,0.06)',
+                    color: '#9bb8ff',
+                    border: `1px solid rgba(120,160,255,${dictation.dictating ? 0.5 : 0.3})`,
+                    borderRadius: 6,
+                    cursor: dictation.finishing ? 'default' : 'pointer',
+                    opacity: dictation.finishing ? 0.6 : 1,
+                  }}
+                >
+                  {dictation.finishing ? '… transcribing' : dictation.dictating ? '● stop' : '🎙 dictate'}
+                </button>
+                {dictation.dictating && (
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--neon-amber)' }}>
+                    listening — speak, pauses become text
+                  </span>
+                )}
+                <span style={{ flex: 1 }} />
                 <button
                   onClick={onAddNote}
                   disabled={addingNote || !newNote.trim()}
@@ -608,7 +645,9 @@ export default function TodoCardView({ cardId, onBack }) {
           {/* The shared chat surface, unforked: agent=tinker + card pins the
               thread to todo:<card_id> server-side; resumeId hydrates past
               turns on reopen (best-effort 404 on a card's first chat).
-              Voice toggle is Phase 5; the card IS the thread, so no New. */}
+              The mic toggle rides the same WS (agent/card are on the
+              connection, so spoken turns hit the card's TinkerAgent too);
+              the card IS the thread, so no New. */}
           <ChatPanel
             agent="tinker"
             card={cardId}
@@ -618,7 +657,6 @@ export default function TodoCardView({ cardId, onBack }) {
             placeholder="hand the TinkerAgent a rough idea… (Enter to send)"
             emptyGlyph="✦"
             emptyHint="> tinker on this card — it sharpens ideas, asks the right questions, and keeps notes here"
-            showVoice={false}
             showNewSession={false}
             onTurnEnd={refresh}
           />

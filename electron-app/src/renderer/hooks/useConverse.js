@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ConverseClient } from '../api/converse'
-import { getSessionMessages, sessionAudioUrl } from '../api/client'
+import { getBase, getSessionMessages } from '../api/client'
 import { TokenSmoother } from '../lib/tokenSmoother'
 import { audioPlayer, base64ToInt16 } from '../audio'
 import { MicCapture } from '../audio/capture'
@@ -28,6 +28,9 @@ export function useConverse({ origin = 'cli', resumeId = null, agent = null, car
   // while it plays, or a past turn while it's being replayed. Drives the
   // play↔stop toggle on the voice bubbles so a long clip can be cut off.
   const [playingId, setPlayingId] = useState(null)
+  // True while the audible clip is user-paused (context suspended, position
+  // held). Drives the pause↔resume toggle on chat bubbles.
+  const [paused, setPaused] = useState(false)
   // The thread we actually connect to. Seeded from the `resumeId` prop (used
   // when opening a past session from history) but overridable in-place: the
   // per-view "New" button clears it to start a brand-new thread without
@@ -110,12 +113,27 @@ export function useConverse({ origin = 'cli', resumeId = null, agent = null, car
     }, 250)
   }, [])
 
-  // Cut off whatever is playing and reset the toggle to ▶.
+  // Cut off whatever is playing and reset the toggle to ▶. audioPlayer.stop()
+  // also clears a pending pause (a suspended context would mute future audio).
   const stopPlayback = useCallback(() => {
     if (playPollRef.current) { clearInterval(playPollRef.current); playPollRef.current = null }
     audioPlayer.stop()
     playingIdRef.current = null
     setPlayingId(null)
+    setPaused(false)
+  }, [])
+
+  // Pause / resume the audible clip in place (live reply or replay): the audio
+  // clock freezes, so playback resumes exactly where it stopped. No-op when
+  // nothing is playing.
+  const togglePause = useCallback(async () => {
+    if (audioPlayer.isPaused()) {
+      await audioPlayer.resume()
+      setPaused(false)
+    } else if (audioPlayer.isPlaying()) {
+      await audioPlayer.pause()
+      setPaused(true)
+    }
   }, [])
 
   const onMessage = useCallback((msg) => {
@@ -274,7 +292,10 @@ export function useConverse({ origin = 'cli', resumeId = null, agent = null, car
             role: m.role,
             text: m.text || '',
             events: [],
-            audioUrl: m.audio_url ? sessionAudioUrl(activeResumeId, m.seq) : null,
+            // The server's audio_url is authoritative — on mixed text+voice
+            // threads it carries the VOICE-store seq, which differs from this
+            // row's transcript seq (rebuilding from m.seq would 404).
+            audioUrl: m.audio_url ? `${getBase()}${m.audio_url}` : null,
           })))
         })
         .catch(() => { /* history is best-effort — a fresh thread is fine */ })
@@ -371,6 +392,7 @@ export function useConverse({ origin = 'cli', resumeId = null, agent = null, car
   // carries an audio_url to the persisted WAV (Phase 6b).
   const replay = useCallback(async (message) => {
     if (playingIdRef.current === message.id) { stopPlayback(); return }
+    setPaused(false) // audioPlayer.stop() below clears the player-side pause
     try { await audioPlayer.ensureContext() } catch { /* ignore */ }
     const chunks = message?.audioChunks
     if (chunks && chunks.length > 0) {
@@ -422,8 +444,8 @@ export function useConverse({ origin = 'cli', resumeId = null, agent = null, car
 
   return {
     messages, connected, busy, pendingAsk, hello,
-    listening, speaking, playingId,
-    send, answerAsk, interrupt, startVoice, stopVoice, replay, newSession,
+    listening, speaking, playingId, paused,
+    send, answerAsk, interrupt, startVoice, stopVoice, replay, togglePause, newSession,
     getMicAnalyser,
   }
 }

@@ -126,6 +126,31 @@ async def get_session_messages(session_id: str, request: Request) -> dict:
                 "seq": m.seq,
                 "ts": m.created_ts,
             })
+        # Mixed text+voice chats (a tinker card, the master chat with the mic)
+        # keep their prose in the transcript but their spoken replies in
+        # voice_messages — reattach each stored clip to its transcript bubble
+        # (matched by the turn's final text, each clip used once, in order) so
+        # a reopened thread can still ▶ replay what the agent said. Best-effort:
+        # history renders text-only if the voice surface is unavailable.
+        if voice_store is not None:
+            try:
+                vrows = await voice_store.list_messages(thread_id)
+            except Exception:  # noqa: BLE001
+                vrows = []
+            for v in vrows:
+                if v.role != "assistant" or not v.has_audio:
+                    continue
+                vtext = (v.text or "").strip()
+                for m in messages:
+                    if (
+                        m["role"] == "assistant"
+                        and not m["has_audio"]
+                        and m["text"].strip() == vtext
+                    ):
+                        m["has_audio"] = True
+                        m["audio_url"] = f"/sessions/{session_id}/audio/{v.seq}"
+                        m["modality"] = "audio"
+                        break
 
     return {"session_id": session_id, "origin": session.origin, "messages": messages}
 

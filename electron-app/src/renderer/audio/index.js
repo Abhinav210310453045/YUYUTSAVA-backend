@@ -40,6 +40,9 @@ export class AudioPlayer {
 
   // Lazily create + resume the context. Browsers block audio until a user
   // gesture; call this from a click/keypress handler before playback.
+  // A user-initiated pause() wins over the auto-resume here — otherwise every
+  // streamed chunk of a live reply would un-pause the very playback the user
+  // just paused (enqueuePcm goes through ensureContext).
   async ensureContext() {
     if (!this._ctx) {
       const Ctx = window.AudioContext || window.webkitAudioContext
@@ -51,11 +54,30 @@ export class AudioPlayer {
       this._analyser.smoothingTimeConstant = 0.8
       this._analyser.connect(this._ctx.destination)
     }
-    if (this._ctx.state === 'suspended') {
+    if (this._ctx.state === 'suspended' && !this._userPaused) {
       try { await this._ctx.resume() } catch { /* ignore */ }
     }
     return this._ctx
   }
+
+  // Pause / resume everything queued (the whole context clock freezes, so the
+  // gapless cursor and isPlaying() hold their state and playback picks up
+  // exactly where it stopped). Distinct from stop(): nothing is discarded.
+  async pause() {
+    this._userPaused = true
+    if (this._ctx && this._ctx.state === 'running') {
+      try { await this._ctx.suspend() } catch { /* ignore */ }
+    }
+  }
+
+  async resume() {
+    this._userPaused = false
+    if (this._ctx && this._ctx.state === 'suspended') {
+      try { await this._ctx.resume() } catch { /* ignore */ }
+    }
+  }
+
+  isPaused() { return !!this._userPaused }
 
   // AnalyserNode for the agent's TTS output, or null before first playback.
   // Consumers (VoiceOrb) call getByteFrequencyData/getByteTimeDomainData on it.
@@ -142,12 +164,20 @@ export class AudioPlayer {
   }
 
   // Barge-in: stop everything currently playing/queued and reset the cursor.
+  // Also clears a pending pause — a suspended context would otherwise silence
+  // all future audio (earcons, the next reply) forever.
   stop() {
     for (const node of this._active) {
       try { node.stop() } catch { /* already stopped */ }
     }
     this._active.clear()
     this._pcmCursor = this._ctx ? this._ctx.currentTime : 0
+    if (this._userPaused) {
+      this._userPaused = false
+      if (this._ctx && this._ctx.state === 'suspended') {
+        this._ctx.resume().catch(() => {})
+      }
+    }
   }
 
   _track(node) {

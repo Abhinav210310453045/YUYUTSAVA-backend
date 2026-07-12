@@ -7,13 +7,16 @@ import { int16ToBase64 } from '../audio'
 export class ConverseClient {
   // `agent`/`card` select a server-side agent bundle: agent='tinker' with a
   // card id pins the conversation to that TODO card's thread (todo:<card_id>).
-  // Omitted → the shared master deepagent, exactly as before.
-  constructor(handlers, { origin = 'cli', resumeId = null, agent = null, card = null } = {}) {
+  // Omitted → the shared master deepagent, exactly as before. `mode='dictate'`
+  // selects the transcribe-only server loop (STT dictation — audio frames in,
+  // transcript frames out, no agent turns; see useDictation).
+  constructor(handlers, { origin = 'cli', resumeId = null, agent = null, card = null, mode = null } = {}) {
     this.handlers = handlers
     this.origin = origin
     this.resumeId = resumeId
     this.agent = agent
     this.card = card
+    this.mode = mode
     this._ws = null
     this._retryDelay = 1000
     this._stopped = false
@@ -43,6 +46,7 @@ export class ConverseClient {
     if (this.resumeId) qs.set('resume_id', this.resumeId)
     if (this.agent) qs.set('agent', this.agent)
     if (this.card) qs.set('card', this.card)
+    if (this.mode) qs.set('mode', this.mode)
     return `${base}/ws/converse?${qs}`
   }
 

@@ -40,10 +40,27 @@ const TypingDots = () => (
   <span className="typing-dots" style={{ marginLeft: 2 }}><i /><i /><i /></span>
 )
 
-function Bubble({ m, userText, sessionId, onRegenerate, onFeedback }) {
+// Glyph for the spoken-reply control: ▶ to play (or resume), ⏸ while audible.
+function PlayPauseIcon({ playing }) {
+  return playing ? (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <rect x="6" y="5" width="4" height="14" rx="1.2" />
+      <rect x="14" y="5" width="4" height="14" rx="1.2" />
+    </svg>
+  ) : (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <path d="M8 5v14l11-7z" />
+    </svg>
+  )
+}
+
+function Bubble({ m, userText, sessionId, onRegenerate, onFeedback, playing, paused, onReplay, onTogglePause }) {
   const isUser = m.role === 'user'
   const [hover, setHover] = useState(false)
   const empty = !m.text && (!m.images || m.images.length === 0)
+  // Spoken replies carry in-session PCM chunks (live turn) or a persisted
+  // audio_url (resumed thread) — either makes the bubble playable.
+  const hasAudio = !isUser && ((m.audioChunks && m.audioChunks.length > 0) || !!m.audioUrl)
 
   return (
     <div
@@ -77,6 +94,25 @@ function Bubble({ m, userText, sessionId, onRegenerate, onFeedback }) {
           <span style={{ whiteSpace: 'pre-wrap' }}>{m.text}</span>
         ) : (
           <>
+            {/* Spoken-reply control: ▶ plays (or resumes a paused clip), ⏸
+                pauses in place — the position holds, unlike the turn Stop. */}
+            {hasAudio && (
+              <button
+                onClick={() => (playing ? onTogglePause() : onReplay(m))}
+                title={playing ? (paused ? 'resume playback' : 'pause playback') : 'play spoken reply'}
+                className="tap-pop"
+                style={{
+                  float: 'right', marginLeft: 8, cursor: 'pointer',
+                  width: 24, height: 24, borderRadius: '50%',
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  background: playing && !paused ? 'rgba(120,160,255,0.30)' : 'rgba(120,160,255,0.12)',
+                  border: `1px solid rgba(120,160,255,${playing && !paused ? 0.6 : 0.35})`,
+                  color: '#9bb8ff',
+                  boxShadow: playing && !paused ? '0 0 10px rgba(120,160,255,0.5)' : 'none',
+                  transition: 'background 0.2s, box-shadow 0.2s',
+                }}
+              ><PlayPauseIcon playing={playing && !paused} /></button>
+            )}
             {empty && m.streaming ? <TypingDots /> : <Markdown>{m.text}</Markdown>}
             {m.text && m.streaming ? <TypingDots /> : null}
             <MessageImages images={m.images} />
@@ -102,9 +138,10 @@ function Bubble({ m, userText, sessionId, onRegenerate, onFeedback }) {
 // The one chat surface, reused (not forked) by every agent: the default props
 // give the orchestrator panel; TodoCardView embeds it with agent='tinker' +
 // card=<card_id> (thread pinned server-side to the card), its own header
-// title/hints, no voice toggle (Phase 5) and no New button (the card IS the
-// thread). `onTurnEnd` fires after each completed turn so a host view can
-// refresh data the agent may have changed (e.g. notes added via todo_*).
+// title/hints and no New button (the card IS the thread) — text and voice
+// alike, since the mic streams over the same agent/card-pinned connection.
+// `onTurnEnd` fires after each completed turn so a host view can refresh
+// data the agent may have changed (e.g. notes added via todo_*).
 export default function ChatPanel({
   resumeId = null,
   active = true,
@@ -120,8 +157,8 @@ export default function ChatPanel({
   onTurnEnd = null,
 }) {
   const {
-    messages, connected, busy, pendingAsk, hello, listening, speaking,
-    send, answerAsk, interrupt, startVoice, stopVoice, newSession,
+    messages, connected, busy, pendingAsk, hello, listening, speaking, playingId, paused,
+    send, answerAsk, interrupt, startVoice, stopVoice, replay, togglePause, newSession,
   } = useConverse({ origin, resumeId, agent, card })
   const [draft, setDraft] = useState('')
   const [askDraft, setAskDraft] = useState('')
@@ -216,6 +253,10 @@ export default function ChatPanel({
             sessionId={hello?.session_id || null}
             onRegenerate={m.role === 'assistant' && !busy ? () => send(precedingUserText(i)) : null}
             onFeedback={(rating) => setFb((p) => ({ ...p, [m.id]: rating }))}
+            playing={playingId === m.id}
+            paused={playingId === m.id && paused}
+            onReplay={replay}
+            onTogglePause={togglePause}
           />
         ))}
 

@@ -32,6 +32,13 @@ is transcribed (``transcript``) and run as a turn whose prose is streamed back a
 ``audio_chunk`` frames. Speaking while the agent talks (``speech_started`` during
 a turn) cancels it — barge-in.
 
+Dictation (``?mode=dictate``): the same socket in transcribe-only mode — no
+session is opened and no agent turn ever runs. Mic ``audio`` frames are VAD-
+segmented and each utterance comes back as a ``transcript`` frame; ``audio_end``
+flushes the tail and the server closes the dictation with ``dictate_done``.
+The client owns the text (the TODO note editor inserts it for the user to
+edit — never auto-submitted). One dictation per connection.
+
 HITL is handled inline on the socket (mirroring the CLI REPL's inline prompts)
 rather than through the proposal/ask SSE — an interactive chat answers its own
 questions in-band. Background async-subagent approvals still flow through the
@@ -124,10 +131,109 @@ def _post_speak_grace_sec() -> float:
 _POST_SPEAK_GRACE_SEC = _post_speak_grace_sec()
 
 
+async def _dictate(ws: WebSocket) -> None:
+    """Transcribe-only loop for ``?mode=dictate`` (STT dictation, no agent).
+
+    Reuses the exact voice plumbing of a conversation — :class:`VoicePipeline`
+    VAD → STT — but never opens a session and never runs a turn. Utterances are
+    transcribed strictly in capture order by a single worker (transcription can
+    take seconds; the receive loop must keep feeding the VAD meanwhile), each
+    non-empty transcript is sent as its own ``transcript`` frame, and the
+    ``audio_end`` flush is acknowledged with ``dictate_done`` once the tail has
+    drained. Low-confidence transcripts are dropped like the conversation path
+    drops them — hallucinated noise is worse than a gap in an editable textarea.
+    """
+    voice = VoicePipeline()
+    send_lock = asyncio.Lock()
+    utterances: asyncio.Queue[bytes | None] = asyncio.Queue()
+
+    async def _send(obj: dict) -> None:
+        async with send_lock:
+            await ws.send_text(json.dumps(obj, default=str))
+
+    async def _worker() -> None:
+        while True:
+            utt = await utterances.get()
+            if utt is None:
+                await _send({"type": "dictate_done"})
+                return
+            result = await voice.transcribe_detailed(utt)
+            text = result.text
+            conf = result.confidence
+            if text and conf is not None and _STT_MIN_CONFIDENCE > 0 and conf < _STT_MIN_CONFIDENCE:
+                logger.info(
+                    "dictate: low-confidence transcript dropped (%.2f) %r",
+                    conf, text[:80],
+                )
+                continue
+            if text:
+                logger.info("dictate: transcript=%r", text[:120])
+                await _send({"type": "transcript", "text": text})
+
+    prewarm = asyncio.create_task(voice.prewarm())
+    worker = asyncio.create_task(_worker())
+    await _send({"type": "hello", "mode": "dictate"})
+    try:
+        while True:
+            raw = await ws.receive_text()
+            try:
+                msg = json.loads(raw)
+            except (ValueError, TypeError):
+                await _send({"type": "error", "message": "invalid JSON frame"})
+                continue
+            mtype = msg.get("type")
+
+            if mtype == "ping":
+                await _send({"type": "pong"})
+                continue
+
+            if mtype == "audio":
+                b64 = msg.get("pcm")
+                if not b64:
+                    continue
+                try:
+                    pcm = base64.b64decode(b64)
+                except (ValueError, TypeError):
+                    continue
+                res = voice.feed_audio(pcm)
+                if res.speech_started:
+                    await _send({"type": "speech_started"})
+                if res.utterance is not None:
+                    utterances.put_nowait(res.utterance)
+                continue
+
+            if mtype == "audio_end":
+                # End of capture: flush the VAD tail, then let the worker drain
+                # in order and ack with dictate_done behind the last transcript.
+                tail = voice.flush()
+                if tail:
+                    utterances.put_nowait(tail)
+                utterances.put_nowait(None)
+                continue
+
+            await _send({"type": "error", "message": f"unknown message type {mtype!r}"})
+
+    except WebSocketDisconnect:
+        pass
+    finally:
+        prewarm.cancel()
+        worker.cancel()
+        try:
+            await worker
+        except (asyncio.CancelledError, Exception):  # noqa: BLE001
+            pass
+        voice.close()
+
+
 @router.websocket("/ws/converse")
 async def converse(ws: WebSocket) -> None:
     manager = getattr(ws.app.state, "conversation_manager", None)
     await ws.accept()
+    # Transcribe-only dictation shares the endpoint (and its auth handling) but
+    # none of the conversation machinery — no manager, no session, no turns.
+    if ws.query_params.get("mode") == "dictate":
+        await _dictate(ws)
+        return
     if manager is None:
         await ws.send_text(json.dumps(
             {"type": "error", "message": "conversation manager not initialized"}

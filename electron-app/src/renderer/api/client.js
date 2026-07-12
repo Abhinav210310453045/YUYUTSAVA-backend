@@ -42,12 +42,11 @@ export const listSessions = (workspace = null, limit = 50, cursor = null, origin
 }
 export const getSession = (id) => _json('GET', `/sessions/${encodeURIComponent(id)}`)
 export const deleteSession = (id) => _json('DELETE', `/sessions/${encodeURIComponent(id)}`)
-// Phase 6b: resume-history + replay. messages = ordered chat turns (text +
-// audio_url for voice turns); the audio URL serves a WAV for the ▶ replay.
+// Phase 6b: resume-history + replay. messages = ordered chat turns; a turn
+// with stored TTS carries its own audio_url (voice-store seq — do not rebuild
+// it from the row seq), served as a WAV for the ▶ replay.
 export const getSessionMessages = (id) =>
   _json('GET', `/sessions/${encodeURIComponent(id)}/messages`)
-export const sessionAudioUrl = (id, seq) =>
-  `${_base}/sessions/${encodeURIComponent(id)}/audio/${seq}`
 
 // Message feedback (👍/👎). Stores the reacted-to (user, assistant) pair for a
 // future feedback agent; survives session deletion. Re-rating upserts.
