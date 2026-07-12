@@ -808,6 +808,197 @@ def build_orchestrator(
     )
 
 
+def build_tinker_agent(
+    card_id: str,
+    card_workspace: Path,
+    settings: LlmSettings,
+    *,
+    bash_timeout_sec: int = 120,
+    permission_check: bool = True,
+    search_config: SearchConfig | None = None,
+    checkpointer: BaseCheckpointSaver | None = None,
+    subagents: "list[Any] | None" = None,
+    async_subagents: "list[Any] | None" = None,
+    async_host_url: str | None = None,
+    async_task_mirror: Any | None = None,
+    async_max_concurrent: int = 8,
+    async_host: Any | None = None,
+    async_host_attachment: Any | None = None,
+    artifact_store: Any | None = None,
+    summary_store: Any | None = None,
+    memory_store: Any | None = None,
+    transcript_store: Any | None = None,
+    context_settings: Any | None = None,
+    compaction_model: BaseChatModel | None = None,
+    skill_store: Any | None = None,
+    transcript_index: Any | None = None,
+    skill_registry: SkillRegistry | None = None,
+    budget_tokens: int = 60_000,
+    usage_store: Any | None = None,
+) -> AgentBundle:
+    """Build the TinkerAgent — third factory, sibling of :func:`build_cli_deepagent`
+    and :func:`build_orchestrator`.
+
+    One bundle per TODO card: the compiled graph carries the card's identity in
+    its system prompt and binds the tr_* TaskRunner gateway to the card's own
+    workspace dir (``blobs/todoboard/<card_id>/``), so a shared graph can't
+    serve two cards. The conversation thread is pinned by the caller to
+    ``todo:<card_id>`` — per-thread checkpointer isolation does the rest.
+
+    Composition follows the CLI deepagent (same context chain, permission/
+    consent, lazy tool discovery) plus the orchestrator's BudgetMiddleware/
+    UsageRecorder pair:
+      tool filter → offload (tool path) → compaction (model path) →
+      budget (absolute ceiling) → usage recorder (passive accounting).
+
+    Tools: todo_* FULL scope (author="tinker"), tr_* bound to the card
+    workspace with ``agent_name="tinker"``, vis_*, ws_* (when
+    ``search_config``), mem_*/ctx_* (when stores wired), sk_* with the
+    tinker skills namespace. ``subagents``/``async_subagents`` ride along
+    exactly like the CLI factory — no spawn-subagent tool.
+    """
+    model = chat_model(settings)
+    checkpointer = checkpointer or MemorySaver()
+    ws = card_workspace.resolve()
+    sandbox_root = ws / "_sandbox"
+    output_dir = ws / "_output"
+
+    middleware: list = [
+        ToolFilterMiddleware(),
+        FilesystemPromptOverrideMiddleware(),
+        VoiceStyleMiddleware(),
+    ]
+    middleware.extend(_context_middleware(
+        model=model,
+        artifact_store=artifact_store,
+        context_settings=context_settings,
+        summary_store=summary_store,
+        memory_store=memory_store,
+        transcript_store=transcript_store,
+        transcript_index=transcript_index,
+        compaction_model=compaction_model,
+        role="tinker",
+    ))
+    # Absolute spend ceiling + passive accounting, after compaction (the
+    # orchestrator's ordering rule). Lazy imports: daemon-only modules.
+    from yuyutsava.daemon.budget import BudgetMiddleware
+    middleware.append(BudgetMiddleware(max_input_tokens=budget_tokens, role="tinker"))
+    if usage_store is not None:
+        from yuyutsava.core.llm import model_name_of
+        from yuyutsava.daemon.usage import UsageRecorder
+        middleware.append(UsageRecorder(
+            usage_store,
+            role="tinker",
+            model_name=model_name_of(model),
+            task_id=f"tinker:{card_id}",
+            thread_id=f"todo:{card_id}",
+        ))
+    if permission_check:
+        middleware.append(PermissionMiddleware(workspace_root=ws))
+
+    # Per-turn retrieval injection — the tinker graph is as persistent as the
+    # CLI's, so memory/skills/transcript recall must be per-turn, and the
+    # skills search is scoped to the tinker namespace (agent column).
+    _injectors: list = []
+    if memory_store is not None:
+        from yuyutsava.context.injector import MemoryInjector
+        _injectors.append(MemoryInjector(memory_store))
+    if skill_store is not None:
+        from yuyutsava.skills.injector import SkillInjector
+        _injectors.append(SkillInjector(skill_store, agent="tinker"))
+    if transcript_index is not None:
+        from yuyutsava.context.conversation_injector import ConversationInjector
+        _injectors.append(ConversationInjector(transcript_index))
+    if _injectors:
+        from yuyutsava.core.retrieval_injection_middleware import (
+            RetrievalInjectionMiddleware,
+        )
+        middleware.append(RetrievalInjectionMiddleware(_injectors))
+
+    context_tools: list = []
+    if artifact_store is not None:
+        from yuyutsava.context.tools import make_context_tools
+        context_tools.extend(make_context_tools(artifact_store))
+    if memory_store is not None:
+        from yuyutsava.memory.tools import make_memory_tools
+        context_tools.extend(make_memory_tools(memory_store))
+
+    from yuyutsava.visuals.tools import make_visual_tools
+    context_tools.extend(make_visual_tools(output_dir=output_dir))
+
+    # The whole point: FULL board scope, notes authored as "tinker".
+    from yuyutsava.todoboard.tools import make_todo_tools
+    context_tools.extend(make_todo_tools(scope="full", author="tinker"))
+
+    skill_registry = skill_registry or SkillRegistry()
+
+    subagent_specs: list[dict] = []
+    if subagents:
+        subagent_specs.extend(sa.as_deepagents_subagent_spec() for sa in subagents)
+    if async_subagents:
+        if not async_host_url:
+            raise ValueError(
+                "build_tinker_agent: async_subagents requires async_host_url."
+            )
+        subagent_specs.extend(
+            sa.as_async_subagent_spec(url=async_host_url)
+            for sa in async_subagents
+            if getattr(sa, "supports_async", False)
+        )
+    if async_task_mirror is not None and async_subagents:
+        from yuyutsava.async_subagents.cap_middleware import BackgroundTaskCapMiddleware
+        middleware.append(
+            BackgroundTaskCapMiddleware(async_task_mirror, max_concurrent=async_max_concurrent)
+        )
+    if async_subagents:
+        from yuyutsava.async_subagents.interrupt_middleware import AsyncTaskInterruptPatchMiddleware
+        from yuyutsava.async_subagents.check_guard_middleware import CheckAsyncTaskGuardMiddleware
+        async_specs = [s for s in subagent_specs if "graph_id" in s and "url" in s]
+        middleware.append(AsyncTaskInterruptPatchMiddleware(async_specs))
+        middleware.append(CheckAsyncTaskGuardMiddleware())
+
+    backend = _local_shell_backend_factory(ws, bash_timeout_sec)
+    startup_tools, _registry = _build_tool_registry_and_tools(
+        _bind_task_runner_tools(ws, sandbox_root, agent_name="tinker"),
+        search_config, skill_registry,
+        extra_tools=context_tools, skill_store=skill_store,
+    )
+
+    # Semantic store present → SkillInjector surfaces the relevant modes per
+    # turn; static index only as the keyword-less fallback (orchestrator rule).
+    from yuyutsava.agents.tinker.prompts import render_tinker_system_prompt
+    skills_index = (
+        "" if skill_store is not None else skill_registry.index_block(agent="tinker")
+    )
+    graph = create_deep_agent(
+        model=model,
+        tools=startup_tools,
+        backend=backend,
+        system_prompt=render_tinker_system_prompt(
+            card_id=card_id,
+            card_workspace=ws,
+            sandbox_root=sandbox_root,
+            output_dir=output_dir,
+            tool_catalog=_registry.catalog_block(),
+            skills_index=skills_index,
+        ),
+        checkpointer=checkpointer,
+        middleware=middleware,
+        subagents=subagent_specs or None,
+        debug=False,
+    )
+    return AgentBundle(
+        agent=graph,
+        docker_backend=None,
+        sandbox_root=sandbox_root,
+        output_dir=output_dir,
+        async_host=async_host,
+        async_host_url=async_host_url,
+        async_host_attachment=async_host_attachment,
+        async_task_mirror=async_task_mirror,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Graph helpers
 # ---------------------------------------------------------------------------

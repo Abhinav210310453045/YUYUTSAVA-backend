@@ -14,7 +14,9 @@ import { MicCapture } from '../audio/capture'
 let _mid = 0
 const nextId = () => `m${++_mid}`
 
-export function useConverse({ origin = 'cli', resumeId = null } = {}) {
+// `agent`/`card` select the server-side bundle (agent='tinker' + a card id
+// pins the thread to that TODO card); omitted → the master deepagent.
+export function useConverse({ origin = 'cli', resumeId = null, agent = null, card = null } = {}) {
   const [messages, setMessages] = useState([])
   const [connected, setConnected] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -293,12 +295,12 @@ export function useConverse({ origin = 'cli', resumeId = null } = {}) {
           setPendingAsk(null)
         },
       },
-      { origin, resumeId: activeResumeId },
+      { origin, resumeId: activeResumeId, agent, card },
     )
     clientRef.current = client
     client.connect()
     return () => { cancelled = true; client.disconnect(); stopSmoother(); clientRef.current = null }
-  }, [origin, activeResumeId, resetNonce, onMessage, flushSmoother, stopSmoother])
+  }, [origin, activeResumeId, resetNonce, agent, card, onMessage, flushSmoother, stopSmoother])
 
   const send = useCallback((text) => {
     const t = (text || '').trim()

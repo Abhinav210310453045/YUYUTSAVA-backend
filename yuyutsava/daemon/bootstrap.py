@@ -917,6 +917,7 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
             settings=orchestrator_settings,
             search_config=search_config,
             voice_store=voice_store,
+            usage_store=usage_store,
         )
 
         app = make_app(

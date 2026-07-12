@@ -99,20 +99,46 @@ function Bubble({ m, userText, sessionId, onRegenerate, onFeedback }) {
   )
 }
 
-export default function ChatPanel({ resumeId = null, active = true }) {
+// The one chat surface, reused (not forked) by every agent: the default props
+// give the orchestrator panel; TodoCardView embeds it with agent='tinker' +
+// card=<card_id> (thread pinned server-side to the card), its own header
+// title/hints, no voice toggle (Phase 5) and no New button (the card IS the
+// thread). `onTurnEnd` fires after each completed turn so a host view can
+// refresh data the agent may have changed (e.g. notes added via todo_*).
+export default function ChatPanel({
+  resumeId = null,
+  active = true,
+  agent = null,
+  card = null,
+  origin = 'ui',
+  title = 'Chat — orchestrator',
+  placeholder = 'message the orchestrator (Enter to send, Shift+Enter for newline)',
+  emptyGlyph = '◈',
+  emptyHint = '> talk to YUYUTSAVA — it can run tasks, make visuals, and delegate',
+  showVoice = true,
+  showNewSession = true,
+  onTurnEnd = null,
+}) {
   const {
     messages, connected, busy, pendingAsk, hello, listening, speaking,
     send, answerAsk, interrupt, startVoice, stopVoice, newSession,
-  } = useConverse({ origin: 'ui', resumeId })
+  } = useConverse({ origin, resumeId, agent, card })
   const [draft, setDraft] = useState('')
   const [askDraft, setAskDraft] = useState('')
   const [fb, setFb] = useState({}) // messageId -> 'up' | 'down' (local selection)
   const scrollRef = useRef(null)
+  const wasBusyRef = useRef(false)
 
   useEffect(() => {
     const el = scrollRef.current
     if (el) el.scrollTop = el.scrollHeight
   }, [messages, pendingAsk])
+
+  // Notify the host view when a turn finishes (busy true → false).
+  useEffect(() => {
+    if (wasBusyRef.current && !busy) onTurnEnd?.()
+    wasBusyRef.current = busy
+  }, [busy, onTurnEnd])
 
   // Panel stays mounted when hidden — don't leave the push-to-talk mic hot.
   useEffect(() => {
@@ -152,8 +178,8 @@ export default function ChatPanel({ resumeId = null, active = true }) {
         <span style={{
           fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.1em',
           textTransform: 'uppercase', color: 'var(--text-primary)', fontWeight: 600,
-        }}>Chat — orchestrator</span>
-        <NewSessionButton onClick={newSession} label="New chat" />
+        }}>{title}</span>
+        {showNewSession && <NewSessionButton onClick={newSession} label="New chat" />}
       </div>
 
       {/* animated gradient mesh behind the thread */}
@@ -178,8 +204,8 @@ export default function ChatPanel({ resumeId = null, active = true }) {
               fontSize: 40, fontWeight: 700,
               background: 'var(--grad-accent)', backgroundClip: 'text', WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
-            }} className="grad-animated">◈</div>
-            <div>{'> talk to YUYUTSAVA — it can run tasks, make visuals, and delegate'}</div>
+            }} className="grad-animated">{emptyGlyph}</div>
+            <div>{emptyHint}</div>
           </div>
         )}
         {messages.map((m, i) => (
@@ -230,7 +256,7 @@ export default function ChatPanel({ resumeId = null, active = true }) {
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={onKeyDown}
           rows={1}
-          placeholder={busy ? 'agent is working…' : 'message the orchestrator (Enter to send, Shift+Enter for newline)'}
+          placeholder={busy ? 'agent is working…' : placeholder}
           style={{
             flex: 1, resize: 'none', background: 'var(--glass-bg)', color: 'var(--text-primary)',
             border: '1px solid var(--glass-border)', borderRadius: 22, padding: '11px 16px',
@@ -238,14 +264,16 @@ export default function ChatPanel({ resumeId = null, active = true }) {
             backdropFilter: 'blur(var(--glass-blur))', outline: 'none',
           }}
         />
-        <button
-          onClick={() => (listening ? stopVoice() : startVoice())}
-          title={listening ? 'stop microphone' : 'talk to the agent'}
-          className="tap-pop"
-          style={micBtnStyle(listening)}
-        >
-          {listening ? '● mic' : '🎙 mic'}
-        </button>
+        {showVoice && (
+          <button
+            onClick={() => (listening ? stopVoice() : startVoice())}
+            title={listening ? 'stop microphone' : 'talk to the agent'}
+            className="tap-pop"
+            style={micBtnStyle(listening)}
+          >
+            {listening ? '● mic' : '🎙 mic'}
+          </button>
+        )}
         {busy ? (
           <button onClick={interrupt} className="tap-pop" style={btnStyle(false)}>stop</button>
         ) : (

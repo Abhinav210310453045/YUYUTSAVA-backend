@@ -142,9 +142,14 @@ async def converse(ws: WebSocket) -> None:
     origin = ws.query_params.get("origin", "cli")
     resume_id = ws.query_params.get("resume_id") or None
     continue_latest = ws.query_params.get("continue", "").lower() in ("1", "true", "yes")
+    # agent=tinker&card=<card_id> routes to the card-bound TinkerAgent bundle,
+    # thread pinned to todo:<card_id>. Default is the shared master deepagent.
+    agent = ws.query_params.get("agent", "master")
+    card_id = ws.query_params.get("card") or None
 
     try:
         convo, resuming = await manager.open(
+            agent=agent, card_id=card_id,
             origin=origin, resume_id=resume_id, continue_latest=continue_latest,
         )
     except Exception as exc:  # noqa: BLE001
@@ -154,9 +159,9 @@ async def converse(ws: WebSocket) -> None:
         return
 
     logger.info(
-        "converse: WS open origin=%s resume_id=%s → session=%s resuming=%s "
-        "voice_barge_in=%s (post_speak_grace=%.1fs)",
-        origin, resume_id, convo.session_id, resuming,
+        "converse: WS open agent=%s card=%s origin=%s resume_id=%s → session=%s "
+        "resuming=%s voice_barge_in=%s (post_speak_grace=%.1fs)",
+        agent, card_id, origin, resume_id, convo.session_id, resuming,
         _BARGE_IN_ENABLED, _POST_SPEAK_GRACE_SEC,
     )
     await ws.send_text(json.dumps({
@@ -164,6 +169,8 @@ async def converse(ws: WebSocket) -> None:
         "session_id": convo.session_id,
         "thread_id": convo.thread_id,
         "origin": origin,
+        "agent": agent,
+        "card_id": card_id,
         "resuming": resuming,
         # Tell the client the voice interruption policy so it can match: when
         # barge-in is off (default) the client runs half-duplex — it mutes the

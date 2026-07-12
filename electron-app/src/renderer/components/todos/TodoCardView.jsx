@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { getTodo, patchTodo, addTodoNote, patchTodoNote, deleteTodoNote } from '../../api/client'
 import { STATUS_ACCENT, TagChips, PinIcon, humanAge } from './shared'
+import ChatPanel from '../chat/ChatPanel'
 
 const STATUSES = ['inbox', 'active', 'done', 'archived']
 
@@ -157,6 +158,10 @@ export default function TodoCardView({ cardId, onBack }) {
   const [newNote, setNewNote] = useState('')
   const [addingNote, setAddingNote] = useState(false)
   const [patching, setPatching] = useState(false)
+  // "Think with TinkerAgent" split: when open, the content area becomes
+  // notes | chat. The chat is the shared ChatPanel pointed at agent=tinker —
+  // its thread is pinned server-side to this card, so it resumes on reopen.
+  const [thinkOpen, setThinkOpen] = useState(false)
   const titleRef = useRef(null)
   // Esc sets this before blurring: the blur handler must skip the commit
   // because the reverted title state hasn't re-rendered into its closure yet.
@@ -296,11 +301,26 @@ export default function TodoCardView({ cardId, onBack }) {
             >
               {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
+
+            <button
+              onClick={() => setThinkOpen((v) => !v)}
+              title={thinkOpen ? 'close the TinkerAgent chat' : 'think on this card with the TinkerAgent'}
+              style={{
+                fontFamily: 'var(--font-mono)', fontSize: 11, padding: '5px 12px',
+                background: thinkOpen ? 'rgba(120,160,255,0.18)' : 'rgba(120,160,255,0.06)',
+                color: '#9bb8ff',
+                border: `1px solid rgba(120,160,255,${thinkOpen ? 0.5 : 0.3})`,
+                borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap',
+              }}
+            >
+              {thinkOpen ? '✕ Tinker' : '✦ Tinker'}
+            </button>
           </>
         )}
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+      <div style={{ flex: 1, minWidth: 0, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
         {error && (
           <div style={{
             fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--neon-red)',
@@ -388,6 +408,33 @@ export default function TodoCardView({ cardId, onBack }) {
             </div>
           </>
         )}
+      </div>
+
+      {thinkOpen && card && (
+        <div style={{
+          width: '46%', minWidth: 380, maxWidth: 640,
+          borderLeft: '1px solid var(--border-subtle)',
+          display: 'flex', flexDirection: 'column', overflow: 'hidden',
+        }}>
+          {/* The shared chat surface, unforked: agent=tinker + card pins the
+              thread to todo:<card_id> server-side; resumeId hydrates past
+              turns on reopen (best-effort 404 on a card's first chat).
+              Voice toggle is Phase 5; the card IS the thread, so no New. */}
+          <ChatPanel
+            agent="tinker"
+            card={cardId}
+            origin="tinker"
+            resumeId={`todo:${cardId}`}
+            title="Think with TinkerAgent"
+            placeholder="hand the TinkerAgent a rough idea… (Enter to send)"
+            emptyGlyph="✦"
+            emptyHint="> tinker on this card — it sharpens ideas, asks the right questions, and keeps notes here"
+            showVoice={false}
+            showNewSession={false}
+            onTurnEnd={refresh}
+          />
+        </div>
+      )}
       </div>
     </div>
   )

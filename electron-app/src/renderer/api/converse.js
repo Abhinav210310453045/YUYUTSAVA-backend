@@ -5,10 +5,15 @@ import { int16ToBase64 } from '../audio'
 // (WS /ws/converse). Mirrors SSEClient's connect/disconnect + auto-reconnect
 // shape. Frames are JSON; see daemon/web/routers/converse.py for the protocol.
 export class ConverseClient {
-  constructor(handlers, { origin = 'cli', resumeId = null } = {}) {
+  // `agent`/`card` select a server-side agent bundle: agent='tinker' with a
+  // card id pins the conversation to that TODO card's thread (todo:<card_id>).
+  // Omitted → the shared master deepagent, exactly as before.
+  constructor(handlers, { origin = 'cli', resumeId = null, agent = null, card = null } = {}) {
     this.handlers = handlers
     this.origin = origin
     this.resumeId = resumeId
+    this.agent = agent
+    this.card = card
     this._ws = null
     this._retryDelay = 1000
     this._stopped = false
@@ -36,6 +41,8 @@ export class ConverseClient {
     const base = getBase().replace(/^http/, 'ws')
     const qs = new URLSearchParams({ origin: this.origin })
     if (this.resumeId) qs.set('resume_id', this.resumeId)
+    if (this.agent) qs.set('agent', this.agent)
+    if (this.card) qs.set('card', this.card)
     return `${base}/ws/converse?${qs}`
   }
 
