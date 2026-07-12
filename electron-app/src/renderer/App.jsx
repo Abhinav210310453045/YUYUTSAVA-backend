@@ -4,6 +4,7 @@ import ActivityLog from './components/layout/ActivityLog'
 import ProposalsPanel from './components/proposals/ProposalsPanel'
 import SessionsPanel from './components/sessions/SessionsPanel'
 import ArtifactsPanel from './components/artifacts/ArtifactsPanel'
+import TodosPanel from './components/todos/TodosPanel'
 import SettingsPanel from './components/settings/SettingsPanel'
 import ChatPanel from './components/chat/ChatPanel'
 import VoicePanel from './components/voice/VoicePanel'
@@ -179,7 +180,7 @@ export default function App() {
               the entry animation; Chat & Voice stay mounted once visited and are
               only hidden, preserving their live conversation across navigation. */}
           <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minWidth: 0, position: 'relative' }}>
-            {(activePanel === 'proposals' || activePanel === 'sessions' || activePanel === 'artifacts' || activePanel === 'settings') && (
+            {(activePanel === 'proposals' || activePanel === 'sessions' || activePanel === 'todos' || activePanel === 'artifacts' || activePanel === 'settings') && (
               <div
                 key={activePanel}
                 style={{ flex: 1, display: 'flex', overflow: 'hidden', animation: 'fade-in 0.2s ease' }}
@@ -193,6 +194,7 @@ export default function App() {
                   />
                 )}
                 {activePanel === 'sessions' && <SessionsPanel onOpenSession={onOpenSession} />}
+                {activePanel === 'todos' && <TodosPanel />}
                 {activePanel === 'artifacts' && <ArtifactsPanel />}
                 {activePanel === 'settings' && <SettingsPanel />}
               </div>

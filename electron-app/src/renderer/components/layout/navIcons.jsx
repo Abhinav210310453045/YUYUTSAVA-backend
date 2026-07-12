@@ -41,6 +41,12 @@ export const navIcons = {
       <polyline points="21 15 16 10 5 21"/>
     </svg>
   ),
+  todos: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="9 11 12 14 22 4"/>
+      <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+    </svg>
+  ),
 }
 
 // Sun / moon glyphs for the light/dark theme toggle.
@@ -75,6 +81,7 @@ export function PanelToggleIcon({ open }) {
 export const NAV_ITEMS = [
   { id: 'proposals', label: 'Proposals' },
   { id: 'sessions', label: 'Sessions' },
+  { id: 'todos', label: 'Todos' },
   { id: 'artifacts', label: 'Artifacts' },
   { id: 'settings', label: 'Settings' },
   { id: 'chat', label: 'Chat' },

@@ -15,8 +15,14 @@ locally per phase (never push), pause for user review between phases.
 - [x] Verified: 41 SQLite exchange/store/tool checks, 10 PG round-trip checks (jsonb/epoch/CASCADE), 18 REST TestClient checks, live daemon curl CRUD (create→list→get→patch→note→snapshot→404s→delete, workspace dir cleaned)
 - Note: "assign this as a TODO" through a real LLM chat turn is a manual review item (tools are registered + individually exercised)
 
-## Phase 2 — Board UI
-Not started.
+## Phase 2 — Board UI — DONE 2026-07-12
+- [x] `todos` nav entry + check-square glyph in `NAV_ITEMS` (`components/layout/navIcons.jsx`); panel branch in `App.jsx` (stateless remount group)
+- [x] `components/todos/TodosPanel.jsx` — four status columns (inbox/active/done/archived) with per-status accents, clickable summary cards (title, tags, pinned pin, note/attachment counts, age), create input + Add, per-card delete (confirm), 5s poll while the board is visible (agents write TODOs too)
+- [x] `components/todos/TodoCardView.jsx` — expanded card: renamable title (Enter/blur commits, Esc reverts), status select, pin toggle, notes list with per-author badges + add (⌘/Ctrl+Enter) / inline edit / delete
+- [x] `components/todos/shared.jsx` — STATUS_ACCENT / TagChips / PinIcon / humanAge shared by both views
+- [x] `api/client.js` — listTodos/createTodo/getTodo/patchTodo/deleteTodo + note add/patch/delete on the unprefixed legacy routes; `_json` now returns null on 204 (the todo DELETEs)
+- [x] Verified: `vite build` clean; live-daemon curl sequence of the exact renderer flows (create→list→rename→status+pin→note add/edit→delete note→delete card→404); real Electron run driven via Playwright — 10/10 UI checks passed (nav icon, board columns, create, open, rename, status, note add/edit/delete, card delete) with screenshots reviewed
+- Note (STT dictation is Phase 5, attachment upload is Phase 4 — deliberately absent)
 
 ## Phase 3 — TinkerAgent + chat
 Not started.

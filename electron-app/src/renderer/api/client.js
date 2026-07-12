@@ -16,6 +16,7 @@ async function _json(method, path, body) {
   if (body !== undefined) opts.body = JSON.stringify(body)
   const res = await fetch(`${_base}${path}`, opts)
   if (!res.ok) throw new Error(`${method} ${path} → ${res.status}`)
+  if (res.status === 204) return null // no-body responses (todo DELETEs)
   return res.json()
 }
 
@@ -72,6 +73,30 @@ export const getTaskLogs = (taskId) =>
 
 export const getLogLevel = () => _json('GET', '/logs/level')
 export const setLogLevel = (level) => _json('PUT', '/logs/level', { level })
+
+// TODO board (docs/TODO_BOARD_PLAN.md). Responses are the versioned exchange
+// models (TodoCardV1 / TodoCardSummaryV1 / TodoNoteV1); note PATCH/DELETE are
+// scoped under the card so the daemon can 404 cross-card note ids.
+export const listTodos = (status = null, tag = null, limit = 500) => {
+  const qs = new URLSearchParams()
+  if (status) qs.set('status', status)
+  if (tag) qs.set('tag', tag)
+  qs.set('limit', String(limit))
+  return _json('GET', `/todos?${qs}`)
+}
+export const createTodo = (title, { status, tags, pinned, note } = {}) =>
+  _json('POST', '/todos', { title, status, tags, pinned, note })
+export const getTodo = (cardId) => _json('GET', `/todos/${encodeURIComponent(cardId)}`)
+// Partial update — pass only the fields to change (title/status/pinned/tags).
+export const patchTodo = (cardId, fields) =>
+  _json('PATCH', `/todos/${encodeURIComponent(cardId)}`, fields)
+export const deleteTodo = (cardId) => _json('DELETE', `/todos/${encodeURIComponent(cardId)}`)
+export const addTodoNote = (cardId, body, author = 'user') =>
+  _json('POST', `/todos/${encodeURIComponent(cardId)}/notes`, { body, author })
+export const patchTodoNote = (cardId, noteId, body) =>
+  _json('PATCH', `/todos/${encodeURIComponent(cardId)}/notes/${encodeURIComponent(noteId)}`, { body })
+export const deleteTodoNote = (cardId, noteId) =>
+  _json('DELETE', `/todos/${encodeURIComponent(cardId)}/notes/${encodeURIComponent(noteId)}`)
 
 // Config-variable catalog for the Settings UI (grouped/typed; reload_class
 // per var). Served by the daemon so the form never drifts from the backend.
