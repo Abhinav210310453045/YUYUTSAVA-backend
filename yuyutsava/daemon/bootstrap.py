@@ -430,6 +430,8 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     checkpointer_saver = CheckpointerSaver(db_path=checkpoints_db_path(), storage=storage)
     checkpointer = await checkpointer_saver.start()
 
+    from yuyutsava.todoboard.exchange import get_default_exchange
+
     # ── unified TTL sweeper (checkpoints + on-disk blobs + event rows) ---
     # Webcam frames pile up fast (potentially one every few seconds for
     # hours). Keep ~1h of history then delete files + matching
@@ -467,6 +469,11 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         ],
         config=SweeperConfig(),
         artifact_store=artifact_store,
+        # Orphaned TODO workspaces (dir without a card row) — card ids come
+        # through the exchange; the health handle makes the sweep skip while
+        # degraded (the SQLite buffer's card list is partial).
+        todo_exchange=get_default_exchange(),
+        storage_health=storage_health,
     )
 
     # ── bus ---------------------------------------------------------------

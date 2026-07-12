@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import shutil
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -43,6 +44,7 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from yuyutsava.storage.events import Store
 from yuyutsava.storage.ids import parse_thread_id_ts
+from yuyutsava.storage.paths import blobs_dir
 
 logger = logging.getLogger("yuyutsava.storage.sweeper")
 
@@ -70,6 +72,12 @@ class SweeperConfig:
     # Loop interval — one tick of every target per period.
     sweep_interval_sec: int = 300
 
+    # TODO-board workspaces are durable user data with NO TTL — the sweep only
+    # removes blobs/todoboard/<dir> dirs whose card row is gone. The grace
+    # window keeps a freshly-created dir alive across the exchange's
+    # mkdir-before-row-insert ordering.
+    todo_orphan_grace_sec: int = 3600
+
 
 @dataclass(frozen=True)
 class SweepReport:
@@ -80,6 +88,7 @@ class SweepReport:
     blob_rows_deleted: int = 0
     event_rows_deleted: int = 0
     artifact_rows_deleted: int = 0
+    todo_orphan_dirs_deleted: int = 0
 
     @property
     def total(self) -> int:
@@ -89,6 +98,7 @@ class SweepReport:
             + self.blob_rows_deleted
             + self.event_rows_deleted
             + self.artifact_rows_deleted
+            + self.todo_orphan_dirs_deleted
         )
 
 
@@ -127,12 +137,16 @@ class UnifiedSweeper:
         blob_targets: list[BlobSweepTarget] | None = None,
         config: SweeperConfig | None = None,
         artifact_store: object | None = None,  # context.artifacts.ArtifactStore
+        todo_exchange: object | None = None,  # todoboard.exchange.TodoExchange
+        storage_health: object | None = None,  # storage.routing.health.StorageHealth
     ) -> None:
         self._store = store
         self._saver = checkpoint_saver
         self._blob_targets = list(blob_targets or [])
         self._config = config or SweeperConfig()
         self._artifact_store = artifact_store
+        self._todo_exchange = todo_exchange
+        self._storage_health = storage_health
 
         # Make sure every registered blob directory exists so the first sweep
         # doesn't log a FileNotFoundError on a fresh install.
@@ -168,9 +182,10 @@ class UnifiedSweeper:
                 # Log every tick so daemon health is visible; counters are 0
                 # when there's nothing to delete.
                 logger.info(
-                    "sweeper: checkpoints=%d blob_files=%d blob_rows=%d event_rows=%d",
+                    "sweeper: checkpoints=%d blob_files=%d blob_rows=%d event_rows=%d todo_orphans=%d",
                     report.checkpoints_deleted, report.blob_files_deleted,
                     report.blob_rows_deleted, report.event_rows_deleted,
+                    report.todo_orphan_dirs_deleted,
                 )
             except Exception:
                 logger.exception("sweeper: tick failed")
@@ -181,12 +196,14 @@ class UnifiedSweeper:
         blob_files_deleted, blob_rows_deleted = await self._sweep_blobs()
         event_rows_deleted = await self._sweep_events()
         artifact_rows_deleted = await self._sweep_artifacts()
+        todo_orphan_dirs_deleted = await self._sweep_todo_orphans()
         return SweepReport(
             checkpoints_deleted=checkpoints_deleted,
             blob_files_deleted=blob_files_deleted,
             blob_rows_deleted=blob_rows_deleted,
             event_rows_deleted=event_rows_deleted,
             artifact_rows_deleted=artifact_rows_deleted,
+            todo_orphan_dirs_deleted=todo_orphan_dirs_deleted,
         )
 
     # ------------------------------------------------------------------
@@ -311,3 +328,45 @@ class UnifiedSweeper:
         """
         cutoff = time.time() - self._config.event_ttl_sec
         return await self._store.delete_event_payloads_older_than(cutoff)
+
+    async def _sweep_todo_orphans(self) -> int:
+        """Remove ``blobs/todoboard/<dir>`` workspaces whose card row is gone.
+
+        No TTL — card workspaces are durable user data; only true orphans go
+        (a delete_card whose rmtree failed, or a crash between the exchange's
+        mkdir and its row insert — the grace window covers the latter). Card
+        ids come from the exchange, never raw SQL. Two hard safety rules:
+        skip entirely while storage is degraded (the SQLite buffer's card list
+        is partial and would misclassify live workspaces), and skip when the
+        id listing fails — deleting on incomplete knowledge is never OK.
+        """
+        if self._todo_exchange is None:
+            return 0
+        if self._storage_health is not None and getattr(self._storage_health, "degraded", False):
+            return 0
+        root = blobs_dir() / "todoboard"
+        if not root.is_dir():
+            return 0
+        try:
+            live = set(await self._todo_exchange.list_card_ids())  # type: ignore[attr-defined]
+        except Exception:
+            logger.exception("sweeper: could not list TODO card ids — skipping orphan sweep")
+            return 0
+        cutoff = time.time() - self._config.todo_orphan_grace_sec
+
+        def _remove_orphans() -> int:
+            removed = 0
+            for entry in root.iterdir():
+                if not entry.is_dir() or entry.name in live:
+                    continue
+                try:
+                    if entry.stat().st_mtime >= cutoff:
+                        continue  # inside the grace window
+                    shutil.rmtree(entry)
+                    removed += 1
+                    logger.info("sweeper: removed orphan TODO workspace %s", entry)
+                except OSError:
+                    logger.debug("sweeper: rmtree %s failed", entry, exc_info=True)
+            return removed
+
+        return await asyncio.get_running_loop().run_in_executor(None, _remove_orphans)

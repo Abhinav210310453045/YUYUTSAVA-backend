@@ -204,6 +204,12 @@ class TodoExchange:
     async def board_snapshot(self) -> BoardSnapshotV1:
         return BoardSnapshotV1(cards=await self.query_board())
 
+    async def list_card_ids(self) -> list[str]:
+        """Every card id on the board, unfiltered — the sweeper's ground truth
+        for orphan-dir detection (a dir under blobs/todoboard/ with no id here
+        is an orphan)."""
+        return await self._guard(self._store.list_card_ids(), "list card ids")
+
     # ── notes ──────────────────────────────────────────────────────────
 
     async def add_note(self, card_id: str, body: str, *, author: str = "user") -> TodoNoteV1:
@@ -248,16 +254,19 @@ class TodoExchange:
         title: str | None = None,
         meta: dict[str, Any] | None = None,
     ) -> TodoAttachmentV1:
-        """Record an attachment on a card. ``link`` kinds carry a URL; every
-        other kind references an existing file on disk (the upload endpoint /
-        agent tools write the file into the card workspace first)."""
+        """Record an attachment on a card. Validation is dispatched to the
+        artifact-block registry by (kind, mime): ``link`` kinds carry a URL,
+        file-backed kinds reference an existing file on disk (the upload
+        endpoint / agent tools write the file into the card workspace first).
+        The block may also infer a missing mime from the file suffix."""
+        # Lazy import — artifacts.py imports our exception types at module
+        # level, so the cycle must break on this side.
+        from yuyutsava.todoboard.artifacts import resolve_block
+
         _require(kind in ATTACHMENT_KINDS, f"kind must be one of {ATTACHMENT_KINDS}")
-        if kind == "link":
-            _require(bool(url), "link attachments require a url")
-        else:
-            _require(bool(path), f"{kind} attachments require a file path")
-            if not await asyncio.to_thread(Path(path).is_file):
-                raise TodoAttachmentError(f"attachment file not found: {path}")
+        block = resolve_block(kind, mime)
+        # Validators touch the filesystem — off the event loop.
+        mime = await asyncio.to_thread(block.validate, path=path, url=url, mime=mime)
         att = TodoAttachmentV1(
             attachment_id=f"tda_{ULID()}", card_id=card_id, kind=kind,
             path=path, url=url, mime=mime, title=title, meta=meta or {},

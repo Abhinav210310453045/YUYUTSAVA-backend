@@ -68,6 +68,10 @@ class TodoStore(ABC):
         """Summaries, pinned first then most recently updated."""
 
     @abstractmethod
+    async def list_card_ids(self) -> list[str]:
+        """All card ids, no limit — the orphan-dir sweep's ground truth."""
+
+    @abstractmethod
     async def add_note(self, note: TodoNoteV1) -> bool:
         """Insert a note; returns False when its card doesn't exist."""
 
@@ -233,6 +237,14 @@ class SqliteTodoStore(BaseSqliteStore, TodoStore):
             rows = await cur.fetchall()
             await cur.close()
         return [_sqlite_summary(r) for r in rows]
+
+    async def list_card_ids(self) -> list[str]:
+        await self._ensure_schema()
+        async with self._conn() as conn:
+            cur = await conn.execute("SELECT card_id FROM todo_cards")
+            rows = await cur.fetchall()
+            await cur.close()
+        return [r["card_id"] for r in rows]
 
     async def add_note(self, note: TodoNoteV1) -> bool:
         async def _do(conn):
@@ -461,6 +473,12 @@ class PgTodoStore(TodoStore):
             )
             rows = await cur.fetchall()
         return [_pg_summary(r) for r in rows]
+
+    async def list_card_ids(self) -> list[str]:
+        async with self._pool.connection() as conn:
+            cur = await conn.execute("SELECT card_id FROM todo_cards")
+            rows = await cur.fetchall()
+        return [r[0] for r in rows]
 
     async def add_note(self, note: TodoNoteV1) -> bool:
         async with self._pool.connection() as conn:

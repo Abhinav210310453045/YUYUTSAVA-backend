@@ -98,6 +98,32 @@ export const patchTodoNote = (cardId, noteId, body) =>
 export const deleteTodoNote = (cardId, noteId) =>
   _json('DELETE', `/todos/${encodeURIComponent(cardId)}/notes/${encodeURIComponent(noteId)}`)
 
+// TODO attachments (Phase 4). Upload is multipart FormData — no Content-Type
+// header, the browser sets the boundary. Rejections (415 mime / 413 size)
+// carry a human `detail` worth surfacing, unlike the generic _json errors.
+export async function uploadTodoAttachment(cardId, file, { title, kind } = {}) {
+  const form = new FormData()
+  form.append('file', file)
+  if (title) form.append('title', title)
+  if (kind) form.append('kind', kind)
+  const res = await fetch(`${_base}/todos/${encodeURIComponent(cardId)}/attachments`, {
+    method: 'POST',
+    body: form,
+  })
+  if (!res.ok) {
+    let detail = ''
+    try { detail = (await res.json()).detail || '' } catch { /* non-JSON body */ }
+    throw new Error(detail || `upload → ${res.status}`)
+  }
+  return res.json()
+}
+// Serves the attachment's bytes (images render it in <img>; download=true adds
+// Content-Disposition so the browser saves instead of displays).
+export const todoAttachmentUrl = (cardId, attachmentId, { download = false } = {}) =>
+  `${_base}/todos/${encodeURIComponent(cardId)}/attachments/${encodeURIComponent(attachmentId)}${download ? '?download=true' : ''}`
+export const deleteTodoAttachment = (cardId, attachmentId) =>
+  _json('DELETE', `/todos/${encodeURIComponent(cardId)}/attachments/${encodeURIComponent(attachmentId)}`)
+
 // Config-variable catalog for the Settings UI (grouped/typed; reload_class
 // per var). Served by the daemon so the form never drifts from the backend.
 export const getConfigSchema = () => _json('GET', '/config/schema')

@@ -1,6 +1,10 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react'
-import { getTodo, patchTodo, addTodoNote, patchTodoNote, deleteTodoNote } from '../../api/client'
+import {
+  getTodo, patchTodo, addTodoNote, patchTodoNote, deleteTodoNote,
+  uploadTodoAttachment, deleteTodoAttachment,
+} from '../../api/client'
 import { STATUS_ACCENT, TagChips, PinIcon, humanAge } from './shared'
+import { resolveBlock } from './artifactBlocks'
 import ChatPanel from '../chat/ChatPanel'
 
 const STATUSES = ['inbox', 'active', 'done', 'archived']
@@ -151,6 +155,74 @@ function NoteRow({ note, onChanged, onDeleted }) {
   )
 }
 
+// Per-kind badge tint on attachment tiles — image/diagram lean blue (visual),
+// link violet, everything else neutral.
+const KIND_COLOR = {
+  image: { fg: '#9bb8ff', bg: 'rgba(120,160,255,0.12)', border: 'rgba(120,160,255,0.25)' },
+  diagram: { fg: '#9bb8ff', bg: 'rgba(120,160,255,0.12)', border: 'rgba(120,160,255,0.25)' },
+  link: { fg: '#c4b5fd', bg: 'rgba(167,139,250,0.12)', border: 'rgba(167,139,250,0.25)' },
+}
+const KIND_NEUTRAL = { fg: 'var(--text-muted)', bg: 'transparent', border: 'var(--border-card)' }
+
+// One gallery tile: kind badge + title + delete chrome around the block the
+// registry resolved for this attachment (unknown kinds → download tile).
+function AttachmentTile({ attachment, cardId, onDeleted }) {
+  const [busy, setBusy] = useState(false)
+  const Block = resolveBlock(attachment)
+  const kind = KIND_COLOR[attachment.kind] || KIND_NEUTRAL
+
+  const onDelete = async () => {
+    if (!confirm('Delete this attachment?')) return
+    setBusy(true)
+    try {
+      await deleteTodoAttachment(cardId, attachment.attachment_id)
+      onDeleted?.(attachment.attachment_id)
+    } catch (e) {
+      alert(`Delete failed: ${e.message}`)
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div style={{
+      background: 'var(--bg-elevated, #1a1a2e)',
+      border: '1px solid var(--border-card)',
+      borderRadius: 8,
+      padding: '10px 12px',
+      display: 'flex', flexDirection: 'column', gap: 8,
+      fontFamily: 'var(--font-mono)', fontSize: 12,
+      minWidth: 0,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{
+          fontSize: 9, padding: '1px 6px', borderRadius: 8,
+          background: kind.bg, color: kind.fg, border: `1px solid ${kind.border}`,
+          textTransform: 'uppercase', letterSpacing: '0.05em',
+        }}>
+          {attachment.kind}
+        </span>
+        <span style={{
+          flex: 1, minWidth: 0, color: 'var(--text-muted)', fontSize: 10,
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {attachment.title || ''}
+        </span>
+        <span style={{ color: 'var(--text-dim)', fontSize: 10, whiteSpace: 'nowrap' }}>
+          {humanAge(attachment.created_ts)}
+        </span>
+        <button
+          onClick={onDelete}
+          disabled={busy}
+          style={noteBtnStyle('var(--neon-red)', 'rgba(255,51,102,0.25)')}
+        >
+          {busy ? '...' : 'Delete'}
+        </button>
+      </div>
+      <Block attachment={attachment} cardId={cardId} />
+    </div>
+  )
+}
+
 export default function TodoCardView({ cardId, onBack }) {
   const [card, setCard] = useState(null)
   const [error, setError] = useState(null)
@@ -162,6 +234,9 @@ export default function TodoCardView({ cardId, onBack }) {
   // notes | chat. The chat is the shared ChatPanel pointed at agent=tinker —
   // its thread is pinned server-side to this card, so it resumes on reopen.
   const [thinkOpen, setThinkOpen] = useState(false)
+  const [uploading, setUploading] = useState(0) // in-flight upload count
+  const [dragOver, setDragOver] = useState(false)
+  const fileInputRef = useRef(null)
   const titleRef = useRef(null)
   // Esc sets this before blurring: the blur handler must skip the commit
   // because the reverted title state hasn't re-rendered into its closure yet.
@@ -226,6 +301,29 @@ export default function TodoCardView({ cardId, onBack }) {
 
   const onNoteDeleted = useCallback((noteId) => {
     setCard((c) => (c ? { ...c, notes: c.notes.filter((n) => n.note_id !== noteId) } : c))
+  }, [])
+
+  // Shared by drag-drop and the picker: upload sequentially, appending each
+  // returned row; a per-file failure reports and moves on to the next.
+  const onFiles = useCallback(async (files) => {
+    for (const file of Array.from(files || [])) {
+      setUploading((n) => n + 1)
+      try {
+        const att = await uploadTodoAttachment(cardId, file)
+        setCard((c) => (c ? { ...c, attachments: [...c.attachments, att] } : c))
+      } catch (e) {
+        alert(`Upload of ${file.name} failed: ${e.message}`)
+      } finally {
+        setUploading((n) => n - 1)
+      }
+    }
+  }, [cardId])
+
+  const onAttachmentDeleted = useCallback((attachmentId) => {
+    setCard((c) => (c ? {
+      ...c,
+      attachments: c.attachments.filter((a) => a.attachment_id !== attachmentId),
+    } : c))
   }, [])
 
   const accent = STATUS_ACCENT[card?.status] || STATUS_ACCENT.inbox
@@ -405,6 +503,97 @@ export default function TodoCardView({ cardId, onBack }) {
                   {addingNote ? '...' : '+ Add note'}
                 </button>
               </div>
+            </div>
+
+            {/* ── attachments gallery + upload (Phase 4) ─────────────────
+                Lives in the notes column so it coexists with the Phase-3
+                notes | Tinker-chat split. The whole section is the drop
+                target; the picker mirrors it for click-driven uploads. */}
+            <div
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={(e) => {
+                e.preventDefault()
+                setDragOver(false)
+                onFiles(e.dataTransfer?.files)
+              }}
+              style={{
+                display: 'flex', flexDirection: 'column', gap: 12,
+                marginTop: 8, padding: dragOver ? 11 : 12,
+                border: dragOver
+                  ? '2px dashed rgba(0,255,136,0.5)'
+                  : '1px dashed var(--border-card)',
+                borderRadius: 8,
+                background: dragOver ? 'rgba(0,255,136,0.04)' : 'transparent',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <h2 style={{
+                  fontSize: 12, fontWeight: 600, fontFamily: 'var(--font-mono)',
+                  color: 'var(--text-primary)', textTransform: 'uppercase',
+                  letterSpacing: '0.1em', margin: 0,
+                }}>
+                  Attachments
+                </h2>
+                {card.attachments.length > 0 && (
+                  <span style={{
+                    fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--neon-green)',
+                    background: 'rgba(0,255,136,0.08)', border: '1px solid rgba(0,255,136,0.2)',
+                    borderRadius: 10, padding: '1px 7px',
+                  }}>
+                    {card.attachments.length}
+                  </span>
+                )}
+                <span style={{ flex: 1 }} />
+                {uploading > 0 && (
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)' }}>
+                    uploading…
+                  </span>
+                )}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  style={{ display: 'none' }}
+                  onChange={(e) => { onFiles(e.target.files); e.target.value = '' }}
+                />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading > 0}
+                  style={{
+                    fontFamily: 'var(--font-mono)', fontSize: 11, padding: '5px 12px',
+                    background: 'rgba(0,255,136,0.08)', color: 'var(--neon-green)',
+                    border: '1px solid rgba(0,255,136,0.25)', borderRadius: 6,
+                    cursor: uploading > 0 ? 'default' : 'pointer',
+                    opacity: uploading > 0 ? 0.5 : 1,
+                  }}
+                >
+                  + Upload
+                </button>
+              </div>
+
+              {card.attachments.length === 0 && (
+                <div style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+                  {'> drop files here, upload, or ask the TinkerAgent for a diagram'}
+                </div>
+              )}
+
+              {card.attachments.length > 0 && (
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+                  gap: 12,
+                }}>
+                  {card.attachments.map((a) => (
+                    <AttachmentTile
+                      key={a.attachment_id}
+                      attachment={a}
+                      cardId={cardId}
+                      onDeleted={onAttachmentDeleted}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
           </>
         )}
