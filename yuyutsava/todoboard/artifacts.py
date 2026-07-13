@@ -209,6 +209,18 @@ register_block(ArtifactBlock(
     upload_mimes=("application/pdf", "application/zip"),
 ))
 
+# ── Phase-7 blocks ──────────────────────────────────────────────────────
+# Each lives in its own module; these lines are its entire registration —
+# the pluggability contract in action (the frontend twin is one entry in
+# components/todos/artifactBlocks/index.js). Registered after the v1 blocks:
+# both refine a kind by mime, so resolve_block's mime-specific pass finds
+# them regardless of order, and their mimes are unclaimed by earlier blocks.
+from yuyutsava.todoboard.block_audio import AUDIO_BLOCK  # noqa: E402
+from yuyutsava.todoboard.block_jsx import JSX_BLOCK  # noqa: E402
+
+register_block(AUDIO_BLOCK)
+register_block(JSX_BLOCK)
+
 
 __all__ = [
     "ArtifactBlock",

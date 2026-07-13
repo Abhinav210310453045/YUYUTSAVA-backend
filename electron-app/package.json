@@ -11,6 +11,7 @@
     "electron": "node scripts/launch-electron.js"
   },
   "dependencies": {
+    "@babel/standalone": "^8.0.4",
     "@fontsource/jetbrains-mono": "^5.2.8",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

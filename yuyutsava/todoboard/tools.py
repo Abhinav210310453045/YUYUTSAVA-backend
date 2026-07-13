@@ -15,8 +15,11 @@ a board failure must never crash an agent loop.
 
 from __future__ import annotations
 
+import asyncio
 import functools
+import json
 import logging
+from pathlib import Path
 from typing import Any, Awaitable, Callable, Literal
 
 from langchain_core.tools import BaseTool, tool
@@ -220,12 +223,79 @@ def make_todo_tools(
         )
         return f"attached {att.kind} {att.attachment_id} to {card_id}"
 
+    @tool
+    @_safe
+    async def todo_generate_artifact(
+        card_id: str,
+        block: str,
+        spec: dict[str, Any] | str | None = None,
+        title: str | None = None,
+    ) -> str:
+        """Generate an artifact on a TODO card and attach it, in one step.
+
+        Dispatches to a generative artifact block by name: ``audio`` speaks
+        ``spec={"text": ...}`` through the TTS pipeline into a WAV voice
+        note; ``diagram`` renders a visuals spec (``spec={"kind":
+        "diagram"|"chart"|..., ...}``). ``spec`` is a JSON object (an
+        object-encoded string is accepted too). The file is written into the
+        card's workspace directory, so it survives with the card.
+        """
+        # The dispatcher is block-agnostic: everything block-specific lives
+        # in the registry, so new generative blocks need no edits here.
+        from yuyutsava.todoboard.artifacts import blocks
+
+        if isinstance(spec, str):  # models often stringify nested objects
+            try:
+                spec = json.loads(spec)
+            except json.JSONDecodeError:
+                return (
+                    "todo-board error [TodoValidationError]: spec must be a "
+                    'JSON object, e.g. {"text": "words to speak"}'
+                )
+        if spec is not None and not isinstance(spec, dict):
+            return (
+                "todo-board error [TodoValidationError]: spec must be a "
+                "JSON object, not a list/scalar"
+            )
+
+        gen = next((b for b in blocks() if b.name == block), None)
+        if gen is None or gen.generate is None:
+            names = ", ".join(sorted(b.name for b in blocks() if b.generate))
+            return (
+                f"todo-board error [TodoValidationError]: no generative "
+                f"artifact block named {block!r} (available: {names})"
+            )
+        card = await ex.get_card(card_id)
+        from yuyutsava.storage.paths import blobs_dir
+
+        out_dir = (
+            Path(card.workspace_path) if card.workspace_path
+            else blobs_dir() / "todoboard" / card_id
+        )
+        # Generators do blocking work (TTS/renderers) — off the event loop,
+        # like the exchange runs validators.
+        try:
+            path, mime = await asyncio.to_thread(gen.generate, dict(spec or {}), out_dir)
+        except TodoError:
+            raise  # _safe renders these
+        except Exception as exc:  # a broken generator must not crash the loop
+            return f"todo-board error [TodoAttachmentError]: {block} generation failed: {exc}"
+        att = await ex.attach(
+            card_id, gen.kind, path=str(path), mime=mime, title=title,
+            meta={"source": "generate", "block": block, "author": author},
+        )
+        return (
+            f"generated {block} artifact {att.attachment_id} ({att.mime}) "
+            f"on {card_id}: {path.name}"
+        )
+
     return [
         *capture_tools,
         todo_update,
         todo_set_status,
         todo_add_note,
         todo_attach_artifact,
+        todo_generate_artifact,
     ]
 
 
