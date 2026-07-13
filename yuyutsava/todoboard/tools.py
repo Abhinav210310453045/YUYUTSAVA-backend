@@ -140,7 +140,29 @@ def make_todo_tools(
         attachments, and the card's workspace directory path."""
         return _render_card(await ex.get_card(card_id))
 
-    capture_tools: list[BaseTool] = [todo_add, todo_list, todo_get]
+    @tool
+    @_safe
+    async def todo_recall(query: str, card_id: str | None = None, k: int = 6) -> str:
+        """Semantically search the notes on the user's TODO board — decisions,
+        ideas, findings written on cards. Use when the user refers to something
+        that may live on the board ("what did we decide about X?", "the plan on
+        my board"). Pass ``card_id`` to search one card only. Returns matching
+        note excerpts labeled with their card id — read the full card with
+        todo_get."""
+        hits = await ex.search_notes(query, k=k, card_id=card_id)
+        if not hits:
+            return (
+                "no board notes matched (semantic recall may be unavailable "
+                "on this deployment — try todo_list / todo_get)"
+            )
+        lines = []
+        for h in hits:
+            card = h.payload.get("card_id", "?")
+            text = h.text if len(h.text) <= 300 else h.text[:300] + " …"
+            lines.append(f"- [{card}] {text}")
+        return "\n".join(lines)
+
+    capture_tools: list[BaseTool] = [todo_add, todo_list, todo_get, todo_recall]
     if scope == "capture":
         return capture_tools
 

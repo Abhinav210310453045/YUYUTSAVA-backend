@@ -323,6 +323,9 @@ async def converse(ws: WebSocket) -> None:
             await ws.send_text(json.dumps(obj, default=str))
 
     async def _on_event(ev: StreamEvent) -> None:
+        # Link any background task this turn launches back to this conversation
+        # thread, so its completion wakes the master here (subagent_completed).
+        manager.record_async_launch(ev, thread_id=convo.thread_id, origin=origin)
         await _send({"type": ev.kind, **ev.data})
 
     async def _ask_handler(interrupt_value) -> str:

@@ -835,9 +835,18 @@ def build_tinker_agent(
     skill_registry: SkillRegistry | None = None,
     budget_tokens: int = 60_000,
     usage_store: Any | None = None,
+    mcp_tools: "list[Any] | None" = None,
+    note_index: Any | None = None,
 ) -> AgentBundle:
     """Build the TinkerAgent — third factory, sibling of :func:`build_cli_deepagent`
     and :func:`build_orchestrator`.
+
+    ``mcp_tools`` are the user-configured MCP server tools already scoped to
+    this agent (``mcp_manager.tools_for("tinker")`` — the same wiring the
+    orchestrator master uses); they join the ToolRegistry so schemas load
+    lazily via tool_search. ``note_index``
+    (:class:`~yuyutsava.todoboard.recall.TodoNoteIndex`) enables per-turn
+    semantic recall of relevant board notes.
 
     One bundle per TODO card: the compiled graph carries the card's identity in
     its system prompt and binds the tr_* TaskRunner gateway to the card's own
@@ -909,6 +918,11 @@ def build_tinker_agent(
     if transcript_index is not None:
         from yuyutsava.context.conversation_injector import ConversationInjector
         _injectors.append(ConversationInjector(transcript_index))
+    if note_index is not None:
+        # Board-wide note recall: a related decision often lives on a
+        # DIFFERENT card than the one this bundle is pinned to.
+        from yuyutsava.todoboard.recall import TodoNoteInjector
+        _injectors.append(TodoNoteInjector(note_index))
     if _injectors:
         from yuyutsava.core.retrieval_injection_middleware import (
             RetrievalInjectionMiddleware,
@@ -929,6 +943,12 @@ def build_tinker_agent(
     # The whole point: FULL board scope, notes authored as "tinker".
     from yuyutsava.todoboard.tools import make_todo_tools
     context_tools.extend(make_todo_tools(scope="full", author="tinker"))
+
+    # User-configured MCP servers, scoped to "tinker" — registered like every
+    # other master tool so unprefixed names stay model-visible and the rest
+    # ride tool_search, exactly as build_orchestrator wires them.
+    if mcp_tools:
+        context_tools.extend(mcp_tools)
 
     skill_registry = skill_registry or SkillRegistry()
 

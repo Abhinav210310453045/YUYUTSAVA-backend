@@ -204,6 +204,12 @@ async def build_agent_stack(
     if pg_pool is not None:
         from yuyutsava.todoboard.store import PgTodoStore, set_default_todo_store
         set_default_todo_store(PgTodoStore(pg_pool))
+        # Board-note recall: embed-on-write for notes authored through this
+        # stack + todo_recall searches. Boot backfill is the daemon's job —
+        # a CLI start stays light.
+        if embedder is not None:
+            from yuyutsava.todoboard.recall import TodoNoteIndex, set_default_note_index
+            set_default_note_index(TodoNoteIndex(pg_pool, embedder=embedder))
 
     # Best-effort: fetch the active model's live price from its provider and cache
     # it into ~/.yuyutsava/model_prices.json so the cost ledger (and Langfuse)
@@ -262,7 +268,20 @@ async def build_agent_stack(
         from yuyutsava.async_subagents.mirror import AsyncTaskMirror
 
         model = chat_model(settings)
-        async_subagents = [general_purpose]
+        # The background TinkerAgent rides along as an async-only peer so the
+        # conversational master can delegate "tinker on card X in the
+        # background" — async-only: interactive tinkering has its own per-card
+        # bundle. No MCP manager in this stack (daemon-only subsystem); the
+        # tinker-bg graph simply gets no MCP tools when the CLI owns the host.
+        from yuyutsava.agents.tinker.subagent import make_tinker_subagent
+        tinker_sub = make_tinker_subagent(
+            skill_registry=skill_registry,
+            search_config=search_config,
+            memory_store=memory_store,
+            skill_store=skill_store,
+            consent=consent_registry,
+        )
+        async_subagents = [general_purpose, tinker_sub]
 
         # The interactive CLI REPL has its own (intentional) blocking I/O, so it
         # stays permissive by default; YUYUTSAVA_ALLOW_BLOCKING still overrides.

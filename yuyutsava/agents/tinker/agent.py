@@ -52,12 +52,16 @@ async def build_tinker_stack(
     search_config: SearchConfig,
     checkpointer: BaseCheckpointSaver,
     usage_store: Any | None = None,
+    mcp_manager: Any | None = None,
 ) -> AgentBundle:
     """Build one card's TinkerAgent bundle.
 
     ``workspace`` is the daemon/CLI workspace (skill discovery scope);
     ``card_workspace`` is the card's blob dir — the agent's actual WORKSPACE
-    zone, where tr_* and vis_* output lands.
+    zone, where tr_* and vis_* output lands. ``mcp_manager`` is the daemon's
+    :class:`~yuyutsava.mcp.loader.MCPClientManager`; when present the tinker
+    gets the user-configured MCP tools scoped to ``"tinker"``, same wiring as
+    the orchestrator master.
     """
     context_settings = ContextSettings.from_env(
         "tinker", provider=_env("LLM_PROVIDER", None, "groq"),
@@ -149,6 +153,13 @@ async def build_tinker_stack(
             card_id, "owner" if attachment.host is not None else "attached", async_host_url,
         )
 
+    # User-configured MCP servers (scope "tinker") + board-note recall. Both
+    # resolve to None/[] gracefully: no MCP manager outside the daemon, no
+    # note index on SQLite-only deployments.
+    mcp_tools = mcp_manager.tools_for("tinker") if mcp_manager is not None else []
+    from yuyutsava.todoboard.recall import get_default_note_index
+    note_index = get_default_note_index()
+
     bundle = build_tinker_agent(
         card_id,
         card_ws,
@@ -173,6 +184,8 @@ async def build_tinker_stack(
         transcript_index=transcript_index,
         skill_registry=skill_registry,
         usage_store=usage_store,
+        mcp_tools=mcp_tools,
+        note_index=note_index,
     )
     bundle.pg_pool = pg_pool
     bundle.embedder = embedder

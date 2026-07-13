@@ -370,11 +370,12 @@ class OrchestratorLoop:
 
         if cancelled:
             await self._registry.mark_cancelled(task_id, note="cancelled by user")
-            await self._store.put_decision(
-                proposal_id=task.proposal_id, event_id=task.event_id,
-                outcome="orchestrator_cancelled",
-                action_summary="cancelled by user",
-            )
+            if task.proposal_id:
+                await self._store.put_decision(
+                    proposal_id=task.proposal_id, event_id=task.event_id,
+                    outcome="orchestrator_cancelled",
+                    action_summary="cancelled by user",
+                )
             await self._channels.post_event(ChannelEvent(
                 payload=TimelinePayload(
                     line=f"task {task_id}: cancelled by user",
@@ -384,11 +385,16 @@ class OrchestratorLoop:
             ))
             return
 
-        await self._store.put_decision(
-            proposal_id=task.proposal_id, event_id=task.event_id,
-            outcome="orchestrator_done",
-            action_summary=(final_text or "(empty)")[:300],
-        )
+        # Decisions exist only for proposal-born tasks. Wake-ups
+        # (subagent_completed), direct submissions, and resumes carry an empty
+        # proposal_id — recording one would violate decisions_proposal_fk on
+        # Postgres and abort the run AFTER the turn already streamed.
+        if task.proposal_id:
+            await self._store.put_decision(
+                proposal_id=task.proposal_id, event_id=task.event_id,
+                outcome="orchestrator_done",
+                action_summary=(final_text or "(empty)")[:300],
+            )
         if self._registry is not None and task_id:
             await self._registry.mark_done(task_id, result_summary=final_text)
         memory = getattr(deps, "memory_store", None)

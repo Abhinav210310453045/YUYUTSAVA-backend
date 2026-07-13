@@ -73,6 +73,12 @@ def _workspace_root() -> Path:
     return blobs_dir() / "todoboard"
 
 
+def board_workspace_root() -> Path:
+    """Root of every card workspace (``blobs/todoboard/``) — the containment
+    zone for agents that work across cards (the background TinkerAgent)."""
+    return _workspace_root()
+
+
 def _require(condition: bool, message: str) -> None:
     if not condition:
         raise TodoValidationError(message)
@@ -224,6 +230,7 @@ class TodoExchange:
         )
         if not await self._guard(self._store.add_note(note), "add note"):
             raise TodoNotFoundError(f"no TODO card with id {card_id!r}")
+        self._schedule_note_index(note)
         return note
 
     async def update_note(self, note_id: str, body: str) -> TodoNoteV1:
@@ -235,7 +242,25 @@ class TodoExchange:
         )
         if note is None:
             raise TodoNotFoundError(f"no TODO note with id {note_id!r}")
+        self._schedule_note_index(note, replace=True)
         return note
+
+    async def search_notes(
+        self, query: str, *, k: int = 8, card_id: str | None = None
+    ) -> list:
+        """Semantic recall over note bodies (``todo_note_chunks``), optionally
+        scoped to one card. Returns retrieval ``Hit``s whose payload carries
+        ``card_id``/``note_id``. Empty when no index is wired (SQLite-only
+        deployments) — recall is an enhancement, never a dependency."""
+        query = (query or "").strip()
+        _require(bool(query), "search query must be non-empty")
+        _require(1 <= k <= 50, "k must be between 1 and 50")
+        from yuyutsava.todoboard.recall import get_default_note_index
+
+        index = get_default_note_index()
+        if index is None or not index.enabled:
+            return []
+        return await index.search(query, k, card_id=card_id)
 
     async def delete_note(self, note_id: str) -> None:
         if not await self._guard(self._store.delete_note(note_id), "delete note"):
@@ -292,6 +317,23 @@ class TodoExchange:
 
     # ── internals ──────────────────────────────────────────────────────
 
+    def _schedule_note_index(self, note: TodoNoteV1, *, replace: bool = False) -> None:
+        """Embed a written note into the recall index, best-effort.
+
+        The index is a retrieval shadow of the board, so the write hook lives
+        here — inside the only write path — rather than in callers. A missing
+        index (SQLite mode) or degraded Postgres is a silent skip; the boot
+        sync repairs the gap. Lazy import keeps recall.py off the import path
+        for consumers that never touch it."""
+        try:
+            from yuyutsava.todoboard.recall import get_default_note_index
+
+            index = get_default_note_index()
+            if index is not None:
+                index.schedule(note, replace=replace)
+        except Exception:  # noqa: BLE001 — indexing must never break a write
+            logger.debug("todo: note index scheduling failed", exc_info=True)
+
     async def _guard(self, coro, action: str):
         """Run one store call, wrapping backend faults in TodoStorageError."""
         try:
@@ -327,6 +369,7 @@ def get_default_exchange() -> TodoExchange:
 
 __all__ = [
     "TodoExchange",
+    "board_workspace_root",
     "TodoError",
     "TodoValidationError",
     "TodoNotFoundError",

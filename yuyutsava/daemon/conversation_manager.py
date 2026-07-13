@@ -67,6 +67,8 @@ class ConversationManager:
         store: SessionStore | None = None,
         voice_store: Any | None = None,
         usage_store: Any | None = None,
+        mcp_manager: Any | None = None,
+        launch_index: Any | None = None,
     ) -> None:
         self._workspace = workspace
         self._checkpointer = checkpointer
@@ -76,6 +78,12 @@ class ConversationManager:
         self._store = store
         self.voice_store = voice_store  # storage.voice_store.VoiceMessageStore | None
         self._usage_store = usage_store  # daemon.usage.UsageStore | None (tinker accounting)
+        self._mcp_manager = mcp_manager  # mcp.loader.MCPClientManager | None (tinker MCP tools)
+        # async_subagents.launch_index.LaunchIndex | None — links bg tasks a
+        # conversation launches back to its thread, so the watcher's completion
+        # bridge can wake the master on THIS conversation (the orchestrator loop
+        # records its own launches; conversations must record theirs here).
+        self._launch_index = launch_index
         # Bundle cache: "master" | "tinker:<card_id>" → AgentBundle. The
         # factory map below is per AGENT; the key carries the card because a
         # tinker bundle is card-specific (workspace + prompt).
@@ -164,7 +172,34 @@ class ConversationManager:
             search_config=self._resolved_search(),
             checkpointer=self._checkpointer,
             usage_store=self._usage_store,
+            mcp_manager=self._mcp_manager,
         )
+
+    # ------------------------------------------------------------------ #
+    # Background-task launch correlation                                   #
+    # ------------------------------------------------------------------ #
+
+    def record_async_launch(
+        self, ev: Any, *, thread_id: str, origin: str | None = None
+    ) -> None:
+        """Link a bg task launched during a conversation turn to its thread.
+
+        Mirror of ``OrchestratorLoop._record_async_launch``: sniff the
+        ``start_async_task`` tool result (which carries the new task_id) out of
+        the event stream and record it in the shared ``LaunchIndex``, so the
+        watcher's completion sink wakes the master on this conversation's
+        thread instead of leaving the task un-notified. No-op when async
+        subagents are disabled or the event is anything else.
+        """
+        if self._launch_index is None or getattr(ev, "kind", "") != "tool_result":
+            return
+        if ev.data.get("name") != "start_async_task":
+            return
+        from yuyutsava.async_subagents.launch_index import parse_async_task_id
+
+        tid = parse_async_task_id(ev.data.get("full") or ev.data.get("preview") or "")
+        if tid:
+            self._launch_index.record(tid, thread_id, origin)
 
     # ------------------------------------------------------------------ #
     # Opening conversations                                                #

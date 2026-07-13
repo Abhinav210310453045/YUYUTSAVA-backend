@@ -601,6 +601,22 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         skill_store, agent="orchestrator", top_k=mem_settings.top_k
     )
 
+    # ── TODO-board note recall (pgvector, migration v16) --------------------
+    # Embed-on-write hooks in the exchange resolve this default index; the boot
+    # sync backfills notes written before the feature (or while degraded — a
+    # spillover-drained note has no chunks until this catches it). SQLite-only
+    # deployments leave the singleton unset and every hook no-ops.
+    if pg_pool is not None and embedder is not None:
+        from yuyutsava.todoboard.recall import TodoNoteIndex, set_default_note_index
+
+        note_index = TodoNoteIndex(pg_pool, embedder=embedder, min_score=mem_settings.min_score)
+        set_default_note_index(note_index)
+        try:
+            await note_index.sync(get_default_exchange())
+            logger.info("  todo notes: pgvector recall enabled (todo_recall)")
+        except Exception:
+            logger.warning("todo notes: boot index sync failed", exc_info=True)
+
     # ── storage spillover recovery -----------------------------------------
     # On Postgres recovery the health probe drains the buffered SQLite rows back
     # into Postgres (drain-and-delete: no duplication) and re-embeds any
@@ -676,6 +692,24 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     ]
     subagents = {sa.name: sa for sa in subagent_list}
 
+    # Background TinkerAgent (Phase 6): registered as an ASYNC subagent of the
+    # master only — "tinker on card X in the background" from any chat/voice
+    # surface. Deliberately NOT in the sync `subagents` dict: interactive
+    # tinkering has its own per-card bundle (ConversationManager); the master
+    # delegates long tinkering jobs, it doesn't run them inline.
+    from yuyutsava.agents.tinker.subagent import make_tinker_subagent
+    tinker_sub = make_tinker_subagent(
+        skill_registry=skill_registry,
+        search_config=search_config,
+        mcp_manager=mcp_manager,
+        cap_enforcer=cap_enforcer,
+        memory_store=memory_store,
+        skill_store=skill_store,
+        policy=policy,
+        consent=consent_registry,
+    )
+    bg_subagent_list = [*subagent_list, tinker_sub]
+
     # Orchestrator work queue + the launch index that links a background task
     # back to the conversation that started it. Created before the async block so
     # the watcher's completion sink can enqueue master wake-ups onto the queue.
@@ -722,7 +756,7 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
 
         def _build_host() -> AsyncSubagentHost:
             return AsyncSubagentHost.from_subagents(
-                subagent_list,
+                bg_subagent_list,
                 model=subagent_model,
                 checkpointer=checkpointer,
                 allow_blocking=allow_blocking,
@@ -801,7 +835,7 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
 
     capabilities_block = render_capabilities_block(
         list(subagents.values()),
-        async_subagents=subagent_list if async_host_url is not None else None,
+        async_subagents=bg_subagent_list if async_host_url is not None else None,
     )
 
     # ── triage agent + loop ----------------------------------------------
@@ -844,7 +878,7 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         mcp_manager=mcp_manager,
         search_config=search_config,
         cap_enforcer=cap_enforcer,
-        async_subagents=subagent_list if async_host_url is not None else None,
+        async_subagents=bg_subagent_list if async_host_url is not None else None,
         async_host_url=async_host_url,
         async_task_mirror=async_mirror,
         artifact_store=artifact_store,
@@ -925,6 +959,8 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
             search_config=search_config,
             voice_store=voice_store,
             usage_store=usage_store,
+            mcp_manager=mcp_manager,
+            launch_index=launch_index,
         )
 
         app = make_app(
