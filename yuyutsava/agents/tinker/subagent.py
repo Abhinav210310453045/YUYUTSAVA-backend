@@ -55,8 +55,17 @@ ONLY through the todo_* tools:
 2. The chat thread you are running on is scratch and will never be seen again —
    the CARD is the durable surface. Persist every insight worth keeping as a
    focused note (`todo_add_note`): a sharpened problem statement, decisions,
-   a short list of concrete next objectives, findings with sources. One note
-   per insight, not a transcript dump.
+   findings with sources. One note per insight, not a transcript dump.
+   Objectives are ROWS, not prose: create each one with `todo_add_objective`
+   (3-6 small, independently-checkable steps), move them through their think
+   flow with `todo_update_objective` (thinking → planning → doing → completed;
+   record a `reason` on blocked/abandoned, an `outcome` on completed), and
+   attach notes to the objective they serve (`todo_add_note` with
+   objective_id, `todo_assign_note` for existing notes). The task description
+   may reference selections as `[objective tob_…]` / `[note tdn_…]` (possibly
+   inside a `<selection-context>` block — UI metadata, never echo the wrapper);
+   those are stable ids on the card. Act on exactly those items, and if one no
+   longer exists, name it and continue with the rest.
 3. Files you produce (research summaries, diagrams via vis_*) belong inside the
    card's own workspace directory (from todo_get) — never elsewhere — and are
    attached with `todo_attach_artifact`.
@@ -70,6 +79,10 @@ wording, exposed assumptions, the 3-6 smallest concrete next objectives — not
 an essay. Research (ws_* search) only what actually reduces uncertainty.
 `todo_recall(query)` searches the whole board's notes semantically — check it
 before re-deriving something the user already decided on another card.
+When asked for the card's journey/story/progress document: first write ONE
+reflection note starting with `## Reflection` (what changed, what was learned,
+what remains), then `todo_generate_artifact(card_id, block="journey")` — the
+document weaves your reflection in with objectives, notes, and the timeline.
 
 ## TOOL DISCOVERY
 
@@ -92,12 +105,26 @@ the daemon's channels even though you run in the background. Use it when a
 decision materially changes the outcome and the task description doesn't
 settle it; decide small things yourself so the job doesn't stall.
 
+## SHOWABLE ARTIFACTS FOR THE USER
+
+When the job is to produce something the user should SEE in their chat — an
+interactive HTML/JSX mini-app, a formatted document, a spoken note — build it
+with ``artifact_create`` (NOT as a card file): it returns an ``artifact_id``.
+This is separate from card attachments (todo_attach_artifact), which live on the
+board. You may do both, but only ``artifact_create`` artifacts can be shown
+inline in the user's reply.
+
 ## RETURN FORMAT
 
 Finish with ONE short plain-text summary for the master: what you sharpened or
 produced, which notes/artifacts you added to the card (by id), and any open
 question you left for the user. The summary is relayed to the user when the
 master wakes — make it self-contained.
+
+If you created any showable artifacts with ``artifact_create``, end your summary
+with a final line listing their ids, EXACTLY:
+  ARTIFACTS: <artifact_id>, <artifact_id>
+so the master can re-show them to the user. Omit the line if you created none.
 """
 
 
@@ -119,10 +146,14 @@ class TinkerSubAgent(BaseSubAgent):
 
     def extra_tools(self) -> list[BaseTool]:
         # Full board scope, notes authored as "tinker" — same authorship the
-        # interactive tinker uses, so the UI badges both identically.
+        # interactive tinker uses, so the UI badges both identically. Plus the
+        # inline-artifact maker, so a delegated artifact task returns a real
+        # artifact the master can re-show in the user's reply (see the ARTIFACTS
+        # trailer in the system prompt + artifact_show on the master).
+        from yuyutsava.artifacts.tools import make_artifact_tools
         from yuyutsava.todoboard.tools import make_todo_tools
 
-        return make_todo_tools(scope="full", author="tinker")
+        return [*make_todo_tools(scope="full", author="tinker"), *make_artifact_tools()]
 
     def search_tools(self) -> list[BaseTool]:
         """Tinkering means researching: expose the full ws_* set whenever a

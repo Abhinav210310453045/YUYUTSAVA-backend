@@ -40,7 +40,7 @@ export default function ProposalsPanel({ proposals, asks, onRemoveProposal, onRe
       }}>
         <h2 style={{
           fontSize: 13,
-          fontWeight: 600,
+          fontWeight: 'var(--fw-semibold)',
           fontFamily: 'var(--font-mono)',
           color: 'var(--text-primary)',
           textTransform: 'uppercase',
@@ -53,8 +53,8 @@ export default function ProposalsPanel({ proposals, asks, onRemoveProposal, onRe
             fontFamily: 'var(--font-mono)',
             fontSize: 10,
             color: 'var(--neon-green)',
-            background: 'rgba(0,255,136,0.08)',
-            border: '1px solid rgba(0,255,136,0.2)',
+            background: 'rgba(var(--accent-rgb),0.08)',
+            border: '1px solid rgba(var(--accent-rgb),0.2)',
             borderRadius: 10,
             padding: '1px 7px',
           }}>

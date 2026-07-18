@@ -12,7 +12,7 @@ export default function LinkBlock({ attachment }) {
         display: 'block', padding: '10px 12px',
         background: 'var(--bg-card)', border: '1px solid rgba(120,160,255,0.25)',
         borderRadius: 6, fontFamily: 'var(--font-mono)', fontSize: 11,
-        color: '#9bb8ff', textDecoration: 'none',
+        color: 'var(--text-info)', textDecoration: 'none',
         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
       }}
       title={attachment.url}

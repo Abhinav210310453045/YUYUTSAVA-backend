@@ -30,6 +30,7 @@ from yuyutsava.storage.sessions.store import SessionNotFound
 
 
 _TASK_PREVIEW_MAX = 200
+_TITLE_MAX = 80
 
 
 class SqliteSessionStore(BaseSqliteStore):
@@ -37,7 +38,9 @@ class SqliteSessionStore(BaseSqliteStore):
 
     # v2: added the `origin` column (cli|voice) so the Sessions UI can split
     # voice vs CLI conversations off a DB column rather than a UI heuristic.
-    _SCHEMA_VERSION: ClassVar[int] = 2
+    # v3: added the `title` column — set once from the session's first user
+    # message so conversation lists can show a human name instead of the id.
+    _SCHEMA_VERSION: ClassVar[int] = 3
     _META_TABLE: ClassVar[str] = "sessions_meta"
     _SCHEMA_SQL: ClassVar[str] = """
     CREATE TABLE IF NOT EXISTS sessions_meta (
@@ -57,7 +60,8 @@ class SqliteSessionStore(BaseSqliteStore):
         db_row_bytes       INTEGER NOT NULL DEFAULT 0,
         task_preview       TEXT NOT NULL DEFAULT '',
         schema_version     INTEGER NOT NULL DEFAULT 1,
-        origin             TEXT NOT NULL DEFAULT 'cli'
+        origin             TEXT NOT NULL DEFAULT 'cli',
+        title              TEXT NOT NULL DEFAULT ''
     );
 
     CREATE INDEX IF NOT EXISTS idx_sessions_workspace_updated
@@ -89,6 +93,14 @@ class SqliteSessionStore(BaseSqliteStore):
             try:
                 await conn.execute(
                     "ALTER TABLE sessions ADD COLUMN origin TEXT NOT NULL DEFAULT 'cli'"
+                )
+            except sqlite3.OperationalError as exc:
+                if "duplicate column" not in str(exc).lower():
+                    raise
+        if current < 3:
+            try:
+                await conn.execute(
+                    "ALTER TABLE sessions ADD COLUMN title TEXT NOT NULL DEFAULT ''"
                 )
             except sqlite3.OperationalError as exc:
                 if "duplicate column" not in str(exc).lower():
@@ -140,8 +152,22 @@ class SqliteSessionStore(BaseSqliteStore):
             id=tid, thread_id=tid, workspace=Path(ws), status="running",
             created_at=now, updated_at=now, message_count=0,
             memory_files_count=0, db_row_bytes=0, task_preview=preview,
-            schema_version=self._SCHEMA_VERSION, origin=origin,
+            schema_version=self._SCHEMA_VERSION, origin=origin, title="",
         )
+
+    async def set_title_if_empty(self, session_id: str, title: str) -> None:
+        t = (title or "").strip()[:_TITLE_MAX]
+        if not t:
+            return
+
+        async def _do(conn: aiosqlite.Connection) -> None:
+            await conn.execute(
+                "UPDATE sessions SET title=? WHERE id=? "
+                "AND (title IS NULL OR title='')",
+                (t, session_id),
+            )
+
+        await self._run_write(_do)
 
     async def touch(
         self,
@@ -222,7 +248,7 @@ class SqliteSessionStore(BaseSqliteStore):
             cur = await conn.execute(
                 "SELECT id, thread_id, workspace, status, created_at, updated_at, "
                 "message_count, memory_files_count, db_row_bytes, task_preview, "
-                "schema_version, origin FROM sessions WHERE id=?",
+                "schema_version, origin, title FROM sessions WHERE id=?",
                 (session_id,),
             )
             row = await cur.fetchone()
@@ -248,7 +274,7 @@ class SqliteSessionStore(BaseSqliteStore):
         sql = (
             "SELECT id, thread_id, workspace, status, created_at, updated_at, "
             "message_count, memory_files_count, db_row_bytes, task_preview, "
-            "schema_version, origin FROM sessions"
+            "schema_version, origin, title FROM sessions"
         )
         clauses: list[str] = []
         params: tuple[Any, ...] = ()
@@ -271,6 +297,29 @@ class SqliteSessionStore(BaseSqliteStore):
             await cur.close()
         return [_row_to_session(r) for r in rows]
 
+    async def list_thread_family(
+        self, base: str, *, limit: int = 50
+    ) -> list[Session]:
+        """Sessions whose id is ``base`` or ``base:<suffix>``, newest first.
+
+        substr() comparison rather than LIKE — ids contain ``_`` (a LIKE
+        wildcard), so a LIKE pattern would over-match sibling cards.
+        """
+        await self._ensure_schema()
+        prefix = base + ":"
+        async with self._conn() as conn:
+            cur = await conn.execute(
+                "SELECT id, thread_id, workspace, status, created_at, updated_at, "
+                "message_count, memory_files_count, db_row_bytes, task_preview, "
+                "schema_version, origin, title FROM sessions "
+                "WHERE id=? OR substr(id, 1, ?)=? "
+                "ORDER BY updated_at DESC LIMIT ?",
+                (base, len(prefix), prefix, int(limit)),
+            )
+            rows = await cur.fetchall()
+            await cur.close()
+        return [_row_to_session(r) for r in rows]
+
 
 def _row_to_session(row: Any) -> Session:
     """Build a ``Session`` from either a tuple row or an ``aiosqlite.Row``.
@@ -280,13 +329,13 @@ def _row_to_session(row: Any) -> Session:
     """
     (
         sid, tid, ws, status, created, updated, msgs, mems, dbbytes, preview,
-        ver, origin,
+        ver, origin, title,
     ) = row
     return Session(
         id=sid, thread_id=tid, workspace=Path(ws), status=status,
         created_at=created, updated_at=updated, message_count=msgs,
         memory_files_count=mems, db_row_bytes=dbbytes, task_preview=preview,
-        schema_version=ver, origin=origin,
+        schema_version=ver, origin=origin, title=title,
     )
 
 

@@ -46,6 +46,10 @@ class Session:
     # Electron text chat) or "voice" (the voice agent). The Sessions UI splits
     # on this column, so the distinction is DB-backed, not a UI artifact.
     origin: str = "cli"
+    # Human name for conversation lists — set once from the session's first
+    # user message, never overwritten (unlike task_preview, which tracks the
+    # latest turn).
+    title: str = ""
 
 
 # ---------------------------------------------------------------------------

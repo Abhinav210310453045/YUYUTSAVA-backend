@@ -12,3 +12,15 @@ services:
     ports:
       - "8000:8000"
     restart: unless-stopped
+    environment:
+      - KROKI_MERMAID_HOST=mermaid
+    depends_on:
+      - mermaid
+
+  # Companion service Kroki proxies mermaid/{png,svg} requests to. Without
+  # it, mermaid renders 503 ("Connection refused: /127.0.0.1:8002") even
+  # though the core kroki container is healthy — graphviz/d2/plantuml don't
+  # need a companion so they work fine on their own.
+  mermaid:
+    image: yuzutech/kroki-mermaid:latest
+    restart: unless-stopped

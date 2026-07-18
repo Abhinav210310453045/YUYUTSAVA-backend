@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { todoAttachmentUrl } from '../../../api/client'
+import { blockSrc } from './src'
 import { audioPlayer } from '../../../audio'
 
 // Phase-7 audio block. Plays through the shared AudioPlayer singleton (fetch
@@ -62,7 +62,7 @@ export default function AudioBlock({ attachment, cardId }) {
     setLoading(true)
     audioPlayer.stop() // cut whatever else is on the shared player, reset its cursor
     try {
-      await audioPlayer.playUrl(todoAttachmentUrl(cardId, attachment.attachment_id))
+      await audioPlayer.playUrl(blockSrc(attachment, cardId))
     } catch (e) {
       setLoading(false)
       setError(e.message)
@@ -110,7 +110,7 @@ export default function AudioBlock({ attachment, cardId }) {
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
           background: audible ? 'rgba(120,160,255,0.30)' : 'rgba(120,160,255,0.12)',
           border: `1px solid rgba(120,160,255,${audible ? 0.6 : 0.35})`,
-          color: '#9bb8ff',
+          color: 'var(--text-info)',
           boxShadow: audible ? '0 0 10px rgba(120,160,255,0.5)' : 'none',
           transition: 'background 0.2s, box-shadow 0.2s',
           opacity: loading ? 0.5 : 1,

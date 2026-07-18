@@ -83,6 +83,9 @@ class OrchestratorDeps:
     summary_store: object | None = None
     memory_store: object | None = None
     transcript_store: object | None = None
+    # context.transcript_index.PgTranscriptIndex — when set, the master gets
+    # a per-turn ConversationInjector (recall of its own swept turns).
+    transcript_index: object | None = None
     context_settings: object | None = None
     compaction_model: BaseChatModel | None = None
 

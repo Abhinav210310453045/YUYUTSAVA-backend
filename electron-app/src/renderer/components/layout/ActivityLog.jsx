@@ -159,6 +159,7 @@ export default function ActivityLog({ events = [], logs = [], bgTasks = EMPTY_MA
       <div style={{
         display: 'flex',
         borderBottom: '1px solid var(--border-subtle)',
+        background: 'var(--bg-bar)',
         flexShrink: 0,
       }}>
         {TABS.map((t) => {

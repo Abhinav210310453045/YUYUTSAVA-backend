@@ -9,6 +9,7 @@ import SettingsPanel from './components/settings/SettingsPanel'
 import ChatPanel from './components/chat/ChatPanel'
 import VoicePanel from './components/voice/VoicePanel'
 import InWindowToast from './components/notifications/InWindowToast'
+import ResizeHandle from './components/common/ResizeHandle'
 import { useSSE, getLogsEnabled, setLogsEnabled } from './hooks/useSSE.jsx'
 import { NotificationsProvider } from './hooks/useNotifications.jsx'
 import { getLogLevel, setLogLevel } from './api/client'
@@ -16,36 +17,16 @@ import { getLogLevel, setLogLevel } from './api/client'
 const ACTIVITY_MIN = 180
 const ACTIVITY_MAX = 600
 
-function ResizeHandle({ onMouseDown, side }) {
-  const [hovered, setHovered] = useState(false)
-  return (
-    <div
-      onMouseDown={onMouseDown}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        width: 4,
-        flexShrink: 0,
-        cursor: 'col-resize',
-        background: hovered ? 'var(--neon-green)' : 'transparent',
-        opacity: hovered ? 0.4 : 1,
-        transition: 'background 0.15s',
-        zIndex: 10,
-        position: 'relative',
-      }}
-    >
-      {/* wider invisible hit area */}
-      <div style={{
-        position: 'absolute',
-        top: 0, bottom: 0,
-        left: -4, right: -4,
-      }} />
-    </div>
-  )
-}
+const RUN_ID_KEY = 'yy.app.runId'
+const PANEL_KEY = 'yy.app.activePanel'
+const PANELS = ['proposals', 'sessions', 'todos', 'artifacts', 'settings', 'chat', 'voice']
 
 export default function App() {
-  const [activePanel, setActivePanel] = useState('proposals')
+  // Chat is the home panel on a fresh launch; an in-run renderer reload
+  // (daemon restart, crash recovery) restores the last panel instead — see
+  // the run-id effect below. Hide/minimize keeps the renderer alive, so
+  // those restore automatically without any of this.
+  const [activePanel, setActivePanel] = useState('chat')
   // Thread id to resume when the Chat panel opens from a session row. Cleared on
   // any plain navigation so the Chat nav icon always starts a fresh UI session.
   const [chatResumeId, setChatResumeId] = useState(null)
@@ -54,8 +35,45 @@ export default function App() {
   // Chat & Voice are mounted once visited and then kept alive (just hidden) so
   // navigating away — e.g. to Settings mid-conversation — and back preserves the
   // live WebSocket, messages, and audio instead of destroying them.
-  const [visited, setVisited] = useState({ chat: false, voice: false })
+  const [visited, setVisited] = useState({ chat: true, voice: false })
+  // Set when this renderer boot is a reload within the same app run; TodosPanel
+  // consumes it (once) to reopen the card that was open before the reload.
+  const pendingTodoRestore = useRef(false)
   const { proposals, asks, eventLines, logLines, bgTasks, connected, pendingCount, removeProposal, removeAsk } = useSSE()
+
+  // Fresh-launch vs in-run-reload detection: the main process mints one run id
+  // per process; a matching stored id means this boot is a reload → restore.
+  useEffect(() => {
+    let cancelled = false
+    Promise.resolve(window.electronAPI?.getAppRunId?.()).then((runId) => {
+      if (cancelled || !runId) return
+      const prev = localStorage.getItem(RUN_ID_KEY)
+      if (prev === String(runId)) {
+        const saved = localStorage.getItem(PANEL_KEY)
+        if (saved && PANELS.includes(saved)) {
+          pendingTodoRestore.current = saved === 'todos'
+          if (saved === 'voice') setVisited((v) => ({ ...v, voice: true }))
+          setActivePanel(saved)
+        }
+      } else {
+        localStorage.setItem(RUN_ID_KEY, String(runId))
+      }
+    }).catch(() => {})
+    return () => { cancelled = true }
+  }, [])
+
+  // Keep the last panel persisted so an in-run reload can restore it.
+  useEffect(() => {
+    try { localStorage.setItem(PANEL_KEY, activePanel) } catch { /* quota */ }
+  }, [activePanel])
+
+  // One-shot: TodosPanel calls this on mount; returns the card to reopen only
+  // right after an in-run reload that landed on the todos panel.
+  const consumeRestoredCard = useCallback(() => {
+    if (!pendingTodoRestore.current) return null
+    pendingTodoRestore.current = false
+    return localStorage.getItem('yy.todo.openId')
+  }, [])
 
   // Plain navigation no longer resets the chat thread — returning to Chat/Voice
   // shows the last conversation. A fresh thread is started explicitly via the
@@ -127,7 +145,7 @@ export default function App() {
   }, [navTo])
 
   const [activityW, setActivityW] = useState(300)
-  const [activityOpen, setActivityOpen] = useState(true)
+  const [activityOpen, setActivityOpen] = useState(false)
   const [dragging, setDragging] = useState(false)
 
   const startDrag = useCallback((e) => {
@@ -194,7 +212,7 @@ export default function App() {
                   />
                 )}
                 {activePanel === 'sessions' && <SessionsPanel onOpenSession={onOpenSession} />}
-                {activePanel === 'todos' && <TodosPanel />}
+                {activePanel === 'todos' && <TodosPanel consumeRestoredCard={consumeRestoredCard} />}
                 {activePanel === 'artifacts' && <ArtifactsPanel />}
                 {activePanel === 'settings' && <SettingsPanel />}
               </div>

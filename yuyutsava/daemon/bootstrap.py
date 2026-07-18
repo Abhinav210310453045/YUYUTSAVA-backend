@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Awaitable, Callable
@@ -38,7 +39,6 @@ from yuyutsava.channels.plugin import InboundSink
 from yuyutsava.channels.registry import ChannelPluginRegistry
 from yuyutsava.context.artifacts import PgArtifactStore, SqliteArtifactStore
 from yuyutsava.context.config import ContextSettings
-from yuyutsava.context.injector import MemoryInjector
 from yuyutsava.context.summary_store import PgThreadSummaryStore, SqliteThreadSummaryStore
 from yuyutsava.context.transcript_store import PgTranscriptStore, SqliteTranscriptStore
 from yuyutsava.storage.voice_store import PgVoiceMessageStore, SqliteVoiceMessageStore
@@ -46,7 +46,7 @@ from yuyutsava.core.config import (
     DaemonConfig, EventsConfig, LlmSettings, SearchConfig, SourceConfig,
     _env, llm_settings_from_env,
 )
-from yuyutsava.core.llm import chat_model
+from yuyutsava.llm import chat_model
 from yuyutsava.core.model_router import ComplexityScorer, ModelRouter
 from yuyutsava.core.policy import PermissionsPolicy, StorePolicyCapEnforcer
 from yuyutsava.daemon.channels import ChannelEvent, ChannelRouter, TimelinePayload
@@ -69,7 +69,6 @@ from yuyutsava.memory.config import MemorySettings
 from yuyutsava.memory.embedder import Embedder
 from yuyutsava.memory.store import MemoryStore, PgMemoryStore, SqliteMemoryStore
 from yuyutsava.prefs.injector import PrefsInjector
-from yuyutsava.skills.injector import SkillInjector
 from yuyutsava.skills.registry import SkillRegistry
 from yuyutsava.skills.store import PgSkillStore, SkillIndexer, SqliteSkillStore
 from yuyutsava.storage.backend import StorageSettings
@@ -84,6 +83,27 @@ from yuyutsava.storage.sessions import PgSessionStore, set_default_session_store
 from yuyutsava.storage.sweeper import BlobSweepTarget, SweeperConfig, UnifiedSweeper
 
 logger = logging.getLogger("yuyutsava.daemon.bootstrap")
+
+# Trailer a background subagent appends to its summary listing showable
+# artifact ids (see the tinker subagent prompt): "ARTIFACTS: id1, id2".
+_ARTIFACTS_TRAILER = re.compile(r"(?im)^\s*ARTIFACTS:\s*(.+?)\s*$")
+
+
+def _parse_artifact_ids(summary: str) -> list[str]:
+    """Extract artifact ids from a subagent summary's ARTIFACTS trailer.
+
+    Returns them in order, de-duplicated; empty when the trailer is absent.
+    Tolerant of comma/space separators and surrounding punctuation.
+    """
+    if not summary:
+        return []
+    ids: list[str] = []
+    for m in _ARTIFACTS_TRAILER.finditer(summary):
+        for tok in re.split(r"[,\s]+", m.group(1)):
+            tok = tok.strip().strip(".,;")
+            if tok and tok not in ids:
+                ids.append(tok)
+    return ids
 
 
 # ---------------------------------------------------------------------------
@@ -354,10 +374,8 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         else:
             memory_store = SqliteMemoryStore(state_db_path())
             logger.info("  memory    : sqlite keyword fallback (no embeddings)")
-    memory_injector = (
-        MemoryInjector(memory_store, top_k=mem_settings.top_k)
-        if memory_store is not None else None
-    )
+    # (Memory recall for the orchestrator master moved into build_orchestrator
+    # as a per-turn RetrievalInjectionMiddleware — no build-time injector here.)
 
     # ── store (events DB: postgres-primary + sqlite spillover buffer) ------
     # On the Postgres backend each domain becomes a RoutedStore that fails over
@@ -597,9 +615,8 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         await SkillIndexer.sync(skill_registry, skill_store)
     except Exception:
         logger.warning("skills: index sync failed", exc_info=True)
-    skill_injector = SkillInjector(
-        skill_store, agent="orchestrator", top_k=mem_settings.top_k
-    )
+    # (Skill recall for the orchestrator master likewise rides the per-turn
+    # middleware inside build_orchestrator, scoped agent="orchestrator".)
 
     # ── TODO-board note recall (pgvector, migration v16) --------------------
     # Embed-on-write hooks in the exchange resolve this default index; the boot
@@ -755,11 +772,32 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         allow_blocking = resolve_allow_blocking(default=True)
 
         def _build_host() -> AsyncSubagentHost:
+            # Background graphs get the same context controllers as the
+            # masters (tool-result offload + compaction + ctx_* readback) —
+            # bg runs are the longest and were the only agents without them.
+            from yuyutsava.context.tools import make_context_tools
+            from yuyutsava.core.engine import context_middleware
+
             return AsyncSubagentHost.from_subagents(
                 bg_subagent_list,
                 model=subagent_model,
                 checkpointer=checkpointer,
                 allow_blocking=allow_blocking,
+                middleware_factory=lambda sa: context_middleware(
+                    model=subagent_model,
+                    artifact_store=artifact_store,
+                    context_settings=context_settings,
+                    summary_store=summary_store,
+                    memory_store=memory_store,
+                    transcript_store=None,  # bg thread ids are host-minted;
+                    # transcripts serve interactive resume — skip them here.
+                    compaction_model=compaction_model,
+                    role=f"{sa.name}-bg",
+                ),
+                extra_tools_factory=(
+                    (lambda: make_context_tools(artifact_store))
+                    if artifact_store is not None else None
+                ),
             )
 
         # NOTE: once the host owner starts, it installs blockbuster (unless
@@ -798,6 +836,10 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
             origin = task.origin or (rec.origin if rec else None) or ""
             if not parent:
                 return
+            # A subagent that produced showable artifacts ends its summary with an
+            # "ARTIFACTS: id, id" trailer (see the tinker subagent prompt). Lift the
+            # ids so the master can re-show them inline via artifact_show.
+            artifact_ids = _parse_artifact_ids(summary)
             await task_queue.put(OrchestratorTask(
                 proposal_id="", event_id="", topic="subagent_completion",
                 summary=f"{task.agent_name} {'ok' if ok else 'failed'}",
@@ -810,6 +852,7 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
                     "agent_name": task.agent_name,
                     "ok": ok,
                     "summary": summary,
+                    "artifacts": artifact_ids,
                 },
             ))
             await async_mirror.mark_notified(task.task_id)
@@ -867,6 +910,14 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         skill_registry=skill_registry,
     )
 
+    # Transcript RAG for the orchestrator master (Postgres only): the same
+    # per-turn ConversationInjector recall the chat/tinker masters get, so a
+    # resumed orchestrator thread remembers its own swept turns.
+    orch_transcript_index = None
+    if pg_pool is not None and embedder is not None:
+        from yuyutsava.context.transcript_index import PgTranscriptIndex
+        orch_transcript_index = PgTranscriptIndex(pg_pool, embedder=embedder)
+
     orch_deps = OrchestratorDeps(
         subagents=subagents,
         subagent_model=subagent_model,
@@ -885,6 +936,7 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         summary_store=summary_store,
         memory_store=memory_store,
         transcript_store=transcript_store,
+        transcript_index=orch_transcript_index,
         context_settings=context_settings,
         compaction_model=compaction_model,
         usage_store=usage_store,
@@ -898,8 +950,6 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         orchestrator_token_budget=daemon_cfg.orchestrator_token_budget,
         checkpointer=checkpointer,
         prefs_injector=prefs_injector,
-        memory_injector=memory_injector,
-        skill_injector=skill_injector,
         skill_store=skill_store,
         task_registry=task_registry,
         model_router=model_router,
@@ -952,6 +1002,32 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         # Builds its shared deepagent bundle on first /ws/converse use and
         # attaches to this daemon's async-subagent host (no second host).
         from yuyutsava.daemon.conversation_manager import ConversationManager
+        # Fresh subagent instances for the chat master's sync roster — the
+        # orchestrator's own instances stay on its graph (specs must not
+        # share tool/middleware objects across graphs). GeneralPurposeAgent
+        # is built inside build_agent_stack; these two join it.
+        chat_extra_subagents = [
+            FileOrganizerAgent(
+                task_runner, store,
+                skill_registry=skill_registry,
+                can_write_skills=True,
+                mcp_manager=mcp_manager,
+                search_config=search_config,
+                cap_enforcer=cap_enforcer,
+                memory_store=memory_store,
+                skill_store=skill_store,
+            ),
+            FaceWatcherAgent(
+                task_runner, store,
+                skill_registry=skill_registry,
+                can_write_skills=True,
+                mcp_manager=mcp_manager,
+                search_config=search_config,
+                cap_enforcer=cap_enforcer,
+                memory_store=memory_store,
+                skill_store=skill_store,
+            ),
+        ]
         conversation_manager = ConversationManager(
             workspace=workspace,
             checkpointer=checkpointer,
@@ -961,6 +1037,10 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
             usage_store=usage_store,
             mcp_manager=mcp_manager,
             launch_index=launch_index,
+            prefs_store=prefs_store,
+            cap_enforcer=cap_enforcer,
+            task_submission=task_submission,
+            extra_subagents=chat_extra_subagents,
         )
 
         app = make_app(

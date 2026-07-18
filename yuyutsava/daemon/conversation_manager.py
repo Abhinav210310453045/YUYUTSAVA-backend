@@ -11,8 +11,9 @@ to it over a WebSocket. Conversations are served by per-agent
     ``thread_id`` via the checkpointer.
   * ``"tinker:<card_id>"`` — one TinkerAgent bundle per TODO card. Per-card
     because the bundle binds tr_* to the card's workspace dir and bakes the
-    card's identity into its system prompt; its single thread is pinned to
-    ``todo:<card_id>`` so reopening the card resumes the conversation.
+    card's identity into its system prompt. A card can hold many chats, each
+    a thread in the ``todo:<card_id>[:<suffix>]`` family sharing that one
+    bundle (the legacy pre-multi-chat pin is the bare ``todo:<card_id>``).
 
 Lazy by design: each bundle is built on its first ``open()``, not at daemon
 startup — no cost or startup latency when a surface is unused. Because the
@@ -40,8 +41,12 @@ from yuyutsava.core.config import (
     llm_settings_from_env,
 )
 from yuyutsava.core.engine import AgentBundle
+from yuyutsava.storage.ids import (
+    is_tinker_thread_of,
+    mint_tinker_thread_id,
+    tinker_thread_base,
+)
 from yuyutsava.storage.sessions import SessionStore, get_default_session_store
-from yuyutsava.storage.sessions.store import SessionNotFound
 
 logger = logging.getLogger("yuyutsava.daemon.conversation_manager")
 
@@ -51,6 +56,14 @@ def _bash_timeout_sec() -> int:
         return max(1, int(os.environ.get("YUYUTSAVA_BASH_TIMEOUT", "300")))
     except ValueError:
         return 300
+
+
+def _chat_budget_tokens() -> int:
+    """Absolute per-call input-token ceiling for the shared chat master."""
+    try:
+        return max(1, int(os.environ.get("YUYUTSAVA_CHAT_BUDGET_TOKENS", "120000")))
+    except ValueError:
+        return 120_000
 
 
 class ConversationManager:
@@ -69,6 +82,10 @@ class ConversationManager:
         usage_store: Any | None = None,
         mcp_manager: Any | None = None,
         launch_index: Any | None = None,
+        prefs_store: Any | None = None,
+        cap_enforcer: Any | None = None,
+        task_submission: Any | None = None,
+        extra_subagents: Any | None = None,
     ) -> None:
         self._workspace = workspace
         self._checkpointer = checkpointer
@@ -77,8 +94,12 @@ class ConversationManager:
         self._recursion_limit = recursion_limit
         self._store = store
         self.voice_store = voice_store  # storage.voice_store.VoiceMessageStore | None
-        self._usage_store = usage_store  # daemon.usage.UsageStore | None (tinker accounting)
-        self._mcp_manager = mcp_manager  # mcp.loader.MCPClientManager | None (tinker MCP tools)
+        self._usage_store = usage_store  # daemon.usage.UsageStore | None (chat + tinker accounting)
+        self._mcp_manager = mcp_manager  # mcp.loader.MCPClientManager | None (chat + tinker MCP tools)
+        self._prefs_store = prefs_store  # storage.prefs.PrefsStore | None (per-turn prefs injection)
+        self._cap_enforcer = cap_enforcer  # tools.search._CapEnforcer | None (ws_* rate cap)
+        self._task_submission = task_submission  # daemon.task_submission.TaskSubmissionService | None
+        self._extra_subagents = list(extra_subagents or [])  # extra sync task roster (file-organizer, …)
         # async_subagents.launch_index.LaunchIndex | None — links bg tasks a
         # conversation launches back to its thread, so the watcher's completion
         # bridge can wake the master on THIS conversation (the orchestrator loop
@@ -89,6 +110,17 @@ class ConversationManager:
         # tinker bundle is card-specific (workspace + prompt).
         self._bundles: dict[str, AgentBundle] = {}
         self._build_locks: dict[str, asyncio.Lock] = {}
+        # Thread ids with a turn currently executing. A LangGraph thread's
+        # checkpoint is single-writer: two turns streaming the same thread_id
+        # concurrently interleave message writes, which duplicates the leading
+        # human message and produces empty messages the model rejects ("must
+        # include at least one parts field") — surfacing as duplicated bubbles
+        # and truncated "half" replies. The per-connection turn gate in the WS
+        # handler can't prevent this because a reconnect makes a NEW connection
+        # on the SAME thread; this daemon-scoped set is the cross-connection
+        # guard. Plain set ops are atomic under asyncio (no await between the
+        # check and the add), so no lock is needed.
+        self._busy_threads: set[str] = set()
 
     # ------------------------------------------------------------------ #
     # Bundle builds                                                        #
@@ -134,6 +166,15 @@ class ConversationManager:
                 )
         return bundle
 
+    def _orch_submit_tools(self, origin: str) -> list:
+        """The orch_submit hand-off tool, when the daemon wired a submission
+        service. Events/background work stay orchestrator-only — this is the
+        conversation masters' sanctioned path to that side of the system."""
+        if self._task_submission is None:
+            return []
+        from yuyutsava.daemon.submit_tool import make_orch_submit_tool
+        return [make_orch_submit_tool(self._task_submission, origin=origin)]
+
     async def _build_master_bundle(self) -> AgentBundle:
         from yuyutsava.cli.agent_stack import build_agent_stack
 
@@ -148,6 +189,13 @@ class ConversationManager:
             permission_check=True,
             search_config=self._resolved_search(),
             checkpointer=self._checkpointer,
+            mcp_manager=self._mcp_manager,
+            usage_store=self._usage_store,
+            budget_tokens=_chat_budget_tokens(),
+            prefs_store=self._prefs_store,
+            cap_enforcer=self._cap_enforcer,
+            extra_subagents=self._extra_subagents,
+            extra_tools=self._orch_submit_tools("chat"),
         )
 
     async def _build_tinker_bundle(self, card_id: str) -> AgentBundle:
@@ -173,6 +221,9 @@ class ConversationManager:
             checkpointer=self._checkpointer,
             usage_store=self._usage_store,
             mcp_manager=self._mcp_manager,
+            prefs_store=self._prefs_store,
+            cap_enforcer=self._cap_enforcer,
+            extra_tools=self._orch_submit_tools("tinker"),
         )
 
     # ------------------------------------------------------------------ #
@@ -221,16 +272,20 @@ class ConversationManager:
         split them. ``agent_path`` is seeded equal to ``origin`` for interrupt
         attribution.
 
-        ``agent="tinker"`` requires ``card_id`` and pins the thread to
-        ``todo:<card_id>`` — ``resume_id``/``continue_latest`` are ignored
-        because the card IS the thread: reopening a card always resumes it.
+        ``agent="tinker"`` requires ``card_id``. A card can hold many chats
+        (thread ids ``todo:<card_id>[:<suffix>]``): ``resume_id`` resumes one
+        of them, ``continue_latest`` resumes the newest, and neither means a
+        fresh chat on the card.
         """
         store = self._store or get_default_session_store()
 
         if agent == "tinker":
             if not card_id:
                 raise ValueError("tinker conversations require a card id (?card=)")
-            return await self._open_tinker(store, card_id, origin=origin)
+            return await self._open_tinker(
+                store, card_id, origin=origin,
+                resume_id=resume_id, continue_latest=continue_latest,
+            )
 
         # Master path: defer the heavy bundle build to the first turn (inside
         # the cancellable turn task) so the WS handshake stays responsive.
@@ -249,7 +304,13 @@ class ConversationManager:
         )
 
     async def _open_tinker(
-        self, store: SessionStore, card_id: str, *, origin: str
+        self,
+        store: SessionStore,
+        card_id: str,
+        *,
+        origin: str,
+        resume_id: str | None = None,
+        continue_latest: bool = False,
     ) -> tuple[ConversationService, bool]:
         from yuyutsava.todoboard.exchange import get_default_exchange
 
@@ -257,18 +318,31 @@ class ConversationManager:
         # (typed TodoNotFoundError) instead of the first turn.
         card = await get_default_exchange().get_card(card_id)
 
-        thread_id = f"todo:{card_id}"
-        try:
-            # Session rows are keyed by their thread_id, so the pin doubles as
-            # the resume key: same card → same session → same checkpoint.
-            session = await store.get(thread_id)
-            await store.update_status(thread_id, "running")
+        # Session rows are keyed by their thread_id: resolve which of the
+        # card's chats to open. Legacy single-chat cards used the bare
+        # ``todo:<card_id>`` pin; new chats mint ``todo:<card_id>:<ULID>`` —
+        # both are members of the same family.
+        session = None
+        if resume_id:
+            if not is_tinker_thread_of(card_id, resume_id):
+                raise ValueError(
+                    f"resume id {resume_id!r} does not belong to card {card_id!r}"
+                )
+            session = await store.get(resume_id)  # SessionNotFound propagates
+        elif continue_latest:
+            rows = await store.list_thread_family(
+                tinker_thread_base(card_id), limit=1
+            )
+            session = rows[0] if rows else None
+
+        if session is not None:
+            await store.update_status(session.id, "running")
             resuming = True
-        except SessionNotFound:
+        else:
             session = await store.create(
                 workspace=self._workspace,
                 task=f"(tinker: {card.title})",
-                thread_id=thread_id,
+                thread_id=mint_tinker_thread_id(card_id),
                 origin=origin,
             )
             resuming = False
@@ -288,6 +362,30 @@ class ConversationManager:
             recursion_limit=self._recursion_limit,
         )
         return svc, resuming
+
+    # ------------------------------------------------------------------ #
+    # Per-thread turn serialization                                        #
+    # ------------------------------------------------------------------ #
+
+    def try_begin_turn(self, thread_id: str) -> bool:
+        """Claim the turn slot for ``thread_id``; False if one is already running.
+
+        A LangGraph checkpoint is single-writer per thread: two turns streaming
+        the same thread concurrently corrupt the message list (duplicate leading
+        human message, empty messages the model 400s on). Every conversation
+        turn — text, voice, barge-in — must run inside this guard so only one
+        executes per thread at a time, regardless of which WS connection drives
+        it. Race-free: the membership check and the add happen with no ``await``
+        between them, so the asyncio loop can't interleave two callers here.
+        """
+        if thread_id in self._busy_threads:
+            return False
+        self._busy_threads.add(thread_id)
+        return True
+
+    def end_turn(self, thread_id: str) -> None:
+        """Release the turn slot for ``thread_id`` (idempotent)."""
+        self._busy_threads.discard(thread_id)
 
     @property
     def bundle_ready(self) -> bool:

@@ -27,6 +27,7 @@ from yuyutsava.daemon.web.auth import (
 )
 from yuyutsava.daemon.web.exceptions import register_exception_handlers
 from yuyutsava.daemon.web.routers import (
+    artifacts as artifacts_router,
     channels as channels_router,
     cli_attach as cli_attach_router,
     config as config_router,
@@ -211,6 +212,7 @@ def create_app(
         visuals_router.router,
         feedback_router.router,
         todos_router.router,
+        artifacts_router.router,
     ]
     # Read-only DB introspection. Opt-out via env (defaults on).
     if os.environ.get("YUYUTSAVA_DB_API_ENABLED", "true").lower() not in {"0", "false", "no"}:

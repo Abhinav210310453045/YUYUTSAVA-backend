@@ -1,18 +1,33 @@
 import React, { useEffect, useState } from 'react'
-import { todoAttachmentUrl } from '../../../api/client'
+import { blockSrc, bundleSrc, primaryName } from './src'
 
-// Phase-7 JSX/HTML sandbox block. Interactive artifacts render inside a
-// sandboxed iframe with an opaque origin (sandbox="allow-scripts" ONLY — no
-// same-origin, no top navigation, no popups, no forms) plus an injected CSP
-// that denies ALL network. This upholds TextBlock's never-inject posture:
-// artifact code never touches the app's DOM, and the app's node-free,
-// context-isolated renderer never leaks into the frame.
+// Phase-7 JSX/HTML sandbox block. Interactive artifacts render inside an iframe
+// with an opaque origin (sandbox="allow-scripts" ONLY — no same-origin, no top
+// navigation, no popups, no forms). That opaque origin is the load-bearing
+// guarantee and it holds in BOTH modes below: artifact code never touches the
+// app's DOM, and the app's node-free, context-isolated renderer never leaks into
+// the frame.
 //
-// JSX is transpiled locally with @babel/standalone and runs against the
-// app's own bundled React 18 UMD builds, all inlined into the srcDoc — the
-// frame needs (and is allowed) zero remote fetches. Everything heavy is
-// dynamically imported so it lands in a lazy chunk loaded only when a JSX
-// artifact is actually on screen.
+// The two modes differ in where the document comes from, because "self-contained"
+// and "multi-file" are genuinely different problems:
+//
+//   • JSX (text/jsx) — one file, no siblings, no network. Transpiled locally with
+//     @babel/standalone against the app's own bundled React 18 UMD builds, all
+//     inlined into a srcDoc under a CSP that denies ALL network. It needs (and is
+//     allowed) zero remote fetches. Everything heavy is dynamically imported so it
+//     lands in a lazy chunk loaded only when a JSX artifact is on screen.
+//
+//   • HTML (text/html) — framed from its OWN directory (…/bundle/<basename>) via
+//     the bytes route, not inlined. Inlining is what broke these: a srcDoc has no
+//     base URL, so `<script src="./support.js">` had nothing to resolve against
+//     and a no-network CSP blocked it twice over — a Claude *.dc.html would paint
+//     its skeleton with the `{{ }}` bindings still showing, because the runtime
+//     that binds them never loaded. Framed from a real URL, relative refs and CDN
+//     scripts resolve exactly as they do when the file is opened in a browser.
+//     The frame can reach the network by design; it still cannot script the app
+//     (opaque origin) nor usefully call the local API (Origin: null fails the
+//     daemon's CORS loopback regex, and mutations are preflighted). See
+//     yuyutsava/daemon/web/bundle.py.
 
 const SANDBOX_MIMES = ['text/html', 'text/jsx']
 
@@ -33,7 +48,9 @@ const CSP_META = `<meta http-equiv="Content-Security-Policy" content="${FRAME_CS
 // elsewhere in valid compiled code.
 const escScript = (s) => s.replace(/<\/script/gi, '<\\/script')
 
-// Raw HTML artifacts run as authored — just force the CSP in first.
+// Fallback only: a record with no on-disk path has no directory to frame, so its
+// bytes get inlined under the strict no-network CSP as before. Every real HTML
+// artifact (upload or artifact_create) has a path and takes the bundle route.
 function buildHtmlDoc(src) {
   if (/<head[^>]*>/i.test(src)) return src.replace(/<head[^>]*>/i, (m) => m + CSP_META)
   if (/<html[^>]*>/i.test(src)) return src.replace(/<html[^>]*>/i, (m) => m + `<head>${CSP_META}</head>`)
@@ -119,31 +136,39 @@ ${escScript(compiled)}
 </script></body></html>`
 }
 
-export default function SandboxBlock({ attachment, cardId }) {
-  const [doc, setDoc] = useState(null)
+export default function SandboxBlock({ attachment, cardId, expanded }) {
+  const [doc, setDoc] = useState(null)      // srcDoc — the inlined modes only
   const [source, setSource] = useState(null)
   const [error, setError] = useState(null)
   const [showSource, setShowSource] = useState(false)
+
+  const isJsx = attachment.mime === 'text/jsx'
+  const primary = primaryName(attachment)
+  // HTML with a real file on disk frames itself from its own directory; JSX (and
+  // a pathless record) still builds an inlined srcDoc.
+  const frameSrc = !isJsx && primary ? bundleSrc(attachment, cardId, primary) : null
 
   useEffect(() => {
     let cancelled = false
     ;(async () => {
       try {
-        const res = await fetch(todoAttachmentUrl(cardId, attachment.attachment_id))
+        // Still fetched when framing: the source toggle shows it, and a failure
+        // here is the same 404 the frame would hit — better surfaced as our own
+        // error than as the daemon's JSON rendered inside the frame.
+        const res = await fetch(blockSrc(attachment, cardId))
         if (!res.ok) throw new Error(`fetch → ${res.status}`)
         const text = await res.text()
         if (cancelled) return
         setSource(text)
-        const built = attachment.mime === 'text/jsx'
-          ? await buildJsxDoc(text)
-          : buildHtmlDoc(text)
+        if (frameSrc) return  // the frame loads its own bytes from the bundle
+        const built = isJsx ? await buildJsxDoc(text) : buildHtmlDoc(text)
         if (!cancelled) setDoc(built)
       } catch (e) {
         if (!cancelled) setError(e.message)
       }
     })()
     return () => { cancelled = true }
-  }, [cardId, attachment.attachment_id, attachment.mime])
+  }, [cardId, attachment.attachment_id, attachment.mime, frameSrc, isJsx])
 
   if (error) {
     return (
@@ -163,7 +188,7 @@ export default function SandboxBlock({ attachment, cardId }) {
               fontSize: 9, padding: '2px 8px', borderRadius: 8, cursor: 'pointer',
               fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.05em',
               background: (mode === 'source') === showSource ? 'rgba(120,160,255,0.12)' : 'transparent',
-              color: (mode === 'source') === showSource ? '#9bb8ff' : 'var(--text-dim)',
+              color: (mode === 'source') === showSource ? 'var(--text-info)' : 'var(--text-dim)',
               border: `1px solid ${(mode === 'source') === showSource ? 'rgba(120,160,255,0.25)' : 'var(--border-subtle)'}`,
             }}
           >
@@ -173,14 +198,14 @@ export default function SandboxBlock({ attachment, cardId }) {
       </div>
       {showSource ? (
         <pre style={{
-          margin: 0, padding: '8px 10px', maxHeight: 280, overflow: 'auto',
+          margin: 0, padding: '8px 10px', maxHeight: expanded ? '78vh' : 280, overflow: 'auto',
           background: 'var(--bg-card)', border: '1px solid var(--border-subtle)',
           borderRadius: 6, fontFamily: 'var(--font-mono)', fontSize: 11,
           color: 'var(--text-primary)', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
         }}>
           {source == null ? 'loading…' : source}
         </pre>
-      ) : doc == null ? (
+      ) : !frameSrc && doc == null ? (
         <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-dim)' }}>
           loading sandbox…
         </div>
@@ -188,11 +213,11 @@ export default function SandboxBlock({ attachment, cardId }) {
         <iframe
           sandbox="allow-scripts"
           referrerPolicy="no-referrer"
-          srcDoc={doc}
+          {...(frameSrc ? { src: frameSrc } : { srcDoc: doc })}
           title={attachment.title || 'artifact sandbox'}
           style={{
-            width: '100%', height: 280, border: '1px solid var(--border-subtle)',
-            borderRadius: 6, background: '#10101c',
+            width: '100%', height: expanded ? '78vh' : 280, border: '1px solid var(--border-subtle)',
+            borderRadius: 6, background: 'var(--bg-card, #10101c)',
           }}
         />
       )}

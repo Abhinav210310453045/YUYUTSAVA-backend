@@ -3,6 +3,7 @@ import { useConverse } from '../../hooks/useConverse'
 import NewSessionButton from '../common/NewSessionButton'
 import Markdown from './Markdown'
 import MessageImages from './MessageImages'
+import MessageArtifacts from './MessageArtifacts'
 import MessageActions from './MessageActions'
 
 function ToolEvents({ events }) {
@@ -57,7 +58,7 @@ function PlayPauseIcon({ playing }) {
 function Bubble({ m, userText, sessionId, onRegenerate, onFeedback, playing, paused, onReplay, onTogglePause }) {
   const isUser = m.role === 'user'
   const [hover, setHover] = useState(false)
-  const empty = !m.text && (!m.images || m.images.length === 0)
+  const empty = !m.text && (!m.images || m.images.length === 0) && (!m.artifacts || m.artifacts.length === 0)
   // Spoken replies carry in-session PCM chunks (live turn) or a persisted
   // audio_url (resumed thread) — either makes the bubble playable.
   const hasAudio = !isUser && ((m.audioChunks && m.audioChunks.length > 0) || !!m.audioUrl)
@@ -86,7 +87,7 @@ function Bubble({ m, userText, sessionId, onRegenerate, onFeedback, playing, pau
           fontFamily: 'var(--font-ui)',
           wordBreak: 'break-word',
           animation: 'bubble-pop 0.28s cubic-bezier(0.34,1.56,0.64,1)',
-          '--bulge-glow': isUser ? 'rgba(0,255,136,0.28)' : 'rgba(0,212,255,0.22)',
+          '--bulge-glow': isUser ? 'rgba(var(--accent-rgb),0.28)' : 'rgba(0,212,255,0.22)',
           boxShadow: 'var(--shadow-card)',
         }}
       >
@@ -107,7 +108,7 @@ function Bubble({ m, userText, sessionId, onRegenerate, onFeedback, playing, pau
                   display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                   background: playing && !paused ? 'rgba(120,160,255,0.30)' : 'rgba(120,160,255,0.12)',
                   border: `1px solid rgba(120,160,255,${playing && !paused ? 0.6 : 0.35})`,
-                  color: '#9bb8ff',
+                  color: 'var(--text-info)',
                   boxShadow: playing && !paused ? '0 0 10px rgba(120,160,255,0.5)' : 'none',
                   transition: 'background 0.2s, box-shadow 0.2s',
                 }}
@@ -116,6 +117,7 @@ function Bubble({ m, userText, sessionId, onRegenerate, onFeedback, playing, pau
             {empty && m.streaming ? <TypingDots /> : <Markdown>{m.text}</Markdown>}
             {m.text && m.streaming ? <TypingDots /> : null}
             <MessageImages images={m.images} />
+            <MessageArtifacts artifacts={m.artifacts} />
             <ToolEvents events={m.events} />
             {!m.streaming && !m.error && !empty && (
               <div style={{ opacity: hover || m.feedback ? 1 : 0.55, transition: 'opacity 0.15s' }}>
@@ -155,6 +157,25 @@ export default function ChatPanel({
   showVoice = true,
   showNewSession = true,
   onTurnEnd = null,
+  // { text, ts }: appends text into the composer draft. The ts nonce makes a
+  // repeat selection retrigger; the user still reviews and hits send. Used by
+  // the card view's "Ask Tinker about selection" handoff.
+  draftSeed = null,
+  // Selection-context chips (all optional — inert for Chat/Voice surfaces):
+  // contextChips = [{ key, label, accent? }] rendered as removable pills above
+  // the composer; the next send carries buildContext() invisibly and then
+  // onChipsConsumed() fires so the host clears its selection.
+  contextChips = null,
+  onRemoveChip = null,
+  onClearChips = null,
+  buildContext = null,
+  onChipsConsumed = null,
+  // Extra controls the host renders on the right side of the header (e.g.
+  // the card view's chat-history dropdown + New-chat button).
+  headerActions = null,
+  // Fires with the server hello ({ session_id, thread_id, resuming, … }) so a
+  // host that drives resumeId can learn the id of a freshly minted session.
+  onSessionChange = null,
 }) {
   const {
     messages, connected, busy, pendingAsk, hello, listening, speaking, playingId, paused,
@@ -183,7 +204,28 @@ export default function ChatPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active])
 
-  const onSubmit = () => { send(draft); setDraft('') }
+  // Seed the composer from the host view (selection → Ask Tinker). Appends
+  // rather than replaces so an in-progress draft is never clobbered.
+  useEffect(() => {
+    if (draftSeed?.text) setDraft((d) => (d ? `${d}\n${draftSeed.text}` : draftSeed.text))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftSeed?.ts])
+
+  // Surface the live session id to the host once the server hello lands.
+  useEffect(() => {
+    if (hello?.session_id) onSessionChange?.(hello)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hello?.session_id])
+
+  const onSubmit = () => {
+    const hasChips = contextChips && contextChips.length > 0
+    const ok = send(draft, {
+      context: hasChips && buildContext ? buildContext() : undefined,
+    })
+    if (!ok) return // keep draft + chips — the frame never left (disconnected/busy)
+    setDraft('')
+    if (hasChips) onChipsConsumed?.()
+  }
   const onKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSubmit() }
   }
@@ -205,7 +247,7 @@ export default function ChatPanel({
       {/* header */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8,
-        padding: '14px 24px', borderBottom: '1px solid var(--border-subtle)',
+        padding: '14px 24px', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-bar)',
       }}>
         <span style={{
           width: 8, height: 8, borderRadius: '50%',
@@ -214,9 +256,14 @@ export default function ChatPanel({
         }} />
         <span style={{
           fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.1em',
-          textTransform: 'uppercase', color: 'var(--text-primary)', fontWeight: 600,
+          textTransform: 'uppercase', color: 'var(--text-primary)', fontWeight: 'var(--fw-semibold)',
         }}>{title}</span>
-        {showNewSession && <NewSessionButton onClick={newSession} label="New chat" />}
+        {(headerActions || showNewSession) && (
+          <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            {headerActions}
+            {showNewSession && <NewSessionButton onClick={newSession} label="New chat" />}
+          </span>
+        )}
       </div>
 
       {/* animated gradient mesh behind the thread */}
@@ -287,6 +334,59 @@ export default function ChatPanel({
         )}
       </div>
 
+      {/* selection-context chips — what the next message will be scoped to */}
+      {contextChips && contextChips.length > 0 && (
+        <div style={{
+          display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6,
+          padding: '8px 24px 0', position: 'relative', zIndex: 1,
+        }}>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+            context
+          </span>
+          {contextChips.map((chip) => (
+            <span
+              key={chip.key}
+              title={chip.title || chip.label}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 5,
+                fontFamily: 'var(--font-mono)', fontSize: 10,
+                padding: '2px 8px', borderRadius: 10,
+                background: chip.accent?.glow || 'rgba(120,160,255,0.10)',
+                color: chip.accent?.bar || 'var(--text-info)',
+                border: `1px solid ${chip.accent?.border || 'rgba(120,160,255,0.3)'}`,
+                maxWidth: 220,
+              }}
+            >
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {chip.label}
+              </span>
+              <button
+                onClick={() => onRemoveChip?.(chip.key)}
+                title="remove from context"
+                style={{
+                  background: 'none', border: 'none', color: 'inherit',
+                  cursor: 'pointer', padding: 0, fontSize: 10, lineHeight: 1,
+                }}
+              >
+                ✕
+              </button>
+            </span>
+          ))}
+          {contextChips.length > 1 && (
+            <button
+              onClick={() => onClearChips?.()}
+              style={{
+                fontFamily: 'var(--font-mono)', fontSize: 9, padding: '2px 8px',
+                background: 'transparent', color: 'var(--text-muted)',
+                border: '1px solid var(--border-card)', borderRadius: 10, cursor: 'pointer',
+              }}
+            >
+              clear all
+            </button>
+          )}
+        </div>
+      )}
+
       {/* composer */}
       <div style={{
         display: 'flex', gap: 8, padding: '12px 24px 18px', position: 'relative', zIndex: 1,
@@ -337,8 +437,8 @@ function btnStyle(primary) {
   return {
     fontFamily: 'var(--font-mono)', fontSize: 12, cursor: 'pointer',
     padding: '8px 14px', borderRadius: 10,
-    background: primary ? 'rgba(0,255,136,0.1)' : 'rgba(255,51,102,0.08)',
-    border: `1px solid ${primary ? 'rgba(0,255,136,0.3)' : 'rgba(255,51,102,0.3)'}`,
+    background: primary ? 'rgba(var(--accent-rgb),0.1)' : 'rgba(255,51,102,0.08)',
+    border: `1px solid ${primary ? 'rgba(var(--accent-rgb),0.3)' : 'rgba(255,51,102,0.3)'}`,
     color: primary ? 'var(--neon-green)' : 'var(--neon-red)',
   }
 }
@@ -350,7 +450,7 @@ function sendStyle(enabled) {
     background: enabled ? 'var(--grad-accent)' : 'var(--glass-bg)',
     color: enabled ? '#04120a' : 'var(--text-dim)',
     opacity: enabled ? 1 : 0.6,
-    boxShadow: enabled ? '0 2px 14px rgba(0,255,136,0.3)' : 'none',
+    boxShadow: enabled ? '0 2px 14px rgba(var(--accent-rgb),0.3)' : 'none',
   }
 }
 
@@ -360,6 +460,6 @@ function micBtnStyle(active) {
     padding: '8px 12px', borderRadius: 22,
     background: active ? 'rgba(120,160,255,0.18)' : 'rgba(120,160,255,0.06)',
     border: `1px solid rgba(120,160,255,${active ? 0.5 : 0.3})`,
-    color: '#9bb8ff',
+    color: 'var(--text-info)',
   }
 }

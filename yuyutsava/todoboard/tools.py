@@ -15,7 +15,6 @@ a board failure must never crash an agent loop.
 
 from __future__ import annotations
 
-import asyncio
 import functools
 import json
 import logging
@@ -57,13 +56,34 @@ def _safe(fn: Callable[..., Awaitable[str]]) -> Callable[..., Awaitable[str]]:
 def _render_summary(c: TodoCardSummaryV1) -> str:
     pin = "📌 " if c.pinned else ""
     tags = f" #{' #'.join(c.tags)}" if c.tags else ""
+    objectives = (
+        f", {c.objective_done_count}/{c.objective_count} objectives"
+        if c.objective_count else ""
+    )
     return (
         f"- {pin}{c.card_id} [{c.status}] {c.title}{tags} "
-        f"({c.note_count} note(s), {c.attachment_count} attachment(s))"
+        f"({c.note_count} note(s), {c.attachment_count} attachment(s){objectives})"
     )
 
 
-def _render_card(c: TodoCardV1) -> str:
+def _humanize_event(e) -> str:
+    p = e.payload or {}
+    title = p.get("title") or p.get("attachment_id") or ""
+    body = {
+        "card_status": f"card {p.get('from')} → {p.get('to')}",
+        "objective_created": f"objective added: {title} [{p.get('phase')}]",
+        "objective_phase": f"{title}: {p.get('from')} → {p.get('to')}"
+                           + (f" ({p['reason']})" if p.get("reason") else ""),
+        "objective_updated": f"{title}: {', '.join(p.get('fields', []))} changed",
+        "objective_deleted": f"objective removed: {title}",
+        "note_assigned": f"note {p.get('note_id')} → objective",
+        "artifact_attached": f"attached {p.get('kind')}: {title}",
+        "journey_generated": "journey document generated",
+    }.get(e.kind, e.kind)
+    return f"  [{e.actor}] {body}"
+
+
+def _render_card(c: TodoCardV1, events: list | None = None) -> str:
     lines = [
         f"{'📌 ' if c.pinned else ''}{c.title}",
         f"id: {c.card_id} | status: {c.status}"
@@ -71,17 +91,32 @@ def _render_card(c: TodoCardV1) -> str:
     ]
     if c.workspace_path:
         lines.append(f"workspace: {c.workspace_path}")
+    if c.objectives:
+        lines.append("objectives (think flow):")
+        for o in c.objectives:
+            lines.append(f"  [{o.phase}] ({o.objective_id}) #{o.order_idx} {o.title}")
+            if o.reason:
+                lines.append(f"    ↳ reason: {o.reason}")
+            if o.outcome:
+                lines.append(f"    ↳ outcome: {o.outcome}")
     if c.notes:
         lines.append("notes:")
-        lines.extend(f"  [{n.author}] ({n.note_id}) {n.body}" for n in c.notes)
+        lines.extend(
+            f"  [{n.author}{'→' + n.objective_id if n.objective_id else ''}] "
+            f"({n.note_id}) {n.body}"
+            for n in c.notes
+        )
     if c.attachments:
         lines.append("attachments:")
         lines.extend(
             f"  [{a.kind}] ({a.attachment_id}) {a.title or ''} {a.path or a.url or ''}".rstrip()
             for a in c.attachments
         )
-    if not c.notes and not c.attachments:
-        lines.append("(no notes or attachments yet)")
+    if not c.objectives and not c.notes and not c.attachments:
+        lines.append("(no objectives, notes, or attachments yet)")
+    if events:
+        lines.append("recent activity:")
+        lines.extend(_humanize_event(e) for e in events)
     return "\n".join(lines)
 
 
@@ -139,9 +174,12 @@ def make_todo_tools(
     @tool
     @_safe
     async def todo_get(card_id: str) -> str:
-        """Read one TODO card in full: title, status, tags, all notes and
-        attachments, and the card's workspace directory path."""
-        return _render_card(await ex.get_card(card_id))
+        """Read one TODO card in full: title, status, tags, objectives (its
+        think flow), all notes and attachments, the card's workspace directory
+        path, and its most recent activity."""
+        card = await ex.get_card(card_id)
+        events = await ex.list_events(card_id)
+        return _render_card(card, events[-8:])
 
     @tool
     @_safe
@@ -181,7 +219,8 @@ def make_todo_tools(
         """Update a TODO card's title, status, pinned flag, or tags. Only the
         fields you pass change; the rest stay as they are."""
         card = await ex.update_card(
-            card_id, title=title, status=status, pinned=pinned, tags=tags
+            card_id, title=title, status=status, pinned=pinned, tags=tags,
+            actor=author,
         )
         return f"updated {card.card_id}: {card.title!r} [{card.status}]"
 
@@ -189,16 +228,79 @@ def make_todo_tools(
     @_safe
     async def todo_set_status(card_id: str, status: str) -> str:
         """Move a TODO card to a new status: inbox, active, done, or archived."""
-        card = await ex.update_card(card_id, status=status)
+        card = await ex.update_card(card_id, status=status, actor=author)
         return f"{card.card_id} is now [{card.status}]"
 
     @tool
     @_safe
-    async def todo_add_note(card_id: str, body: str) -> str:
+    async def todo_add_note(
+        card_id: str,
+        body: str,
+        objective_id: str | None = None,
+        phase: str | None = None,
+    ) -> str:
         """Append a note to a TODO card — an idea, finding, decision, or next
-        step worth keeping on the card."""
-        note = await ex.add_note(card_id, body, author=author)
+        step worth keeping on the card. Pass ``objective_id`` to attach the
+        note to the objective it serves (and optionally ``phase`` for the
+        think-flow context it was written in); omit both for a card-level
+        general note."""
+        note = await ex.add_note(
+            card_id, body, author=author, objective_id=objective_id, phase=phase
+        )
         return f"added note {note.note_id} to {card_id}"
+
+    @tool
+    @_safe
+    async def todo_add_objective(
+        card_id: str,
+        title: str,
+        phase: str = "thinking",
+    ) -> str:
+        """Add one small, independently-checkable objective to a card's think
+        flow. Objectives are the card's structured decomposition (typically
+        3-6); each moves through phases: thinking, planning, doing, completed,
+        with blocked and abandoned as off-ramps."""
+        obj = await ex.add_objective(card_id, title, phase=phase, actor=author)
+        return f"added objective {obj.objective_id} [{obj.phase}] to {card_id}: {obj.title!r}"
+
+    @tool
+    @_safe
+    async def todo_update_objective(
+        objective_id: str,
+        title: str | None = None,
+        phase: str | None = None,
+        order: int | None = None,
+        reason: str | None = None,
+        outcome: str | None = None,
+    ) -> str:
+        """Update an objective — move it through its think flow or refine it.
+
+        ``phase`` is one of: thinking, planning, doing, completed, blocked,
+        abandoned (any move is allowed). Give ``reason`` when moving to
+        blocked/abandoned (why it stopped) and ``outcome`` when completing
+        (what it produced) — the journey document weaves these in. ``order``
+        repositions the objective in the card's list."""
+        obj = await ex.update_objective(
+            objective_id, title=title, phase=phase, order_idx=order,
+            reason=reason, outcome=outcome, actor=author,
+        )
+        return f"objective {obj.objective_id} is now [{obj.phase}]: {obj.title!r}"
+
+    @tool
+    @_safe
+    async def todo_assign_note(
+        note_id: str,
+        objective_id: str | None = None,
+        phase: str | None = None,
+    ) -> str:
+        """Attach an existing note to an objective on the same card (or clear
+        the assignment by passing no objective_id). Use this to convert older
+        prose notes into the structured think flow."""
+        note = await ex.assign_note(
+            note_id, objective_id=objective_id, phase=phase, actor=author
+        )
+        target = f"objective {note.objective_id}" if note.objective_id else "card level (general)"
+        return f"note {note.note_id} assigned to {target}"
 
     @tool
     @_safe
@@ -219,7 +321,8 @@ def make_todo_tools(
         if kind not in ATTACHMENT_KINDS:
             return f"todo-board error [TodoValidationError]: kind must be one of {ATTACHMENT_KINDS}"
         att = await ex.attach(
-            card_id, kind, path=path, url=url, title=title, mime=mime
+            card_id, kind, path=path, url=url, title=title, mime=mime,
+            actor=author,
         )
         return f"attached {att.kind} {att.attachment_id} to {card_id}"
 
@@ -236,14 +339,13 @@ def make_todo_tools(
         Dispatches to a generative artifact block by name: ``audio`` speaks
         ``spec={"text": ...}`` through the TTS pipeline into a WAV voice
         note; ``diagram`` renders a visuals spec (``spec={"kind":
-        "diagram"|"chart"|..., ...}``). ``spec`` is a JSON object (an
-        object-encoded string is accepted too). The file is written into the
-        card's workspace directory, so it survives with the card.
+        "diagram"|"chart"|..., ...}``); ``journey`` compiles the card's whole
+        think flow — objectives, notes, activity timeline, artifacts — into a
+        themed HTML "journey of the plan" document (no spec needed). ``spec``
+        is a JSON object (an object-encoded string is accepted too). The file
+        is written into the card's workspace directory, so it survives with
+        the card.
         """
-        # The dispatcher is block-agnostic: everything block-specific lives
-        # in the registry, so new generative blocks need no edits here.
-        from yuyutsava.todoboard.artifacts import blocks
-
         if isinstance(spec, str):  # models often stringify nested objects
             try:
                 spec = json.loads(spec)
@@ -257,36 +359,12 @@ def make_todo_tools(
                 "todo-board error [TodoValidationError]: spec must be a "
                 "JSON object, not a list/scalar"
             )
-
-        gen = next((b for b in blocks() if b.name == block), None)
-        if gen is None or gen.generate is None:
-            names = ", ".join(sorted(b.name for b in blocks() if b.generate))
-            return (
-                f"todo-board error [TodoValidationError]: no generative "
-                f"artifact block named {block!r} (available: {names})"
-            )
-        card = await ex.get_card(card_id)
-        from yuyutsava.storage.paths import blobs_dir
-
-        out_dir = (
-            Path(card.workspace_path) if card.workspace_path
-            else blobs_dir() / "todoboard" / card_id
-        )
-        # Generators do blocking work (TTS/renderers) — off the event loop,
-        # like the exchange runs validators.
-        try:
-            path, mime = await asyncio.to_thread(gen.generate, dict(spec or {}), out_dir)
-        except TodoError:
-            raise  # _safe renders these
-        except Exception as exc:  # a broken generator must not crash the loop
-            return f"todo-board error [TodoAttachmentError]: {block} generation failed: {exc}"
-        att = await ex.attach(
-            card_id, gen.kind, path=str(path), mime=mime, title=title,
-            meta={"source": "generate", "block": block, "author": author},
+        att = await ex.generate_artifact(
+            card_id, block, spec, title=title, actor=author
         )
         return (
             f"generated {block} artifact {att.attachment_id} ({att.mime}) "
-            f"on {card_id}: {path.name}"
+            f"on {card_id}: {Path(att.path).name if att.path else ''}"
         )
 
     return [
@@ -294,6 +372,9 @@ def make_todo_tools(
         todo_update,
         todo_set_status,
         todo_add_note,
+        todo_add_objective,
+        todo_update_objective,
+        todo_assign_note,
         todo_attach_artifact,
         todo_generate_artifact,
     ]

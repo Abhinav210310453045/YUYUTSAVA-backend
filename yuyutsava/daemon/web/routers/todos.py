@@ -32,9 +32,15 @@ from fastapi.responses import FileResponse
 
 from yuyutsava.todoboard import artifacts
 
+from yuyutsava.daemon.web.bundle import bundle_asset_response
+from yuyutsava.daemon.web.schemas.session import SessionOut
 from yuyutsava.daemon.web.schemas.todo import (
+    GenerateIn,
+    NoteAssignIn,
     NoteIn,
     NotePatchIn,
+    ObjectiveIn,
+    ObjectivePatchIn,
     TodoCreateIn,
     TodoPatchIn,
 )
@@ -45,13 +51,17 @@ from yuyutsava.todoboard.exchange import (
     TodoValidationError,
     get_default_exchange,
 )
+from yuyutsava.storage.ids import tinker_thread_base
+from yuyutsava.storage.sessions import get_default_session_store
 from yuyutsava.todoboard.models import (
     BoardSnapshotV1,
     CardStatus,
     TodoAttachmentV1,
     TodoCardSummaryV1,
     TodoCardV1,
+    TodoEventV1,
     TodoNoteV1,
+    TodoObjectiveV1,
 )
 
 logger = logging.getLogger("yuyutsava.daemon.web.routers.todos")
@@ -101,6 +111,18 @@ async def board_snapshot() -> BoardSnapshotV1:
     return await get_default_exchange().board_snapshot()
 
 
+# Also before /todos/{card_id} so "attachments" never parses as a card id.
+@router.get(
+    "/todos/attachments", response_model=list[TodoAttachmentV1],
+    summary="List every card's attachments (newest first) for the gallery",
+)
+@_mapped
+async def list_all_attachments(
+    limit: int = Query(200, ge=1, le=1000),
+) -> list[TodoAttachmentV1]:
+    return await get_default_exchange().list_all_attachments(limit=limit)
+
+
 @router.post("/todos", response_model=TodoCardV1, status_code=201, summary="Create a TODO card")
 @_mapped
 async def create_todo(body: TodoCreateIn) -> TodoCardV1:
@@ -137,7 +159,10 @@ async def delete_todo(card_id: str) -> None:
 )
 @_mapped
 async def add_note(card_id: str, body: NoteIn) -> TodoNoteV1:
-    return await get_default_exchange().add_note(card_id, body.body, author=body.author)
+    return await get_default_exchange().add_note(
+        card_id, body.body, author=body.author,
+        objective_id=body.objective_id, phase=body.phase,
+    )
 
 
 @router.patch(
@@ -159,12 +184,114 @@ async def delete_note(card_id: str, note_id: str) -> None:
     await get_default_exchange().delete_note(note_id)
 
 
+@router.patch(
+    "/todos/{card_id}/notes/{note_id}/assign", response_model=TodoNoteV1,
+    summary="Assign a note to an objective (or clear with objective_id=null)",
+)
+@_mapped
+async def assign_note(card_id: str, note_id: str, body: NoteAssignIn) -> TodoNoteV1:
+    await _require_note_on_card(card_id, note_id)
+    return await get_default_exchange().assign_note(
+        note_id, objective_id=body.objective_id, phase=body.phase,
+    )
+
+
 async def _require_note_on_card(card_id: str, note_id: str) -> None:
     """404 (before any write) unless the note exists on this card."""
     card = await get_default_exchange().get_card(card_id)
     if not any(n.note_id == note_id for n in card.notes):
         raise HTTPException(
             status_code=404, detail=f"note {note_id!r} is not on card {card_id!r}"
+        )
+
+
+# ── objectives (think flow) ────────────────────────────────────────────
+
+@router.post(
+    "/todos/{card_id}/objectives", response_model=TodoObjectiveV1, status_code=201,
+    summary="Add an objective to a card's think flow",
+)
+@_mapped
+async def add_objective(card_id: str, body: ObjectiveIn) -> TodoObjectiveV1:
+    return await get_default_exchange().add_objective(
+        card_id, body.title, phase=body.phase,
+    )
+
+
+@router.patch(
+    "/todos/{card_id}/objectives/{objective_id}", response_model=TodoObjectiveV1,
+    summary="Update an objective (title/phase/order/reason/outcome)",
+)
+@_mapped
+async def patch_objective(
+    card_id: str, objective_id: str, body: ObjectivePatchIn,
+) -> TodoObjectiveV1:
+    await _require_objective_on_card(card_id, objective_id)
+    return await get_default_exchange().update_objective(
+        objective_id, title=body.title, phase=body.phase,
+        order_idx=body.order_idx, reason=body.reason, outcome=body.outcome,
+    )
+
+
+@router.delete(
+    "/todos/{card_id}/objectives/{objective_id}", status_code=204,
+    summary="Delete an objective (its notes demote to general)",
+)
+@_mapped
+async def delete_objective(card_id: str, objective_id: str) -> None:
+    await _require_objective_on_card(card_id, objective_id)
+    await get_default_exchange().delete_objective(objective_id)
+
+
+@router.get(
+    "/todos/{card_id}/events", response_model=list[TodoEventV1],
+    summary="A card's activity timeline (oldest first)",
+)
+@_mapped
+async def list_events(
+    card_id: str,
+    limit: int = Query(500, ge=1, le=5000),
+) -> list[TodoEventV1]:
+    ex = get_default_exchange()
+    await ex.get_card(card_id)  # 404 for unknown cards, not an empty list
+    return await ex.list_events(card_id, limit=limit)
+
+
+@router.get(
+    "/todos/{card_id}/chats", response_model=list[SessionOut],
+    summary="The card's tinker chat sessions, newest first",
+)
+@_mapped
+async def list_card_chats(
+    card_id: str,
+    limit: int = Query(50, ge=1, le=200),
+) -> list[SessionOut]:
+    await get_default_exchange().get_card(card_id)  # 404 for unknown cards
+    store = get_default_session_store()
+    rows = await store.list_thread_family(
+        tinker_thread_base(card_id), limit=limit
+    )
+    return [SessionOut.from_session(s) for s in rows]
+
+
+@router.post(
+    "/todos/{card_id}/generate", response_model=TodoAttachmentV1, status_code=201,
+    summary="Generate an artifact on the card via a generative block",
+)
+@_mapped
+async def generate_artifact(card_id: str, body: GenerateIn) -> TodoAttachmentV1:
+    return await get_default_exchange().generate_artifact(
+        card_id, body.block, body.spec, title=body.title,
+    )
+
+
+async def _require_objective_on_card(card_id: str, objective_id: str) -> None:
+    """404 (before any write) unless the objective exists on this card."""
+    card = await get_default_exchange().get_card(card_id)
+    if not any(o.objective_id == objective_id for o in card.objectives):
+        raise HTTPException(
+            status_code=404,
+            detail=f"objective {objective_id!r} is not on card {card_id!r}",
         )
 
 
@@ -232,9 +359,32 @@ async def upload_attachment(
     file: UploadFile = File(...),
     title: str | None = Form(None),
     kind: str | None = Form(None),
+    objective_id: str | None = Form(None),
+    note_id: str | None = Form(None),
 ) -> TodoAttachmentV1:
     ex = get_default_exchange()
     card = await ex.get_card(card_id)  # 404 before any disk write
+
+    # Soft association only: rows stay card-level; the objective/note pointer
+    # lives in meta (with a title snapshot) so it survives objective deletion
+    # the same way todo_events.objective_id does.
+    assoc: dict = {}
+    if objective_id:
+        obj = next((o for o in card.objectives if o.objective_id == objective_id), None)
+        if obj is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"objective {objective_id!r} is not on card {card_id!r}",
+            )
+        assoc["objective_id"] = objective_id
+        assoc["objective_title"] = obj.title
+    if note_id:
+        if not any(n.note_id == note_id for n in card.notes):
+            raise HTTPException(
+                status_code=400,
+                detail=f"note {note_id!r} is not on card {card_id!r}",
+            )
+        assoc["note_id"] = note_id
 
     mime = file.content_type or None
     if mime in (None, "application/octet-stream"):
@@ -255,7 +405,7 @@ async def upload_attachment(
         return await ex.attach(
             card_id, kind, path=str(dest), mime=mime,
             title=title or file.filename or dest.name,
-            meta={"size": size, "filename": file.filename, "source": "upload"},
+            meta={"size": size, "filename": file.filename, "source": "upload", **assoc},
         )
     except BaseException:
         await asyncio.to_thread(dest.unlink, True)  # missing_ok
@@ -283,6 +433,25 @@ async def get_attachment(
         media_type=att.mime or "application/octet-stream",
         filename=os.path.basename(att.path) if download else None,
     )
+
+
+@router.get(
+    "/todos/{card_id}/attachments/{attachment_id}/bundle/{rel_path:path}",
+    summary="Serve a file from the attachment's own directory (multi-file artifacts)",
+)
+@_mapped
+async def get_attachment_bundle_asset(
+    card_id: str, attachment_id: str, rel_path: str,
+) -> FileResponse:
+    """Bytes for one file of a multi-file artifact, relative to the attachment.
+
+    The renderer frames the primary file at ``…/bundle/<basename of att.path>``,
+    so its relative refs (``./support.js``, a sibling stylesheet) resolve back
+    into this route and the artifact renders as it would from a folder on disk.
+    Path containment is enforced in ``web/bundle.py``.
+    """
+    att = await _require_attachment_on_card(card_id, attachment_id)
+    return bundle_asset_response(att.path, rel_path)
 
 
 @router.delete(

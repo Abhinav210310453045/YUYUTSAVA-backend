@@ -257,7 +257,7 @@ class OllamaSettings:
 class OpenAISettings:
     """Native OpenAI API (OpenAI-compatible chat completions).
 
-    Handled by the default ``ChatOpenAI`` path in ``yuyutsava.core.llm`` — no
+    Handled by the default ``ChatOpenAI`` path in ``yuyutsava.llm`` — no
     dedicated factory branch needed. See https://platform.openai.com/
     """
 

@@ -29,7 +29,10 @@ logger = logging.getLogger("yuyutsava.skills.tools")
 
 
 def make_skill_tools(
-    registry: SkillRegistry, store: SkillStore | None = None
+    registry: SkillRegistry,
+    store: SkillStore | None = None,
+    *,
+    agent_name: str | None = None,
 ) -> list[BaseTool]:
     """Return skill tools bound to registry (+ optional store).
 
@@ -38,6 +41,11 @@ def make_skill_tools(
     over the skill index built from the same shared discovery factory as
     ``tool_search``, so the agent can actively find a skill beyond the
     per-turn relevant-skills injection.
+
+    ``agent_name`` is the writing agent's identity: ``sk_write_skill(scope=
+    "own")`` tags the saved skill with it so agent-scoped searches keep each
+    agent's task-specific skills out of the others' way (masters search with
+    agent=None and see everything).
     """
 
     @tool
@@ -51,7 +59,9 @@ def make_skill_tools(
         return registry.get_body(name)
 
     @tool
-    async def sk_write_skill(name: str, description: str, body: str) -> str:
+    async def sk_write_skill(
+        name: str, description: str, body: str, scope: str = "global"
+    ) -> str:
         """Save a reusable task pattern as a personal skill.
 
         Call this after completing a task whose pattern is NOT already in the
@@ -62,9 +72,15 @@ def make_skill_tools(
             name:        Short hyphenated identifier, e.g. 'pdf-to-archive'.
             description: One sentence — what + when to use. Max 512 chars.
             body:        Compact markdown instructions. Max 150 words.
+            scope:       "global" (default) — reusable by ANY agent;
+                         "own" — specific to your kind of task, visible only
+                         to you and to masters. Use "own" when unsure.
         """
+        agent = agent_name if scope == "own" and agent_name else None
         try:
-            slug = registry.write_skill(name=name, description=description, body=body)
+            slug = registry.write_skill(
+                name=name, description=description, body=body, agent=agent
+            )
         except Exception as exc:
             return f"error saving skill {name!r}: {exc}"
         # Index into the semantic store so it's retrievable later. Best-effort:
@@ -79,7 +95,10 @@ def make_skill_tools(
                         "skills: wrote %r to disk but failed to index it", slug,
                         exc_info=True,
                     )
-        return f"skill {slug!r} saved to personal scope"
+        return (
+            f"skill {slug!r} saved to personal scope"
+            + (f" (agent-scoped to {agent!r})" if agent else " (global)")
+        )
 
     tools: list[BaseTool] = [sk_read_skill, sk_write_skill]
 
@@ -94,7 +113,8 @@ def make_skill_tools(
                 noun="skill",
                 examples=(
                     "Returns the names + descriptions of the closest skills; then "
-                    "call sk_read_skill('<name>') to load the full body."
+                    "call sk_read_skill('<name>') to load the full body. Results "
+                    "may include skills any agent learned, not just your own."
                 ),
             )
         )

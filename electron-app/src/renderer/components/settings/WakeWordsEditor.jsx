@@ -45,7 +45,7 @@ export default function WakeWordsEditor({ value, threshold, onChange }) {
     borderRadius: 'var(--radius-btn)',
     fontSize: 10,
     fontFamily: 'var(--font-mono)',
-    fontWeight: 600,
+    fontWeight: 'var(--fw-semibold)',
     letterSpacing: '0.06em',
     cursor: 'pointer',
     ...extra,
@@ -108,8 +108,8 @@ export default function WakeWordsEditor({ value, threshold, onChange }) {
           onClick={() => add(draft)}
           style={chipBtn({
             textTransform: 'uppercase',
-            border: '1px solid rgba(0,255,136,0.3)',
-            background: 'rgba(0,255,136,0.06)',
+            border: '1px solid rgba(var(--accent-rgb),0.3)',
+            background: 'rgba(var(--accent-rgb),0.06)',
             color: 'var(--neon-green)',
             padding: '6px 14px',
           })}
@@ -127,7 +127,7 @@ export default function WakeWordsEditor({ value, threshold, onChange }) {
             style={chipBtn({
               border: '1px solid rgba(120,160,255,0.3)',
               background: 'rgba(120,160,255,0.08)',
-              color: '#9bb8ff',
+              color: 'var(--text-info)',
             })}
           >
             + {p}

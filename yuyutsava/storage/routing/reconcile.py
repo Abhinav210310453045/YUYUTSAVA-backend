@@ -80,21 +80,35 @@ CONTENT_TABLE_SPECS: tuple[TableSpec, ...] = (
               ("feedback_id", "thread_id", "session_id", "workspace", "message_ref",
                "rating", "note", "user_text", "assistant_text", "created_ts"),
               order=5, ts_cols=frozenset({"created_ts"}), any_conflict=True),
-    # TODO board (pg/migrations v16): durable user data, no thread FK. Cards
-    # drain before their FK children. pinned is INTEGER on both sides so the
-    # replay needs no bool cast.
+    # TODO board (pg/migrations v16 + v17): durable user data, no thread FK.
+    # Cards drain before their FK children; objectives before notes (notes'
+    # objective_id FK). pinned/order_idx are INTEGER on both sides so the
+    # replay needs no bool cast. A buffered note referencing an objective
+    # deleted in PG mid-outage violates todo_notes_objective_fk on replay
+    # (any_conflict doesn't cover FK errors) — same accepted risk class as
+    # the card FK. todo_events is history: append-only, no objective FK.
     TableSpec("todo_cards", ("card_id",),
               ("card_id", "title", "status", "pinned", "tags", "workspace_path",
                "created_ts", "updated_ts"),
               order=6, jsonb=frozenset({"tags"}),
               ts_cols=frozenset({"created_ts", "updated_ts"}), any_conflict=True),
-    TableSpec("todo_notes", ("note_id",),
-              ("note_id", "card_id", "body", "author", "created_ts", "updated_ts"),
+    TableSpec("todo_objectives", ("objective_id",),
+              ("objective_id", "card_id", "title", "phase", "order_idx",
+               "reason", "outcome", "created_ts", "updated_ts"),
               order=7, ts_cols=frozenset({"created_ts", "updated_ts"}), any_conflict=True),
+    TableSpec("todo_notes", ("note_id",),
+              ("note_id", "card_id", "body", "author", "objective_id", "phase",
+               "created_ts", "updated_ts"),
+              order=8, ts_cols=frozenset({"created_ts", "updated_ts"}), any_conflict=True),
     TableSpec("todo_attachments", ("attachment_id",),
               ("attachment_id", "card_id", "kind", "path", "url", "mime", "title",
                "meta", "created_ts"),
-              order=7, jsonb=frozenset({"meta"}),
+              order=8, jsonb=frozenset({"meta"}),
+              ts_cols=frozenset({"created_ts"}), any_conflict=True),
+    TableSpec("todo_events", ("event_id",),
+              ("event_id", "card_id", "objective_id", "kind", "payload", "actor",
+               "created_ts"),
+              order=9, jsonb=frozenset({"payload"}),
               ts_cols=frozenset({"created_ts"}), any_conflict=True),
 )
 

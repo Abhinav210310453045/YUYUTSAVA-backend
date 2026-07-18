@@ -221,12 +221,21 @@ class PgUsageStore(UsageStore):
         # are satisfied for thread-less / task-less rows (e.g. raw CLI calls).
         thread_id = row.thread_id or None
         task_id = row.task_id or None
+        # task_id may name a conversation that was never registered in `tasks`
+        # (e.g. the tinker card recorder tags "tinker:<card_id>", which is a chat
+        # thread, not an orchestrator task). Resolve it through a guard subquery:
+        # an existing task keeps its id; an orphan (or NULL) collapses to NULL, so
+        # llm_usage_task_fk is always satisfied — the same orphan-nulling the v4
+        # migration applies to the backfill. Attribution for real tasks is
+        # untouched (the orchestrator inserts the task row before its first call).
         async with self._pool.connection() as conn:
             await ensure_thread(conn, thread_id)  # parent must exist for the FK
             await conn.execute(
                 "INSERT INTO llm_usage (id, ts, thread_id, task_id, role, "
                 "model, input_tokens, output_tokens, est_cost_usd) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                "VALUES (%s, %s, %s, "
+                "(SELECT task_id FROM tasks WHERE task_id = %s), "
+                "%s, %s, %s, %s, %s)",
                 (row.id, row.ts, thread_id, task_id, row.role,
                  row.model, row.input_tokens, row.output_tokens,
                  row.est_cost_usd),

@@ -11,7 +11,7 @@ import MessageImages from '../chat/MessageImages'
 // "wake keywords live in Settings" note. Stored as a UI-only env key.
 const NOTE_KEY = 'UI_VOICE_NOTE_DISMISSED'
 
-const BLUE = '#9bb8ff'
+const BLUE = 'var(--text-info)'
 
 // Play / pause glyph for the per-message audio toggle. Two bars while a clip is
 // audible (tap to stop), a triangle otherwise (tap to replay).
@@ -312,7 +312,7 @@ export default function VoicePanel({ onOpenSettings, autoStartSignal = 0, resume
         <span style={{
           fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.1em',
           textTransform: 'uppercase', fontWeight: 700, flex: 1,
-          background: 'linear-gradient(90deg, #cdd9ff, #9bb8ff 60%, #8b5cf6)',
+          background: 'linear-gradient(90deg, #cdd9ff, var(--text-info) 60%, #8b5cf6)',
           WebkitBackgroundClip: 'text', backgroundClip: 'text', WebkitTextFillColor: 'transparent',
         }}>Voice — talk to YUYUTSAVA</span>
         <NewSessionButton onClick={() => { stopVoice(); newSession() }} label="New" color={BLUE} />
@@ -415,8 +415,8 @@ function askBtn(primary) {
   return {
     fontFamily: 'var(--font-mono)', fontSize: 12, cursor: 'pointer',
     padding: '6px 12px', borderRadius: 10,
-    background: primary ? 'rgba(0,255,136,0.1)' : 'rgba(255,51,102,0.08)',
-    border: `1px solid ${primary ? 'rgba(0,255,136,0.3)' : 'rgba(255,51,102,0.3)'}`,
+    background: primary ? 'rgba(var(--accent-rgb),0.1)' : 'rgba(255,51,102,0.08)',
+    border: `1px solid ${primary ? 'rgba(var(--accent-rgb),0.3)' : 'rgba(255,51,102,0.3)'}`,
     color: primary ? 'var(--neon-green)' : 'var(--neon-red)',
   }
 }

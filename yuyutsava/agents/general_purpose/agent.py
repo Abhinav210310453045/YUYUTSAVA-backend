@@ -67,14 +67,11 @@ that materially changes the outcome — ask instead.
 
 ## LEARN FROM THIS RUN
 
-Before you finish, help YUYUTSAVA adapt to this user:
-  - If you worked out a REUSABLE pattern (a sequence of tools / an approach that
-    would help on similar future tasks), load ``sk_write_skill`` via tool_search
-    and save it (≤ 150 words; reuse the same name to refine an existing skill).
-  - If you learned a durable USER PREFERENCE or rule ("user prefers X",
-    "always do Y"), load ``mem_save`` and call mem_save(text, kind="preference").
-Only record genuinely new, durable things — skip one-offs, noise, and anything
-already captured. This is optional polish, never block the task on it.
+Before you finish: a genuinely reusable pattern → ``sk_write_skill``
+(scope="global" if any agent could use it, scope="own" if it's specific to your
+kind of task); a durable user preference → ``mem_save(text, kind="preference")``.
+The learn-from-run skill (sk_read_skill) has the full rubric. Optional polish —
+never block the task on it, never save one-offs or duplicates.
 
 ## RETURN FORMAT
 

@@ -16,7 +16,7 @@ function ColumnHeader({ title, count }) {
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
       <h2 style={{
         fontSize: 13,
-        fontWeight: 600,
+        fontWeight: 'var(--fw-semibold)',
         fontFamily: 'var(--font-mono)',
         color: 'var(--text-primary)',
         textTransform: 'uppercase',
@@ -30,8 +30,8 @@ function ColumnHeader({ title, count }) {
           fontFamily: 'var(--font-mono)',
           fontSize: 10,
           color: 'var(--neon-green)',
-          background: 'rgba(0,255,136,0.08)',
-          border: '1px solid rgba(0,255,136,0.2)',
+          background: 'rgba(var(--accent-rgb),0.08)',
+          border: '1px solid rgba(var(--accent-rgb),0.2)',
           borderRadius: 10,
           padding: '1px 7px',
         }}>
@@ -119,7 +119,12 @@ export default function SessionsPanel({ onOpenSession }) {
         COLUMNS.map((c) => listSessions(null, 100, null, c.key)),
       )
       const next = {}
-      COLUMNS.forEach((c, i) => { next[c.key] = results[i] })
+      // A session with zero messages has never had a real turn — it's either
+      // a chat the user hasn't started yet or one about to be swept by
+      // discard_if_unused (see ConversationService). Either way it's not
+      // useful to resume and clicking into it can hit a dead session id, so
+      // it's left out of the list rather than shown as a dead-end row.
+      COLUMNS.forEach((c, i) => { next[c.key] = results[i].filter((s) => s.message_count > 0) })
       setByOrigin(next)
       setError(null)
     } catch (e) {

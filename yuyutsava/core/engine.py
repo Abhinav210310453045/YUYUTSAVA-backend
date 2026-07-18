@@ -33,7 +33,6 @@ from langgraph.graph.state import CompiledStateGraph
 
 from yuyutsava.core.config import DockerSettings, LocalSettings, LlmSettings, SearchConfig
 from yuyutsava.core.docker_sandbox_backend import DockerSandboxBackend
-from yuyutsava.core.llm import chat_model
 from yuyutsava.core.filesystem_prompt_middleware import FilesystemPromptOverrideMiddleware
 from yuyutsava.core.voice_style_middleware import VoiceStyleMiddleware
 from yuyutsava.core.permission_middleware import PermissionMiddleware
@@ -285,6 +284,8 @@ def _build_tool_registry_and_tools(
     skill_registry: SkillRegistry | None,
     extra_tools: list | None = None,
     skill_store: Any | None = None,
+    agent_name: str | None = None,
+    cap_enforcer: Any | None = None,
 ) -> tuple[list, Any]:
     """Build a ToolRegistry and return (startup_tools, registry).
 
@@ -292,12 +293,20 @@ def _build_tool_registry_and_tools(
     All custom tools go into the graph for execution; only tool_search is
     visible to the LLM upfront (the ToolFilterMiddleware hides tr_*/ws_* etc.).
     ``extra_tools`` rides along for families outside the fixed sets (e.g.
-    the always-visible ctx_* artifact readers).
+    the always-visible ctx_* artifact readers). ``cap_enforcer`` rate-caps the
+    ws_* searches (daemon policy); None (standalone CLI, no events store)
+    leaves them uncapped.
     """
     from yuyutsava.agents.db_tools import make_db_tools
 
-    search_tools = make_search_tools(search_config) if search_config else []
-    skill_tools = make_skill_tools(skill_registry, skill_store) if skill_registry else []
+    search_tools = (
+        make_search_tools(search_config, cap_enforcer=cap_enforcer)
+        if search_config else []
+    )
+    skill_tools = (
+        make_skill_tools(skill_registry, skill_store, agent_name=agent_name)
+        if skill_registry else []
+    )
     db_tools = make_db_tools()  # always available — read-only by construction
     all_custom_tools = (
         task_runner_tools + search_tools + skill_tools + db_tools + (extra_tools or [])
@@ -366,6 +375,55 @@ def _context_middleware(
     return out
 
 
+# Public alias: external builders (async_subagents host wiring in bootstrap /
+# agent stacks) attach the same context controllers to their graphs.
+context_middleware = _context_middleware
+
+
+def _sync_subagent_specs(
+    subagents: "Sequence[Any]",
+    *,
+    model: BaseChatModel,
+    artifact_store: Any | None,
+    context_settings: Any | None,
+    summary_store: Any | None,
+    memory_store: Any | None,
+    compaction_model: BaseChatModel | None,
+) -> list[dict]:
+    """Sync-delegation specs with the orchestrator's context treatment.
+
+    Mirrors build_orchestrator's per-spec wiring: ToolFilterMiddleware +
+    context middleware (tool-result offload, compaction) and the ctx_*
+    readback pair — without this, a delegated general-purpose run keeps
+    every tool result inline. No BudgetMiddleware here: the CLI/tinker
+    builds have no subagent token-budget config. transcript_store stays
+    None — sync subagent runs live inside the master's turn; transcripts
+    serve interactive resume.
+    """
+    specs: list[dict] = []
+    for sa in subagents:
+        spec = sa.as_deepagents_subagent_spec()
+        spec["middleware"] = [
+            ToolFilterMiddleware(),
+            *_context_middleware(
+                model=model,
+                artifact_store=artifact_store,
+                context_settings=context_settings,
+                summary_store=summary_store,
+                memory_store=memory_store,
+                transcript_store=None,
+                compaction_model=compaction_model,
+                role=sa.name,
+            ),
+        ]
+        if artifact_store is not None:
+            # Fresh ctx_* instances per spec — never shared across graphs.
+            from yuyutsava.context.tools import make_context_tools
+            spec["tools"] = list(spec.get("tools") or []) + make_context_tools(artifact_store)
+        specs.append(spec)
+    return specs
+
+
 def build_cli_deepagent(
     workspace_root: Path,
     settings: LlmSettings,
@@ -393,6 +451,12 @@ def build_cli_deepagent(
     compaction_model: BaseChatModel | None = None,
     skill_store: Any | None = None,
     transcript_index: Any | None = None,
+    mcp_tools: "list[Any] | None" = None,
+    cap_enforcer: Any | None = None,
+    budget_tokens: int | None = None,
+    usage_store: Any | None = None,
+    prefs_store: Any | None = None,
+    extra_tools: "list[Any] | None" = None,
 ) -> AgentBundle:
     """Build the CLI deepagent.
 
@@ -439,6 +503,11 @@ def build_cli_deepagent(
             CLI chat threads are the longest-lived in the system, so the
             stack factory (``cli/agent_stack.py``) wires these by default.
     """
+    # Imported here, not at module scope: `yuyutsava.llm` imports core.config,
+    # whose package __init__ re-exports this module — a module-level import would
+    # close that loop. Same reason model_name_of is imported lazily below.
+    from yuyutsava.llm import chat_model
+
     model = chat_model(settings)
     checkpointer = checkpointer or MemorySaver()
     # FilesystemPromptOverrideMiddleware strips the deepagents "## Filesystem Tools"
@@ -461,6 +530,22 @@ def build_cli_deepagent(
         compaction_model=compaction_model,
         role="cli",
     ))
+    # Absolute spend ceiling + passive accounting, after compaction (the
+    # orchestrator's ordering rule). Both daemon-wired: the standalone CLI
+    # passes neither and keeps its historical unbounded behavior. Lazy
+    # imports: daemon-only modules.
+    if budget_tokens is not None:
+        from yuyutsava.daemon.budget import BudgetMiddleware
+        middleware.append(BudgetMiddleware(max_input_tokens=budget_tokens, role="cli"))
+    if usage_store is not None:
+        from yuyutsava.llm import model_name_of
+        from yuyutsava.daemon.usage import UsageRecorder
+        # The chat bundle is shared across conversation threads, so there is
+        # no fixed thread/task to pin (unlike the per-card tinker recorder);
+        # rows land task-less/thread-less, which the store supports.
+        middleware.append(UsageRecorder(
+            usage_store, role="cli", model_name=model_name_of(model),
+        ))
     if permission_check:
         middleware.append(PermissionMiddleware(workspace_root=workspace_root.resolve()))
 
@@ -478,6 +563,11 @@ def build_cli_deepagent(
         # Recall this conversation's own earlier turns (survives checkpoint sweep).
         from yuyutsava.context.conversation_injector import ConversationInjector
         _injectors.append(ConversationInjector(transcript_index))
+    if prefs_store is not None:
+        # User preferences (whitelisted keys) — the same block the daemon
+        # orchestrator gets per task, here refreshed per turn.
+        from yuyutsava.prefs.injector import PrefsInjector
+        _injectors.append(PrefsInjector(prefs_store))
     if _injectors:
         from yuyutsava.core.retrieval_injection_middleware import (
             RetrievalInjectionMiddleware,
@@ -508,11 +598,42 @@ def build_cli_deepagent(
     from yuyutsava.todoboard.tools import make_todo_tools
     context_tools.extend(make_todo_tools(scope="capture"))
 
+    # Per-agent user-behavior memory (um_note/um_read): the CLI master learns
+    # durable behaviors of this user; only the MEMORY.md index rides the prompt.
+    from yuyutsava.memory.agent_memory import AgentMemoryStore
+    from yuyutsava.memory.agent_memory_tools import make_agent_memory_tools
+    _agent_mem = AgentMemoryStore("cli")
+    context_tools.extend(make_agent_memory_tools(_agent_mem))
+    agent_memory_block = _agent_mem.read_index_block()
+
+    # Inline artifacts (interactive HTML/JSX, docs, audio) shown in the chat/
+    # voice reply itself — the richer, non-card twin of the vis_* visuals.
+    from yuyutsava.artifacts.tools import make_artifact_tools
+    context_tools.extend(make_artifact_tools())
+
+    # User-configured MCP servers, scoped to "cli" — registered like every
+    # other master tool so unprefixed names stay model-visible and the rest
+    # ride tool_search, exactly as build_orchestrator wires them.
+    if mcp_tools:
+        context_tools.extend(mcp_tools)
+
+    # Daemon-provided one-off tools (e.g. orch_submit) ride the same registry.
+    if extra_tools:
+        context_tools.extend(extra_tools)
+
     skill_registry = SkillRegistry(workspace_dir=ws)
 
     subagent_specs: list[dict] = []
     if subagents:
-        subagent_specs.extend(sa.as_deepagents_subagent_spec() for sa in subagents)
+        subagent_specs.extend(_sync_subagent_specs(
+            subagents,
+            model=model,
+            artifact_store=artifact_store,
+            context_settings=context_settings,
+            summary_store=summary_store,
+            memory_store=memory_store,
+            compaction_model=compaction_model,
+        ))
 
     if async_subagents:
         if not async_host_url:
@@ -561,15 +682,19 @@ def build_cli_deepagent(
         )
         startup_tools, _registry = _build_tool_registry_and_tools(
             _bind_task_runner_tools(ws), search_config, skill_registry,
-            extra_tools=context_tools, skill_store=skill_store,
+            extra_tools=context_tools, skill_store=skill_store, agent_name="cli",
+            cap_enforcer=cap_enforcer,
         )
+        _prompt = docker_system_prompt(
+            workspace_root, docker_cfg.export_dir, _registry.catalog_block()
+        )
+        if agent_memory_block:
+            _prompt = f"{_prompt}\n\n{agent_memory_block}"
         graph = create_deep_agent(
             model=model,
             tools=startup_tools,
             backend=docker_backend,
-            system_prompt=docker_system_prompt(
-                workspace_root, docker_cfg.export_dir, _registry.catalog_block()
-            ),
+            system_prompt=_prompt,
             checkpointer=checkpointer,
             middleware=middleware,
             subagents=final_subagent_specs,
@@ -587,15 +712,19 @@ def build_cli_deepagent(
     backend = _local_shell_backend_factory(workspace_root, bash_timeout_sec)
     startup_tools, _registry = _build_tool_registry_and_tools(
         _bind_task_runner_tools(ws, sandbox_root), search_config, skill_registry,
-        extra_tools=context_tools, skill_store=skill_store,
+        extra_tools=context_tools, skill_store=skill_store, agent_name="cli",
+        cap_enforcer=cap_enforcer,
     )
+    _prompt = local_system_prompt(
+        workspace_root, sandbox_root, output_dir, _registry.catalog_block()
+    )
+    if agent_memory_block:
+        _prompt = f"{_prompt}\n\n{agent_memory_block}"
     graph = create_deep_agent(
         model=model,
         tools=startup_tools,
         backend=backend,
-        system_prompt=local_system_prompt(
-            workspace_root, sandbox_root, output_dir, _registry.catalog_block()
-        ),
+        system_prompt=_prompt,
         checkpointer=checkpointer,
         middleware=middleware,
         subagents=final_subagent_specs,
@@ -673,7 +802,9 @@ def build_orchestrator(
         # delegates dynamic tasks to the `general-purpose` subagent instead.
     ]
     if skill_registry:
-        master_tools.extend(make_skill_tools(skill_registry, skill_store))
+        master_tools.extend(
+            make_skill_tools(skill_registry, skill_store, agent_name="orchestrator")
+        )
     if deps.search_config is not None:
         master_tools.extend(make_search_tools(deps.search_config, cap_enforcer=deps.cap_enforcer))
     if deps.mcp_manager is not None:
@@ -687,6 +818,15 @@ def build_orchestrator(
     # TODO board capture — same subset as the CLI deepagent.
     from yuyutsava.todoboard.tools import make_todo_tools
     master_tools.extend(make_todo_tools(scope="capture"))
+    # Per-agent user-behavior memory (um_note/um_read); the index block itself
+    # is injected per task by the orchestrator loop alongside prefs/memory.
+    from yuyutsava.memory.agent_memory import AgentMemoryStore
+    from yuyutsava.memory.agent_memory_tools import make_agent_memory_tools
+    master_tools.extend(make_agent_memory_tools(AgentMemoryStore("orchestrator")))
+    # Inline artifacts (interactive HTML/JSX, docs, audio) shown in the chat/
+    # voice reply itself — the richer, non-card twin of the vis_* visuals.
+    from yuyutsava.artifacts.tools import make_artifact_tools
+    master_tools.extend(make_artifact_tools())
 
     # Lazy discovery: ToolFilterMiddleware hides the prefixed master tools
     # (sk_/ws_/mem_/…) from the model. Register them so the model can pull a
@@ -716,7 +856,7 @@ def build_orchestrator(
         usage_store = getattr(deps, "usage_store", None)
         if usage_store is None:
             return []
-        from yuyutsava.core.llm import model_name_of
+        from yuyutsava.llm import model_name_of
         from yuyutsava.daemon.usage import UsageRecorder
         return [UsageRecorder(
             usage_store,
@@ -782,6 +922,29 @@ def build_orchestrator(
         budget,
         *_usage_mw(model, "orchestrator"),
     ]
+
+    # Per-turn retrieval injection — memory/skills recalled against the
+    # task message itself (the loop's build-time prefs_block keeps only the
+    # non-similarity blocks: prefs + um index). ConversationInjector rides
+    # along when the daemon wires a transcript index, so resumed orchestrator
+    # threads recall their own swept turns like the CLI/tinker masters do.
+    _injectors: list = []
+    if deps.memory_store is not None:
+        from yuyutsava.context.injector import MemoryInjector
+        _injectors.append(MemoryInjector(deps.memory_store))
+    if skill_store is not None:
+        from yuyutsava.skills.injector import SkillInjector
+        _injectors.append(SkillInjector(skill_store, agent="orchestrator"))
+    _transcript_index = getattr(deps, "transcript_index", None)
+    if _transcript_index is not None:
+        from yuyutsava.context.conversation_injector import ConversationInjector
+        _injectors.append(ConversationInjector(_transcript_index))
+    if _injectors:
+        from yuyutsava.core.retrieval_injection_middleware import (
+            RetrievalInjectionMiddleware,
+        )
+        master_middleware.append(RetrievalInjectionMiddleware(_injectors))
+
     mirror = getattr(deps, "async_task_mirror", None)
     if mirror is not None and (async_subagents or getattr(deps, "remote_async_subagents", None)):
         from yuyutsava.async_subagents.cap_middleware import BackgroundTaskCapMiddleware
@@ -837,6 +1000,9 @@ def build_tinker_agent(
     usage_store: Any | None = None,
     mcp_tools: "list[Any] | None" = None,
     note_index: Any | None = None,
+    cap_enforcer: Any | None = None,
+    prefs_store: Any | None = None,
+    extra_tools: "list[Any] | None" = None,
 ) -> AgentBundle:
     """Build the TinkerAgent — third factory, sibling of :func:`build_cli_deepagent`
     and :func:`build_orchestrator`.
@@ -866,6 +1032,8 @@ def build_tinker_agent(
     tinker skills namespace. ``subagents``/``async_subagents`` ride along
     exactly like the CLI factory — no spawn-subagent tool.
     """
+    from yuyutsava.llm import chat_model  # lazy: see build_cli_deepagent
+
     model = chat_model(settings)
     checkpointer = checkpointer or MemorySaver()
     ws = card_workspace.resolve()
@@ -893,7 +1061,7 @@ def build_tinker_agent(
     from yuyutsava.daemon.budget import BudgetMiddleware
     middleware.append(BudgetMiddleware(max_input_tokens=budget_tokens, role="tinker"))
     if usage_store is not None:
-        from yuyutsava.core.llm import model_name_of
+        from yuyutsava.llm import model_name_of
         from yuyutsava.daemon.usage import UsageRecorder
         middleware.append(UsageRecorder(
             usage_store,
@@ -923,6 +1091,10 @@ def build_tinker_agent(
         # DIFFERENT card than the one this bundle is pinned to.
         from yuyutsava.todoboard.recall import TodoNoteInjector
         _injectors.append(TodoNoteInjector(note_index))
+    if prefs_store is not None:
+        # User preferences (whitelisted keys) — parity with the CLI master.
+        from yuyutsava.prefs.injector import PrefsInjector
+        _injectors.append(PrefsInjector(prefs_store))
     if _injectors:
         from yuyutsava.core.retrieval_injection_middleware import (
             RetrievalInjectionMiddleware,
@@ -944,17 +1116,43 @@ def build_tinker_agent(
     from yuyutsava.todoboard.tools import make_todo_tools
     context_tools.extend(make_todo_tools(scope="full", author="tinker"))
 
+    # Per-agent user-behavior memory — one shared "tinker" store across cards
+    # (behaviors are per-user, not per-card); the index rides the prompt below.
+    from yuyutsava.memory.agent_memory import AgentMemoryStore
+    from yuyutsava.memory.agent_memory_tools import make_agent_memory_tools
+    _agent_mem = AgentMemoryStore("tinker")
+    context_tools.extend(make_agent_memory_tools(_agent_mem))
+    agent_memory_block = _agent_mem.read_index_block()
+
     # User-configured MCP servers, scoped to "tinker" — registered like every
     # other master tool so unprefixed names stay model-visible and the rest
     # ride tool_search, exactly as build_orchestrator wires them.
     if mcp_tools:
         context_tools.extend(mcp_tools)
 
+    # Inline artifacts (interactive HTML/JSX, docs, audio) shown directly in
+    # the tinker chat reply — complements todo_generate_artifact, which pins
+    # its output to a card block instead.
+    from yuyutsava.artifacts.tools import make_artifact_tools
+    context_tools.extend(make_artifact_tools())
+
+    # Daemon-provided one-off tools (e.g. orch_submit) ride the same registry.
+    if extra_tools:
+        context_tools.extend(extra_tools)
+
     skill_registry = skill_registry or SkillRegistry()
 
     subagent_specs: list[dict] = []
     if subagents:
-        subagent_specs.extend(sa.as_deepagents_subagent_spec() for sa in subagents)
+        subagent_specs.extend(_sync_subagent_specs(
+            subagents,
+            model=model,
+            artifact_store=artifact_store,
+            context_settings=context_settings,
+            summary_store=summary_store,
+            memory_store=memory_store,
+            compaction_model=compaction_model,
+        ))
     if async_subagents:
         if not async_host_url:
             raise ValueError(
@@ -981,7 +1179,8 @@ def build_tinker_agent(
     startup_tools, _registry = _build_tool_registry_and_tools(
         _bind_task_runner_tools(ws, sandbox_root, agent_name="tinker"),
         search_config, skill_registry,
-        extra_tools=context_tools, skill_store=skill_store,
+        extra_tools=context_tools, skill_store=skill_store, agent_name="tinker",
+        cap_enforcer=cap_enforcer,
     )
 
     # Semantic store present → SkillInjector surfaces the relevant modes per
@@ -1001,6 +1200,7 @@ def build_tinker_agent(
             output_dir=output_dir,
             tool_catalog=_registry.catalog_block(),
             skills_index=skills_index,
+            agent_memory_block=agent_memory_block,
         ),
         checkpointer=checkpointer,
         middleware=middleware,

@@ -33,7 +33,7 @@ export default function ProposalCard({ proposal, onResolved }) {
     borderRadius: 'var(--radius-btn)',
     fontSize: 11,
     fontFamily: 'var(--font-mono)',
-    fontWeight: 600,
+    fontWeight: 'var(--fw-semibold)',
     letterSpacing: '0.05em',
     border: '1px solid',
     cursor: 'pointer',
@@ -149,7 +149,7 @@ export default function ProposalCard({ proposal, onResolved }) {
             lineHeight: 1.6,
             color: 'var(--text-code)',
             background: 'rgba(0,0,0,0.4)',
-            border: '1px solid rgba(0,255,136,0.1)',
+            border: '1px solid rgba(var(--accent-rgb),0.1)',
             borderRadius: 4,
             padding: '8px 10px',
             whiteSpace: 'pre-wrap',
@@ -165,7 +165,7 @@ export default function ProposalCard({ proposal, onResolved }) {
         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
           {!modifying ? (
             <>
-              <button onClick={() => respond('approve')} disabled={!!loading} style={{ ...btnBase, color: 'var(--neon-green)', borderColor: 'rgba(0,255,136,0.3)', background: 'rgba(0,255,136,0.06)' }}>
+              <button onClick={() => respond('approve')} disabled={!!loading} style={{ ...btnBase, color: 'var(--neon-green)', borderColor: 'rgba(var(--accent-rgb),0.3)', background: 'rgba(var(--accent-rgb),0.06)' }}>
                 {loading === 'approve' ? '...' : 'Approve'}
               </button>
               <button onClick={() => respond('approve_remember')} disabled={!!loading} style={{ ...btnBase, color: 'var(--neon-cyan)', borderColor: 'rgba(0,212,255,0.3)', background: 'rgba(0,212,255,0.06)', fontSize: 10 }}>
@@ -186,7 +186,7 @@ export default function ProposalCard({ proposal, onResolved }) {
               <button
                 onClick={() => respond('modify', editedText)}
                 disabled={!!loading}
-                style={{ ...btnBase, color: 'var(--neon-green)', borderColor: 'rgba(0,255,136,0.3)', background: 'rgba(0,255,136,0.06)' }}
+                style={{ ...btnBase, color: 'var(--neon-green)', borderColor: 'rgba(var(--accent-rgb),0.3)', background: 'rgba(var(--accent-rgb),0.06)' }}
               >
                 {loading === 'modify' ? '...' : 'Submit'}
               </button>

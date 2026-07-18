@@ -52,6 +52,15 @@ class ArtifactBlock:
     upload_mimes: tuple[str, ...] = () # subset accepted by the multipart upload
                                        # endpoint; () = not user-uploadable
     generate: Generator | None = None
+    needs_context: bool = False        # generate() wants the hydrated card +
+                                       # timeline injected into its spec (the
+                                       # dispatcher collects them ON the event
+                                       # loop — generators run in a thread and
+                                       # must never touch the loop-bound store)
+    singleton: bool = False            # at most one generated attachment of
+                                       # this block per card — regeneration
+                                       # updates the existing row in place
+                                       # instead of attaching a duplicate
 
 
 def _mime_matches(mime: str | None, patterns: tuple[str, ...]) -> bool:
@@ -217,9 +226,11 @@ register_block(ArtifactBlock(
 # them regardless of order, and their mimes are unclaimed by earlier blocks.
 from yuyutsava.todoboard.block_audio import AUDIO_BLOCK  # noqa: E402
 from yuyutsava.todoboard.block_jsx import JSX_BLOCK  # noqa: E402
+from yuyutsava.todoboard.block_journey import JOURNEY_BLOCK  # noqa: E402
 
 register_block(AUDIO_BLOCK)
 register_block(JSX_BLOCK)
+register_block(JOURNEY_BLOCK)
 
 
 __all__ = [

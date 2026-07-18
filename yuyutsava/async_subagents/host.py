@@ -159,18 +159,31 @@ class AsyncSubagentHost:
         *,
         model,
         checkpointer,
+        middleware_factory=None,
+        extra_tools_factory=None,
         **kwargs,
     ) -> "AsyncSubagentHost":
         """Build a host from a sequence of ``BaseSubAgent`` instances.
 
         Each subagent's ``build_async_graph(model, checkpointer)`` is compiled
         once and registered under ``subagent.async_graph_id()``.
+
+        ``middleware_factory(sa) -> list`` supplies context middleware
+        (tool-result offload, compaction) per graph; ``extra_tools_factory()
+        -> list`` supplies companion tools (ctx_* readback). Both are
+        FACTORIES, called once per subagent — middleware/tool instances must
+        not be shared across graphs. Omit both for the legacy bare graphs.
         """
         graphs: dict[str, object] = {}
         for sa in subagents:
             if not getattr(sa, "supports_async", False):
                 continue
-            graphs[sa.async_graph_id()] = sa.build_async_graph(model, checkpointer)
+            graphs[sa.async_graph_id()] = sa.build_async_graph(
+                model,
+                checkpointer,
+                middleware=middleware_factory(sa) if middleware_factory else None,
+                extra_tools=extra_tools_factory() if extra_tools_factory else None,
+            )
         return cls(graphs=graphs, **kwargs)
 
     # ------------------------------------------------------------------

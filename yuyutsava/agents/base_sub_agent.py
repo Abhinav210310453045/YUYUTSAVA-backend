@@ -27,7 +27,7 @@ Example::
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Sequence
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.tools import BaseTool
@@ -61,7 +61,11 @@ class BaseSubAgent(ABC):
         self,
         task_runner: TaskRunnerAgent,
         skill_registry: SkillRegistry | None = None,
-        can_write_skills: bool = False,
+        # Subagents learn by default — sk_write_skill with agent scoping keeps
+        # task-specific skills out of other agents' way (scope="own" tags them
+        # with self.name; masters still see everything). Purely reactive agents
+        # (triage, face_watcher) pass False explicitly where constructed.
+        can_write_skills: bool = True,
         search_config: SearchConfig | None = None,
         mcp_manager: MCPClientManager | None = None,
         cap_enforcer: object | None = None,  # tools.search._CapEnforcer; untyped to avoid cycle
@@ -166,7 +170,11 @@ class BaseSubAgent(ABC):
             from yuyutsava.skills.tools import make_skill_tools
             # Pass the store so sk_write_skill dual-writes (disk + semantic
             # index), making a skill learned this run recallable immediately.
-            return make_skill_tools(self._skill_registry, self._skill_store)
+            # agent_name lets scope="own" writes tag the skill with this
+            # subagent's identity.
+            return make_skill_tools(
+                self._skill_registry, self._skill_store, agent_name=self.name
+            )
         return [make_read_skill_tool(self._skill_registry)]
 
     def memory_tools(self) -> list[BaseTool]:
@@ -347,15 +355,40 @@ class BaseSubAgent(ABC):
         self,
         model: BaseChatModel,
         checkpointer: BaseCheckpointSaver,
+        *,
+        middleware: Sequence[Any] | None = None,
+        extra_tools: Sequence[BaseTool] | None = None,
     ) -> CompiledStateGraph:
         """Compiled graph registered with the LangGraph host.
 
-        Default: same react graph as the sync path. Subclasses can override
-        to compile a different graph for background execution (e.g. different
-        prompt, longer recursion limit, different tool subset).
+        Default (no ``middleware``/``extra_tools``): same react graph as the
+        sync path — unchanged behaviour. When ``middleware`` is provided the
+        graph compiles via ``langchain.agents.create_agent`` instead
+        (``create_react_agent`` has no middleware hook), giving background
+        runs the same context controllers as interactive agents — tool-result
+        offload, compaction — with ``extra_tools`` (fresh ctx_* readback
+        instances per graph) riding along. Subclasses can still override for
+        a different prompt/recursion limit/tool subset.
 
         No checkpointer is passed here: LangGraph API injects its own
         checkpointer at runtime, and embedding one causes a ValueError at
         graph load time.
         """
-        return self.build_react_agent(model, None)
+        if middleware is None and not extra_tools:
+            return self.build_react_agent(model, None)
+        from langchain.agents import create_agent
+
+        registry = self.build_tool_registry()
+        tools = [
+            registry.make_tool_search_tool(),
+            *self.all_tools(),
+            *(extra_tools or []),
+        ]
+        graph = create_agent(
+            model=model,
+            tools=tools,
+            system_prompt=self.rendered_system_prompt(),
+            middleware=list(middleware or []),
+        )
+        graph.name = self.name
+        return graph

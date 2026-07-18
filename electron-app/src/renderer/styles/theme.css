@@ -61,34 +61,200 @@
   --glass-bg-user: rgba(0, 255, 136, 0.06);
   --glass-border:  rgba(255, 255, 255, 0.10);
   --glass-blur:    14px;
+
+  /* Theme plumbing — defaults equal the previously hardcoded values so the
+     default dark theme stays pixel-identical. --accent-rgb is the brand accent
+     as an R,G,B triplet: components write rgba(var(--accent-rgb), <alpha>) so
+     one override retints every accent wash per theme. */
+  --accent-rgb:  0, 255, 136;
+  --bg-titlebar: rgba(10, 10, 15, 0.8);
+  --bg-bar:      transparent;  /* panel header strips; darkened in light themes */
+  --title-glow:  0 0 12px rgba(0, 255, 136, 0.5);
+  --scrollbar-thumb:       rgba(var(--accent-rgb), 0.3);
+  --scrollbar-thumb-hover: rgba(var(--accent-rgb), 0.55);
+  --selection-bg:          rgba(var(--accent-rgb), 0.28);
+  --focus-ring:            rgba(var(--accent-rgb), 0.1);
+  --bulge-glow:            rgba(var(--accent-rgb), 0.18);
+  --shadow-hover: 0 8px 24px rgba(0, 0, 0, 0.4);
+
+  /* Semantic text accents (previously hardcoded hex scattered in JSX) */
+  --text-info:     #9bb8ff;
+  --text-cyan:     #22d3ee;
+  --text-lavender: #c4b5fd;
+  --text-warning:  #facc15;
+
+  /* Typography weights — light themes bump these for readability on bright
+     backgrounds (body slightly bold, headings fully bold). */
+  --fw-body:     400;
+  --fw-semibold: 600;
 }
 
-/* Light theme — token overrides only. The redesigned Chat/Voice panels consume
-   these tokens so they flip fully; panels with hardcoded rgba are best-effort. */
-:root[data-theme="light"] {
-  --bg-deep:     #f4f6fb;
-  --bg-panel:    #eef1f8;
+/* ───────────────────────── Light theme family ─────────────────────────
+   Token overrides only — components never branch on the theme. All light
+   themes share ONE clean neutral canvas (below) so text stays maximally
+   readable; each theme's identity comes purely from its vivid accent trio
+   (brand + gradient/mesh companions) in the small blocks that follow.
+   --neon-green doubles as the brand accent; --accent-rgb drives every
+   rgba(var(--accent-rgb), a) wash. The default dark theme above is
+   untouched. Panels with remaining hardcoded rgba are best-effort. */
+:root[data-theme="light"],
+:root[data-theme="meadow"],
+:root[data-theme="lagoon"],
+:root[data-theme="sunset"],
+:root[data-theme="berry"] {
+  /* Neutral canvas — cool grays dark enough that white cards and the
+     titlebar clearly separate from the background, near-black text. */
+  --bg-deep:     #e3e6ee;
+  --bg-panel:    #cdd4e1;
   --bg-card:     #ffffff;
-  --bg-elevated: #ffffff;
-  --bg-hover:    #e9edf5;
+  --bg-elevated: #f6f7fa;
+  --bg-hover:    #b9c1d3;
+  --bg-titlebar: rgba(180, 189, 207, 0.97);
+  --bg-bar:      #c9d0de;
 
-  --text-primary:   #0f172a;
-  --text-secondary: #334155;
-  --text-muted:     #64748b;
-  --text-code:      #0a7d4f;
-  --text-dim:       #94a3b8;
+  --text-primary:   #0b1120;
+  --text-secondary: #223049;
+  --text-muted:     #43536e;
+  --text-dim:       #71809a;
 
-  --border-subtle: rgba(15, 23, 42, 0.08);
-  --border-card:   rgba(15, 23, 42, 0.12);
+  --border-subtle: rgba(16, 24, 40, 0.16);
+  --border-card:   rgba(16, 24, 40, 0.24);
 
-  --glow-green:  0 0 18px rgba(0, 200, 120, 0.18);
-  --shadow-card: 0 4px 20px rgba(15, 23, 42, 0.10), 0 1px 3px rgba(15, 23, 42, 0.08);
+  --shadow-card:  0 4px 20px rgba(16, 24, 40, 0.14), 0 1px 3px rgba(16, 24, 40, 0.12);
+  --shadow-hover: 0 8px 24px rgba(16, 24, 40, 0.22);
 
-  --glass-bg:      rgba(15, 23, 42, 0.04);
-  --glass-bg-user: rgba(0, 200, 120, 0.10);
-  --glass-border:  rgba(15, 23, 42, 0.10);
-  --grad-user:     linear-gradient(135deg, rgba(0,200,120,0.16), rgba(0,170,220,0.12));
-  --grad-mesh:     radial-gradient(60% 60% at 15% 10%, rgba(0,200,120,0.08), transparent 60%),
-                   radial-gradient(50% 50% at 85% 20%, rgba(139,92,246,0.07), transparent 60%),
-                   radial-gradient(60% 60% at 70% 90%, rgba(0,170,220,0.06), transparent 60%);
+  --glass-bg:     rgba(16, 24, 40, 0.07);
+  --glass-border: rgba(16, 24, 40, 0.18);
+
+  /* Semantic hues stay semantic (red=red, amber=amber) but darken so
+     they're readable on the light canvas. */
+  --neon-cyan:   #0e7490;
+  --neon-purple: #7c3aed;
+  --neon-amber:  #b45309;
+  --neon-red:    #dc2626;
+  --neon-blue:   #2563eb;
+  --text-warning: #a16207;
+
+  --border-amber: rgba(180, 83, 9, 0.4);
+  --border-red:   rgba(220, 38, 38, 0.35);
+
+  --glow-cyan:   0 0 14px rgba(14, 116, 144, 0.20);
+  --glow-purple: 0 0 14px rgba(124, 58, 237, 0.20);
+  --glow-amber:  0 0 14px rgba(180, 83, 9, 0.20);
+  --glow-red:    0 0 14px rgba(220, 38, 38, 0.20);
+
+  --title-glow:   none;
+  --selection-bg: rgba(var(--accent-rgb), 0.18);
+
+  /* Typographic hierarchy: body slightly bold, headings fully bold. */
+  --fw-body:     500;
+  --fw-semibold: 700;
+}
+
+/* Each theme below = brand accent + companion hues only. Everything else
+   comes from the shared neutral canvas above. */
+
+/* Daylight — royal blue brand, cyan + violet companions, amber warmth. */
+:root[data-theme="light"] {
+  --accent-rgb:  29, 78, 216;
+  --neon-green:  #1d4ed8;
+  --text-code:   #1e40af;
+  --text-info:     #2563eb;
+  --text-cyan:     #0e7490;
+  --text-lavender: #6d28d9;
+
+  --border-neon:  rgba(29, 78, 216, 0.42);
+  --border-focus: rgba(29, 78, 216, 0.72);
+  --glow-green:   0 0 14px rgba(29, 78, 216, 0.25);
+  --glass-bg-user: rgba(29, 78, 216, 0.10);
+
+  --grad-accent: linear-gradient(135deg, #1d4ed8 0%, #0891b2 50%, #7c3aed 100%);
+  --grad-user:   linear-gradient(135deg, rgba(29,78,216,0.14), rgba(8,145,178,0.11));
+  --grad-mesh:   radial-gradient(60% 60% at 15% 10%, rgba(29,78,216,0.08), transparent 60%),
+                 radial-gradient(50% 50% at 85% 20%, rgba(8,145,178,0.07), transparent 60%),
+                 radial-gradient(60% 60% at 70% 90%, rgba(180,83,9,0.06), transparent 60%);
+}
+
+/* Meadow — emerald brand, blue + amber companions. */
+:root[data-theme="meadow"] {
+  --accent-rgb:  4, 120, 87;
+  --neon-green:  #047857;
+  --text-code:   #065f46;
+  --text-info:     #2563eb;
+  --text-cyan:     #0e7490;
+  --text-lavender: #7c3aed;
+
+  --border-neon:  rgba(4, 120, 87, 0.42);
+  --border-focus: rgba(4, 120, 87, 0.72);
+  --glow-green:   0 0 14px rgba(4, 120, 87, 0.25);
+  --glass-bg-user: rgba(4, 120, 87, 0.10);
+
+  --grad-accent: linear-gradient(135deg, #047857 0%, #0d9488 50%, #2563eb 100%);
+  --grad-user:   linear-gradient(135deg, rgba(4,120,87,0.14), rgba(13,148,136,0.11));
+  --grad-mesh:   radial-gradient(60% 60% at 15% 10%, rgba(4,120,87,0.08), transparent 60%),
+                 radial-gradient(50% 50% at 85% 20%, rgba(180,83,9,0.06), transparent 60%),
+                 radial-gradient(60% 60% at 70% 90%, rgba(37,99,235,0.07), transparent 60%);
+}
+
+/* Lagoon — teal brand, violet + blue companions. */
+:root[data-theme="lagoon"] {
+  --accent-rgb:  14, 116, 144;
+  --neon-green:  #0e7490;
+  --text-code:   #155e75;
+  --text-info:     #6d28d9;
+  --text-cyan:     #0e7490;
+  --text-lavender: #7c3aed;
+
+  --border-neon:  rgba(14, 116, 144, 0.42);
+  --border-focus: rgba(14, 116, 144, 0.72);
+  --glow-green:   0 0 14px rgba(14, 116, 144, 0.25);
+  --glass-bg-user: rgba(14, 116, 144, 0.10);
+
+  --grad-accent: linear-gradient(135deg, #0e7490 0%, #2563eb 50%, #7c3aed 100%);
+  --grad-user:   linear-gradient(135deg, rgba(14,116,144,0.14), rgba(37,99,235,0.10));
+  --grad-mesh:   radial-gradient(60% 60% at 15% 10%, rgba(14,116,144,0.08), transparent 60%),
+                 radial-gradient(50% 50% at 85% 20%, rgba(124,58,237,0.07), transparent 60%),
+                 radial-gradient(60% 60% at 70% 90%, rgba(37,99,235,0.07), transparent 60%);
+}
+
+/* Sunset — burnt-orange brand, pink + violet companions. */
+:root[data-theme="sunset"] {
+  --accent-rgb:  194, 65, 12;
+  --neon-green:  #c2410c;
+  --text-code:   #9a3412;
+  --text-info:     #be185d;
+  --text-cyan:     #0e7490;
+  --text-lavender: #7c3aed;
+
+  --border-neon:  rgba(194, 65, 12, 0.42);
+  --border-focus: rgba(194, 65, 12, 0.72);
+  --glow-green:   0 0 14px rgba(194, 65, 12, 0.25);
+  --glass-bg-user: rgba(194, 65, 12, 0.09);
+
+  --grad-accent: linear-gradient(135deg, #c2410c 0%, #db2777 50%, #7c3aed 100%);
+  --grad-user:   linear-gradient(135deg, rgba(194,65,12,0.12), rgba(219,39,119,0.10));
+  --grad-mesh:   radial-gradient(60% 60% at 15% 10%, rgba(194,65,12,0.08), transparent 60%),
+                 radial-gradient(50% 50% at 85% 20%, rgba(219,39,119,0.07), transparent 60%),
+                 radial-gradient(60% 60% at 70% 90%, rgba(124,58,237,0.06), transparent 60%);
+}
+
+/* Berry — fuchsia brand, purple + blue companions. */
+:root[data-theme="berry"] {
+  --accent-rgb:  162, 28, 175;
+  --neon-green:  #a21caf;
+  --text-code:   #86198f;
+  --text-info:     #6d28d9;
+  --text-cyan:     #0e7490;
+  --text-lavender: #7c3aed;
+
+  --border-neon:  rgba(162, 28, 175, 0.42);
+  --border-focus: rgba(162, 28, 175, 0.72);
+  --glow-green:   0 0 14px rgba(162, 28, 175, 0.25);
+  --glass-bg-user: rgba(162, 28, 175, 0.09);
+
+  --grad-accent: linear-gradient(135deg, #a21caf 0%, #7c3aed 50%, #2563eb 100%);
+  --grad-user:   linear-gradient(135deg, rgba(162,28,175,0.12), rgba(124,58,237,0.10));
+  --grad-mesh:   radial-gradient(60% 60% at 15% 10%, rgba(162,28,175,0.08), transparent 60%),
+                 radial-gradient(50% 50% at 85% 20%, rgba(124,58,237,0.07), transparent 60%),
+                 radial-gradient(60% 60% at 70% 90%, rgba(37,99,235,0.07), transparent 60%);
 }

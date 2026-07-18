@@ -27,7 +27,7 @@ export default function InWindowToast() {
             cursor: 'pointer',
             maxWidth: 360,
             background: 'rgba(20,22,28,0.95)',
-            border: '1px solid rgba(0,255,136,0.25)',
+            border: '1px solid rgba(var(--accent-rgb),0.25)',
             borderRadius: 6,
             padding: '10px 12px',
             fontFamily: 'var(--font-mono)',
@@ -44,7 +44,7 @@ export default function InWindowToast() {
           }}>
             {t.kind}
           </div>
-          <div style={{ fontSize: 12, fontWeight: 600 }}>{t.title}</div>
+          <div style={{ fontSize: 12, fontWeight: 'var(--fw-semibold)' }}>{t.title}</div>
           {t.body && (
             <div style={{
               fontSize: 11,

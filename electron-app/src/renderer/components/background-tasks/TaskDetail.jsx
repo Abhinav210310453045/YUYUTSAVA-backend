@@ -8,17 +8,17 @@ import { getTaskLogs } from '../../api/client'
 // (already exposes tool_name / tool_args / status); no backend change needed.
 
 const STATUS_STYLES = {
-  running:       { color: 'var(--neon-cyan, #22d3ee)', label: 'running' },
-  awaiting_user: { color: 'var(--neon-amber, #fbbf24)', label: 'awaiting user' },
-  success:       { color: 'var(--neon-green, #00ff88)', label: 'done' },
-  failed:        { color: 'var(--neon-red, #ff3366)',   label: 'failed' },
+  running:       { color: 'var(--neon-cyan, var(--text-cyan))', label: 'running' },
+  awaiting_user: { color: 'var(--neon-amber, var(--neon-amber))', label: 'awaiting user' },
+  success:       { color: 'var(--neon-green, var(--neon-green))', label: 'done' },
+  failed:        { color: 'var(--neon-red, var(--neon-red))',   label: 'failed' },
 }
 
 const NODE_COLORS = {
   user:        'var(--neon-purple, #a78bfa)',
-  assistant:   'var(--neon-green, #00ff88)',
-  tool_call:   'var(--neon-amber, #fbbf24)',
-  tool_result: 'var(--neon-cyan, #22d3ee)',
+  assistant:   'var(--neon-green, var(--neon-green))',
+  tool_call:   'var(--neon-amber, var(--neon-amber))',
+  tool_result: 'var(--neon-cyan, var(--text-cyan))',
 }
 
 function fmtElapsed(seconds) {
@@ -38,7 +38,7 @@ function prettyArgs(raw) {
 function TimelineItem({ msg, isLast }) {
   const [hover, setHover] = useState(false)
   const isErr = msg.status === 'error'
-  const nodeColor = isErr ? 'var(--neon-red, #ff3366)' : (NODE_COLORS[msg.role] || 'var(--text-muted)')
+  const nodeColor = isErr ? 'var(--neon-red, var(--neon-red))' : (NODE_COLORS[msg.role] || 'var(--text-muted)')
 
   let label = msg.role
   let body = msg.text || ''
@@ -85,7 +85,7 @@ function TimelineItem({ msg, isLast }) {
         }}
       >
         <div style={{
-          color: isErr ? 'var(--neon-red, #ff3366)' : nodeColor,
+          color: isErr ? 'var(--neon-red, var(--neon-red))' : nodeColor,
           fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 700,
           marginBottom: body ? 4 : 0, letterSpacing: '0.02em',
         }}>
@@ -95,7 +95,7 @@ function TimelineItem({ msg, isLast }) {
           <div
             className="selectable"
             style={{
-              color: isErr ? 'var(--neon-red, #ff3366)' : 'var(--text-secondary)',
+              color: isErr ? 'var(--neon-red, var(--neon-red))' : 'var(--text-secondary)',
               fontFamily: mono ? 'var(--font-mono)' : 'var(--font-ui)',
               fontSize: mono ? 11 : 12.5, lineHeight: 1.5,
               whiteSpace: 'pre-wrap', wordBreak: 'break-word',
@@ -165,7 +165,7 @@ export default function TaskDetail({ task, onClose }) {
         onClick={(e) => e.stopPropagation()}
         style={{
           width: 'min(720px, 94vw)', height: '100%',
-          background: 'var(--bg-panel)', borderLeft: '1px solid var(--border-neon, rgba(0,255,136,0.25))',
+          background: 'var(--bg-panel)', borderLeft: '1px solid var(--border-neon, rgba(var(--accent-rgb),0.25))',
           display: 'flex', flexDirection: 'column',
           boxShadow: '-24px 0 60px rgba(0,0,0,0.5)',
           animation: 'drawer-slide-in 0.22s ease',
@@ -174,7 +174,7 @@ export default function TaskDetail({ task, onClose }) {
         {/* header */}
         <div style={{
           display: 'flex', alignItems: 'center', gap: 10,
-          padding: '14px 18px', borderBottom: '1px solid var(--border-subtle)',
+          padding: '14px 18px', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-bar)',
           flexShrink: 0,
         }}>
           <span style={{
@@ -192,7 +192,7 @@ export default function TaskDetail({ task, onClose }) {
               </span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 }}>
-              <span style={{ color: style.color, fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 600 }}>
+              <span style={{ color: style.color, fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 'var(--fw-semibold)' }}>
                 {style.label}
               </span>
               <span style={{ color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', fontSize: 11 }}>
@@ -231,7 +231,7 @@ export default function TaskDetail({ task, onClose }) {
               loading timeline<span style={{ animation: 'blink 1s step-end infinite' }}>…</span>
             </div>
           )}
-          {err && <div style={{ color: 'var(--neon-red, #ff3366)', fontFamily: 'var(--font-mono)', fontSize: 12 }}>error: {err}</div>}
+          {err && <div style={{ color: 'var(--neon-red, var(--neon-red))', fontFamily: 'var(--font-mono)', fontSize: 12 }}>error: {err}</div>}
 
           {logs && logs.length === 0 && !loading && (
             <div style={{ color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', fontSize: 12 }}>
@@ -248,11 +248,11 @@ export default function TaskDetail({ task, onClose }) {
               <div style={{ display: 'flex', justifyContent: 'center' }}>
                 <span style={{
                   width: 10, height: 10, borderRadius: '50%', marginTop: 12,
-                  background: 'var(--neon-cyan, #22d3ee)',
+                  background: 'var(--neon-cyan, var(--text-cyan))',
                   animation: 'task-node-pulse 1.4s ease-out infinite',
                 }} />
               </div>
-              <div style={{ color: 'var(--neon-cyan, #22d3ee)', fontFamily: 'var(--font-mono)', fontSize: 11, padding: '10px 0' }}>
+              <div style={{ color: 'var(--neon-cyan, var(--text-cyan))', fontFamily: 'var(--font-mono)', fontSize: 11, padding: '10px 0' }}>
                 {task.status === 'awaiting_user' ? 'waiting for your input…' : 'working…'}
               </div>
             </div>
@@ -261,7 +261,7 @@ export default function TaskDetail({ task, onClose }) {
           {!isLive && task.summary && (
             <div style={{
               marginTop: 8, padding: '10px 12px', borderRadius: 8,
-              background: 'rgba(0,255,136,0.05)', border: `1px solid ${style.color}44`,
+              background: 'rgba(var(--accent-rgb),0.05)', border: `1px solid ${style.color}44`,
             }}>
               <div style={{ color: style.color, fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 4 }}>
                 Result

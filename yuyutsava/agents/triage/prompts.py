@@ -31,8 +31,11 @@ agent (complexity, 1-5). Anchored examples: move one file = 1; rename a
 batch of files = 2; summarize a document = 3; multi-step research with web
 search = 4; build/refactor code across files = 5. When unsure, use 3.
 
-Output ONLY the structured decision; do not write prose.
+Return ONLY the structured decision as a single json object; do not write prose.
 """
+# The literal "json" above is load-bearing: with_structured_output sends
+# response_format=json_object, and some OpenAI-compatible providers (e.g.
+# Alibaba/Qwen) reject that unless the word "json" appears in the messages.
 
 
 def render_event_message(

@@ -12,6 +12,20 @@ export const STATUS_ACCENT = {
   archived: { bar: '#8888a0', border: 'rgba(136, 136, 160, 0.30)', glow: 'rgba(136, 136, 160, 0.10)', hover: 'rgba(136, 136, 160, 0.28)' },
 }
 
+// Think-flow phases in lane order (the exchange ObjectivePhase vocabulary):
+// mainline first, off-ramps after. One accent per phase, same shape as
+// STATUS_ACCENT so objective chips read like the rest of the board.
+export const PHASES = ['thinking', 'planning', 'doing', 'completed', 'blocked', 'abandoned']
+
+export const PHASE_ACCENT = {
+  thinking:  { bar: '#c4b5fd', border: 'rgba(167, 139, 250, 0.34)', glow: 'rgba(167, 139, 250, 0.12)', hover: 'rgba(167, 139, 250, 0.32)' },
+  planning:  { bar: '#7aa2ff', border: 'rgba(120, 160, 255, 0.34)', glow: 'rgba(120, 160, 255, 0.12)', hover: 'rgba(120, 160, 255, 0.32)' },
+  doing:     { bar: '#fbbf24', border: 'rgba(251, 191, 36, 0.34)', glow: 'rgba(251, 191, 36, 0.12)', hover: 'rgba(251, 191, 36, 0.32)' },
+  completed: { bar: '#00ff88', border: 'rgba(0, 255, 136, 0.30)', glow: 'rgba(0, 255, 136, 0.10)', hover: 'rgba(0, 255, 136, 0.28)' },
+  blocked:   { bar: '#ff5c7a', border: 'rgba(255, 92, 122, 0.34)', glow: 'rgba(255, 92, 122, 0.12)', hover: 'rgba(255, 92, 122, 0.32)' },
+  abandoned: { bar: '#8888a0', border: 'rgba(136, 136, 160, 0.30)', glow: 'rgba(136, 136, 160, 0.10)', hover: 'rgba(136, 136, 160, 0.28)' },
+}
+
 export function humanAge(unixSec) {
   const d = Math.max(0, Date.now() / 1000 - unixSec)
   if (d < 60) return `${Math.floor(d)}s ago`

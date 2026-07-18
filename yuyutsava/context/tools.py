@@ -1,8 +1,10 @@
-"""ctx_* tools: read offloaded tool results back on demand.
+"""ctx_* tools: read offloaded tool results back on demand + compact on request.
 
-These two tools are the retrieval half of the offload contract — every
+The fetch/grep pair is the retrieval half of the offload contract — every
 digest the :class:`ToolResultOffloadMiddleware` injects names them in its
-``hint`` field. Unlike the other prefixed tool families they are **always
+``hint`` field. ``ctx_compact`` is the agent-facing trigger for the
+:class:`~yuyutsava.context.compaction.YuyutsavaCompactionMiddleware` (which
+otherwise only fires on the token threshold). Unlike the other prefixed tool families they are **always
 visible** to the model (no ``tool_search`` discovery step): a digest is
 useless if the model can't immediately act on it, so ``ctx_`` is *not* in
 ``ToolFilterMiddleware._SUPPRESS_PREFIXES``.
@@ -73,7 +75,30 @@ def make_context_tools(store: ArtifactStore) -> list[BaseTool]:
         body = "\n".join(matches)
         return f"[artifact {artifact_id} — {len(matches)} match(es) for {pattern!r}]\n{body}"
 
-    tools: list[BaseTool] = [ctx_fetch_artifact, ctx_grep_artifact]
+    @tool
+    async def ctx_compact() -> str:
+        """Compact this conversation's older turns into a summary now.
+
+        Use when the context is getting long and the older turns are no
+        longer needed verbatim — e.g. after finishing a subtask, or before
+        starting something new in the same conversation. The summary keeps
+        the session intent, decisions, and artifact ids; recent messages
+        stay verbatim. Compaction runs automatically near the token budget,
+        so only call this to compact EARLIER than that.
+        """
+        # Lazy import: keeps this module free of the middleware stack.
+        from yuyutsava.context.compaction import request_compaction
+
+        thread_id = thread_id_from_runtime()
+        if not thread_id:
+            return "[error] no active thread — compaction not scheduled"
+        request_compaction(thread_id)
+        return (
+            "[ok] compaction scheduled — older turns will be summarized on "
+            "the next model call in this thread"
+        )
+
+    tools: list[BaseTool] = [ctx_fetch_artifact, ctx_grep_artifact, ctx_compact]
 
     # ctx_recall is only meaningful when the store maintains a semantic index
     # (Postgres + embedder). On SQLite the tool is simply not offered, so the

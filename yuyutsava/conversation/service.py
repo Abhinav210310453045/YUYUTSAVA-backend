@@ -26,10 +26,13 @@ orchestrator exactly the way the CLI does.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
+import time
 from pathlib import Path
 from typing import Awaitable, Callable  # noqa: F401 — Callable used in type strings
 
+from yuyutsava.conversation.titles import derive_session_title
 from yuyutsava.core.engine import AgentBundle
 from yuyutsava.core.streaming import StreamEvent, astream_agent_iter
 from yuyutsava.sessions.runner import (
@@ -227,6 +230,15 @@ class ConversationService:
                 await self._ticker.tick(max(steps, 1))
                 if preview:
                     await self.store.touch(self.session.id, task_preview=preview)
+                if not self.session.title:
+                    # Name the session after its first user message — set-once
+                    # (the store's WHERE title='' guard keeps it race-safe).
+                    title = derive_session_title(text)
+                    if title:
+                        await self.store.set_title_if_empty(self.session.id, title)
+                        self.session = dataclasses.replace(
+                            self.session, title=title
+                        )
             except Exception:  # noqa: BLE001 — bookkeeping never breaks a turn
                 logger.debug("turn bookkeeping failed", exc_info=True)
         return final
@@ -235,16 +247,26 @@ class ConversationService:
     # Lifecycle                                                            #
     # ------------------------------------------------------------------ #
 
+    # Below this age, an unused session survives a disconnect instead of being
+    # discarded — long enough for a client to recover from a transient first-
+    # connection drop (network blip, panel re-render) and actually resume the
+    # SAME session it just cached as its reconnect target, instead of the id
+    # being deleted out from under it and every reconnect failing forever.
+    _DISCARD_GRACE_SEC = 10.0
+
     async def discard_if_unused(self) -> bool:
-        """Delete this session row iff no turn ever ran on it.
+        """Delete this session row iff no turn ever ran on it AND it's past
+        the grace window.
 
         Returns True if the row was discarded. Lets a transport drop a session
         that was opened (tab/overlay connect) but never used, instead of leaving
-        an empty seconds-old row cluttering the Sessions history. Safe: it only
-        deletes a session with zero turns — anything the user actually said keeps
-        the row. Bookkeeping is skipped for a discarded session.
+        an empty row cluttering the Sessions history. Safe: it only deletes a
+        session with zero turns — anything the user actually said keeps the
+        row. Bookkeeping is skipped for a discarded session.
         """
         if self._turns_ran > 0:
+            return False
+        if time.time() - self.session.created_at < self._DISCARD_GRACE_SEC:
             return False
         try:
             await self.store.delete(self.session.id)

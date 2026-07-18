@@ -64,6 +64,11 @@ voice = [
     # Zero-config TTS fallback off-macOS (SAPI5 on Windows, espeak on Linux);
     # macOS keeps the built-in `say` fallback instead.
     "pyttsx3>=2.90 ; sys_platform != 'darwin'",
+    # pyttsx3's SAPI5 driver drives Windows TTS through COM — declare the COM
+    # deps explicitly so a clean Windows install has a working voice fallback
+    # (pyttsx3 imports these lazily and doesn't hard-require them itself).
+    "comtypes>=1.2.0 ; sys_platform == 'win32'",
+    "pywin32>=306 ; sys_platform == 'win32'",
 ]
 memory = [
     "pgvector>=0.3.0",

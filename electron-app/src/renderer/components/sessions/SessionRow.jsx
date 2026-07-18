@@ -26,7 +26,7 @@ function shellQuote(s) {
 
 const STATUS_COLOR = {
   running: 'var(--neon-green)',
-  idle: '#facc15',
+  idle: 'var(--text-warning)',
   crashed: 'var(--neon-red)',
   done: 'var(--text-dim)',
 }
@@ -36,9 +36,9 @@ const CHAT_PREVIEW_MARKER = '(interactive chat)'
 // Per-origin accent used for the card's left bar, border tint, and glow so the
 // three columns are distinguishable at a glance. Keyed by session.origin.
 const ORIGIN_ACCENT = {
-  ui:    { bar: '#00ff88', border: 'rgba(0, 255, 136, 0.30)', glow: 'rgba(0, 255, 136, 0.10)', hover: 'rgba(0, 255, 136, 0.28)' },
+  ui:    { bar: 'var(--neon-green)', border: 'rgba(var(--accent-rgb), 0.30)', glow: 'rgba(var(--accent-rgb), 0.10)', hover: 'rgba(var(--accent-rgb), 0.28)' },
   voice: { bar: '#7aa2ff', border: 'rgba(120, 160, 255, 0.34)', glow: 'rgba(120, 160, 255, 0.12)', hover: 'rgba(120, 160, 255, 0.32)' },
-  cli:   { bar: '#fbbf24', border: 'rgba(251, 191, 36, 0.30)', glow: 'rgba(251, 191, 36, 0.10)', hover: 'rgba(251, 191, 36, 0.28)' },
+  cli:   { bar: 'var(--neon-amber)', border: 'rgba(251, 191, 36, 0.30)', glow: 'rgba(251, 191, 36, 0.10)', hover: 'rgba(251, 191, 36, 0.28)' },
 }
 
 function CopyButton({ label, command, accent = 'var(--neon-green)' }) {
@@ -62,9 +62,9 @@ function CopyButton({ label, command, accent = 'var(--neon-green)' }) {
         fontFamily: 'var(--font-mono)',
         fontSize: 11,
         padding: '6px 10px',
-        background: copied ? 'rgba(0,255,136,0.18)' : 'rgba(0,255,136,0.06)',
+        background: copied ? 'rgba(var(--accent-rgb),0.18)' : 'rgba(var(--accent-rgb),0.06)',
         color: accent,
-        border: `1px solid ${accent === 'var(--neon-green)' ? 'rgba(0,255,136,0.25)' : 'rgba(255,200,80,0.3)'}`,
+        border: `1px solid ${accent === 'var(--neon-green)' ? 'rgba(var(--accent-rgb),0.25)' : 'rgba(255,200,80,0.3)'}`,
         borderRadius: 6,
         cursor: 'pointer',
         transition: 'background 0.15s',
@@ -92,6 +92,10 @@ export default function SessionRow({ session, onDeleted, onOpenSession }) {
   const isVoice = session.origin === 'voice'
   const isResumableInUi = isUi || isVoice
   const isChat = isResumableInUi || (session.task_preview || '').trim() === CHAT_PREVIEW_MARKER
+  // Conversation name, Claude-Code style: the first user message (server-set
+  // title), falling back to the latest one (task_preview) for pre-title rows.
+  const chatTitle = session.title
+    || ((session.task_preview || '').trim() === CHAT_PREVIEW_MARKER ? '' : session.task_preview)
   const accent = ORIGIN_ACCENT[session.origin] || ORIGIN_ACCENT.cli
   // Pass the whole session so the parent can route by origin (voice→Voice panel,
   // ui/chat→Chat panel) instead of always opening chat.
@@ -158,7 +162,7 @@ export default function SessionRow({ session, onDeleted, onOpenSession }) {
           title={idExpanded ? 'click to collapse' : session.id}
           style={{
             color: 'var(--neon-green)',
-            fontWeight: 600,
+            fontWeight: 'var(--fw-semibold)',
             cursor: 'pointer',
             display: 'inline-block',
             maxWidth: idExpanded ? '480px' : '90px',
@@ -177,7 +181,7 @@ export default function SessionRow({ session, onDeleted, onOpenSession }) {
             padding: '1px 6px',
             borderRadius: 8,
             background: 'rgba(120, 160, 255, 0.12)',
-            color: '#9bb8ff',
+            color: 'var(--text-info)',
             border: '1px solid rgba(120, 160, 255, 0.25)',
             textTransform: 'uppercase',
             letterSpacing: '0.05em',
@@ -192,6 +196,22 @@ export default function SessionRow({ session, onDeleted, onOpenSession }) {
         <span style={{ flex: 1 }} />
         <span style={{ color: 'var(--text-dim)' }}>{humanAge(session.updated_at)}</span>
       </div>
+
+      {isChat && chatTitle && (
+        <div
+          title={chatTitle}
+          style={{
+            color: 'var(--text-primary)',
+            fontSize: 12,
+            opacity: 0.85,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {chatTitle}
+        </div>
+      )}
 
       {!isChat && (
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', color: 'var(--text-muted)', fontSize: 11 }}>
@@ -234,7 +254,7 @@ export default function SessionRow({ session, onDeleted, onOpenSession }) {
                 fontSize: 11,
                 padding: '6px 10px',
                 background: 'rgba(120,160,255,0.10)',
-                color: '#9bb8ff',
+                color: 'var(--text-info)',
                 border: '1px solid rgba(120,160,255,0.3)',
                 borderRadius: 6,
                 cursor: 'pointer',

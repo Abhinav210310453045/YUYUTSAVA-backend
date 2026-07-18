@@ -20,6 +20,11 @@ export class ConverseClient {
     this._ws = null
     this._retryDelay = 1000
     this._stopped = false
+    // Consecutive pre-`hello` rejections while trying to resume the current
+    // `resumeId` (e.g. the session was discarded server-side). Distinct from
+    // a mid-conversation turn error, which arrives AFTER `hello` and is never
+    // counted here — see the `helloReceived` guard in `_open()`.
+    this._resumeFailures = 0
   }
 
   connect() {
@@ -37,6 +42,7 @@ export class ConverseClient {
   // RESUMES this conversation instead of minting a fresh one — otherwise the
   // history is lost on every reconnect. Called with the thread_id from `hello`.
   setResumeId(id) {
+    if (id && id !== this.resumeId) this._resumeFailures = 0
     if (id) this.resumeId = id
   }
 
@@ -59,11 +65,33 @@ export class ConverseClient {
       return
     }
     this._ws = ws
+    // True once THIS attempt's `hello` frame lands. The WS transport can
+    // "succeed" (onopen fires) even when the server immediately rejects the
+    // session at the app layer and closes it — resetting the backoff there
+    // defeated it entirely (every attempt looked like a fresh success). Only
+    // `hello` is a real app-level success signal; an `error` frame arriving
+    // before it means the resume was rejected outright, not a mid-turn failure.
+    let helloReceived = false
 
-    ws.onopen = () => { this._retryDelay = 1000; this.handlers.onConnected?.() }
+    ws.onopen = () => { this.handlers.onConnected?.() }
     ws.onmessage = (e) => {
       let msg
       try { msg = JSON.parse(e.data) } catch { return }
+      if (msg.type === 'hello') {
+        helloReceived = true
+        this._retryDelay = 1000
+        this._resumeFailures = 0
+      } else if (msg.type === 'error' && !helloReceived && this.resumeId) {
+        this._resumeFailures += 1
+        if (this._resumeFailures >= ConverseClient.MAX_RESUME_FAILURES) {
+          const deadId = this.resumeId
+          this.resumeId = null
+          this._resumeFailures = 0
+          this._stopped = true
+          this.handlers.onResumeExhausted?.(msg.message, deadId)
+          return // swallow the repeated rejections — only the summary above surfaces
+        }
+      }
       this.handlers.onMessage?.(msg)
     }
     ws.onclose = () => {
@@ -87,10 +115,18 @@ export class ConverseClient {
     return false
   }
 
-  sendText(text) { return this._send({ type: 'user_text', text }) }
+  // `context` carries board-UI selection references (objective/note ids);
+  // the server wraps it in a <selection-context> block ahead of the text.
+  sendText(text, context = null) {
+    return this._send({ type: 'user_text', text, ...(context ? { context } : {}) })
+  }
   answerAsk(text) { return this._send({ type: 'ask_response', text }) }
   interrupt() { return this._send({ type: 'interrupt' }) }
   // Stream one frame of mic PCM (Int16Array, 16 kHz mono) to the daemon.
   sendAudio(int16) { return this._send({ type: 'audio', pcm: int16ToBase64(int16) }) }
   endAudio() { return this._send({ type: 'audio_end' }) }
 }
+
+// Consecutive pre-`hello` resume rejections before giving up on a dead
+// `resumeId` (see `_open()`'s `helloReceived` guard).
+ConverseClient.MAX_RESUME_FAILURES = 3

@@ -33,7 +33,7 @@ export default function SettingsField({ label, envKey, type = 'text', value, onC
           onClick={() => onChange(envKey, value === 'true' ? 'false' : 'true')}
           style={{
             width: 40, height: 22, borderRadius: 11,
-            background: value === 'true' ? 'rgba(0,255,136,0.3)' : 'var(--bg-elevated)',
+            background: value === 'true' ? 'rgba(var(--accent-rgb),0.3)' : 'var(--bg-elevated)',
             border: '1px solid',
             borderColor: value === 'true' ? 'var(--neon-green)' : 'var(--border-card)',
             position: 'relative',

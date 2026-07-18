@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { listTodos, createTodo, deleteTodo } from '../../api/client'
 import TodoCardView from './TodoCardView'
-import { STATUS_ACCENT, TagChips, PinIcon, humanAge } from './shared'
+import { STATUS_ACCENT, PHASE_ACCENT, TagChips, PinIcon, humanAge } from './shared'
 
 const POLL_MS = 5000
 
@@ -68,7 +68,7 @@ function TodoCard({ card, onOpen, onDeleted }) {
         )}
         <span style={{
           flex: 1,
-          fontWeight: 600,
+          fontWeight: 'var(--fw-semibold)',
           wordBreak: 'break-word',
           color: 'var(--text-primary)',
         }}>
@@ -97,6 +97,26 @@ function TodoCard({ card, onOpen, onDeleted }) {
 
       <TagChips tags={card.tags} />
 
+      {/* Think-flow progress: completed / total objectives (summary counts). */}
+      {card.objective_count > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{
+            flex: 1, height: 4, borderRadius: 2,
+            background: 'rgba(255,255,255,0.06)', overflow: 'hidden',
+          }}>
+            <div style={{
+              width: `${Math.round((card.objective_done_count / card.objective_count) * 100)}%`,
+              height: '100%', borderRadius: 2,
+              background: PHASE_ACCENT.completed.bar,
+              opacity: 0.8, transition: 'width 0.3s ease',
+            }} />
+          </div>
+          <span style={{ color: 'var(--text-muted)', fontSize: 10, whiteSpace: 'nowrap' }}>
+            {card.objective_done_count}/{card.objective_count}
+          </span>
+        </div>
+      )}
+
       <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
         <CountBadge label="notes" count={card.note_count} />
         <span style={{ color: 'var(--text-dim)' }}>·</span>
@@ -124,7 +144,7 @@ function BoardColumn({ col, cards, loaded, error, onOpen, onDeleted }) {
         <span style={{ width: 8, height: 8, borderRadius: '50%', background: accent.bar, flexShrink: 0 }} />
         <h2 style={{
           fontSize: 13,
-          fontWeight: 600,
+          fontWeight: 'var(--fw-semibold)',
           fontFamily: 'var(--font-mono)',
           color: 'var(--text-primary)',
           textTransform: 'uppercase',
@@ -200,13 +220,23 @@ function BoardColumn({ col, cards, loaded, error, onOpen, onDeleted }) {
   )
 }
 
-export default function TodosPanel() {
+export default function TodosPanel({ consumeRestoredCard = null }) {
   const [cards, setCards] = useState([])
   const [error, setError] = useState(null)
   const [loaded, setLoaded] = useState(false)
-  const [openId, setOpenId] = useState(null)
+  // Reopen the pre-reload card only when App says this boot is an in-run
+  // reload; plain navigation to the board always starts at the card list.
+  const [openId, setOpenId] = useState(() => consumeRestoredCard?.() || null)
   const [newTitle, setNewTitle] = useState('')
   const [creating, setCreating] = useState(false)
+
+  // Track the open card for the reload-restore path above.
+  useEffect(() => {
+    try {
+      if (openId) localStorage.setItem('yy.todo.openId', openId)
+      else localStorage.removeItem('yy.todo.openId')
+    } catch { /* quota */ }
+  }, [openId])
 
   const refresh = useCallback(async () => {
     try {
@@ -268,11 +298,11 @@ export default function TodosPanel() {
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div style={{
         display: 'flex', alignItems: 'center', gap: 10,
-        padding: '14px 24px', borderBottom: '1px solid var(--border-subtle)',
+        padding: '14px 24px', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-bar)',
       }}>
         <span style={{
           fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.1em',
-          textTransform: 'uppercase', color: 'var(--text-primary)', fontWeight: 600,
+          textTransform: 'uppercase', color: 'var(--text-primary)', fontWeight: 'var(--fw-semibold)',
         }}>Todos — board</span>
         <input
           value={newTitle}
@@ -291,8 +321,8 @@ export default function TodosPanel() {
           disabled={creating || !newTitle.trim()}
           style={{
             fontFamily: 'var(--font-mono)', fontSize: 11, padding: '5px 12px',
-            background: 'rgba(0,255,136,0.08)', color: 'var(--neon-green)',
-            border: '1px solid rgba(0,255,136,0.25)', borderRadius: 6,
+            background: 'rgba(var(--accent-rgb),0.08)', color: 'var(--neon-green)',
+            border: '1px solid rgba(var(--accent-rgb),0.25)', borderRadius: 6,
             cursor: creating || !newTitle.trim() ? 'default' : 'pointer',
             opacity: creating || !newTitle.trim() ? 0.5 : 1,
           }}
@@ -304,8 +334,8 @@ export default function TodosPanel() {
           title="Refresh"
           style={{
             fontFamily: 'var(--font-mono)', fontSize: 11, padding: '5px 10px',
-            background: 'rgba(0,255,136,0.08)', color: 'var(--neon-green)',
-            border: '1px solid rgba(0,255,136,0.25)', borderRadius: 6, cursor: 'pointer',
+            background: 'rgba(var(--accent-rgb),0.08)', color: 'var(--neon-green)',
+            border: '1px solid rgba(var(--accent-rgb),0.25)', borderRadius: 6, cursor: 'pointer',
           }}
         >↻</button>
       </div>

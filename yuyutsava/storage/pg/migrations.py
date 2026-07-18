@@ -726,6 +726,73 @@ MIGRATIONS: list[tuple[int, str]] = [
             ON todo_note_chunks (card_id);
         """,
     ),
+    (
+        17,
+        # TODO board think flow. Objectives are a card's structured
+        # decomposition — small sub-goals moving thinking → planning → doing →
+        # completed (blocked/abandoned as off-ramps); phase IS CHECK'd (closed
+        # 6-value flow, like todo_cards.status). Notes gain an optional
+        # objective assignment: the FK is ON DELETE SET NULL because a note is
+        # the user's thinking and the objective is scaffolding — deleting an
+        # objective demotes its notes to card-level "general notes", never
+        # destroys them. todo_notes.phase (context the note was written in)
+        # has no CHECK: it survives objective deletion as history and is
+        # validated at the exchange. todo_events is the card's activity
+        # timeline (feeds the "journey" document): objective_id deliberately
+        # has NO FK — history must survive objective deletion (same rationale
+        # as message_feedback's missing thread FK) — and kind is un-CHECK'd
+        # because the event vocabulary grows with the board. No booleans
+        # anywhere, honoring the spillover no-cast convention. Mirrors
+        # SqliteTodoStore._SCHEMA_SQL v2 (yuyutsava/todoboard/store.py).
+        """
+        CREATE TABLE IF NOT EXISTS todo_objectives (
+            objective_id TEXT PRIMARY KEY,
+            card_id      TEXT NOT NULL REFERENCES todo_cards (card_id) ON DELETE CASCADE,
+            title        TEXT NOT NULL,
+            phase        TEXT NOT NULL DEFAULT 'thinking'
+                         CHECK (phase IN ('thinking','planning','doing',
+                                          'completed','blocked','abandoned')),
+            order_idx    INTEGER NOT NULL DEFAULT 0,
+            reason       TEXT,
+            outcome      TEXT,
+            created_ts   TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_ts   TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS todo_objectives_card_idx
+            ON todo_objectives (card_id, order_idx, created_ts);
+
+        ALTER TABLE todo_notes ADD COLUMN IF NOT EXISTS objective_id TEXT;
+        ALTER TABLE todo_notes ADD COLUMN IF NOT EXISTS phase TEXT;
+        DO $$ BEGIN
+            ALTER TABLE todo_notes ADD CONSTRAINT todo_notes_objective_fk
+                FOREIGN KEY (objective_id) REFERENCES todo_objectives (objective_id)
+                ON DELETE SET NULL;
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+        CREATE INDEX IF NOT EXISTS todo_notes_objective_idx
+            ON todo_notes (objective_id);
+
+        CREATE TABLE IF NOT EXISTS todo_events (
+            event_id     TEXT PRIMARY KEY,
+            card_id      TEXT NOT NULL REFERENCES todo_cards (card_id) ON DELETE CASCADE,
+            objective_id TEXT,
+            kind         TEXT NOT NULL,
+            payload      JSONB NOT NULL DEFAULT '{}'::jsonb,
+            actor        TEXT NOT NULL DEFAULT 'user',
+            created_ts   TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS todo_events_card_idx
+            ON todo_events (card_id, created_ts);
+        """,
+    ),
+    (
+        18,
+        # Session titles: set once from the session's first user message so
+        # conversation lists (Sessions panel, tinker chat history) can show a
+        # human name instead of a raw id. Mirrors SqliteSessionStore v3.
+        """
+        ALTER TABLE sessions ADD COLUMN IF NOT EXISTS title TEXT NOT NULL DEFAULT '';
+        """,
+    ),
 ]
 
 

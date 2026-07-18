@@ -31,7 +31,7 @@ from yuyutsava.context.summary_store import PgThreadSummaryStore, SqliteThreadSu
 from yuyutsava.context.transcript_store import PgTranscriptStore, SqliteTranscriptStore
 from yuyutsava.core.config import LlmSettings, SearchConfig, _env, llm_settings_from_env
 from yuyutsava.core.engine import AgentBundle, build_tinker_agent
-from yuyutsava.core.llm import chat_model
+from yuyutsava.llm import chat_model
 from yuyutsava.skills.registry import SkillRegistry
 from yuyutsava.storage.paths import state_db_path
 
@@ -53,6 +53,9 @@ async def build_tinker_stack(
     checkpointer: BaseCheckpointSaver,
     usage_store: Any | None = None,
     mcp_manager: Any | None = None,
+    prefs_store: Any | None = None,
+    cap_enforcer: Any | None = None,
+    extra_tools: "list[Any] | None" = None,
 ) -> AgentBundle:
     """Build one card's TinkerAgent bundle.
 
@@ -134,11 +137,31 @@ async def build_tinker_stack(
         # First-come-wins shared host: inside the daemon this always attaches
         # to the already-running owner instead of starting a second server.
         def _build_host() -> AsyncSubagentHost:
+            # Background graphs get the same context controllers as the
+            # masters (tool-result offload + compaction + ctx_* readback).
+            from yuyutsava.context.tools import make_context_tools
+            from yuyutsava.core.engine import context_middleware
+
             return AsyncSubagentHost.from_subagents(
                 async_subagents,
                 model=model,
                 checkpointer=checkpointer,
                 allow_blocking=allow_blocking,
+                middleware_factory=lambda sa: context_middleware(
+                    model=model,
+                    artifact_store=artifact_store,
+                    context_settings=context_settings,
+                    summary_store=summary_store,
+                    memory_store=memory_store,
+                    transcript_store=None,  # bg thread ids are host-minted;
+                    # transcripts serve interactive resume — skip them here.
+                    compaction_model=compaction_model,
+                    role=f"{sa.name}-bg",
+                ),
+                extra_tools_factory=(
+                    (lambda: make_context_tools(artifact_store))
+                    if artifact_store is not None else None
+                ),
             )
 
         attachment = await asyncio.to_thread(
@@ -186,6 +209,9 @@ async def build_tinker_stack(
         usage_store=usage_store,
         mcp_tools=mcp_tools,
         note_index=note_index,
+        prefs_store=prefs_store,
+        cap_enforcer=cap_enforcer,
+        extra_tools=extra_tools,
     )
     bundle.pg_pool = pg_pool
     bundle.embedder = embedder

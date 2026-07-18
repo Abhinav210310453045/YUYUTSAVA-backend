@@ -248,8 +248,9 @@ async def converse(ws: WebSocket) -> None:
     origin = ws.query_params.get("origin", "cli")
     resume_id = ws.query_params.get("resume_id") or None
     continue_latest = ws.query_params.get("continue", "").lower() in ("1", "true", "yes")
-    # agent=tinker&card=<card_id> routes to the card-bound TinkerAgent bundle,
-    # thread pinned to todo:<card_id>. Default is the shared master deepagent.
+    # agent=tinker&card=<card_id> routes to the card-bound TinkerAgent bundle;
+    # resume_id picks one of the card's chats (todo:<card_id>[:<suffix>]),
+    # no resume_id starts a fresh one. Default is the shared master deepagent.
     agent = ws.query_params.get("agent", "master")
     card_id = ws.query_params.get("card") or None
 
@@ -346,6 +347,18 @@ async def converse(ws: WebSocket) -> None:
 
     async def _run_turn(text: str) -> None:
         nonlocal agent_active
+        # Cross-connection turn gate: refuse to start a second turn on this
+        # thread while one is already running (e.g. a reconnect drove a new
+        # turn while the previous connection's turn is still finishing). Running
+        # both would corrupt the shared checkpoint — duplicate bubbles + empty
+        # "half" replies. The per-connection turn_task gate can't catch this.
+        if not manager.try_begin_turn(convo.thread_id):
+            await _send({
+                "type": "error",
+                "message": "a turn is already running on this conversation",
+            })
+            await _send({"type": "turn_end"})
+            return
         agent_active = True
         try:
             if not convo.bundle_ready:
@@ -365,6 +378,7 @@ async def converse(ws: WebSocket) -> None:
             await _send({"type": "error", "message": str(exc)})
         finally:
             agent_active = False
+            manager.end_turn(convo.thread_id)
             await _send({"type": "turn_end"})
 
     # ---- voice path ------------------------------------------------------
@@ -415,6 +429,14 @@ async def converse(ws: WebSocket) -> None:
         and any queued/!in-flight TTS immediately.
         """
         nonlocal agent_active
+        # Cross-connection turn gate (see _run_turn) — one turn per thread.
+        if not manager.try_begin_turn(convo.thread_id):
+            await _send({
+                "type": "error",
+                "message": "a turn is already running on this conversation",
+            })
+            await _send({"type": "turn_end"})
+            return
         agent_active = True
         assert voice is not None
         chunker = SentenceChunker()
@@ -506,6 +528,7 @@ async def converse(ws: WebSocket) -> None:
             await _send({"type": "error", "message": str(exc)})
         finally:
             agent_active = False
+            manager.end_turn(convo.thread_id)
             await tts_queue.put(None)
             try:
                 await worker
@@ -666,6 +689,13 @@ async def converse(ws: WebSocket) -> None:
                     # One turn at a time; a stray send while busy is ignored.
                     await _send({"type": "error", "message": "a turn is already running"})
                     continue
+                # Board-UI selection context (objective/note reference ids)
+                # rides a structured field and is composed here — the sentinel
+                # wrapper is canonical server-side, and clients strip it from
+                # hydrated transcripts so the user only ever sees their text.
+                context = (msg.get("context") or "").strip()
+                if context:
+                    text = f"<selection-context>\n{context}\n</selection-context>\n\n{text}"
                 turn_task = asyncio.create_task(_run_turn(text))
                 continue
 

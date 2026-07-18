@@ -20,7 +20,7 @@ export default function SettingsSection({ title, children, defaultOpen = true })
           color: 'var(--text-secondary)',
           fontSize: 11,
           fontFamily: 'var(--font-mono)',
-          fontWeight: 600,
+          fontWeight: 'var(--fw-semibold)',
           letterSpacing: '0.1em',
           textTransform: 'uppercase',
           borderBottom: open ? '1px solid var(--border-subtle)' : 'none',

@@ -52,17 +52,29 @@ _SEP = "━" * 60
 # ---------------------------------------------------------------------------
 
 
-def _ai_message_text(msg: AIMessage) -> str:
-    c = msg.content
-    if isinstance(c, str) and c.strip():
-        return c.strip()
-    if isinstance(c, list):
+def flatten_content(content: object) -> str:
+    """Flatten LangChain message content (str or block list) to text.
+
+    List content may mix plain-string blocks with {"type":"text"} dicts —
+    merge_content appends str chunks to a list-content message as raw strings,
+    so both shapes carry prose and must be kept. Dropping the str blocks is
+    what truncated the ``final`` event to the first chunk of a reply.
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
         parts: list[str] = []
-        for block in c:
-            if isinstance(block, dict) and block.get("type") == "text":
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict) and block.get("type") == "text":
                 parts.append(str(block.get("text", "")))
-        return "".join(parts).strip()
+        return "".join(parts)
     return ""
+
+
+def _ai_message_text(msg: AIMessage) -> str:
+    return flatten_content(msg.content).strip()
 
 
 def last_assistant_text(messages: list[Any]) -> str:
@@ -306,6 +318,30 @@ def _image_event_from_result(body: str) -> dict | None:
     }
 
 
+def _artifact_event_from_result(body: str) -> dict | None:
+    """Extract an ``artifact`` event payload from an ``artifact_create`` result.
+
+    Turns the tool's record JSON into a typed ``artifact`` frame so the UI can
+    render the pluggable block inline (SandboxBlock/AudioBlock/TextBlock/…) and
+    open it big — the non-visual twin of :func:`_image_event_from_result`.
+    """
+    try:
+        data = json.loads(body)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(data, dict) or data.get("status") != "ok" or not data.get("artifact_id"):
+        return None
+    return {
+        # attachment_id is the key the frontend block components read; alias it.
+        "artifact_id": data["artifact_id"],
+        "attachment_id": data["artifact_id"],
+        "url": data.get("url"),
+        "kind": data.get("kind"),
+        "mime": data.get("mime"),
+        "title": data.get("title"),
+    }
+
+
 async def _has_resumable_state(agent: CompiledStateGraph, cfg: RunnableConfig) -> bool:
     """True when ``cfg``'s thread has a checkpoint with messages to resume.
 
@@ -384,7 +420,13 @@ async def astream_agent_iter(
         }
 
     final_messages: list[Any] = []
-    current_input: Any = {"messages": [HumanMessage(content=task)]}
+    # Explicit stable id: a HumanMessage created with id=None gets a fresh id
+    # re-minted by add_messages on every reload of the thread, which breaks the
+    # transcript recorder's id-based dedup — the same user turn is written again
+    # under a new id each subsequent turn, so the chat history (and the UI that
+    # hydrates from it) shows duplicate user bubbles. Pinning the id at creation
+    # makes it round-trip through the checkpoint unchanged.
+    current_input: Any = {"messages": [HumanMessage(content=task, id=str(uuid.uuid4()))]}
     if resume:
         # Continue this thread from its last committed checkpoint. If the
         # checkpoint is missing or lives in an incompatible backend (e.g. the
@@ -422,13 +464,7 @@ async def astream_agent_iter(
             if mode == "messages":
                 chunk, _meta = data
                 if isinstance(chunk, AIMessageChunk):
-                    text = ""
-                    if isinstance(chunk.content, str):
-                        text = chunk.content
-                    elif isinstance(chunk.content, list):
-                        for block in chunk.content:
-                            if isinstance(block, dict) and block.get("type") == "text":
-                                text += str(block.get("text", ""))
+                    text = flatten_content(chunk.content)
                     if text:
                         yield StreamEvent("token", {"text": text})
 
@@ -466,6 +502,10 @@ async def astream_agent_iter(
                                 img = _image_event_from_result(safe_body)
                                 if img is not None:
                                     yield StreamEvent("image", img)
+                            elif tn in ("artifact_create", "artifact_show"):
+                                art = _artifact_event_from_result(safe_body)
+                                if art is not None:
+                                    yield StreamEvent("artifact", art)
 
         if not pending:
             final_text = last_assistant_text(final_messages)
@@ -564,7 +604,9 @@ async def astream_agent(
 
     final_messages: list[Any] = []
     # First call uses the task message; subsequent calls (after interrupt) use Command(resume=...)
-    current_input: Any = {"messages": [HumanMessage(content=task)]}
+    # Explicit stable id so the message round-trips the checkpoint unchanged (see
+    # the note in astream_agent_iter — prevents duplicate transcript rows).
+    current_input: Any = {"messages": [HumanMessage(content=task, id=str(uuid.uuid4()))]}
 
     while True:
         _in_ai_stream = False
@@ -601,13 +643,7 @@ async def astream_agent(
             if mode == "messages":
                 chunk, _meta = data
                 if isinstance(chunk, AIMessageChunk):
-                    text = ""
-                    if isinstance(chunk.content, str):
-                        text = chunk.content
-                    elif isinstance(chunk.content, list):
-                        for block in chunk.content:
-                            if isinstance(block, dict) and block.get("type") == "text":
-                                text += str(block.get("text", ""))
+                    text = flatten_content(chunk.content)
 
                     if text:
                         if not _in_ai_stream:

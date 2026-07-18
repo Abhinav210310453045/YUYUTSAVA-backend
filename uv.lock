@@ -5688,11 +5688,13 @@ visuals = [
     { name = "seaborn" },
 ]
 voice = [
+    { name = "comtypes", marker = "sys_platform == 'win32'" },
     { name = "faster-whisper" },
     { name = "numpy" },
     { name = "onnxruntime" },
     { name = "openwakeword" },
     { name = "pyttsx3", marker = "sys_platform != 'darwin'" },
+    { name = "pywin32", marker = "sys_platform == 'win32'" },
     { name = "sounddevice" },
     { name = "soundfile" },
     { name = "webrtcvad-wheels" },
@@ -5701,6 +5703,7 @@ voice = [
 [package.metadata]
 requires-dist = [
     { name = "aiosqlite", specifier = ">=0.20.0" },
+    { name = "comtypes", marker = "sys_platform == 'win32' and extra == 'voice'", specifier = ">=1.2.0" },
     { name = "deepagents", specifier = ">=0.6.3" },
     { name = "deepface", marker = "extra == 'deepface'", specifier = ">=0.0.93" },
     { name = "exa-py", specifier = ">=1.1.0" },
@@ -5746,6 +5749,7 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.0.1" },
     { name = "python-ulid", specifier = ">=2.7.0" },
     { name = "pyttsx3", marker = "sys_platform != 'darwin' and extra == 'voice'", specifier = ">=2.90" },
+    { name = "pywin32", marker = "sys_platform == 'win32' and extra == 'voice'", specifier = ">=306" },
     { name = "pyyaml", specifier = ">=6.0.0" },
     { name = "requests", specifier = ">=2.32.5" },
     { name = "seaborn", marker = "extra == 'visuals'", specifier = ">=0.13.0" },

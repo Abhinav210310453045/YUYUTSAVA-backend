@@ -14,7 +14,7 @@ export default function NewSessionButton({ onClick, label = 'New', color = 'var(
         marginLeft: 'auto',
         display: 'inline-flex', alignItems: 'center', gap: 5,
         fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.08em',
-        textTransform: 'uppercase', fontWeight: 600,
+        textTransform: 'uppercase', fontWeight: 'var(--fw-semibold)',
         color: hover ? '#04120b' : color,
         background: hover ? color : 'transparent',
         border: `1px solid ${color}`,

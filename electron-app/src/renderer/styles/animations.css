@@ -1,6 +1,6 @@
 @keyframes neon-pulse {
-  0%, 100% { border-color: rgba(0, 255, 136, 0.15); }
-  50%       { border-color: rgba(0, 255, 136, 0.45); }
+  0%, 100% { border-color: rgba(var(--accent-rgb), 0.15); }
+  50%       { border-color: rgba(var(--accent-rgb), 0.45); }
 }
 
 @keyframes neon-pulse-amber {
@@ -81,6 +81,17 @@
   0%, 100% { transform: scaleY(0.4); }
   50%      { transform: scaleY(1); }
 }
+/* Overlay "thinking" state — a masked conic ring sweeping around the disc. */
+@keyframes voice-think {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+/* Overlay "speaking" state — the disc breathes with a warmer, wider glow than
+   the listening beat so the two states read differently at a glance. */
+@keyframes voice-speak {
+  0%, 100% { transform: scale(1);    box-shadow: 0 0 18px 2px rgba(120,160,255,0.28); }
+  50%      { transform: scale(1.05); box-shadow: 0 0 32px 9px rgba(120,160,255,0.45); }
+}
 
 /* Mini overlay enters by sliding up + scaling in from below, exits in reverse. */
 @keyframes overlay-in {
@@ -110,8 +121,8 @@
   border-radius: 6px;
 }
 @keyframes proposal-flash {
-  0%   { box-shadow: 0 0 0 2px var(--neon-green), 0 0 18px rgba(0,255,136,0.55); }
-  60%  { box-shadow: 0 0 0 2px rgba(0,255,136,0.4), 0 0 8px rgba(0,255,136,0.25); }
+  0%   { box-shadow: 0 0 0 2px var(--neon-green), 0 0 18px rgba(var(--accent-rgb),0.55); }
+  60%  { box-shadow: 0 0 0 2px rgba(var(--accent-rgb),0.4), 0 0 8px rgba(var(--accent-rgb),0.25); }
   100% { box-shadow: 0 0 0 0 transparent; }
 }
 

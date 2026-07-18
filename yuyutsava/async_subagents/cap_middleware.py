@@ -53,8 +53,12 @@ class BackgroundTaskCapMiddleware(AgentMiddleware):
         request: Any,
         handler: Callable[[Any], Any],
     ) -> Any:
+        # request.tool is None when the model's tool call didn't resolve to a
+        # bound tool (hallucinated/mistyped name) — let handler() run the
+        # normal unknown-tool path instead of crashing on `.name`.
         if (
-            request.tool.name == "start_async_task"
+            request.tool is not None
+            and request.tool.name == "start_async_task"
             and self._mirror.count_running() >= self._max
         ):
             logger.info("rejecting start_async_task: cap %d reached", self._max)
@@ -67,7 +71,8 @@ class BackgroundTaskCapMiddleware(AgentMiddleware):
         handler: Callable[[Any], Awaitable[Any]],
     ) -> Any:
         if (
-            request.tool.name == "start_async_task"
+            request.tool is not None
+            and request.tool.name == "start_async_task"
             and self._mirror.count_running() >= self._max
         ):
             logger.info("rejecting start_async_task: cap %d reached", self._max)

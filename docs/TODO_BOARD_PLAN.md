@@ -115,3 +115,58 @@ JSX-sandbox renderer (sandboxed iframe/webview, CSP, no remote fetch) and audio 
 ## Key files touched (representative)
 - New: `yuyutsava/todoboard/{models,exchange,store,tools,artifacts}.py`, `yuyutsava/agents/tinker/{agent,prompts}.py`, `yuyutsava/skills/bundled/tinker/*`, `daemon/web/routers/todos.py`, `web/schemas/todo.py`, `electron-app/src/renderer/components/todos/*`.
 - Modified: `storage/pg/migrations.py` (v16), `storage/routing/reconcile.py` (TableSpecs), `daemon/bootstrap.py` + `cli/agent_stack.py` (store wiring, tools), `core/engine.py` (`build_tinker_agent`), `core/tool_filter_middleware.py` (`todo_` prefix), `daemon/conversation_manager.py` (multi-bundle), `daemon/web/routers/converse.py` (`agent` param), `daemon/web/app.py` (router), `renderer` nav/`App.jsx`/`api/client.js`/`useConverse`/`converse.js`.
+
+## Phase 8 — Think flow (objectives + phases + journey)
+
+Evolves the board from notes to a structured think flow (2026-07-16).
+
+**Model** — per-card `todo_objectives` (PG migration **v17**, SQLite twin
+`_SCHEMA_VERSION=2` with a `_migrate` v1→v2 ALTER for the note columns):
+`tob_` id, title, `phase` (CHECK'd: thinking → planning → doing → completed,
+plus blocked/abandoned off-ramps; transitions free-form), `order_idx`,
+`reason` (why blocked/abandoned), `outcome` (what completing produced).
+`todo_notes` gains nullable `objective_id` (FK **ON DELETE SET NULL** — notes
+demote to general, never die) + `phase` (context, survives deletion).
+`todo_events` (`tde_`) is the card's activity timeline: kind ∈ EVENT_KINDS
+(`card_status, objective_created/phase/updated/deleted, note_assigned,
+artifact_attached, journey_generated`), JSONB payload, actor; **no objective
+FK** (history outlives scaffolding), card FK CASCADE. Emitted best-effort by
+`TodoExchange._emit` — an event write never fails its mutation. Spillover:
+`todo_objectives` order=7, notes/attachments bumped to 8, events 9.
+
+**Exchange/tools** — `add/update/delete_objective`, `assign_note`,
+`list_events`, `generate_artifact` (moved from the tool so REST shares it;
+injects card+events into `needs_context` blocks ON the loop — generators run
+in a thread and must never touch the loop-bound store). New full-scope tools:
+`todo_add_objective`, `todo_update_objective`, `todo_assign_note`;
+`todo_add_note` takes objective_id/phase. Tinker prompts (interactive +
+subagent): objectives are rows not prose; reference blocks
+`[objective tob_…]`/`[note tdn_…]` are UI selections; journey = one
+`## Reflection` note then `todo_generate_artifact(block="journey")`.
+
+**Journey block** — `todoboard/block_journey.py`, kind=artifact +
+mime=text/html (SandboxBlock renders it, zero frontend block): deterministic
+self-contained HTML — header, tinker Reflection, objectives by phase with
+reason/outcome + assigned notes, general notes, humanized timeline, artifact
+list.
+
+**REST** — objectives CRUD under `/todos/{id}/objectives[/{oid}]`,
+`PATCH …/notes/{nid}/assign`, `GET …/events`, `POST …/generate`.
+
+**UI** — card view: Think-flow section with List|Flow toggle (persisted
+`yy.todo.view`); Flow = FlowBoard.jsx phase lanes, native drag between lanes
+(optimistic + revert; `draggingRef` gates refresh), empty lanes collapse to
+strips that expand on dragOver; chip click opens an inline drawer
+(title/phase/reason/outcome/notes/detach/delete). NoteRow gains an assignment
+pill dropdown. Header: ☐ Select (multi-select notes/objectives) → “✦ Ask
+Tinker (N)” seeds a stable-id reference block into the card chat (new
+ChatPanel `draftSeed` prop); 📜 Journey generates + auto-opens the document.
+Activity strip (collapsible) mirrors the timeline. Tinker pane is resizable
+via the shared `components/common/ResizeHandle.jsx` (extracted from App.jsx),
+width persisted in `yy.todo.tinkerW`. Board tiles show a completed/total
+progress bar from the new summary counts.
+
+*Verify: standalone python smokes (store v1→v2 migration, exchange event
+ordering, tools render, journey HTML + escaping), vite build, manual pass —
+tinker “break this into objectives” → chips appear, drag to doing, select 2
+notes → Ask Tinker prefills, journey renders in the sandbox block.*

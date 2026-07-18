@@ -26,7 +26,7 @@ class FileOrganizerAgent(BaseSubAgent):
         task_runner: TaskRunnerAgent,
         store: Store,
         skill_registry: SkillRegistry | None = None,
-        can_write_skills: bool = False,
+        can_write_skills: bool = True,
         mcp_manager: MCPClientManager | None = None,
         search_config: SearchConfig | None = None,
         cap_enforcer: object | None = None,

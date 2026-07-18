@@ -153,7 +153,7 @@ export function useConverse({ origin = 'cli', resumeId = null, agent = null, car
         if (!streamingId.current) {
           const id = nextId()
           streamingId.current = id
-          setMessages((cur) => [...cur, { id, role: 'assistant', text: '', events: [], images: [], streaming: true }])
+          setMessages((cur) => [...cur, { id, role: 'assistant', text: '', events: [], images: [], artifacts: [], streaming: true }])
         }
         feedSmoother(msg.text || '')
         break
@@ -166,12 +166,31 @@ export function useConverse({ origin = 'cli', resumeId = null, agent = null, car
         if (!streamingId.current) {
           const id = nextId()
           streamingId.current = id
-          setMessages((cur) => [...cur, { id, role: 'assistant', text: '', events: [], images: [], streaming: true }])
+          setMessages((cur) => [...cur, { id, role: 'assistant', text: '', events: [], images: [], artifacts: [], streaming: true }])
         }
         appendToStreaming((m) => ({
           ...m,
           images: [...(m.images || []), {
             visual_id: msg.visual_id, url: msg.url, kind: msg.kind, title: msg.title, mime: msg.mime,
+          }],
+        }))
+        break
+      }
+      case 'artifact': {
+        // Inline rich artifact (interactive HTML/JSX, doc, audio) made by
+        // artifact_create this turn — attach it to the streaming assistant
+        // message so it renders as a block card in the bubble, openable big.
+        flushSmoother()
+        if (!streamingId.current) {
+          const id = nextId()
+          streamingId.current = id
+          setMessages((cur) => [...cur, { id, role: 'assistant', text: '', events: [], images: [], artifacts: [], streaming: true }])
+        }
+        appendToStreaming((m) => ({
+          ...m,
+          artifacts: [...(m.artifacts || []), {
+            attachment_id: msg.attachment_id || msg.artifact_id,
+            url: msg.url, kind: msg.kind, mime: msg.mime, title: msg.title,
           }],
         }))
         break
@@ -190,9 +209,14 @@ export function useConverse({ origin = 'cli', resumeId = null, agent = null, car
         appendToStreaming((m) => ({ ...m, events: [...m.events, { kind: 'log', text: msg.text }] }))
         break
       case 'final':
-        // Drain buffered prose, then snap to the canonical final text.
+        // Drain buffered prose, then snap to the canonical final text. A
+        // correct final is always ≥ the streamed text (same chunks), so a
+        // SHORTER final can only be a server-side truncation — keep the
+        // accumulated text rather than snapping the bubble back to a stub.
         flushSmoother()
-        if (msg.text) appendToStreaming((m) => ({ ...m, text: msg.text }))
+        if (msg.text) appendToStreaming((m) => (
+          msg.text.length >= m.text.length ? { ...m, text: msg.text } : m
+        ))
         break
       case 'ask':
         setPendingAsk({ payload: msg.payload || {} })
@@ -290,8 +314,16 @@ export function useConverse({ origin = 'cli', resumeId = null, agent = null, car
           setMessages(res.messages.map((m) => ({
             id: nextId(),
             role: m.role,
-            text: m.text || '',
+            // The verbatim transcript stores the server-composed selection
+            // block ahead of what the user typed — strip it on hydration so
+            // resumed threads match what the live bubble showed.
+            text: m.role === 'user'
+              ? (m.text || '').replace(/^<selection-context>\n[\s\S]*?\n<\/selection-context>\n\n/, '')
+              : (m.text || ''),
             events: [],
+            // Inline artifact cards made during the turn — the history endpoint
+            // rebuilds them from the transcript's artifact_create tool results.
+            artifacts: m.artifacts || [],
             // The server's audio_url is authoritative — on mixed text+voice
             // threads it carries the VOICE-store seq, which differs from this
             // row's transcript seq (rebuilding from m.seq would 404).
@@ -308,10 +340,32 @@ export function useConverse({ origin = 'cli', resumeId = null, agent = null, car
         onDisconnected: () => {
           setConnected(false)
           // A dropped socket can never finish the turn — release the input and
-          // surface whatever prose was buffered before the drop.
+          // surface whatever prose was buffered before the drop. Also finalize
+          // any message still mid-stream so it doesn't stay stuck (no
+          // copy/retry, endless typing dots) — see finalizeStreaming's own note
+          // on why this can't reuse appendToStreaming.
           flushSmoother()
           stopSmoother()
-          streamingId.current = null
+          finalizeStreaming()
+          setBusy(false)
+          setPendingAsk(null)
+        },
+        // The client gave up resuming a dead session (server rejected it
+        // MAX_RESUME_FAILURES times in a row before any `hello`, e.g. a
+        // freshly-created chat that got discarded after an early disconnect).
+        // Surface exactly one clear message instead of the storm of raw
+        // rejections that led here — the user picks "New chat" or a different
+        // history entry to recover; we don't silently start one for them.
+        onResumeExhausted: (message) => {
+          console.warn('chat resume failed permanently:', message)
+          setConnected(false)
+          setMessages((cur) => [...cur, {
+            id: nextId(), role: 'assistant', error: true, events: [],
+            text: '⚠ this chat is no longer available — start a new one',
+          }])
+          flushSmoother()
+          stopSmoother()
+          finalizeStreaming()
           setBusy(false)
           setPendingAsk(null)
         },
@@ -321,19 +375,24 @@ export function useConverse({ origin = 'cli', resumeId = null, agent = null, car
     clientRef.current = client
     client.connect()
     return () => { cancelled = true; client.disconnect(); stopSmoother(); clientRef.current = null }
-  }, [origin, activeResumeId, resetNonce, agent, card, onMessage, flushSmoother, stopSmoother])
+  }, [origin, activeResumeId, resetNonce, agent, card, onMessage, flushSmoother, stopSmoother, finalizeStreaming])
 
-  const send = useCallback((text) => {
+  // `context` (optional) carries board-selection references invisibly — the
+  // local bubble and transcript render only the typed text. Returns whether
+  // the frame actually left, so callers can consume one-shot context (chips)
+  // only on success.
+  const send = useCallback((text, { context } = {}) => {
     const t = (text || '').trim()
-    if (!t || busy) return
-    const ok = clientRef.current?.sendText(t)
+    if (!t || busy) return false
+    const ok = clientRef.current?.sendText(t, context || null)
     if (!ok) {
       setMessages((cur) => [...cur, { id: nextId(), role: 'assistant', error: true, events: [],
         text: '⚠ not connected to the daemon — is it running? (restart it after updates)' }])
-      return
+      return false
     }
     setMessages((cur) => [...cur, { id: nextId(), role: 'user', text: t, events: [] }])
     setBusy(true)
+    return true
   }, [busy])
 
   const answerAsk = useCallback((text) => {

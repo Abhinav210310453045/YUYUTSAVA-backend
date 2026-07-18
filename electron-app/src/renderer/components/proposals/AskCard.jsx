@@ -61,7 +61,7 @@ export default function AskCard({ ask, onResolved }) {
     borderRadius: 'var(--radius-btn)',
     fontSize: 11,
     fontFamily: 'var(--font-mono)',
-    fontWeight: 600,
+    fontWeight: 'var(--fw-semibold)',
     letterSpacing: '0.05em',
     border: '1px solid',
     cursor: 'pointer',
@@ -105,7 +105,7 @@ export default function AskCard({ ask, onResolved }) {
             style={{
               fontFamily: 'var(--font-mono)',
               fontSize: 10,
-              color: 'var(--neon-cyan, #22d3ee)',
+              color: 'var(--neon-cyan, var(--text-cyan))',
               background: 'rgba(34,211,238,0.08)',
               border: '1px solid rgba(34,211,238,0.30)',
               borderRadius: 3,
@@ -117,7 +117,7 @@ export default function AskCard({ ask, onResolved }) {
             Background
           </span>
         )}
-        <span style={{ color: 'var(--text-primary)', fontWeight: 600, fontSize: 13 }}>
+        <span style={{ color: 'var(--text-primary)', fontWeight: 'var(--fw-semibold)', fontSize: 13 }}>
           {ask.title || 'Permission request'}
         </span>
         {ask.agent_path && (
@@ -180,8 +180,8 @@ export default function AskCard({ ask, onResolved }) {
                 style={{
                   ...btnBase,
                   color: meta.affirmative ? 'var(--neon-green)' : 'var(--neon-red)',
-                  borderColor: meta.affirmative ? 'rgba(0,255,136,0.3)' : 'rgba(255,51,102,0.3)',
-                  background: meta.affirmative ? 'rgba(0,255,136,0.06)' : 'rgba(255,51,102,0.06)',
+                  borderColor: meta.affirmative ? 'rgba(var(--accent-rgb),0.3)' : 'rgba(255,51,102,0.3)',
+                  background: meta.affirmative ? 'rgba(var(--accent-rgb),0.06)' : 'rgba(255,51,102,0.06)',
                 }}
               >
                 {loading === opt ? '...' : meta.label}
@@ -203,7 +203,7 @@ export default function AskCard({ ask, onResolved }) {
           <button
             onClick={() => respond(freeText.trim() || 'reject')}
             disabled={!!loading}
-            style={{ ...btnBase, color: 'var(--neon-green)', borderColor: 'rgba(0,255,136,0.3)', background: 'rgba(0,255,136,0.06)' }}
+            style={{ ...btnBase, color: 'var(--neon-green)', borderColor: 'rgba(var(--accent-rgb),0.3)', background: 'rgba(var(--accent-rgb),0.06)' }}
           >
             Send
           </button>

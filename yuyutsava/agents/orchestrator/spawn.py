@@ -49,6 +49,7 @@ from yuyutsava.agents.db_tools import make_db_tools
 from yuyutsava.agents.task_runner.tools import bind_tools
 from yuyutsava.core.agent_context import current_context
 from yuyutsava.core.config import SearchConfig
+from yuyutsava.core.streaming import flatten_content
 from yuyutsava.core.tool_registry import ToolRegistry
 from yuyutsava.storage.events import Store
 from yuyutsava.skills.registry import SkillRegistry
@@ -261,18 +262,10 @@ def make_spawn_subagent_tool(
         final_text = ""
         for m in reversed(msgs):
             if isinstance(m, AIMessage):
-                if isinstance(m.content, str) and m.content.strip():
-                    final_text = m.content
+                joined = flatten_content(m.content).strip()
+                if joined:
+                    final_text = joined
                     break
-                if isinstance(m.content, list):
-                    parts: list[str] = []
-                    for blk in m.content:
-                        if isinstance(blk, dict) and blk.get("type") == "text":
-                            parts.append(str(blk.get("text", "")))
-                    joined = "".join(parts).strip()
-                    if joined:
-                        final_text = joined
-                        break
 
         # Audit log — even on empty final_text we log the call.
         try:

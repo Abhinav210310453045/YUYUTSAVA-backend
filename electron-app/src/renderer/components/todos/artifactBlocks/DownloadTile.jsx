@@ -1,5 +1,5 @@
 import React from 'react'
-import { todoAttachmentUrl } from '../../../api/client'
+import { blockSrc } from './src'
 
 function humanSize(bytes) {
   if (typeof bytes !== 'number' || !isFinite(bytes)) return null
@@ -33,11 +33,11 @@ export default function DownloadTile({ attachment, cardId }) {
         </div>
       </div>
       <a
-        href={todoAttachmentUrl(cardId, attachment.attachment_id, { download: true })}
+        href={blockSrc(attachment, cardId, { download: true })}
         download
         style={{
           fontSize: 10, padding: '3px 9px', color: 'var(--neon-green)',
-          border: '1px solid rgba(0,255,136,0.25)', borderRadius: 6,
+          border: '1px solid rgba(var(--accent-rgb),0.25)', borderRadius: 6,
           textDecoration: 'none', whiteSpace: 'nowrap',
         }}
       >

@@ -35,12 +35,15 @@ from yuyutsava.storage.pg.threads import ensure_thread
 from yuyutsava.storage.sessions.store import SessionNotFound
 
 _TASK_PREVIEW_MAX = 200
+_TITLE_MAX = 80
 _SCHEMA_VERSION = 1
 
+# Also the INSERT column list in create() — keep the VALUES placeholder count
+# in sync when adding a column.
 _SELECT_COLS = (
     "id, thread_id, workspace, status, created_at, updated_at, "
     "message_count, memory_files_count, db_row_bytes, task_preview, "
-    "schema_version, origin"
+    "schema_version, origin, title"
 )
 
 
@@ -114,16 +117,28 @@ class PgSessionStore:
             )
             await conn.execute(
                 f"INSERT INTO sessions ({_SELECT_COLS}) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (tid, tid, ws, "running", now, now, 0, 0, 0, preview,
-                 _SCHEMA_VERSION, origin),
+                 _SCHEMA_VERSION, origin, ""),
             )
         return Session(
             id=tid, thread_id=tid, workspace=Path(ws), status="running",
             created_at=now, updated_at=now, message_count=0,
             memory_files_count=0, db_row_bytes=0, task_preview=preview,
-            schema_version=_SCHEMA_VERSION, origin=origin,
+            schema_version=_SCHEMA_VERSION, origin=origin, title="",
         )
+
+    async def set_title_if_empty(self, session_id: str, title: str) -> None:
+        t = (title or "").strip()[:_TITLE_MAX]
+        if not t:
+            return
+        await self._ensure_ready()
+        async with self._conn() as conn:
+            await conn.execute(
+                "UPDATE sessions SET title = %s WHERE id = %s "
+                "AND (title IS NULL OR title = '')",
+                (t, session_id),
+            )
 
     async def touch(
         self,
@@ -242,16 +257,36 @@ class PgSessionStore:
             rows = await cur.fetchall()
         return [_row_to_session(r) for r in rows]
 
+    async def list_thread_family(
+        self, base: str, *, limit: int = 50
+    ) -> list[Session]:
+        """Sessions whose id is ``base`` or ``base:<suffix>``, newest first.
+
+        left() comparison rather than LIKE — ids contain ``_`` (a LIKE
+        wildcard), so a LIKE pattern would over-match sibling cards.
+        """
+        await self._ensure_ready()
+        prefix = base + ":"
+        async with self._conn() as conn:
+            cur = await conn.execute(
+                f"SELECT {_SELECT_COLS} FROM sessions "
+                "WHERE id = %s OR left(id, %s) = %s "
+                "ORDER BY updated_at DESC LIMIT %s",
+                (base, len(prefix), prefix, int(limit)),
+            )
+            rows = await cur.fetchall()
+        return [_row_to_session(r) for r in rows]
+
 
 def _row_to_session(row: Any) -> Session:
     (
         sid, tid, ws, status, created, updated, msgs, mems, dbbytes, preview,
-        ver, origin,
+        ver, origin, title,
     ) = tuple(row)
     return Session(
         id=sid, thread_id=tid, workspace=Path(ws), status=status,
         created_at=float(created), updated_at=float(updated),
         message_count=int(msgs), memory_files_count=int(mems),
         db_row_bytes=int(dbbytes), task_preview=preview,
-        schema_version=int(ver), origin=origin,
+        schema_version=int(ver), origin=origin, title=title or "",
     )

@@ -94,13 +94,25 @@ class OrchestratorTask:
                     "to the user in your own words. Use check the task logs only if "
                     "you need more detail than the summary above."
                 )
+            # Showable artifacts the subagent produced (via artifact_create): tell
+            # the master the exact ids and to re-embed the relevant ones inline.
+            artifacts = c.get("artifacts") or []
+            artifacts_block = ""
+            if ok and artifacts:
+                artifacts_block = (
+                    f"  artifacts: {', '.join(artifacts)}\n"
+                    f"The subagent produced the artifact(s) above for the user. Show the "
+                    f"relevant one(s) inline by calling artifact_show(<id>) for each — do "
+                    f"this BEFORE writing your reply so they render in it.\n"
+                )
             return (
                 f"[background-task-update] A background subagent you started has "
                 f"finished — this is a system notification, not a new user request.\n"
                 f"  agent: {c.get('agent_name', '?')}\n"
                 f"  task_id: {c.get('task_id', '?')}\n"
                 f"  result: {verdict}\n"
-                f"  summary: {c.get('summary', '') or '(no summary)'}\n\n"
+                f"  summary: {c.get('summary', '') or '(no summary)'}\n"
+                f"{artifacts_block}\n"
                 f"{decision}"
             )
         return (

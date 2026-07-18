@@ -21,6 +21,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 
+from yuyutsava.core.streaming import _artifact_event_from_result
 from yuyutsava.daemon.web.schemas.session import SessionOut
 from yuyutsava.storage.purge import purge_session
 from yuyutsava.storage.sessions import (
@@ -110,14 +111,44 @@ async def get_session_messages(session_id: str, request: Request) -> dict:
             })
     elif transcript_store is not None:
         rows = await transcript_store.list_messages(thread_id)
+        # Artifacts made by tool calls attach to the assistant prose that
+        # FOLLOWS them — mirroring the live stream, where the `artifact` event
+        # lands on the turn's streaming bubble alongside its final text.
+        pending_artifacts: list[dict] = []
+
+        def _flush_artifact_row(seq: int, ts: float) -> None:
+            # The producing ai turn had no prose — give the artifacts their own
+            # text-less assistant bubble instead of misattributing them to a
+            # later turn.
+            nonlocal pending_artifacts
+            messages.append({
+                "role": "assistant",
+                "text": "",
+                "modality": "text",
+                "has_audio": False,
+                "audio_url": None,
+                "seq": seq,
+                "ts": ts,
+                "artifacts": pending_artifacts,
+            })
+            pending_artifacts = []
+
         for m in rows:
-            if m.type not in ("human", "ai"):
-                continue  # skip system/tool messages — not chat bubbles
             data = m.content.get("data", {}) if isinstance(m.content, dict) else {}
+            if m.type == "tool":
+                if data.get("name") in ("artifact_create", "artifact_show"):
+                    art = _artifact_event_from_result(_extract_text(data.get("content", "")))
+                    if art is not None:
+                        pending_artifacts.append(art)
+                continue
+            if m.type not in ("human", "ai"):
+                continue  # skip system messages — not chat bubbles
             text = _extract_text(data.get("content", ""))
+            if m.type == "human" and pending_artifacts:
+                _flush_artifact_row(m.seq, m.created_ts)
             if not text.strip():
                 continue  # tool-call-only ai turns carry no prose
-            messages.append({
+            row = {
                 "role": "user" if m.type == "human" else "assistant",
                 "text": text,
                 "modality": "text",
@@ -125,7 +156,13 @@ async def get_session_messages(session_id: str, request: Request) -> dict:
                 "audio_url": None,
                 "seq": m.seq,
                 "ts": m.created_ts,
-            })
+            }
+            if m.type == "ai" and pending_artifacts:
+                row["artifacts"] = pending_artifacts
+                pending_artifacts = []
+            messages.append(row)
+        if pending_artifacts and rows:
+            _flush_artifact_row(rows[-1].seq, rows[-1].created_ts)
         # Mixed text+voice chats (a tinker card, the master chat with the mic)
         # keep their prose in the transcript but their spoken replies in
         # voice_messages — reattach each stored clip to its transcript bubble
@@ -141,6 +178,8 @@ async def get_session_messages(session_id: str, request: Request) -> dict:
                 if v.role != "assistant" or not v.has_audio:
                     continue
                 vtext = (v.text or "").strip()
+                if not vtext:
+                    continue  # never match the text-less artifact-only rows
                 for m in messages:
                     if (
                         m["role"] == "assistant"

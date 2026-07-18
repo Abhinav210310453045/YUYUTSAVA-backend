@@ -18,7 +18,7 @@ import asyncio
 import logging
 import os
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 
@@ -32,7 +32,7 @@ from yuyutsava.context.summary_store import PgThreadSummaryStore, SqliteThreadSu
 from yuyutsava.context.transcript_store import PgTranscriptStore, SqliteTranscriptStore
 from yuyutsava.core.config import DockerSettings, LlmSettings, LocalSettings, SearchConfig, _env
 from yuyutsava.core.engine import AgentBundle, build_cli_deepagent
-from yuyutsava.core.llm import chat_model
+from yuyutsava.llm import chat_model
 from yuyutsava.core.config import llm_settings_from_env
 from yuyutsava.memory.config import MemorySettings
 from yuyutsava.skills.registry import SkillRegistry
@@ -139,8 +139,24 @@ async def build_agent_stack(
     permission_check: bool,
     search_config: SearchConfig,
     checkpointer: BaseCheckpointSaver,
+    mcp_manager: Any | None = None,
+    usage_store: Any | None = None,
+    budget_tokens: int | None = None,
+    prefs_store: Any | None = None,
+    cap_enforcer: Any | None = None,
+    extra_subagents: "list[Any] | None" = None,
+    extra_tools: "list[Any] | None" = None,
 ) -> AgentBundle:
     """Build the conversational deepagent + its subagent stack.
+
+    The trailing keyword group is daemon-supplied wiring (all default to
+    None, keeping the standalone CLI's behavior unchanged): ``mcp_manager``
+    scopes user-configured MCP tools to ``"cli"``; ``usage_store`` /
+    ``budget_tokens`` attach the orchestrator's UsageRecorder/Budget pair;
+    ``prefs_store`` adds the per-turn USER PREFERENCES injector;
+    ``cap_enforcer`` rate-caps ws_* searches; ``extra_subagents`` join the
+    sync ``task`` roster next to general-purpose; ``extra_tools`` are one-off
+    daemon tools (e.g. orch_submit).
 
     Not CLI-specific despite the historical name: this is the same stack the
     daemon-hosted text/voice conversations build (see
@@ -291,11 +307,32 @@ async def build_agent_stack(
         # already running and owns the LangGraph dev server, attach to its
         # URL instead of starting a second one.
         def _build_host() -> AsyncSubagentHost:
+            # Background graphs get the same context controllers as the
+            # masters (tool-result offload + compaction + ctx_* readback) —
+            # bg runs are the longest and were the only agents without them.
+            from yuyutsava.context.tools import make_context_tools
+            from yuyutsava.core.engine import context_middleware
+
             return AsyncSubagentHost.from_subagents(
                 async_subagents,
                 model=model,
                 checkpointer=checkpointer,
                 allow_blocking=allow_blocking,
+                middleware_factory=lambda sa: context_middleware(
+                    model=model,
+                    artifact_store=artifact_store,
+                    context_settings=context_settings,
+                    summary_store=summary_store,
+                    memory_store=memory_store,
+                    transcript_store=None,  # bg thread ids are host-minted;
+                    # transcripts serve interactive resume — skip them here.
+                    compaction_model=compaction_model,
+                    role=f"{sa.name}-bg",
+                ),
+                extra_tools_factory=(
+                    (lambda: make_context_tools(artifact_store))
+                    if artifact_store is not None else None
+                ),
             )
 
         attachment = await asyncio.to_thread(
@@ -323,7 +360,7 @@ async def build_agent_stack(
         permission_check=permission_check,
         search_config=search_config,
         checkpointer=checkpointer,
-        subagents=[general_purpose],
+        subagents=[general_purpose, *(extra_subagents or [])],
         async_subagents=async_subagents,
         async_host_url=async_host_url,
         async_task_mirror=async_mirror,
@@ -337,6 +374,12 @@ async def build_agent_stack(
         compaction_model=compaction_model,
         skill_store=skill_store,
         transcript_index=transcript_index,
+        mcp_tools=(mcp_manager.tools_for("cli") if mcp_manager is not None else None),
+        cap_enforcer=cap_enforcer,
+        budget_tokens=budget_tokens,
+        usage_store=usage_store,
+        prefs_store=prefs_store,
+        extra_tools=extra_tools,
     )
     # Hand the CLI-owned pool + embedder to the bundle so teardown closes them.
     bundle.pg_pool = pg_pool

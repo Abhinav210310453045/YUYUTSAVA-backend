@@ -80,20 +80,30 @@ class SkillRegistry:
                 return skill
         return None
 
-    def write_skill(self, name: str, description: str, body: str) -> str:
+    def write_skill(
+        self, name: str, description: str, body: str, *, agent: str | None = None
+    ) -> str:
         """Write a new skill to the personal scope (~/.yuyutsava/skills/).
 
-        Returns the slug the skill was written under, so callers can index it
-        into the semantic store (see skills/tools.py dual-write).
+        ``agent`` scopes the skill to one agent (None = global, visible to
+        every agent's scan/search). Returns the slug the skill was written
+        under, so callers can index it into the semantic store (see
+        skills/tools.py dual-write).
         """
         slug = _slugify(name)
         skill_dir = self._home_dir / slug
         skill_dir.mkdir(parents=True, exist_ok=True)
         desc_clean = description.strip()[:_MAX_DESC_CHARS]
-        content = f"---\nname: {slug}\ndescription: |\n  {desc_clean}\n---\n\n{body.strip()}\n"
+        agent_line = f"agent: {agent}\n" if agent else ""
+        content = (
+            f"---\nname: {slug}\ndescription: |\n  {desc_clean}\n{agent_line}---\n\n"
+            f"{body.strip()}\n"
+        )
         (skill_dir / "SKILL.md").write_text(content, encoding="utf-8")
         self._cache = None  # invalidate cache
-        logger.info("skills: wrote personal skill %r → %s", slug, skill_dir)
+        logger.info(
+            "skills: wrote personal skill %r (agent=%s) → %s", slug, agent, skill_dir
+        )
         return slug
 
     def index_block(self, agent: str | None = None) -> str:
@@ -194,6 +204,12 @@ def _parse_frontmatter(path: Path, *, scope: str, agent: str | None) -> SkillMet
         fm = {}
 
     name = str(fm.get("name") or path.parent.name)
+    # Personal/workspace skills may carry an ``agent:`` frontmatter key (written
+    # by write_skill(agent=…)); for bundled skills the per-agent dir name is the
+    # default, but explicit frontmatter wins in every scope.
+    fm_agent = fm.get("agent")
+    if fm_agent:
+        agent = str(fm_agent).strip() or agent
     raw_desc = fm.get("description") or ""
     # yaml may parse multi-line block scalar as a string with newlines
     description = " ".join(str(raw_desc).split())[:_MAX_DESC_CHARS]

@@ -45,6 +45,19 @@ from yuyutsava.context.summary_store import ThreadSummaryStore
 
 logger = logging.getLogger("yuyutsava.context.compaction")
 
+# Threads whose next model call should compact regardless of the token
+# threshold. Set by the ``ctx_compact`` tool (context.tools) and consumed —
+# check-and-clear — by ``abefore_model`` below. Process-local by design: the
+# tool call and the following model call run in the same event loop, and a
+# stale flag after a crash merely no-ops on the next compactable turn.
+_FORCE_COMPACT: set[str] = set()
+
+
+def request_compaction(thread_id: str) -> None:
+    """Mark *thread_id* for forced compaction on its next model call."""
+    if thread_id:
+        _FORCE_COMPACT.add(thread_id)
+
 YUYUTSAVA_SUMMARY_PROMPT = """<role>
 Context Extraction Assistant
 </role>
@@ -126,8 +139,16 @@ class YuyutsavaCompactionMiddleware(SummarizationMiddleware):
         messages: list[AnyMessage] = state["messages"]
         self._ensure_message_ids(messages)
 
+        # Agent-requested compaction (ctx_compact): consume the flag whether
+        # or not anything ends up summarizable — a stuck flag must never make
+        # every later turn re-attempt a forced pass.
+        thread_id = _current_thread_id()
+        forced = thread_id in _FORCE_COMPACT
+        if forced:
+            _FORCE_COMPACT.discard(thread_id)
+
         total_tokens = self.token_counter(messages)
-        if not self._should_summarize(messages, total_tokens):
+        if not forced and not self._should_summarize(messages, total_tokens):
             return None
 
         pinned = self._pinned_head(messages)

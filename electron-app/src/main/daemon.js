@@ -1,4 +1,5 @@
 const { spawn } = require('child_process')
+const { app } = require('electron')
 const http = require('http')
 const fs = require('fs')
 const os = require('os')
@@ -91,11 +92,18 @@ function _log(line) {
   if (_logCallback) _logCallback(line)
 }
 
-// Project root that holds pyproject.toml: this file is at
-// <root>/electron-app/src/main/daemon.js, so go up three levels. Used as the
-// daemon's cwd + workspace — the Electron main process's own cwd is
-// electron-app/, which has no pyproject.toml for `uv run` to resolve.
-function repoRoot() {
+// Directory that holds the Python backend's pyproject.toml — the cwd `uv run`
+// needs to resolve the project. Two layouts:
+//   • Dev checkout: this file is <root>/electron-app/src/main/daemon.js, so the
+//     backend is three levels up.
+//   • Packaged app: the backend is bundled to resources/backend (see
+//     electron-builder.config.js `extraResources`); __dirname is inside the
+//     asar, three levels up is NOT the backend, and process.cwd() (Start-Menu
+//     launch) is often System32 — so neither of those can be trusted.
+// This is the P0 fix for the packaged Windows/macOS app: without it `uv run`
+// starts in the wrong directory and dies with "no pyproject.toml".
+function backendRoot() {
+  if (app && app.isPackaged) return path.join(process.resourcesPath, 'backend')
   return path.resolve(__dirname, '../../..')
 }
 
@@ -137,7 +145,13 @@ async function start(workspacePath) {
   // so it can't block the new daemon's singleton lock or fool the guard above.
   _unlinkStaleFiles()
 
-  const root = workspacePath || repoRoot()
+  // `uv run` MUST start in the backend dir (has pyproject.toml). The agent
+  // workspace (--workspace) can be a caller-chosen dir in a dev checkout, but a
+  // packaged launch passes process.cwd() (System32 on Windows), which is not a
+  // usable workspace — fall back to the backend root there.
+  const codeRoot = backendRoot()
+  const packaged = !!(app && app.isPackaged)
+  const workspace = (!packaged && workspacePath) ? workspacePath : codeRoot
   const settings = readSettings()
   const env = { ...process.env, ...Object.fromEntries(Object.entries(settings)) }
   env.PATH = _spawnPath()
@@ -145,10 +159,11 @@ async function start(workspacePath) {
   // detached:true puts the child in its own process group on POSIX so we can
   // signal `uv` AND its python grandchild together via `kill(-pid, ...)`.
   // Without this, SIGTERM reaches `uv` but not the python process it spawns.
+  // (Windows has no process groups; _killGroup uses taskkill /T instead.)
   const isPosix = process.platform !== 'win32'
-  _proc = spawn('uv', ['run', 'yuyutsava', 'daemon', '--no-ui', '--workspace', root], {
+  _proc = spawn('uv', ['run', 'yuyutsava', 'daemon', '--no-ui', '--workspace', workspace], {
     env,
-    cwd: root,
+    cwd: codeRoot,
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: isPosix,
   })
@@ -167,20 +182,24 @@ async function start(workspacePath) {
   })
 }
 
+// Kill a PID and every descendant. POSIX: SIGTERM/SIGKILL the whole process
+// group. Windows: `proc.kill()` reaps only the `uv` wrapper and orphans the
+// python grandchild, so use `taskkill /T` (tree) `/F` (force) instead — Node
+// maps any signal to a hard TerminateProcess on Windows anyway, so there is no
+// graceful signal to preserve here.
+function _killTree(pid, signal) {
+  if (!Number.isInteger(pid) || pid <= 0) return
+  if (process.platform === 'win32') {
+    try { spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore' }) } catch (_) {}
+    return
+  }
+  try { process.kill(-pid, signal) }        // negative pid → process group
+  catch (_) { try { process.kill(pid, signal) } catch (_) {} }
+}
+
 function _killGroup(proc, signal) {
   if (!proc || proc.exitCode !== null) return
-  const isPosix = process.platform !== 'win32'
-  try {
-    if (isPosix) {
-      // Negative PID → entire process group (uv + python grandchild).
-      process.kill(-proc.pid, signal)
-    } else {
-      proc.kill(signal)
-    }
-  } catch (_) {
-    // Process group might already be gone — fall back to direct child kill.
-    try { proc.kill(signal) } catch (_) {}
-  }
+  _killTree(proc.pid, signal)
 }
 
 async function stop() {
@@ -191,13 +210,17 @@ async function stop() {
   if (pid === null) { _proc = null; return }
 
   if (_proc && _proc.exitCode === null) {
-    // We own it: kill the whole group so the `uv` wrapper is reaped too.
+    // We own it: kill the whole tree so the `uv` wrapper AND its python
+    // grandchild are reaped (on Windows the wrapper alone would orphan python).
     _killGroup(_proc, 'SIGTERM')
   } else {
-    // Externally launched (e.g. terminal). Signal only the daemon PID — its
-    // process group includes this Electron process, so a group kill would take
-    // the UI down with it. The python SIGTERM handler tears down + unlinks the
-    // lock/discovery files itself.
+    // Externally launched (e.g. terminal). The discovery PID IS the python
+    // daemon, so signal it directly rather than its group (a POSIX group kill
+    // would include this Electron process and take the UI down). On POSIX the
+    // python SIGTERM handler tears down + unlinks the lock/discovery files; on
+    // Windows Node maps the signal to a hard TerminateProcess (no graceful
+    // teardown — SQLite's per-transaction durability keeps state intact, and
+    // the stale-file sweep below / next start() clears the lock).
     try { process.kill(pid, 'SIGTERM') } catch (_) {}
   }
 
@@ -214,8 +237,13 @@ async function stop() {
 
   if (!stopped) {
     if (_proc && _proc.exitCode === null) _killGroup(_proc, 'SIGKILL')
-    else { try { process.kill(pid, 'SIGKILL') } catch (_) {} }
+    else _killTree(pid, 'SIGKILL')
     // Best-effort cleanup of files the dying process couldn't unlink.
+    _unlinkStaleFiles()
+  } else if (process.platform === 'win32') {
+    // A Windows stop is always a hard kill, so python never ran its own unlink;
+    // clear the lock/discovery so the next start() isn't blocked (POSIX cleans
+    // these up in the daemon's SIGTERM handler).
     _unlinkStaleFiles()
   }
   _proc = null

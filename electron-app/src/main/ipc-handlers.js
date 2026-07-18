@@ -34,7 +34,14 @@ function _daemonRequest(method, path, body) {
   })
 }
 
+// Minted once per main process. The renderer compares this against the value
+// it stashed in localStorage to tell an in-run reload (daemon restart, crash
+// recovery — restore last position) apart from a fresh app launch (open Chat).
+const APP_RUN_ID = `${process.pid}-${Date.now()}`
+
 function register(win) {
+  ipcMain.handle('app:runId', () => APP_RUN_ID)
+
   // Settings
   ipcMain.handle('settings:get', () => settings.readSettings())
   ipcMain.handle('settings:save', (_e, data) => {

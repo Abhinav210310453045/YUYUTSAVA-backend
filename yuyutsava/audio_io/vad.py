@@ -109,11 +109,14 @@ class VadSegmenter:
             barge_start_frames=_env_int("YUYUTSAVA_VAD_BARGE_FRAMES", 15),
             # Conversational pause window: a hands-free voice session stays
             # listening through natural mid-thought pauses and only ends the
-            # utterance after ~1.5 s of continuous silence, so the user isn't
-            # chopped off and fed to the agent in fragments. Raise it
-            # (YUYUTSAVA_VAD_SILENCE_MS) for more forgiving pauses, lower it for
-            # snappier push-to-talk turns.
-            silence_ms=_env_int("YUYUTSAVA_VAD_SILENCE_MS", 1500),
+            # utterance after ~2 s of continuous silence, so the user isn't
+            # chopped off and fed to the agent in mid-sentence fragments. This
+            # is deliberately generous — the common complaint is being cut off
+            # while still thinking/speaking, and the cost of waiting a beat
+            # longer after a real stop is far smaller than losing the tail of a
+            # sentence. Raise it (YUYUTSAVA_VAD_SILENCE_MS) for even more
+            # forgiving pauses, lower it for snappier push-to-talk turns.
+            silence_ms=_env_int("YUYUTSAVA_VAD_SILENCE_MS", 2000),
             min_utterance_ms=_env_int("YUYUTSAVA_VAD_MIN_UTTERANCE_MS", 300),
         )
 

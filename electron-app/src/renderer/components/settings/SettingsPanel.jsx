@@ -205,7 +205,7 @@ export default function SettingsPanel() {
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-        <h2 style={{ fontSize: 13, fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+        <h2 style={{ fontSize: 13, fontWeight: 'var(--fw-semibold)', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
           Settings
         </h2>
         <button
@@ -215,14 +215,14 @@ export default function SettingsPanel() {
             borderRadius: 'var(--radius-btn)',
             fontSize: 11,
             fontFamily: 'var(--font-mono)',
-            fontWeight: 600,
+            fontWeight: 'var(--fw-semibold)',
             letterSpacing: '0.05em',
             textTransform: 'uppercase',
             border: '1px solid',
             cursor: 'pointer',
             color: saved ? 'var(--neon-green)' : 'var(--text-primary)',
-            borderColor: saved ? 'rgba(0,255,136,0.4)' : 'var(--border-card)',
-            background: saved ? 'rgba(0,255,136,0.08)' : 'var(--bg-elevated)',
+            borderColor: saved ? 'rgba(var(--accent-rgb),0.4)' : 'var(--border-card)',
+            background: saved ? 'rgba(var(--accent-rgb),0.08)' : 'var(--bg-elevated)',
             transition: 'all 0.2s',
           }}
         >
@@ -232,8 +232,8 @@ export default function SettingsPanel() {
 
       {saved && (
         <div style={{
-          background: 'rgba(0,255,136,0.06)',
-          border: '1px solid rgba(0,255,136,0.2)',
+          background: 'rgba(var(--accent-rgb),0.06)',
+          border: '1px solid rgba(var(--accent-rgb),0.2)',
           borderRadius: 'var(--radius-card)',
           padding: '9px 14px',
           fontSize: 11,
@@ -289,7 +289,7 @@ export default function SettingsPanel() {
       {/* Daemon status + controls */}
       <div style={{
         background: 'var(--bg-elevated)',
-        border: `1px solid ${daemonStatus?.running ? 'rgba(0,255,136,0.15)' : 'rgba(255,51,102,0.15)'}`,
+        border: `1px solid ${daemonStatus?.running ? 'rgba(var(--accent-rgb),0.15)' : 'rgba(255,51,102,0.15)'}`,
         borderRadius: 'var(--radius-card)',
         padding: '10px 14px',
         display: 'flex',
@@ -304,7 +304,7 @@ export default function SettingsPanel() {
             boxShadow: daemonStatus?.running ? 'var(--glow-green)' : 'var(--glow-red)',
             animation: daemonStatus?.running ? 'neon-pulse 2s ease-in-out infinite' : 'none',
           }} />
-          <span style={{ color: daemonStatus?.running ? 'var(--neon-green)' : 'var(--neon-red)', fontWeight: 600 }}>
+          <span style={{ color: daemonStatus?.running ? 'var(--neon-green)' : 'var(--neon-red)', fontWeight: 'var(--fw-semibold)' }}>
             {daemonStatus?.running ? 'Running' : 'Stopped'}
           </span>
           <span style={{ color: 'var(--text-dim)' }}>·</span>
@@ -341,8 +341,8 @@ export default function SettingsPanel() {
           <DaemonBtn
             label="Start"
             color="var(--neon-green)"
-            borderColor="rgba(0,255,136,0.3)"
-            bg="rgba(0,255,136,0.06)"
+            borderColor="rgba(var(--accent-rgb),0.3)"
+            bg="rgba(var(--accent-rgb),0.06)"
             disabled={daemonBusy}
             onClick={startDaemon}
           />

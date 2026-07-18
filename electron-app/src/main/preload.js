@@ -1,6 +1,10 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('electronAPI', {
+  // Per-main-process run id — lets the renderer tell an in-run reload apart
+  // from a fresh app launch when deciding whether to restore its last view.
+  getAppRunId: () => ipcRenderer.invoke('app:runId'),
+
   // Settings
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (data) => ipcRenderer.invoke('settings:save', data),

@@ -30,7 +30,7 @@ from yuyutsava.daemon.channels import (
     ToolCallPayload,
     ToolResultPayload,
 )
-from yuyutsava.core.llm import model_name_of
+from yuyutsava.llm import model_name_of
 from yuyutsava.daemon.usage import UsageContext
 from yuyutsava.storage.ids import mint_thread_id as _mint_thread_id
 from yuyutsava.daemon.triage_loop import OrchestratorTask
@@ -93,8 +93,6 @@ class OrchestratorLoop:
         orchestrator_token_budget: int,
         checkpointer: BaseCheckpointSaver | None = None,
         prefs_injector: object | None = None,  # yuyutsava.prefs.injector.PrefsInjector
-        memory_injector: object | None = None,  # yuyutsava.context.injector.MemoryInjector
-        skill_injector: object | None = None,  # yuyutsava.skills.injector.SkillInjector
         skill_store: object | None = None,  # yuyutsava.skills.store.SkillStore (dual-write)
         task_registry: object | None = None,  # yuyutsava.daemon.task_registry.TaskRegistry
         model_router: object | None = None,  # yuyutsava.core.model_router.ModelRouter
@@ -109,8 +107,6 @@ class OrchestratorLoop:
         self._budget = orchestrator_token_budget
         self._checkpointer = checkpointer
         self._prefs_injector = prefs_injector
-        self._memory_injector = memory_injector
-        self._skill_injector = skill_injector
         self._skill_store = skill_store
         self._registry = task_registry
         self._model_router = model_router
@@ -297,20 +293,21 @@ class OrchestratorLoop:
     ) -> None:
         model = model if model is not None else self._model
         deps = deps if deps is not None else self._deps
+        # Build-time snapshot keeps only the NON-similarity blocks (prefs +
+        # the um_* standing-awareness index). Memory/skill/conversation recall
+        # is per-turn now — RetrievalInjectionMiddleware inside
+        # build_orchestrator matches them to the task message itself.
         prefs_block = await self._prefs_injector.build_block() if self._prefs_injector else ""
-        # Relevant past context (summaries, outcomes, saved facts) recalled
-        # by similarity to the task text — same informational-block contract
-        # as prefs. Empty when memory is disabled or nothing matches.
-        task_text = f"{task.summary}\n{task.instruction}"
-        memory_block = ""
-        if self._memory_injector is not None:
-            memory_block = await self._memory_injector.build_block(task_text)
-        # Skills relevant to this task, retrieved semantically (only the matches
-        # enter the prompt, not the whole catalogue). Same informational block.
-        skill_block = ""
-        if self._skill_injector is not None:
-            skill_block = await self._skill_injector.build_block(task_text)
-        blocks = "\n\n".join(b for b in (prefs_block, memory_block, skill_block) if b)
+        # Per-agent user-behavior memory: the MEMORY.md index of what this
+        # orchestrator has learned about the user (um_note). Unconditional
+        # (not similarity-gated) — the whole point is standing awareness.
+        from yuyutsava.memory.agent_memory import AgentMemoryStore
+        agent_mem_block = await asyncio.to_thread(
+            AgentMemoryStore("orchestrator").read_index_block
+        )
+        blocks = "\n\n".join(
+            b for b in (prefs_block, agent_mem_block) if b
+        )
         graph = build_orchestrator(
             model=model, deps=deps, budget_tokens=self._budget,
             skill_registry=deps.skill_registry,

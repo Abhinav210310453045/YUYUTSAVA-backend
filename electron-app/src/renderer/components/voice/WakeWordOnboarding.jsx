@@ -8,7 +8,7 @@ import { enableVoiceSource } from '../../api/client'
 // actually listened for. Dismissal (either path) persists via UI_WAKE_ONBOARDED
 // so this never nags again — wake words can still be edited later in Settings.
 
-const BLUE = '#9bb8ff'
+const BLUE = 'var(--text-info)'
 const ONBOARDED_KEY = 'UI_WAKE_ONBOARDED'
 
 // openwakeword ships these pretrained models — no extra download/config.
@@ -129,7 +129,7 @@ export default function WakeWordOnboarding({ save, onDone }) {
 
 function btn(primary, busy) {
   return {
-    fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 600,
+    fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 'var(--fw-semibold)',
     letterSpacing: '0.05em', textTransform: 'uppercase',
     padding: '7px 14px', borderRadius: 'var(--radius-btn)',
     cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.6 : 1,
