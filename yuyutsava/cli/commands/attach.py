@@ -17,6 +17,7 @@ import logging
 import os
 import sys
 
+from yuyutsava.aio import run as aio_run
 from yuyutsava.cli.remote_attach import (
     CliAttachClient,
     prompt_user_for_ask,
@@ -134,6 +135,6 @@ async def _run(args: argparse.Namespace) -> int:
 def run_attach(argv: list[str]) -> int:
     args = _parse_args(argv)
     try:
-        return asyncio.run(_run(args))
+        return aio_run(_run(args))
     except KeyboardInterrupt:
         return 0

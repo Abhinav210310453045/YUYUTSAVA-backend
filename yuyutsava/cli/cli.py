@@ -10,7 +10,6 @@ RESTRUCTURE_HANDOFF.md §5 / plan §11.1 for why we do not make this a class.
 from __future__ import annotations
 
 import argparse
-import asyncio
 import dataclasses
 import os
 import sys
@@ -22,6 +21,7 @@ try:
 except ImportError:
     load_dotenv = None  # type: ignore[assignment, misc]
 
+from yuyutsava.aio import run as aio_run
 from yuyutsava.cli.commands.chat import run_chat
 from yuyutsava.cli.commands.prefs import run_prefs
 from yuyutsava.cli.commands.scenarios import format_scenario_list, get_scenario
@@ -280,8 +280,8 @@ def main(argv: list[str] | None = None) -> int:
         from yuyutsava.cli.commands.attach import run_attach
         return run_attach(raw[1:])
     if raw and raw[0] == "chat":
-        return asyncio.run(_async_main(raw[1:], force_chat=True))
-    return asyncio.run(_async_main(raw))
+        return aio_run(_async_main(raw[1:], force_chat=True))
+    return aio_run(_async_main(raw))
 
 
 async def _async_main(argv: list[str] | None = None, *, force_chat: bool = False) -> int:

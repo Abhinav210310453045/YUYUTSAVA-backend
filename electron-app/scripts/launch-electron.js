@@ -39,8 +39,28 @@ const BUNDLE_ID = 'com.yuyutsava.terminal'
 // index.js, which re-downloads the binary when path.txt's target is missing.
 const electronModuleDir = path.resolve(__dirname, '..', 'node_modules', 'electron')
 const pathTxt = path.join(electronModuleDir, 'path.txt')
-// canonicalExe = .../Electron.app/Contents/MacOS/Electron (whatever path.txt says)
+
+// path.txt only exists once electron's postinstall has downloaded the runtime.
+// It can be missing entirely (postinstall skipped via --ignore-scripts, an
+// interrupted install, ELECTRON_SKIP_BINARY_DOWNLOAD), which used to crash this
+// script with ENOENT before Vite even had a client. Run the package's own
+// installer once to fetch the dist — that's what postinstall would have done.
+if (!fs.existsSync(pathTxt) || !fs.existsSync(path.join(electronModuleDir, 'dist'))) {
+  console.log('[launch-electron] Electron runtime missing — downloading it once...')
+  execFileSync(process.execPath, [path.join(electronModuleDir, 'install.js')], {
+    cwd: electronModuleDir,
+    stdio: 'inherit',
+  })
+}
+
+// canonicalExe = dist/electron.exe on Windows,
+//                dist/Electron.app/Contents/MacOS/Electron on macOS
 const canonicalExe = path.join(electronModuleDir, 'dist', fs.readFileSync(pathTxt, 'utf8').trim())
+if (!fs.existsSync(canonicalExe)) {
+  console.error(`[launch-electron] Electron binary not found at ${canonicalExe}`)
+  console.error('[launch-electron] Try: rm -rf node_modules/electron && npm install electron')
+  process.exit(1)
+}
 
 const macosDir = path.dirname(canonicalExe)
 const contentsDir = path.dirname(macosDir)

@@ -17,6 +17,8 @@ from pathlib import Path
 
 import httpx
 
+from yuyutsava.platform.process import run_capture
+
 
 async def execute_read(
     path: Path,
@@ -108,25 +110,17 @@ async def execute_run(
     from yuyutsava.platform import host_profile
 
     argv = host_profile().shell_command(command)
-    proc = await asyncio.create_subprocess_exec(
-        *argv,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        cwd=str(cwd),
+    # run_capture is loop-agnostic: on Windows the daemon runs on a Selector
+    # loop (psycopg) that cannot create_subprocess_exec, so it spawns in a
+    # worker thread; on POSIX it uses the native asyncio subprocess path.
+    stdout_bytes, stderr_bytes, exit_code = await run_capture(
+        argv, cwd=str(cwd), timeout=timeout
     )
-    try:
-        stdout_bytes, stderr_bytes = await asyncio.wait_for(
-            proc.communicate(), timeout=timeout
-        )
-    except asyncio.TimeoutError:
-        proc.kill()
-        await proc.communicate()
-        raise
 
     return {
         "stdout": stdout_bytes.decode(errors="replace").strip(),
         "stderr": stderr_bytes.decode(errors="replace").strip(),
-        "exit_code": proc.returncode,
+        "exit_code": exit_code,
     }
 
 
@@ -205,23 +199,13 @@ async def execute_python(script_path: Path, cwd: Path, timeout: int = 120) -> di
     Raises ``asyncio.TimeoutError`` if the script exceeds *timeout* seconds.
     """
     cwd.mkdir(parents=True, exist_ok=True)
-    proc = await asyncio.create_subprocess_exec(
-        sys.executable,
-        str(script_path),
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        cwd=str(cwd),
+    out, err, exit_code = await run_capture(
+        [sys.executable, str(script_path)], cwd=str(cwd), timeout=timeout
     )
-    try:
-        out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-    except asyncio.TimeoutError:
-        proc.kill()
-        await proc.communicate()
-        raise
     return {
         "stdout": out.decode(errors="replace").strip(),
         "stderr": err.decode(errors="replace").strip(),
-        "exit_code": proc.returncode,
+        "exit_code": exit_code,
     }
 
 
