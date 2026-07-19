@@ -84,6 +84,9 @@ _PLUMBING_ERROR_LOGGERS = (
     # opentelemetry.* tree, incl. exporter.otlp.proto.http.trace_exporter).
     "opentelemetry",
     "py.warnings",
+    # Vertex re-converts every tool schema on each bind and warns once per
+    # `additionalProperties` key Pydantic emitted — pure noise, N× per turn.
+    "langchain_google_vertexai.functions_utils",
 )
 
 

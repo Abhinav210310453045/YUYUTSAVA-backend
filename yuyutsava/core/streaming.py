@@ -466,7 +466,22 @@ async def astream_agent_iter(
                 if isinstance(chunk, AIMessageChunk):
                     text = flatten_content(chunk.content)
                     if text:
-                        yield StreamEvent("token", {"text": text})
+                        # node/ns let renderers tell main-agent prose from
+                        # LLM calls nested inside the tools node (subagents).
+                        # ns mirrors langgraph's own namespace derivation:
+                        # ``langgraph_checkpoint_ns`` minus its last segment,
+                        # so top-level nodes yield "". Additive keys —
+                        # consumers that only read "text" are unaffected.
+                        node = ""
+                        ns = ""
+                        if isinstance(_meta, dict):
+                            node = str(_meta.get("langgraph_node") or "")
+                            raw_ns = str(_meta.get("langgraph_checkpoint_ns") or "")
+                            if "|" in raw_ns:
+                                ns = raw_ns.rsplit("|", 1)[0]
+                        yield StreamEvent(
+                            "token", {"text": text, "node": node, "ns": ns}
+                        )
 
             elif mode == "updates":
                 if not isinstance(data, dict):

@@ -30,6 +30,7 @@ dependencies = [
     "aiosqlite>=0.20.0",
     "sqlglot>=25.0.0",
     "prompt-toolkit>=3.0",
+    "rich>=14",
     "langgraph-checkpoint-postgres>=2.0.0",
     "psycopg[binary,pool]>=3.2",
     "psutil>=5.9",

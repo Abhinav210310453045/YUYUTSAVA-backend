@@ -22,25 +22,31 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import json
 import os
+import re
 import sys
-from collections import deque
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from prompt_toolkit import PromptSession
+from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.formatted_text import ANSI
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.patch_stdout import patch_stdout
 
 from yuyutsava.cli.agent_stack import build_cli_agent_stack
-from yuyutsava.cli.stream_smoother import TokenSmoother
+from yuyutsava.cli.render.plain import (
+    _CYAN,
+    _DIM,
+    _GREEN,
+    _RED,
+    _RESET,
+    _YELLOW,
+    ChatRenderer,
+)
 from yuyutsava.consent import decision_token as _decision_token
 from yuyutsava.core.config import DockerSettings, LlmSettings, LocalSettings, SearchConfig
 from yuyutsava.core.engine import cleanup_local_sandbox, silence_plumbing_loggers
-from yuyutsava.core.streaming import StreamEvent
 from yuyutsava.storage.paths import state_dir
 from yuyutsava.storage.sessions import (
     SessionsSettings,
@@ -59,15 +65,9 @@ _BANNER_LINES = [
     " ╩  ╚═╝  ╩  ╚═╝  ╩  ╚═╝ ╩ ╩  ╚╝  ╩ ╩",
 ]
 
-_CYAN = "\033[36m"
-_DIM = "\033[2m"
-_YELLOW = "\033[33m"
-_GREEN = "\033[32m"
-_RED = "\033[31m"
-_RESET = "\033[0m"
 
 
-def _print_version_notice() -> None:
+def _print_version_notice(*, full: bool = False) -> None:
     """Render langgraph-api upgrade/support notices once, above the banner.
 
     langgraph_api normally emits these from a background daemon thread that
@@ -75,6 +75,9 @@ def _print_version_notice() -> None:
     ``AsyncSubagentHost.start``). Here we run the *same* check synchronously so
     any notice appears cleanly before the YUYUTSAVA graphic instead of
     interleaving with the conversation. Best-effort — never breaks startup.
+
+    The multi-line upgrade/EOL text is condensed to one dim line; ``full=True``
+    (debug plumbing) keeps the verbatim notice.
     """
     import logging as _logging
 
@@ -115,12 +118,32 @@ def _print_version_notice() -> None:
 
     if not lines:
         return
-    for msg in lines:
-        for line in msg.splitlines():
-            print(f"{_DIM}{_YELLOW}{line}{_RESET}", file=sys.stderr)
+    if full:
+        for msg in lines:
+            for line in msg.splitlines():
+                print(f"{_DIM}{_YELLOW}{line}{_RESET}", file=sys.stderr)
+        return
+    # Condense the whole notice into one dim line: latest version + EOL flag.
+    joined = "\n".join(lines)
+    m = re.search(r"→\s*([0-9][0-9A-Za-z._-]*)", joined)
+    latest = m.group(1) if m else None
+    eol = "End of Life" in joined or "end of life" in joined.lower()
+    parts = ["langgraph-api update available"]
+    if latest:
+        parts[0] += f" → {latest}"
+    if eol:
+        parts.append("current version is EOL")
+    parts.append("pip install -U langgraph-api")
+    print(f"  {_DIM}{_YELLOW}⚠ {' · '.join(parts)}{_RESET}", file=sys.stderr)
 
 
-def _print_banner(*, session_id: str, workspace: Path, resuming: bool) -> None:
+def _print_banner(
+    *,
+    session_id: str,
+    workspace: Path,
+    resuming: bool,
+    status: str | None = None,
+) -> None:
     print(file=sys.stderr)
     for line in _BANNER_LINES:
         print(f"{_CYAN}{line}{_RESET}", file=sys.stderr)
@@ -128,11 +151,37 @@ def _print_banner(*, session_id: str, workspace: Path, resuming: bool) -> None:
     print(file=sys.stderr)
     print(f"  {_DIM}{verb}:{_RESET}  {session_id}", file=sys.stderr)
     print(f"  {_DIM}workspace:{_RESET} {workspace}", file=sys.stderr)
+    if status:
+        print(f"  {_DIM}{status}{_RESET}", file=sys.stderr)
     print(
         f"  {_DIM}type /help, /quit, or press Ctrl+D to exit{_RESET}",
         file=sys.stderr,
     )
     print(file=sys.stderr)
+
+
+def _startup_status_line(sessions_settings: SessionsSettings) -> str:
+    """One dim line summarizing what the silenced startup logs used to say.
+
+    Replaces the ``pg pool: open`` / ``pg migrations: at vN`` / ``Langfuse not
+    active`` INFO lines with a compact ``storage · tracing · langgraph-api``
+    summary. Best-effort — every probe degrades to a placeholder.
+    """
+    try:
+        from yuyutsava.core import tracing as _tracing
+
+        tracing_on = _tracing.is_configured() and _tracing._langfuse_reachable()
+    except Exception:
+        tracing_on = False
+    try:
+        from langgraph_api import __version__ as _lg_version
+    except Exception:
+        _lg_version = "?"
+    return (
+        f"storage: {sessions_settings.backend} · "
+        f"tracing: {'on' if tracing_on else 'off'} · "
+        f"langgraph-api {_lg_version}"
+    )
 
 
 def _print_help() -> None:
@@ -189,481 +238,45 @@ def _suppress_stdio():
 
 
 # ---------------------------------------------------------------------------
-# Renderer for StreamEvent
+# Renderers live in yuyutsava/cli/render/: ``plain.ChatRenderer`` (imported
+# above) is the ANSI fallback; ``renderer.RichChatRenderer`` subclasses it
+# for TTYs.
 # ---------------------------------------------------------------------------
 
 
-@dataclass
-class RingEntry:
-    """One captured event with its full untruncated payload.
+# ---------------------------------------------------------------------------
+# Slash-command completion
+# ---------------------------------------------------------------------------
 
-    Stored in ``ChatRenderer._ring`` so ``/last`` and ``/expand <n>`` can
-    surface payloads the truncated preview hid. Per-entry body is capped
-    by ``YUYUTSAVA_REPL_RING_ENTRY_KB`` (default 100 KB) to keep huge tool
-    outputs from blowing up REPL memory.
-    """
-    index: int
-    kind: str           # "tool_call" | "tool_result"
-    name: str           # tool name
-    full: str           # pretty-printed full body (already capped)
-    truncated: bool     # True if the body was clipped to the per-entry cap
+_SLASH_COMMANDS: dict[str, str] = {
+    "/help": "show available commands",
+    "/quit": "exit the chat (Ctrl+D also works)",
+    "/clear": "clear the screen and redraw the banner",
+    "/new": "start a fresh session in this process",
+    "/session": "show the current session id",
+    "/ring": "list recent tool calls/results with their [#n] indices",
+    "/last": "print the last k captured payloads in full",
+    "/expand": "print the full body of the [#n] entry",
+    "/asks": "list pending background approvals",
+    "/approve": "approve a pending background ask",
+    "/reject": "reject a pending background ask",
+    "/reply": "answer a background question by id",
+}
 
 
-class ChatRenderer:
-    """Print StreamEvents in a Claude-Code-style minimal layout.
+class _SlashCompleter(Completer):
+    """Complete ``/commands`` (with descriptions) at the start of the line."""
 
-    Two display modes share the same ring buffer and slash commands:
-
-    * Non-verbose — one terse line per tool call (``· name: <summary>
-      [zone] [#N]``). Successful tool results are suppressed; errors
-      surface as a single red ``↳ name ✗ <msg>`` line.
-    * Verbose — multi-line pretty-printed tool calls and results, JSON
-      bodies indented two levels, truncation only at the per-entry cap.
-
-    ``write_todos`` always renders as a checklist regardless of mode.
-    Use ``/expand <n>`` to pull the full payload of any ``[#N]`` entry.
-    """
-
-    def __init__(self, *, verbose: bool, workspace: Path | None = None) -> None:
-        self._verbose = verbose
-        self._workspace = workspace
-        self._in_ai_stream = False
-        try:
-            ring_size = max(1, int(os.environ.get("YUYUTSAVA_REPL_RING", "50")))
-        except ValueError:
-            ring_size = 50
-        try:
-            self._entry_cap = max(1024, int(os.environ.get("YUYUTSAVA_REPL_RING_ENTRY_KB", "100")) * 1024)
-        except ValueError:
-            self._entry_cap = 100 * 1024
-        self._ring: deque[RingEntry] = deque(maxlen=ring_size)
-        self._next_index = 1
-        self._smoother = self._make_smoother()
-
-    @staticmethod
-    def _make_smoother() -> TokenSmoother | None:
-        """Build a token smoother for prose, or None to print directly.
-
-        Smoothing is for interactive terminals only: when stdout is not a TTY
-        (piped output, tests) or the user disabled it via
-        ``YUYUTSAVA_REPL_SMOOTH=0``, return None so the render path is
-        byte-for-byte identical to printing chunks as they arrive.
-        """
-        flag = os.environ.get("YUYUTSAVA_REPL_SMOOTH", "1").strip().lower()
-        if flag in ("0", "false", "no", "off"):
-            return None
-        try:
-            if not sys.stdout.isatty():
-                return None
-        except (ValueError, AttributeError):
-            return None
-        try:
-            base_cps = float(os.environ.get("YUYUTSAVA_REPL_SMOOTH_CPS", "180"))
-        except ValueError:
-            base_cps = 180.0
-        return TokenSmoother(
-            sys.stdout.write,
-            flush=sys.stdout.flush,
-            base_cps=base_cps,
-        )
-
-    async def render(self, ev: StreamEvent) -> None:
-        if ev.kind == "token":
-            if not self._in_ai_stream:
-                # Open the AI line with a small chip; no big separator block.
-                print(f"\n{_CYAN}🤖{_RESET}  ", end="", flush=True)
-                self._in_ai_stream = True
-            text = ev.data.get("text", "")
-            if self._smoother is not None:
-                self._smoother.feed(text)
-            else:
-                print(text, end="", flush=True)
+    def get_completions(self, document, complete_event):  # noqa: ANN001, ANN201
+        text = document.text_before_cursor
+        if not text.startswith("/") or " " in text:
             return
-
-        # Any non-token event closes the AI stream visually. Flush the
-        # smoother first so buffered prose lands before the tool/log line.
-        if self._smoother is not None:
-            await self._smoother.drain()
-        if self._in_ai_stream:
-            print(flush=True)
-            self._in_ai_stream = False
-
-        if ev.kind == "tool_call":
-            name = ev.data.get("name", "?")
-            args = ev.data.get("args", {})
-            idx = self._push_ring("tool_call", name, self._pretty(args))
-            if name == "write_todos":
-                self._render_todos(args, idx)
-                return
-            if self._verbose:
-                self._render_tool_call_verbose(name, args, idx)
-            else:
-                self._render_tool_call_compact(name, args, idx)
-            return
-
-        if ev.kind == "tool_result":
-            name = ev.data.get("name", "tool")
-            body = ev.data.get("preview", "") or ""
-            full = ev.data.get("full", body) or body
-            idx = self._push_ring("tool_result", name, full)
-            # The write_todos call line already reflects the new state.
-            if name == "write_todos":
-                return
-            is_err = self._looks_like_error(full or body)
-            if self._verbose:
-                self._render_tool_result_verbose(name, full or body, idx, is_err)
-            elif is_err:
-                self._render_tool_result_compact_error(name, full or body, idx)
-            # else: suppress on success in non-verbose
-            return
-
-        if ev.kind == "log":
-            text = ev.data.get("text", "")
-            if text:
-                print(f"{_YELLOW}{text}{_RESET}", file=sys.stderr, flush=True)
-            return
-
-        if ev.kind == "final":
-            # The token stream above already covered the prose. Just newline.
-            print(flush=True)
-
-    async def end_of_turn(self) -> None:
-        """Force-close any dangling streaming line."""
-        if self._smoother is not None:
-            await self._smoother.drain()
-        if self._in_ai_stream:
-            print(flush=True)
-            self._in_ai_stream = False
-
-    # ------------------------------------------------------------------
-    # Ring buffer + slash command helpers
-    # ------------------------------------------------------------------
-
-    def _push_ring(self, kind: str, name: str, full: str) -> int:
-        truncated = False
-        if len(full) > self._entry_cap:
-            full = full[: self._entry_cap] + f"\n…[truncated to {self._entry_cap // 1024}KB]"
-            truncated = True
-        idx = self._next_index
-        self._next_index += 1
-        self._ring.append(RingEntry(index=idx, kind=kind, name=name, full=full, truncated=truncated))
-        return idx
-
-    def _find(self, idx: int) -> RingEntry | None:
-        for e in self._ring:
-            if e.index == idx:
-                return e
-        return None
-
-    def print_ring(self) -> None:
-        if not self._ring:
-            print(f"{_DIM}(ring empty){_RESET}", file=sys.stderr)
-            return
-        print(f"{_CYAN}ring (most recent last):{_RESET}", file=sys.stderr)
-        for e in self._ring:
-            summary = e.full.replace("\n", " ⏎ ")
-            if len(summary) > 100:
-                summary = summary[:100] + "…"
-            tag = "·" if e.kind == "tool_call" else "↳"
-            print(f"  {_DIM}[#{e.index}] {tag} {e.name}: {summary}{_RESET}", file=sys.stderr)
-
-    def print_entry(self, idx: int) -> None:
-        e = self._find(idx)
-        if e is None:
-            print(f"{_DIM}no ring entry #{idx} (try /ring){_RESET}", file=sys.stderr)
-            return
-        header = f"[#{e.index}] {e.kind} {e.name}"
-        if e.truncated:
-            header += " (truncated)"
-        print(f"{_CYAN}{header}{_RESET}", file=sys.stderr)
-        print(e.full, file=sys.stderr)
-
-    def print_last(self, k: int = 1) -> None:
-        if not self._ring:
-            print(f"{_DIM}(ring empty){_RESET}", file=sys.stderr)
-            return
-        k = max(1, k)
-        for e in list(self._ring)[-k:]:
-            self.print_entry(e.index)
-
-    @staticmethod
-    def _pretty(args: Any) -> str:
-        try:
-            if isinstance(args, (dict, list)):
-                return json.dumps(args, indent=2, default=str)
-        except Exception:
-            pass
-        return str(args)
-
-    @staticmethod
-    def _fmt_args(args: Any, *, limit: int) -> str:
-        try:
-            if isinstance(args, dict):
-                items = []
-                for k, v in args.items():
-                    sval = str(v)
-                    if len(sval) > 40:
-                        sval = sval[:40] + "…"
-                    items.append(f"{k}={sval}")
-                out = ", ".join(items)
-            else:
-                out = str(args)
-        except Exception:
-            out = "…"
-        if len(out) > limit:
-            out = out[:limit] + "…"
-        return out
-
-    # ------------------------------------------------------------------
-    # Mode-specific renderers
-    # ------------------------------------------------------------------
-
-    def _render_tool_call_compact(self, name: str, args: Any, idx: int) -> None:
-        summary = self._compact_summary(args)
-        zone_chip = self._zone_chip(name, args)
-        head = f"  {_DIM}·{_RESET} {_CYAN}{name}{_RESET}"
-        body = f"{_DIM}: {summary}{_RESET}" if summary else ""
-        tail = f"{_DIM}  [#{idx}]{_RESET}"
-        print(f"{head}{body}{zone_chip}{tail}", file=sys.stderr, flush=True)
-
-    def _render_tool_call_verbose(self, name: str, args: Any, idx: int) -> None:
-        print(
-            f"\n  {_DIM}·{_RESET} {_CYAN}{name}{_RESET}  {_DIM}[#{idx}]{_RESET}",
-            file=sys.stderr,
-        )
-        if not isinstance(args, dict) or not args:
-            return
-        for k, v in args.items():
-            sval = self._format_arg_value(v)
-            if "\n" in sval:
-                print(f"    {_DIM}{k}:{_RESET}", file=sys.stderr)
-                for line in sval.splitlines():
-                    print(f"      {line}", file=sys.stderr)
-            else:
-                if len(sval) > 200:
-                    sval = sval[:200] + "…"
-                print(f"    {_DIM}{k}:{_RESET} {sval}", file=sys.stderr)
-
-    def _render_tool_result_verbose(
-        self, name: str, body: str, idx: int, is_err: bool
-    ) -> None:
-        status = f"{_RED}✗ error{_RESET}" if is_err else f"{_GREEN}← ok{_RESET}"
-        print(
-            f"  {_DIM}↳{_RESET} {_CYAN}{name}{_RESET} {status}  {_DIM}[#{idx}]{_RESET}",
-            file=sys.stderr,
-        )
-        pretty = self._pretty_body(body)
-        if len(pretty) > self._entry_cap:
-            pretty = (
-                pretty[: self._entry_cap]
-                + f"\n…[truncated; /expand {idx} for full]"
-            )
-        for line in pretty.splitlines():
-            print(f"      {line}", file=sys.stderr)
-
-    def _render_tool_result_compact_error(
-        self, name: str, body: str, idx: int
-    ) -> None:
-        short = self._error_message(body)
-        if short:
-            tail = f"{_DIM}  [#{idx}]{_RESET}"
-            print(
-                f"  {_RED}↳ {name} ✗ {short}{_RESET}{tail}",
-                file=sys.stderr,
-                flush=True,
-            )
-        else:
-            print(
-                f"  {_RED}↳ {name} ✗ error{_RESET}{_DIM}  [#{idx}]{_RESET}",
-                file=sys.stderr,
-                flush=True,
-            )
-
-    def _render_todos(self, args: Any, idx: int) -> None:
-        todos = args.get("todos") if isinstance(args, dict) else None
-        if not isinstance(todos, list) or not todos:
-            print(
-                f"  {_DIM}· write_todos  [#{idx}]{_RESET}",
-                file=sys.stderr,
-                flush=True,
-            )
-            return
-        print(
-            f"\n  {_CYAN}TODO:{_RESET}  {_DIM}[#{idx}]{_RESET}",
-            file=sys.stderr,
-        )
-        for t in todos:
-            if not isinstance(t, dict):
-                continue
-            status = str(t.get("status", "")).lower()
-            content = str(t.get("content", "")).strip()
-            symbol = self._todo_symbol(status)
-            if status == "completed":
-                colour = _DIM
-            elif status == "in_progress":
-                colour = _GREEN
-            else:
-                colour = ""
-            reset = _RESET if colour else ""
-            print(
-                f"    {colour}{symbol} {content}{reset}",
-                file=sys.stderr,
-            )
-        print(file=sys.stderr)
-
-    @staticmethod
-    def _todo_symbol(status: str) -> str:
-        if status == "completed":
-            return "[✓]"
-        if status == "in_progress":
-            return "[▶]"
-        return "[ ]"
-
-    # ------------------------------------------------------------------
-    # Format helpers
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _compact_summary(args: Any) -> str:
-        if not isinstance(args, dict):
-            s = str(args)
-            return s if len(s) <= 80 else s[:80] + "…"
-        reason = args.get("reason")
-        if isinstance(reason, str) and reason.strip():
-            s = reason.strip()
-            return s if len(s) <= 80 else s[:80] + "…"
-        for key in ("path", "file_path", "target", "directory"):
-            v = args.get(key)
-            if isinstance(v, str) and v.strip():
-                return v.strip()
-        paths = args.get("paths")
-        if isinstance(paths, list) and paths:
-            head = ", ".join(str(p) for p in paths[:2])
-            return head + ("…" if len(paths) > 2 else "")
-        for key in ("query", "pattern", "name", "command", "question"):
-            v = args.get(key)
-            if isinstance(v, str) and v.strip():
-                s = v.strip()
-                if len(s) > 80:
-                    s = s[:80] + "…"
-                return f'{key}="{s}"'
-        # Fallback: terse key=value summary.
-        items: list[str] = []
-        for k, v in args.items():
-            sval = str(v)
-            if len(sval) > 40:
-                sval = sval[:40] + "…"
-            items.append(f"{k}={sval}")
-        out = ", ".join(items)
-        return out if len(out) <= 80 else out[:80] + "…"
-
-    def _zone_chip(self, name: str, args: Any) -> str:
-        if not (name.startswith("tr_") and isinstance(args, dict)):
-            return ""
-        path: str | None = None
-        for k in ("path", "file_path", "target", "directory"):
-            v = args.get(k)
-            if isinstance(v, str) and v.strip():
-                path = v.strip()
-                break
-        if path is None:
-            paths = args.get("paths")
-            if isinstance(paths, list) and paths:
-                p0 = paths[0]
-                if isinstance(p0, str) and p0.strip():
-                    path = p0.strip()
-        if not path:
-            return ""
-        zone = self._classify_zone(path)
-        if not zone:
-            return ""
-        colour = _YELLOW if zone == "external" else _DIM
-        return f"  {colour}[{zone}]{_RESET}"
-
-    def _classify_zone(self, path: str) -> str:
-        from yuyutsava.platform import host_profile
-
-        if self._workspace is not None and path.startswith(str(self._workspace)):
-            return "workspace"
-        if path.startswith(host_profile().temp_zone_prefixes()):
-            return "sandbox"
-        if os.path.isabs(path):
-            return "external"
-        return ""
-
-    @staticmethod
-    def _format_arg_value(v: Any) -> str:
-        if isinstance(v, str):
-            stripped = v.strip()
-            if stripped.startswith(("{", "[")):
-                try:
-                    return json.dumps(json.loads(stripped), indent=2, default=str)
-                except Exception:
-                    pass
-            return v
-        if isinstance(v, (dict, list)):
-            try:
-                return json.dumps(v, indent=2, default=str)
-            except Exception:
-                return str(v)
-        return str(v)
-
-    @staticmethod
-    def _pretty_body(body: str) -> str:
-        if not isinstance(body, str):
-            return str(body)
-        stripped = body.strip()
-        if stripped.startswith(("{", "[")):
-            try:
-                return json.dumps(json.loads(stripped), indent=2, default=str)
-            except Exception:
-                pass
-        return body
-
-    @staticmethod
-    def _looks_like_error(body: str) -> bool:
-        if not isinstance(body, str) or not body:
-            return False
-        stripped = body.strip()
-        if stripped.startswith("{"):
-            try:
-                obj = json.loads(stripped)
-                if isinstance(obj, dict):
-                    status = str(obj.get("status", "")).lower()
-                    if status in ("error", "rejected", "fail", "failed"):
-                        return True
-                    err = obj.get("error")
-                    if err:
-                        return True
-            except Exception:
-                pass
-        head = stripped[:200].lower()
-        markers = ("error:", "exception:", "traceback", "failed:", "✗")
-        return any(m in head for m in markers)
-
-    @staticmethod
-    def _error_message(body: str) -> str:
-        if not isinstance(body, str):
-            return ""
-        stripped = body.strip()
-        if stripped.startswith("{"):
-            try:
-                obj = json.loads(stripped)
-                if isinstance(obj, dict):
-                    err = obj.get("error")
-                    if isinstance(err, dict):
-                        msg = err.get("message") or err.get("code")
-                        if msg:
-                            return str(msg)[:120]
-                    elif isinstance(err, str) and err:
-                        return err[:120]
-                    msg = obj.get("message")
-                    if isinstance(msg, str) and msg:
-                        return msg[:120]
-            except Exception:
-                pass
-        first = stripped.splitlines()[0] if stripped else ""
-        return first[:120]
+        lowered = text.lower()
+        for cmd, desc in _SLASH_COMMANDS.items():
+            if cmd.startswith(lowered):
+                yield Completion(
+                    cmd, start_position=-len(text), display_meta=desc
+                )
 
 
 # ---------------------------------------------------------------------------
@@ -722,62 +335,69 @@ def _render_permission_payload(payload: dict[str, Any]) -> None:
         print(f"  {body}", file=sys.stderr)
 
 
-async def _ask_handler(interrupt_value: Any) -> str:
-    """Render a permission/question interrupt and read the user's reply."""
-    payload = interrupt_value if isinstance(interrupt_value, dict) else {"text": str(interrupt_value)}
-    itype = payload.get("type", "")
+def make_ask_handler(renderer: "ChatRenderer", console: Any = None):
+    """Build the REPL's interrupt handler.
 
-    print(file=sys.stderr)
-    if itype == "user_question":
-        title = payload.get("title") or "Question"
-        body = payload.get("body") or payload.get("question") or ""
-        print(f"{_YELLOW}? {title}{_RESET}", file=sys.stderr)
-        if body:
-            print(f"  {body}", file=sys.stderr)
-        prompt_text = "> "
+    ``renderer.pause()`` stops any live spinner region before the blocking
+    ``input()`` (a repainting Live would fight the prompt) and restarts it
+    after. With a rich ``console`` the card is a humanized Panel; the plain
+    path keeps the ANSI card, now with the same plain-English headline.
+    """
+
+    async def _ask_handler(interrupt_value: Any) -> str:
+        """Render a permission/question interrupt and read the user's reply."""
+        payload = interrupt_value if isinstance(interrupt_value, dict) else {"text": str(interrupt_value)}
+        itype = payload.get("type", "")
         loop = asyncio.get_running_loop()
-        try:
-            answer = await loop.run_in_executor(None, lambda: input(prompt_text).strip())
-        except (EOFError, KeyboardInterrupt):
+
+        from yuyutsava.cli.render import panels
+
+        with renderer.pause():
+            print(file=sys.stderr)
+            if itype == "user_question":
+                if console is not None:
+                    panels.print_ask_panel(console, payload)
+                else:
+                    print(f"{_YELLOW}? {panels.headline(payload)}{_RESET}", file=sys.stderr)
+                    body = payload.get("body") or payload.get("question") or ""
+                    if body:
+                        print(f"  {body}", file=sys.stderr)
+                try:
+                    answer = await loop.run_in_executor(None, lambda: input("> ").strip())
+                except (EOFError, KeyboardInterrupt):
+                    return "reject"
+                return answer or "no response"
+
+            if console is not None:
+                panels.print_ask_panel(console, payload)
+            else:
+                print(f"{_YELLOW}▣ {panels.headline(payload)}{_RESET}", file=sys.stderr)
+                _render_permission_payload(payload)
+                # Offer the allowlist scopes for every task-runner operation type
+                # (matches the daemon's options_for_interrupt). [s]ession /
+                # [p]roject remember the op for the whole workspace so it isn't
+                # re-asked per file/subfolder.
+                print(f"  {_DIM}{panels.options_hint(itype)}{_RESET}", file=sys.stderr)
+
+            # Re-prompt on a blank / unrecognized line instead of silently
+            # rejecting: with several parallel asks under prompt_toolkit, a stray
+            # buffered line could otherwise be misread as a rejection. Explicit
+            # reject words and EOF/Ctrl-C still reject; retries are capped so a
+            # closed stdin can't spin forever.
+            for _ in range(3):
+                try:
+                    raw = await loop.run_in_executor(None, lambda: input("approve/reject> ").strip())
+                except (EOFError, KeyboardInterrupt):
+                    return "reject"
+                if not raw:
+                    continue
+                token = _decision_token(raw)
+                if token is not None:
+                    return token
+                print(f"  {_DIM}please answer: [y]es / [n]o / [s]ession / [p]roject{_RESET}", file=sys.stderr)
             return "reject"
-        return answer or "no response"
 
-    if itype == "task_runner_permission":
-        op = str(payload.get("operation") or "?").upper()
-        title = f"Permission requested — {op}"
-    elif itype == "permission_request":
-        title = "Permission requested — execute"
-    else:
-        title = payload.get("title") or "Permission requested"
-
-    print(f"{_YELLOW}▣ {title}{_RESET}", file=sys.stderr)
-    _render_permission_payload(payload)
-    # Offer the allowlist scopes for every task-runner operation type (matches the
-    # daemon's options_for_interrupt). Choosing [s]ession / [p]roject remembers the
-    # op for the whole workspace so it isn't re-asked per file/subfolder.
-    if itype == "task_runner_permission":
-        hint = "[y]es / [n]o / [s]ession / [p]roject"
-    else:
-        hint = "[y]es / [n]o  (also: approve / reject)"
-    print(f"  {_DIM}{hint}{_RESET}", file=sys.stderr)
-
-    loop = asyncio.get_running_loop()
-    # Re-prompt on a blank / unrecognized line instead of silently rejecting:
-    # with several parallel asks under prompt_toolkit, a stray buffered line could
-    # otherwise be misread as a rejection. Explicit reject words and EOF/Ctrl-C
-    # still reject; we cap retries so a closed stdin can't spin forever.
-    for _ in range(3):
-        try:
-            raw = await loop.run_in_executor(None, lambda: input("approve/reject> ").strip())
-        except (EOFError, KeyboardInterrupt):
-            return "reject"
-        if not raw:
-            continue
-        token = _decision_token(raw)
-        if token is not None:
-            return token
-        print(f"  {_DIM}please answer: [y]es / [n]o / [s]ession / [p]roject{_RESET}", file=sys.stderr)
-    return "reject"
+    return _ask_handler
 
 
 # ---------------------------------------------------------------------------
@@ -928,7 +548,21 @@ async def run_chat_repl(
     # follows the same lifecycle as the SQLite session store.
     history_path = state_dir() / "chat_history"
 
-    renderer = ChatRenderer(verbose=verbose, workspace=workspace)
+    # Rich transcript on real TTYs; the plain ANSI renderer for pipes and
+    # dumb terminals stays byte-identical to the historical behavior.
+    from yuyutsava.cli.render.console import make_console, rich_capable
+
+    console = None
+    if rich_capable():
+        from yuyutsava.cli.render.renderer import RichChatRenderer
+
+        console = make_console()
+        renderer: ChatRenderer = RichChatRenderer(
+            verbose=verbose, workspace=workspace, console=console
+        )
+    else:
+        renderer = ChatRenderer(verbose=verbose, workspace=workspace)
+    ask_handler = make_ask_handler(renderer, console)
     exit_code = 0
 
     # The renderer is the only voice the user should hear in chat mode.
@@ -943,6 +577,12 @@ async def run_chat_repl(
             "yuyutsava.agents.task_runner.tools",
             "yuyutsava.core.tool_registry",
             "yuyutsava.core.permission_middleware",
+            # Startup chatter folded into the banner status line instead:
+            # "pg pool: open", "pg migrations: at vN", "Langfuse not active".
+            # REPL-scoped on purpose — the daemon keeps these lines.
+            "yuyutsava.storage.pg.pool",
+            "yuyutsava.storage.pg.migrations",
+            "yuyutsava.core.tracing",
         ):
             _logging.getLogger(_name).setLevel(_logging.WARNING)
 
@@ -1034,9 +674,13 @@ async def run_chat_repl(
 
             # Surface any langgraph-api upgrade/support notice once, cleanly,
             # right above the banner rather than mid-chat.
-            _print_version_notice()
+            _print_version_notice(full=debug_plumbing)
+            status_line = _startup_status_line(sessions_settings)
             _print_banner(
-                session_id=session.id, workspace=workspace, resuming=resuming
+                session_id=session.id,
+                workspace=workspace,
+                resuming=resuming,
+                status=status_line,
             )
 
             # prompt_toolkit needs a TTY on stdin; when run with piped input
@@ -1051,6 +695,8 @@ async def run_chat_repl(
                     history=FileHistory(str(history_path)),
                     multiline=False,
                     wrap_lines=True,
+                    completer=_SlashCompleter(),
+                    complete_while_typing=True,
                 )
                 if is_tty
                 else None
@@ -1119,7 +765,10 @@ async def run_chat_repl(
                     # Rotate to a brand-new session row + thread_id in-process.
                     session = await convo.new_session(task="(interactive chat)")
                     _print_banner(
-                        session_id=session.id, workspace=workspace, resuming=False
+                        session_id=session.id,
+                        workspace=workspace,
+                        resuming=False,
+                        status=status_line,
                     )
                     continue
 
@@ -1127,10 +776,11 @@ async def run_chat_repl(
                 # renderer is the terminal output adapter; _ask_handler is the
                 # terminal HITL bridge.
                 try:
+                    renderer.begin_turn()
                     await convo.run_turn(
                         user_input,
                         on_event=renderer.render,
-                        ask_handler=_ask_handler,
+                        ask_handler=ask_handler,
                         run_name="cli-chat",
                         keep_full_payloads=True,
                     )
