@@ -224,6 +224,16 @@ def main() -> int:
         except RuntimeError:
             check("closed pool raises", True)
 
+        # In the daemon the host loop dies with the process; here loop B
+        # outlives the check, so close its secondary pool to keep teardown
+        # quiet. (Deliberately reaching into internals — script-only.)
+        async def _close_secondary():
+            p = pool._pools.pop_current()
+            if p is not None:
+                await p.close()
+
+        b.run(_close_secondary())
+
     a.stop()
     b.stop()
     print(f"\n{PASS} passed, {FAIL} failed")

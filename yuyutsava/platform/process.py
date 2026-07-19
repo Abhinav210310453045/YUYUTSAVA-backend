@@ -17,6 +17,7 @@ Windows notes baked in here so callers never think about them:
 from __future__ import annotations
 
 import logging
+import shutil
 import signal
 import subprocess
 import sys
@@ -115,8 +116,16 @@ def spawn_detached(
     POSIX: ``start_new_session=True`` (own session + process group, so a
     Ctrl+C on us never reaches the child, and ``kill_tree`` can reap it).
     Windows: ``CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS`` — the closest
-    equivalent (no console, own group for CTRL_BREAK delivery).
+    equivalent (no console, own group for CTRL_BREAK delivery). The executable
+    is also resolved via ``shutil.which`` there: CreateProcess only finds
+    ``.exe`` files by bare name, while ``which`` honours PATHEXT — without it,
+    batch-shim commands like ``npm`` (really ``npm.cmd``) never launch.
     """
+    cmd = list(cmd)
+    if _IS_WINDOWS:
+        resolved = shutil.which(cmd[0])
+        if resolved is not None:
+            cmd[0] = resolved
     kwargs: dict[str, Any] = {
         "cwd": str(cwd) if cwd is not None else None,
         "env": env,
@@ -130,7 +139,7 @@ def spawn_detached(
         )
     else:
         kwargs["start_new_session"] = True
-    return subprocess.Popen(list(cmd), **kwargs)
+    return subprocess.Popen(cmd, **kwargs)
 
 
 def install_terminate_handler(callback: Callable[[], None]) -> None:
