@@ -778,20 +778,30 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
             from yuyutsava.context.tools import make_context_tools
             from yuyutsava.core.engine import context_middleware
 
+            # Host-only model instances — the host graphs run on the uvicorn
+            # loop in the async-subagent-host thread, and Gemini SDK clients
+            # bind to the first loop that uses them, so the main loop's
+            # subagent/compaction models must never serve host runs (see
+            # llm/quirks/loop_affinity + Architecture.md "Event-loop ownership").
+            host_subagent_model = chat_model(subagent_settings, temperature=0.1)
+            host_compaction_model = chat_model(
+                llm_settings_from_env("compaction"), temperature=0.0
+            )
+
             return AsyncSubagentHost.from_subagents(
                 bg_subagent_list,
-                model=subagent_model,
+                model=host_subagent_model,
                 checkpointer=checkpointer,
                 allow_blocking=allow_blocking,
                 middleware_factory=lambda sa: context_middleware(
-                    model=subagent_model,
+                    model=host_subagent_model,
                     artifact_store=artifact_store,
                     context_settings=context_settings,
                     summary_store=summary_store,
                     memory_store=memory_store,
                     transcript_store=None,  # bg thread ids are host-minted;
                     # transcripts serve interactive resume — skip them here.
-                    compaction_model=compaction_model,
+                    compaction_model=host_compaction_model,
                     role=f"{sa.name}-bg",
                 ),
                 extra_tools_factory=(

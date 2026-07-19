@@ -759,6 +759,41 @@ Key pieces:
 > (`YUYUTSAVA_ALLOW_BLOCKING=0`), and the bootstrap/web/resource paths already wrap
 > their few blocking calls in `asyncio.to_thread`.
 
+### Event-loop ownership
+
+The process runs **two asyncio loops**: the main loop (daemon or CLI — the user-facing
+uvicorn, orchestrator/triage loops, ConversationManager bundles, sweeper, MCP manager
+all live here) and the AsyncSubagentHost's uvicorn loop in the `async-subagent-host`
+daemon thread, where the background graphs execute. Cross-*process* attach is URL-only
+and never shares Python objects; every hazard is inside the host-owner process, between
+its own two loops.
+
+Several resources are **loop-affine** — they bind to the event loop that first uses
+them and crash (`RuntimeError: ... attached to a different loop`) or corrupt state when
+touched from another: grpc.aio channels inside the Gemini SDK clients, psycopg
+`AsyncConnectionPool`s, `httpx.AsyncClient`s, MCP `ClientSession`s (anyio cancel
+scopes), and all `asyncio` primitives (Queue/Lock/Event). The rules:
+
+1. **A loop-affine resource is used only on its creation loop.** Anything captured into
+   host graphs or their middleware (`_build_host` / `middleware_factory` closures) must
+   be plain data, per-loop internally, or built fresh inside `_build_host`.
+2. **One `chat_model()` instance per loop.** Every `_build_host` constructs its own
+   subagent/compaction models; the `loop_pinned` quirk (`llm/quirks/loop_affinity.py`,
+   applied by the vertex + google providers) makes a violation fail immediately with an
+   actionable error instead of the cryptic grpc one mid-request.
+3. **Shared singletons make their internals per-loop** via `LoopLocal`
+   (`yuyutsava/aio/loop_local.py`): `PgPool` opens a lazy secondary pool per extra loop
+   (`min_size=0`), `Embedder` keeps one `httpx.AsyncClient` per loop. The Pg stores
+   therefore stay freely shareable.
+4. **Unduplicatable resources marshal instead:** MCP tool calls from a foreign loop hop
+   to the session's home loop via `run_coroutine_threadsafe`
+   (`mcp/tool_adapter.py`); plain threads signal a loop via `call_soon_threadsafe`
+   (`events/sources/fs.py`).
+5. **The checkpointer is exempt:** `build_async_graph` drops it and `langgraph_api`
+   injects its own for background runs, so the main-loop `AsyncPostgresSaver` never
+   crosses. Teardown of per-loop internals on the host loop is best-effort by design —
+   the host thread is a daemon thread that dies with the process.
+
 ---
 
 ## 12. Streaming & Interrupt Runtime

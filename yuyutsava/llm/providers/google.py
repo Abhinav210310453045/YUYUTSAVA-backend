@@ -8,6 +8,7 @@ from pydantic import SecretStr
 from yuyutsava.core.config import GoogleSettings
 from yuyutsava.llm.base import Provider, require
 from yuyutsava.llm.quirks.gemini_parts import parts_safe
+from yuyutsava.llm.quirks.loop_affinity import loop_pinned
 
 
 class GoogleProvider(Provider):
@@ -20,8 +21,9 @@ class GoogleProvider(Provider):
             "langchain_google_genai", provider="google", install="'yuyutsava[google]'"
         )
         # Same Gemini wire format as Vertex, same zero-parts hazard — one quirk
-        # module, applied by both providers.
-        cls = parts_safe(mod.ChatGoogleGenerativeAI)
+        # module, applied by both providers. Same loop-bound async client too —
+        # see quirks/loop_affinity.
+        cls = loop_pinned(parts_safe(mod.ChatGoogleGenerativeAI))
         return cls(
             api_key=SecretStr(settings.api_key),
             model=settings.model,

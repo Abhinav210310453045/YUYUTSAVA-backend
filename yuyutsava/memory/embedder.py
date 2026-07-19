@@ -11,6 +11,7 @@ import logging
 
 import httpx
 
+from yuyutsava.aio import LoopLocal
 from yuyutsava.memory.config import EMBEDDING_DIM, MemorySettings
 
 logger = logging.getLogger("yuyutsava.memory.embedder")
@@ -27,15 +28,24 @@ _MAX_EMBED_CHARS = 6000
 
 
 class Embedder:
-    """Async embeddings client; one instance shared per process."""
+    """Async embeddings client; one instance shared per process.
+
+    One ``httpx.AsyncClient`` per event loop: the stores holding this embedder
+    are awaited from both the main loop and the AsyncSubagentHost's uvicorn
+    loop, and an ``AsyncClient`` is loop-affine (its transport and anyio
+    primitives bind to the loop that first uses it). See Architecture.md
+    "Event-loop ownership".
+    """
 
     def __init__(self, settings: MemorySettings, *, timeout_sec: float = 30.0) -> None:
         self._settings = settings
         self._use_prefixes = settings.embed_use_prefixes
-        self._client = httpx.AsyncClient(
-            base_url=settings.embed_base_url,
-            headers={"Authorization": f"Bearer {settings.embed_api_key}"},
-            timeout=timeout_sec,
+        self._clients: LoopLocal[httpx.AsyncClient] = LoopLocal(
+            lambda: httpx.AsyncClient(
+                base_url=settings.embed_base_url,
+                headers={"Authorization": f"Bearer {settings.embed_api_key}"},
+                timeout=timeout_sec,
+            )
         )
 
     async def embed(
@@ -57,7 +67,7 @@ class Embedder:
         if self._use_prefixes:
             prefix = _QUERY_PREFIX if mode == "query" else _DOCUMENT_PREFIX
             payload_texts = [prefix + t for t in texts]
-        resp = await self._client.post(
+        resp = await self._clients.get().post(
             "/embeddings",
             json={"model": self._settings.embed_model, "input": payload_texts},
         )
@@ -96,4 +106,8 @@ class Embedder:
             return False
 
     async def aclose(self) -> None:
-        await self._client.aclose()
+        """Close the current loop's client; clients on other loops cannot be
+        closed from here (aclose is loop-affine) and die with the process."""
+        client = self._clients.pop_current()
+        if client is not None:
+            await client.aclose()

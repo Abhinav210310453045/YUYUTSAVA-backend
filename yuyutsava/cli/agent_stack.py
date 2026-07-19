@@ -313,6 +313,14 @@ async def build_agent_stack(
             from yuyutsava.context.tools import make_context_tools
             from yuyutsava.core.engine import context_middleware
 
+            # Host-only compaction model: host graphs run on the uvicorn loop,
+            # and the master bundle's compaction model belongs to this loop —
+            # Gemini SDK clients bind to their first loop (see
+            # llm/quirks/loop_affinity). ``model`` above is already host-only.
+            host_compaction_model = chat_model(
+                llm_settings_from_env("compaction"), temperature=0.0
+            )
+
             return AsyncSubagentHost.from_subagents(
                 async_subagents,
                 model=model,
@@ -326,7 +334,7 @@ async def build_agent_stack(
                     memory_store=memory_store,
                     transcript_store=None,  # bg thread ids are host-minted;
                     # transcripts serve interactive resume — skip them here.
-                    compaction_model=compaction_model,
+                    compaction_model=host_compaction_model,
                     role=f"{sa.name}-bg",
                 ),
                 extra_tools_factory=(

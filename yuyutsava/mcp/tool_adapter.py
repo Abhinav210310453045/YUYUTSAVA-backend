@@ -3,10 +3,19 @@
 Tool names are namespaced ``<server>__<tool>`` so two servers can both expose
 ``read`` without collision. Result content blocks are flattened to a single
 string for now; image / binary results are deferred to a later phase.
+
+The ``ClientSession`` lives on the MCPClientManager's loop (the daemon main
+loop) and its anyio cancel scopes must never run elsewhere — but the adapted
+tools are also baked into background subagent graphs, which execute on the
+AsyncSubagentHost's uvicorn loop. Calls from a foreign loop are therefore
+marshaled onto the session's home loop via ``run_coroutine_threadsafe``; the
+caller just awaits the wrapped future. See Architecture.md "Event-loop
+ownership".
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -28,10 +37,20 @@ def adapt(session: ClientSession, server_name: str, mcp_tool: MCPTool) -> BaseTo
     namespaced = f"{server_name}__{mcp_tool.name}"
     description = mcp_tool.description or f"MCP tool {namespaced}"
     input_schema = dict(mcp_tool.inputSchema or {"type": "object", "properties": {}})
+    # adapt() runs inside the manager's _run_server task, so this IS the loop
+    # the session (and its cancel scopes) belongs to.
+    home_loop = asyncio.get_running_loop()
 
     async def _call(**kwargs: Any) -> str:
         try:
-            result = await session.call_tool(mcp_tool.name, kwargs)
+            if asyncio.get_running_loop() is home_loop:
+                result = await session.call_tool(mcp_tool.name, kwargs)
+            else:
+                result = await asyncio.wrap_future(
+                    asyncio.run_coroutine_threadsafe(
+                        session.call_tool(mcp_tool.name, kwargs), home_loop
+                    )
+                )
         except Exception as exc:  # noqa: BLE001
             logger.warning("MCP call %s failed: %s", namespaced, exc)
             return f"[error calling {namespaced}: {exc}]"
