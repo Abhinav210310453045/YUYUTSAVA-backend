@@ -36,6 +36,7 @@ except ImportError:  # pragma: no cover
     load_dotenv = None  # type: ignore[assignment]
 
 from yuyutsava import platform as yplatform
+from yuyutsava.aio import run as aio_run
 from yuyutsava.core.engine import silence_plumbing_loggers
 from yuyutsava.daemon.bootstrap import DaemonOptions, DaemonSubsystems, build_daemon
 from yuyutsava.daemon.lifecycle import install_reload_handler, install_signal_handlers
@@ -544,7 +545,9 @@ def main(argv: list[str] | None = None) -> int:
     if getattr(pre_args, "stop", False):
         return _cmd_stop()
     try:
-        rc = asyncio.run(_async_main(argv))
+        # aio.run installs the Selector loop policy on Windows (psycopg needs
+        # it); on POSIX it is a passthrough to asyncio.run.
+        rc = aio_run(_async_main(argv))
     except KeyboardInterrupt:
         return 0
     if rc == _REEXEC_RETCODE:

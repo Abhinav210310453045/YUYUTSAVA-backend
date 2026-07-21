@@ -34,6 +34,7 @@ import psutil
 
 from yuyutsava.core.config import _env
 from yuyutsava.daemon.channels import ChannelEvent, SystemMetricsPayload, TimelinePayload
+from yuyutsava.platform.process import run_capture
 
 logger = logging.getLogger("yuyutsava.daemon.resources")
 
@@ -244,12 +245,10 @@ class ResourceMonitor:
         timeout) degrades to an empty mapping.
         """
         try:
-            proc = await asyncio.create_subprocess_exec(
-                "docker", "stats", "--no-stream", "--format", "{{json .}}",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.DEVNULL,
+            out, _, _ = await run_capture(
+                ["docker", "stats", "--no-stream", "--format", "{{json .}}"],
+                timeout=4.0,
             )
-            out, _ = await asyncio.wait_for(proc.communicate(), timeout=4.0)
         except Exception:
             return {}
         stats: dict[str, dict[str, float]] = {}

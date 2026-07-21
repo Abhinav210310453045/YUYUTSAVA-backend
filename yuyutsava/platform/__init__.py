@@ -26,6 +26,7 @@ from yuyutsava.platform.process import (
     install_terminate_handler,
     kill_tree,
     pid_alive,
+    run_capture,
     spawn_detached,
     terminate_pid,
 )
@@ -37,6 +38,7 @@ __all__ = [
     "install_terminate_handler",
     "kill_tree",
     "pid_alive",
+    "run_capture",
     "spawn_detached",
     "terminate_pid",
 ]

@@ -26,10 +26,8 @@ time, never cached) — this module only performs the mechanics.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
-import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
@@ -37,6 +35,7 @@ from pathlib import Path
 from typing import Protocol
 
 from yuyutsava.platform.hostprofile import host_profile
+from yuyutsava.platform.process import run_capture
 
 logger = logging.getLogger("yuyutsava.platform.elevation")
 
@@ -71,21 +70,14 @@ class ElevationProvider(Protocol):
 
 
 async def _run_capture(argv: list[str], *, timeout: int) -> tuple[str, str, int]:
-    proc = await asyncio.create_subprocess_exec(
-        *argv,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    try:
-        out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-    except asyncio.TimeoutError:
-        proc.kill()
-        await proc.communicate()
-        raise
+    # Delegate to the loop-agnostic platform helper so this works on Windows'
+    # Selector loop (which cannot create_subprocess_exec); decode here to keep
+    # this module's string-returning contract.
+    out, err, rc = await run_capture(argv, timeout=timeout)
     return (
         out.decode(errors="replace").strip(),
         err.decode(errors="replace").strip(),
-        proc.returncode if proc.returncode is not None else -1,
+        rc if rc is not None else -1,
     )
 
 

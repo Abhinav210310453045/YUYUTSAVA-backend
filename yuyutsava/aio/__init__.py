@@ -6,5 +6,6 @@ llm quirks — can import it without dragging in ``yuyutsava.core`` (whose
 """
 
 from yuyutsava.aio.loop_local import LoopLocal
+from yuyutsava.aio.run import run
 
-__all__ = ["LoopLocal"]
+__all__ = ["LoopLocal", "run"]

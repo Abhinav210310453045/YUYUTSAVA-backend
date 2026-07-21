@@ -10,6 +10,7 @@ import asyncio
 import json
 import sys
 
+from yuyutsava.aio import run as aio_run
 from yuyutsava.storage.events import Store
 from yuyutsava.storage.prefs import PrefsStore
 
@@ -80,4 +81,4 @@ def run_prefs(argv: list[str]) -> int:
         finally:
             await store.stop()
 
-    return asyncio.run(_run())
+    return aio_run(_run())

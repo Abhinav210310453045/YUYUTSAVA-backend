@@ -16,6 +16,7 @@ Windows notes baked in here so callers never think about them:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import shutil
 import signal
@@ -140,6 +141,61 @@ def spawn_detached(
     else:
         kwargs["start_new_session"] = True
     return subprocess.Popen(cmd, **kwargs)
+
+
+async def run_capture(
+    argv: Sequence[str],
+    *,
+    cwd: Path | str | None = None,
+    timeout: float | None = None,
+    env: dict[str, str] | None = None,
+) -> tuple[bytes, bytes, int]:
+    """Run *argv* to completion and capture output as ``(stdout, stderr, rc)`` bytes.
+
+    Loop-agnostic by design. On Windows the daemon runs on a
+    ``SelectorEventLoop`` (psycopg's async pool requires it — see
+    ``yuyutsava.aio.run``), and that loop cannot ``create_subprocess_exec``. So
+    on Windows we spawn a blocking ``subprocess.run`` in a worker thread; on
+    POSIX we use the native asyncio subprocess path unchanged.
+
+    Raises :class:`asyncio.TimeoutError` when *timeout* is exceeded — the child
+    is killed first — matching the ``create_subprocess_exec`` + ``wait_for``
+    contract callers already rely on. Only for *one-shot* commands (spawn →
+    read to completion); streaming/long-lived children still need the asyncio
+    subprocess API and a Proactor loop.
+    """
+    cwd_s = str(cwd) if cwd is not None else None
+
+    if _IS_WINDOWS:
+        def _run() -> tuple[bytes, bytes, int]:
+            p = subprocess.run(  # noqa: S603 — argv is explicit, no shell
+                list(argv),
+                capture_output=True,
+                cwd=cwd_s,
+                env=env,
+                timeout=timeout,
+            )
+            return p.stdout, p.stderr, p.returncode
+
+        try:
+            return await asyncio.to_thread(_run)
+        except subprocess.TimeoutExpired as exc:  # subprocess.run already killed it
+            raise asyncio.TimeoutError(str(exc)) from exc
+
+    proc = await asyncio.create_subprocess_exec(
+        *argv,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        cwd=cwd_s,
+        env=env,
+    )
+    try:
+        out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except asyncio.TimeoutError:
+        proc.kill()
+        await proc.communicate()
+        raise
+    return out, err, proc.returncode
 
 
 def install_terminate_handler(callback: Callable[[], None]) -> None:

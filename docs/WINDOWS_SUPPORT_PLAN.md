@@ -85,6 +85,36 @@ OS-native administration → L3 (guided by L4 skills); everything gated by L5.*
 - Deps: `psutil`, `httpx`, `requests` already present; add `portalocker` (+ `pyttsx3` under
   voice extra). Mark `pyobjc-framework-cocoa` with `; sys_platform == 'darwin'`.
 
+### 0c. asyncio event-loop policy *(hard blocker — Windows Postgres)*
+On Windows, `asyncio.run` builds the default **ProactorEventLoop**, but psycopg's
+async pool (`AsyncConnectionPool`, `AsyncPostgresSaver`) refuses to run on it
+("cannot use the 'ProactorEventLoop'"), so the entire Postgres/pgvector storage
+layer is unreachable on a native-Windows daemon. The Selector loop that psycopg
+requires is mutually exclusive on Windows with `asyncio.create_subprocess_exec`
+(the Proactor loop is the only one that can spawn subprocesses) — which L2/L3
+use for PowerShell.
+
+**Resolution (`yuyutsava/aio/run.py`):** install `WindowsSelectorEventLoopPolicy`
+once at every process entry (`daemon/main.py`, `cli/cli.py`, `cli/commands/{prefs,attach}.py`),
+guarded to `win32` so POSIX is a byte-for-byte passthrough to `asyncio.run`. It is
+process-global on purpose so the AsyncSubagentHost's own thread loop (which touches
+psycopg via background subagents) is a Selector loop too — safe because
+`langgraph_api`/`langgraph_runtime_inmem`/uvicorn spawn no asyncio subprocesses.
+
+**Compensating change (`platform/process.run_capture`):** every daemon subprocess
+call site is a *one-shot* `spawn → communicate → return`, which converts to a
+blocking `subprocess.run` in a worker thread — loop-agnostic. On Windows
+`run_capture` uses that thread; on POSIX it keeps the native asyncio path. Routed
+through it: `agents/task_runner/executor.py` (`execute_run`/`execute_python`),
+`daemon/resources.py` (`_docker_stats`), `platform/elevation.py` (UAC).
+
+**Known limitation:** *streaming*, long-lived subprocesses still need the Proactor
+loop and are therefore unavailable on native Windows for now — the voice
+(`events/sources/voice.py`) and webcam (`webcam.py`) event sources (both disabled
+in `events_config.json`) and Docker-sandbox mode (`core/docker_sandbox_backend.py`).
+Enabling them on Windows is future work (thread + blocking readline, or a dedicated
+Proactor helper loop for streaming children).
+
 ### 0b. HostProfile — the "OS passport"  *(keystone of the warden design)*
 `hostprofile.py`: a dataclass built once at startup and cached.
 - OS family / version / arch; canonical shell (+ how to invoke it); detected package
