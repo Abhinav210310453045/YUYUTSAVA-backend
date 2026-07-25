@@ -36,6 +36,47 @@ export class AudioPlayer {
     // Shared analyser tapping the output — feeds the Voice orb/waveform while
     // the agent is speaking. Sources connect through it to the destination.
     this._analyser = null
+    // One shared watcher for "is anything audible right now", instead of a
+    // 250 ms poll per consumer. Consumers (chat bubbles' play/pause toggle, the
+    // titlebar transport) subscribe; the interval only exists while audio is
+    // actually scheduled, and tears itself down when it drains.
+    this._listeners = new Set()
+    this._watch = null
+    this._lastPlaying = false
+  }
+
+  // Subscribe to playback state; returns an unsubscribe function. The callback
+  // receives { playing, paused }.
+  onChange(fn) {
+    this._listeners.add(fn)
+    return () => this._listeners.delete(fn)
+  }
+
+  playbackState() {
+    return { playing: this.isPlaying(), paused: this.isPaused() }
+  }
+
+  _notify() {
+    const state = this.playbackState()
+    for (const fn of [...this._listeners]) {
+      try { fn(state) } catch { /* a bad subscriber never breaks playback */ }
+    }
+  }
+
+  // Arm the drain watcher. Cheap and self-limiting: it exists only while
+  // something is queued. (Electron must run the window with
+  // backgroundThrottling:false or a minimized window freezes this interval and
+  // playback state goes stale — see main/index.js.)
+  _armWatch() {
+    this._lastPlaying = true
+    if (this._watch) return
+    this._watch = setInterval(() => {
+      const playing = this.isPlaying()
+      if (playing === this._lastPlaying) return
+      this._lastPlaying = playing
+      if (!playing) { clearInterval(this._watch); this._watch = null }
+      this._notify()
+    }, 200)
   }
 
   // Lazily create + resume the context. Browsers block audio until a user
@@ -68,6 +109,7 @@ export class AudioPlayer {
     if (this._ctx && this._ctx.state === 'running') {
       try { await this._ctx.suspend() } catch { /* ignore */ }
     }
+    this._notify()
   }
 
   async resume() {
@@ -75,6 +117,7 @@ export class AudioPlayer {
     if (this._ctx && this._ctx.state === 'suspended') {
       try { await this._ctx.resume() } catch { /* ignore */ }
     }
+    this._notify()
   }
 
   isPaused() { return !!this._userPaused }
@@ -129,6 +172,8 @@ export class AudioPlayer {
     src.start(startAt)
     this._pcmCursor = startAt + buffer.duration
     this._track(src)
+    this._armWatch()
+    this._notify()
   }
 
   // Replay a persisted clip served as a WAV URL (Phase 6b cross-restart replay).
@@ -147,6 +192,8 @@ export class AudioPlayer {
     src.start(startAt)
     this._pcmCursor = startAt + buffer.duration
     this._track(src)
+    this._armWatch()
+    this._notify()
   }
 
   // True while queued TTS audio is still scheduled to play. The daemon finishes
@@ -178,6 +225,9 @@ export class AudioPlayer {
         this._ctx.resume().catch(() => {})
       }
     }
+    if (this._watch) { clearInterval(this._watch); this._watch = null }
+    this._lastPlaying = false
+    this._notify()
   }
 
   _track(node) {

@@ -1,7 +1,10 @@
-import React, { useState } from 'react'
+import React from 'react'
+import { useViewState } from '../../nav/useViewState'
 
 export default function SettingsSection({ title, children, defaultOpen = true }) {
-  const [open, setOpen] = useState(defaultOpen)
+  // Which sections you had open is part of "where you were" — keep it across
+  // tab switches (the panel unmounts) rather than snapping back to defaults.
+  const [open, setOpen] = useViewState(`section:${title}`, defaultOpen)
 
   return (
     <div style={{

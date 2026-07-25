@@ -56,6 +56,9 @@ def make_ask_handler(
     *,
     default_session_id: str,
     default_agent_path: str = "orchestrator",
+    surface: str = "background",
+    default_agent_label: str = "Orchestrator",
+    task_id: str | None = None,
 ):
     """Factory producing the ask handler the orchestrator + bg watcher share.
 
@@ -63,18 +66,28 @@ def make_ask_handler(
     interrupt values into ``ChannelRouter.post_ask`` with the same shape.
     Extracting it here keeps the formatting consistent and lets the watcher
     reuse the daemon's HITL surface without duplicating logic.
+
+    ``surface`` tags who owns the resulting ask, which is what decides where it
+    may render: an orchestrator/background ask belongs in the Inbox (and the
+    overlay), never inline inside somebody's open chat.
     """
 
     async def ask_handler(interrupt_value: dict) -> str:
         iv = interrupt_value if isinstance(interrupt_value, dict) else {}
+        session_id = iv.get("session_id") or default_session_id
         ask = AskPrompt(
             ask_id=str(uuid.uuid4()),
             title=_title_for_interrupt(interrupt_value),
             body=_body_for_interrupt(interrupt_value),
             options=_options_for_interrupt(interrupt_value),
             interrupt_value=dict(iv),
-            session_id=iv.get("session_id") or default_session_id,
+            session_id=session_id,
             agent_path=iv.get("agent_path") or default_agent_path,
+            surface=surface,
+            thread_id=session_id,
+            task_id=iv.get("task_id") or task_id,
+            agent_label=iv.get("agent_label") or default_agent_label,
+            interrupt_id=iv.get("interrupt_id"),
         )
         return await channels.post_ask(ask)
 

@@ -45,6 +45,11 @@ class CliRemoteChannel(UserChannel):
     routing simple: an ask is broadcast once; whoever responds first wins.
     """
 
+    # Parks an asyncio.Future on the hub, so it is safe to race against the
+    # other surfaces: an ask reaches the attached CLI *and* the UI, and the
+    # loser is cancelled (its finally still broadcasts ask_resolved).
+    broadcast_asks = True
+
     def __init__(self, hub: WebHub, *, name: str = "cli-remote") -> None:
         self.name = name
         self._hub = hub

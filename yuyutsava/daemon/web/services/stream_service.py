@@ -11,7 +11,7 @@ import asyncio
 import dataclasses
 import time
 from collections import OrderedDict, deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Literal
 
 from yuyutsava.daemon.channels import (
@@ -73,39 +73,33 @@ class StreamProposalItem:
 
 @dataclass(frozen=True)
 class StreamAskItem:
-    """SSE relay of a Tier-2 :class:`AskPrompt` (tool permission etc.)."""
+    """SSE relay of a Tier-2 :class:`AskPrompt` (tool permission etc.).
 
-    ask_id: str
-    title: str
-    body: str
-    options: list[str]
-    session_id: str | None = None
-    agent_path: str | None = None
+    Relays the **whole** ask record, ownership and ``interrupt_value``
+    included. Every client surface — the inline block in the owning chat, the
+    always-on-top overlay, the inbox — renders from the same shape, and the
+    expanded card needs the structured interrupt to show the full command,
+    all paths and the risk/zone.
+    """
+
+    ask: dict[str, Any]
     type: Literal["ask"] = "ask"
 
     @classmethod
     def from_ask(cls, a: AskPrompt) -> "StreamAskItem":
-        return cls(
-            ask_id=a.ask_id,
-            title=a.title,
-            body=a.body,
-            options=list(a.options),
-            session_id=a.session_id,
-            agent_path=a.agent_path,
-        )
+        return cls(ask=a.to_wire_dict())
+
+    # Convenience accessors so hub/routing code doesn't dict-fish.
+    @property
+    def ask_id(self) -> str:
+        return str(self.ask.get("ask_id", ""))
+
+    @property
+    def session_id(self) -> str | None:
+        return self.ask.get("session_id")
 
     def to_wire_dict(self) -> dict[str, Any]:
-        return {
-            "type": self.type,
-            "ask": {
-                "ask_id": self.ask_id,
-                "title": self.title,
-                "body": self.body,
-                "options": self.options,
-                "session_id": self.session_id,
-                "agent_path": self.agent_path,
-            },
-        }
+        return {"type": self.type, "ask": self.ask}
 
 
 @dataclass(frozen=True)
@@ -169,6 +163,25 @@ class StreamWakeItem:
         }
 
 
+@dataclass(frozen=True)
+class StreamSettingsItem:
+    """Broadcast when a runtime toggle changes (voice mode, subagent roster).
+
+    Every surface reads the same daemon-owned switches, and several of them are
+    *separate renderers* (the voice overlay is its own window; mobile is its own
+    process). Without this fan-out a toggle flipped in the main window leaves
+    the overlay happily listening. Carries the full snapshot — it's two small
+    objects, so clients replace rather than merge.
+    """
+
+    settings: dict[str, Any] = field(default_factory=dict)
+    ts: float | None = None
+    type: Literal["settings"] = "settings"
+
+    def to_wire_dict(self) -> dict[str, Any]:
+        return {"type": self.type, "settings": self.settings, "ts": self.ts}
+
+
 StreamItem = (
     StreamEventItem
     | StreamProposalItem
@@ -176,6 +189,7 @@ StreamItem = (
     | StreamAskResolvedItem
     | StreamProposalResolvedItem
     | StreamWakeItem
+    | StreamSettingsItem
 )
 
 
@@ -271,6 +285,9 @@ class WebHub:
 
 class WebChannel(UserChannel):
     name = "web"
+    # Parks an asyncio.Future, so it can be shown an ask alongside every other
+    # surface and abandoned cleanly when one of them answers first.
+    broadcast_asks = True
 
     def __init__(self, hub: WebHub) -> None:
         self._hub = hub

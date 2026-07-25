@@ -41,6 +41,7 @@ from yuyutsava.daemon.web.routers import (
     rules as rules_router,
     server_info as server_info_router,
     sessions as sessions_router,
+    settings as settings_router,
     skills as skills_router,
     static_files as static_router,
     stream as stream_router,
@@ -81,6 +82,8 @@ def create_app(
     task_registry: "object | None" = None,      # TaskRegistry; duck-typed
     task_submission: "object | None" = None,    # TaskSubmissionService; duck-typed
     decision_service: "object | None" = None,   # DecisionService; duck-typed
+    ask_registry: "object | None" = None,       # daemon.ask_registry.AskRegistry; duck-typed
+    ask_resume: "object | None" = None,         # daemon.ask_resume.AskResumeService; duck-typed
     channel_plugins: "object | None" = None,    # ChannelPluginRegistry; duck-typed
     usage_store: "object | None" = None,        # daemon.usage.UsageStore; duck-typed
     resource_monitor: "object | None" = None,   # daemon.resources.ResourceMonitor; duck-typed
@@ -92,6 +95,8 @@ def create_app(
     transcript_store: "object | None" = None,   # context.transcript_store.TranscriptStore; duck-typed
     async_subagents: bool = False,              # background subagent host enabled
     async_task_watcher: "object | None" = None,  # async_subagents.watcher.AsyncTaskHealthWatcher
+    runtime_settings: "object | None" = None,   # prefs.runtime.RuntimeSettings; duck-typed
+    subagent_roster: "dict | None" = None,      # {name: BaseSubAgent} for /settings/subagents
 ) -> FastAPI:
     if auth is None:
         auth = AuthSettings.from_env(host=host)
@@ -143,10 +148,14 @@ def create_app(
     app.state.model_router = model_router
     app.state.memory_store = memory_store
     app.state.conversation_manager = conversation_manager
+    app.state.ask_registry = ask_registry
+    app.state.ask_resume = ask_resume
     app.state.voice_store = voice_store
     app.state.transcript_store = transcript_store
     app.state.async_subagents = async_subagents
     app.state.async_task_watcher = async_task_watcher
+    app.state.runtime_settings = runtime_settings
+    app.state.subagent_roster = subagent_roster
 
     # Auth first so CORSMiddleware (added after → wraps outside) answers
     # preflight OPTIONS before the bearer check can 401 them.
@@ -202,6 +211,7 @@ def create_app(
         sessions_router.router,
         skills_router.router,
         config_router.router,
+        settings_router.router,
         logs_router.router,
         cli_attach_router.router,
         tasks_router.router,

@@ -30,6 +30,7 @@ from yuyutsava.storage.events.abc import (
     ConsentRuleStore,
     DecisionStore,
     EventStore,
+    PendingAskStore,
     PrefsBackend,
     ProposalStore,
     ToolCounterStore,
@@ -333,6 +334,109 @@ class SqliteConsentGrantStore(ConsentGrantStore):
             )
             for r in rows
         ]
+
+
+# Column order shared by the INSERT and the row→dict reader below.
+_ASK_COLS = (
+    "ask_id", "created_ts", "surface", "session_id", "thread_id", "card_id",
+    "task_id", "interrupt_id", "agent_path", "agent_label", "title", "body",
+    "options_json", "payload_json", "status", "answered_ts", "response",
+)
+
+
+def ask_row_to_record(row: Any) -> dict[str, Any]:
+    """One ``pending_asks`` row → the wire record clients render.
+
+    ``payload_json`` is authoritative (it is exactly what was broadcast); the
+    flat columns exist for querying and are folded back in as a fallback for
+    rows written by an older build.
+    """
+    try:
+        payload = json.loads(row["payload_json"]) or {}
+    except (ValueError, TypeError):
+        payload = {}
+    try:
+        options = json.loads(row["options_json"]) or []
+    except (ValueError, TypeError):
+        options = []
+    record = {
+        "ask_id": row["ask_id"],
+        "created_ts": row["created_ts"],
+        "surface": row["surface"],
+        "session_id": row["session_id"],
+        "thread_id": row["thread_id"],
+        "card_id": row["card_id"],
+        "task_id": row["task_id"],
+        "interrupt_id": row["interrupt_id"],
+        "agent_path": row["agent_path"],
+        "agent_label": row["agent_label"],
+        "title": row["title"],
+        "body": row["body"],
+        "options": options,
+    }
+    record.update(payload)
+    record["status"] = row["status"]
+    return record
+
+
+def ask_record_to_params(record: dict[str, Any]) -> tuple:
+    """Wire record → the ``pending_asks`` column tuple (INSERT order)."""
+    return (
+        record.get("ask_id"),
+        float(record.get("created_ts") or time.time()),
+        record.get("surface") or "background",
+        record.get("session_id"),
+        record.get("thread_id"),
+        record.get("card_id"),
+        record.get("task_id"),
+        record.get("interrupt_id"),
+        record.get("agent_path"),
+        record.get("agent_label"),
+        record.get("title") or "",
+        record.get("body") or "",
+        json.dumps(list(record.get("options") or [])),
+        json.dumps(record, default=str),
+        "pending",
+        None,
+        None,
+    )
+
+
+class SqlitePendingAskStore(PendingAskStore):
+    def __init__(self, backend: SqliteEventsBackend) -> None:
+        self._b = backend
+
+    async def put(self, record: dict[str, Any]) -> None:
+        cols = ", ".join(_ASK_COLS)
+        marks = ",".join("?" * len(_ASK_COLS))
+        await self._b.execute(
+            f"INSERT OR IGNORE INTO pending_asks({cols}) VALUES({marks})",
+            ask_record_to_params(record),
+        )
+
+    async def resolve(self, ask_id: str, response: str, *, status: str = "answered") -> bool:
+        # Compare-and-set on status: two surfaces answering at the same instant
+        # both call this, and exactly one wins.
+        rc = await self._b.execute_rowcount(
+            "UPDATE pending_asks SET status=?, response=?, answered_ts=? "
+            "WHERE ask_id=? AND status='pending'",
+            (status, response, time.time(), ask_id),
+        )
+        return rc == 1
+
+    async def list_pending(self, limit: int = 200) -> list[dict[str, Any]]:
+        rows = await self._b.fetchall(
+            "SELECT * FROM pending_asks WHERE status='pending' "
+            "ORDER BY created_ts ASC LIMIT ?",
+            (int(limit),),
+        )
+        return [ask_row_to_record(r) for r in rows]
+
+    async def get(self, ask_id: str) -> dict[str, Any] | None:
+        row = await self._b.fetchone(
+            "SELECT * FROM pending_asks WHERE ask_id=?", (ask_id,)
+        )
+        return ask_row_to_record(row) if row else None
 
 
 # ---------------------------------------------------------------------------

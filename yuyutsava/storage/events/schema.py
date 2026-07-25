@@ -90,9 +90,38 @@ CREATE TABLE IF NOT EXISTS consent_grants (
     expires_ts  REAL
 );
 CREATE INDEX IF NOT EXISTS idx_consent_grants_domain ON consent_grants(domain, scope_ref);
+
+-- Tier-2 asks awaiting an answer. Nothing here ever expires: the agent is
+-- parked on a LangGraph interrupt and waits indefinitely, so the record has to
+-- outlive the process that raised it. Written BEFORE the ask is broadcast, so
+-- a frame dropped by a slow subscriber (WebHub.broadcast drops on QueueFull)
+-- can still be rediscovered via GET /asks, and a daemon restart can re-enter
+-- the owner with Command(resume=…). ``payload_json`` is the full wire record
+-- (AskPrompt.to_wire_dict) so a hydrating client renders an identical card.
+CREATE TABLE IF NOT EXISTS pending_asks (
+    ask_id       TEXT PRIMARY KEY,
+    created_ts   REAL NOT NULL,
+    surface      TEXT NOT NULL,
+    session_id   TEXT,
+    thread_id    TEXT,
+    card_id      TEXT,
+    task_id      TEXT,
+    interrupt_id TEXT,
+    agent_path   TEXT,
+    agent_label  TEXT,
+    title        TEXT NOT NULL,
+    body         TEXT NOT NULL,
+    options_json TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    status       TEXT NOT NULL CHECK (status IN ('pending','answered','cancelled')),
+    answered_ts  REAL,
+    response     TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_pending_asks_status ON pending_asks(status, created_ts);
+CREATE INDEX IF NOT EXISTS idx_pending_asks_thread ON pending_asks(thread_id);
 """
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 async def migrate(conn: aiosqlite.Connection) -> None:

@@ -25,9 +25,17 @@ from yuyutsava.storage.events.abc import (
     ConsentRuleStore,
     DecisionStore,
     EventStore,
+    PendingAskStore,
     PrefsBackend,
     ProposalStore,
     ToolCounterStore,
+)
+# The pending_asks row<->record codecs are backend-agnostic (plain JSON text
+# columns), so both twins share one implementation rather than drifting.
+from yuyutsava.storage.events.sqlite_backend import (
+    _ASK_COLS,
+    ask_record_to_params,
+    ask_row_to_record,
 )
 from yuyutsava.storage.models import ConsentRule, Decision, EventRecord, Proposal
 from yuyutsava.storage.pg.pool import PgPool
@@ -314,3 +322,53 @@ class PgConsentGrantStore(ConsentGrantStore):
             )
             for r in rows
         ]
+
+
+class PgPendingAskStore(PendingAskStore):
+    """``pending_asks`` (migration v19) — durable Tier-2 asks.
+
+    Wire-identical to :class:`SqlitePendingAskStore`: same column order, same
+    epoch-float timestamps, ``options_json``/``payload_json`` kept as TEXT (not
+    ``jsonb``) so a spillover reconcile is a straight copy with no casts.
+    """
+
+    def __init__(self, pool: PgPool) -> None:
+        self._pool = pool
+
+    async def put(self, record: dict[str, Any]) -> None:
+        cols = ", ".join(_ASK_COLS)
+        marks = ",".join(["%s"] * len(_ASK_COLS))
+        async with self._pool.connection() as conn:
+            await conn.execute(
+                f"INSERT INTO pending_asks({cols}) VALUES({marks}) "
+                "ON CONFLICT (ask_id) DO NOTHING",
+                ask_record_to_params(record),
+            )
+
+    async def resolve(self, ask_id: str, response: str, *, status: str = "answered") -> bool:
+        async with self._pool.connection() as conn:
+            cur = await conn.execute(
+                "UPDATE pending_asks SET status=%s, response=%s, answered_ts=%s "
+                "WHERE ask_id=%s AND status='pending'",
+                (status, response, time.time(), ask_id),
+            )
+            return (cur.rowcount or 0) == 1
+
+    async def list_pending(self, limit: int = 200) -> list[dict[str, Any]]:
+        async with self._pool.connection() as conn:
+            cur = await conn.execute(
+                f"SELECT {', '.join(_ASK_COLS)} FROM pending_asks "
+                "WHERE status='pending' ORDER BY created_ts ASC LIMIT %s",
+                (int(limit),),
+            )
+            rows = await cur.fetchall()
+        return [ask_row_to_record(dict(zip(_ASK_COLS, r))) for r in rows]
+
+    async def get(self, ask_id: str) -> dict[str, Any] | None:
+        async with self._pool.connection() as conn:
+            cur = await conn.execute(
+                f"SELECT {', '.join(_ASK_COLS)} FROM pending_asks WHERE ask_id=%s",
+                (ask_id,),
+            )
+            row = await cur.fetchone()
+        return ask_row_to_record(dict(zip(_ASK_COLS, row))) if row else None

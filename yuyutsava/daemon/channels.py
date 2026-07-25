@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import logging
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Literal, Mapping
@@ -218,9 +219,22 @@ class ChannelEvent:
         return self.payload.kind
 
 
+# Where an ask came from — and therefore which view *owns* it. Rendering is a
+# pure function of (owner, where the user is): the owning view shows it inline,
+# everywhere else shows a notification plus an inbox entry, and an unfocused app
+# gets the overlay. A permission prompt must never appear inside a different
+# running session's path, which is why every ask carries its origin.
+ASK_SURFACES = ("chat", "voice", "tinker", "background", "cli")
+
+
 @dataclass(frozen=True)
 class AskPrompt:
-    """A Tier-2 interrupt rendered for the user (tool-level permission)."""
+    """A Tier-2 interrupt rendered for the user (tool-level permission).
+
+    One record, whatever raised it — a chat turn, a tinker card, a background
+    subagent or the CLI. The ownership fields below are what let every surface
+    agree on where it belongs without any of them guessing.
+    """
 
     ask_id: str
     title: str
@@ -236,6 +250,43 @@ class AskPrompt:
     interrupt_value: Mapping[str, Any]
     session_id: str | None = None    # thread_id of the originating run (HITL scoping)
     agent_path: str | None = None    # e.g. "orchestrator/file_organizer#1" — who's asking
+    # ---- ownership: which surface raised this, and how to get back to it ----
+    surface: str = "background"      # one of ASK_SURFACES
+    thread_id: str | None = None     # conversation thread, when a conversation owns it
+    card_id: str | None = None       # TODO card, for tinker asks
+    task_id: str | None = None       # background task id, for bg asks
+    agent_label: str | None = None   # short human name ("TinkerAgent", "file-organizer")
+    # ``interrupt_id`` is LangGraph's own id for this interrupt (the ``it_id``
+    # collected in core/streaming.py). Needed so a resume after a daemon
+    # restart maps the reply back onto the right interrupt when a turn is
+    # blocked on several at once.
+    interrupt_id: str | None = None
+    created_ts: float = field(default_factory=time.time)
+
+    def to_wire_dict(self) -> dict[str, Any]:
+        """The full record every client surface renders from.
+
+        ``interrupt_value`` rides along deliberately: the collapsed summary
+        (title/body/options from ``interrupt_format``) is not enough to show
+        the full command, every path, and the risk/zone that the expanded card
+        promises — and dropping it here was exactly why clients couldn't.
+        """
+        return {
+            "ask_id": self.ask_id,
+            "title": self.title,
+            "body": self.body,
+            "options": list(self.options),
+            "session_id": self.session_id,
+            "agent_path": self.agent_path,
+            "surface": self.surface,
+            "thread_id": self.thread_id,
+            "card_id": self.card_id,
+            "task_id": self.task_id,
+            "agent_label": self.agent_label,
+            "interrupt_id": self.interrupt_id,
+            "created_ts": self.created_ts,
+            "interrupt_value": dict(self.interrupt_value or {}),
+        }
 
 
 @dataclass(frozen=True)
@@ -255,6 +306,16 @@ class UserChannel(ABC):
     """One way to talk to the user. Channels are free to no-op irrelevant calls."""
 
     name: str = "unnamed"
+
+    # Whether this channel can be shown an ask *concurrently* with the others
+    # and abandoned cleanly when somebody else answers first. True for surfaces
+    # that park an ``asyncio.Future`` (web, cli-remote) — those all get every
+    # ask and the first answer wins. False for surfaces that block a thread on
+    # stdin: :class:`TerminalChannel` reads through ``asyncio.to_thread(input)``,
+    # which cannot actually be cancelled, so fanning out to it would leak a
+    # blocked thread per ask and spam a daemon's stderr with prompts nobody is
+    # reading. Those stay the sequential fallback for a headless daemon.
+    broadcast_asks: bool = False
 
     @abstractmethod
     async def post_event(self, ev: ChannelEvent) -> None: ...
@@ -304,6 +365,11 @@ class ChannelRouter:
     # async_subagents (which pulls langgraph_api). The duck-typed contract is
     # ``.get(session_id) -> channel_name | None``.
     session_origin: Any | None = None
+    # ``daemon.ask_registry.AskRegistry`` — persists every ask before it is
+    # broadcast and marks it resolved on answer, so an ask survives a dropped
+    # frame or a daemon restart. Duck-typed (``record`` / ``resolve``) and
+    # optional so headless/test routers need no storage.
+    ask_registry: Any | None = None
 
     def register(self, channel: UserChannel) -> bool:
         """Add ``channel`` to the fan-out. Idempotent by ``channel.name``.
@@ -362,6 +428,25 @@ class ChannelRouter:
         return ProposalDecision(decision="skip")
 
     async def post_ask(self, a: AskPrompt) -> str:
+        """Show an ask on every surface that can hold one; first answer wins.
+
+        Previously this picked exactly ONE channel, which is what made an ask
+        invisible everywhere except wherever it happened to land — the whole
+        point of the ask being a permission prompt is that you can grant it
+        from wherever you are. Now every cancel-safe surface (see
+        ``UserChannel.broadcast_asks``) gets it simultaneously and the losers
+        are cancelled; their ``finally`` blocks broadcast ``ask_resolved``, so
+        the cards clear in sync.
+        """
+        # Durable first: the row must exist before anyone can see the ask, so a
+        # frame dropped on the wire (WebHub.broadcast drops on QueueFull) is
+        # still recoverable through GET /asks.
+        if self.ask_registry is not None:
+            try:
+                await self.ask_registry.record(a)
+            except Exception:  # noqa: BLE001
+                logger.debug("ask registry record failed", exc_info=True)
+
         prefer = None
         if self.session_origin is not None:
             try:
@@ -369,13 +454,89 @@ class ChannelRouter:
             except Exception:  # noqa: BLE001
                 logger.debug("session_origin.get failed", exc_info=True)
                 prefer = None
-        for c in self._ordered_for_ask(prefer=prefer):
+        ordered = self._ordered_for_ask(prefer=prefer)
+        fanout = [c for c in ordered if c.broadcast_asks]
+
+        answer: str | None = None
+        try:
+            if fanout:
+                answer = await self._race_ask(a, fanout)
+            if answer is None:
+                # No broadcast-capable surface answered (or none exists —
+                # headless daemon): fall back to the historical
+                # first-accepting-channel walk so a terminal-only daemon still
+                # prompts.
+                for c in ordered:
+                    if c.broadcast_asks:
+                        continue
+                    try:
+                        answer = await c.post_ask(a)
+                        break
+                    except NotImplementedError:
+                        continue
+        except asyncio.CancelledError:
+            # The asking turn was cancelled (Stop button, barge-in) — on either
+            # path. Nobody is waiting for this answer any more, so retire the
+            # record: leaving it 'pending' would strand a card in the Inbox
+            # that can never be answered and whose agent no longer exists.
+            # Detached because we are unwinding a cancellation and must not
+            # await here.
+            if self.ask_registry is not None:
+                asyncio.create_task(
+                    self.ask_registry.resolve(a.ask_id, "", status="cancelled")
+                )
+            raise
+        if answer is None:
+            logger.error("No channel could handle ask %s; defaulting to reject", a.ask_id)
+            answer = "reject"
+
+        if self.ask_registry is not None:
             try:
-                return await c.post_ask(a)
-            except NotImplementedError:
-                continue
-        logger.error("No channel could handle ask %s; defaulting to reject", a.ask_id)
-        return "reject"
+                await self.ask_registry.resolve(a.ask_id, answer)
+            except Exception:  # noqa: BLE001
+                logger.debug("ask registry resolve failed", exc_info=True)
+        return answer
+
+    async def _race_ask(self, a: AskPrompt, channels: list[UserChannel]) -> str | None:
+        """Await every channel at once; return the first real answer, or None.
+
+        ``None`` means every candidate declined (``NotImplementedError``) or
+        failed — the caller then falls back to the sequential path.
+        """
+        tasks = {
+            asyncio.create_task(c.post_ask(a), name=f"ask:{c.name}:{a.ask_id}"): c
+            for c in channels
+        }
+        answer: str | None = None
+        try:
+            while tasks:
+                done, _ = await asyncio.wait(
+                    tasks.keys(), return_when=asyncio.FIRST_COMPLETED
+                )
+                for t in done:
+                    channel = tasks.pop(t)
+                    try:
+                        answer = t.result()
+                    except asyncio.CancelledError:
+                        continue
+                    except NotImplementedError:
+                        continue          # this surface can't show asks
+                    except Exception:     # noqa: BLE001
+                        logger.warning(
+                            "channel %s failed showing ask %s",
+                            channel.name, a.ask_id, exc_info=True,
+                        )
+                        continue
+                    return answer
+            return None
+        finally:
+            # Whoever lost the race is told to stop showing it. Their finally
+            # blocks broadcast ask_resolved, which is what clears the card on
+            # every other surface.
+            for t in tasks:
+                t.cancel()
+            if tasks:
+                await asyncio.wait(tasks.keys())
 
     async def shutdown(self) -> None:
         for c in self.channels:

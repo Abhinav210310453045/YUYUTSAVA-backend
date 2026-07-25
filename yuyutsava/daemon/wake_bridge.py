@@ -23,9 +23,17 @@ logger = logging.getLogger("yuyutsava.daemon.wake_bridge")
 
 
 async def run_wake_bridge(
-    bus: EventBus, hub: WebHub, stop_event: asyncio.Event
+    bus: EventBus, hub: WebHub, stop_event: asyncio.Event,
+    runtime_settings: "object | None" = None,
 ) -> None:
-    """Relay ``voice.wake`` bus events onto the web hub until stopped."""
+    """Relay ``voice.wake`` bus events onto the web hub until stopped.
+
+    ``runtime_settings`` (a :class:`~yuyutsava.prefs.runtime.RuntimeSettings`)
+    is the voice-mode gate. Turning wake detection off already tears down the
+    source subprocess, but that reload takes a moment and a detection can be
+    mid-flight; dropping here means a stale wake can never pop the overlay of a
+    user who just asked not to be listened for.
+    """
     logger.info("wake bridge: relaying voice.wake → web hub")
     stop_task = asyncio.create_task(stop_event.wait(), name="wake-bridge-stop")
     try:
@@ -33,6 +41,11 @@ async def run_wake_bridge(
         async for ev in agen:
             if stop_event.is_set():
                 break
+            if runtime_settings is not None:
+                await runtime_settings.refresh()
+                if not runtime_settings.voice().wake_enabled:
+                    logger.info("wake bridge: dropped — voice mode is off")
+                    continue
             # ``stage`` distinguishes the instant overlay-pop ("open") from the
             # trailing same-breath command ("command"); the command text rides in
             # ``hints`` (the bus envelope omits the persisted payload) so the

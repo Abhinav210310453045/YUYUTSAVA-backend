@@ -54,4 +54,8 @@ function show({ title, body, proposalId, urgency }) {
   return { ok: true }
 }
 
-module.exports = { init, show }
+// The dock bounce / taskbar flash on its own — the ask overlay pops without
+// an OS banner (it IS the surface), but still wants to be noticed.
+function bounce() { _platformBounce() }
+
+module.exports = { init, show, bounce }

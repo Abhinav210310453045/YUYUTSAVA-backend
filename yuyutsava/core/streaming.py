@@ -371,6 +371,7 @@ async def astream_agent_iter(
     agent_path: str = "orchestrator",
     keep_full_payloads: bool = False,
     resume: bool = False,
+    resume_value: Any | None = None,
     modality: str = "text",
 ):
     """Async generator that yields ``StreamEvent``s instead of printing them.
@@ -400,6 +401,13 @@ async def astream_agent_iter(
     committed checkpoint instead of starting a new turn — ``task`` is only
     used as the fresh-run fallback when no resumable state is found.
 
+    ``resume_value``: answer an interrupt raised by an earlier process. Takes
+    precedence over ``resume``/``task``: the graph is re-entered with
+    ``Command(resume=<value>)``, which is how a HITL ask answered *after* a
+    daemon restart still reaches the agent that was waiting for it. Pass a
+    plain decision string for a single interrupt, or ``{interrupt_id: decision}``
+    when the turn was blocked on several.
+
     Yields events; the final yielded event is always ``StreamEvent("final", {"text": ...})``.
     """
     _tid = thread_id or str(uuid.uuid4())
@@ -427,7 +435,16 @@ async def astream_agent_iter(
     # hydrates from it) shows duplicate user bubbles. Pinning the id at creation
     # makes it round-trip through the checkpoint unchanged.
     current_input: Any = {"messages": [HumanMessage(content=task, id=str(uuid.uuid4()))]}
-    if resume:
+    if resume_value is not None:
+        # Answering an interrupt raised by a PREVIOUS process. The graph is
+        # still parked at its checkpointed ``interrupt()``, so we re-enter with
+        # the decision instead of starting a turn — no new user message, and
+        # the agent carries on from exactly where it stopped. Scalar for a
+        # single interrupt, ``{it_id: decision}`` when several were pending
+        # (LangGraph requires the keyed form then), matching what the in-loop
+        # resume below builds.
+        current_input = Command(resume=resume_value)
+    elif resume:
         # Continue this thread from its last committed checkpoint. If the
         # checkpoint is missing or lives in an incompatible backend (e.g. the
         # storage backend was switched on reload), fall back to a fresh run.

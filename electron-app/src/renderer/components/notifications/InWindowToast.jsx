@@ -21,10 +21,10 @@ export default function InWindowToast() {
       {toasts.map((t) => (
         <div
           key={t.id}
-          onClick={() => dismissToast(t.id)}
+          onClick={() => { if (!t.action) dismissToast(t.id) }}
           style={{
             pointerEvents: 'auto',
-            cursor: 'pointer',
+            cursor: t.action ? 'default' : 'pointer',
             maxWidth: 360,
             background: 'rgba(20,22,28,0.95)',
             border: '1px solid rgba(var(--accent-rgb),0.25)',
@@ -57,6 +57,36 @@ export default function InWindowToast() {
               WebkitBoxOrient: 'vertical',
             }}>
               {t.body}
+            </div>
+          )}
+          {/* Action row. A pointer, never the decision itself: an ask is only
+              ever answered on the view that owns it, in the Inbox, or in the
+              overlay — approving one session's action from a toast floating
+              over a different session is exactly what this design forbids. */}
+          {t.action && (
+            <div style={{ display: 'flex', gap: 6, marginTop: 8, justifyContent: 'flex-end' }}>
+              <button
+                onClick={(e) => { e.stopPropagation(); dismissToast(t.id) }}
+                style={{
+                  fontFamily: 'var(--font-mono)', fontSize: 10, cursor: 'pointer',
+                  padding: '4px 10px', borderRadius: 6,
+                  background: 'transparent', color: 'var(--text-muted)',
+                  border: '1px solid var(--border-subtle)',
+                }}
+              >
+                Later
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); t.action.run?.(); dismissToast(t.id) }}
+                style={{
+                  fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 'var(--fw-semibold)',
+                  cursor: 'pointer', padding: '4px 10px', borderRadius: 6,
+                  background: 'rgba(var(--accent-rgb),0.10)', color: 'var(--neon-green)',
+                  border: '1px solid rgba(var(--accent-rgb),0.35)',
+                }}
+              >
+                {t.action.label || 'Open'}
+              </button>
             </div>
           )}
         </div>

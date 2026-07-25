@@ -26,6 +26,11 @@ export const respondProposal = (id, decision, editedInstruction = null) =>
 export const respondAsk = (id, response) =>
   _json('POST', `/ask/${id}/respond`, { response })
 
+// Every ask still awaiting an answer. Asks never expire and the SSE broadcast
+// can drop frames, so this is how a surface (re)discovers what is pending —
+// on connect, and after a daemon restart that left agents parked mid-interrupt.
+export const getAsks = () => _json('GET', '/asks?status=pending')
+
 export const getRules = () => _json('GET', '/rules')
 export const deleteRule = (id) => _json('DELETE', `/rules/${id}`)
 export const getDecisions = (limit = 50) => _json('GET', `/decisions?limit=${limit}`)
@@ -208,5 +213,19 @@ export async function enableVoiceSource(wakeWords, wakeThreshold = null) {
   if (wakeWords) params.wake_words = wakeWords
   if (wakeThreshold != null && wakeThreshold !== '') params.wake_threshold = wakeThreshold
   sources.voice = { enabled: true, params }
-  return patchEventsConfig(sources)
+  const res = await patchEventsConfig(sources)
+  // The runtime toggle is the OWNER of the voice source's enabled bit (the
+  // daemon re-applies it on every reload and on boot). Turning the source on
+  // here without it would be undone the next time the config reloads.
+  await patchRuntimeSettings({ voice: { wake_enabled: true } }).catch(() => {})
+  return res
 }
+
+// Hot runtime toggles (voice mode, dedicated subagents). Distinct from
+// /config/* above: these apply immediately, need no restart, and are broadcast
+// to every surface as a `settings` SSE item — see useRuntimeSettings.
+export const getRuntimeSettings = () => _json('GET', '/settings/runtime')
+export const patchRuntimeSettings = (patch) => _json('PATCH', '/settings/runtime', patch)
+// The dedicated subagent roster (name/description/enabled), built from the
+// agents the daemon actually booted with — a new subagent needs no UI change.
+export const getSubagentRoster = () => _json('GET', '/settings/subagents')

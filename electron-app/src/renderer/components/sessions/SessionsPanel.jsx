@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { listSessions } from '../../api/client'
 import SessionRow from './SessionRow'
+import { useScrollRestore } from '../../nav/useViewState'
 
 const POLL_MS = 5000
 
@@ -44,6 +45,8 @@ function ColumnHeader({ title, count }) {
 
 function SessionColumn({ col, sessions, loaded, error, onDeleted, onOpenSession }) {
   const isEmpty = loaded && sessions.length === 0
+  // Come back to the column scrolled where you left it, not at the top.
+  const scrollRef = useScrollRestore(loaded, `sessions/col/${col.key}`)
   return (
     <div style={{
       flex: 1,
@@ -55,7 +58,7 @@ function SessionColumn({ col, sessions, loaded, error, onDeleted, onOpenSession 
     }}>
       <ColumnHeader title={col.title} count={sessions.length} />
 
-      <div style={{
+      <div ref={scrollRef} style={{
         flex: 1,
         overflowY: 'auto',
         display: 'flex',

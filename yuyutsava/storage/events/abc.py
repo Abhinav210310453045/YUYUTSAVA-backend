@@ -147,3 +147,32 @@ class ConsentGrantStore(ABC):
 
     @abstractmethod
     async def load(self) -> list["Grant"]: ...
+
+
+class PendingAskStore(ABC):
+    """``pending_asks`` — Tier-2 asks awaiting an answer.
+
+    Durable because nothing here expires: the agent is parked on a LangGraph
+    interrupt and waits indefinitely, so the record has to outlive the process
+    that raised it. :meth:`put` runs *before* the ask is broadcast, which is
+    what makes a dropped SSE frame recoverable and a daemon restart resumable.
+    """
+
+    @abstractmethod
+    async def put(self, record: dict[str, Any]) -> None:
+        """Insert a pending ask. Idempotent on ``ask_id``."""
+
+    @abstractmethod
+    async def resolve(self, ask_id: str, response: str, *, status: str = "answered") -> bool:
+        """Flip pending → answered. False when it was already resolved.
+
+        The compare-and-set is what makes "first answer anywhere wins" safe
+        across surfaces answering at the same moment.
+        """
+
+    @abstractmethod
+    async def list_pending(self, limit: int = 200) -> list[dict[str, Any]]:
+        """Every unanswered ask, oldest first (the Inbox + boot hydration)."""
+
+    @abstractmethod
+    async def get(self, ask_id: str) -> dict[str, Any] | None: ...

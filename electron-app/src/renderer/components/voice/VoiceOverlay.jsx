@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useConverse } from '../../hooks/useConverse'
+import { useRuntimeSettings } from '../../hooks/useRuntimeSettings'
 import { audioPlayer } from '../../audio'
 import ArtifactModal from '../artifacts/ArtifactModal'
+import { subscribeAskShowing, isAskShowing } from '../asks/overlayState'
 
 // The mini voice overlay rendered in its own frameless transparent window.
 // It opens (hotkey / wake word), plays an open earcon, listens, shows a compact
@@ -109,6 +111,8 @@ function OverlayMic({ listening, speaking, busy }) {
 export default function VoiceOverlay() {
   const { messages, listening, speaking, busy, startVoice, stopVoice, interrupt } =
     useConverse({ origin: 'voice' })
+  // Own subscription — this renderer has none of the main window's plumbing.
+  const { voice } = useRuntimeSettings()
   const [phase, setPhase] = useState('in') // 'in' | 'out'
   const [expandedArt, setExpandedArt] = useState(null) // artifact peeked big
   const idleTimer = useRef(null)
@@ -149,8 +153,14 @@ export default function VoiceOverlay() {
       try { await startVoice() } catch { /* ignore */ }
       resetIdle()
     }
-    // First mount counts as an activation.
-    activate()
+    // First mount is an activation ONLY when the window was summoned for
+    // voice. The overlay is now shared with pending asks, and a permission
+    // request must never open a hot microphone or play the voice earcon —
+    // main knows which it was (overlay.currentReason). If the IPC isn't there
+    // at all (older preload), keep the historical behaviour.
+    Promise.resolve(window.electronAPI?.getOverlayReason?.())
+      .then((reason) => { if (reason === 'voice' || reason === undefined) activate() })
+      .catch(() => activate())
     const off = window.electronAPI?.onOverlayActivate?.(() => { activate() })
     return () => {
       off && off()
@@ -158,6 +168,14 @@ export default function VoiceOverlay() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Voice mode turned off while the overlay is up (from the main window's
+  // titlebar, or the CLI) — close ourselves. This window is its own renderer,
+  // so nothing else can stop its mic; main can only hide the window, which
+  // would leave a hidden, live microphone behind.
+  useEffect(() => {
+    if (!voice.wake_enabled && !closingRef.current) dismiss()
+  }, [voice.wake_enabled, dismiss])
 
   // Any conversational activity keeps the overlay alive.
   useEffect(() => { if (!closingRef.current) resetIdle() }, [messages, speaking, listening, resetIdle])
@@ -174,9 +192,17 @@ export default function VoiceOverlay() {
     return () => window.removeEventListener('keydown', onKey)
   }, [dismiss])
 
+  const [askUp, setAskUp] = useState(isAskShowing)
+  useEffect(() => subscribeAskShowing(setAskUp), [])
+
   const state = speaking ? 'speaking' : busy ? 'thinking' : listening ? 'listening' : 'idle'
   const accent = STATE_ACCENT[state]
   const status = listening ? 'listening…' : speaking ? 'speaking…' : busy ? 'thinking…' : 'tap to talk'
+
+  // An ask has taken over the shared window. Step aside so the two don't stack
+  // — unless a voice turn is actually in flight, where cutting the user off
+  // mid-answer would be worse than sharing the space for a moment.
+  if (askUp && state === 'idle' && !lastAssistant) return null
 
   return (
     <div style={{
@@ -184,47 +210,77 @@ export default function VoiceOverlay() {
       padding: 12, boxSizing: 'border-box', background: 'transparent',
     }}>
       <div style={{
+        position: 'relative',
         width: '100%',
         display: 'flex', alignItems: 'flex-start', gap: 14,
-        padding: '16px 18px',
-        borderRadius: 18,
-        background: 'rgba(12,14,22,0.82)',
-        backdropFilter: 'blur(22px)',
-        // Border + outer glow track the state accent so the whole pill shifts
-        // hue with the mic (dim → cyan → amber → blue).
-        border: `1px solid ${accent}55`,
-        boxShadow: `0 8px 40px rgba(0,0,0,0.5), 0 0 26px ${accent}30`,
-        transition: 'border-color 0.35s ease, box-shadow 0.35s ease',
+        padding: '18px 20px',
+        borderRadius: 22,
+        // Layered glass: a deep tinted base plus a state-tinted wash, so the
+        // panel takes on the mic's hue instead of just outlining it.
+        background: `linear-gradient(160deg, rgba(26,26,46,0.90), rgba(10,10,15,0.92)),
+                     radial-gradient(80% 120% at 12% 0%, ${accent}22, transparent 70%)`,
+        backdropFilter: 'blur(26px)',
+        WebkitBackdropFilter: 'blur(26px)',
+        border: `1px solid ${accent}44`,
+        boxShadow: `0 12px 48px rgba(0,0,0,0.58), 0 0 34px ${accent}26`,
+        transition: 'border-color 0.35s ease, box-shadow 0.35s ease, background 0.35s ease',
         animation: `${phase === 'out' ? 'overlay-out' : 'overlay-in'} ${EXIT_MS}ms ease`,
         animationFillMode: 'both',
+        overflow: 'hidden',
       }}>
+        {/* top shine — the hairline that sells the glass */}
+        <span aria-hidden style={{
+          position: 'absolute', top: 0, left: 16, right: 16, height: 1,
+          background: `linear-gradient(90deg, transparent, ${accent}88, transparent)`,
+          transition: 'background 0.35s ease',
+        }} />
+
         <button
           onClick={() => (listening ? stopVoice() : startVoice())}
           title={listening ? 'stop listening' : 'talk'}
+          className="tap-pop"
           style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
         >
           <OverlayMic listening={listening} speaking={speaking} busy={busy} />
         </button>
 
-        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
           <div style={{
-            fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.12em',
-            textTransform: 'uppercase', color: accent, transition: 'color 0.35s ease',
-          }}>{status}</div>
+            display: 'inline-flex', alignItems: 'center', gap: 6, alignSelf: 'flex-start',
+            fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 'var(--fw-semibold)',
+            letterSpacing: '0.12em', textTransform: 'uppercase',
+            color: accent,
+            background: `${accent}18`,
+            border: `1px solid ${accent}40`,
+            borderRadius: 999, padding: '3px 10px',
+            transition: 'color 0.35s ease, background 0.35s ease, border-color 0.35s ease',
+          }}>
+            <span style={{
+              width: 5, height: 5, borderRadius: '50%', background: accent,
+              boxShadow: `0 0 8px ${accent}`,
+              animation: state === 'idle' ? 'none' : 'voice-idle 1.6s ease-in-out infinite',
+            }} />
+            {status}
+          </div>
           {/* Current exchange only (latest user line + latest assistant reply),
               rendered in full and streamed chunk-by-chunk. The reply scrolls
               within a bounded height for long answers rather than being clamped. */}
           <div style={{
-            fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.4,
-            wordBreak: 'break-word',
+            fontFamily: 'var(--font-ui)',
+            fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.45,
+            wordBreak: 'break-word', fontStyle: lastUser ? 'normal' : 'italic',
           }}>
             {lastUser ? `“${lastUser.text}”` : 'say something…'}
           </div>
           {lastAssistant && (
             <div style={{
-              fontSize: 12, color: 'var(--text-primary)', lineHeight: 1.45,
-              maxHeight: 180, overflowY: 'auto', wordBreak: 'break-word',
+              fontFamily: 'var(--font-ui)',
+              fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.5,
+              maxHeight: 250, overflowY: 'auto', wordBreak: 'break-word',
               whiteSpace: 'pre-wrap',
+              background: 'rgba(255,255,255,0.035)',
+              border: '1px solid var(--border-subtle)',
+              borderRadius: 12, padding: '9px 11px', marginTop: 2,
             }}>
               {lastAssistant.text}{lastAssistant.streaming ? <span style={{ color: BLUE }}>▋</span> : null}
             </div>
@@ -242,7 +298,7 @@ export default function VoiceOverlay() {
                   style={{
                     display: 'inline-flex', alignItems: 'center', gap: 5,
                     fontFamily: 'var(--font-mono)', fontSize: 10,
-                    padding: '3px 9px', borderRadius: 8, cursor: 'pointer',
+                    padding: '4px 11px', borderRadius: 999, cursor: 'pointer',
                     background: 'rgba(120,160,255,0.12)', color: 'var(--text-info)',
                     border: '1px solid rgba(120,160,255,0.3)',
                     maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
@@ -256,11 +312,16 @@ export default function VoiceOverlay() {
         <button
           onClick={() => { if (busy) interrupt(); dismiss() }}
           title="close (or say “thank you”)"
+          className="tap-pop"
           style={{
-            background: 'none', border: 'none', color: 'var(--text-muted)',
-            cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: 4, alignSelf: 'flex-start',
+            width: 24, height: 24, flexShrink: 0, alignSelf: 'flex-start',
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            background: 'rgba(255,255,255,0.05)',
+            border: '1px solid var(--glass-border)', borderRadius: '50%',
+            color: 'var(--text-muted)', cursor: 'pointer',
+            fontFamily: 'var(--font-mono)', fontSize: 12, lineHeight: 1,
           }}
-        >×</button>
+        >✕</button>
       </div>
 
       <ArtifactModal attachment={expandedArt} onClose={() => setExpandedArt(null)} />

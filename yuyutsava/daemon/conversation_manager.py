@@ -41,6 +41,7 @@ from yuyutsava.core.config import (
     llm_settings_from_env,
 )
 from yuyutsava.core.engine import AgentBundle
+from yuyutsava.daemon.turn_registry import TurnRegistry, TurnRun
 from yuyutsava.storage.ids import (
     is_tinker_thread_of,
     mint_tinker_thread_id,
@@ -83,6 +84,7 @@ class ConversationManager:
         mcp_manager: Any | None = None,
         launch_index: Any | None = None,
         prefs_store: Any | None = None,
+        runtime_settings: Any | None = None,
         cap_enforcer: Any | None = None,
         task_submission: Any | None = None,
         extra_subagents: Any | None = None,
@@ -97,6 +99,11 @@ class ConversationManager:
         self._usage_store = usage_store  # daemon.usage.UsageStore | None (chat + tinker accounting)
         self._mcp_manager = mcp_manager  # mcp.loader.MCPClientManager | None (chat + tinker MCP tools)
         self._prefs_store = prefs_store  # storage.prefs.PrefsStore | None (per-turn prefs injection)
+        # prefs.runtime.RuntimeSettings | None — the dedicated-subagent switches.
+        # The master bundle below is built once and reused by every conversation,
+        # so the toggle can't be baked into its roster; it rides along and is
+        # enforced per model/tool call by SubagentGateMiddleware.
+        self._runtime_settings = runtime_settings
         self._cap_enforcer = cap_enforcer  # tools.search._CapEnforcer | None (ws_* rate cap)
         self._task_submission = task_submission  # daemon.task_submission.TaskSubmissionService | None
         self._extra_subagents = list(extra_subagents or [])  # extra sync task roster (file-organizer, …)
@@ -110,17 +117,16 @@ class ConversationManager:
         # tinker bundle is card-specific (workspace + prompt).
         self._bundles: dict[str, AgentBundle] = {}
         self._build_locks: dict[str, asyncio.Lock] = {}
-        # Thread ids with a turn currently executing. A LangGraph thread's
-        # checkpoint is single-writer: two turns streaming the same thread_id
-        # concurrently interleave message writes, which duplicates the leading
-        # human message and produces empty messages the model rejects ("must
-        # include at least one parts field") — surfacing as duplicated bubbles
-        # and truncated "half" replies. The per-connection turn gate in the WS
-        # handler can't prevent this because a reconnect makes a NEW connection
-        # on the SAME thread; this daemon-scoped set is the cross-connection
-        # guard. Plain set ops are atomic under asyncio (no await between the
-        # check and the add), so no lock is needed.
-        self._busy_threads: set[str] = set()
+        # Every in-flight conversation turn, owned by the daemon and addressed
+        # by thread_id — NOT by the socket that asked for it. Sockets attach as
+        # viewers, so closing a tinker pane or reloading the renderer no longer
+        # kills the agent mid-node. It doubles as the per-thread turn gate the
+        # WS handler used to keep in a bare set: a LangGraph checkpoint is
+        # single-writer per thread, and two turns streaming the same thread
+        # concurrently interleave message writes (duplicate leading human
+        # message, empty messages the model 400s on — duplicated bubbles and
+        # truncated "half" replies). See daemon/turn_registry.py.
+        self._turns = TurnRegistry()
 
     # ------------------------------------------------------------------ #
     # Bundle builds                                                        #
@@ -193,6 +199,7 @@ class ConversationManager:
             usage_store=self._usage_store,
             budget_tokens=_chat_budget_tokens(),
             prefs_store=self._prefs_store,
+            runtime_settings=self._runtime_settings,
             cap_enforcer=self._cap_enforcer,
             extra_subagents=self._extra_subagents,
             extra_tools=self._orch_submit_tools("chat"),
@@ -364,34 +371,35 @@ class ConversationManager:
         return svc, resuming
 
     # ------------------------------------------------------------------ #
-    # Per-thread turn serialization                                        #
+    # Daemon-owned turns                                                   #
     # ------------------------------------------------------------------ #
 
-    def try_begin_turn(self, thread_id: str) -> bool:
-        """Claim the turn slot for ``thread_id``; False if one is already running.
+    @property
+    def turns(self) -> TurnRegistry:
+        """The daemon's live conversation runs (see ``daemon/turn_registry``).
 
-        A LangGraph checkpoint is single-writer per thread: two turns streaming
-        the same thread concurrently corrupt the message list (duplicate leading
-        human message, empty messages the model 400s on). Every conversation
-        turn — text, voice, barge-in — must run inside this guard so only one
-        executes per thread at a time, regardless of which WS connection drives
-        it. Race-free: the membership check and the add happen with no ``await``
-        between them, so the asyncio loop can't interleave two callers here.
+        Transports use it to *attach* to a thread rather than to own its turn:
+        ``registry.attach(thread_id, since_seq)`` for replay + live frames,
+        ``registry.start(...)`` to run one (which also serializes turns per
+        thread), and ``registry.cancel(thread_id)`` for the Stop button.
         """
-        if thread_id in self._busy_threads:
-            return False
-        self._busy_threads.add(thread_id)
-        return True
+        return self._turns
 
-    def end_turn(self, thread_id: str) -> None:
-        """Release the turn slot for ``thread_id`` (idempotent)."""
-        self._busy_threads.discard(thread_id)
+    def start_turn(self, thread_id: str, **kwargs) -> TurnRun | None:
+        """Launch a turn on the daemon loop; ``None`` when one already runs.
+
+        Same mutual-exclusion guarantee the old ``try_begin_turn`` gate gave —
+        but the caller now holds a real handle instead of a bare thread id, so
+        the turn survives the connection that asked for it.
+        """
+        return self._turns.start(thread_id=thread_id, **kwargs)
 
     @property
     def bundle_ready(self) -> bool:
         return "master" in self._bundles
 
     async def aclose(self) -> None:
+        await self._turns.aclose()
         bundles, self._bundles = self._bundles, {}
         for key, bundle in bundles.items():
             try:

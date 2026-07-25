@@ -23,6 +23,8 @@ def make_app(
     task_registry=None,
     task_submission=None,
     decision_service=None,
+    ask_registry=None,
+    ask_resume=None,
     channel_plugins=None,
     usage_store=None,
     resource_monitor=None,
@@ -34,6 +36,8 @@ def make_app(
     transcript_store=None,
     async_subagents=False,
     async_task_watcher=None,
+    runtime_settings=None,
+    subagent_roster=None,
 ):
     """Backwards-compatible alias of :func:`create_app`.
 
@@ -44,7 +48,8 @@ def make_app(
     the Phase-4 ``usage_store``, the Phase-5 resource governor
     (``resource_monitor``, ``admission_controller``), and the Phase-6
     capability sources for /v1/server-info (``model_router``,
-    ``memory_store``, ``async_subagents``).
+    ``memory_store``, ``async_subagents``), and the runtime toggles behind
+    /settings/* (``runtime_settings``, ``subagent_roster``).
     """
     return create_app(
         hub,
@@ -57,6 +62,8 @@ def make_app(
         task_registry=task_registry,
         task_submission=task_submission,
         decision_service=decision_service,
+        ask_registry=ask_registry,
+        ask_resume=ask_resume,
         channel_plugins=channel_plugins,
         usage_store=usage_store,
         resource_monitor=resource_monitor,
@@ -68,6 +75,8 @@ def make_app(
         transcript_store=transcript_store,
         async_subagents=async_subagents,
         async_task_watcher=async_task_watcher,
+        runtime_settings=runtime_settings,
+        subagent_roster=subagent_roster,
     )
 
 

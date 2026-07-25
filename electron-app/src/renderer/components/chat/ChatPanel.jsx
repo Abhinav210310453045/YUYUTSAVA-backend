@@ -5,6 +5,7 @@ import Markdown from './Markdown'
 import MessageImages from './MessageImages'
 import MessageArtifacts from './MessageArtifacts'
 import MessageActions from './MessageActions'
+import AskCard from '../asks/AskCard'
 
 function ToolEvents({ events }) {
   if (!events || events.length === 0) return null
@@ -176,13 +177,18 @@ export default function ChatPanel({
   // Fires with the server hello ({ session_id, thread_id, resuming, … }) so a
   // host that drives resumeId can learn the id of a freshly minted session.
   onSessionChange = null,
+  // Identity of the conversation in the shared store (conversations/store.js),
+  // which is what survives this component being unmounted. Defaults to
+  // origin/agent/card/resumeId; a host that can show two different chats at
+  // the same coordinates (the TODO card view's "New chat", which has no
+  // resumeId yet) must pass its own so they don't collide.
+  sessionKey = null,
 }) {
   const {
     messages, connected, busy, pendingAsk, hello, listening, speaking, playingId, paused,
     send, answerAsk, interrupt, startVoice, stopVoice, replay, togglePause, newSession,
-  } = useConverse({ origin, resumeId, agent, card })
+  } = useConverse({ origin, resumeId, agent, card, sessionKey, active })
   const [draft, setDraft] = useState('')
-  const [askDraft, setAskDraft] = useState('')
   const [fb, setFb] = useState({}) // messageId -> 'up' | 'down' (local selection)
   const scrollRef = useRef(null)
   const wasBusyRef = useRef(false)
@@ -236,11 +242,6 @@ export default function ChatPanel({
     for (let j = i - 1; j >= 0; j--) if (messages[j].role === 'user') return messages[j].text
     return ''
   }
-
-  const askBody = pendingAsk?.payload?.body || pendingAsk?.payload?.question
-    || pendingAsk?.payload?.reason || pendingAsk?.payload?.text || 'The agent is asking for input.'
-  const askTitle = pendingAsk?.payload?.title
-    || (pendingAsk?.payload?.type === 'task_runner_permission' ? 'Permission requested' : 'Question')
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
@@ -307,30 +308,17 @@ export default function ChatPanel({
           />
         ))}
 
+        {/* The ask block, and the ONLY place an ask renders inline. It arrives
+            on this conversation's own channel, so it is this conversation's by
+            construction — an ask raised anywhere else reaches the user through
+            the Inbox and the overlay instead, never through someone's open
+            chat. Same card as those surfaces, so the option set (including the
+            approve/session/project consent scopes) is identical everywhere. */}
         {pendingAsk && (
-          <div style={{
-            border: '1px solid var(--neon-amber)', borderRadius: 'var(--radius-card)',
-            padding: '12px 14px', background: 'rgba(255,176,0,0.06)', backdropFilter: 'blur(8px)',
-          }}>
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--neon-amber)', marginBottom: 6 }}>
-              ▣ {askTitle}
-            </div>
-            <div style={{ fontSize: 13, color: 'var(--text-primary)', marginBottom: 8 }}>{askBody}</div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                value={askDraft}
-                onChange={(e) => setAskDraft(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter' && askDraft.trim()) { answerAsk(askDraft.trim()); setAskDraft('') } }}
-                placeholder="type a reply, or use the buttons"
-                style={{
-                  flex: 1, background: 'var(--bg-deep)', color: 'var(--text-primary)',
-                  border: '1px solid var(--border-card)', borderRadius: 6, padding: '6px 10px', fontSize: 12,
-                }}
-              />
-              <button onClick={() => answerAsk('yes')} style={btnStyle(true)}>approve</button>
-              <button onClick={() => answerAsk('no')} style={btnStyle(false)}>reject</button>
-            </div>
-          </div>
+          <AskCard
+            ask={pendingAsk}
+            onAnswer={(_ask, response) => answerAsk(response)}
+          />
         )}
       </div>
 

@@ -34,6 +34,13 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      // Chromium throttles timers to ~1/min in a hidden or minimized window.
+      // The renderer's clocks are load-bearing here — the token smoother that
+      // paces streamed prose, the playback drain watcher, the WS keep-alive —
+      // so minimizing mid-turn made a perfectly healthy stream *look* dead and
+      // playback state go stale. Conversations are meant to keep running while
+      // you're elsewhere; they have to keep rendering too.
+      backgroundThrottling: false,
     },
   })
 
@@ -64,9 +71,18 @@ function createWindow() {
   })
 }
 
+// Voice mode, mirrored from the daemon by the renderer (see 'voice:modeEnabled').
+// Optimistic default: on, so a hotkey pressed before the renderer has reported
+// in behaves as it always did.
+let voiceModeEnabled = true
+
 // Summon the voice UI. When the main window is focused and visible, route to
 // the in-app Voice panel (richer surface); otherwise pop the mini overlay.
 function activateVoice({ reason = 'hotkey', wakeWord = '' } = {}) {
+  // Voice mode off means nothing summons the mic on its own — not the wake
+  // word, not the global hotkey. The user opens the Voice panel and taps the
+  // mic themselves.
+  if (!voiceModeEnabled) return
   const mainFocused = win && !win.isDestroyed() && win.isFocused() && !win.isMinimized()
   if (mainFocused) {
     overlay.hide()
@@ -116,7 +132,26 @@ async function onReady() {
     }
     activateVoice({ reason: 'wake', ...p })
   })
+  ipcMain.on('voice:modeEnabled', (_e, enabled) => {
+    voiceModeEnabled = !!enabled
+    // Turning voice mode off with the overlay already up would leave a live
+    // mic on screen that nothing can re-summon — close it.
+    if (!voiceModeEnabled) overlay.hide()
+  })
   ipcMain.on('overlay:close', () => overlay.hide())
+  // A pending ask wants the user's attention. Main owns the "is the app in
+  // front of them?" question: when it is, the owning view renders the ask
+  // inline and the Inbox lists it, so popping an always-on-top window over the
+  // top would just be a third copy. When it isn't, this is the only surface
+  // that can reach them — and it appears without stealing focus.
+  ipcMain.on('overlay:show-ask', (_e, payload) => {
+    const mainFocused = win && !win.isDestroyed() && win.isFocused() && !win.isMinimized()
+    overlay.showAsk({ ...(payload || {}), mainFocused })
+  })
+  ipcMain.on('overlay:hide-ask', () => overlay.hideAsk())
+  // The overlay renderer asks, on mount, what it was opened for — so an ask
+  // never starts the mic (see main/overlay.js currentReason).
+  ipcMain.handle('overlay:reason', () => overlay.currentReason())
   // Re-read the hotkey after a settings save (it may have changed).
   ipcMain.on('voice:rebindHotkey', () => registerVoiceHotkey())
 

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react'
+import React, { useState, useCallback, useEffect } from 'react'
 import Titlebar from './components/layout/Titlebar'
 import ActivityLog from './components/layout/ActivityLog'
 import ProposalsPanel from './components/proposals/ProposalsPanel'
@@ -11,102 +11,80 @@ import VoicePanel from './components/voice/VoicePanel'
 import InWindowToast from './components/notifications/InWindowToast'
 import ResizeHandle from './components/common/ResizeHandle'
 import { useSSE, getLogsEnabled, setLogsEnabled } from './hooks/useSSE.jsx'
+import { useRuntimeSettings } from './hooks/useRuntimeSettings'
 import { NotificationsProvider } from './hooks/useNotifications.jsx'
+import { NavProvider, useNav } from './nav/NavProvider'
 import { getLogLevel, setLogLevel } from './api/client'
 
 const ACTIVITY_MIN = 180
 const ACTIVITY_MAX = 600
 
-const RUN_ID_KEY = 'yy.app.runId'
-const PANEL_KEY = 'yy.app.activePanel'
-const PANELS = ['proposals', 'sessions', 'todos', 'artifacts', 'settings', 'chat', 'voice']
-
 export default function App() {
-  // Chat is the home panel on a fresh launch; an in-run renderer reload
-  // (daemon restart, crash recovery) restores the last panel instead — see
-  // the run-id effect below. Hide/minimize keeps the renderer alive, so
-  // those restore automatically without any of this.
-  const [activePanel, setActivePanel] = useState('chat')
-  // Thread id to resume when the Chat panel opens from a session row. Cleared on
-  // any plain navigation so the Chat nav icon always starts a fresh UI session.
-  const [chatResumeId, setChatResumeId] = useState(null)
-  // Thread id to resume when the Voice panel opens from a voice session row.
-  const [voiceResumeId, setVoiceResumeId] = useState(null)
+  return (
+    <NavProvider>
+      <AppShell />
+    </NavProvider>
+  )
+}
+
+function AppShell() {
+  // Navigation — including which tab is active, how deep you are in it, and
+  // restoring all of that after an in-run reload — lives in NavProvider.
+  // Hide/minimize keeps the renderer alive, so those need nothing at all.
+  const { activePanel, switchTab, topRouteOf } = useNav()
+  // Thread to resume rides the tab's route params: opening a row in Sessions
+  // pins it, and it survives navigating away and back.
+  const chatResumeId = topRouteOf('chat').params.resumeId || null
+  const voiceResumeId = topRouteOf('voice').params.resumeId || null
   // Chat & Voice are mounted once visited and then kept alive (just hidden) so
   // navigating away — e.g. to Settings mid-conversation — and back preserves the
   // live WebSocket, messages, and audio instead of destroying them.
-  const [visited, setVisited] = useState({ chat: true, voice: false })
-  // Set when this renderer boot is a reload within the same app run; TodosPanel
-  // consumes it (once) to reopen the card that was open before the reload.
-  const pendingTodoRestore = useRef(false)
-  const { proposals, asks, eventLines, logLines, bgTasks, connected, pendingCount, removeProposal, removeAsk } = useSSE()
+  const [visited, setVisited] = useState(() => ({ chat: true, voice: activePanel === 'voice' }))
+  const { proposals, eventLines, logLines, bgTasks, connected, pendingCount, removeProposal } = useSSE()
 
-  // Fresh-launch vs in-run-reload detection: the main process mints one run id
-  // per process; a matching stored id means this boot is a reload → restore.
+  // A tab only needs mounting once it's been looked at — including when the
+  // nav tree is restored straight onto Voice after a reload.
   useEffect(() => {
-    let cancelled = false
-    Promise.resolve(window.electronAPI?.getAppRunId?.()).then((runId) => {
-      if (cancelled || !runId) return
-      const prev = localStorage.getItem(RUN_ID_KEY)
-      if (prev === String(runId)) {
-        const saved = localStorage.getItem(PANEL_KEY)
-        if (saved && PANELS.includes(saved)) {
-          pendingTodoRestore.current = saved === 'todos'
-          if (saved === 'voice') setVisited((v) => ({ ...v, voice: true }))
-          setActivePanel(saved)
-        }
-      } else {
-        localStorage.setItem(RUN_ID_KEY, String(runId))
-      }
-    }).catch(() => {})
-    return () => { cancelled = true }
-  }, [])
-
-  // Keep the last panel persisted so an in-run reload can restore it.
-  useEffect(() => {
-    try { localStorage.setItem(PANEL_KEY, activePanel) } catch { /* quota */ }
-  }, [activePanel])
-
-  // One-shot: TodosPanel calls this on mount; returns the card to reopen only
-  // right after an in-run reload that landed on the todos panel.
-  const consumeRestoredCard = useCallback(() => {
-    if (!pendingTodoRestore.current) return null
-    pendingTodoRestore.current = false
-    return localStorage.getItem('yy.todo.openId')
-  }, [])
-
-  // Plain navigation no longer resets the chat thread — returning to Chat/Voice
-  // shows the last conversation. A fresh thread is started explicitly via the
-  // per-view "New" button, or by opening a session from the Sessions list.
-  const navTo = useCallback((target) => {
-    setActivePanel(target)
-    if (target === 'chat' || target === 'voice') {
-      setVisited((v) => (v[target] ? v : { ...v, [target]: true }))
+    if (activePanel === 'chat' || activePanel === 'voice') {
+      setVisited((v) => (v[activePanel] ? v : { ...v, [activePanel]: true }))
     }
-  }, [])
+  }, [activePanel])
 
   // Open a session from a Sessions row, routing by its origin: voice sessions
   // resume in the Voice panel, chat/ui sessions in the Chat panel. Both reuse
   // the session's own thread_id so the backend continues the same conversation.
   const onOpenSession = useCallback((session) => {
     const target = session?.origin === 'voice' ? 'voice' : 'chat'
-    if (target === 'voice') setVoiceResumeId(session.id)
-    else setChatResumeId(session.id)
-    setActivePanel(target)
-    setVisited((v) => (v[target] ? v : { ...v, [target]: true }))
-  }, [])
+    switchTab(target, { resumeId: session.id })
+  }, [switchTab])
+
+  // Daemon-owned voice mode. The titlebar button flips it; the state also
+  // reaches the overlay and the CLI, since it lives in the daemon.
+  const { voice, voiceOn, saving: voiceSaving, setVoice } = useRuntimeSettings()
+
+  // The main process owns the global hotkey and the overlay, and has no daemon
+  // client of its own — so the renderer pushes the flag to it. Re-pushed on
+  // every change (and on mount) so a daemon restart can't leave main stale.
+  useEffect(() => {
+    window.electronAPI?.setVoiceModeEnabled?.(voiceOn)
+  }, [voiceOn])
+
+  const onToggleVoice = useCallback((next) => {
+    // One button, both halves: "voice mode" as the user thinks of it is
+    // "does it listen for me, and does it talk back".
+    setVoice({ wake_enabled: next, tts_enabled: next }).catch(() => {})
+  }, [setVoice])
 
   // Hotkey/wake while the window is focused: switch to the Voice panel and bump
   // a nonce so the panel auto-starts the mic (even if it was already mounted).
   const [voiceAutoStart, setVoiceAutoStart] = useState(0)
   useEffect(() => {
     const off = window.electronAPI?.onVoiceActivate?.(() => {
-      setActivePanel('voice')
-      setVisited((v) => (v.voice ? v : { ...v, voice: true }))
+      switchTab('voice')
       setVoiceAutoStart((n) => n + 1)
     })
     return () => off && off()
-  }, [])
+  }, [switchTab])
 
   const [logsEnabled, setLogsEnabledState] = useState(getLogsEnabled())
   const [logLevel, setLogLevelState] = useState('INFO')
@@ -130,19 +108,19 @@ export default function App() {
   // which consumes highlightId from NotificationsProvider.
   useEffect(() => {
     const off = window.electronAPI?.onNotificationClick?.(() => {
-      navTo('proposals')
+      switchTab('proposals')
     })
     return () => off && off()
-  }, [navTo])
+  }, [switchTab])
 
   // Tray menu navigation (tray → "Open"/"Settings"). 'dashboard' maps to the
   // proposals home view; other targets map straight to a panel id.
   useEffect(() => {
     const off = window.electronAPI?.onNavigate?.((target) => {
-      navTo(target === 'dashboard' ? 'proposals' : target)
+      switchTab(target === 'dashboard' ? 'proposals' : target)
     })
     return () => off && off()
-  }, [navTo])
+  }, [switchTab])
 
   const [activityW, setActivityW] = useState(300)
   const [activityOpen, setActivityOpen] = useState(false)
@@ -187,16 +165,21 @@ export default function App() {
           logLevel={logLevel}
           onChangeLogLevel={onChangeLogLevel}
           activePanel={activePanel}
-          onNav={navTo}
+          onNav={switchTab}
           pendingCount={pendingCount}
           activityOpen={activityOpen}
           onToggleActivity={setActivityOpen}
+          voiceOn={voiceOn}
+          voiceSaving={voiceSaving}
+          onToggleVoice={onToggleVoice}
         />
 
         <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-          {/* Main panel. Stateless views remount (re-keyed) so switching replays
-              the entry animation; Chat & Voice stay mounted once visited and are
-              only hidden, preserving their live conversation across navigation. */}
+          {/* Main panel. Stateless views remount on tab switch (re-keyed so the
+              entry animation replays) — their drill-down position comes back
+              from the route and their view state from useViewState. Chat &
+              Voice stay mounted once visited and are only hidden, preserving
+              their live conversation across navigation. */}
           <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minWidth: 0, position: 'relative' }}>
             {(activePanel === 'proposals' || activePanel === 'sessions' || activePanel === 'todos' || activePanel === 'artifacts' || activePanel === 'settings') && (
               <div
@@ -206,13 +189,11 @@ export default function App() {
                 {activePanel === 'proposals' && (
                   <ProposalsPanel
                     proposals={proposals}
-                    asks={asks}
                     onRemoveProposal={removeProposal}
-                    onRemoveAsk={removeAsk}
                   />
                 )}
                 {activePanel === 'sessions' && <SessionsPanel onOpenSession={onOpenSession} />}
-                {activePanel === 'todos' && <TodosPanel consumeRestoredCard={consumeRestoredCard} />}
+                {activePanel === 'todos' && <TodosPanel />}
                 {activePanel === 'artifacts' && <ArtifactsPanel />}
                 {activePanel === 'settings' && <SettingsPanel />}
               </div>
@@ -224,7 +205,7 @@ export default function App() {
             )}
             {visited.voice && (
               <div style={{ flex: 1, display: activePanel === 'voice' ? 'flex' : 'none', overflow: 'hidden', minWidth: 0 }}>
-                <VoicePanel onOpenSettings={() => navTo('settings')} autoStartSignal={voiceAutoStart} resumeId={voiceResumeId} active={activePanel === 'voice'} />
+                <VoicePanel onOpenSettings={() => switchTab('settings')} autoStartSignal={voiceAutoStart} resumeId={voiceResumeId} active={activePanel === 'voice'} voiceSettings={voice} />
               </div>
             )}
           </div>

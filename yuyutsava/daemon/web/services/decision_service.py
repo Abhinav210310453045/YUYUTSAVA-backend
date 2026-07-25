@@ -60,12 +60,20 @@ class DecisionService:
     plugins via the InboundSink).
     """
 
-    def __init__(self, store: object) -> None:
+    def __init__(self, store: object, *, ask_resume: object | None = None) -> None:
         self._store = store
         self._proposal_maps: list[
             MutableMapping[str, "asyncio.Future[ProposalDecision]"]
         ] = []
         self._ask_maps: list[MutableMapping[str, "asyncio.Future[str]"]] = []
+        # ``daemon.ask_resume.AskResumeService`` — consulted when an ask has no
+        # live waiter, which is what an answer given after a daemon restart
+        # looks like. Set late (it needs the conversation manager), hence the
+        # setter below rather than a required constructor arg.
+        self._ask_resume = ask_resume
+
+    def set_ask_resume(self, service: object | None) -> None:
+        self._ask_resume = service
 
     def add_waiters(
         self,
@@ -124,10 +132,19 @@ class DecisionService:
         """Resolve a Tier-2 ask. Empty responses default to ``"reject"``."""
         response = response.strip() or "reject"
         fut = self._find(self._ask_maps, ask_id)
-        if fut is None or fut.done():
-            raise DecisionConflictError("ask expired or already answered")
-        fut.set_result(response)
-        return RespondOutcome(ok=True)
+        if fut is not None and not fut.done():
+            fut.set_result(response)
+            return RespondOutcome(ok=True)
+        # No live waiter. That is either "already answered" — or the daemon has
+        # restarted since the ask was raised, in which case the agent is still
+        # parked on its checkpointed interrupt and the answer must be delivered
+        # by re-entering the graph rather than by waking a future that no longer
+        # exists. Asks never expire, so this second case is normal, not an edge.
+        if self._ask_resume is not None:
+            resumed = await self._ask_resume.resume(ask_id, response)
+            if resumed:
+                return RespondOutcome(ok=True, note="agent resumed from its checkpoint")
+        raise DecisionConflictError("ask expired or already answered")
 
     # ------------------------------------------------------------------ #
     # Introspection (InboundSink.list_pending)                            #

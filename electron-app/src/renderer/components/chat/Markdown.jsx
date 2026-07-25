@@ -1,25 +1,60 @@
 import React, { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import remarkIndentedProse from '../../lib/remarkIndentedProse'
 
 // Themed Markdown renderer for assistant bubbles. Custom renderers keep the
 // terminal/neon identity (mono code blocks, neon links, tinted tables) and
 // consume theme tokens so it flips with the light/dark toggle. Safe for
 // streaming: react-markdown re-parses the accumulated text each token.
+//
+// The framed block chrome hangs off `pre`, not `code`. react-markdown dropped
+// the `inline` prop in v9, so `code` can no longer tell a `` `span` `` from a
+// fenced block on its own — but in hast a block is always `<pre><code>` while
+// inline code has no `pre` parent. Overriding `pre` is the only stable
+// discriminator; do not move this back onto `code`.
 
-function CodeBlock({ inline, className, children }) {
-  const text = String(children ?? '').replace(/\n$/, '')
+// A `pre` carries exactly one `code` child holding the block's text and, when
+// the fence named a language, a `language-*` class.
+function codeChildOf(node) {
+  return node?.children?.find((c) => c.type === 'element' && c.tagName === 'code')
+}
+
+function hastText(el) {
+  if (!el) return ''
+  if (el.type === 'text') return String(el.value ?? '')
+  return (el.children || []).map(hastText).join('')
+}
+
+// Defensive fallback for when `node` is absent (e.g. a future react-markdown
+// stops passing it): recover the text from the rendered React children.
+function reactText(children) {
+  return React.Children.toArray(children)
+    .map((c) => (React.isValidElement(c) ? reactText(c.props.children) : String(c ?? '')))
+    .join('')
+}
+
+function InlineCode({ children }) {
+  return (
+    <code style={{
+      fontFamily: 'var(--font-mono)', fontSize: '0.88em',
+      background: 'var(--glass-bg)', border: '1px solid var(--border-card)',
+      borderRadius: 5, padding: '1px 5px', color: 'var(--text-code)',
+    }}>{children}</code>
+  )
+}
+
+function CodeBlock({ node, children }) {
+  const codeEl = codeChildOf(node)
+  // Render the extracted text directly rather than `children` — the nested
+  // `code` element would otherwise route through InlineCode and draw a pill
+  // inside the panel.
+  const text = (codeEl ? hastText(codeEl) : reactText(children)).replace(/\n$/, '')
   const [copied, setCopied] = useState(false)
-  if (inline) {
-    return (
-      <code style={{
-        fontFamily: 'var(--font-mono)', fontSize: '0.88em',
-        background: 'var(--glass-bg)', border: '1px solid var(--border-card)',
-        borderRadius: 5, padding: '1px 5px', color: 'var(--text-code)',
-      }}>{children}</code>
-    )
-  }
-  const lang = (className || '').replace('language-', '')
+  const classes = codeEl?.properties?.className || []
+  const langClass = (Array.isArray(classes) ? classes : String(classes).split(' '))
+    .find((c) => /^language-.+/.test(c))
+  const lang = langClass ? langClass.slice('language-'.length) : ''
   const onCopy = async () => {
     try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1400) } catch { /* ignore */ }
   }
@@ -50,7 +85,8 @@ function CodeBlock({ inline, className, children }) {
 }
 
 const COMPONENTS = {
-  code: CodeBlock,
+  pre: CodeBlock,
+  code: InlineCode,
   a: ({ href, children }) => (
     <a href={href} target="_blank" rel="noreferrer"
        style={{ color: 'var(--neon-cyan)', textDecoration: 'underline', textUnderlineOffset: 2 }}>
@@ -85,7 +121,7 @@ const COMPONENTS = {
 
 export default function Markdown({ children }) {
   return (
-    <ReactMarkdown remarkPlugins={[remarkGfm]} components={COMPONENTS}>
+    <ReactMarkdown remarkPlugins={[remarkGfm, remarkIndentedProse]} components={COMPONENTS}>
       {children || ''}
     </ReactMarkdown>
   )

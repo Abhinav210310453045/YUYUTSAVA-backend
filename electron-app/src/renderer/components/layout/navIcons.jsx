@@ -62,7 +62,8 @@ export function PanelToggleIcon({ open }) {
 }
 
 export const NAV_ITEMS = [
-  { id: 'proposals', label: 'Proposals' },
+  // Asks + proposals both land here — "Inbox" is what it actually is.
+  { id: 'proposals', label: 'Inbox' },
   { id: 'sessions', label: 'Sessions' },
   { id: 'todos', label: 'Todos' },
   { id: 'artifacts', label: 'Artifacts' },

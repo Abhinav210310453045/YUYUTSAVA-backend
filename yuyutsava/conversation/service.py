@@ -193,6 +193,7 @@ class ConversationService:
         keep_full_payloads: bool = True,
         recursion_limit: int | None = None,
         modality: str = "text",
+        resume_value: object | None = None,
     ) -> str:
         """Run one user turn end-to-end, returning the final assistant text.
 
@@ -200,6 +201,11 @@ class ConversationService:
         (the terminating ``final`` event included, so renderers can close their
         stream). Session bookkeeping (message counter, ``task_preview``) is
         coalesced and flushed once per turn when ``bookkeep`` is on.
+
+        ``resume_value`` answers an interrupt this conversation was parked on
+        when a *previous* daemon process died: no new user message is sent, the
+        graph simply continues from its checkpoint with that decision. ``text``
+        is ignored in that case (and bookkeeping skips the empty preview).
         """
         bundle = await self._ensure_bundle()
         self._turns_ran += 1
@@ -215,6 +221,7 @@ class ConversationService:
             agent_path=self.agent_path,
             keep_full_payloads=keep_full_payloads,
             modality=modality,
+            resume_value=resume_value,
         ):
             if ev.kind == "final":
                 final = ev.data.get("text", "") or final
@@ -224,7 +231,7 @@ class ConversationService:
             if result is not None:
                 await result
 
-        if self._ticker is not None:
+        if self._ticker is not None and resume_value is None:
             preview = (text or "").strip().replace("\n", " ")
             try:
                 await self._ticker.tick(max(steps, 1))

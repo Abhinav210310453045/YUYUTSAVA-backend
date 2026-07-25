@@ -1,8 +1,22 @@
 import React from 'react'
 import { navIcons, NAV_ITEMS, PanelToggleIcon } from './navIcons.jsx'
 import { useTheme } from '../../hooks/useTheme'
+import BackButton from './BackButton'
+import PlaybackButton from './PlaybackButton'
 
 const LEVELS = ['DEBUG', 'INFO', 'WARNING']
+
+// Mic glyph, struck through when voice mode is off.
+function MicIcon({ off }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+         stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+      <rect x="9" y="2" width="6" height="11" rx="3" />
+      <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
+      {off && <path d="M3 3l18 18" />}
+    </svg>
+  )
+}
 
 export default function Titlebar({
   connected,
@@ -15,6 +29,9 @@ export default function Titlebar({
   pendingCount,
   activityOpen,
   onToggleActivity,
+  voiceOn,
+  voiceSaving,
+  onToggleVoice,
 }) {
   const { theme, setTheme, themes } = useTheme()
   return (
@@ -31,6 +48,13 @@ export default function Titlebar({
       flexShrink: 0,
       gap: 12,
     }}>
+      {/* Global back arrow, sat where a macOS back chevron belongs — just
+          right of the traffic lights, ahead of everything else. Pops the
+          active tab's stack; dimmed at that tab's home view. */}
+      <span style={{ WebkitAppRegion: 'no-drag', display: 'flex', marginLeft: -4 }}>
+        <BackButton />
+      </span>
+
       <span style={{
         fontFamily: 'var(--font-mono)',
         fontSize: 11,
@@ -125,6 +149,45 @@ export default function Titlebar({
             )
           })}
         </div>
+
+        <span style={{ width: 1, height: 18, background: 'var(--border-subtle)' }} />
+
+        {/* Transport for a spoken reply still playing on a view you've left.
+            Renders nothing while silent, or while you're on that view. */}
+        <PlaybackButton />
+
+        {/* Voice mode. Off = the daemon stops listening for the wake word (it
+            releases the mic) and stops speaking replies; the mic button in the
+            Voice panel still works. Daemon-owned, so the CLI and the overlay
+            see the same state. */}
+        <button
+          onClick={() => onToggleVoice?.(!voiceOn)}
+          disabled={voiceSaving}
+          title={voiceOn
+            ? 'Voice mode is ON — wake word is listening and replies are spoken. Click to turn off.'
+            : 'Voice mode is OFF — nothing is listening for you and replies stay text. The mic button still works.'}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 5,
+            height: 28,
+            padding: '0 8px',
+            borderRadius: 6,
+            color: voiceOn ? 'var(--neon-green)' : 'var(--text-muted)',
+            background: voiceOn ? 'rgba(var(--accent-rgb),0.08)' : 'transparent',
+            border: `1px solid ${voiceOn ? 'rgba(var(--accent-rgb),0.2)' : 'var(--border-subtle)'}`,
+            fontFamily: 'var(--font-mono)',
+            fontSize: 10,
+            letterSpacing: '0.1em',
+            textTransform: 'uppercase',
+            cursor: voiceSaving ? 'progress' : 'pointer',
+            opacity: voiceSaving ? 0.6 : 1,
+            transition: 'all 0.2s',
+          }}
+        >
+          <MicIcon off={!voiceOn} />
+          {voiceOn ? 'Voice' : 'Muted'}
+        </button>
 
         <span style={{ width: 1, height: 18, background: 'var(--border-subtle)' }} />
 

@@ -25,7 +25,7 @@
       "enabled": false
     },
     "voice": {
-      "enabled": true,
+      "enabled": false,
       "wake_words": "hey_jarvis"
     },
     "webcam": {

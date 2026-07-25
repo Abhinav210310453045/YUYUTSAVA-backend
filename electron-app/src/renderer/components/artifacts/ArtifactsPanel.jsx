@@ -5,6 +5,8 @@ import { resolveBlock } from '../todos/artifactBlocks'
 import Lightbox from './Lightbox'
 import ArtifactModal from './ArtifactModal'
 import VisualActions from './VisualActions'
+import { useNav } from '../../nav/NavProvider'
+import { useViewState, useScrollRestore } from '../../nav/useViewState'
 
 // A gallery of everything the agent has produced. Two feeds:
 //   • Visuals (charts/diagrams/tables/…) served from /visuals, session-scoped.
@@ -108,19 +110,26 @@ const SectionTitle = ({ children }) => (
 )
 
 export default function ArtifactsPanel() {
+  const { params, push, pop } = useNav()
   const [sessions, setSessions] = useState([])
-  const [sessionId, setSessionId] = useState(null)
+  const [sessionId, setSessionId] = useViewState('sessionId', null)
   const [visuals, setVisuals] = useState([])
   const [items, setItems] = useState([])   // general artifacts + card attachments
   const [loading, setLoading] = useState(false)
   const [loadingItems, setLoadingItems] = useState(false)
-  const [zoomed, setZoomed] = useState(null)       // a visual (image lightbox)
-  const [expanded, setExpanded] = useState(null)   // an artifact/attachment (block modal)
+  // Which item is open big is a depth level, so the back arrow closes the
+  // modal exactly like Esc does — and a reload reopens it.
+  const zoomed = params.visualId ? visuals.find((v) => v.visual_id === params.visualId) || null : null
+  const expanded = params.artifactId ? items.find((i) => i.attachment_id === params.artifactId) || null : null
+  const openVisual = useCallback((v) => push({ visualId: v.visual_id }), [push])
+  const openArtifact = useCallback((it) => push({ artifactId: it.attachment_id }), [push])
+  const scrollRef = useScrollRestore(!loadingItems)
 
   const onDeleted = useCallback((visualId) => {
     setVisuals((cur) => cur.filter((v) => v.visual_id !== visualId))
-    setZoomed((z) => (z && z.visual_id === visualId ? null : z))
-  }, [])
+    // The lightbox was showing what just got deleted — step back out of it.
+    if (params.visualId === visualId) pop()
+  }, [params.visualId, pop])
 
   const refreshItems = useCallback(() => {
     setLoadingItems(true)
@@ -166,7 +175,7 @@ export default function ArtifactsPanel() {
         <SectionTitle>Artifacts</SectionTitle>
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
+      <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
         {/* ── general artifacts + board attachments (global) ────────── */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
           <SectionTitle>Documents, interactive & board files</SectionTitle>
@@ -195,7 +204,7 @@ export default function ArtifactsPanel() {
             gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
           }}>
             {items.map((it) => (
-              <ArtifactTile key={it.attachment_id} item={it} onExpand={setExpanded} />
+              <ArtifactTile key={it.attachment_id} item={it} onExpand={openArtifact} />
             ))}
           </div>
         )}
@@ -242,15 +251,15 @@ export default function ArtifactsPanel() {
             display: 'grid', gap: 14,
             gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
           }}>
-            {visuals.map((v) => <VisualCard key={v.visual_id} v={v} onOpen={setZoomed} onDeleted={onDeleted} />)}
+            {visuals.map((v) => <VisualCard key={v.visual_id} v={v} onOpen={openVisual} onDeleted={onDeleted} />)}
           </div>
         )}
       </div>
 
-      <Lightbox v={zoomed} onClose={() => setZoomed(null)} onDeleted={onDeleted} />
+      <Lightbox v={zoomed} onClose={pop} onDeleted={onDeleted} />
       <ArtifactModal
         attachment={expanded} cardId={expanded?._cardId}
-        onClose={() => setExpanded(null)}
+        onClose={pop}
       />
     </div>
   )

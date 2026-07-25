@@ -20,6 +20,11 @@ export class ConverseClient {
     this._ws = null
     this._retryDelay = 1000
     this._stopped = false
+    // The last per-thread frame `seq` the consumer rendered. Sent on every
+    // (re)connect so the daemon replays exactly the gap instead of the client
+    // silently losing whatever streamed while the socket was down. `null` =
+    // "no prior state", which the server reads as "just the in-flight turn".
+    this._sinceSeq = null
     // Consecutive pre-`hello` rejections while trying to resume the current
     // `resumeId` (e.g. the session was discarded server-side). Distinct from
     // a mid-conversation turn error, which arrives AFTER `hello` and is never
@@ -46,6 +51,12 @@ export class ConverseClient {
     if (id) this.resumeId = id
   }
 
+  // Where the consumer has got to in this thread's frame stream. Kept current
+  // as frames arrive; read at connect time by _wsUrl().
+  setSinceSeq(seq) {
+    if (typeof seq === 'number' && seq >= 0) this._sinceSeq = seq
+  }
+
   _wsUrl() {
     const base = getBase().replace(/^http/, 'ws')
     const qs = new URLSearchParams({ origin: this.origin })
@@ -53,6 +64,7 @@ export class ConverseClient {
     if (this.agent) qs.set('agent', this.agent)
     if (this.card) qs.set('card', this.card)
     if (this.mode) qs.set('mode', this.mode)
+    if (this._sinceSeq !== null) qs.set('since_seq', String(this._sinceSeq))
     return `${base}/ws/converse?${qs}`
   }
 
@@ -120,7 +132,11 @@ export class ConverseClient {
   sendText(text, context = null) {
     return this._send({ type: 'user_text', text, ...(context ? { context } : {}) })
   }
-  answerAsk(text) { return this._send({ type: 'ask_response', text }) }
+  // `askId` identifies the durable ask record, so the daemon resolves it
+  // through the same DecisionService path an Inbox/overlay answer takes.
+  answerAsk(text, askId = null) {
+    return this._send({ type: 'ask_response', text, ...(askId ? { ask_id: askId } : {}) })
+  }
   interrupt() { return this._send({ type: 'interrupt' }) }
   // Stream one frame of mic PCM (Int16Array, 16 kHz mono) to the daemon.
   sendAudio(int16) { return this._send({ type: 'audio', pcm: int16ToBase64(int16) }) }

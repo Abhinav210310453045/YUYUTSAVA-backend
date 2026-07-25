@@ -793,6 +793,44 @@ MIGRATIONS: list[tuple[int, str]] = [
         ALTER TABLE sessions ADD COLUMN IF NOT EXISTS title TEXT NOT NULL DEFAULT '';
         """,
     ),
+    (
+        19,
+        # Durable Tier-2 asks. Nothing here expires: the agent is parked on a
+        # LangGraph interrupt and waits indefinitely, so the record must outlive
+        # the process that raised it. Written BEFORE broadcast so an ask lost to
+        # a dropped SSE frame is still rediscoverable (GET /asks), and a daemon
+        # restart can re-enter the owner with Command(resume=…). payload_json is
+        # the full wire record (AskPrompt.to_wire_dict) — clients hydrate an
+        # identical card from it. Deliberately no FKs: an ask must survive the
+        # session or task row it refers to. Mirrors events schema v4
+        # (yuyutsava/storage/events/schema.py); the two must stay wire-identical.
+        """
+        CREATE TABLE IF NOT EXISTS pending_asks (
+            ask_id       TEXT PRIMARY KEY,
+            created_ts   DOUBLE PRECISION NOT NULL,
+            surface      TEXT NOT NULL,
+            session_id   TEXT,
+            thread_id    TEXT,
+            card_id      TEXT,
+            task_id      TEXT,
+            interrupt_id TEXT,
+            agent_path   TEXT,
+            agent_label  TEXT,
+            title        TEXT NOT NULL,
+            body         TEXT NOT NULL,
+            options_json TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            status       TEXT NOT NULL
+                         CHECK (status IN ('pending','answered','cancelled')),
+            answered_ts  DOUBLE PRECISION,
+            response     TEXT
+        );
+        CREATE INDEX IF NOT EXISTS pending_asks_status_idx
+            ON pending_asks (status, created_ts);
+        CREATE INDEX IF NOT EXISTS pending_asks_thread_idx
+            ON pending_asks (thread_id);
+        """,
+    ),
 ]
 
 

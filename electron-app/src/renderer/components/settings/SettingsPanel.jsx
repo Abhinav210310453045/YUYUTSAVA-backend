@@ -1,9 +1,11 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import SettingsSection from './SettingsSection'
 import SettingsField from './SettingsField'
 import WatchedDirsEditor from './WatchedDirsEditor'
 import WakeWordsEditor from './WakeWordsEditor'
+import { VoiceModeSettings, SubagentSettings } from './RuntimeToggles'
 import { getConfigSchema } from '../../api/client'
+import { useViewState, useScrollRestore } from '../../nav/useViewState'
 
 function DaemonBtn({ label, color, borderColor, bg, disabled, onClick }) {
   return (
@@ -60,14 +62,27 @@ const FALLBACK_SCHEMA = {
 }
 
 export default function SettingsPanel() {
-  const [settings, setSettings] = useState({})
-  const [initial, setInitial] = useState({})
+  // The edit buffer outlives navigation: stepping out to check something and
+  // coming back must not silently discard half-made changes.
+  const [settings, setSettings] = useViewState('settings', {})
+  const [initial, setInitial] = useViewState('initial', {})
   const [schema, setSchema] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saved, setSaved] = useState(false)
   const [daemonStatus, setDaemonStatus] = useState(null)
   const [daemonBusy, setDaemonBusy] = useState(false)
   const [reloadPrompt, setReloadPrompt] = useState(null)  // { keys: [...], noResume: bool }
+  const scrollRef = useScrollRestore(!loading)
+
+  // Any field the user has touched but not saved. Read through a ref by the
+  // load effect, which must refresh the baseline without stomping the edits.
+  const dirty = useMemo(
+    () => Object.keys({ ...initial, ...settings })
+      .some((k) => (settings[k] ?? '') !== (initial[k] ?? '')),
+    [settings, initial],
+  )
+  const dirtyRef = useRef(dirty)
+  dirtyRef.current = dirty
 
   useEffect(() => {
     Promise.all([
@@ -75,7 +90,7 @@ export default function SettingsPanel() {
       window.electronAPI?.getDaemonStatus() || Promise.resolve(null),
       getConfigSchema().catch(() => FALLBACK_SCHEMA),
     ]).then(([s, status, sch]) => {
-      setSettings(s || {})
+      if (!dirtyRef.current) setSettings(s || {})
       setInitial(s || {})
       setDaemonStatus(status)
       setSchema(sch && Array.isArray(sch.groups) && sch.groups.length ? sch : FALLBACK_SCHEMA)
@@ -203,7 +218,7 @@ export default function SettingsPanel() {
   }
 
   return (
-    <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
         <h2 style={{ fontSize: 13, fontWeight: 'var(--fw-semibold)', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
           Settings
@@ -348,6 +363,15 @@ export default function SettingsPanel() {
           />
         )}
       </div>
+
+      {/* Hot toggles — applied immediately, no Save, no restart. */}
+      <SettingsSection title="Voice Mode" defaultOpen={true}>
+        <VoiceModeSettings />
+      </SettingsSection>
+
+      <SettingsSection title="Subagents" defaultOpen={false}>
+        <SubagentSettings />
+      </SettingsSection>
 
       <SettingsSection title="Watched Directories" defaultOpen={true}>
         <WatchedDirsEditor />

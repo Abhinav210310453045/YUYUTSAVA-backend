@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 import yuyutsava.daemon.web.routers.converse as converse_router
 from yuyutsava.audio_io.vad import VadResult
 from yuyutsava.core.streaming import StreamEvent
+from yuyutsava.daemon.turn_registry import TurnRegistry
 from yuyutsava.daemon.web.app import create_app
 from yuyutsava.daemon.web.services.stream_service import WebHub
 
@@ -46,10 +47,23 @@ class _FakeConvo:
 
     async def finish(self, status: str = "done") -> None: ...
 
+    async def discard_if_unused(self) -> bool:
+        return False
+
 
 class _FakeManager:
-    async def open(self, *, origin="cli", resume_id=None, continue_latest=False):
+    def __init__(self) -> None:
+        # Turns are daemon-owned now (see daemon/turn_registry.py).
+        self.turns = TurnRegistry()
+
+    async def open(self, *, agent="master", card_id=None, origin="cli",
+                   resume_id=None, continue_latest=False):
         return _FakeConvo(origin), False
+
+    def start_turn(self, thread_id: str, **kw):
+        return self.turns.start(thread_id=thread_id, **kw)
+
+    def record_async_launch(self, ev, *, thread_id, origin=None) -> None: ...
 
 
 class _FakeVoice:

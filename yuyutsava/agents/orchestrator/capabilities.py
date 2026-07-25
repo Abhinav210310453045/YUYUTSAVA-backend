@@ -21,6 +21,7 @@ def render_capabilities_block(
     *,
     async_subagents: list[BaseSubAgent] | None = None,
     remote_async_subagents: list[object] | None = None,
+    disabled: "frozenset[str] | set[str] | None" = None,
 ) -> str:
     """Return one line per subagent.
 
@@ -29,15 +30,25 @@ def render_capabilities_block(
       - ``<name>-bg`` ``[background, local]`` — start with ``start_async_task('<name>-bg', ...)``
       - ``<name>`` ``[background, remote]`` — same, hosted off-process
 
+    ``disabled`` names subagents the user switched off at runtime
+    (``runtime.subagents``); they are omitted entirely — from the sync roster,
+    their ``-bg`` peers, and the remote entries — so a master that reads this
+    block never learns about a subagent it isn't allowed to call. Callers whose
+    graph outlives a toggle also install
+    :class:`~yuyutsava.core.subagent_gate_middleware.SubagentGateMiddleware`.
+
     Empty input → ``(no subagents registered)``.
     """
+    off = frozenset(disabled or ())
     lines: list[str] = []
     for sa in subagents or []:
+        if sa.name in off:
+            continue
         desc = sa.description.strip().replace("\n", " ")
         lines.append(f"  - {sa.name} [sync] — {desc}")
 
     for sa in async_subagents or []:
-        if not getattr(sa, "supports_async", False):
+        if not getattr(sa, "supports_async", False) or sa.name in off:
             continue
         async_name = sa.async_subagent_name()
         desc = sa.description.strip().replace("\n", " ")
@@ -49,6 +60,8 @@ def render_capabilities_block(
     for r in remote_async_subagents or []:
         # ``RemoteAsyncSubagentSpec`` exposes name/description directly.
         name = getattr(r, "name", "?")
+        if name in off:
+            continue
         desc = (getattr(r, "description", "") or "").strip().replace("\n", " ")
         lines.append(
             f"  - {name} [background, remote] — {desc} "

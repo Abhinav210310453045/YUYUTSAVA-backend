@@ -37,6 +37,7 @@ from yuyutsava.core.filesystem_prompt_middleware import FilesystemPromptOverride
 from yuyutsava.core.voice_style_middleware import VoiceStyleMiddleware
 from yuyutsava.core.permission_middleware import PermissionMiddleware
 from yuyutsava.core.prompts import docker_system_prompt, local_system_prompt
+from yuyutsava.core.subagent_gate_middleware import SubagentGateMiddleware
 from yuyutsava.core.tool_filter_middleware import ToolFilterMiddleware
 from yuyutsava.core.tool_registry import ToolRegistry
 from yuyutsava.agents.task_runner.tools import bind_tools as _bind_task_runner_tools
@@ -459,6 +460,7 @@ def build_cli_deepagent(
     budget_tokens: int | None = None,
     usage_store: Any | None = None,
     prefs_store: Any | None = None,
+    runtime_settings: Any | None = None,
     extra_tools: "list[Any] | None" = None,
 ) -> AgentBundle:
     """Build the CLI deepagent.
@@ -521,6 +523,10 @@ def build_cli_deepagent(
         ToolFilterMiddleware(),
         FilesystemPromptOverrideMiddleware(),
         VoiceStyleMiddleware(),
+        # Runtime on/off switches for the dedicated subagents. This bundle is
+        # cached and reused across conversations, so the roster it was built
+        # with can go stale — the gate enforces the current toggle per call.
+        SubagentGateMiddleware(runtime_settings),
     ]
     middleware.extend(_context_middleware(
         model=model,
@@ -782,10 +788,22 @@ def build_orchestrator(
     from yuyutsava.daemon.budget import BudgetMiddleware
     from yuyutsava.events.tools import make_recall_tool
 
+    # Dedicated subagents the user switched off. A fresh orchestrator graph is
+    # built per task, so reading the toggle here is both free and complete: a
+    # disabled subagent is absent from the prompt AND from the roster below.
+    _runtime_settings = getattr(deps, "runtime_settings", None)
+    disabled_subagents: frozenset[str] = frozenset()
+    if _runtime_settings is not None:
+        try:
+            disabled_subagents = _runtime_settings.subagents().disabled
+        except Exception:  # noqa: BLE001 — a toggle never blocks a build
+            logger.debug("orchestrator: subagent toggle read failed", exc_info=True)
+
     capabilities = render_capabilities_block(
         list(deps.subagents.values()),
         async_subagents=getattr(deps, "async_subagents", None),
         remote_async_subagents=getattr(deps, "remote_async_subagents", None),
+        disabled=disabled_subagents,
     )
     # When a semantic skill store is wired, the SkillInjector adds only the
     # task-relevant skills at runtime (via prefs_block), so suppress the static
@@ -871,6 +889,8 @@ def build_orchestrator(
 
     subagent_specs: list[dict] = []
     for sa in deps.subagents.values():
+        if sa.name in disabled_subagents:
+            continue
         spec = sa.as_deepagents_subagent_spec()
         spec["model"] = deps.subagent_model
         spec["middleware"] = [
@@ -897,11 +917,13 @@ def build_orchestrator(
                 "Build an AsyncSubagentHost at daemon boot and store its .url on deps."
             )
         for sa in async_subagents:
-            if not getattr(sa, "supports_async", False):
+            if not getattr(sa, "supports_async", False) or sa.name in disabled_subagents:
                 continue
             subagent_specs.append(sa.as_async_subagent_spec(url=async_host_url))
 
     for r in (getattr(deps, "remote_async_subagents", None) or []):
+        if getattr(r, "name", "") in disabled_subagents:
+            continue
         subagent_specs.append(r.as_async_subagent_spec())
 
     budget = BudgetMiddleware(max_input_tokens=budget_tokens, role="orchestrator")
@@ -921,6 +943,10 @@ def build_orchestrator(
     master_middleware: list = [
         ToolFilterMiddleware(),
         VoiceStyleMiddleware(),
+        # Belt and braces: the roster above already omits disabled subagents,
+        # but a task that outlives a toggle (or a name the model remembers from
+        # its own history) still gets a clean refusal instead of a silent retry.
+        SubagentGateMiddleware(_runtime_settings),
         *_ctx_mw(model, "orchestrator"),
         budget,
         *_usage_mw(model, "orchestrator"),

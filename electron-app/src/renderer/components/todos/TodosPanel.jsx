@@ -2,6 +2,8 @@ import React, { useEffect, useState, useCallback } from 'react'
 import { listTodos, createTodo, deleteTodo } from '../../api/client'
 import TodoCardView from './TodoCardView'
 import { STATUS_ACCENT, PHASE_ACCENT, TagChips, PinIcon, humanAge } from './shared'
+import { useNav } from '../../nav/NavProvider'
+import { dropViewState, useScrollRestore } from '../../nav/useViewState'
 
 const POLL_MS = 5000
 
@@ -129,6 +131,8 @@ function TodoCard({ card, onOpen, onDeleted }) {
 }
 
 function BoardColumn({ col, cards, loaded, error, onOpen, onDeleted }) {
+  // Come back to the column scrolled where you left it, not at the top.
+  const scrollRef = useScrollRestore(loaded, `todos/col/${col.key}`)
   const accent = STATUS_ACCENT[col.key]
   const isEmpty = loaded && cards.length === 0
   return (
@@ -168,7 +172,7 @@ function BoardColumn({ col, cards, loaded, error, onOpen, onDeleted }) {
         )}
       </div>
 
-      <div style={{
+      <div ref={scrollRef} style={{
         flex: 1,
         overflowY: 'auto',
         display: 'flex',
@@ -220,23 +224,16 @@ function BoardColumn({ col, cards, loaded, error, onOpen, onDeleted }) {
   )
 }
 
-export default function TodosPanel({ consumeRestoredCard = null }) {
+export default function TodosPanel() {
+  const { params, push } = useNav()
   const [cards, setCards] = useState([])
   const [error, setError] = useState(null)
   const [loaded, setLoaded] = useState(false)
-  // Reopen the pre-reload card only when App says this boot is an in-run
-  // reload; plain navigation to the board always starts at the card list.
-  const [openId, setOpenId] = useState(() => consumeRestoredCard?.() || null)
+  // Which card is open is navigation state, not component state: it survives
+  // leaving the tab, comes back with the back arrow, and is restored on reload.
+  const openId = params.cardId || null
   const [newTitle, setNewTitle] = useState('')
   const [creating, setCreating] = useState(false)
-
-  // Track the open card for the reload-restore path above.
-  useEffect(() => {
-    try {
-      if (openId) localStorage.setItem('yy.todo.openId', openId)
-      else localStorage.removeItem('yy.todo.openId')
-    } catch { /* quota */ }
-  }, [openId])
 
   const refresh = useCallback(async () => {
     try {
@@ -275,16 +272,12 @@ export default function TodosPanel({ consumeRestoredCard = null }) {
 
   const onDeleted = useCallback((cardId) => {
     setCards((cur) => cur.filter((c) => c.card_id !== cardId))
+    dropViewState(`todos/card/${cardId}`)
   }, [])
 
-  if (openId) {
-    return (
-      <TodoCardView
-        cardId={openId}
-        onBack={() => { setOpenId(null); refresh() }}
-      />
-    )
-  }
+  const openCard = useCallback((cardId) => push({ cardId }), [push])
+
+  if (openId) return <TodoCardView cardId={openId} />
 
   // Pinned cards float to the top of their column; ties keep the freshest first.
   const byStatus = {}
@@ -354,7 +347,7 @@ export default function TodosPanel({ consumeRestoredCard = null }) {
             cards={byStatus[col.key]}
             loaded={loaded}
             error={error}
-            onOpen={setOpenId}
+            onOpen={openCard}
             onDeleted={onDeleted}
           />
         ))}

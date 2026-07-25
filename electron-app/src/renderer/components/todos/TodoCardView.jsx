@@ -11,6 +11,9 @@ import ResizeHandle from '../common/ResizeHandle'
 import ThinkBoard from './ThinkBoard'
 import AttachmentsDrawer from './AttachmentsDrawer'
 import TinkerChatHistory from './TinkerChatHistory'
+import BackButton from '../layout/BackButton'
+import { useNav } from '../../nav/NavProvider'
+import { useViewState } from '../../nav/useViewState'
 
 const STATUSES = ['inbox', 'active', 'done', 'archived']
 
@@ -41,33 +44,44 @@ function humanizeEvent(e) {
   }
 }
 
-export default function TodoCardView({ cardId, onBack }) {
+export default function TodoCardView({ cardId }) {
+  const { params, replace } = useNav()
+  // Everything the user can *see* about where they are inside a card is keyed
+  // on the card, not on the route — so switching tinker chats (a param change)
+  // leaves the drawers, selection and pane layout exactly as they were.
+  const scope = `todos/card/${cardId}`
+
   const [card, setCard] = useState(null)
   const [error, setError] = useState(null)
-  const [title, setTitle] = useState('')
+  // Title is a live edit buffer: kept across navigation, and refresh() leaves
+  // it alone while it's dirty so an uncommitted rename isn't clobbered.
+  const [title, setTitle] = useViewState('title', '', scope)
+  const [titleDirty, setTitleDirty] = useViewState('titleDirty', false, scope)
   const [patching, setPatching] = useState(false)
   // "Think with TinkerAgent" split: when open, the content area becomes
   // board | chat. The chat is the shared ChatPanel pointed at agent=tinker —
   // a card can hold many chats; the pane opens on the most recent one.
-  const [thinkOpen, setThinkOpen] = useState(false)
-  // The card's tinker chats (newest first) + which one the pane shows.
-  // chatSel.id: undefined = not resolved yet, null = fresh chat (no resume),
-  // else a session id; epoch bumps force a ChatPanel remount via key.
+  const [thinkOpen, setThinkOpen] = useViewState('thinkOpen', false, scope)
+  // The card's tinker chats (newest first). WHICH one is showing is navigation
+  // state (params.chat): undefined = not resolved yet, 'new' = fresh chat with
+  // no resume, else a session id. `epoch` bumps force a ChatPanel remount.
   const [chats, setChats] = useState(null)
-  const [chatSel, setChatSel] = useState({ id: undefined, epoch: 0 })
+  const chatParam = params.chat
+  const chatSelId = chatParam === undefined ? undefined : (chatParam === 'new' ? null : chatParam)
+  const [chatEpoch, setChatEpoch] = useViewState('chatEpoch', 0, scope)
   const [liveChatId, setLiveChatId] = useState(null)
   const [uploading, setUploading] = useState(0) // in-flight upload count
-  const [expandedAtt, setExpandedAtt] = useState(null) // attachment shown big
-  const [attOpen, setAttOpen] = useState(false) // bottom drawer, closed by default
+  const [expandedAtt, setExpandedAtt] = useViewState('expandedAtt', null, scope) // attachment shown big
+  const [attOpen, setAttOpen] = useViewState('attOpen', false, scope) // bottom drawer, closed by default
   // Header "+ Objective" popover input.
   const [objComposerOpen, setObjComposerOpen] = useState(false)
   const [newObjective, setNewObjective] = useState('')
   const [addingObjective, setAddingObjective] = useState(false)
   // Multi-select of notes/objectives → context chips on the tinker composer.
-  const [selectMode, setSelectMode] = useState(false)
-  const [selected, setSelected] = useState(() => new Set()) // 'obj:…' | 'note:…'
+  const [selectMode, setSelectMode] = useViewState('selectMode', false, scope)
+  const [selected, setSelected] = useViewState('selected', () => new Set(), scope) // 'obj:…' | 'note:…'
   const [journeyBusy, setJourneyBusy] = useState(false)
-  const [activityOpen, setActivityOpen] = useState(false)
+  const [activityOpen, setActivityOpen] = useViewState('activityOpen', false, scope)
   const [events, setEvents] = useState([])
   // Objective collapse state — persisted per card, pruned to live ids on load.
   const [collapsedObjectives, setCollapsedObjectives] = useState(() => {
@@ -84,6 +98,14 @@ export default function TodoCardView({ cardId, onBack }) {
   // Esc sets this before blurring: the blur handler must skip the commit
   // because the reverted title state hasn't re-rendered into its closure yet.
   const revertingRef = useRef(false)
+  // refresh() is called from callbacks that close over stale state; read the
+  // dirty flag through a ref so it never reverts an edit in progress.
+  const titleDirtyRef = useRef(titleDirty)
+  titleDirtyRef.current = titleDirty
+  // Same reason: loadChats must only auto-resolve the pane's chat when nothing
+  // has picked one yet, without re-running every time the selection changes.
+  const chatParamRef = useRef(chatParam)
+  chatParamRef.current = chatParam
   // True while a board item is mid-drag — refreshes are skipped so an
   // optimistic move can't be clobbered by a stale server card.
   const draggingRef = useRef(false)
@@ -97,12 +119,12 @@ export default function TodoCardView({ cardId, onBack }) {
     try {
       const c = await getTodo(cardId)
       setCard(c)
-      setTitle(c.title)
+      if (!titleDirtyRef.current) setTitle(c.title)
       setError(null)
     } catch (e) {
       setError(e.message)
     }
-  }, [cardId])
+  }, [cardId, setTitle])
 
   useEffect(() => { refresh() }, [refresh])
   useEffect(() => { if (activityOpen) loadEvents() }, [activityOpen, loadEvents])
@@ -132,27 +154,32 @@ export default function TodoCardView({ cardId, onBack }) {
   // (most recent, or fresh when the card has none). Best-effort: on failure
   // fall back to a fresh chat, which always works.
   const loadChats = useCallback(async () => {
+    // Resolving the pane's chat is a lateral move, not a new depth level:
+    // `replace` keeps back going card → board rather than walking back
+    // through every chat that was ever opened.
     try {
       const rows = await listTodoChats(cardId)
       setChats(rows)
-      setChatSel((s) => (s.id === undefined ? { id: rows[0]?.id ?? null, epoch: s.epoch } : s))
+      if (chatParamRef.current === undefined) replace({ chat: rows[0]?.id ?? 'new' })
     } catch {
       setChats((c) => c ?? [])
-      setChatSel((s) => (s.id === undefined ? { id: null, epoch: s.epoch } : s))
+      if (chatParamRef.current === undefined) replace({ chat: 'new' })
     }
-  }, [cardId])
+  }, [cardId, replace])
 
   useEffect(() => { if (thinkOpen) loadChats() }, [thinkOpen, loadChats])
 
   const onNewChat = useCallback(() => {
-    // null id + epoch bump remounts the ChatPanel with no resume_id → the
+    // 'new' + epoch bump remounts the ChatPanel with no resume_id → the
     // server mints a fresh todo:<card>:<ULID> session.
-    setChatSel((s) => ({ id: null, epoch: s.epoch + 1 }))
-  }, [])
+    setChatEpoch((n) => n + 1)
+    replace({ chat: 'new' })
+  }, [replace, setChatEpoch])
 
   const onSelectChat = useCallback((s) => {
-    setChatSel((p) => ({ id: s.id, epoch: p.epoch + 1 }))
-  }, [])
+    setChatEpoch((n) => n + 1)
+    replace({ chat: s.id })
+  }, [replace, setChatEpoch])
 
   // A tinker turn may have written objectives/notes/events — re-pull both;
   // the chat list too (first turn sets the session's title + message count).
@@ -317,17 +344,21 @@ export default function TodoCardView({ cardId, onBack }) {
       const c = await patchTodo(cardId, fields)
       setCard(c)
       setTitle(c.title)
+      setTitleDirty(false)
     } catch (e) {
       alert(`Update failed: ${e.message}`)
     } finally {
       setPatching(false)
     }
-  }, [cardId])
+  }, [cardId, setTitle, setTitleDirty])
 
   const onTitleCommit = () => {
-    if (revertingRef.current) { revertingRef.current = false; setTitle(card?.title || ''); return }
+    if (revertingRef.current) {
+      revertingRef.current = false
+      setTitle(card?.title || ''); setTitleDirty(false); return
+    }
     const t = title.trim()
-    if (!card || !t || t === card.title) { setTitle(card?.title || ''); return }
+    if (!card || !t || t === card.title) { setTitle(card?.title || ''); setTitleDirty(false); return }
     patch({ title: t })
   }
 
@@ -364,17 +395,7 @@ export default function TodoCardView({ cardId, onBack }) {
         display: 'flex', alignItems: 'center', gap: 10,
         padding: '14px 24px', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-bar)',
       }}>
-        <button
-          onClick={onBack}
-          title="back to board"
-          style={{
-            fontFamily: 'var(--font-mono)', fontSize: 11, padding: '5px 12px',
-            background: 'transparent', color: 'var(--text-muted)',
-            border: '1px solid var(--border-card)', borderRadius: 6, cursor: 'pointer',
-          }}
-        >
-          ← Board
-        </button>
+        <BackButton variant="labelled" label="Board" title="back to board" />
 
         {card && (
           <>
@@ -382,7 +403,7 @@ export default function TodoCardView({ cardId, onBack }) {
             <input
               ref={titleRef}
               value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              onChange={(e) => { setTitle(e.target.value); setTitleDirty(true) }}
               onBlur={onTitleCommit}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') titleRef.current?.blur()
@@ -633,13 +654,21 @@ export default function TodoCardView({ cardId, onBack }) {
                   to the card's bundle; resumeId picks WHICH of the card's
                   chats (none = fresh). The key hard-remounts on chat switch so
                   composer/draft state never leaks across sessions. */}
-              {chatSel.id !== undefined && (
+              {chatSelId !== undefined && (
                 <ChatPanel
-                  key={`tinker:${cardId}:${chatSel.id ?? `new-${chatSel.epoch}`}:${chatSel.epoch}`}
+                  key={`tinker:${cardId}:${chatSelId ?? `new-${chatEpoch}`}:${chatEpoch}`}
+                  // The live conversation lives in the shared store, not in the
+                  // component — so closing this pane (or switching cards) no
+                  // longer ends the turn. The key above still hard-remounts the
+                  // panel on a chat switch so composer/draft state can't leak;
+                  // this one says WHICH conversation the remount reattaches to.
+                  // The epoch is what makes "New chat" a different conversation
+                  // rather than a reattach to the same unresolved one.
+                  sessionKey={`tinker:${cardId}:${chatSelId ?? `new-${chatEpoch}`}`}
                   agent="tinker"
                   card={cardId}
                   origin="tinker"
-                  resumeId={chatSel.id}
+                  resumeId={chatSelId}
                   title="Think with TinkerAgent"
                   placeholder="hand the TinkerAgent a rough idea… (Enter to send)"
                   emptyGlyph="✦"

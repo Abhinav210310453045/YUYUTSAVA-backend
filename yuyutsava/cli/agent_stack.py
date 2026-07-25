@@ -143,6 +143,7 @@ async def build_agent_stack(
     usage_store: Any | None = None,
     budget_tokens: int | None = None,
     prefs_store: Any | None = None,
+    runtime_settings: Any | None = None,
     cap_enforcer: Any | None = None,
     extra_subagents: "list[Any] | None" = None,
     extra_tools: "list[Any] | None" = None,
@@ -154,8 +155,11 @@ async def build_agent_stack(
     scopes user-configured MCP tools to ``"cli"``; ``usage_store`` /
     ``budget_tokens`` attach the orchestrator's UsageRecorder/Budget pair;
     ``prefs_store`` adds the per-turn USER PREFERENCES injector;
-    ``cap_enforcer`` rate-caps ws_* searches; ``extra_subagents`` join the
-    sync ``task`` roster next to general-purpose; ``extra_tools`` are one-off
+    ``runtime_settings`` carries the user's dedicated-subagent switches (this
+    bundle is cached across conversations, so the toggle is enforced per call
+    rather than baked into the roster); ``cap_enforcer`` rate-caps ws_*
+    searches; ``extra_subagents`` join the sync ``task`` roster next to
+    general-purpose; ``extra_tools`` are one-off
     daemon tools (e.g. orch_submit).
 
     Not CLI-specific despite the historical name: this is the same stack the
@@ -387,6 +391,7 @@ async def build_agent_stack(
         budget_tokens=budget_tokens,
         usage_store=usage_store,
         prefs_store=prefs_store,
+        runtime_settings=runtime_settings,
         extra_tools=extra_tools,
     )
     # Hand the CLI-owned pool + embedder to the bundle so teardown closes them.

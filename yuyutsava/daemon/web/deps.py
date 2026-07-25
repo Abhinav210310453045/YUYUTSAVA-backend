@@ -97,6 +97,22 @@ def get_async_watcher(request: Request):
     return getattr(request.app.state, "async_task_watcher", None)
 
 
+def get_runtime_settings(request: Request):
+    """The daemon's ``RuntimeSettings`` (voice mode + subagent deny-list)."""
+    settings = getattr(request.app.state, "runtime_settings", None)
+    if settings is None:
+        raise ServiceUnavailableError("runtime settings not initialized")
+    return settings
+
+
+def get_subagent_roster(request: Request):
+    """``{name: BaseSubAgent}`` of the dedicated subagents this daemon booted with.
+
+    ``None`` in headless/test apps that never registered any.
+    """
+    return getattr(request.app.state, "subagent_roster", None)
+
+
 def get_channel_plugins(request: Request):
     """The daemon's ``ChannelPluginRegistry`` (enable/disable at runtime)."""
     registry = getattr(request.app.state, "channel_plugins", None)

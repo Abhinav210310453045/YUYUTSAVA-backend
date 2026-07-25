@@ -55,6 +55,12 @@ export class SSEClient {
       try { this.handlers.onWake?.(JSON.parse(e.data)) } catch {}
     })
 
+    // A runtime toggle changed (voice mode, dedicated subagents). Broadcast so
+    // every surface — this window, the overlay, mobile — agrees without polling.
+    this._es.addEventListener('settings', (e) => {
+      try { this.handlers.onSettings?.(JSON.parse(e.data)) } catch {}
+    })
+
     this._es.onerror = () => {
       this._es?.close()
       this._es = null

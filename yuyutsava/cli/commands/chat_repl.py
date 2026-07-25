@@ -47,6 +47,7 @@ from yuyutsava.cli.render.plain import (
 from yuyutsava.consent import decision_token as _decision_token
 from yuyutsava.core.config import DockerSettings, LlmSettings, LocalSettings, SearchConfig
 from yuyutsava.core.engine import cleanup_local_sandbox, silence_plumbing_loggers
+from yuyutsava.prefs.runtime import UNDISABLEABLE
 from yuyutsava.storage.paths import state_dir
 from yuyutsava.storage.sessions import (
     SessionsSettings,
@@ -196,6 +197,9 @@ def _print_help() -> None:
     print(f"  {_DIM}/last [k]{_RESET}     print the last k captured payloads in full (default 1)", file=sys.stderr)
     print(f"  {_DIM}/expand <n>{_RESET}   print the full body of the [#n] entry", file=sys.stderr)
     print(file=sys.stderr)
+    print(f"  {_DIM}/voice{_RESET}        voice mode: /voice on|off, /voice wake off, /voice tts off", file=sys.stderr)
+    print(f"  {_DIM}/subagents{_RESET}    dedicated subagents: /subagents off face-watcher", file=sys.stderr)
+    print(file=sys.stderr)
     print(f"{_DIM}Ctrl+C cancels the current turn but keeps the session open.{_RESET}", file=sys.stderr)
     print(file=sys.stderr)
 
@@ -261,6 +265,8 @@ _SLASH_COMMANDS: dict[str, str] = {
     "/approve": "approve a pending background ask",
     "/reject": "reject a pending background ask",
     "/reply": "answer a background question by id",
+    "/voice": "show or set voice mode (/voice on|off|wake on|tts off)",
+    "/subagents": "list dedicated subagents (/subagents on|off <name>)",
 }
 
 
@@ -454,6 +460,116 @@ async def _handle_ask_command(cmd: str, remote: Any) -> bool:
     return False
 
 
+class _LazyRuntimeSettings:
+    """Opens ``state.db`` only if the user actually types /voice or /subagents.
+
+    The REPL has no reason to pay for the events ``Store`` (and its writer
+    task) on every chat launch — these toggles are occasional. Built on first
+    use and closed with :meth:`aclose` when the REPL exits.
+    """
+
+    def __init__(self) -> None:
+        self._settings: Any | None = None
+        self._store: Any | None = None
+
+    async def get(self) -> Any:
+        if self._settings is None:
+            from yuyutsava.prefs.runtime import RuntimeSettings
+            from yuyutsava.storage.events import Store
+            from yuyutsava.storage.prefs import PrefsStore
+
+            self._store = Store()
+            await self._store.start()
+            self._settings = await RuntimeSettings(PrefsStore(self._store)).load()
+        return self._settings
+
+    async def aclose(self) -> None:
+        if self._store is not None:
+            # Let a just-issued write drain before the store goes away (same
+            # 50ms courtesy the `yuyutsava prefs` subcommand takes).
+            await asyncio.sleep(0.05)
+            with contextlib.suppress(Exception):
+                await self._store.stop()
+            self._store = None
+            self._settings = None
+
+
+def _on_off(word: str) -> bool | None:
+    w = word.strip().lower()
+    if w in ("on", "true", "yes", "1", "enable", "enabled"):
+        return True
+    if w in ("off", "false", "no", "0", "disable", "disabled"):
+        return False
+    return None
+
+
+async def _handle_settings_command(cmd: str, runtime_settings: Any) -> bool:
+    """Handle ``/voice`` and ``/subagents`` (async — they hit ``state.db``).
+
+    These write the same ``user_prefs`` rows the daemon and the desktop app
+    read, so a toggle typed here reaches every surface without any CLI↔daemon
+    transport (the daemon re-reads on a short TTL — see
+    :class:`~yuyutsava.prefs.runtime.RuntimeSettings`).
+
+    Returns True when *cmd* was one of these commands (and was handled).
+    """
+    c = cmd.strip()
+    if not c.startswith("/"):
+        return False
+    parts = c.split()
+    head = parts[0].lower()
+    if head not in ("/voice", "/subagents"):
+        return False
+
+    await runtime_settings.refresh(force=True)
+
+    if head == "/voice":
+        args = [p.lower() for p in parts[1:]]
+        # /voice on|off              → both switches
+        # /voice wake on | tts off   → one switch
+        if not args:
+            pass
+        elif len(args) == 1 and (flag := _on_off(args[0])) is not None:
+            await runtime_settings.set_voice(wake_enabled=flag, tts_enabled=flag)
+        elif len(args) == 2 and args[0] in ("wake", "tts") and (flag := _on_off(args[1])) is not None:
+            key = "wake_enabled" if args[0] == "wake" else "tts_enabled"
+            await runtime_settings.set_voice(**{key: flag})
+        else:
+            print(f"  {_DIM}usage: /voice [on|off] | /voice wake on|off | "
+                  f"/voice tts on|off{_RESET}", file=sys.stderr)
+            return True
+        v = runtime_settings.voice()
+        print(f"  {_DIM}wake word:{_RESET}    {'on' if v.wake_enabled else 'off'}", file=sys.stderr)
+        print(f"  {_DIM}spoken reply:{_RESET} {'on' if v.tts_enabled else 'off'}", file=sys.stderr)
+        if not v.wake_enabled:
+            print(f"  {_DIM}(the mic is still yours to use manually){_RESET}", file=sys.stderr)
+        return True
+
+    # /subagents [on|off <name>]
+    args = parts[1:]
+    if args:
+        if len(args) != 2 or (flag := _on_off(args[0])) is None:
+            print(f"  {_DIM}usage: /subagents [on|off <name>]{_RESET}", file=sys.stderr)
+            return True
+        name = args[1]
+        if name in UNDISABLEABLE and not flag:
+            print(f"  {_DIM}{name} can't be switched off — the master delegates "
+                  f"to it as a fallback{_RESET}", file=sys.stderr)
+            return True
+        await runtime_settings.set_subagent_enabled(name, flag)
+    disabled = runtime_settings.subagents().disabled
+    if disabled:
+        print(f"  {_DIM}off:{_RESET} {', '.join(sorted(disabled))}", file=sys.stderr)
+    else:
+        print(f"  {_DIM}all dedicated subagents are on{_RESET}", file=sys.stderr)
+    # This REPL's own roster is just general-purpose (the domain subagents live
+    # in the daemon), so say what the toggle actually affects rather than
+    # implying a local change that didn't happen.
+    print(f"  {_DIM}applies to the daemon's orchestrator, chat and voice "
+          f"agents{_RESET}", file=sys.stderr)
+    return True
+
+
 def _handle_slash(
     cmd: str,
     *,
@@ -624,6 +740,8 @@ async def run_chat_repl(
         cli_bridge = None
         cli_watcher = None
         cli_remote = None
+        # /voice + /subagents backing store — opened on first use, not here.
+        runtime_toggles = _LazyRuntimeSettings()
         if bundle.async_host_url is not None:
             from yuyutsava.daemon.singleton import read_daemon_discovery
             disco = read_daemon_discovery()
@@ -754,6 +872,15 @@ async def run_chat_repl(
                                   f"answer with y/n/s/p{_RESET}", file=sys.stderr)
                         continue
 
+                # Runtime toggles (/voice, /subagents) — async because they
+                # read/write state.db, which every other surface reads too.
+                # Guarded so a normal message never opens the prefs store.
+                if user_input.strip().startswith(("/voice", "/subagents")):
+                    if await _handle_settings_command(
+                        user_input, await runtime_toggles.get(),
+                    ):
+                        continue
+
                 slash_result = _handle_slash(
                     user_input, session_id=session.id, workspace=workspace, renderer=renderer,
                 )
@@ -816,6 +943,7 @@ async def run_chat_repl(
             if cli_remote is not None:
                 with contextlib.suppress(Exception):
                     await cli_remote.stop()
+            await runtime_toggles.aclose()
             if execution_mode == "local" and bundle.sandbox_root is not None:
                 try:
                     cleanup_local_sandbox(workspace, bundle.sandbox_root)

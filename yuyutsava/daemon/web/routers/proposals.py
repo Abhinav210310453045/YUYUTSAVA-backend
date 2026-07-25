@@ -7,7 +7,9 @@ decision arriving over HTTP or from a Telegram button takes one code path.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from typing import Any
+
+from fastapi import APIRouter, Depends, Query, Request
 
 from yuyutsava.daemon.web.deps import get_decision_service
 from yuyutsava.daemon.web.exceptions import ConflictError
@@ -17,6 +19,30 @@ from yuyutsava.daemon.web.schemas.proposal import (
 from yuyutsava.daemon.web.services.decision_service import DecisionConflictError
 
 router = APIRouter(tags=["decisions"])
+
+
+@router.get(
+    "/asks",
+    summary="Every ask still awaiting an answer (the Inbox / hydration source)",
+)
+async def list_asks(
+    request: Request,
+    status: str = Query("pending", pattern="^(pending)$"),
+) -> dict[str, Any]:
+    """Rediscovery for asks, which never expire and must never be lost.
+
+    Two real holes close here. ``WebHub.broadcast`` drops silently on
+    ``QueueFull``, and asks carry no ``task_id`` so the per-task replay ring
+    can't refill them — a missed SSE frame used to mean the ask was gone with
+    the agent still blocked on it. And an ask raised before a daemon restart
+    has no live broadcast at all. Hydrating from here on connect makes both
+    self-healing: the record is written before the ask is ever shown.
+    """
+    registry = getattr(request.app.state, "ask_registry", None)
+    if registry is None:
+        return {"asks": [], "count": 0}
+    asks = registry.pending()
+    return {"asks": asks, "count": len(asks)}
 
 
 @router.post(

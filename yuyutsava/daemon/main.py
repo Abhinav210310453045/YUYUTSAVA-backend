@@ -436,7 +436,11 @@ async def _async_main(argv: list[str] | None = None) -> int:
         # Relay wake-word detections to the UI so it can open the voice overlay.
         from yuyutsava.daemon.wake_bridge import run_wake_bridge
         tasks.append(asyncio.create_task(
-            run_wake_bridge(subs.bus, subs.web_hub, stop_event), name="wake-bridge",
+            run_wake_bridge(
+                subs.bus, subs.web_hub, stop_event,
+                runtime_settings=subs.runtime_settings,
+            ),
+            name="wake-bridge",
         ))
 
     # Durable resume: re-enqueue tasks a previous instance left unfinished

@@ -93,6 +93,12 @@ class OrchestratorDeps:
     # master/subagent model call writes one llm_usage row (UsageRecorder).
     usage_store: object | None = None
 
+    # prefs.runtime.RuntimeSettings — the user's dedicated-subagent switches.
+    # Read at build time (a fresh orchestrator graph per task means a disabled
+    # subagent simply never enters the roster) and enforced per call by
+    # SubagentGateMiddleware. None → every registered subagent is available.
+    runtime_settings: object | None = None
+
 
 # ---------------------------------------------------------------------------
 # ask_user tool
@@ -118,6 +124,12 @@ def _make_ask_user_tool(channels: ChannelRouter) -> BaseTool:
             interrupt_value={"type": "orchestrator_ask", "question": question, **ctx},
             session_id=ctx.get("session_id"),
             agent_path=ctx.get("agent_path"),
+            # The orchestrator runs behind the user's back — its questions
+            # belong in the Inbox, not inside whatever chat is open.
+            surface="background",
+            thread_id=ctx.get("session_id"),
+            task_id=ctx.get("task_id"),
+            agent_label="Orchestrator",
         )
         return await channels.post_ask(ask)
 

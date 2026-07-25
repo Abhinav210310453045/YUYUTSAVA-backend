@@ -1,16 +1,23 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { useSSE } from './useSSE.jsx'
+import { useAsks } from './useAsks.jsx'
+import { useAskRouting } from './useAskRouting'
 import { useFocus } from './useFocus'
 
 // Per the plan (PHASE_2_PLAN §4.4): only urgency>=2 proposals trigger a banner.
 // Asks are always blocking, so they banner regardless.
 const PROPOSAL_BANNER_MIN_URGENCY = 2
 const TOAST_TTL_MS = 6000
+// An ask that nobody can see inline is not a passing notice — it stays until
+// it's dealt with, because an agent is blocked on it.
+const ASK_TOAST_TTL_MS = 20000
 
 const NotificationsContext = createContext(null)
 
 export function NotificationsProvider({ children }) {
-  const { proposals, asks } = useSSE()
+  const { proposals } = useSSE()
+  const { asks } = useAsks()
+  const { isOnOwningView, goToAsk } = useAskRouting(asks)
   const focused = useFocus()
 
   // Track which IDs we've already routed so re-renders don't fire duplicates.
@@ -24,10 +31,11 @@ export function NotificationsProvider({ children }) {
   const [highlightId, setHighlightId] = useState(null)
 
   const pushToast = useCallback((toast) => {
-    setToasts((prev) => [...prev, toast])
+    setToasts((prev) => [...prev.filter((t) => t.id !== toast.id), toast])
+    const ttl = toast.ttl || TOAST_TTL_MS
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== toast.id))
-    }, TOAST_TTL_MS)
+    }, ttl)
   }, [])
 
   const dismissToast = useCallback((id) => {
@@ -72,17 +80,42 @@ export function NotificationsProvider({ children }) {
     }
   }, [proposals, focused, pushToast])
 
-  // Route new asks — always banner when unfocused (blocking on user input).
+  // Route new asks.
+  //
+  // The rule that matters here: an ask is *announced* everywhere but *rendered*
+  // only on the view that owns it. If the user is already looking at that view
+  // the inline card is right in front of them and a toast is noise — so we stay
+  // quiet. Anywhere else they get a pointer ("TinkerAgent needs permission →
+  // Open") which navigates; it never carries the decision itself, because
+  // approving one session's action from inside another's is exactly the leak
+  // this design exists to prevent. Unfocused, the always-on-top overlay (main
+  // process) takes over, so we only fire the OS banner alongside it.
   useEffect(() => {
-    for (const [id, a] of asks) {
+    const live = new Set()
+    for (const ask of asks) {
+      const id = ask.ask_id
+      live.add(id)
       if (seenAskIds.current.has(id)) continue
       seenAskIds.current.add(id)
 
+      if (isOnOwningView(ask)) continue   // the inline card is already visible
+
+      const who = ask.agent_label || 'An agent'
       if (!focused) {
+        // The user is in another app. Summon the always-on-top overlay — the
+        // only surface that can reach them there — and back it with an OS
+        // banner. This has to be driven from HERE: the overlay window is
+        // created lazily, so the AskOverlay living inside it cannot be the
+        // thing that pops it. Main decides the rest (and never steals focus).
+        window.electronAPI?.showAskOverlay?.({
+          ask_id: id,
+          title: ask.title || '',
+          agent: who,
+        })
         window.electronAPI?.showNotification?.({
-          title: a.title || 'Question',
-          body: a.body || '',
-          proposalId: id, // re-use the field; click handler scrolls to this id
+          title: `${who} needs your permission`,
+          body: ask.title || ask.body || '',
+          proposalId: id, // re-uses the field; the click handler scrolls to it
           urgency: 3,
         })
       } else {
@@ -90,15 +123,22 @@ export function NotificationsProvider({ children }) {
           id: `a-${id}`,
           kind: 'ask',
           proposalId: id,
-          title: a.title || 'Question',
-          body: a.body || '',
+          askId: id,
+          title: `${who} needs your permission`,
+          body: ask.title || '',
+          ttl: ASK_TOAST_TTL_MS,
+          action: { label: 'Open', run: () => goToAsk(ask) },
         })
       }
     }
     for (const id of Array.from(seenAskIds.current)) {
-      if (!asks.has(id)) seenAskIds.current.delete(id)
+      if (!live.has(id)) {
+        seenAskIds.current.delete(id)
+        // Answered elsewhere — drop any pointer still on screen.
+        setToasts((prev) => prev.filter((t) => t.askId !== id))
+      }
     }
-  }, [asks, focused, pushToast])
+  }, [asks, focused, isOnOwningView, goToAsk, pushToast])
 
   // Clear highlight after a short window so the same id can re-highlight later.
   useEffect(() => {
@@ -108,7 +148,9 @@ export function NotificationsProvider({ children }) {
   }, [highlightId])
 
   return (
-    <NotificationsContext.Provider value={{ toasts, dismissToast, highlightId }}>
+    <NotificationsContext.Provider
+      value={{ toasts, pushToast, dismissToast, highlightId }}
+    >
       {children}
     </NotificationsContext.Provider>
   )

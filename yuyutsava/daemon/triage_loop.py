@@ -18,6 +18,7 @@ import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 from ulid import ULID
 
@@ -155,23 +156,51 @@ class TriageLoop:
         store: Store,
         channels: ChannelRouter,
         triage: TriageAgent,
-        capabilities_block: str,
+        capabilities_block: "str | Callable[[], str]",
         task_queue: asyncio.Queue[OrchestratorTask],
         proposal_expiry_sec: int,
         max_concurrent: int = 4,
         skill_registry: SkillRegistry | None = None,
+        runtime_settings: object | None = None,
     ) -> None:
         self._bus = bus
         self._store = store
         self._channels = channels
         self._triage = triage
+        # Callable, not a string: the roster changes at runtime (the user can
+        # switch a dedicated subagent off), and a block captured at boot would
+        # keep offering an agent that is no longer there.
         self._capabilities_block = capabilities_block
+        self._runtime_settings = runtime_settings
         self._task_queue = task_queue
         self._proposal_expiry_sec = proposal_expiry_sec
         self._sem = asyncio.Semaphore(max_concurrent)
         self._workers: set[asyncio.Task[None]] = set()
         self._skill_registry = skill_registry
         self._consent = ConsentEvaluator(store)
+
+    def _capabilities(self) -> str:
+        block = self._capabilities_block
+        return block() if callable(block) else block
+
+    def _hint(self, hint: str | None) -> str:
+        """Resolve a triage subagent hint against the *current* roster.
+
+        A hint naming a switched-off subagent (or the historical
+        ``file-organizer`` default when that one is off) falls back to
+        ``general-purpose``, which is always available — otherwise the proposal
+        would be approved and then refused downstream by the gate middleware.
+        """
+        name = (hint or "").strip() or "file-organizer"
+        if self._runtime_settings is None:
+            return name
+        try:
+            if self._runtime_settings.subagents().is_enabled(name):
+                return name
+        except Exception:  # noqa: BLE001 — never break triage on a toggle read
+            return name
+        logger.info("triage: subagent %s is off — routing to general-purpose", name)
+        return "general-purpose"
 
     async def run(self, stop_event: asyncio.Event) -> None:
         sub = self._bus.subscribe("**")
@@ -214,7 +243,7 @@ class TriageLoop:
                     proposed_instruction = _build_fs_instruction(ev)
                     decision = TriageDecision(
                         action="propose",
-                        subagent_hint="file-organizer",
+                        subagent_hint=self._hint("file-organizer"),
                         proposed_instruction=proposed_instruction,
                         reason="auto_approve rule",
                         urgency=1,
@@ -231,7 +260,7 @@ class TriageLoop:
                     if self._skill_registry else ""
                 )
                 decision = await self._triage.classify(
-                    ev, self._capabilities_block, skills_index=skills_index
+                    ev, self._capabilities(), skills_index=skills_index
                 )
 
                 if decision.action == "drop":
@@ -255,7 +284,7 @@ class TriageLoop:
                     topic=ev.topic,
                     summary=ev.summary,
                     proposed=decision.proposed_instruction or ev.summary,
-                    subagent=decision.subagent_hint or "file-organizer",
+                    subagent=self._hint(decision.subagent_hint),
                     urgency=decision.urgency,
                     expiry_sec=self._proposal_expiry_sec,
                 )
@@ -276,7 +305,7 @@ class TriageLoop:
             topic=ev.topic,
             summary=ev.summary,
             proposed=decision.proposed_instruction or ev.summary,
-            subagent=decision.subagent_hint or "file-organizer",
+            subagent=self._hint(decision.subagent_hint),
             urgency=decision.urgency,
             expiry_sec=self._proposal_expiry_sec,
         )

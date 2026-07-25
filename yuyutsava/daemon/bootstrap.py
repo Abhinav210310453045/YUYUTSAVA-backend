@@ -49,6 +49,8 @@ from yuyutsava.core.config import (
 from yuyutsava.llm import chat_model
 from yuyutsava.core.model_router import ComplexityScorer, ModelRouter
 from yuyutsava.core.policy import PermissionsPolicy, StorePolicyCapEnforcer
+from yuyutsava.daemon.ask_registry import AskRegistry
+from yuyutsava.daemon.ask_resume import AskResumeService
 from yuyutsava.daemon.channels import ChannelEvent, ChannelRouter, TimelinePayload
 from yuyutsava.daemon.checkpointing import CheckpointerSaver
 from yuyutsava.daemon.orchestrator_loop import OrchestratorLoop
@@ -69,6 +71,7 @@ from yuyutsava.memory.config import MemorySettings
 from yuyutsava.memory.embedder import Embedder
 from yuyutsava.memory.store import MemoryStore, PgMemoryStore, SqliteMemoryStore
 from yuyutsava.prefs.injector import PrefsInjector
+from yuyutsava.prefs.runtime import RuntimeSettings
 from yuyutsava.skills.registry import SkillRegistry
 from yuyutsava.skills.store import PgSkillStore, SkillIndexer, SqliteSkillStore
 from yuyutsava.storage.backend import StorageSettings
@@ -143,6 +146,9 @@ class DaemonSubsystems:
     # stores
     store: Store
     prefs_store: PrefsStore
+    # Hot toggles (voice mode, subagent deny-list) shared by the web API, the
+    # wake bridge, the conversation manager and the agent middleware.
+    runtime_settings: RuntimeSettings
 
     # bus + sources
     bus: EventBus
@@ -245,6 +251,24 @@ def _inject_heartbeat(events_cfg: EventsConfig, heartbeat_sec: int) -> EventsCon
             params={**src.params, "heartbeat_sec": heartbeat_sec},
         )
         for name, src in events_cfg.sources.items()
+    })
+
+
+def _apply_wake_toggle(events_cfg: EventsConfig, wake_enabled: bool) -> EventsConfig:
+    """Force the ``voice`` source's enabled bit to match the runtime toggle.
+
+    The runtime pref is the single owner of wake-word detection: whatever
+    ``events_config.json`` (or ``--voice``) says, a user who turned voice mode
+    off last session must not have the mic re-opened on the next boot. No-op
+    when the source isn't configured at all.
+    """
+    src = events_cfg.sources.get("voice")
+    if src is None or src.enabled == wake_enabled:
+        return events_cfg
+    logger.info("  voice src : forced enabled=%s by the runtime toggle", wake_enabled)
+    return EventsConfig(sources={
+        **events_cfg.sources,
+        "voice": SourceConfig(name="voice", enabled=wake_enabled, params=dict(src.params)),
     })
 
 
@@ -422,6 +446,16 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     # ── user prefs store --------------------------------------------------
     prefs_store = PrefsStore(store)
     prefs_injector = PrefsInjector(prefs_store)
+    # Hot runtime toggles (voice mode, dedicated-subagent deny-list). Primed
+    # here so every synchronous reader — the converse turn loop, the subagent
+    # gate middleware — starts warm instead of racing a first DB read.
+    runtime_settings = await RuntimeSettings(prefs_store).load()
+    _voice_toggles = runtime_settings.voice()
+    if not (_voice_toggles.wake_enabled and _voice_toggles.tts_enabled):
+        logger.info(
+            "  voice mode: wake=%s tts=%s (runtime toggle)",
+            _voice_toggles.wake_enabled, _voice_toggles.tts_enabled,
+        )
 
     # ── permissions policy (Tier-1.5: auto_approve, ws_* daily caps) ------
     policy = PermissionsPolicy.from_file()
@@ -498,12 +532,16 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     bus = EventBus()
 
     # ── sources -----------------------------------------------------------
+    # The persisted voice toggle overrides the on-disk source config so a
+    # daemon restart can't silently re-open the mic (see _apply_wake_toggle).
+    events_cfg = _apply_wake_toggle(events_cfg, runtime_settings.voice().wake_enabled)
     registry = SourceRegistry(bus, store, events_cfg)
     await registry.start_all()
 
     async def _hot_reload_events_config() -> None:
         """Re-read events_config.json and rebind sources in place."""
         new_cfg = _inject_heartbeat(EventsConfig.from_file(), daemon_cfg.heartbeat_sec)
+        new_cfg = _apply_wake_toggle(new_cfg, runtime_settings.voice().wake_enabled)
         changed = await registry.reload(new_cfg)
         if changed:
             logger.info("config reload: events sources now %s",
@@ -511,6 +549,13 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
 
     # ── channels ----------------------------------------------------------
     channels = ChannelRouter(channels=[], primary_name="web")
+    # Durable Tier-2 asks. Nothing about an ask expires — the agent is parked on
+    # a checkpointed interrupt — so the record has to outlive both the socket
+    # that showed it and this process. Hydrated below with whatever a previous
+    # run left unanswered.
+    ask_registry = AskRegistry(store)
+    channels.ask_registry = ask_registry
+    await ask_registry.hydrate()
     # Origin-aware HITL routing is always on (Phase 3): CLI attach and
     # channel plugins both map session ids to their channel. Previously
     # constructed only when async subagents were enabled.
@@ -886,10 +931,18 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     else:
         logger.info("  async subs: disabled (set YUYUTSAVA_ASYNC_SUBAGENTS=1 to enable)")
 
-    capabilities_block = render_capabilities_block(
-        list(subagents.values()),
-        async_subagents=bg_subagent_list if async_host_url is not None else None,
-    )
+    def capabilities_block() -> str:
+        """The subagent roster as triage should see it *right now*.
+
+        Rebuilt per call rather than captured at boot: the user can switch a
+        dedicated subagent off mid-session, and triage must stop proposing it
+        immediately (the orchestrator would only refuse the delegation later).
+        """
+        return render_capabilities_block(
+            list(subagents.values()),
+            async_subagents=bg_subagent_list if async_host_url is not None else None,
+            disabled=runtime_settings.subagents().disabled,
+        )
 
     # ── triage agent + loop ----------------------------------------------
     triage = TriageAgent(triage_model)
@@ -918,6 +971,7 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         task_queue=task_queue,
         proposal_expiry_sec=daemon_cfg.proposal_expiry_sec,
         skill_registry=skill_registry,
+        runtime_settings=runtime_settings,
     )
 
     # Transcript RAG for the orchestrator master (Postgres only): the same
@@ -950,6 +1004,7 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         context_settings=context_settings,
         compaction_model=compaction_model,
         usage_store=usage_store,
+        runtime_settings=runtime_settings,
     )
     orch_loop = OrchestratorLoop(
         task_queue=task_queue,
@@ -1048,10 +1103,24 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
             mcp_manager=mcp_manager,
             launch_index=launch_index,
             prefs_store=prefs_store,
+            runtime_settings=runtime_settings,
             cap_enforcer=cap_enforcer,
             task_submission=task_submission,
             extra_subagents=chat_extra_subagents,
         )
+
+        # An ask answered after a restart has no waiter left to wake — the
+        # agent is parked on a checkpointed interrupt, so the answer has to
+        # re-enter the graph. Built here because it needs both the conversation
+        # manager (for conversation-owned asks) and the watcher (for background
+        # ones), and handed to the DecisionService every responder goes through.
+        ask_resume = AskResumeService(
+            registry=ask_registry,
+            conversation_manager=conversation_manager,
+            watcher=async_watcher,
+            channels=channels,
+        )
+        decision_service.set_ask_resume(ask_resume)
 
         app = make_app(
             web_hub,
@@ -1064,6 +1133,8 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
             task_registry=task_registry,
             task_submission=task_submission,
             decision_service=decision_service,
+            ask_registry=ask_registry,
+            ask_resume=ask_resume,
             channel_plugins=channel_plugins,
             usage_store=usage_store,
             resource_monitor=resource_monitor,
@@ -1075,6 +1146,8 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
             transcript_store=transcript_store,
             async_subagents=async_host_url is not None,
             async_task_watcher=async_watcher,
+            runtime_settings=runtime_settings,
+            subagent_roster=subagents,
         )
         uvicorn_level = logging.getLevelName(
             logging.getLogger("yuyutsava").getEffectiveLevel()
@@ -1103,6 +1176,7 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         workspace=workspace,
         store=store,
         prefs_store=prefs_store,
+        runtime_settings=runtime_settings,
         bus=bus,
         registry=registry,
         channels=channels,

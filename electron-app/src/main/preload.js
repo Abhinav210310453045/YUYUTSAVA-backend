@@ -64,6 +64,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   closeOverlay: () => ipcRenderer.send('overlay:close'),
   // Ask main to re-register the global hotkey (after a settings change).
   rebindVoiceHotkey: () => ipcRenderer.send('voice:rebindHotkey'),
+  // Voice mode (daemon-owned) mirrored into the main process, which owns the
+  // global hotkey and the overlay but has no daemon client of its own. Pushed
+  // by the renderer on mount and on every change; with voice mode off, neither
+  // the hotkey nor a stray wake can summon the mic.
+  setVoiceModeEnabled: (enabled) => ipcRenderer.send('voice:modeEnabled', !!enabled),
+  // Overlay: a pending ask needs the user. Main decides whether to actually
+  // pop the window (it knows if the main window is focused, in which case the
+  // inline card + Inbox already cover it) and shows it WITHOUT taking focus.
+  showAskOverlay: (payload) => ipcRenderer.send('overlay:show-ask', payload || {}),
+  hideAskOverlay: () => ipcRenderer.send('overlay:hide-ask'),
+  // 'voice' | 'ask' | null — what the overlay window was summoned for.
+  getOverlayReason: () => ipcRenderer.invoke('overlay:reason'),
   // Overlay: main signals "you are visible now, start listening".
   onOverlayActivate: (cb) => {
     const handler = (_event, payload) => cb(payload)

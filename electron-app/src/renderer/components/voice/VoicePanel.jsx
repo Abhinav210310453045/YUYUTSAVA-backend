@@ -6,6 +6,7 @@ import NewSessionButton from '../common/NewSessionButton'
 import VoiceOrb from './VoiceOrb'
 import Markdown from '../chat/Markdown'
 import MessageImages from '../chat/MessageImages'
+import AskCard from '../asks/AskCard'
 
 // Persisted flag (in the daemon .env via main/settings.js) for the dismissible
 // "wake keywords live in Settings" note. Stored as a UI-only env key.
@@ -238,19 +239,30 @@ function VoiceBubble({ m, playing, onReplay }) {
   )
 }
 
-export default function VoicePanel({ onOpenSettings, autoStartSignal = 0, resumeId = null, active = true }) {
+export default function VoicePanel({
+  onOpenSettings, autoStartSignal = 0, resumeId = null, active = true,
+  // Daemon-owned voice mode (App passes it down from useRuntimeSettings).
+  // Defaults to fully on so the panel behaves as before when unset.
+  voiceSettings = { wake_enabled: true, tts_enabled: true },
+}) {
   const {
     messages, connected, busy, pendingAsk, listening, speaking, playingId,
     answerAsk, startVoice, stopVoice, interrupt, replay, newSession, getMicAnalyser,
-  } = useConverse({ origin: 'voice', resumeId })
+  } = useConverse({ origin: 'voice', resumeId, active })
   const { settings, loading: settingsLoading, save } = useSettings()
-  const [askDraft, setAskDraft] = useState('')
   const scrollRef = useRef(null)
   const panelRef = useRef(null)
 
+  const wakeOn = voiceSettings?.wake_enabled !== false
+  const ttsOn = voiceSettings?.tts_enabled !== false
+  const voiceModeOff = !wakeOn && !ttsOn
+
   const noteDismissed = settings[NOTE_KEY] === '1'
   // First-run wake-word setup: no wake word chosen yet and not yet onboarded.
+  // Skipped while the wake word is switched off — offering to set one up is
+  // noise when the user has just told us not to listen.
   const needsOnboarding = !settingsLoading
+    && wakeOn
     && !settings.WAKE_WORDS
     && settings.UI_WAKE_ONBOARDED !== '1'
 
@@ -259,12 +271,33 @@ export default function VoicePanel({ onOpenSettings, autoStartSignal = 0, resume
     if (el) el.scrollTop = el.scrollHeight
   }, [messages, pendingAsk])
 
+  // True while the CURRENT mic session was opened FOR the user (wake/hotkey)
+  // rather than BY them tapping the mic — see the mute effect below.
+  const autoStarted = useRef(false)
+
   // Hotkey/wake while the window is focused bumps autoStartSignal → start the
   // mic. Skip the initial mount (signal 0) so opening the panel by hand is quiet.
+  // With the wake word off the mic is never opened for the user — only by their
+  // own tap (main also gates the hotkey; this is the renderer-side guard).
   useEffect(() => {
-    if (autoStartSignal > 0 && !listening) startVoice()
+    if (autoStartSignal > 0 && !listening && wakeOn) {
+      autoStarted.current = true
+      startVoice()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoStartSignal])
+
+  // Turning the wake word off must close a mic WE opened — otherwise the
+  // toggle claims "not listening" while the mic light is still on. A mic the
+  // user opened by tapping is left alone: manual capture is exactly what voice
+  // mode off still allows.
+  useEffect(() => {
+    if (!wakeOn && listening && autoStarted.current) {
+      autoStarted.current = false
+      stopVoice()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wakeOn])
 
   // The panel now stays mounted when you navigate away (so the conversation
   // survives). Stop the mic when it's hidden so we never leave a hot mic running
@@ -282,10 +315,8 @@ export default function VoicePanel({ onOpenSettings, autoStartSignal = 0, resume
     ? 'speaking…'
     : busy ? 'working…'
     : listening ? 'listening…'
+    : voiceModeOff ? 'voice mode off · tap to talk'
     : 'tap to talk · drag to move'
-
-  const askBody = pendingAsk?.payload?.body || pendingAsk?.payload?.question
-    || pendingAsk?.payload?.reason || pendingAsk?.payload?.text || 'The agent is asking for input.'
 
   return (
     <div ref={panelRef} style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
@@ -318,8 +349,31 @@ export default function VoicePanel({ onOpenSettings, autoStartSignal = 0, resume
         <NewSessionButton onClick={() => { stopVoice(); newSession() }} label="New" color={BLUE} />
       </div>
 
+      {/* Voice mode is off — say so once, plainly, instead of letting the
+          panel look broken when nothing reacts to the wake word. Not
+          dismissible: it disappears the moment voice mode is turned back on. */}
+      {(!wakeOn || !ttsOn) && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 10, position: 'relative', zIndex: 2,
+          margin: '4px 24px 0', padding: '8px 12px',
+          background: 'rgba(140,140,150,0.08)',
+          border: '1px solid var(--border-subtle)', borderRadius: 12,
+          fontSize: 12, color: 'var(--text-secondary)',
+        }}>
+          <span style={{ color: 'var(--text-muted)' }}>◎</span>
+          <span style={{ flex: 1 }}>
+            {voiceModeOff
+              ? 'Voice mode is off — nothing is listening for you and replies stay text. Tap the mic to talk anyway.'
+              : !wakeOn
+                ? 'Wake word is off — nothing is listening for you. Tap the mic to talk.'
+                : 'Spoken replies are off — answers arrive as text.'}
+            {' '}Turn it back on from the title bar.
+          </span>
+        </div>
+      )}
+
       {/* dismissible wake-word note */}
-      {!noteDismissed && (
+      {wakeOn && !noteDismissed && (
         <div style={{
           display: 'flex', alignItems: 'center', gap: 10, position: 'relative', zIndex: 2,
           margin: '4px 24px 0', padding: '8px 12px',
@@ -368,30 +422,16 @@ export default function VoicePanel({ onOpenSettings, autoStartSignal = 0, resume
           <VoiceBubble key={m.id} m={m} playing={playingId === m.id} onReplay={replay} />
         ))}
 
+        {/* The inline ask, and the only place one renders in this view. It
+            arrives on this conversation's own channel, so it belongs here by
+            construction; anything raised elsewhere reaches the user through the
+            Inbox and the overlay instead. Shared card, so the consent scopes
+            (approve / session / project) survive here too. */}
         {pendingAsk && (
-          <div style={{
-            border: '1px solid var(--neon-amber)', borderRadius: 14,
-            padding: '12px 14px', background: 'rgba(255,176,0,0.06)', backdropFilter: 'blur(8px)',
-          }}>
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--neon-amber)', marginBottom: 6 }}>
-              ▣ Question
-            </div>
-            <div style={{ fontSize: 13, color: 'var(--text-primary)', marginBottom: 8 }}>{askBody}</div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                value={askDraft}
-                onChange={(e) => setAskDraft(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter' && askDraft.trim()) { answerAsk(askDraft.trim()); setAskDraft('') } }}
-                placeholder="type a reply, or use the buttons"
-                style={{
-                  flex: 1, background: 'var(--bg-deep)', color: 'var(--text-primary)',
-                  border: '1px solid var(--border-card)', borderRadius: 8, padding: '6px 10px', fontSize: 12,
-                }}
-              />
-              <button onClick={() => answerAsk('yes')} style={askBtn(true)}>approve</button>
-              <button onClick={() => answerAsk('no')} style={askBtn(false)}>reject</button>
-            </div>
-          </div>
+          <AskCard
+            ask={pendingAsk}
+            onAnswer={(_ask, response) => answerAsk(response)}
+          />
         )}
       </div>
 
@@ -404,19 +444,15 @@ export default function VoicePanel({ onOpenSettings, autoStartSignal = 0, resume
         busy={busy}
         getMicAnalyser={getMicAnalyser}
         status={status}
-        onToggle={() => (listening ? stopVoice() : startVoice())}
+        onToggle={() => {
+          // Either way this is now a mic the USER owns, so a voice-mode flip
+          // won't yank it out from under them.
+          autoStarted.current = false
+          if (listening) stopVoice(); else startVoice()
+        }}
         onStop={interrupt}
       />
     </div>
   )
 }
 
-function askBtn(primary) {
-  return {
-    fontFamily: 'var(--font-mono)', fontSize: 12, cursor: 'pointer',
-    padding: '6px 12px', borderRadius: 10,
-    background: primary ? 'rgba(var(--accent-rgb),0.1)' : 'rgba(255,51,102,0.08)',
-    border: `1px solid ${primary ? 'rgba(var(--accent-rgb),0.3)' : 'rgba(255,51,102,0.3)'}`,
-    color: primary ? 'var(--neon-green)' : 'var(--neon-red)',
-  }
-}

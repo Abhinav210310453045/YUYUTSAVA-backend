@@ -799,6 +799,40 @@ class AsyncTaskHealthWatcher:
             ts=time.time(),
         )))
 
+    async def resume_interrupt(
+        self, task_id: str, interrupt_id: str | None, reply: str
+    ) -> bool:
+        """Push a reply into a task parked on an interrupt. Returns success.
+
+        The restart path: an ask raised before the daemon went down has no
+        in-memory waiter left, but the run itself is still checkpointed and
+        interrupted on the subagent host. Answering it means re-entering the
+        run directly rather than waking a future that no longer exists.
+        """
+        task = self._mirror.get(task_id)
+        if task is None:
+            logger.warning("resume_interrupt: unknown task %s", task_id)
+            return False
+        if not interrupt_id:
+            logger.warning(
+                "resume_interrupt: task %s has no interrupt id — cannot route "
+                "the reply", task_id,
+            )
+            return False
+        try:
+            await self._client.runs.create(
+                thread_id=task.sub_thread_id,
+                assistant_id=task.graph_id,
+                command={"resume": {interrupt_id: reply}},
+                multitask_strategy="interrupt",
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("resume_interrupt: runs.create failed for %s", task_id)
+            return False
+        await self._mirror.set_status(task_id, "running", pending_ask_id=None)
+        logger.info("resume_interrupt: task %s resumed with a stored reply", task_id)
+        return True
+
     def _build_ask(
         self,
         task: MirroredTask,
@@ -826,6 +860,15 @@ class AsyncTaskHealthWatcher:
             interrupt_value=iv,
             session_id=task.parent_thread_id or task.task_id,
             agent_path=iv["agent_path"],
+            # A background ask belongs to the task, not to whichever chat
+            # happened to launch it: it renders in the Inbox (and the overlay),
+            # never inline inside that conversation. task_id + interrupt_id are
+            # what let the resume path re-enter the right run afterwards.
+            surface="background",
+            thread_id=task.parent_thread_id,
+            task_id=task.task_id,
+            agent_label=task.agent_name,
+            interrupt_id=interrupt_id,
         )
 
     # ------------------------------------------------------------------

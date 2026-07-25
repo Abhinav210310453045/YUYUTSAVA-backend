@@ -32,6 +32,7 @@ from yuyutsava.storage.events.sqlite_backend import (
     SqliteDecisionStore,
     SqliteEventsBackend,
     SqliteEventStore,
+    SqlitePendingAskStore,
     SqlitePrefsBackend,
     SqliteProposalStore,
     SqliteToolCounterStore,
@@ -62,6 +63,7 @@ class Store:
         self._counters = SqliteToolCounterStore(self._backend)
         self._prefs = SqlitePrefsBackend(self._backend)
         self._grants = SqliteConsentGrantStore(self._backend)
+        self._asks = SqlitePendingAskStore(self._backend)
         self._grants_cache: list[Grant] = []
 
     @classmethod
@@ -84,6 +86,7 @@ class Store:
                 PgConsentRuleStore,
                 PgDecisionStore,
                 PgEventStore,
+                PgPendingAskStore,
                 PgPrefsBackend,
                 PgProposalStore,
                 PgToolCounterStore,
@@ -98,6 +101,7 @@ class Store:
             self._counters = RoutedStore(PgToolCounterStore(pg_pool), SqliteToolCounterStore(b), health, name="tool_call_counters")
             self._prefs = RoutedStore(PgPrefsBackend(pg_pool), SqlitePrefsBackend(b), health, name="user_prefs")
             self._grants = RoutedStore(PgConsentGrantStore(pg_pool), SqliteConsentGrantStore(b), health, name="consent_grants")
+            self._asks = RoutedStore(PgPendingAskStore(pg_pool), SqlitePendingAskStore(b), health, name="pending_asks")
         return self
 
     # ------------------------------------------------------------------ #
@@ -160,6 +164,26 @@ class Store:
         return await self._proposals.try_set_status(
             proposal_id, from_status=from_status, to_status=to_status
         )
+
+    # ------------------------------------------------------------------ #
+    # pending asks (Tier-2 HITL, durable across restarts)                 #
+    # ------------------------------------------------------------------ #
+
+    async def put_pending_ask(self, record: dict[str, Any]) -> None:
+        """Record an ask BEFORE it is broadcast, so it is never unrecoverable."""
+        await self._asks.put(record)
+
+    async def resolve_pending_ask(
+        self, ask_id: str, response: str, *, status: str = "answered"
+    ) -> bool:
+        """Mark an ask answered; False when another surface got there first."""
+        return await self._asks.resolve(ask_id, response, status=status)
+
+    async def list_pending_asks(self, limit: int = 200) -> list[dict[str, Any]]:
+        return await self._asks.list_pending(limit)
+
+    async def get_pending_ask(self, ask_id: str) -> dict[str, Any] | None:
+        return await self._asks.get(ask_id)
 
     # ------------------------------------------------------------------ #
     # decisions                                                           #

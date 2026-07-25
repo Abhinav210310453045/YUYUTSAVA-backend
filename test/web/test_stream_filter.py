@@ -54,11 +54,13 @@ class ItemMatchesTests(unittest.TestCase):
         # Proposals match via their nested proposal.session_id.
         self.assertTrue(item_matches(_proposal("orch-1"), None, "orch-1"))
         self.assertFalse(item_matches(_proposal("orch-2"), None, "orch-1"))
-        # Asks carry session_id directly.
-        ask = StreamAskItem(
-            ask_id="a1", title="t", body="b", options=[], session_id="orch-1",
-        )
+        # Asks carry session_id inside the record (exposed as a property).
+        ask = StreamAskItem(ask={
+            "ask_id": "a1", "title": "t", "body": "b", "options": [],
+            "session_id": "orch-1",
+        })
         self.assertTrue(item_matches(ask, None, "orch-1"))
+        self.assertFalse(item_matches(ask, None, "orch-2"))
 
 
 class TaskRingTests(unittest.IsolatedAsyncioTestCase):
