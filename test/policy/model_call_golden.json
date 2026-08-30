@@ -1,0 +1,1026 @@
+{
+  "filesystem_drop": {
+    "__no_system_message__": {
+      "blocks": null,
+      "messages": [
+        "HumanMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "last message is not human": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        }
+      ],
+      "messages": [
+        "HumanMessage",
+        "AIMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "no messages": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        }
+      ],
+      "messages": [],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "non-text block present": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        },
+        {
+          "type": "image",
+          "url": "x"
+        }
+      ],
+      "messages": [
+        "HumanMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "plain": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        }
+      ],
+      "messages": [
+        "HumanMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "with the filesystem block": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        }
+      ],
+      "messages": [
+        "HumanMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "with tools": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        }
+      ],
+      "messages": [
+        "HumanMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": [
+        "tr_grep",
+        "ctx_recall",
+        "execute",
+        "tool_search",
+        "ws_exa_search",
+        "task"
+      ]
+    }
+  },
+  "filesystem_replace": {
+    "__no_system_message__": {
+      "blocks": null,
+      "messages": [
+        "HumanMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "last message is not human": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        }
+      ],
+      "messages": [
+        "HumanMessage",
+        "AIMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "no messages": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        }
+      ],
+      "messages": [],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "non-text block present": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        },
+        {
+          "type": "image",
+          "url": "x"
+        }
+      ],
+      "messages": [
+        "HumanMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "plain": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        }
+      ],
+      "messages": [
+        "HumanMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "with the filesystem block": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        },
+        {
+          "text": "Use tr_* tools.",
+          "type": "text"
+        }
+      ],
+      "messages": [
+        "HumanMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "with tools": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        }
+      ],
+      "messages": [
+        "HumanMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": [
+        "tr_grep",
+        "ctx_recall",
+        "execute",
+        "tool_search",
+        "ws_exa_search",
+        "task"
+      ]
+    }
+  },
+  "retrieval": {
+    "__no_system_message__": {
+      "blocks": [
+        {
+          "text": "## MEMORY\nrecalled\n\n## SKILLS\nmatched",
+          "type": "text"
+        }
+      ],
+      "messages": [
+        "HumanMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "last message is not human": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        }
+      ],
+      "messages": [
+        "HumanMessage",
+        "AIMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "no messages": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        }
+      ],
+      "messages": [],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "non-text block present": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        },
+        {
+          "type": "image",
+          "url": "x"
+        },
+        {
+          "text": "\n\n## MEMORY\nrecalled\n\n## SKILLS\nmatched",
+          "type": "text"
+        }
+      ],
+      "messages": [
+        "HumanMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "plain": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        },
+        {
+          "text": "\n\n## MEMORY\nrecalled\n\n## SKILLS\nmatched",
+          "type": "text"
+        }
+      ],
+      "messages": [
+        "HumanMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "with the filesystem block": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        },
+        {
+          "text": "## Filesystem Tools\n\nUse read_file and write_file to manage files.",
+          "type": "text"
+        },
+        {
+          "text": "\n\n## MEMORY\nrecalled\n\n## SKILLS\nmatched",
+          "type": "text"
+        }
+      ],
+      "messages": [
+        "HumanMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "with tools": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        },
+        {
+          "text": "\n\n## MEMORY\nrecalled\n\n## SKILLS\nmatched",
+          "type": "text"
+        }
+      ],
+      "messages": [
+        "HumanMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": [
+        "tr_grep",
+        "ctx_recall",
+        "execute",
+        "tool_search",
+        "ws_exa_search",
+        "task"
+      ]
+    }
+  },
+  "retrieval_broken": {
+    "__no_system_message__": {
+      "blocks": null,
+      "messages": [
+        "HumanMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "last message is not human": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        }
+      ],
+      "messages": [
+        "HumanMessage",
+        "AIMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "no messages": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        }
+      ],
+      "messages": [],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "non-text block present": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        },
+        {
+          "type": "image",
+          "url": "x"
+        }
+      ],
+      "messages": [
+        "HumanMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "plain": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        }
+      ],
+      "messages": [
+        "HumanMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "with the filesystem block": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        },
+        {
+          "text": "## Filesystem Tools\n\nUse read_file and write_file to manage files.",
+          "type": "text"
+        }
+      ],
+      "messages": [
+        "HumanMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "with tools": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        }
+      ],
+      "messages": [
+        "HumanMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": [
+        "tr_grep",
+        "ctx_recall",
+        "execute",
+        "tool_search",
+        "ws_exa_search",
+        "task"
+      ]
+    }
+  },
+  "retrieval_empty": {
+    "__no_system_message__": {
+      "blocks": null,
+      "messages": [
+        "HumanMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "last message is not human": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        }
+      ],
+      "messages": [
+        "HumanMessage",
+        "AIMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "no messages": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        }
+      ],
+      "messages": [],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "non-text block present": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        },
+        {
+          "type": "image",
+          "url": "x"
+        }
+      ],
+      "messages": [
+        "HumanMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "plain": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        }
+      ],
+      "messages": [
+        "HumanMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "with the filesystem block": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        },
+        {
+          "text": "## Filesystem Tools\n\nUse read_file and write_file to manage files.",
+          "type": "text"
+        }
+      ],
+      "messages": [
+        "HumanMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "with tools": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        }
+      ],
+      "messages": [
+        "HumanMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": [
+        "tr_grep",
+        "ctx_recall",
+        "execute",
+        "tool_search",
+        "ws_exa_search",
+        "task"
+      ]
+    }
+  },
+  "subagent_gate": {
+    "__no_system_message__": {
+      "blocks": [
+        {
+          "text": "SUBAGENTS CURRENTLY TURNED OFF: researcher. The user has switched these off. Do not delegate to them (neither task nor start_async_task) \u2014 the call will be refused. Handle the work yourself or use general-purpose, and say plainly that the subagent is switched off if the user expected it.",
+          "type": "text"
+        }
+      ],
+      "messages": [
+        "HumanMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "last message is not human": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        },
+        {
+          "text": "SUBAGENTS CURRENTLY TURNED OFF: researcher. The user has switched these off. Do not delegate to them (neither task nor start_async_task) \u2014 the call will be refused. Handle the work yourself or use general-purpose, and say plainly that the subagent is switched off if the user expected it.",
+          "type": "text"
+        }
+      ],
+      "messages": [
+        "HumanMessage",
+        "AIMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "no messages": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        },
+        {
+          "text": "SUBAGENTS CURRENTLY TURNED OFF: researcher. The user has switched these off. Do not delegate to them (neither task nor start_async_task) \u2014 the call will be refused. Handle the work yourself or use general-purpose, and say plainly that the subagent is switched off if the user expected it.",
+          "type": "text"
+        }
+      ],
+      "messages": [],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "non-text block present": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        },
+        {
+          "type": "image",
+          "url": "x"
+        },
+        {
+          "text": "SUBAGENTS CURRENTLY TURNED OFF: researcher. The user has switched these off. Do not delegate to them (neither task nor start_async_task) \u2014 the call will be refused. Handle the work yourself or use general-purpose, and say plainly that the subagent is switched off if the user expected it.",
+          "type": "text"
+        }
+      ],
+      "messages": [
+        "HumanMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "plain": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        },
+        {
+          "text": "SUBAGENTS CURRENTLY TURNED OFF: researcher. The user has switched these off. Do not delegate to them (neither task nor start_async_task) \u2014 the call will be refused. Handle the work yourself or use general-purpose, and say plainly that the subagent is switched off if the user expected it.",
+          "type": "text"
+        }
+      ],
+      "messages": [
+        "HumanMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "with the filesystem block": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        },
+        {
+          "text": "## Filesystem Tools\n\nUse read_file and write_file to manage files.",
+          "type": "text"
+        },
+        {
+          "text": "SUBAGENTS CURRENTLY TURNED OFF: researcher. The user has switched these off. Do not delegate to them (neither task nor start_async_task) \u2014 the call will be refused. Handle the work yourself or use general-purpose, and say plainly that the subagent is switched off if the user expected it.",
+          "type": "text"
+        }
+      ],
+      "messages": [
+        "HumanMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "with tools": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        },
+        {
+          "text": "SUBAGENTS CURRENTLY TURNED OFF: researcher. The user has switched these off. Do not delegate to them (neither task nor start_async_task) \u2014 the call will be refused. Handle the work yourself or use general-purpose, and say plainly that the subagent is switched off if the user expected it.",
+          "type": "text"
+        }
+      ],
+      "messages": [
+        "HumanMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": [
+        "tr_grep",
+        "ctx_recall",
+        "execute",
+        "tool_search",
+        "ws_exa_search",
+        "task"
+      ]
+    }
+  },
+  "subagent_gate_none": {
+    "__no_system_message__": {
+      "blocks": null,
+      "messages": [
+        "HumanMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "last message is not human": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        }
+      ],
+      "messages": [
+        "HumanMessage",
+        "AIMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "no messages": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        }
+      ],
+      "messages": [],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "non-text block present": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        },
+        {
+          "type": "image",
+          "url": "x"
+        }
+      ],
+      "messages": [
+        "HumanMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "plain": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        }
+      ],
+      "messages": [
+        "HumanMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "with the filesystem block": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        },
+        {
+          "text": "## Filesystem Tools\n\nUse read_file and write_file to manage files.",
+          "type": "text"
+        }
+      ],
+      "messages": [
+        "HumanMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "with tools": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        }
+      ],
+      "messages": [
+        "HumanMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": [
+        "tr_grep",
+        "ctx_recall",
+        "execute",
+        "tool_search",
+        "ws_exa_search",
+        "task"
+      ]
+    }
+  },
+  "tool_filter": {
+    "__no_system_message__": {
+      "blocks": null,
+      "messages": [
+        "HumanMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "last message is not human": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        }
+      ],
+      "messages": [
+        "HumanMessage",
+        "AIMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "no messages": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        }
+      ],
+      "messages": [],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "non-text block present": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        },
+        {
+          "type": "image",
+          "url": "x"
+        }
+      ],
+      "messages": [
+        "HumanMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "plain": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        }
+      ],
+      "messages": [
+        "HumanMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "with the filesystem block": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        },
+        {
+          "text": "## Filesystem Tools\n\nUse read_file and write_file to manage files.",
+          "type": "text"
+        }
+      ],
+      "messages": [
+        "HumanMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "with tools": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        }
+      ],
+      "messages": [
+        "HumanMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": [
+        "ctx_recall",
+        "tool_search",
+        "task"
+      ]
+    }
+  },
+  "voice_style": {
+    "__no_system_message__": {
+      "blocks": null,
+      "messages": [
+        "HumanMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "last message is not human": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        }
+      ],
+      "messages": [
+        "HumanMessage",
+        "AIMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "no messages": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        }
+      ],
+      "messages": [],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "non-text block present": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        },
+        {
+          "type": "image",
+          "url": "x"
+        }
+      ],
+      "messages": [
+        "HumanMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "plain": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        }
+      ],
+      "messages": [
+        "HumanMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "with the filesystem block": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        },
+        {
+          "text": "## Filesystem Tools\n\nUse read_file and write_file to manage files.",
+          "type": "text"
+        }
+      ],
+      "messages": [
+        "HumanMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": []
+    },
+    "with tools": {
+      "blocks": [
+        {
+          "text": "You are YUYUTSAVA. Base instructions.",
+          "type": "text"
+        }
+      ],
+      "messages": [
+        "HumanMessage"
+      ],
+      "response_format": null,
+      "tool_choice": null,
+      "tools": [
+        "tr_grep",
+        "ctx_recall",
+        "execute",
+        "tool_search",
+        "ws_exa_search",
+        "task"
+      ]
+    }
+  }
+}

@@ -20,6 +20,7 @@ keyword matching (documented limitation, still useful).
 """
 
 from yuyutsava.memory.config import MemorySettings
-from yuyutsava.memory.store import MemoryStore, PgMemoryStore, SqliteMemoryStore
+from yuyutsava.memory.store import MemoryStore
+from yuyutsava.memory.store_unified import pg_memory_store, sqlite_memory_store
 
-__all__ = ["MemorySettings", "MemoryStore", "PgMemoryStore", "SqliteMemoryStore"]
+__all__ = ["MemorySettings", "MemoryStore", "pg_memory_store", "sqlite_memory_store"]

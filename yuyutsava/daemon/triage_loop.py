@@ -29,6 +29,7 @@ from yuyutsava.daemon.channels import (
 from yuyutsava.daemon.consent import ConsentEvaluator
 from yuyutsava.events.bus import EventBus, EventEnvelope
 from yuyutsava.storage.events import ConsentRule, Proposal, Store
+from yuyutsava.storage.events.roles import TriageStore
 from yuyutsava.skills.registry import SkillRegistry
 
 logger = logging.getLogger("yuyutsava.daemon.triage_loop")
@@ -153,7 +154,7 @@ class TriageLoop:
         self,
         *,
         bus: EventBus,
-        store: Store,
+        store: TriageStore,
         channels: ChannelRouter,
         triage: TriageAgent,
         capabilities_block: "str | Callable[[], str]",
@@ -264,6 +265,29 @@ class TriageLoop:
                 )
 
                 if decision.action == "drop":
+                    # Record it. Every other outcome — logged, skipped_by_rule,
+                    # auto_approved — writes a decision row and a timeline line;
+                    # `drop` alone used to `return` in silence, and that made a
+                    # deliberate "not worth acting on" indistinguishable from a
+                    # broken daemon.
+                    #
+                    # It matters most for `mode=triage` submissions: the task
+                    # registry row stays `queued` (coarse v1, see
+                    # task_submission.submit_via_triage), so with no decision
+                    # recorded the user saw a task sit queued forever with no
+                    # explanation anywhere. Found by submitting one and watching
+                    # nothing happen.
+                    await self._store.put_decision(
+                        proposal_id=None, event_id=ev.event_id,
+                        outcome="dropped", action_summary=decision.reason,
+                    )
+                    await self._channels.post_event(ChannelEvent(
+                        payload=TimelinePayload(
+                            ts=ev.ts,
+                            line=f"dropped: {ev.summary} — {decision.reason}",
+                            cls="event-decision-skipped",
+                        ),
+                    ))
                     return
                 if decision.action == "log":
                     await self._store.put_decision(

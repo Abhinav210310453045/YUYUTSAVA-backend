@@ -15,6 +15,10 @@ showing the prompt.
 
 from __future__ import annotations
 
+# Narrowed from `object` in Phase 2 step 2.7: this service approves and skips
+# proposals, which is two methods of the events Store, not the whole surface.
+from yuyutsava.storage.events.roles import ProposalWriter
+
 import asyncio
 import logging
 from dataclasses import dataclass
@@ -60,7 +64,9 @@ class DecisionService:
     plugins via the InboundSink).
     """
 
-    def __init__(self, store: object, *, ask_resume: object | None = None) -> None:
+    def __init__(
+        self, store: ProposalWriter, *, ask_resume: object | None = None
+    ) -> None:
         self._store = store
         self._proposal_maps: list[
             MutableMapping[str, "asyncio.Future[ProposalDecision]"]

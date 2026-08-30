@@ -1,5 +1,19 @@
 # Yuyutsava Daemon — Architecture & Flow Diagrams
 
+> **Scope.** Diagram-first companion to [`Architecture.md`](Architecture.md),
+> focused on the **daemon's runtime flows**. Architecture.md is the prose
+> reference and covers both operating modes; this file is the picture book for
+> boot, event ingestion, triage, orchestration and shutdown. For the wire-level
+> view of the SSE/WebSocket surfaces drawn below — frame catalogs, `seq`/replay
+> semantics, the voice PCM path — see [`docs/Transport.md`](docs/Transport.md).
+>
+> **Updated** after the Phase 0–4 architecture remediation
+> (`docs/architecture-review/`). The structural changes that show up here:
+> `build_daemon` split into seven builders, the fourteen middleware classes
+> replaced by one `LangChainPolicyAdapter` over plain policies, the two stream
+> drivers merged into `_drive_graph` + two sinks, and the SQLite/Postgres store
+> twins collapsed onto one `Dialect` adapter.
+
 ---
 
 ## 1. System Overview — Component Map
@@ -19,7 +33,7 @@ graph TB
 
     subgraph EventLayer["Event Infrastructure"]
         BUS[EventBus\npub/sub]
-        STORE[("Store\nSQLite\n~/.yuyutsava/state.db")]
+        STORE[("Store — one impl per domain\nDialect: SQLite | Postgres+pgvector")]
     end
 
     subgraph Processing["Processing Layer"]
@@ -29,14 +43,22 @@ graph TB
 
     subgraph Agents["Agent Layer"]
         ORCH[OrchestratorGraph\nLangGraph]
-        TR[TaskRunnerAgent]
-        FO[FileOrganizerAgent]
+        POL[LangChainPolicyAdapter\n14 policies, 1 middleware]
+        TR[TaskRunnerAgent\npermission gateway]
+        GP[general-purpose\nfile-organizer · face-watcher]
+    end
+
+    subgraph Async["Background Subagents"]
+        HOST[AsyncSubagentHost\nin-proc LangGraph server]
+        MIRROR[AsyncTaskMirror]
     end
 
     subgraph Channels["User Channel Layer"]
         CR[ChannelRouter]
-        WC[WebChannel\nFastAPI + SSE]
+        WC[WebChannel\nFastAPI + SSE + WS]
         TC[TerminalChannel\nstderr]
+        VC[VoiceChannel]
+        TG[Telegram plugin]
     end
 
     subgraph LLM["LLM Providers"]
@@ -55,15 +77,20 @@ graph TB
     TL -->|post_proposal| CR
     CR --> WC
     CR --> TC
-    WC -->|SSE /stream| Browser["Browser / UI"]
+    CR --> VC
+    CR --> TG
+    WC -->|SSE /stream · WS /ws/converse| Browser["Electron UI / mobile"]
     Browser -->|POST /proposal/id/respond| WC
     TL -->|enqueue OrchestratorTask| OL
     OL -->|build_orchestrator| ORCH
-    ORCH -->|invoke subagents| TR
-    ORCH -->|invoke subagents| FO
+    ORCH --> POL
+    POL -->|policy-gated| TR
+    POL -->|policy-gated| GP
+    ORCH -. start_async_task .-> HOST --> GP
+    HOST --> MIRROR --> ORCH
     ORCH -->|LLM calls| OLLM
     TR -->|LLM calls| SLLM
-    FO -->|LLM calls| SLLM
+    GP -->|LLM calls| SLLM
     OL -->|stream events| CR
     OL -->|put_decision| STORE
 ```
@@ -72,36 +99,53 @@ graph TB
 
 ## 2. Daemon Boot Sequence
 
+`main.py` **runs**; `bootstrap.build_daemon()` **wires**. The wiring used to be one
+927-line function; ADR-003 split it into seven named builders, each independently
+testable and under 200 lines.
+
 ```mermaid
 sequenceDiagram
-    participant Main as main.py
-    participant Env as .env / Config
-    participant Store as Store (SQLite)
-    participant Bus as EventBus
-    participant SR as SourceRegistry
-    participant CR as ChannelRouter
-    participant LLM as LLM factories
-    participant TL as TriageLoop
-    participant OL as OrchestratorLoop
-    participant Web as WebServer (Uvicorn)
+    participant Main as daemon/main.py
+    participant Boot as bootstrap.build_daemon()
+    participant BS as build_storage
+    participant BP as build_policy
+    participant BR as build_retention
+    participant BE as build_events
+    participant BSA as build_subagents
+    participant BA as build_async_subagents
+    participant Loops as asyncio tasks
 
-    Main->>Env: load_dotenv()
-    Main->>Env: build DaemonConfig + EventsConfig
-    Main->>Store: await store.start() → WAL pragma, writer task
-    Main->>Bus: EventBus()
-    Main->>SR: SourceRegistry(bus, store, events_config)
-    Main->>SR: await registry.start_all()
-    Note over SR: spawns per-source tasks\nwith backoff supervision
-    Main->>CR: ChannelRouter([WebChannel, TerminalChannel])
-    Main->>LLM: llm_settings_from_env("triage")
-    Main->>LLM: llm_settings_from_env("orchestrator")
-    Main->>LLM: llm_settings_from_env("subagent")
-    Main->>TL: TriageLoop(bus, store, router, triage_model)
-    Main->>OL: OrchestratorLoop(store, router, orch_model, subagents)
-    Main->>Web: uvicorn.serve(app, host, port)
-    Note over Main: asyncio.wait([triage_task, orch_task, web_task],\nreturn_when=FIRST_COMPLETED)
-    Note over Main: On SIGINT/SIGTERM → graceful shutdown
+    Main->>Main: acquire_daemon_lock() (singleton per user)
+    Main->>Boot: await build_daemon(opts)
+
+    Boot->>BS: backend (sqlite | postgres + migrations v1–v20)
+    Note over BS: StoreFactory makes the backend choice ONCE\nfor CLI, tinker and daemon alike
+    BS-->>Boot: StorageSubsystem (stores · embedder · registry · usage)
+
+    Boot->>BP: permissions.json · consent registry · cap enforcer
+    Boot->>BR: MCP manager · checkpointer · unified TTL sweeper
+    Boot->>BE: EventBus · SourceRegistry.start_all() · ChannelRouter
+    Note over BE: +WebChannel if UI · +Terminal always · +Voice if --voice
+    Boot->>BE: ResourceMonitor + AdmissionController · role models
+    Boot->>BSA: subagents (general-purpose · file-organizer · face-watcher) + TaskRunner
+    Boot->>BA: task_queue · LaunchIndex · [AsyncSubagentHost + Mirror + Watcher]
+
+    Boot->>Boot: TriageAgent + TriageLoop · TaskSubmissionService
+    Boot->>Boot: OrchestratorDeps + OrchestratorLoop · DecisionService
+    Boot->>Boot: FastAPI app + uvicorn.Server (bearer auth iff non-loopback)
+    Boot-->>Main: DaemonSubsystems (frozen record)
+
+    Main->>Main: write_daemon_discovery(pid, web_url, async_host_url)
+    Main->>Loops: triage · orchestrator · sweeper · resource-monitor · uvicorn · reload
+    Main->>Loops: resume_interrupted_tasks() (durable resume from checkpoint)
+    Note over Main: asyncio.wait(..., return_when=FIRST_COMPLETED)
 ```
+
+> **A boot bug this shape hides.** An extraction once stranded an import inside a
+> Postgres-only branch: every test suite stayed green and the daemon only failed
+> on a live PG boot. `test/daemon/test_bootstrap_no_unbound_names.py` now catches
+> that statically, along with the mirror-image case (a local import shadowing a
+> module-level one), across `bootstrap.py` and `engine.py`.
 
 ---
 
@@ -179,7 +223,7 @@ flowchart TD
     CLASSIFY --> TRIAGE_LLM[Triage LLM\nreturns TriageDecision\naction, subagent_hint,\nurgency, summary,\ninstruction]
 
     TRIAGE_LLM --> ACTION{action?}
-    ACTION -->|drop| DROP[log drop\nput_decision store]
+    ACTION -->|drop| DROP[put_decision outcome=dropped\n+ timeline line\nsee note below]
     ACTION -->|log| LOG_ONLY[put_decision store\nno task created]
     ACTION -->|propose| PROPOSE[create Proposal\nput_proposal store]
 
@@ -210,6 +254,17 @@ flowchart TD
     QUEUE --> WAIT
 ```
 
+> **`drop` used to be silent.** Every other outcome wrote a decision row and a
+> timeline line; `drop` alone did `return`. For a `mode=triage` submission that
+> meant the task registry row sat `queued` forever with **no evidence anywhere
+> that triage had seen it** — indistinguishable, from the UI, from a broken
+> daemon. Found by submitting one against a running daemon and watching nothing
+> happen. It now records `outcome="dropped"` with the classifier's reason.
+>
+> The registry row still stays `queued` — that is deliberate v1 behaviour
+> (`task_submission.submit_via_triage`), and whether a dropped task belongs in a
+> terminal state is a product decision, not a bug fix.
+
 ---
 
 ## 6. Orchestrator Loop — Task Execution
@@ -221,7 +276,7 @@ flowchart TD
     GET -->|OrchestratorTask| THREAD[generate thread_id\norch-uuid4]
 
     THREAD --> BUILD[build_orchestrator\nmodel, deps, budget_tokens]
-    BUILD --> GRAPH[LangGraph CompiledStateGraph\nwith BudgetMiddleware]
+    BUILD --> GRAPH[CompiledStateGraph\n+ LangChainPolicyAdapter\n14 policies incl. Budget]
 
     GRAPH --> RENDER[task.render_to_message\nformatted prompt string]
     RENDER --> STREAM[astream_agent_iter\nagent, task_msg, thread_id]
@@ -243,48 +298,69 @@ flowchart TD
 
 ---
 
-## 7. Core Engine — `astream_agent_iter` Internals
+## 7. Core Engine — the stream driver
+
+`core/streaming.py` used to hold **two** ~226-line drivers that were ~90%
+identical. ADR-004 collapsed them into one driver plus two sinks: `_drive_graph`
+owns the loop, interrupt collection and the resume handshake; `astream_agent_iter`
+turns its items into `StreamEvent`s and `astream_agent` prints them.
 
 ```mermaid
 sequenceDiagram
     participant OL as OrchestratorLoop
-    participant Engine as core/engine.py
-    participant Graph as LangGraph Agent
-    participant BM as BudgetMiddleware
+    participant Sink as astream_agent_iter (sink)
+    participant Drive as _drive_graph (the driver)
+    participant Graph as Agent (ports.Agent)
+    participant Pol as LangChainPolicyAdapter
     participant LLM as LLM Provider
-    participant Tools as SubAgent Tools
 
-    OL->>Engine: astream_agent_iter(agent, task, thread_id)
-    Engine->>Graph: astream(input, config, stream_mode=["messages","updates"])
+    OL->>Sink: astream_agent_iter(agent, task, thread_id, ask_handler)
+    Sink->>Drive: _drive_graph(agent, input, cfg, ask=ask_handler)
+    Drive->>Graph: astream(input, config, stream_mode=["messages","updates"])
 
     loop each graph chunk
-        Graph->>BM: check token budget
-        BM-->>Graph: inject SystemMessage "wrap up" if over cap
+        Graph->>Pol: revise_model_call → prompt + tool list
+        Pol-->>Graph: revised request
+        Graph->>LLM: model call
+        Pol-->>Graph: after_model → Budget may inject a wrap-up Directive
 
-        alt AIMessageChunk (token)
-            Graph-->>Engine: chunk → StreamEvent("token", data)
-            Engine-->>OL: yield StreamEvent token
+        alt AIMessageChunk
+            Drive-->>Sink: ("chunk", (chunk, meta))
+            Sink-->>OL: StreamEvent("token", {text, node, ns})
         end
 
-        alt tool_call update
-            Graph->>Tools: invoke tool
-            Tools-->>Graph: tool result guarded max 100k chars
-            Graph-->>Engine: StreamEvent("tool_call") + StreamEvent("tool_result")
-            Engine-->>OL: yield both events
+        alt tool call / result
+            Graph->>Pol: before_tool → Denied | Raw | proceed
+            Pol-->>Graph: refusal ToolMessage, or the tool runs
+            Graph->>Pol: after_tool → offload rewrites oversized results
+            Drive-->>Sink: ("message", m)
+            Sink-->>OL: StreamEvent("tool_call") + StreamEvent("tool_result")
         end
 
-        alt __interrupt__ (Tier-2 permission)
-            Graph-->>Engine: interrupt value
-            Engine->>OL: yield StreamEvent("log", interrupt)
-            OL->>Router: router.post_ask(AskPrompt)
-            Router-->>OL: user answer string
-            OL->>Engine: send answer via ask_handler callback
-            Engine->>Graph: graph.astream(Command(resume=answer))
+        alt __interrupt__
+            Drive->>Drive: collect pending (id, value)
         end
     end
 
-    Engine-->>OL: yield StreamEvent("final", text)
+    Drive-->>Sink: ("pass_end", steps)
+    alt pending interrupts
+        Drive->>Sink: ask(value) per interrupt → channel-routed
+        Sink-->>Drive: decision string
+        Drive->>Graph: _resume_command(decisions)
+    else none
+        Sink-->>OL: StreamEvent("final", {text})
+    end
 ```
+
+**Why one driver mattered.** The multi-interrupt resume protocol was implemented
+in both copies and they had drifted: only the daemon one handled interrupts
+arriving with **no ids**; the CLI one built `Command(resume={})` and discarded
+every answer the user had just typed. `_resume_command` is now the single
+implementation.
+
+`_drive_graph` is annotated against `ports.Agent` (`astream` + `aget_state`), not
+`CompiledStateGraph` — so its whole parity suite runs against a scripted double
+that is not a graph.
 
 ---
 
@@ -312,8 +388,8 @@ flowchart TD
     FO_TOOLS --> FO_MOVE[move / rename file]
     FO_TOOLS --> FO_LIST[list directory]
 
-    TR_GRAPH --> BM_TR[BudgetMiddleware\nsubagent_token_budget\n30k tokens]
-    FO_GRAPH --> BM_FO[BudgetMiddleware\nsubagent_token_budget\n30k tokens]
+    TR_GRAPH --> BM_TR[LangChainPolicyAdapter\nToolFilter · Offload · Budget 30k · Usage]
+    FO_GRAPH --> BM_FO[LangChainPolicyAdapter\nToolFilter · Offload · Budget 30k · Usage]
 
     BM_TR --> RESULT_TR[result → back to OrchestratorGraph]
     BM_FO --> RESULT_FO[result → back to OrchestratorGraph]
@@ -358,7 +434,14 @@ flowchart TD
 
 ---
 
-## 10. SQLite Store — Data Model & Access Patterns
+## 10. The Store — Data Model & Access Patterns
+
+> **One implementation, two backends.** Each domain below used to have a
+> hand-written SQLite store *and* a Postgres twin — 19 pairs that drifted
+> silently. `storage/dialect.py` names the five things that actually differ
+> (placeholder, timestamp, JSON, parent-row FK, vector support) and each domain
+> now has one implementation over it. Timestamps are `TIMESTAMPTZ` on Postgres
+> since migration v20; the events schema gained matching foreign keys in SQLite v5.
 
 ```mermaid
 erDiagram
@@ -411,7 +494,7 @@ flowchart LR
         W4[put_consent_rule] -->|TriageLoop on approve/skip_remember| STORE
     end
 
-    subgraph Reads["Sync Reads (asyncio thread)"]
+    subgraph Reads["Reads"]
         R1[list_consent_rules] -->|TriageLoop._handle\non every event| STORE
         R2[get_event_payload] -->|OrchestratorGraph recall tool| STORE
         R3[list_decisions] -->|GET /decisions endpoint| STORE
@@ -419,7 +502,7 @@ flowchart LR
         R5[try_set_proposal_status CAS] -->|WebChannel POST handler| STORE
     end
 
-    STORE[("SQLite\nstate.db\nWAL mode")]
+    STORE[("One store per domain\nDialect: SQLite WAL | Postgres+pgvector")]
 ```
 
 ---
@@ -460,24 +543,42 @@ flowchart TD
 
 ## 12. Token Budget Enforcement
 
+`BudgetPolicy` (was `BudgetMiddleware`) is a plain `Policy` — no framework import,
+tested without a graph. It reads `Turn.usage`, which the adapter resolves **once**
+per turn from the latest `AIMessage`; before ADR-004 the budget and the usage
+recorder each dug that out of `usage_metadata` separately.
+
 ```mermaid
 flowchart TD
-    MSG[LLM invocation in graph] --> BM[BudgetMiddleware\nbefore_invoke]
-    BM --> CHECK{spent_tokens at cap?}
-    CHECK -->|no| PASS[pass messages to LLM unchanged]
-    CHECK -->|yes| INJECT[inject SystemMessage:\nYou have N tokens left, wrap up]
-    INJECT --> LLM[LLM call]
-    PASS --> LLM
+    MSG[model call completes] --> AD[LangChainPolicyAdapter.aafter_model]
+    AD --> RESOLVE[Turn.usage resolved once\nlatest AIMessage · dict or object]
+    RESOLVE --> BP[BudgetPolicy.after_model]
+    BP --> ACC[spent += usage.input_tokens]
+    ACC --> CHECK{spent >= cap?}
+    CHECK -->|no| NONE[return None — no state update]
+    CHECK -->|already fired| NONE
+    CHECK -->|yes, first time| DIR[return Directive\nStop calling tools. Summarise…]
+    DIR --> INJECT[adapter converts to\nSystemMessage in state]
 
-    LLM --> RESPONSE[LLM response]
-    RESPONSE --> TRACK[BudgetMiddleware.after_invoke\nspent += usage_metadata.input_tokens]
-    TRACK --> NEXT[next graph node]
+    RESOLVE --> UP[UsagePolicy.after_model]
+    UP --> ROW[one llm_usage row\ntokens · model · role · task_id]
+    ROW --> COST{model in price table?}
+    COST -->|yes| EST[est_cost_usd]
+    COST -->|no| WARN[est_cost_usd = 0.00\n+ warn ONCE naming the model]
 
-    subgraph Budgets["Budget Caps per Role"]
+    subgraph Budgets["Budget caps per role"]
         B1[orchestrator_token_budget\ndefault 8000 tokens]
         B2[subagent_token_budget\ndefault 30000 tokens]
     end
 ```
+
+Two properties worth keeping:
+
+- **The directive fires once.** It is a wrap-up instruction, not a hard stop —
+  killing the graph mid-tool-call would leave an orphaned tool call in state,
+  which is a worse failure than one more turn.
+- **A call with no reported usage counts as nothing**, never as zero. A zero row
+  is indistinguishable from a genuinely free call once the ledger is summed.
 
 ---
 
@@ -588,9 +689,10 @@ mindmap
       Bus fanout is non-blocking
       Drop policy on full queues
     Token Safety
-      BudgetMiddleware per role
-      Hard cap injects wrap-up message
+      BudgetPolicy per role
+      Cap injects a wrap-up Directive, once
       Orchestrator 8k / SubAgent 30k
+      Unpriced model warns, never guesses
     Graceful Shutdown
       Stop sources first
       Close bus wakes triage loop
@@ -600,4 +702,16 @@ mindmap
       EventSource
       UserChannel
       BaseSubAgent
+      Provider — the llm layer
+    Our Own Abstractions
+      Policy + one LangChainPolicyAdapter
+      ports/ dependency-free Protocols
+      Dialect: 2 backends, 1 implementation
+      ModelHandle: identity from the provider
+      AskUser: HITL without calling interrupt
+    Nothing Fails Silently
+      Triage drop is recorded
+      Unpriced model warns once
+      Filesystem-block strip warns when it matches nothing
+      Storage degrade/recover posts a timeline notice
 ```

@@ -43,6 +43,8 @@ from dataclasses import dataclass, field
 import aiosqlite
 
 from yuyutsava.storage.backend import StorageSettings
+from yuyutsava.storage.context import GLOBAL_CONTEXT, AppContext
+from yuyutsava.storage.domains import Backend, purge_tables
 from yuyutsava.storage.paths import interrupts_db_path, state_db_path
 from yuyutsava.storage.sessions import (
     SessionsSettings,
@@ -62,33 +64,17 @@ KEEP_MEMORY_KINDS: tuple[str, ...] = ("fact", "preference")
 # on the two events tables that key on ``session_id`` rather than ``thread_id``.
 # Table/column names come only from this fixed whitelist, never user input, so
 # the f-string interpolation below is safe.
-_STATE_TABLES: tuple[tuple[str, str], ...] = (
-    ("transcript_messages", "thread_id"),
-    ("artifacts", "thread_id"),
-    ("thread_summaries", "thread_id"),
-    ("voice_messages", "thread_id"),
-    ("tasks", "thread_id"),
-    ("llm_usage", "thread_id"),
-    ("proposals", "session_id"),
-    ("decisions", "session_id"),
-)
+_STATE_TABLES: tuple[tuple[str, str], ...] = purge_tables(Backend.SQLITE)
 
 # PG child tables cleared (explicitly, not via cascade — so the purge is
 # independent of constraint drift) before the ``threads`` hub row is dropped.
 # Ordered so FK dependents precede their parents: ``llm_usage.task_id`` -> tasks.
-_PG_CHILD_TABLES: tuple[tuple[str, str], ...] = (
-    ("llm_usage", "thread_id"),
-    ("tasks", "thread_id"),
-    ("transcript_chunks", "thread_id"),
-    ("transcript_messages", "thread_id"),
-    ("artifact_chunks", "thread_id"),
-    ("artifacts", "thread_id"),
-    ("thread_summaries", "thread_id"),
-    ("voice_messages", "thread_id"),
-    ("interrupts", "thread_id"),
-    ("proposals", "session_id"),
-    ("decisions", "session_id"),
-)
+# DERIVED, not hand-maintained. Editing a literal list here was how
+# ``message_feedback`` and ``pending_asks`` came to survive session deletion:
+# adding a domain meant remembering to touch a module you were not working in,
+# and forgetting was silent. Declare the domain in
+# :mod:`yuyutsava.storage.domains` and it is purged automatically.
+_PG_CHILD_TABLES: tuple[tuple[str, str], ...] = purge_tables(Backend.POSTGRES)
 
 
 @dataclass
@@ -107,16 +93,30 @@ class PurgeReport:
         return sum(self.rows.values())
 
 
-async def purge_session(session_id: str, *, pg_pool: object | None = None) -> PurgeReport:
+async def purge_session(
+    session_id: str,
+    *,
+    pg_pool: object | None = None,
+    ctx: "AppContext | None" = None,
+) -> PurgeReport:
     """Remove every row + file tied to ``session_id``. Raises ``SessionNotFound``.
 
-    Self-contained: reads the process-singleton session store and opens whatever
-    else it needs (checkpointer, a short-lived PG pool in Postgres mode), so the
-    CLI and the web endpoint call it identically with no store wiring. Any step
-    failing propagates (hard-fail); see the module docstring for the ordering
-    that makes a partial purge safely retryable.
+    Pass ``ctx`` to supply the stores explicitly; omit it and they come from the
+    process globals exactly as before (Phase 3 step 3.4, finding ``F-S08``).
+
+    The explicit form matters because this function's one-argument signature hid
+    that it touches **four** stores — sessions, visuals, feedback and the events
+    store — plus the checkpointer and on-disk blobs. A caller reading
+    ``purge_session(sid)`` had no way to know its blast radius, and a test had to
+    set and restore four globals to exercise it.
+
+    Still self-contained by default: the CLI and the web endpoint call it
+    identically with no wiring. Any step failing propagates (hard-fail); see the
+    module docstring for the ordering that makes a partial purge safely
+    retryable.
     """
-    store = get_default_session_store()
+    ctx = ctx if ctx is not None else GLOBAL_CONTEXT
+    store = ctx.sessions()
     s = await store.get(session_id)  # raises SessionNotFound if unknown
     thread_id = s.thread_id
     report = PurgeReport(session_id=session_id, thread_id=thread_id)
@@ -154,11 +154,34 @@ async def purge_session(session_id: str, *, pg_pool: object | None = None) -> Pu
         #     it, else the SQLite twin) so PG-primary rows are cleaned too. Run
         #     BEFORE the thread hub is dropped so files are unlinked (the FK
         #     CASCADE would only remove the row, not the on-disk PNG).
-        from yuyutsava.visuals.store import get_default_visual_store
+        report.rows["visual_artifacts"] = await ctx.visuals().delete_for_thread(thread_id)
 
-        report.rows["visual_artifacts"] = await get_default_visual_store().delete_for_thread(
-            thread_id
-        )
+        # 3c. Message feedback. Not in _STATE_TABLES / _PG_CHILD_TABLES because
+        #     the table lives outside the thread-hub FK graph, so neither the
+        #     bulk delete nor the PG cascade reaches it — and a feedback row
+        #     stores user_text/assistant_text VERBATIM. Leaving it behind kept
+        #     the conversation content of a session the user asked to delete.
+        #     Uses the backend-aware default store, same as visuals above.
+        #     The resolver lazily falls back to the SQLite store when the daemon
+        #     never installed one, so this needs no guard.
+        report.rows["message_feedback"] = await ctx.feedback().delete_for_thread(thread_id)
+
+        # 3d. Pending asks. Same class of gap as 3c, found by the domain
+        #     registry: the row stores the agent's question (title/body) and the
+        #     user's response, and it was purged by nothing and swept by nothing.
+        #     Unwired callers get a per-call store (purge_session takes no
+        #     wiring); a caller that already has one open — the daemon keeps one
+        #     for the whole process — passes it and we do not start or stop it.
+        _events, _owned = ctx.events(settings, pg_pool=pg_pool)
+        if _owned:
+            await _events.start()
+        try:
+            report.rows["pending_asks"] = await _events.delete_pending_asks_for_thread(
+                thread_id
+            )
+        finally:
+            if _owned:
+                await _events.stop()
 
         # 4. Sessions row LAST — a failure above leaves it listed + retryable.
         await store.delete(session_id)

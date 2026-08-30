@@ -14,6 +14,8 @@ isolation: a unit test passes a fake ``ctx`` that captures emits.
 
 from __future__ import annotations
 
+from yuyutsava.storage.events.roles import EventPayloadWriter
+
 import asyncio
 import dataclasses
 import logging
@@ -38,7 +40,11 @@ class SourceContext:
 
     name: str
     bus: EventBus
-    store: Store
+    # Narrowed from the whole events Store (Phase 2 step 2.7): a source
+    # publishes payloads and does nothing else with it. Every EventSource
+    # subclass receives this context, so the wide type advertised ~30 methods
+    # to code that needs one.
+    store: EventPayloadWriter
     params: dict[str, Any]
     cancelled: asyncio.Event
 

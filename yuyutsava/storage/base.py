@@ -1,15 +1,20 @@
 """Base class for async-sqlite stores in the storage layer.
 
-Three production stores currently reinvent the same patterns: WAL +
-busy_timeout setup, per-process write lock, retry-on-SQLITE_BUSY, and a
-schema-version anchor for forward-only migrations. This class extracts
-those so the per-domain stores in Step 2 only need to provide their schema
-SQL and their read/write methods.
+Centralises the patterns every SQLite store needs: WAL + busy_timeout setup,
+a per-process write lock, retry-on-SQLITE_BUSY, and a schema-version anchor
+for forward-only migrations. Subclasses supply only their schema SQL and
+their read/write methods.
 
-This module ships now (Step 1) so the storage package has its abstraction
-in place before the moves in Step 2. No store inherits from it yet —
-:class:`SqliteSessionStore`, :class:`Store`, and :class:`InterruptsStore`
-keep their hand-rolled patterns until Step 2 swaps them over.
+**This class is load-bearing.** It is the base of the SQLite half of ~14
+domain stores, including the artifact, summary, transcript, memory, skill,
+todo, visual, voice, feedback, interrupt, task, usage and session stores.
+Changing its transaction or retry behaviour changes all of them at once.
+
+Note that only the *SQLite* twins inherit from it — the Postgres twins reach
+the pool directly and therefore do NOT get its ``BEGIN IMMEDIATE`` wrapper or
+its retry policy. That asymmetry is a known LSP defect (finding ``F-S10`` in
+docs/architecture-review/); it is resolved by ADR-002, which moves the
+transaction policy into a shared dialect adapter.
 """
 
 from __future__ import annotations
@@ -174,9 +179,16 @@ class BaseSqliteStore:
         """Serialize per-process writes; retry on SQLITE_BUSY up to 3x.
 
         ``fn`` runs inside a ``BEGIN IMMEDIATE`` transaction with the
-        connection passed in; this method commits on success and rolls
-        back on failure. The per-process ``asyncio.Lock`` prevents the
-        retry loop from fighting itself when many tasks write concurrently.
+        connection passed in; this method commits on success and **explicitly
+        rolls back** on failure, so a partially-applied write is never left
+        behind. The per-process ``asyncio.Lock`` prevents the retry loop from
+        fighting itself when many tasks write concurrently.
+
+        The rollback used to be implicit — the connection was simply closed and
+        SQLite discarded the open transaction. That worked, but it relied on
+        driver close semantics rather than stating the intent, and it left the
+        retry path re-entering with the previous attempt's partial work only
+        *probably* gone. It is explicit now.
         """
         await self._ensure_schema()
         async with self._write_lock:
@@ -185,7 +197,15 @@ class BaseSqliteStore:
                 try:
                     async with self._conn() as conn:
                         await conn.execute("BEGIN IMMEDIATE")
-                        result = await fn(conn)
+                        try:
+                            result = await fn(conn)
+                        except BaseException:
+                            # Roll back before the connection closes, so the
+                            # transaction is discarded deliberately rather than
+                            # by side effect. BaseException so that a cancelled
+                            # task cannot leave a write half-applied either.
+                            await conn.rollback()
+                            raise
                         await conn.commit()
                         return result
                 except sqlite3.OperationalError as exc:

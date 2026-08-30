@@ -102,7 +102,7 @@ class ConversationManager:
         # prefs.runtime.RuntimeSettings | None — the dedicated-subagent switches.
         # The master bundle below is built once and reused by every conversation,
         # so the toggle can't be baked into its roster; it rides along and is
-        # enforced per model/tool call by SubagentGateMiddleware.
+        # enforced per model/tool call by SubagentGatePolicy.
         self._runtime_settings = runtime_settings
         self._cap_enforcer = cap_enforcer  # tools.search._CapEnforcer | None (ws_* rate cap)
         self._task_submission = task_submission  # daemon.task_submission.TaskSubmissionService | None

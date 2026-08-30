@@ -18,13 +18,19 @@ import fnmatch
 import json
 import logging
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, AsyncIterator, Sequence
 
 import aiosqlite
 from ulid import ULID
 
 from yuyutsava.storage.base import amigration_lock
+# The pending_asks wire helpers moved to events/ask_wire.py (ADR-002 step
+# 2.5b) — they are backend-independent and the unified store needed them.
+from yuyutsava.storage.events.ask_wire import (  # noqa: F401
+    _ASK_COLS, ask_record_to_params, ask_row_to_record,
+)
 from yuyutsava.storage.events.abc import (
     ConsentGrantStore,
     ConsentRuleStore,
@@ -64,10 +70,19 @@ class SqliteEventsBackend:
         await conn.execute("PRAGMA journal_mode=WAL")
         await conn.execute("PRAGMA synchronous=NORMAL")
         # Cross-process migration lock: daemon + chat can boot simultaneously.
+        # Foreign keys stay OFF for the whole migration: schema v5 rebuilds
+        # `proposals` and `decisions` to add their constraints (SQLite has no
+        # ALTER TABLE ADD CONSTRAINT), and a rebuild trips over its own
+        # intermediate states with enforcement on.
         async with amigration_lock():
             await conn.executescript(SCHEMA_SQL)
             await migrate(conn)
             await conn.commit()
+        # ON only after migrating, and outside any transaction — the pragma is a
+        # silent no-op inside one. Without this the REFERENCES clauses in
+        # schema.py are decorative: SQLite defaults foreign_keys to OFF, which
+        # is why the tables could diverge from Postgres unnoticed (finding AC).
+        await conn.execute("PRAGMA foreign_keys=ON")
         self._conn = conn
 
     async def close(self) -> None:
@@ -80,6 +95,62 @@ class SqliteEventsBackend:
         if self._conn is None:
             raise RuntimeError("SqliteEventsBackend.open() must be called first")
         return self._conn
+
+    @asynccontextmanager
+    async def foreign_keys_off(self) -> "AsyncIterator[None]":
+        """Suspend FK enforcement (and therefore ON DELETE CASCADE) on this connection.
+
+        For the spillover **buffer**, where cascade semantics are actively wrong.
+        In Postgres mode these tables are a write buffer holding rows until the
+        reconciler copies them out — not a model of referential integrity. The
+        reconciler drains parents first (Postgres needs the parent row before
+        the child) and deletes each drained batch from the buffer as it goes, so
+        with cascade live, deleting a drained ``event_payloads`` row would take
+        that event's still-undrained ``proposals`` with it and they would never
+        reach Postgres.
+
+        The constraints are still exactly right for pure-SQLite mode, where
+        these tables ARE the system of record. Only the drain needs them off.
+
+        ``PRAGMA foreign_keys`` is a no-op inside a transaction, so this must
+        wrap statements that are not already in one.
+        """
+        await self._c.execute("PRAGMA foreign_keys=OFF")
+        try:
+            yield
+        finally:
+            await self._c.execute("PRAGMA foreign_keys=ON")
+
+    @asynccontextmanager
+    async def transaction(self) -> "AsyncIterator[aiosqlite.Connection]":
+        """Run several statements atomically: all commit, or none do.
+
+        ``execute`` / ``execute_rowcount`` commit per statement, so a method
+        issuing two of them is **not** atomic — a failure between them leaves
+        the first applied. That is the same defect found on the Postgres side
+        (``PgPool.connection()`` is autocommit); this is its SQLite twin.
+
+        Mirrors :meth:`yuyutsava.storage.base.BaseSqliteStore._run_write`:
+        ``BEGIN IMMEDIATE``, commit on success, explicit rollback on any
+        exception — including ``CancelledError``, so a cancelled task cannot
+        leave a partial write.
+
+        Holds the same write lock as ``execute``, so a transaction and a
+        single-statement write can never interleave.
+
+            async with backend.transaction() as conn:
+                await conn.execute("DELETE FROM ...", (...))
+                await conn.execute("INSERT INTO ...", (...))
+        """
+        async with self._write_lock:
+            conn = self._c
+            await conn.execute("BEGIN IMMEDIATE")
+            try:
+                yield conn
+            except BaseException:
+                await conn.rollback()
+                raise
+            await conn.commit()
 
     async def execute(self, sql: str, params: Sequence[Any] = ()) -> None:
         async with self._write_lock:
@@ -112,164 +183,29 @@ class SqliteEventsBackend:
 # ---------------------------------------------------------------------------
 
 
-class SqliteEventStore(EventStore):
-    def __init__(self, backend: SqliteEventsBackend) -> None:
-        self._b = backend
 
-    async def put_event_payload(
-        self, *, event_id: str, topic: str, ts: float,
-        payload: dict[str, Any], blob_path: str | None = None,
-    ) -> None:
-        await self._b.execute(
-            "INSERT OR REPLACE INTO event_payloads(event_id, topic, ts, payload_json, blob_path) "
-            "VALUES(?,?,?,?,?)",
-            (event_id, topic, ts, json.dumps(payload, default=str), blob_path),
-        )
-
-    async def get_event_payload(self, event_id: str) -> EventRecord | None:
-        row = await self._b.fetchone(
-            "SELECT topic, ts, payload_json, blob_path FROM event_payloads WHERE event_id=?",
-            (event_id,),
-        )
-        if row is None:
-            return None
-        try:
-            payload = json.loads(row["payload_json"])
-        except (json.JSONDecodeError, TypeError):
-            payload = {}
-        if not isinstance(payload, dict):
-            payload = {}
-        return EventRecord(
-            event_id=event_id, topic=row["topic"], ts=row["ts"],
-            payload=payload, blob_path=row["blob_path"],
-        )
-
-    async def delete_event_payloads_with_blob_prefix(self, prefix: str, older_than_ts: float) -> int:
-        return await self._b.execute_rowcount(
-            "DELETE FROM event_payloads WHERE blob_path LIKE ? AND ts < ?",
-            (prefix + "%", older_than_ts),
-        )
-
-    async def delete_event_payloads_older_than(self, older_than_ts: float) -> int:
-        return await self._b.execute_rowcount(
-            "DELETE FROM event_payloads WHERE blob_path IS NULL AND ts < ?",
-            (older_than_ts,),
-        )
+# NOTE: SqliteEventStore was replaced on 2026-08-08 by the Unified* store in
+# events/unified.py (ADR-002 step 2.5b). Parity verified against both twins on
+# both live backends in test/storage/test_events_unified_parity.py.
 
 
-class SqliteProposalStore(ProposalStore):
-    def __init__(self, backend: SqliteEventsBackend) -> None:
-        self._b = backend
-
-    async def put(self, p: Proposal) -> None:
-        await self._b.execute(
-            "INSERT INTO proposals(proposal_id, event_id, topic, summary, proposed, subagent, "
-            "urgency, created_ts, expires_ts, status, session_id, agent_path) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-            (p.proposal_id, p.event_id, p.topic, p.summary, p.proposed, p.subagent,
-             p.urgency, p.created_ts, p.expires_ts, p.status, p.session_id, p.agent_path),
-        )
-
-    async def get(self, proposal_id: str) -> Proposal | None:
-        row = await self._b.fetchone(
-            "SELECT * FROM proposals WHERE proposal_id=?", (proposal_id,)
-        )
-        return _row_to_proposal(row) if row else None
-
-    async def try_set_status(self, proposal_id: str, *, from_status: str, to_status: str) -> bool:
-        rc = await self._b.execute_rowcount(
-            "UPDATE proposals SET status=? WHERE proposal_id=? AND status=?",
-            (to_status, proposal_id, from_status),
-        )
-        return rc == 1
+# NOTE: SqliteProposalStore was replaced on 2026-08-08 by the Unified* stores in events/unified.py
+# (ADR-002 step 2.5b) — one implementation over the dialect adapter. Parity
+# verified against both twins on both live backends in
+# test/storage/test_events_unified_parity.py.
 
 
-class SqliteDecisionStore(DecisionStore):
-    def __init__(self, backend: SqliteEventsBackend) -> None:
-        self._b = backend
 
-    async def put(
-        self, *, proposal_id: str | None, event_id: str, outcome: str,
-        action_summary: str | None = None, ts: float | None = None,
-        session_id: str | None = None, agent_path: str | None = None,
-    ) -> None:
-        await self._b.execute(
-            "INSERT INTO decisions(decision_id, proposal_id, event_id, outcome, action_summary, ts, "
-            "session_id, agent_path) VALUES(?,?,?,?,?,?,?,?)",
-            (str(ULID()), proposal_id, event_id, outcome, action_summary, ts or time.time(),
-             session_id, agent_path),
-        )
-
-    async def list(self, limit: int = 50, cursor: float | None = None) -> list[Decision]:
-        if cursor is not None:
-            rows = await self._b.fetchall(
-                "SELECT * FROM decisions WHERE ts < ? ORDER BY ts DESC LIMIT ?",
-                (float(cursor), limit),
-            )
-        else:
-            rows = await self._b.fetchall(
-                "SELECT * FROM decisions ORDER BY ts DESC LIMIT ?", (limit,)
-            )
-        return [_row_to_decision(r) for r in rows]
-
-    async def recall(self, topic_glob: str, since_sec: float, limit: int = 20) -> list[dict[str, Any]]:
-        cutoff = time.time() - since_sec
-        rows = await self._b.fetchall(
-            """
-            SELECT d.outcome, d.action_summary, d.ts, ep.topic
-              FROM decisions d
-              JOIN event_payloads ep ON ep.event_id = d.event_id
-             WHERE d.ts >= ?
-             ORDER BY d.ts DESC LIMIT ?
-            """,
-            (cutoff, limit),
-        )
-        return [dict(r) for r in rows if fnmatch.fnmatchcase(r["topic"], topic_glob)]
+# NOTE: SqliteDecisionStore was replaced on 2026-08-08 by the Unified* stores in events/unified.py
+# (ADR-002 step 2.5b) — one implementation over the dialect adapter. Parity
+# verified against both twins on both live backends in
+# test/storage/test_events_unified_parity.py.
 
 
-class SqliteConsentRuleStore(ConsentRuleStore):
-    def __init__(self, backend: SqliteEventsBackend) -> None:
-        self._b = backend
-
-    async def put(self, rule: ConsentRule) -> None:
-        await self._b.execute(
-            "INSERT INTO consent_rules(rule_id, topic_glob, match_json, decision, created_ts, expires_ts) "
-            "VALUES(?,?,?,?,?,?)",
-            (rule.rule_id, rule.topic_glob, rule.match_json, rule.decision,
-             rule.created_ts, rule.expires_ts),
-        )
-
-    async def list(self) -> list[ConsentRule]:
-        rows = await self._b.fetchall("SELECT * FROM consent_rules ORDER BY created_ts DESC")
-        return [_row_to_consent_rule(r) for r in rows]
-
-
-class SqliteToolCounterStore(ToolCounterStore):
-    def __init__(self, backend: SqliteEventsBackend) -> None:
-        self._b = backend
-
-    async def incr(self, tool_name: str, day: str) -> int:
-        async with self._b._write_lock:
-            await self._b._c.execute(
-                "INSERT INTO tool_call_counters(tool_name, day, count) VALUES(?,?,1) "
-                "ON CONFLICT(tool_name, day) DO UPDATE SET count = count + 1",
-                (tool_name, day),
-            )
-            await self._b._c.commit()
-            cur = await self._b._c.execute(
-                "SELECT count FROM tool_call_counters WHERE tool_name=? AND day=?",
-                (tool_name, day),
-            )
-            row = await cur.fetchone()
-            await cur.close()
-        return int(row["count"]) if row else 1
-
-    async def get(self, tool_name: str, day: str) -> int:
-        row = await self._b.fetchone(
-            "SELECT count FROM tool_call_counters WHERE tool_name=? AND day=?",
-            (tool_name, day),
-        )
-        return int(row["count"]) if row else 0
+# NOTE: SqliteConsentRuleStore was replaced on 2026-08-08 by UnifiedConsentRuleStore in
+# events/unified.py (ADR-002 step 2.5b) — one implementation over the dialect
+# adapter. Parity was verified against both twins on both live backends
+# (test/storage/test_events_unified_parity.py, 44 assertions) first.
 
 
 class SqlitePrefsBackend(PrefsBackend):
@@ -307,136 +243,23 @@ class SqlitePrefsBackend(PrefsBackend):
         return out
 
 
-class SqliteConsentGrantStore(ConsentGrantStore):
-    def __init__(self, backend: SqliteEventsBackend) -> None:
-        self._b = backend
 
-    async def put(self, grant: "Grant") -> None:  # noqa: F821
-        await self._b.execute(
-            "INSERT OR REPLACE INTO consent_grants"
-            "(grant_id, domain, subject_key, decision, scope, scope_ref, created_ts, expires_ts) "
-            "VALUES(?,?,?,?,?,?,?,?)",
-            (grant.grant_id, grant.domain, grant.subject_key, grant.decision,
-             grant.scope, grant.scope_ref, grant.created_ts, grant.expires_ts),
-        )
-
-    async def delete(self, grant_id: str) -> None:
-        await self._b.execute("DELETE FROM consent_grants WHERE grant_id=?", (grant_id,))
-
-    async def load(self) -> list["Grant"]:  # noqa: F821
-        from yuyutsava.consent.models import Grant
-        rows = await self._b.fetchall("SELECT * FROM consent_grants")
-        return [
-            Grant(
-                grant_id=r["grant_id"], domain=r["domain"], subject_key=r["subject_key"],
-                decision=r["decision"], scope=r["scope"], scope_ref=r["scope_ref"],
-                created_ts=r["created_ts"], expires_ts=r["expires_ts"],
-            )
-            for r in rows
-        ]
+# NOTE: SqliteConsentGrantStore was replaced on 2026-08-08 by the Unified* stores in events/unified.py
+# (ADR-002 step 2.5b) — one implementation over the dialect adapter. Parity
+# verified against both twins on both live backends in
+# test/storage/test_events_unified_parity.py.
 
 
-# Column order shared by the INSERT and the row→dict reader below.
-_ASK_COLS = (
-    "ask_id", "created_ts", "surface", "session_id", "thread_id", "card_id",
-    "task_id", "interrupt_id", "agent_path", "agent_label", "title", "body",
-    "options_json", "payload_json", "status", "answered_ts", "response",
-)
 
 
-def ask_row_to_record(row: Any) -> dict[str, Any]:
-    """One ``pending_asks`` row → the wire record clients render.
-
-    ``payload_json`` is authoritative (it is exactly what was broadcast); the
-    flat columns exist for querying and are folded back in as a fallback for
-    rows written by an older build.
-    """
-    try:
-        payload = json.loads(row["payload_json"]) or {}
-    except (ValueError, TypeError):
-        payload = {}
-    try:
-        options = json.loads(row["options_json"]) or []
-    except (ValueError, TypeError):
-        options = []
-    record = {
-        "ask_id": row["ask_id"],
-        "created_ts": row["created_ts"],
-        "surface": row["surface"],
-        "session_id": row["session_id"],
-        "thread_id": row["thread_id"],
-        "card_id": row["card_id"],
-        "task_id": row["task_id"],
-        "interrupt_id": row["interrupt_id"],
-        "agent_path": row["agent_path"],
-        "agent_label": row["agent_label"],
-        "title": row["title"],
-        "body": row["body"],
-        "options": options,
-    }
-    record.update(payload)
-    record["status"] = row["status"]
-    return record
 
 
-def ask_record_to_params(record: dict[str, Any]) -> tuple:
-    """Wire record → the ``pending_asks`` column tuple (INSERT order)."""
-    return (
-        record.get("ask_id"),
-        float(record.get("created_ts") or time.time()),
-        record.get("surface") or "background",
-        record.get("session_id"),
-        record.get("thread_id"),
-        record.get("card_id"),
-        record.get("task_id"),
-        record.get("interrupt_id"),
-        record.get("agent_path"),
-        record.get("agent_label"),
-        record.get("title") or "",
-        record.get("body") or "",
-        json.dumps(list(record.get("options") or [])),
-        json.dumps(record, default=str),
-        "pending",
-        None,
-        None,
-    )
 
 
-class SqlitePendingAskStore(PendingAskStore):
-    def __init__(self, backend: SqliteEventsBackend) -> None:
-        self._b = backend
 
-    async def put(self, record: dict[str, Any]) -> None:
-        cols = ", ".join(_ASK_COLS)
-        marks = ",".join("?" * len(_ASK_COLS))
-        await self._b.execute(
-            f"INSERT OR IGNORE INTO pending_asks({cols}) VALUES({marks})",
-            ask_record_to_params(record),
-        )
-
-    async def resolve(self, ask_id: str, response: str, *, status: str = "answered") -> bool:
-        # Compare-and-set on status: two surfaces answering at the same instant
-        # both call this, and exactly one wins.
-        rc = await self._b.execute_rowcount(
-            "UPDATE pending_asks SET status=?, response=?, answered_ts=? "
-            "WHERE ask_id=? AND status='pending'",
-            (status, response, time.time(), ask_id),
-        )
-        return rc == 1
-
-    async def list_pending(self, limit: int = 200) -> list[dict[str, Any]]:
-        rows = await self._b.fetchall(
-            "SELECT * FROM pending_asks WHERE status='pending' "
-            "ORDER BY created_ts ASC LIMIT ?",
-            (int(limit),),
-        )
-        return [ask_row_to_record(r) for r in rows]
-
-    async def get(self, ask_id: str) -> dict[str, Any] | None:
-        row = await self._b.fetchone(
-            "SELECT * FROM pending_asks WHERE ask_id=?", (ask_id,)
-        )
-        return ask_row_to_record(row) if row else None
+# NOTE: SqlitePendingAskStore was replaced on 2026-08-08 by the Unified* store in
+# events/unified.py (ADR-002 step 2.5b). Parity verified against both twins on
+# both live backends in test/storage/test_events_unified_parity.py.
 
 
 # ---------------------------------------------------------------------------

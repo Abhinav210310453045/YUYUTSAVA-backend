@@ -1,6 +1,6 @@
 """Pluggable digest builders for offloaded tool results.
 
-When :class:`~yuyutsava.context.offload_middleware.ToolResultOffloadMiddleware`
+When :class:`~yuyutsava.context.offload_policy.ToolResultOffloadPolicy`
 moves a tool result into the artifact store, it replaces the inline content
 with a *digest* — the small, load-bearing summary that stays in context. The
 quality of that summary determines whether the model can act without paging the

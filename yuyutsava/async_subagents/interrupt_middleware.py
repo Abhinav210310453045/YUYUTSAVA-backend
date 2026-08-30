@@ -9,23 +9,27 @@ matching ``ToolMessage``. The next agent tick fails inside
 
     Found AIMessages with tool_calls that do not have a corresponding ToolMessage.
 
-This middleware intercepts those two tools on the *master* side and, before
-the handler runs, POSTs synthetic ``ToolMessage``s into the subagent thread
-for every unresolved ``tool_call_id``. The subsequent interrupt + new run
-then sees a clean message list and validates fine.
+:class:`RemoteThreadPatcher` POSTs synthetic ``ToolMessage``s into the subagent
+thread for every unresolved ``tool_call_id``, so the subsequent interrupt + new
+run sees a clean message list and validates fine.
 
-Wire it AFTER ``BackgroundTaskCapMiddleware`` in the master's middleware list
-so the cap check (which can short-circuit and return a refusal ToolMessage)
-runs first; this middleware only does work when the tool actually proceeds.
+Since Phase 4 this module holds no middleware. The *decision* — which tool calls
+warrant a patch, and against which thread — is
+:class:`~yuyutsava.async_subagents.interrupt_patch_policy.AsyncTaskInterruptPatchPolicy`.
+What stays here is the SDK client that carries it out, plus
+``find_pending_tool_calls`` / ``build_synthetic_toolmessages``, which the
+watcher's self-heal shares so both agree on what "orphaned" means.
+
+Order still matters: the policy runs AFTER ``BackgroundTaskCapPolicy``, so the
+cap (which can short-circuit with a refusal) is evaluated first and no patch is
+attempted for a launch that never happens.
 """
 
 from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Awaitable, Callable, Iterable
-
-from langchain.agents.middleware.types import AgentMiddleware
+from typing import Any, Iterable
 
 logger = logging.getLogger("yuyutsava.async_subagents.interrupt_middleware")
 
@@ -39,8 +43,15 @@ SYNTHETIC_TOOL_CONTENT = "[interrupted by user update — tool was cancelled mid
 _SETTLED_RUN_STATUSES = frozenset({"success", "error", "interrupted", "cancelled", "timeout"})
 
 
-class AsyncTaskInterruptPatchMiddleware(AgentMiddleware):
-    """Inject synthetic ToolMessages for pending tool_calls before an interrupt.
+class RemoteThreadPatcher:
+    """Talks to a background subagent's Agent Protocol server to heal its thread.
+
+    Split out of ``AsyncTaskInterruptPatchMiddleware`` in Phase 4: none of this is
+    policy. It is an SDK client that settles a run and injects synthetic
+    ToolMessages, and it is shared verbatim between the middleware (until it is
+    deleted) and ``AsyncTaskInterruptPatchPolicy``. Holding it, rather than
+    reaching into a middleware's private members, is what keeps one copy of the
+    settle/patch logic.
 
     Parameters
     ----------
@@ -51,7 +62,6 @@ class AsyncTaskInterruptPatchMiddleware(AgentMiddleware):
     """
 
     def __init__(self, agent_specs: Iterable[dict]) -> None:
-        super().__init__()
         self._url_by_name: dict[str, str | None] = {}
         self._headers_by_name: dict[str, dict[str, str]] = {}
         for spec in agent_specs:
@@ -63,57 +73,13 @@ class AsyncTaskInterruptPatchMiddleware(AgentMiddleware):
         self._sync_clients: dict[str, Any] = {}
         self._async_clients: dict[str, Any] = {}
 
-    # ------------------------------------------------------------------
-    # Middleware hooks
-    # ------------------------------------------------------------------
+    def knows(self, agent_name: str) -> bool:
+        """Whether *agent_name* is one of the subagents this master launched."""
+        return agent_name in self._url_by_name
 
-    def wrap_tool_call(
-        self,
-        request: Any,
-        handler: Callable[[Any], Any],
-    ) -> Any:
-        if request.tool.name in _INTERRUPT_TOOLS:
-            tracked = self._lookup_tracked(request)
-            if tracked is not None:
-                self._patch_pending_sync(tracked["agent_name"], tracked["thread_id"])
-        return handler(request)
-
-    async def awrap_tool_call(
-        self,
-        request: Any,
-        handler: Callable[[Any], Awaitable[Any]],
-    ) -> Any:
-        if request.tool.name in _INTERRUPT_TOOLS:
-            tracked = self._lookup_tracked(request)
-            if tracked is not None:
-                await self._patch_pending_async(tracked["agent_name"], tracked["thread_id"])
-        return await handler(request)
-
-    # ------------------------------------------------------------------
-    # Internals
-    # ------------------------------------------------------------------
-
-    def _lookup_tracked(self, request: Any) -> dict | None:
-        """Pull the tracked AsyncTask record for this tool call out of state."""
-        args = (request.tool_call or {}).get("args") or {}
-        task_id = (args.get("task_id") or "").strip()
-        if not task_id:
-            return None
-        state = getattr(request, "state", None) or {}
-        tasks = state.get("async_tasks") if isinstance(state, dict) else None
-        if not tasks:
-            return None
-        tracked = tasks.get(task_id)
-        if not tracked:
-            return None
-        agent_name = tracked.get("agent_name") if isinstance(tracked, dict) else None
-        thread_id = tracked.get("thread_id") if isinstance(tracked, dict) else None
-        if not agent_name or not thread_id:
-            return None
-        if agent_name not in self._url_by_name:
-            logger.debug("Unknown async subagent %r; skipping interrupt patch", agent_name)
-            return None
-        return {"agent_name": agent_name, "thread_id": thread_id}
+    async def patch_pending(self, agent_name: str, thread_id: str) -> int:
+        """Settle the active run and resolve orphaned tool calls. Returns how many."""
+        return await self._patch_pending_async(agent_name, thread_id)
 
     def _resolve_headers(self, agent_name: str) -> dict[str, str]:
         headers = dict(self._headers_by_name.get(agent_name) or {})

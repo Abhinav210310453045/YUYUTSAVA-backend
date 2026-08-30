@@ -10,6 +10,7 @@ from yuyutsava.llm.base import Provider, require
 
 class BedrockProvider(Provider):
     settings_type = BedrockSettings
+    key = "bedrock"
 
     def build(
         self, settings: BedrockSettings, *, temperature: float, disable_reasoning: bool

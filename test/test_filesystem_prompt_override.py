@@ -1,4 +1,4 @@
-"""Verify FilesystemPromptOverrideMiddleware strips the deepagents filesystem block.
+"""Verify FilesystemPromptPolicy strips the deepagents filesystem block.
 
 Builds the real CLI deepagent (mirroring the chat REPL: subagents=[GeneralPurposeAgent])
 with a fake model that records the exact system prompt + bound tools on the first model
@@ -18,6 +18,7 @@ Or via pytest:  pytest test/test_filesystem_prompt_override.py
 
 from __future__ import annotations
 
+import asyncio
 import itertools
 import os
 from pathlib import Path
@@ -31,6 +32,7 @@ from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 
 import yuyutsava.core.engine as engine
+import yuyutsava.llm as llm
 from yuyutsava.agents.general_purpose.agent import GeneralPurposeAgent
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
 from yuyutsava.core.config import AnthropicSettings, LocalSettings, SearchConfig
@@ -59,8 +61,14 @@ def _render_prompt() -> dict[str, Any]:
             captured.setdefault("bound_tools", names)
             return self
 
-    orig = engine.chat_model
-    engine.chat_model = lambda settings, *, temperature=0.1: CapturingModel(
+    # Patch the factory at its *source* module, not on ``engine``. Builders
+    # import it lazily inside the function body (``core/engine.py`` — from
+    # yuyutsava.llm import chat_model), so ``from X import Y`` resolves
+    # ``yuyutsava.llm.chat_model`` at call time. Patching ``engine.chat_model``
+    # silently no-ops: the attribute has not existed since the llm/ refactor,
+    # which is how this tripwire went dead without anyone noticing.
+    orig = llm.chat_model
+    llm.chat_model = lambda settings, **kwargs: CapturingModel(
         messages=itertools.cycle([AIMessage(content="done")])
     )
     try:
@@ -84,12 +92,18 @@ def _render_prompt() -> dict[str, Any]:
             search_config=search_config,
             subagents=[general_purpose],
         )
-        bundle.agent.invoke(
+        # ``ainvoke``, not ``invoke``: LangChain picks the sync or async
+        # middleware hooks from how the graph is driven, and every production
+        # path (daemon, CLI, voice) is async. Rendering the prompt through the
+        # sync path meant this tripwire was exercising hooks nothing in
+        # production runs — it went unnoticed until Phase 4, when the migrated
+        # policies became async-only and this was the single caller that broke.
+        asyncio.run(bundle.agent.ainvoke(
             {"messages": [{"role": "user", "content": "hi"}]},
             config={"configurable": {"thread_id": "fs-prompt-test"}},
-        )
+        ))
     finally:
-        engine.chat_model = orig
+        llm.chat_model = orig
 
     msgs = captured.get("messages") or []
     system = msgs[0] if msgs else None
@@ -118,14 +132,33 @@ def test_filesystem_block_removed():
     assert "## FOLLOWING CONVENTIONS" in text, "Following Conventions guidance was lost"
 
 
-def test_bound_tools_unchanged():
-    r = _render_prompt()
-    assert set(r["bound_tools"]) == {"write_todos", "task", "tool_search"}, (
-        f"unexpected bound tools: {r['bound_tools']}"
+def test_lazy_discovery_invariant_holds():
+    """Suppressed tool families never reach the model; discovery entry point does.
+
+    Asserts the *invariant* rather than an exact tool list. The previous version
+    pinned ``{write_todos, task, tool_search}`` exactly, so it broke the moment
+    the always-visible vis_* / artifact_* families were added — a false alarm
+    that says nothing about whether lazy discovery still works. What actually
+    matters is that ToolFilterPolicy is still hiding what it claims to hide.
+    """
+    from yuyutsava.core.tool_filter_policy import _SUPPRESS_NAMES, _SUPPRESS_PREFIXES
+
+    bound = set(_render_prompt()["bound_tools"])
+
+    leaked_prefix = {n for n in bound if n.startswith(_SUPPRESS_PREFIXES)}
+    assert not leaked_prefix, f"suppressed prefix families leaked to the model: {sorted(leaked_prefix)}"
+
+    leaked_builtin = bound & _SUPPRESS_NAMES
+    assert not leaked_builtin, (
+        f"deepagents built-ins we replace with tr_* leaked to the model: {sorted(leaked_builtin)}"
     )
+
+    # The lazy-discovery entry point and the deepagents built-ins we keep.
+    assert "tool_search" in bound, "tool_search missing — lazy discovery is broken"
+    assert {"write_todos", "task"} <= bound, f"expected deepagents built-ins missing: {sorted(bound)}"
 
 
 if __name__ == "__main__":
     test_filesystem_block_removed()
-    test_bound_tools_unchanged()
-    print("OK — filesystem block stripped, BLOCKs A/B/D intact, bound tools unchanged.")
+    test_lazy_discovery_invariant_holds()
+    print("OK — filesystem block stripped, BLOCKs A/B/D intact, lazy-discovery invariant holds.")

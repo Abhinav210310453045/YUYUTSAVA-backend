@@ -1,4 +1,4 @@
-"""SqliteUsageStore + UsageRecorder middleware (Phase 4 cost tracking).
+"""SqliteUsageStore + UsagePolicy (Phase 4 cost tracking).
 
 Run:  uv run python -m unittest test.daemon.test_usage -v
 """
@@ -13,7 +13,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 
 from yuyutsava.daemon.usage import (
     SqliteUsageStore,
-    UsageRecorder,
+    UsagePolicy,
     UsageRow,
     mint_usage_id,
 )
@@ -99,7 +99,7 @@ class _FailingStore:
         raise RuntimeError("db down")
 
 
-class UsageRecorderTests(unittest.IsolatedAsyncioTestCase):
+class UsagePolicyTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
         self.store = SqliteUsageStore(Path(self._tmp.name) / "state.db")
@@ -107,13 +107,22 @@ class UsageRecorderTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self) -> None:
         self._tmp.cleanup()
 
-    def _recorder(self, store=None) -> UsageRecorder:
-        return UsageRecorder(
+    def _recorder(self, store=None):
+        """The policy behind its adapter — the shape the graph actually runs.
+
+        Phase 4 turned ``UsageRecorder`` into ``UsagePolicy``; the hook the graph
+        calls is now the adapter's ``aafter_model``, which resolves usage once
+        and hands the policy a ``Turn``. Driving the adapter keeps these cases
+        exercising the production path rather than the policy in isolation.
+        """
+        from yuyutsava.policy.adapter import LangChainPolicyAdapter
+
+        return LangChainPolicyAdapter([UsagePolicy(
             store if store is not None else self.store,
             role="orchestrator", model_name="test-model",
             task_id="tsk_1", thread_id="orch-1",
             prices={"test-model": (1.00, 5.00)},
-        )
+        )])
 
     @staticmethod
     def _state(usage: dict | None) -> dict:

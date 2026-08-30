@@ -5,6 +5,10 @@ does nothing unless ``YUYUTSAVA_DEBUG_PROMPT`` is truthy. It runs as the last
 ``before_model`` hook so it reports the message list *after* offload and
 compaction have done their work — i.e. what the LLM actually receives.
 
+Phase 4 step 4.8, thirteenth migration: a plain
+:class:`~yuyutsava.policy.base.Policy` rather than an ``AgentMiddleware``
+subclass. Nothing about the report changed.
+
 This is the answer to "is the content really reduced, or just copied into a
 table too?". For each model call it logs one line per message with its byte
 size and flags offloaded tool digests, plus a total. You will see that a
@@ -30,7 +34,8 @@ import os
 import time
 from typing import Any
 
-from langchain.agents.middleware import AgentMiddleware
+from yuyutsava.policy.base import Policy
+from yuyutsava.policy.types import Directive, Turn
 
 logger = logging.getLogger("yuyutsava.context.prompt_inspector")
 
@@ -54,30 +59,22 @@ def _is_offloaded_digest(content: Any) -> bool:
     return isinstance(content, str) and content.lstrip().startswith('{"offloaded": true')
 
 
-class PromptInspectorMiddleware(AgentMiddleware):
+class PromptInspectorPolicy(Policy):
     """Log the assembled per-step context. No-op unless YUYUTSAVA_DEBUG_PROMPT."""
+
+    name = "PromptInspectorPolicy"
 
     def __init__(self, role: str = "agent") -> None:
         super().__init__()
         self._role = role
         self._call = 0
 
-    # Async runtime path (the daemon + CLI both stream via astream).
-    async def abefore_model(self, state: Any, runtime: Any) -> None:
-        self._report(state)
+    async def before_model(self, turn: Turn) -> Directive | None:
+        self._report(list(turn.messages))
         return None
 
-    # Sync path (parity; some test/eval flows use invoke()).
-    def before_model(self, state: Any, runtime: Any) -> None:
-        self._report(state)
-        return None
-
-    def _report(self, state: Any) -> None:
+    def _report(self, messages: list[Any]) -> None:
         if not _enabled():
-            return
-        try:
-            messages = state.get("messages", []) if isinstance(state, dict) else []
-        except Exception:
             return
         self._call += 1
         total = 0

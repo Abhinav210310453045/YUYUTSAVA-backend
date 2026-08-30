@@ -46,6 +46,8 @@ before broad ones.
 
 from __future__ import annotations
 
+from yuyutsava.storage.events.roles import ToolCallCounter
+
 import datetime as _dt
 import fnmatch
 import json
@@ -163,9 +165,12 @@ class StorePolicyCapEnforcer:
     count exceeds the cap. ``today_utc()`` defines the day boundary.
     """
 
-    def __init__(self, policy: PermissionsPolicy, store: object) -> None:
+    def __init__(self, policy: PermissionsPolicy, store: ToolCallCounter) -> None:
         self._policy = policy
-        self._store = store  # yuyutsava.storage.events.Store, kept untyped to avoid cycle
+        # Was `object`, "kept untyped to avoid cycle". The cycle was real; the
+        # fix is a Protocol, not an escape hatch — ToolCallCounter names the two
+        # methods used here and imports nothing from the Store.
+        self._store = store
 
     async def check_and_incr(self, tool_name: str) -> tuple[bool, str]:
         cap = self._policy.daily_cap_for(tool_name)

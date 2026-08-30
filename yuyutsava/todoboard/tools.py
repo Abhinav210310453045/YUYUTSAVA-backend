@@ -1,7 +1,7 @@
 """todo_* tools: agent-facing access to the TODO board via the exchange.
 
 Hidden behind the normal ``tool_search`` discovery flow (the ``todo_`` prefix
-is in ``ToolFilterMiddleware._SUPPRESS_PREFIXES``) — their names stay visible
+is suppressed by ``ToolFilterPolicy``) — their names stay visible
 in the system-prompt catalog and a schema is pulled on demand, like mem_*/ws_*.
 
 Two scopes:

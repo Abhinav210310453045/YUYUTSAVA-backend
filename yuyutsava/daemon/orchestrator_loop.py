@@ -35,6 +35,7 @@ from yuyutsava.daemon.usage import UsageContext
 from yuyutsava.storage.ids import mint_thread_id as _mint_thread_id
 from yuyutsava.daemon.triage_loop import OrchestratorTask
 from yuyutsava.storage.events import Store
+from yuyutsava.storage.events.roles import DecisionWriter
 from langchain_core.language_models import BaseChatModel
 from langgraph.checkpoint.base import BaseCheckpointSaver
 
@@ -100,7 +101,7 @@ class OrchestratorLoop:
         *,
         task_queue: asyncio.Queue[OrchestratorTask],
         channels: ChannelRouter,
-        store: Store,
+        store: DecisionWriter,
         orchestrator_model: BaseChatModel,
         deps: OrchestratorDeps,
         orchestrator_token_budget: int,
@@ -308,7 +309,7 @@ class OrchestratorLoop:
         deps = deps if deps is not None else self._deps
         # Build-time snapshot keeps only the NON-similarity blocks (prefs +
         # the um_* standing-awareness index). Memory/skill/conversation recall
-        # is per-turn now — RetrievalInjectionMiddleware inside
+        # is per-turn now — RetrievalInjectionPolicy inside
         # build_orchestrator matches them to the task message itself.
         prefs_block = await self._prefs_injector.build_block() if self._prefs_injector else ""
         # Per-agent user-behavior memory: the MEMORY.md index of what this
@@ -442,24 +443,57 @@ async def resume_interrupted_tasks(
     The daemon singleton lock guarantees no *other* process owns these rows,
     so any non-terminal task at boot is ours to resume.
 
-    Each row is re-pushed as an :class:`OrchestratorTask`:
+    Only ``running`` rows are resumed. They carry their persisted ``thread_id``
+    + ``resume`` flag so the orchestrator continues them from their last
+    LangGraph checkpoint.
 
-    - ``running`` rows carry their persisted ``thread_id`` + ``resume`` flag so
-      the orchestrator continues them from their last LangGraph checkpoint.
-    - ``queued`` rows never started, so they re-run fresh on a new thread.
+    **``queued`` rows are deliberately not resumed — this is a consent boundary.**
+
+    ``queued`` conflates two states the ``tasks`` table cannot tell apart, because
+    a row carries no ``proposal_id``:
+
+    * a **direct** submission (``submit_direct``) writes an *approved* proposal
+      and enqueues in the same breath, so it is only ``queued`` for the moment
+      between the two calls;
+    * a **triage** submission (``submit_via_triage``) is ``queued`` for its whole
+      life while a Tier-1 proposal waits on the user — and stays ``queued`` if
+      the user never answers, if they skip it, or if triage drops it.
+
+    Re-enqueueing ``queued`` therefore executed proposals the user had **declined
+    by timeout**. Observed on a live daemon: two triage submissions with
+    ``proposal=pending`` / ``decision=expired`` were resurrected at the next boot
+    and run unattended, one of them attempting to write to the user's TODO board.
+    That contradicts the system's own second invariant — *nothing acts without a
+    standing rule or an explicit approval*.
+
+    The asymmetry decides it. Being conservative costs a re-submission of a task
+    that had not started anyway; being permissive runs something the user
+    declined. So ``queued`` rows are logged and left alone.
 
     Returns the number of tasks re-enqueued.
     """
     if registry is None:
         return 0
     rows: list = []
-    for status in ("running", "queued"):
-        try:
-            page, _cursor = await registry.list(status=status, limit=limit)
-        except Exception:
-            logger.exception("resume: listing %s tasks failed", status)
-            continue
+    try:
+        page, _cursor = await registry.list(status="running", limit=limit)
         rows.extend(page)
+    except Exception:
+        logger.exception("resume: listing running tasks failed")
+
+    # `queued` rows are deliberately NOT resumed — see the docstring. Surface
+    # them so an operator can see what was left behind rather than wonder.
+    try:
+        stale, _ = await registry.list(status="queued", limit=limit)
+    except Exception:
+        stale = []
+    if stale:
+        logger.info(
+            "resume: %d queued task(s) NOT resumed (never authorised — a queued "
+            "row has no approved proposal to point at). Re-submit if you want "
+            "them: %s",
+            len(stale), ", ".join(r.task_id for r in stale[:5]),
+        )
 
     count = 0
     for rec in rows:

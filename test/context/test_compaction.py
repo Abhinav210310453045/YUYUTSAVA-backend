@@ -30,7 +30,7 @@ from langchain_core.messages import (
 
 from yuyutsava.context.compaction import YuyutsavaCompactionMiddleware
 from yuyutsava.context.config import ContextSettings
-from yuyutsava.context.summary_store import SqliteThreadSummaryStore
+from yuyutsava.context.summary_store_unified import sqlite_summary_store
 
 FAKE_SUMMARY = (
     "## SESSION INTENT\nOrganize the downloads folder.\n"
@@ -147,7 +147,7 @@ class CompactionTriggerTests(unittest.IsolatedAsyncioTestCase):
 class CompactionPersistenceTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
-        self.summary_store = SqliteThreadSummaryStore(Path(self._tmp.name) / "state.db")
+        self.summary_store = sqlite_summary_store(Path(self._tmp.name) / "state.db")
 
     async def asyncTearDown(self) -> None:
         self._tmp.cleanup()
@@ -239,7 +239,7 @@ class ThreeCycleContinuityTests(unittest.IsolatedAsyncioTestCase):
     async def test_three_cycles_keep_session_intent(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
-        store = SqliteThreadSummaryStore(Path(self._tmp.name) / "state.db")
+        store = sqlite_summary_store(Path(self._tmp.name) / "state.db")
         mw = _mw(
             ContextSettings(max_input_tokens=600, compact_fraction=0.5, keep_messages=4),
             summary_store=store,

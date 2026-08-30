@@ -35,7 +35,7 @@ def render_capabilities_block(
     their ``-bg`` peers, and the remote entries — so a master that reads this
     block never learns about a subagent it isn't allowed to call. Callers whose
     graph outlives a toggle also install
-    :class:`~yuyutsava.core.subagent_gate_middleware.SubagentGateMiddleware`.
+    :class:`~yuyutsava.core.subagent_gate_policy.SubagentGatePolicy`.
 
     Empty input → ``(no subagents registered)``.
     """

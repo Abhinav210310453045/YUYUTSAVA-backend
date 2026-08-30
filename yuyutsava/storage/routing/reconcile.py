@@ -41,28 +41,37 @@ class TableSpec:
 
 
 # FK order: event_payloads → proposals → decisions; the rest are independent.
+#
+# ``ts_cols`` marks epoch-REAL columns in the SQLite buffer whose Postgres
+# counterpart is TIMESTAMPTZ, so the drain wraps them in to_timestamp(). Every
+# timestamp column is TIMESTAMPTZ on Postgres since migration v20 — before that
+# the events tables were DOUBLE PRECISION and needed no wrapping.
 EVENT_TABLE_SPECS: tuple[TableSpec, ...] = (
     TableSpec("event_payloads", ("event_id",),
               ("event_id", "topic", "ts", "payload_json", "blob_path"),
-              order=1, jsonb=frozenset({"payload_json"})),
+              order=1, jsonb=frozenset({"payload_json"}),
+              ts_cols=frozenset({"ts"})),
     TableSpec("proposals", ("proposal_id",),
               ("proposal_id", "event_id", "topic", "summary", "proposed", "subagent",
                "urgency", "created_ts", "expires_ts", "status", "session_id", "agent_path"),
-              order=2),
+              order=2, ts_cols=frozenset({"created_ts", "expires_ts"})),
     TableSpec("decisions", ("decision_id",),
               ("decision_id", "proposal_id", "event_id", "outcome", "action_summary",
                "ts", "session_id", "agent_path"),
-              order=3),
+              order=3, ts_cols=frozenset({"ts"})),
     TableSpec("consent_rules", ("rule_id",),
               ("rule_id", "topic_glob", "match_json", "decision", "created_ts", "expires_ts"),
-              order=4, jsonb=frozenset({"match_json"})),
+              order=4, jsonb=frozenset({"match_json"}),
+              ts_cols=frozenset({"created_ts", "expires_ts"})),
     TableSpec("tool_call_counters", ("tool_name", "day"),
               ("tool_name", "day", "count"), order=4),
     TableSpec("user_prefs", ("key",),
-              ("key", "value_json", "updated_ts"), order=4, jsonb=frozenset({"value_json"})),
+              ("key", "value_json", "updated_ts"), order=4, jsonb=frozenset({"value_json"}),
+              ts_cols=frozenset({"updated_ts"})),
     TableSpec("consent_grants", ("grant_id",),
               ("grant_id", "domain", "subject_key", "decision", "scope", "scope_ref",
-               "created_ts", "expires_ts"), order=4),
+               "created_ts", "expires_ts"), order=4,
+              ts_cols=frozenset({"created_ts", "expires_ts"})),
 )
 
 
@@ -140,13 +149,19 @@ class Reconciler:
     content_specs: tuple[TableSpec, ...] = ()
 
     async def reconcile(self) -> int:
-        """Drain everything; return the total rows moved. Never raises."""
+        """Drain everything; return the total rows moved. Never raises.
+
+        Runs with foreign keys suspended on the buffer connection. Tables drain
+        parents-first because Postgres requires the parent row before the child,
+        and each batch is deleted from the buffer as it lands — so with SQLite's
+        ``ON DELETE CASCADE`` live (schema v5), removing a drained
+        ``event_payloads`` row would delete that event's not-yet-drained
+        ``proposals`` before they were ever copied. Silent data loss, only
+        during an outage recovery. See ``SqliteEventsBackend.foreign_keys_off``.
+        """
         total = 0
-        for spec in sorted((*EVENT_TABLE_SPECS, *self.content_specs), key=lambda s: s.order):
-            try:
-                total += await self._drain_table(spec)
-            except Exception:  # noqa: BLE001
-                logger.exception("reconcile: draining %s failed", spec.table)
+        async with self.backend.foreign_keys_off():
+            total += await self._drain_all()
         for drain in self.extra_drains:
             try:
                 total += await drain()
@@ -159,6 +174,15 @@ class Reconciler:
                 logger.exception("reconcile: backfill failed")
         if total:
             logger.info("reconcile: drained %d buffered row(s) into postgres", total)
+        return total
+
+    async def _drain_all(self) -> int:
+        total = 0
+        for spec in sorted((*EVENT_TABLE_SPECS, *self.content_specs), key=lambda s: s.order):
+            try:
+                total += await self._drain_table(spec)
+            except Exception:  # noqa: BLE001
+                logger.exception("reconcile: draining %s failed", spec.table)
         return total
 
     async def _drain_table(self, spec: TableSpec) -> int:

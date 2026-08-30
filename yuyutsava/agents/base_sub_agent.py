@@ -39,6 +39,7 @@ import fnmatch
 
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
 from yuyutsava.agents.task_runner.tools import bind_tools
+from yuyutsava.ports import CapEnforcer, MemoryStore
 from yuyutsava.core.config import SearchConfig
 from yuyutsava.core.tool_registry import ToolRegistry
 from yuyutsava.mcp.loader import MCPClientManager
@@ -68,8 +69,10 @@ class BaseSubAgent(ABC):
         can_write_skills: bool = True,
         search_config: SearchConfig | None = None,
         mcp_manager: MCPClientManager | None = None,
-        cap_enforcer: object | None = None,  # tools.search._CapEnforcer; untyped to avoid cycle
-        memory_store: object | None = None,  # memory.store.MemoryStore; untyped to avoid cycle
+        # Typed against yuyutsava.ports (a leaf), so these no longer need the
+        # `object | None` + comment workaround the import cycle forced.
+        cap_enforcer: CapEnforcer | None = None,
+        memory_store: MemoryStore | None = None,
         skill_store: object | None = None,   # skills.store.SkillStore; for dual-write indexing
     ) -> None:
         self._task_runner = task_runner
@@ -300,7 +303,7 @@ class BaseSubAgent(ABC):
             graph = create_deep_agent(model=model, backend=backend,
                                       subagents=[agent_spec], ...)
         """
-        # Under the orchestrator these specs run with ToolFilterMiddleware, which
+        # Under the orchestrator these specs run with ToolFilterPolicy, which
         # hides the prefixed tools. Register them behind a tool_search gateway and
         # list their names in the prompt so the subagent can discover schemas on
         # demand instead of being blind to its own toolset.

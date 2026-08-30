@@ -4,7 +4,7 @@ Deliberately NOT tr_* file tools: ``~/.yuyutsava`` is the EXTERNAL zone for
 every master, so tr_write_file would raise a user permission prompt on each
 quiet learning write; and a dedicated tool enforces the slug/index/size
 invariants that prompt-guided file writes would drift from. The ``um_``
-prefix is suppressed by ToolFilterMiddleware like the other families —
+prefix is suppressed by ToolFilterPolicy like the other families —
 schemas load on demand via tool_search.
 """
 

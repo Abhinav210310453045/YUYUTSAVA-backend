@@ -28,10 +28,10 @@ from typing import Any
 
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
-from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 
 from yuyutsava.core.text_utils import sanitize_message_metadata
+from yuyutsava.ports.agent import Agent
 from yuyutsava.core.tool_result import guard_tool_result, is_tool_error
 from yuyutsava.core.tracing import get_callback, trace_metadata
 from yuyutsava.models.interrupts import (
@@ -342,7 +342,7 @@ def _artifact_event_from_result(body: str) -> dict | None:
     }
 
 
-async def _has_resumable_state(agent: CompiledStateGraph, cfg: RunnableConfig) -> bool:
+async def _has_resumable_state(agent: Agent, cfg: RunnableConfig) -> bool:
     """True when ``cfg``'s thread has a checkpoint with messages to resume.
 
     Used by :func:`astream_agent_iter` to decide between continuing an
@@ -360,8 +360,164 @@ async def _has_resumable_state(agent: CompiledStateGraph, cfg: RunnableConfig) -
     return bool(values.get("messages"))
 
 
+def _run_config(
+    *,
+    thread_id: str,
+    recursion_limit: int,
+    agent_path: str,
+    modality: str | None = None,
+    trace_name: str,
+    trace_tags: list[str],
+) -> RunnableConfig:
+    """The per-run config, built once for both entrypoints.
+
+    The two drivers built this separately and disagreed about it: only the
+    daemon one seeded ``modality``, so a middleware asking "is this a voice
+    turn?" always got "no" on the CLI path.
+    """
+    configurable: dict[str, Any] = {"thread_id": thread_id, "agent_path": agent_path}
+    if modality is not None:
+        configurable["modality"] = modality
+    cfg: RunnableConfig = {
+        "recursion_limit": recursion_limit,
+        "configurable": configurable,
+    }
+    callback = get_callback()
+    if callback is not None:
+        cfg["callbacks"] = [callback]
+        cfg["metadata"] = {
+            **(cfg.get("metadata") or {}),
+            **trace_metadata(session_id=thread_id, trace_name=trace_name,
+                             tags=trace_tags),
+        }
+    return cfg
+
+
+def _resume_command(decisions: list[tuple[str | None, str]]) -> Command:
+    """Build the ``Command`` that re-enters a graph parked on interrupt(s).
+
+    **One copy of the resume protocol.** It was written twice — once per driver
+    — and the copies drifted: the daemon's handles the case where several
+    interrupts arrive with no ids, and the CLI's built ``Command(resume={})``
+    there, discarding every answer the user had just given. That is `F-D03`'s
+    "the resume protocol is hand-implemented twice" with a concrete bill.
+
+    LangGraph requires the keyed form once more than one interrupt is pending;
+    the scalar form is kept for the single case to avoid relying on map support
+    in any node that may not accept it.
+    """
+    if len(decisions) == 1:
+        return Command(resume=decisions[0][1])
+    if all(it_id is None for it_id, _ in decisions):
+        # No ids at all (older LangGraph / a single resumable task): the map
+        # form cannot route, so fall back to a scalar resume with the first
+        # decision rather than dropping every answer and effectively rejecting.
+        return Command(resume=decisions[0][1])
+    resume_map: dict[str, Any] = {}
+    for it_id, decision in decisions:
+        if it_id is None:
+            # Mixed id/no-id is unexpected; skipping would silently reject this
+            # op, so leave it out of the map and let LangGraph re-emit the
+            # interrupt on the next pass (re-prompt, not auto-reject).
+            continue
+        resume_map[it_id] = decision
+    return Command(resume=resume_map)
+
+
+async def _drive_graph(
+    agent: Agent,
+    first_input: Any,
+    cfg: RunnableConfig,
+    *,
+    ask: Any,
+    collected: list[Any],
+):
+    """The graph loop, once. Decodes the stream and owns the resume protocol.
+
+    ADR-004 item 5: *"collapse ``astream_agent`` / ``astream_agent_iter`` into
+    one driver plus a sink"*. This is the driver. The two entrypoints are the
+    sinks — one turns these items into ``StreamEvent``s, the other into stderr
+    and log lines — and neither re-implements the loop, the interrupt
+    collection, or the resume handshake.
+
+    Deliberately low-level: it yields what the graph said, not a presentation
+    vocabulary. Forcing one event shape on both consumers would have meant
+    bending the CLI's byte-for-byte output to fit the daemon's payloads, and the
+    CLI output is a user-facing surface.
+
+    Yields:
+        ``("chunk", (chunk, meta))``  every ``messages``-mode item
+        ``("message", m)``           each message in an ``updates`` delta,
+                                     already sanitized and appended to
+                                     *collected*
+        ``("pass_end", steps)``      end of a stream pass; *steps* is how many
+                                     messages it produced
+
+    *ask* is awaited once per pending interrupt with the interrupt's value and
+    must return a decision string. ``None`` auto-rejects, which is what a
+    headless run wants.
+    """
+    current_input: Any = first_input
+
+    while True:
+        pending: list[tuple[str | None, Any]] = []
+        steps = 0
+
+        async for event in agent.astream(
+            current_input, config=cfg, stream_mode=["messages", "updates"],
+        ):
+            if not isinstance(event, tuple) or len(event) != 2:
+                continue
+            mode, data = event
+
+            if mode == "updates" and isinstance(data, dict) and "__interrupt__" in data:
+                for iv in data["__interrupt__"] or []:
+                    pending.append((getattr(iv, "id", None),
+                                    iv.value if hasattr(iv, "value") else iv))
+                yield ("interrupt_seen", None)
+                continue
+
+            if mode == "messages":
+                yield ("chunk", data)
+                continue
+
+            if mode != "updates" or not isinstance(data, dict):
+                continue
+            for _node_name, node_data in data.items():
+                if not isinstance(node_data, dict):
+                    continue
+                msgs = node_data.get("messages", [])
+                if not isinstance(msgs, list):
+                    continue
+                for m in msgs:
+                    if isinstance(m, AIMessage):
+                        sanitize_message_metadata(m)
+                    collected.append(m)
+                    steps += 1
+                    yield ("message", m)
+
+        yield ("pass_end", steps)
+
+        if not pending:
+            return
+
+        decisions: list[tuple[str | None, str]] = []
+        for it_id, value in pending:
+            if ask is None:
+                decision = "reject"
+            else:
+                try:
+                    decision = await ask(value)
+                except Exception as exc:  # noqa: BLE001 — a failed ask must not end the run
+                    yield ("ask_failed", exc)
+                    decision = "reject"
+            decisions.append((it_id, decision))
+
+        current_input = _resume_command(decisions)
+
+
 async def astream_agent_iter(
-    agent: CompiledStateGraph,
+    agent: Agent,
     task: str,
     *,
     thread_id: str | None = None,
@@ -388,7 +544,7 @@ async def astream_agent_iter(
 
     ``modality`` is seeded into ``configurable`` (``"text"`` by default,
     ``"voice"`` for spoken turns) so a middleware can style the reply for the
-    channel — e.g. ``VoiceStyleMiddleware`` makes voice replies short and
+    channel — e.g. ``VoiceStylePolicy`` makes voice replies short and
     spoken. The same agent graph serves both; only the per-turn value differs.
 
     ``keep_full_payloads``: when True, tool_result payloads include a
@@ -411,21 +567,14 @@ async def astream_agent_iter(
     Yields events; the final yielded event is always ``StreamEvent("final", {"text": ...})``.
     """
     _tid = thread_id or str(uuid.uuid4())
-    cfg: RunnableConfig = {
-        "recursion_limit": recursion_limit,
-        "configurable": {"thread_id": _tid, "agent_path": agent_path, "modality": modality},
-    }
-    _lf_cb = get_callback()
-    if _lf_cb is not None:
-        cfg["callbacks"] = [_lf_cb]
-        cfg["metadata"] = {
-            **(cfg.get("metadata") or {}),
-            **trace_metadata(
-                session_id=_tid,
-                trace_name=run_name,
-                tags=["mode:daemon", f"agent:{agent_path}"],
-            ),
-        }
+    cfg = _run_config(
+        thread_id=_tid,
+        recursion_limit=recursion_limit,
+        agent_path=agent_path,
+        modality=modality,
+        trace_name=run_name,
+        trace_tags=["mode:daemon", f"agent:{agent_path}"],
+    )
 
     final_messages: list[Any] = []
     # Explicit stable id: a HumanMessage created with id=None gets a fresh id
@@ -434,164 +583,100 @@ async def astream_agent_iter(
     # under a new id each subsequent turn, so the chat history (and the UI that
     # hydrates from it) shows duplicate user bubbles. Pinning the id at creation
     # makes it round-trip through the checkpoint unchanged.
-    current_input: Any = {"messages": [HumanMessage(content=task, id=str(uuid.uuid4()))]}
+    first_input: Any = {"messages": [HumanMessage(content=task, id=str(uuid.uuid4()))]}
     if resume_value is not None:
         # Answering an interrupt raised by a PREVIOUS process. The graph is
         # still parked at its checkpointed ``interrupt()``, so we re-enter with
         # the decision instead of starting a turn — no new user message, and
-        # the agent carries on from exactly where it stopped. Scalar for a
-        # single interrupt, ``{it_id: decision}`` when several were pending
-        # (LangGraph requires the keyed form then), matching what the in-loop
-        # resume below builds.
-        current_input = Command(resume=resume_value)
+        # the agent carries on from exactly where it stopped.
+        first_input = Command(resume=resume_value)
     elif resume:
         # Continue this thread from its last committed checkpoint. If the
         # checkpoint is missing or lives in an incompatible backend (e.g. the
         # storage backend was switched on reload), fall back to a fresh run.
         if await _has_resumable_state(agent, cfg):
-            current_input = None
+            first_input = None
         else:
             logger.warning(
                 "resume requested for thread %s but no checkpoint state found; "
                 "starting a fresh run", _tid,
             )
 
-    while True:
-        # pending: every interrupt fired in this pass, in arrival order.
-        # LangGraph requires Command(resume={id: value, ...}) whenever >1
-        # interrupt is pending — see fix note in the file docstring.
-        pending: list[tuple[str | None, Any]] = []
-        _steps_this_pass = 0
-
-        async for event in agent.astream(
-            current_input, config=cfg, stream_mode=["messages", "updates"],
-        ):
-            if not isinstance(event, tuple) or len(event) != 2:
+    steps_last_pass = 0
+    async for kind, item in _drive_graph(
+        agent, first_input, cfg, ask=ask_handler, collected=final_messages,
+    ):
+        if kind == "chunk":
+            chunk, meta = item
+            if not isinstance(chunk, AIMessageChunk):
                 continue
-            mode, data = event
-
-            if mode == "updates" and isinstance(data, dict) and "__interrupt__" in data:
-                interrupts = data["__interrupt__"]
-                for iv in interrupts or []:
-                    it_id = getattr(iv, "id", None)
-                    value = iv.value if hasattr(iv, "value") else iv
-                    pending.append((it_id, value))
+            text = flatten_content(chunk.content)
+            if not text:
                 continue
+            # node/ns let renderers tell main-agent prose from LLM calls nested
+            # inside the tools node (subagents). ns mirrors langgraph's own
+            # namespace derivation: ``langgraph_checkpoint_ns`` minus its last
+            # segment, so top-level nodes yield "". Additive keys — consumers
+            # that only read "text" are unaffected.
+            node = ""
+            ns = ""
+            if isinstance(meta, dict):
+                node = str(meta.get("langgraph_node") or "")
+                raw_ns = str(meta.get("langgraph_checkpoint_ns") or "")
+                if "|" in raw_ns:
+                    ns = raw_ns.rsplit("|", 1)[0]
+            yield StreamEvent("token", {"text": text, "node": node, "ns": ns})
 
-            if mode == "messages":
-                chunk, _meta = data
-                if isinstance(chunk, AIMessageChunk):
-                    text = flatten_content(chunk.content)
-                    if text:
-                        # node/ns let renderers tell main-agent prose from
-                        # LLM calls nested inside the tools node (subagents).
-                        # ns mirrors langgraph's own namespace derivation:
-                        # ``langgraph_checkpoint_ns`` minus its last segment,
-                        # so top-level nodes yield "". Additive keys —
-                        # consumers that only read "text" are unaffected.
-                        node = ""
-                        ns = ""
-                        if isinstance(_meta, dict):
-                            node = str(_meta.get("langgraph_node") or "")
-                            raw_ns = str(_meta.get("langgraph_checkpoint_ns") or "")
-                            if "|" in raw_ns:
-                                ns = raw_ns.rsplit("|", 1)[0]
-                        yield StreamEvent(
-                            "token", {"text": text, "node": node, "ns": ns}
-                        )
+        elif kind == "message":
+            m = item
+            if isinstance(m, AIMessage) and m.tool_calls:
+                for tc in m.tool_calls:
+                    name = tc.get("name", "?") if isinstance(tc, dict) else getattr(tc, "name", "?")
+                    args = tc.get("args", {}) if isinstance(tc, dict) else getattr(tc, "args", {})
+                    yield StreamEvent("tool_call", {"name": name, "args": args})
+            elif isinstance(m, ToolMessage):
+                tn = getattr(m, "name", "tool") or "tool"
+                body = m.content if isinstance(m.content, str) else str(m.content)
+                safe_body = guard_tool_result(body, tn)
+                if safe_body is not body:
+                    m.content = safe_body
+                preview = safe_body if len(safe_body) <= 600 else safe_body[:600] + " …[truncated]"
+                payload: dict = {"name": tn, "preview": preview}
+                if keep_full_payloads:
+                    payload["full"] = safe_body
+                yield StreamEvent("tool_result", payload)
+                if tn.startswith("vis_"):
+                    img = _image_event_from_result(safe_body)
+                    if img is not None:
+                        yield StreamEvent("image", img)
+                elif tn in ("artifact_create", "artifact_show"):
+                    art = _artifact_event_from_result(safe_body)
+                    if art is not None:
+                        yield StreamEvent("artifact", art)
 
-            elif mode == "updates":
-                if not isinstance(data, dict):
-                    continue
-                for _node_name, node_data in data.items():
-                    if not isinstance(node_data, dict):
-                        continue
-                    msgs = node_data.get("messages", [])
-                    if not isinstance(msgs, list):
-                        continue
-                    for m in msgs:
-                        if isinstance(m, AIMessage):
-                            sanitize_message_metadata(m)
-                        final_messages.append(m)
-                        _steps_this_pass += 1
-                        if isinstance(m, AIMessage) and m.tool_calls:
-                            for tc in m.tool_calls:
-                                name = tc.get("name", "?") if isinstance(tc, dict) else getattr(tc, "name", "?")
-                                args = tc.get("args", {}) if isinstance(tc, dict) else getattr(tc, "args", {})
-                                yield StreamEvent("tool_call", {"name": name, "args": args})
-                        elif isinstance(m, ToolMessage):
-                            tn = getattr(m, "name", "tool") or "tool"
-                            body = m.content if isinstance(m.content, str) else str(m.content)
-                            safe_body = guard_tool_result(body, tn)
-                            if safe_body is not body:
-                                m.content = safe_body
-                            preview = safe_body if len(safe_body) <= 600 else safe_body[:600] + " …[truncated]"
-                            payload: dict = {"name": tn, "preview": preview}
-                            if keep_full_payloads:
-                                payload["full"] = safe_body
-                            yield StreamEvent("tool_result", payload)
-                            if tn.startswith("vis_"):
-                                img = _image_event_from_result(safe_body)
-                                if img is not None:
-                                    yield StreamEvent("image", img)
-                            elif tn in ("artifact_create", "artifact_show"):
-                                art = _artifact_event_from_result(safe_body)
-                                if art is not None:
-                                    yield StreamEvent("artifact", art)
+        elif kind == "pass_end":
+            steps_last_pass = item
 
-        if not pending:
-            final_text = last_assistant_text(final_messages)
-            if not final_text and _steps_this_pass == 0:
-                yield StreamEvent("log", {
-                    "text": (
-                        f"⚠️  Agent produced no output — possible recursion limit hit "
-                        f"(limit={recursion_limit}) or graph exited unexpectedly."
-                    )
-                })
-            elif not final_text:
-                yield StreamEvent("log", {
-                    "text": "⚠️  Task ended with no assistant text. Agent may have stopped mid-task."
-                })
-            yield StreamEvent("final", {"text": final_text})
-            return
+        elif kind == "ask_failed":
+            yield StreamEvent("log", {"text": f"ask_handler raised: {item}; rejecting"})
 
-        # Ask the user for every pending interrupt, then resume the graph
-        # with a single Command. Use resume_map form when N>1 — required
-        # by LangGraph; keep scalar form for N==1 to minimize diff risk
-        # for any node that may not accept the map form.
-        decisions: list[tuple[str | None, str]] = []
-        for it_id, value in pending:
-            if ask_handler is None:
-                decision = "reject"
-            else:
-                try:
-                    decision = await ask_handler(value)
-                except Exception as exc:
-                    yield StreamEvent("log", {"text": f"ask_handler raised: {exc}; rejecting"})
-                    decision = "reject"
-            decisions.append((it_id, decision))
-
-        if len(decisions) == 1:
-            current_input = Command(resume=decisions[0][1])
-        elif all(it_id is None for it_id, _ in decisions):
-            # No ids at all (older LangGraph / single resumable task): the map
-            # form can't route, so fall back to a scalar resume with the first
-            # decision rather than dropping every answer and effectively rejecting.
-            current_input = Command(resume=decisions[0][1])
-        else:
-            resume_map: dict[str, Any] = {}
-            for it_id, decision in decisions:
-                if it_id is None:
-                    # Mixed id/no-id is unexpected; skipping would silently reject
-                    # this op, so leave it out of the map and let LangGraph re-emit
-                    # the interrupt on the next pass (re-prompt, not auto-reject).
-                    continue
-                resume_map[it_id] = decision
-            current_input = Command(resume=resume_map)
+    final_text = last_assistant_text(final_messages)
+    if not final_text and steps_last_pass == 0:
+        yield StreamEvent("log", {
+            "text": (
+                f"⚠️  Agent produced no output — possible recursion limit hit "
+                f"(limit={recursion_limit}) or graph exited unexpectedly."
+            )
+        })
+    elif not final_text:
+        yield StreamEvent("log", {
+            "text": "⚠️  Task ended with no assistant text. Agent may have stopped mid-task."
+        })
+    yield StreamEvent("final", {"text": final_text})
 
 
 async def astream_agent(
-    agent: CompiledStateGraph,
+    agent: Agent,
     task: str,
     *,
     thread_id: str | None = None,
@@ -602,13 +687,15 @@ async def astream_agent(
     interrupts_store: InterruptsStore | None = None,
     invocation_mode: str = "cli",
 ) -> str:
-    """
-    Run the agent with real-time async streaming.
+    """Run the agent with real-time async streaming, printing as it goes.
+
+    The terminal sink over :func:`_drive_graph`. Everything about *running* the
+    graph — the stream loop, interrupt collection, the resume handshake — is the
+    driver's; everything here is presentation:
 
     - LLM tokens are printed to stderr as they arrive (no buffering).
-    - Tool calls and results are logged at INFO level with clear labels.
-    - Handles ``interrupt()`` events from ``PermissionMiddleware``: pauses,
-      asks the user on stdin, then resumes the graph with approve/reject.
+    - Tool calls and results are logged at INFO with clear labels.
+    - ``interrupt()`` pauses and asks the user on stdin, then resumes.
     - Returns the final assistant text.
     - ``on_tick`` (optional): awaited with the count of new messages observed
       after each graph step batch. Used by ``yuyutsava.sessions.runner`` to
@@ -616,17 +703,18 @@ async def astream_agent(
       session layer.
     """
     _tid = thread_id or str(uuid.uuid4())
-    cfg: RunnableConfig = {
-        "recursion_limit": recursion_limit,
-        "configurable": {"thread_id": _tid, "agent_path": agent_path},
-    }
-    _lf_cb = get_callback()
-    if _lf_cb is not None:
-        cfg["callbacks"] = [_lf_cb]
-        cfg["metadata"] = {
-            **(cfg.get("metadata") or {}),
-            **trace_metadata(session_id=_tid, trace_name="cli", tags=["mode:cli"]),
-        }
+    cfg = _run_config(
+        thread_id=_tid,
+        recursion_limit=recursion_limit,
+        agent_path=agent_path,
+        # The CLI is a typed surface. Seeded explicitly rather than left absent,
+        # which is what it was before the drivers were merged — a middleware
+        # asking "is this voice?" got no key at all here and the key on the
+        # daemon path.
+        modality="text",
+        trace_name="cli",
+        trace_tags=["mode:cli"],
+    )
 
     logger.info(_SEP)
     logger.info("YUYUTSAVA  starting task  thread_id=%s", cfg["configurable"]["thread_id"])
@@ -635,173 +723,111 @@ async def astream_agent(
     logger.info(_SEP)
 
     final_messages: list[Any] = []
-    # First call uses the task message; subsequent calls (after interrupt) use Command(resume=...)
-    # Explicit stable id so the message round-trips the checkpoint unchanged (see
-    # the note in astream_agent_iter — prevents duplicate transcript rows).
-    current_input: Any = {"messages": [HumanMessage(content=task, id=str(uuid.uuid4()))]}
+    # Explicit stable id so the message round-trips the checkpoint unchanged
+    # (see the note in astream_agent_iter — prevents duplicate transcript rows).
+    first_input: Any = {"messages": [HumanMessage(content=task, id=str(uuid.uuid4()))]}
 
-    while True:
-        _in_ai_stream = False
-        # See note in astream_agent_iter — same multi-interrupt handling.
-        pending: list[tuple[str | None, Any]] = []
-        _steps_this_pass = 0
+    async def _ask(value: Any) -> str:
+        return await prompt_permission(
+            value,
+            interrupts_store=interrupts_store,
+            session_id=session_id,
+            thread_id=_tid,
+            invocation_mode=invocation_mode,
+        )
 
-        # We stream with two modes at once:
-        #   "messages" → yields (mode, (chunk, metadata)) — LLM tokens as they arrive
-        #   "updates"  → yields (mode, {"node": state_delta}) — tool calls / results
-        async for event in agent.astream(
-            current_input,
-            config=cfg,
-            stream_mode=["messages", "updates"],
-        ):
-            # With multiple stream_mode values, events are (mode, data) tuples
-            if not isinstance(event, tuple) or len(event) != 2:
-                continue
-            mode, data = event
+    in_ai_stream = False
+    steps_last_pass = 0
 
-            # ── interrupt detection (updates mode) ─────────────────────────
-            if mode == "updates" and isinstance(data, dict) and "__interrupt__" in data:
-                if _in_ai_stream:
-                    print("\n", file=sys.stderr)
-                    _in_ai_stream = False
-                interrupts = data["__interrupt__"]
-                for iv in interrupts or []:
-                    it_id = getattr(iv, "id", None)
-                    value = iv.value if hasattr(iv, "value") else iv
-                    pending.append((it_id, value))
-                continue  # let any other events in this batch process normally
-
-            # ── messages mode: streaming LLM tokens ────────────────────────
-            if mode == "messages":
-                chunk, _meta = data
-                if isinstance(chunk, AIMessageChunk):
-                    text = flatten_content(chunk.content)
-
-                    if text:
-                        if not _in_ai_stream:
-                            print(f"\n\033[36m{'─' * 60}\033[0m", file=sys.stderr)
-                            print("\033[36m🤖  AI (streaming)\033[0m", file=sys.stderr)
-                            print(f"\033[36m{'─' * 60}\033[0m", file=sys.stderr)
-                            _in_ai_stream = True
-                        print(text, end="", flush=True, file=sys.stderr)
-
-                    # Close the AI stream line if a tool call is starting
-                    if chunk.tool_calls or getattr(chunk, "tool_call_chunks", None):
-                        if _in_ai_stream:
-                            print("\n", file=sys.stderr)
-                            _in_ai_stream = False
-
-                elif isinstance(chunk, ToolMessage):
-                    if _in_ai_stream:
-                        print("\n", file=sys.stderr)
-                        _in_ai_stream = False
-
-            # ── updates mode: full state delta after each node ──────────────
-            elif mode == "updates":
-                if _in_ai_stream:
-                    print("\n", file=sys.stderr)
-                    _in_ai_stream = False
-
-                if not isinstance(data, dict):
-                    continue
-
-                for _node_name, node_data in data.items():
-                    if not isinstance(node_data, dict):
-                        continue
-                    msgs = node_data.get("messages", [])
-                    if not isinstance(msgs, list):
-                        continue
-
-                    for m in msgs:
-                        if isinstance(m, AIMessage):
-                            sanitize_message_metadata(m)
-                        final_messages.append(m)
-                        _steps_this_pass += 1
-
-                        if isinstance(m, AIMessage):
-                            usage = getattr(m, "usage_metadata", None)
-                            if usage:
-                                parts_u: list[str] = []
-                                for k in ("input_tokens", "output_tokens", "total_tokens"):
-                                    v = usage.get(k) if isinstance(usage, dict) else getattr(usage, k, None)
-                                    if v is not None:
-                                        parts_u.append(f"{k.replace('_tokens', '')}: {v}")
-                                if parts_u:
-                                    logger.debug("    Tokens  %s", " | ".join(parts_u))
-
-                            if m.tool_calls:
-                                for tc in m.tool_calls:
-                                    name = tc.get("name", "?") if isinstance(tc, dict) else getattr(tc, "name", "?")
-                                    args = tc.get("args", {}) if isinstance(tc, dict) else getattr(tc, "args", {})
-                                    args_str = json.dumps(args, indent=4) if isinstance(args, dict) else str(args)
-                                    logger.info("")
-                                    logger.info("\033[33m🔧  TOOL CALL → %s\033[0m", name)
-                                    logger.info("    Input:\n%s", _indent(args_str, 4))
-
-                        elif isinstance(m, ToolMessage):
-                            tn = getattr(m, "name", "tool") or "tool"
-                            body = m.content if isinstance(m.content, str) else str(m.content)
-                            safe_body = guard_tool_result(body, tn)
-                            if safe_body is not body:
-                                m.content = safe_body
-                            preview = safe_body if len(safe_body) <= 600 else safe_body[:600] + "\n    … [truncated]"
-                            err = is_tool_error(m, safe_body)
-                            logger.info("")
-                            if err:
-                                logger.error("\033[1;31m❌  TOOL ERROR ← %s\033[0m", tn)
-                                logger.error("    %s", preview.replace("\n", "\n    "))
-                            else:
-                                logger.info("\033[32m✅  TOOL RESULT ← %s\033[0m", tn)
-                                logger.info("    %s", preview.replace("\n", "\n    "))
-
-        # End of this stream pass — close any dangling AI output line
-        if _in_ai_stream:
+    def _close_stream() -> None:
+        nonlocal in_ai_stream
+        if in_ai_stream:
             print("\n", file=sys.stderr)
+            in_ai_stream = False
 
-        # Fire the progress hook once per pass so the runner can coalesce
-        # touches. Doing it here (not per-message) keeps the engine ignorant
-        # of the store's throttling policy.
-        if on_tick is not None and _steps_this_pass > 0:
-            try:
-                await on_tick(_steps_this_pass)
-            except Exception:
-                logger.exception("on_tick handler raised; continuing")
+    async for kind, item in _drive_graph(
+        agent, first_input, cfg, ask=_ask, collected=final_messages,
+    ):
+        if kind == "interrupt_seen":
+            _close_stream()
 
-        # No interrupt → done
-        if not pending:
-            if _steps_this_pass == 0 and not final_messages:
-                logger.error(
-                    "⚠️  Agent produced no output — possible recursion limit hit "
-                    "(limit=%d) or graph exited unexpectedly. "
-                    "Try re-running with --recursion-limit <higher value>.",
-                    recursion_limit,
-                )
-            break
+        elif kind == "chunk":
+            chunk, _meta = item
+            if isinstance(chunk, AIMessageChunk):
+                text = flatten_content(chunk.content)
+                if text:
+                    if not in_ai_stream:
+                        print(f"\n\033[36m{'─' * 60}\033[0m", file=sys.stderr)
+                        print("\033[36m🤖  AI (streaming)\033[0m", file=sys.stderr)
+                        print(f"\033[36m{'─' * 60}\033[0m", file=sys.stderr)
+                        in_ai_stream = True
+                    print(text, end="", flush=True, file=sys.stderr)
+                # Close the AI stream line if a tool call is starting.
+                if chunk.tool_calls or getattr(chunk, "tool_call_chunks", None):
+                    _close_stream()
+            elif isinstance(chunk, ToolMessage):
+                _close_stream()
 
-        # Ask the user for every pending interrupt, then resume the graph
-        # with a single Command. resume_map form is required by LangGraph
-        # when more than one interrupt is in flight; keep the scalar form
-        # for the common single-interrupt case.
-        decisions: list[tuple[str | None, str]] = []
-        for it_id, value in pending:
-            decision = await prompt_permission(
-                value,
-                interrupts_store=interrupts_store,
-                session_id=session_id,
-                thread_id=_tid,
-                invocation_mode=invocation_mode,
-            )
-            decisions.append((it_id, decision))
+        elif kind == "message":
+            _close_stream()
+            m = item
+            if isinstance(m, AIMessage):
+                usage = getattr(m, "usage_metadata", None)
+                if usage:
+                    parts_u: list[str] = []
+                    for k in ("input_tokens", "output_tokens", "total_tokens"):
+                        v = usage.get(k) if isinstance(usage, dict) else getattr(usage, k, None)
+                        if v is not None:
+                            parts_u.append(f"{k.replace('_tokens', '')}: {v}")
+                    if parts_u:
+                        logger.debug("    Tokens  %s", " | ".join(parts_u))
 
-        if len(decisions) == 1:
-            current_input = Command(resume=decisions[0][1])
-        else:
-            resume_map: dict[str, Any] = {}
-            for it_id, decision in decisions:
-                if it_id is None:
-                    continue
-                resume_map[it_id] = decision
-            current_input = Command(resume=resume_map)
+                if m.tool_calls:
+                    for tc in m.tool_calls:
+                        name = tc.get("name", "?") if isinstance(tc, dict) else getattr(tc, "name", "?")
+                        args = tc.get("args", {}) if isinstance(tc, dict) else getattr(tc, "args", {})
+                        args_str = json.dumps(args, indent=4) if isinstance(args, dict) else str(args)
+                        logger.info("")
+                        logger.info("\033[33m🔧  TOOL CALL → %s\033[0m", name)
+                        logger.info("    Input:\n%s", _indent(args_str, 4))
+
+            elif isinstance(m, ToolMessage):
+                tn = getattr(m, "name", "tool") or "tool"
+                body = m.content if isinstance(m.content, str) else str(m.content)
+                safe_body = guard_tool_result(body, tn)
+                if safe_body is not body:
+                    m.content = safe_body
+                preview = safe_body if len(safe_body) <= 600 else safe_body[:600] + "\n    … [truncated]"
+                err = is_tool_error(m, safe_body)
+                logger.info("")
+                if err:
+                    logger.error("\033[1;31m❌  TOOL ERROR ← %s\033[0m", tn)
+                    logger.error("    %s", preview.replace("\n", "\n    "))
+                else:
+                    logger.info("\033[32m✅  TOOL RESULT ← %s\033[0m", tn)
+                    logger.info("    %s", preview.replace("\n", "\n    "))
+
+        elif kind == "pass_end":
+            # End of this stream pass — close any dangling AI output line.
+            if in_ai_stream:
+                print("\n", file=sys.stderr)
+            steps_last_pass = item
+            # Fire the progress hook once per pass so the runner can coalesce
+            # touches. Doing it here (not per-message) keeps the engine ignorant
+            # of the store's throttling policy.
+            if on_tick is not None and item > 0:
+                try:
+                    await on_tick(item)
+                except Exception:
+                    logger.exception("on_tick handler raised; continuing")
+
+    if steps_last_pass == 0 and not final_messages:
+        logger.error(
+            "⚠️  Agent produced no output — possible recursion limit hit "
+            "(limit=%d) or graph exited unexpectedly. "
+            "Try re-running with --recursion-limit <higher value>.",
+            recursion_limit,
+        )
 
     final_text = last_assistant_text(final_messages)
     if not final_text:

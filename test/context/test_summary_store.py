@@ -9,13 +9,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from yuyutsava.context.summary_store import SqliteThreadSummaryStore
+from yuyutsava.context.summary_store_unified import sqlite_summary_store
 
 
 class SummaryStoreTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
-        self.store = SqliteThreadSummaryStore(Path(self._tmp.name) / "state.db")
+        self.store = sqlite_summary_store(Path(self._tmp.name) / "state.db")
 
     async def asyncTearDown(self) -> None:
         self._tmp.cleanup()

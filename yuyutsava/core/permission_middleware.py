@@ -1,7 +1,6 @@
-"""
-Permission middleware for YUYUTSAVA — fallback safety layer for raw ``execute`` calls.
+"""Command safety rules for raw ``execute`` calls — the decision, not the delivery.
 
-Two independent checks run on every ``execute`` tool call:
+Two independent checks classify a shell command:
 
   1. PATH SCOPE CHECK (hard rules, workspace-aware)
      Extracts absolute paths from the command and classifies each one:
@@ -14,8 +13,14 @@ Two independent checks run on every ``execute`` tool call:
        • rm -rf, sudo, kill -9, find -delete, curl | bash, etc.
        • Enriches reason with protected-dir names when relevant.
 
-Checks run in this order: scope check first (stronger), then pattern check.
-The first match that requires user input calls ``interrupt()``.
+Everything here is a pure function over a command string: no framework, no I/O,
+no user interaction. Applying these rules — asking the user, refusing the call —
+is :class:`~yuyutsava.core.permission_policy.PermissionPolicy`.
+
+That split arrived with Phase 4 (ADR-004). Before it, ``PermissionMiddleware``
+lived at the bottom of this file, subclassed ``AgentMiddleware`` and called
+``langgraph.types.interrupt()`` inline, so exercising *any* of it meant running a
+graph. The rules were always framework-free; only their delivery was not.
 """
 
 from __future__ import annotations
@@ -25,11 +30,6 @@ import re
 from pathlib import Path
 from typing import Any
 
-from langchain_core.messages import ToolMessage
-from langchain.agents.middleware.types import AgentMiddleware
-from langgraph.types import interrupt
-
-from yuyutsava.models.interrupts import PermissionRequestInterrupt
 from yuyutsava.platform import host_profile
 
 # ---------------------------------------------------------------------------
@@ -194,7 +194,7 @@ def scope_check(
 
     Returns a ``(reason, hard_block)`` tuple when a violation is found:
       • ``hard_block=True``  → return [BLOCKED] immediately, no user prompt
-      • ``hard_block=False`` → pause and ask the user via ``interrupt()``
+      • ``hard_block=False`` → the caller must ask the user before proceeding
 
     Returns ``None`` when no scope violation is detected.
 
@@ -246,95 +246,7 @@ def scope_check(
     return None
 
 
-# ---------------------------------------------------------------------------
-# Middleware
-# ---------------------------------------------------------------------------
-
-
-class PermissionMiddleware(AgentMiddleware):  # type: ignore[misc]
-    """
-    Async-only middleware that intercepts the ``execute`` tool call.
-
-    Acts as the fallback safety layer when the LLM calls ``execute`` directly
-    instead of routing through the TaskRunnerAgent tr_* tools.
-
-    Two checks run in sequence:
-      1. Scope check  — path-based hard rules (workspace boundary + system-critical)
-      2. Pattern check — regex detection of dangerous command shapes
-
-    For each check:
-      • Hard block  → return [BLOCKED] ToolMessage immediately, no user prompt
-      • Soft block  → call ``interrupt()`` and wait for user approval via stdin
-      • No match    → pass through to the next check or allow execution
-    """
-
-    def __init__(self, workspace_root: Path | None = None) -> None:
-        self.workspace_root = workspace_root.resolve() if workspace_root else None
-
-    async def awrap_tool_call(
-        self,
-        request: Any,
-        handler: Any,
-    ) -> Any:
-        tool_name: str = request.tool_call.get("name", "")
-
-        if tool_name == "execute":
-            args: dict[str, Any] = request.tool_call.get("args", {})
-            command: str = args.get("command", "") if isinstance(args, dict) else ""
-            tool_call_id: str = request.tool_call.get("id", "") or ""
-
-            # ── Check 1: Path scope (hard rules) ─────────────────────────
-            if self.workspace_root is not None:
-                violation = scope_check(command, self.workspace_root)
-                if violation is not None:
-                    scope_reason, hard_block = violation
-
-                    if hard_block:
-                        # System-critical path: block immediately, no user prompt
-                        return ToolMessage(
-                            content=(
-                                f"[BLOCKED] Access denied — system-critical path.\n"
-                                f"Command : {command}\n"
-                                f"Reason  : {scope_reason}"
-                            ),
-                            tool_call_id=tool_call_id,
-                            name=tool_name,
-                        )
-
-                    # Out-of-workspace or protected dir: ask user
-                    decision: str = interrupt(
-                        PermissionRequestInterrupt(
-                            command=command, reason=scope_reason
-                        ).to_interrupt_dict()
-                    )
-                    if decision != "approve":
-                        return ToolMessage(
-                            content=(
-                                f"[BLOCKED] User denied permission.\n"
-                                f"Command : {command}\n"
-                                f"Reason  : {scope_reason}"
-                            ),
-                            tool_call_id=tool_call_id,
-                            name=tool_name,
-                        )
-
-            # ── Check 2: Dangerous-command patterns (regex) ───────────────
-            pattern_reason = classify_command(command)
-            if pattern_reason:
-                decision = interrupt(
-                    PermissionRequestInterrupt(
-                        command=command, reason=pattern_reason
-                    ).to_interrupt_dict()
-                )
-                if decision != "approve":
-                    return ToolMessage(
-                        content=(
-                            f"[BLOCKED] User denied permission to run this command.\n"
-                            f"Command : {command}\n"
-                            f"Reason  : {pattern_reason}"
-                        ),
-                        tool_call_id=tool_call_id,
-                        name=tool_name,
-                    )
-
-        return await handler(request)
+__all__ = [
+    "classify_command",
+    "scope_check",
+]

@@ -1,6 +1,6 @@
 """Resolve the *live* per-token price of the configured model from its provider.
 
-The cost ledger (:class:`yuyutsava.daemon.usage.UsageRecorder` via
+The cost ledger (:class:`yuyutsava.daemon.usage.UsagePolicy` via
 :func:`yuyutsava.core.model_router.estimate_cost_usd`) prices a call by
 longest-prefix match against a table that merges the built-in ``PRICES`` with
 ``~/.yuyutsava/model_prices.json``. Historically that meant hand-editing the

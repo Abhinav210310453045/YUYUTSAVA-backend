@@ -12,7 +12,8 @@ from pathlib import Path
 # Import the store first: it pulls in the memory.embedder→core chain, so core
 # is fully initialized before skills.registry loads (avoids an import-order cycle
 # when this module is imported standalone, before core).
-from yuyutsava.skills.store import SkillIndexer, SqliteSkillStore
+from yuyutsava.skills.store import SkillIndexer
+from yuyutsava.skills.store_unified import sqlite_skill_store
 from yuyutsava.skills.registry import SkillMeta
 
 
@@ -26,7 +27,7 @@ def _meta(name: str, desc: str, *, scope: str = "personal", agent: str | None = 
 class SqliteSkillStoreTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
-        self.store = SqliteSkillStore(Path(self._tmp.name) / "state.db")
+        self.store = sqlite_skill_store(Path(self._tmp.name) / "state.db")
 
     async def asyncTearDown(self) -> None:
         self._tmp.cleanup()

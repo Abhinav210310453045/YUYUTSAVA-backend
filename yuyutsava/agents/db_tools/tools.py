@@ -4,7 +4,7 @@ These call directly into :mod:`yuyutsava.storage.introspect`; the same safety
 guarantees (``mode=ro`` URI + sqlglot validator + LIMIT cap + timeout) apply
 whether the caller is an agent or the HTTP API.
 
-Tool names use the ``db_`` prefix so they are hidden by ``ToolFilterMiddleware``
+Tool names use the ``db_`` prefix so they are hidden by ``ToolFilterPolicy``
 upfront; their names show in the tool catalog and a schema is loaded on demand
 via ``tool_search('select:db_query')`` or a keyword search.
 """

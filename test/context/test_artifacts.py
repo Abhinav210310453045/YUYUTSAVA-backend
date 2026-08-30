@@ -10,13 +10,15 @@ import time
 import unittest
 from pathlib import Path
 
-from yuyutsava.context.artifacts import SqliteArtifactStore
+from yuyutsava.context.artifacts_unified import (
+    UnifiedArtifactStore, sqlite_artifact_store,
+)
 
 
 class SqliteArtifactStoreTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
-        self.store = SqliteArtifactStore(Path(self._tmp.name) / "state.db")
+        self.store = sqlite_artifact_store(Path(self._tmp.name) / "state.db")
 
     async def asyncTearDown(self) -> None:
         self._tmp.cleanup()

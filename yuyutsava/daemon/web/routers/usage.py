@@ -1,9 +1,16 @@
 """LLM spend aggregates (Phase 4 cost tracking).
 
-One endpoint over the ``llm_usage`` table the ``UsageRecorder`` middleware
-fills: per-task, per-model, or per-day sums of tokens and estimated USD.
-The per-task grouping joined against ``GET /tasks`` is the audit surface
+One endpoint over the ``llm_usage`` table the ``UsagePolicy``
+fills: per-task, per-model, per-day or per-thread sums of tokens and estimated
+USD. The per-task grouping joined against ``GET /tasks`` is the audit surface
 for triage complexity noise ("complexity-1 tasks that burned 50k tokens").
+
+``group_by=thread`` answers "what did this conversation cost?" — and is the
+**only** grouping that works for chat/tinker spend on Postgres. ``task_id`` is
+FK-constrained to ``tasks`` there, so a tag naming something that is not an
+orchestrator task (the TinkerAgent's ``tinker:<card_id>``) is nulled on insert
+and its cost lands in the anonymous bucket. ``thread_id`` carries the same
+identity (``todo:<card_id>``) with no such constraint, on both backends.
 """
 
 from __future__ import annotations
@@ -27,8 +34,12 @@ async def get_usage(
     since: float | None = Query(
         None, description="Only count calls at/after this epoch-seconds timestamp",
     ),
-    group_by: Literal["task", "model", "day"] | None = Query(
-        None, description="Grouping; omit for one overall totals row",
+    group_by: Literal["task", "model", "day", "thread"] | None = Query(
+        None,
+        description=(
+            "Grouping; omit for one overall totals row. Use 'thread' for "
+            "per-conversation cost (chat and tinker spend is task-less)."
+        ),
     ),
     usage_store=Depends(get_usage_store),
 ) -> UsageOut:

@@ -6,12 +6,17 @@ from langchain_core.language_models import BaseChatModel
 
 from yuyutsava.core.config import VertexSettings
 from yuyutsava.llm.base import Provider, require
+from yuyutsava.llm.handle import Capability
 from yuyutsava.llm.quirks.gemini_parts import parts_safe
 from yuyutsava.llm.quirks.loop_affinity import loop_pinned
 
 
 class VertexProvider(Provider):
     settings_type = VertexSettings
+    key = "vertex"
+    # The grpc.aio client binds to the loop that first drives it — declared here
+    # so a builder can ask, rather than learn from loop_pinned's error.
+    capabilities = frozenset({Capability.LOOP_AFFINE})
 
     def build(
         self, settings: VertexSettings, *, temperature: float, disable_reasoning: bool

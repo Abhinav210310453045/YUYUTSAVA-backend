@@ -84,7 +84,9 @@ MIGRATIONS: list[tuple[int, str]] = [
     (
         2,
         # Phase 2: first-class task tracking (POST /tasks + GET /tasks).
-        # Timestamps are epoch-seconds DOUBLE PRECISION, not TIMESTAMPTZ:
+        # Timestamps were epoch-seconds DOUBLE PRECISION here; v20 converted
+        # them to TIMESTAMPTZ along with the other 16. Kept as written for the
+        # historical record — never edit an applied migration.
         # the registry reads them back and serves them over the API as the
         # same floats the SQLite twin stores, so the two backends stay
         # byte-identical at the wire boundary.
@@ -97,9 +99,9 @@ MIGRATIONS: list[tuple[int, str]] = [
                            ('queued','running','done','failed','cancelled')),
             thread_id      TEXT,
             complexity     INTEGER,
-            created_ts     DOUBLE PRECISION NOT NULL,
-            started_ts     DOUBLE PRECISION,
-            finished_ts    DOUBLE PRECISION,
+            created_ts     TIMESTAMPTZ      NOT NULL,
+            started_ts     TIMESTAMPTZ     ,
+            finished_ts    TIMESTAMPTZ     ,
             deferred_ms    INTEGER NOT NULL DEFAULT 0,
             result_summary TEXT,
             error          TEXT
@@ -113,11 +115,11 @@ MIGRATIONS: list[tuple[int, str]] = [
         # Phase 4: model routing + cost tracking. One llm_usage row per
         # model call; tasks gains the chosen-model column so the
         # "complexity-1 tasks that burned 50k tokens" audit join works.
-        # Same epoch-seconds DOUBLE PRECISION convention as tasks (v2).
+        # Same convention as tasks (v2); both converted to TIMESTAMPTZ in v20.
         """
         CREATE TABLE IF NOT EXISTS llm_usage (
             id            TEXT PRIMARY KEY,
-            ts            DOUBLE PRECISION NOT NULL,
+            ts            TIMESTAMPTZ      NOT NULL,
             thread_id     TEXT NOT NULL DEFAULT '',
             task_id       TEXT NOT NULL DEFAULT '',
             role          TEXT NOT NULL,
@@ -246,14 +248,15 @@ MIGRATIONS: list[tuple[int, str]] = [
         # model (sessions.thread_id -> threads -> tasks/llm_usage/...). Mirrors
         # SqliteSessionStore._SCHEMA_SQL (storage/sessions/sqlite_impl.py) with
         # epoch-seconds REAL widened to DOUBLE PRECISION and a thread FK.
+        # (v20 later converted these to TIMESTAMPTZ.)
         """
         CREATE TABLE IF NOT EXISTS sessions (
             id                 TEXT PRIMARY KEY,
             thread_id          TEXT NOT NULL,
             workspace          TEXT NOT NULL,
             status             TEXT NOT NULL,
-            created_at         DOUBLE PRECISION NOT NULL,
-            updated_at         DOUBLE PRECISION NOT NULL,
+            created_at         TIMESTAMPTZ      NOT NULL,
+            updated_at         TIMESTAMPTZ      NOT NULL,
             message_count      INTEGER NOT NULL DEFAULT 0,
             memory_files_count INTEGER NOT NULL DEFAULT 0,
             db_row_bytes       INTEGER NOT NULL DEFAULT 0,
@@ -348,7 +351,7 @@ MIGRATIONS: list[tuple[int, str]] = [
         CREATE TABLE IF NOT EXISTS event_payloads (
             event_id     TEXT PRIMARY KEY,
             topic        TEXT NOT NULL,
-            ts           DOUBLE PRECISION NOT NULL,
+            ts           TIMESTAMPTZ      NOT NULL,
             payload_json JSONB NOT NULL,
             blob_path    TEXT
         );
@@ -362,8 +365,8 @@ MIGRATIONS: list[tuple[int, str]] = [
             proposed     TEXT NOT NULL,
             subagent     TEXT NOT NULL,
             urgency      INTEGER NOT NULL,
-            created_ts   DOUBLE PRECISION NOT NULL,
-            expires_ts   DOUBLE PRECISION NOT NULL,
+            created_ts   TIMESTAMPTZ      NOT NULL,
+            expires_ts   TIMESTAMPTZ      NOT NULL,
             status       TEXT NOT NULL CHECK (status IN ('pending','approved','skipped','expired','modified')),
             session_id   TEXT,
             agent_path   TEXT
@@ -377,7 +380,7 @@ MIGRATIONS: list[tuple[int, str]] = [
             event_id       TEXT NOT NULL,
             outcome        TEXT NOT NULL,
             action_summary TEXT,
-            ts             DOUBLE PRECISION NOT NULL,
+            ts             TIMESTAMPTZ      NOT NULL,
             session_id     TEXT,
             agent_path     TEXT
         );
@@ -388,8 +391,8 @@ MIGRATIONS: list[tuple[int, str]] = [
             topic_glob  TEXT NOT NULL,
             match_json  JSONB NOT NULL,
             decision    TEXT NOT NULL CHECK (decision IN ('auto_approve','auto_skip')),
-            created_ts  DOUBLE PRECISION NOT NULL,
-            expires_ts  DOUBLE PRECISION
+            created_ts  TIMESTAMPTZ      NOT NULL,
+            expires_ts  TIMESTAMPTZ     
         );
         CREATE INDEX IF NOT EXISTS idx_consent_rules_topic ON consent_rules (topic_glob);
 
@@ -403,7 +406,7 @@ MIGRATIONS: list[tuple[int, str]] = [
         CREATE TABLE IF NOT EXISTS user_prefs (
             key        TEXT PRIMARY KEY,
             value_json JSONB NOT NULL,
-            updated_ts DOUBLE PRECISION NOT NULL
+            updated_ts TIMESTAMPTZ      NOT NULL
         );
 
         CREATE TABLE IF NOT EXISTS consent_grants (
@@ -413,8 +416,8 @@ MIGRATIONS: list[tuple[int, str]] = [
             decision    TEXT NOT NULL,
             scope       TEXT NOT NULL,
             scope_ref   TEXT NOT NULL,
-            created_ts  DOUBLE PRECISION NOT NULL,
-            expires_ts  DOUBLE PRECISION
+            created_ts  TIMESTAMPTZ      NOT NULL,
+            expires_ts  TIMESTAMPTZ     
         );
         CREATE INDEX IF NOT EXISTS idx_consent_grants_domain ON consent_grants (domain, scope_ref);
 
@@ -436,8 +439,8 @@ MIGRATIONS: list[tuple[int, str]] = [
             payload_json      JSONB NOT NULL,
             outcome           TEXT,
             user_response     TEXT,
-            created_at        DOUBLE PRECISION NOT NULL,
-            resolved_at       DOUBLE PRECISION
+            created_at        TIMESTAMPTZ      NOT NULL,
+            resolved_at       TIMESTAMPTZ     
         );
         CREATE INDEX IF NOT EXISTS idx_interrupts_session ON interrupts (session_id);
         CREATE INDEX IF NOT EXISTS idx_interrupts_agent_path ON interrupts (agent_path);
@@ -807,7 +810,7 @@ MIGRATIONS: list[tuple[int, str]] = [
         """
         CREATE TABLE IF NOT EXISTS pending_asks (
             ask_id       TEXT PRIMARY KEY,
-            created_ts   DOUBLE PRECISION NOT NULL,
+            created_ts   TIMESTAMPTZ      NOT NULL,
             surface      TEXT NOT NULL,
             session_id   TEXT,
             thread_id    TEXT,
@@ -822,13 +825,185 @@ MIGRATIONS: list[tuple[int, str]] = [
             payload_json TEXT NOT NULL,
             status       TEXT NOT NULL
                          CHECK (status IN ('pending','answered','cancelled')),
-            answered_ts  DOUBLE PRECISION,
+            answered_ts  TIMESTAMPTZ     ,
             response     TEXT
         );
         CREATE INDEX IF NOT EXISTS pending_asks_status_idx
             ON pending_asks (status, created_ts);
         CREATE INDEX IF NOT EXISTS pending_asks_thread_idx
             ON pending_asks (thread_id);
+        """,
+    ),
+    (
+        20,
+        """
+        -- One timestamp convention. Before this, 22 columns were TIMESTAMPTZ and
+        -- 19 were DOUBLE PRECISION epoch seconds, split along no principle anyone
+        -- could state -- which made Dialect.ts_param()/epoch() correct per COLUMN
+        -- rather than per backend, and produced finding AK: an insert that failed
+        -- with "column is of type double precision but expression is of type
+        -- timestamp with time zone".
+        --
+        -- Each ALTER is guarded on information_schema, so re-running is a no-op
+        -- and a database created fresh from the post-v20 CREATE TABLE bodies is
+        -- left alone. to_timestamp(NULL) is NULL, so nullable columns convert
+        -- with no special case.
+        --
+        -- SQLite keeps REAL epoch seconds -- it has no timestamp type. That
+        -- asymmetry is what the dialect exists to absorb; the point here is that
+        -- the rule is now uniform, so ts_param()/epoch() are always correct.
+        DO $$ BEGIN
+            IF (SELECT data_type FROM information_schema.columns
+                 WHERE table_schema='public' AND table_name='consent_grants'
+                   AND column_name='created_ts') = 'double precision' THEN
+                ALTER TABLE consent_grants ALTER COLUMN created_ts TYPE TIMESTAMPTZ
+                    USING to_timestamp(created_ts);
+            END IF;
+        END $$;
+        DO $$ BEGIN
+            IF (SELECT data_type FROM information_schema.columns
+                 WHERE table_schema='public' AND table_name='consent_grants'
+                   AND column_name='expires_ts') = 'double precision' THEN
+                ALTER TABLE consent_grants ALTER COLUMN expires_ts TYPE TIMESTAMPTZ
+                    USING to_timestamp(expires_ts);
+            END IF;
+        END $$;
+        DO $$ BEGIN
+            IF (SELECT data_type FROM information_schema.columns
+                 WHERE table_schema='public' AND table_name='consent_rules'
+                   AND column_name='created_ts') = 'double precision' THEN
+                ALTER TABLE consent_rules ALTER COLUMN created_ts TYPE TIMESTAMPTZ
+                    USING to_timestamp(created_ts);
+            END IF;
+        END $$;
+        DO $$ BEGIN
+            IF (SELECT data_type FROM information_schema.columns
+                 WHERE table_schema='public' AND table_name='consent_rules'
+                   AND column_name='expires_ts') = 'double precision' THEN
+                ALTER TABLE consent_rules ALTER COLUMN expires_ts TYPE TIMESTAMPTZ
+                    USING to_timestamp(expires_ts);
+            END IF;
+        END $$;
+        DO $$ BEGIN
+            IF (SELECT data_type FROM information_schema.columns
+                 WHERE table_schema='public' AND table_name='decisions'
+                   AND column_name='ts') = 'double precision' THEN
+                ALTER TABLE decisions ALTER COLUMN ts TYPE TIMESTAMPTZ
+                    USING to_timestamp(ts);
+            END IF;
+        END $$;
+        DO $$ BEGIN
+            IF (SELECT data_type FROM information_schema.columns
+                 WHERE table_schema='public' AND table_name='event_payloads'
+                   AND column_name='ts') = 'double precision' THEN
+                ALTER TABLE event_payloads ALTER COLUMN ts TYPE TIMESTAMPTZ
+                    USING to_timestamp(ts);
+            END IF;
+        END $$;
+        DO $$ BEGIN
+            IF (SELECT data_type FROM information_schema.columns
+                 WHERE table_schema='public' AND table_name='interrupts'
+                   AND column_name='created_at') = 'double precision' THEN
+                ALTER TABLE interrupts ALTER COLUMN created_at TYPE TIMESTAMPTZ
+                    USING to_timestamp(created_at);
+            END IF;
+        END $$;
+        DO $$ BEGIN
+            IF (SELECT data_type FROM information_schema.columns
+                 WHERE table_schema='public' AND table_name='interrupts'
+                   AND column_name='resolved_at') = 'double precision' THEN
+                ALTER TABLE interrupts ALTER COLUMN resolved_at TYPE TIMESTAMPTZ
+                    USING to_timestamp(resolved_at);
+            END IF;
+        END $$;
+        DO $$ BEGIN
+            IF (SELECT data_type FROM information_schema.columns
+                 WHERE table_schema='public' AND table_name='llm_usage'
+                   AND column_name='ts') = 'double precision' THEN
+                ALTER TABLE llm_usage ALTER COLUMN ts TYPE TIMESTAMPTZ
+                    USING to_timestamp(ts);
+            END IF;
+        END $$;
+        DO $$ BEGIN
+            IF (SELECT data_type FROM information_schema.columns
+                 WHERE table_schema='public' AND table_name='pending_asks'
+                   AND column_name='created_ts') = 'double precision' THEN
+                ALTER TABLE pending_asks ALTER COLUMN created_ts TYPE TIMESTAMPTZ
+                    USING to_timestamp(created_ts);
+            END IF;
+        END $$;
+        DO $$ BEGIN
+            IF (SELECT data_type FROM information_schema.columns
+                 WHERE table_schema='public' AND table_name='pending_asks'
+                   AND column_name='answered_ts') = 'double precision' THEN
+                ALTER TABLE pending_asks ALTER COLUMN answered_ts TYPE TIMESTAMPTZ
+                    USING to_timestamp(answered_ts);
+            END IF;
+        END $$;
+        DO $$ BEGIN
+            IF (SELECT data_type FROM information_schema.columns
+                 WHERE table_schema='public' AND table_name='proposals'
+                   AND column_name='created_ts') = 'double precision' THEN
+                ALTER TABLE proposals ALTER COLUMN created_ts TYPE TIMESTAMPTZ
+                    USING to_timestamp(created_ts);
+            END IF;
+        END $$;
+        DO $$ BEGIN
+            IF (SELECT data_type FROM information_schema.columns
+                 WHERE table_schema='public' AND table_name='proposals'
+                   AND column_name='expires_ts') = 'double precision' THEN
+                ALTER TABLE proposals ALTER COLUMN expires_ts TYPE TIMESTAMPTZ
+                    USING to_timestamp(expires_ts);
+            END IF;
+        END $$;
+        DO $$ BEGIN
+            IF (SELECT data_type FROM information_schema.columns
+                 WHERE table_schema='public' AND table_name='sessions'
+                   AND column_name='created_at') = 'double precision' THEN
+                ALTER TABLE sessions ALTER COLUMN created_at TYPE TIMESTAMPTZ
+                    USING to_timestamp(created_at);
+            END IF;
+        END $$;
+        DO $$ BEGIN
+            IF (SELECT data_type FROM information_schema.columns
+                 WHERE table_schema='public' AND table_name='sessions'
+                   AND column_name='updated_at') = 'double precision' THEN
+                ALTER TABLE sessions ALTER COLUMN updated_at TYPE TIMESTAMPTZ
+                    USING to_timestamp(updated_at);
+            END IF;
+        END $$;
+        DO $$ BEGIN
+            IF (SELECT data_type FROM information_schema.columns
+                 WHERE table_schema='public' AND table_name='tasks'
+                   AND column_name='created_ts') = 'double precision' THEN
+                ALTER TABLE tasks ALTER COLUMN created_ts TYPE TIMESTAMPTZ
+                    USING to_timestamp(created_ts);
+            END IF;
+        END $$;
+        DO $$ BEGIN
+            IF (SELECT data_type FROM information_schema.columns
+                 WHERE table_schema='public' AND table_name='tasks'
+                   AND column_name='started_ts') = 'double precision' THEN
+                ALTER TABLE tasks ALTER COLUMN started_ts TYPE TIMESTAMPTZ
+                    USING to_timestamp(started_ts);
+            END IF;
+        END $$;
+        DO $$ BEGIN
+            IF (SELECT data_type FROM information_schema.columns
+                 WHERE table_schema='public' AND table_name='tasks'
+                   AND column_name='finished_ts') = 'double precision' THEN
+                ALTER TABLE tasks ALTER COLUMN finished_ts TYPE TIMESTAMPTZ
+                    USING to_timestamp(finished_ts);
+            END IF;
+        END $$;
+        DO $$ BEGIN
+            IF (SELECT data_type FROM information_schema.columns
+                 WHERE table_schema='public' AND table_name='user_prefs'
+                   AND column_name='updated_ts') = 'double precision' THEN
+                ALTER TABLE user_prefs ALTER COLUMN updated_ts TYPE TIMESTAMPTZ
+                    USING to_timestamp(updated_ts);
+            END IF;
+        END $$;
         """,
     ),
 ]

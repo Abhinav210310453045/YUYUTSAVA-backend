@@ -16,7 +16,8 @@ from unittest import mock
 import httpx
 
 from yuyutsava.daemon.resources import ResourceSnapshot
-from yuyutsava.daemon.task_registry import SqliteTaskStore, TaskRegistry
+from yuyutsava.daemon.task_registry import TaskRegistry
+from yuyutsava.daemon.task_store_unified import sqlite_task_store
 from yuyutsava.daemon.task_submission import TaskSubmissionService
 from yuyutsava.daemon.web.app import create_app
 from yuyutsava.daemon.web.auth import AuthSettings, check_request
@@ -128,7 +129,7 @@ class V1ContractTests(unittest.IsolatedAsyncioTestCase):
         self._tmp = tempfile.TemporaryDirectory()
         tmp = Path(self._tmp.name)
 
-        self.registry = TaskRegistry(SqliteTaskStore(tmp / "state.db"))
+        self.registry = TaskRegistry(sqlite_task_store(tmp / "state.db"))
         self.queue: asyncio.Queue = asyncio.Queue()
         self.store = _EventsStore()
         self.hub = WebHub(store=self.store)

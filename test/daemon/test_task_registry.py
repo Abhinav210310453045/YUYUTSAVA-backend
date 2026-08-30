@@ -9,8 +9,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from yuyutsava.daemon.task_store_unified import sqlite_task_store
 from yuyutsava.daemon.task_registry import (
-    SqliteTaskStore,
     TaskRegistry,
     mint_task_id,
 )
@@ -20,7 +20,7 @@ class TaskRegistryTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
         self.registry = TaskRegistry(
-            SqliteTaskStore(Path(self._tmp.name) / "state.db")
+            sqlite_task_store(Path(self._tmp.name) / "state.db")
         )
 
     async def asyncTearDown(self) -> None:
@@ -151,7 +151,7 @@ class TaskRegistryTests(unittest.IsolatedAsyncioTestCase):
         conn.commit()
         conn.close()
 
-        store = SqliteTaskStore(db)
+        store = sqlite_task_store(db)
         rec = await store.get("tsk_old")
         self.assertEqual(rec.instruction, "legacy row")
         self.assertIsNone(rec.model)

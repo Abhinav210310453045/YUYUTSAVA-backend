@@ -28,7 +28,7 @@ from yuyutsava.cli.commands.scenarios import format_scenario_list, get_scenario
 from yuyutsava.cli.commands.sessions import delete_session, print_sessions_table
 from yuyutsava.core.config import DockerSettings, LocalSettings, SearchConfig, llm_settings_from_env
 from yuyutsava.core.engine import (
-    build_agent,
+    build_cli_deepagent,
     builtin_tools_reference_json,
     export_agent_state_graph_png,
     setup_logging,
@@ -300,7 +300,7 @@ async def _async_main(argv: list[str] | None = None, *, force_chat: bool = False
         return 0
 
     if args.list_sessions:
-        # Short-circuit before build_agent — no model, no Docker, no LLM keys needed.
+        # Short-circuit before build_cli_deepagent — no model, no Docker, no LLM keys needed.
         # Default: show every session so the user can discover ids regardless of cwd.
         # --this-workspace narrows to the current --workspace.
         ws_filter = args.workspace.resolve() if args.this_workspace else None
@@ -319,7 +319,7 @@ async def _async_main(argv: list[str] | None = None, *, force_chat: bool = False
             return 2
         settings = llm_settings_from_env()
         workspace = args.workspace.resolve()
-        graph_bundle = build_agent(
+        graph_bundle = build_cli_deepagent(
             workspace,
             settings,
             bash_timeout_sec=args.bash_timeout,

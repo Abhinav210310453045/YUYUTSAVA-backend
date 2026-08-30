@@ -25,6 +25,7 @@ import contextlib
 import os
 import re
 import sys
+import traceback
 from pathlib import Path
 from typing import Any
 
@@ -920,7 +921,19 @@ async def run_chat_repl(
                     continue
                 except Exception as exc:  # noqa: BLE001
                     await renderer.end_of_turn()
-                    print(f"{_RED}error:{_RESET} {exc}", file=sys.stderr)
+                    # Name the exception type and keep the traceback: a bare
+                    # str(exc) turns a library-internal failure ("list index out
+                    # of range") into an unattributable one-liner, and the frame
+                    # it came from is the only thing that makes it fixable. The
+                    # turn still fails soft — the session stays open either way.
+                    print(
+                        f"{_RED}error:{_RESET} {type(exc).__name__}: {exc}",
+                        file=sys.stderr,
+                    )
+                    tb = "".join(
+                        traceback.format_exception(type(exc), exc, exc.__traceback__)
+                    )
+                    print(f"{_DIM}{tb.rstrip()}{_RESET}", file=sys.stderr)
                     continue
 
                 await renderer.end_of_turn()

@@ -20,7 +20,7 @@ complexity ≤ 2 → light, ≤ 3 → standard, else heavy.
 
 The ``PRICES`` table (USD per **1M** input/output tokens, keyed by
 model-name prefix, longest prefix wins) feeds
-:class:`yuyutsava.daemon.usage.UsageRecorder` cost estimates. Override or
+:class:`yuyutsava.daemon.usage.UsagePolicy` cost estimates. Override or
 extend it via ``~/.yuyutsava/model_prices.json``::
 
     {"my-model-prefix": [0.50, 1.50]}
@@ -105,7 +105,17 @@ def estimate_cost_usd(
     output_tokens: int,
     prices: dict[str, tuple[float, float]] | None = None,
 ) -> float:
-    """Estimated spend for one call. Longest matching prefix wins; 0.0 unknown."""
+    """Estimated spend for one call. Longest matching prefix wins; 0.0 unknown.
+
+    An unpriced model returns ``0.0`` — we genuinely do not know, and inventing
+    a number would be worse than admitting it. But ``0.0`` is indistinguishable
+    from a free call once the ledger sums it, so :func:`_warn_unpriced_once`
+    says so rather than letting the cost column quietly read zero forever.
+
+    Found by running the daemon: the price table ships ``gemini-2.5-flash`` and
+    the configured model was ``gemini-3.5-flash``, which prefix-matches nothing.
+    Every call was being costed at $0.00 with no indication anywhere.
+    """
     table = prices if prices is not None else PRICES
     best: tuple[float, float] | None = None
     best_len = -1
@@ -113,8 +123,34 @@ def estimate_cost_usd(
         if model.startswith(prefix) and len(prefix) > best_len:
             best, best_len = pair, len(prefix)
     if best is None:
+        _warn_unpriced_once(model)
         return 0.0
     return (input_tokens * best[0] + output_tokens * best[1]) / 1_000_000
+
+
+#: Models already reported as unpriced. Per-call warning would be one line per
+#: model call — noise an operator learns to scroll past, which is the same
+#: failure as saying nothing.
+_UNPRICED_SEEN: set[str] = set()
+
+
+def _warn_unpriced_once(model: str) -> None:
+    """Say, once, that this model's spend is not being counted."""
+    if not model or model in _UNPRICED_SEEN:
+        return
+    _UNPRICED_SEEN.add(model)
+    logger.warning(
+        "no price entry for model %r — its llm_usage rows will record "
+        "est_cost_usd=0.00 and the usage totals will under-report. Add it to "
+        "~/.yuyutsava/model_prices.json as {\"%s\": [<$/1M in>, <$/1M out>]} "
+        "(prefixes match, so \"%s\" would cover variants).",
+        model, model, model.rsplit("-", 1)[0] if "-" in model else model,
+    )
+
+
+def unpriced_models() -> frozenset[str]:
+    """Models seen this process with no price entry. For diagnostics/tests."""
+    return frozenset(_UNPRICED_SEEN)
 
 
 def _parse_thresholds(raw: str) -> tuple[int, int]:

@@ -23,7 +23,8 @@ from unittest import mock
 from yuyutsava.core.streaming import StreamEvent, astream_agent_iter
 from yuyutsava.daemon.channels import ChannelRouter, UserChannel
 from yuyutsava.daemon.orchestrator_loop import OrchestratorLoop, resume_interrupted_tasks
-from yuyutsava.daemon.task_registry import SqliteTaskStore, TaskRegistry
+from yuyutsava.daemon.task_registry import TaskRegistry
+from yuyutsava.daemon.task_store_unified import sqlite_task_store
 from yuyutsava.daemon.triage_loop import OrchestratorTask
 
 
@@ -55,24 +56,33 @@ class ResumeOnStartupTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
         self.registry = TaskRegistry(
-            SqliteTaskStore(Path(self._tmp.name) / "state.db")
+            sqlite_task_store(Path(self._tmp.name) / "state.db")
         )
 
     async def asyncTearDown(self) -> None:
         self._tmp.cleanup()
 
-    async def test_reenqueues_running_with_thread_id_and_queued_fresh(self) -> None:
+    async def test_reenqueues_running_but_never_queued(self) -> None:
+        """``queued`` is a consent boundary — see test_resume_consent_boundary.py.
+
+        This case used to assert the opposite (both statuses resumed). That
+        behaviour executed Tier-1 proposals the user had declined by timeout:
+        a ``queued`` row carries no ``proposal_id``, so at boot a *direct*
+        submission (approved, enqueued in the same breath) is indistinguishable
+        from a *triage* submission still waiting on — or refused by — the user.
+        Observed live: two expired triage proposals were resurrected and run.
+        """
         # A task that was mid-flight (running, has a checkpoint thread_id)…
         running_id = self.registry.mint_task_id()
         await self.registry.create(task_id=running_id, origin="api", instruction="resume me")
         await self.registry.mark_running(running_id, thread_id="orch-abc")
-        # …and one that never started (still queued, no thread_id).
+        # …and one that never started — never authorised, so never resumed.
         queued_id = self.registry.mint_task_id()
         await self.registry.create(task_id=queued_id, origin="api", instruction="queued one")
 
         queue: asyncio.Queue[OrchestratorTask] = asyncio.Queue()
         n = await resume_interrupted_tasks(self.registry, queue)
-        self.assertEqual(n, 2)
+        self.assertEqual(n, 1, "only the running task may resume")
 
         items = []
         while not queue.empty():
@@ -81,8 +91,11 @@ class ResumeOnStartupTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(by_id[running_id].resume_thread_id, "orch-abc")
         self.assertEqual(by_id[running_id].instruction, "resume me")
-        self.assertIsNone(by_id[queued_id].resume_thread_id)
-        self.assertEqual(by_id[queued_id].instruction, "queued one")
+        self.assertNotIn(
+            queued_id, by_id,
+            "a never-authorised queued task was re-enqueued — a restart is "
+            "bypassing Tier-1 consent",
+        )
 
     async def test_ignores_terminal_tasks(self) -> None:
         done_id = self.registry.mint_task_id()
@@ -104,7 +117,7 @@ class OrchestratorLoopResumeTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
         self.registry = TaskRegistry(
-            SqliteTaskStore(Path(self._tmp.name) / "state.db")
+            sqlite_task_store(Path(self._tmp.name) / "state.db")
         )
         self.channel = _RecordingChannel()
         self.store = _RecordingStore()

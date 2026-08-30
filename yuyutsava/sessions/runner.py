@@ -21,7 +21,8 @@ from langchain_core.messages import ToolMessage
 from langgraph.graph.state import CompiledStateGraph
 
 from yuyutsava.core.streaming import astream_agent
-from yuyutsava.storage.interrupts import InterruptsStore, SqliteInterruptsStore
+from yuyutsava.storage.interrupts import InterruptsStore
+from yuyutsava.storage.interrupts_unified import sqlite_interrupts_store
 from yuyutsava.storage.models import Session
 from yuyutsava.storage.sessions import SessionNotFound, SessionStore, SessionsSettings
 
@@ -232,7 +233,7 @@ async def run_session(
         try:
             settings = SessionsSettings.from_env()
             if settings.interrupts_db_path is not None:
-                interrupts_store = SqliteInterruptsStore(
+                interrupts_store = sqlite_interrupts_store(
                     settings.interrupts_db_path,
                     busy_timeout_ms=settings.busy_timeout_ms,
                 )

@@ -11,6 +11,7 @@ from yuyutsava.llm.base import Provider, require
 
 class CohereProvider(Provider):
     settings_type = CohereSettings
+    key = "cohere"
 
     def build(
         self, settings: CohereSettings, *, temperature: float, disable_reasoning: bool

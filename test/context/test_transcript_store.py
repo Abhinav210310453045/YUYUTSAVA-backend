@@ -1,4 +1,8 @@
-"""Unit tests for SqliteTranscriptStore + TranscriptRecorderMiddleware.
+"""Unit tests for the transcript store + TranscriptRecorderPolicy.
+
+The store is now UnifiedTranscriptStore over SqliteDialect (ADR-002 step 2.5b);
+these cover the middleware and SQLite-specific behaviour, while cross-backend
+parity lives in test/storage/test_transcript_store_parity.py.
 
 Run:  uv run python -m unittest test.context.test_transcript_store -v
 """
@@ -12,15 +16,15 @@ from pathlib import Path
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
-from yuyutsava.context import transcript_middleware as tmw
-from yuyutsava.context.transcript_middleware import TranscriptRecorderMiddleware
-from yuyutsava.context.transcript_store import SqliteTranscriptStore
+from yuyutsava.context.transcript_policy import TranscriptRecorderPolicy
+from yuyutsava.policy import adapter as tmw
+from yuyutsava.context.transcript_store_unified import sqlite_transcript_store
 
 
 class TranscriptStoreTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
-        self.store = SqliteTranscriptStore(Path(self._tmp.name) / "state.db")
+        self.store = sqlite_transcript_store(Path(self._tmp.name) / "state.db")
 
     async def asyncTearDown(self) -> None:
         self._tmp.cleanup()
@@ -74,11 +78,13 @@ class TranscriptStoreTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self.store.list_messages("t1"), [])
 
 
-class TranscriptRecorderMiddlewareTests(unittest.IsolatedAsyncioTestCase):
+class TranscriptRecorderPolicyTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
-        self.store = SqliteTranscriptStore(Path(self._tmp.name) / "state.db")
-        self.mw = TranscriptRecorderMiddleware(self.store)
+        self.store = sqlite_transcript_store(Path(self._tmp.name) / "state.db")
+        from yuyutsava.policy.adapter import LangChainPolicyAdapter
+
+        self.mw = LangChainPolicyAdapter([TranscriptRecorderPolicy(self.store)])
         self._orig_tid = tmw._current_thread_id
         tmw._current_thread_id = lambda: "tA"  # type: ignore[assignment]
 

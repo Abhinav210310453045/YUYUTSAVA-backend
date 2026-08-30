@@ -32,6 +32,7 @@ from yuyutsava.daemon.task_registry import TaskRegistry
 from yuyutsava.daemon.triage_loop import OrchestratorTask
 from yuyutsava.events.bus import EventBus, EventEnvelope
 from yuyutsava.storage.events import Proposal, Store
+from yuyutsava.storage.events.roles import TriageStore
 
 logger = logging.getLogger("yuyutsava.daemon.task_submission")
 
@@ -52,7 +53,7 @@ class TaskSubmissionService:
         *,
         registry: TaskRegistry,
         task_queue: asyncio.Queue[OrchestratorTask],
-        store: Store,
+        store: TriageStore,
         bus: EventBus,
         proposal_expiry_sec: int = 300,
         complexity_scorer: object | None = None,  # core.model_router.ComplexityScorer

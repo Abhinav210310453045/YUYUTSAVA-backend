@@ -22,6 +22,7 @@ import logging
 from typing import Any
 
 from yuyutsava.storage.events.store import Store
+from yuyutsava.storage.events.roles import PrefsBackend
 
 logger = logging.getLogger("yuyutsava.storage.prefs")
 
@@ -33,7 +34,7 @@ class PrefsStore:
     ``prefs`` subcommand) already created — the connection is shared.
     """
 
-    def __init__(self, store: Store) -> None:
+    def __init__(self, store: PrefsBackend) -> None:
         self._store = store
 
     # ------------------------------------------------------------------ #

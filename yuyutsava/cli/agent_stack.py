@@ -26,10 +26,7 @@ from yuyutsava.agents.general_purpose.agent import GeneralPurposeAgent
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
 from yuyutsava.agents.task_runner.tools import set_default_consent
 from yuyutsava.consent import ConsentRegistry
-from yuyutsava.context.artifacts import PgArtifactStore, SqliteArtifactStore
 from yuyutsava.context.config import ContextSettings
-from yuyutsava.context.summary_store import PgThreadSummaryStore, SqliteThreadSummaryStore
-from yuyutsava.context.transcript_store import PgTranscriptStore, SqliteTranscriptStore
 from yuyutsava.core.config import DockerSettings, LlmSettings, LocalSettings, SearchConfig, _env
 from yuyutsava.core.engine import AgentBundle, build_cli_deepagent
 from yuyutsava.llm import chat_model
@@ -68,8 +65,8 @@ async def _build_retrieval_stores(skill_registry: SkillRegistry):
 
     if storage.is_postgres():
         from yuyutsava.memory.embedder import Embedder
-        from yuyutsava.memory.store import PgMemoryStore
-        from yuyutsava.skills.store import PgSkillStore
+        from yuyutsava.memory.store_unified import pg_memory_store
+        from yuyutsava.skills.store_unified import pg_skill_store
         from yuyutsava.storage.pg import migrations as pg_migrations
         from yuyutsava.storage.pg.pool import PgPool
 
@@ -83,9 +80,9 @@ async def _build_retrieval_stores(skill_registry: SkillRegistry):
                     "CLI: embedder unreachable — memory/skills degrade to "
                     "keyword search until it recovers"
                 )
-            skill_store = PgSkillStore(pg_pool, embedder, min_score=mem_settings.min_score)
+            skill_store = pg_skill_store(pg_pool, embedder, min_score=mem_settings.min_score)
             if mem_settings.enabled:
-                memory_store = PgMemoryStore(
+                memory_store = pg_memory_store(
                     pg_pool, embedder,
                     min_score=mem_settings.min_score,
                     dedup_threshold=mem_settings.dedup_threshold,
@@ -102,11 +99,11 @@ async def _build_retrieval_stores(skill_registry: SkillRegistry):
             memory_store = skill_store = pg_pool = embedder = None
 
     if skill_store is None:
-        from yuyutsava.skills.store import SqliteSkillStore
-        skill_store = SqliteSkillStore(state_db_path())
+        from yuyutsava.skills.store_unified import sqlite_skill_store
+        skill_store = sqlite_skill_store(state_db_path())
     if memory_store is None and mem_settings.enabled:
-        from yuyutsava.memory.store import SqliteMemoryStore
-        memory_store = SqliteMemoryStore(state_db_path())
+        from yuyutsava.memory.store_unified import sqlite_memory_store
+        memory_store = sqlite_memory_store(state_db_path())
 
     # Catch the store up to on-disk skills (previous sessions, bundled,
     # workspace) so they're retrievable this session — best-effort.
@@ -115,15 +112,19 @@ async def _build_retrieval_stores(skill_registry: SkillRegistry):
     except Exception:
         logger.warning("CLI: skill index sync failed", exc_info=True)
 
-    # Re-embed any rows that landed without a vector (Pg only).
+    # Re-embed any rows that landed without a vector. Both stores declare
+    # backfill_embeddings unconditionally since ADR-002 step 2.5b — it returns 0
+    # on a backend with no vectors — so this no longer probes with getattr. That
+    # form was duck-typed, and a call site that forgot the guard raised
+    # AttributeError on SQLite only, in production only.
     if pg_pool is not None and embedder is not None:
         for store in (memory_store, skill_store):
-            backfill = getattr(store, "backfill_embeddings", None)
-            if backfill is not None:
-                try:
-                    await backfill()
-                except Exception:
-                    logger.warning("CLI: embedding backfill failed", exc_info=True)
+            if store is None:
+                continue  # memory can be disabled entirely
+            try:
+                await store.backfill_embeddings()
+            except Exception:
+                logger.warning("CLI: embedding backfill failed", exc_info=True)
 
     return memory_store, skill_store, pg_pool, embedder
 
@@ -153,7 +154,7 @@ async def build_agent_stack(
     The trailing keyword group is daemon-supplied wiring (all default to
     None, keeping the standalone CLI's behavior unchanged): ``mcp_manager``
     scopes user-configured MCP tools to ``"cli"``; ``usage_store`` /
-    ``budget_tokens`` attach the orchestrator's UsageRecorder/Budget pair;
+    ``budget_tokens`` attach the orchestrator's UsagePolicy/BudgetPolicy pair;
     ``prefs_store`` adds the per-turn USER PREFERENCES injector;
     ``runtime_settings`` carries the user's dedicated-subagent switches (this
     bundle is cached across conversations, so the toggle is enforced per call
@@ -195,35 +196,29 @@ async def build_agent_stack(
         skill_registry
     )
 
-    # Context-controller stores follow the ACTIVE backend, not a hardcoded twin:
-    # when a pgvector pool exists (Postgres backend) they live in Postgres so a
-    # daemon-hosted conversation persists to the SAME place the HTTP history
-    # endpoint reads — otherwise the SQLite twins (zero-config fallback). Mirrors
-    # the daemon's own selection in daemon/bootstrap.py. Postgres is primary;
-    # SQLite is only the fallback when no pool is available.
-    # These three are written only INSIDE a checkpointed turn; if Postgres is
-    # down the LangGraph checkpointer (also PG) fails the turn anyway, so a
-    # SQLite write-buffer would never be reached — they stay PG-primary /
-    # SQLite-fallback-at-boot (not RoutedStore). Spillover failover is applied to
-    # the REST-path stores (feedback, visuals) in the daemon instead.
-    if pg_pool is not None:
-        artifact_store = PgArtifactStore(
-            pg_pool, embedder=embedder, semantic_recall=context_settings.semantic_recall
-        )
-        summary_store = PgThreadSummaryStore(pg_pool)
-        transcript_store = PgTranscriptStore(pg_pool)
-    else:
-        artifact_store = SqliteArtifactStore(state_db_path())
-        summary_store = SqliteThreadSummaryStore(state_db_path())
-        transcript_store = SqliteTranscriptStore(state_db_path())
+    # Context-controller stores, selected ONCE by StoreFactory (Phase 3 step
+    # 3.5). The CLI, the tinker bundle and the daemon each used to write this
+    # `if pg_pool is not None:` branch out in full; the factory owns it now, so
+    # they cannot drift. See StoreFactory.context_stores for why these stay
+    # PG-primary / SQLite-fallback rather than RoutedStore.
+    from yuyutsava.storage.backend import StorageSettings as _SS
+    from yuyutsava.storage.factory import StoreFactory as _SF
+
+    _ctx = _SF(_SS.from_env(), pg_pool=pg_pool, embedder=embedder).context_stores(
+        semantic_recall=context_settings.semantic_recall
+    )
+    artifact_store = _ctx.artifacts
+    summary_store = _ctx.summaries
+    transcript_store = _ctx.transcripts
 
     # TODO board: point the todo_* capture tools at the SAME board the daemon
     # serves. With a pool the Pg store is primary (get_default_todo_store()
     # would otherwise lazily fall back to the SQLite twin and split the board);
     # without one the lazy SQLite fallback is correct, so leave it unset.
     if pg_pool is not None:
-        from yuyutsava.todoboard.store import PgTodoStore, set_default_todo_store
-        set_default_todo_store(PgTodoStore(pg_pool))
+        from yuyutsava.todoboard.store import set_default_todo_store
+        from yuyutsava.todoboard.store_unified import pg_todo_store
+        set_default_todo_store(pg_todo_store(pg_pool))
         # Board-note recall: embed-on-write for notes authored through this
         # stack + todo_recall searches. Boot backfill is the daemon's job —
         # a CLI start stays light.
@@ -242,12 +237,9 @@ async def build_agent_stack(
         logger.debug("price cache refresh failed", exc_info=True)
 
     # Per-conversation transcript recall (Postgres only): index each turn so a
-    # resumed session recalls prior topics after its checkpoint is swept. Requires
-    # the pgvector pool + embedder; None on the SQLite fallback (no-op downstream).
-    transcript_index = None
-    if pg_pool is not None and embedder is not None:
-        from yuyutsava.context.transcript_index import PgTranscriptIndex
-        transcript_index = PgTranscriptIndex(pg_pool, embedder=embedder)
+    # resumed session recalls prior topics after its checkpoint is swept. None on
+    # the SQLite fallback, which the middleware treats as a no-op.
+    transcript_index = _ctx.transcript_index
 
     sandbox_root_for_tr = (
         local_settings.sandbox_dir.resolve()

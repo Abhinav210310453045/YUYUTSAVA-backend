@@ -15,6 +15,7 @@ from yuyutsava.llm.base import Provider, require
 
 class AnthropicProvider(Provider):
     settings_type = AnthropicSettings
+    key = "anthropic"
 
     def build(
         self, settings: AnthropicSettings, *, temperature: float, disable_reasoning: bool

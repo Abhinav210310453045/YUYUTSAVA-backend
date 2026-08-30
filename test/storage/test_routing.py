@@ -18,10 +18,10 @@ import psycopg
 
 from yuyutsava.storage.backend import StorageSettings
 from yuyutsava.storage.events import Store
+from yuyutsava.storage.dialect import EventsSqliteDialect
+from yuyutsava.storage.events.unified import UnifiedEventStore, UnifiedProposalStore
 from yuyutsava.storage.events.sqlite_backend import (
-    SqliteEventStore,
     SqliteEventsBackend,
-    SqliteProposalStore,
 )
 from yuyutsava.storage.models import Proposal
 from yuyutsava.storage.routing.facade import RoutedStore
@@ -84,7 +84,7 @@ class RoutedStoreFailoverTests(unittest.IsolatedAsyncioTestCase):
         self._tmp.cleanup()
 
     async def test_pg_error_routes_write_to_buffer_and_marks_degraded(self) -> None:
-        buffer = SqliteEventStore(self.backend)
+        buffer = UnifiedEventStore(EventsSqliteDialect(self.backend))
         health = StorageHealth(_DownPool(), probe_interval_sec=0.05)
         routed = RoutedStore(_RaisingPrimary(), buffer, health, name="event_payloads")
 
@@ -112,8 +112,8 @@ class ReconcileDrainAndDeleteTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_drain_moves_rows_to_pg_then_deletes_from_sqlite(self) -> None:
         # Simulate rows buffered during an outage.
-        events = SqliteEventStore(self.backend)
-        proposals = SqliteProposalStore(self.backend)
+        events = UnifiedEventStore(EventsSqliteDialect(self.backend))
+        proposals = UnifiedProposalStore(EventsSqliteDialect(self.backend))
         await events.put_event_payload(
             event_id="e1", topic="fs.write", ts=time.time(), payload={"path": "/x"}
         )
@@ -150,7 +150,7 @@ class PureSqliteModeTests(unittest.IsolatedAsyncioTestCase):
         # domain stores are plain twins, never RoutedStore, so nothing drains.
         store = Store.for_backend(StorageSettings(backend="sqlite"))
         self.assertNotIsInstance(store._events, RoutedStore)
-        self.assertEqual(type(store._events).__name__, "SqliteEventStore")
+        self.assertEqual(type(store._events).__name__, "UnifiedEventStore")
 
 
 if __name__ == "__main__":

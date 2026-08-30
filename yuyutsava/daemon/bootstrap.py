@@ -19,7 +19,7 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Awaitable, Callable
+from typing import Any, Awaitable, Callable
 
 import uvicorn
 
@@ -37,11 +37,7 @@ from yuyutsava.async_subagents.session_origin import SessionOriginMap
 from yuyutsava.channels.config import ChannelsConfig
 from yuyutsava.channels.plugin import InboundSink
 from yuyutsava.channels.registry import ChannelPluginRegistry
-from yuyutsava.context.artifacts import PgArtifactStore, SqliteArtifactStore
 from yuyutsava.context.config import ContextSettings
-from yuyutsava.context.summary_store import PgThreadSummaryStore, SqliteThreadSummaryStore
-from yuyutsava.context.transcript_store import PgTranscriptStore, SqliteTranscriptStore
-from yuyutsava.storage.voice_store import PgVoiceMessageStore, SqliteVoiceMessageStore
 from yuyutsava.core.config import (
     DaemonConfig, EventsConfig, LlmSettings, SearchConfig, SourceConfig,
     _env, llm_settings_from_env,
@@ -55,11 +51,11 @@ from yuyutsava.daemon.channels import ChannelEvent, ChannelRouter, TimelinePaylo
 from yuyutsava.daemon.checkpointing import CheckpointerSaver
 from yuyutsava.daemon.orchestrator_loop import OrchestratorLoop
 from yuyutsava.daemon.resources import AdmissionController, ResourceMonitor, ResourceSettings
-from yuyutsava.daemon.task_registry import PgTaskStore, SqliteTaskStore, TaskRegistry
+from yuyutsava.daemon.task_registry import TaskRegistry
 from yuyutsava.daemon.task_submission import TaskSubmissionService
 from yuyutsava.daemon.terminal_channel import TerminalChannel
 from yuyutsava.daemon.triage_loop import OrchestratorTask, TriageLoop
-from yuyutsava.daemon.usage import PgUsageStore, SqliteUsageStore, UsageStore
+from yuyutsava.daemon.usage import UsageStore
 from yuyutsava.daemon.web.auth import AuthSettings
 from yuyutsava.daemon.web.server import WebChannel, WebHub, make_app
 from yuyutsava.daemon.web.services.decision_service import DecisionService
@@ -69,12 +65,13 @@ from yuyutsava.mcp.config import MCPConfig
 from yuyutsava.mcp.loader import MCPClientManager
 from yuyutsava.memory.config import MemorySettings
 from yuyutsava.memory.embedder import Embedder
-from yuyutsava.memory.store import MemoryStore, PgMemoryStore, SqliteMemoryStore
 from yuyutsava.prefs.injector import PrefsInjector
 from yuyutsava.prefs.runtime import RuntimeSettings
 from yuyutsava.skills.registry import SkillRegistry
-from yuyutsava.skills.store import PgSkillStore, SkillIndexer, SqliteSkillStore
+from yuyutsava.skills.store import SkillIndexer
 from yuyutsava.storage.backend import StorageSettings
+from yuyutsava.memory.store import MemoryStore
+from yuyutsava.storage.factory import StoreFactory
 from yuyutsava.storage.events import Store
 from yuyutsava.storage.paths import blobs_dir, checkpoints_db_path, state_db_path, state_dir
 from yuyutsava.storage.pg import migrations as pg_migrations
@@ -288,21 +285,55 @@ def _build_initial_events_config(opts: DaemonOptions, daemon_cfg: DaemonConfig) 
 # ---------------------------------------------------------------------------
 
 
-async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
-    """Wire every daemon subsystem and return them as a populated record.
+# ---------------------------------------------------------------------------
+# Subsystem builders
+# ---------------------------------------------------------------------------
 
-    Boot order matches the original ``daemon/main.py``: store → prefs →
-    policy → MCP → checkpointer → sweeper → bus → sources → channels →
-    models → skills → search → subagents → triage agent → loops. The
-    caller is responsible for installing signal handlers, scheduling the
-    loop tasks, and ordered shutdown.
+
+@dataclass(frozen=True)
+class StorageSubsystem:
+    """Everything the persistence layer produces, as one explicit record.
+
+    Phase 3 step 3.3 (ADR-003). ``build_daemon`` was a 927-line function whose
+    only description of how the system fits together was *statement order inside
+    one body* — unverifiable by any tool, unholdable in one head.
+
+    This is the first slice pulled out. It has explicit inputs (options) and
+    explicit outputs (this record), so it can be built and inspected without
+    constructing a daemon, and the load order it depends on is visible in a
+    signature rather than implied by position.
     """
-    workspace = opts.workspace.resolve()
-    home = state_dir()
 
-    daemon_cfg = DaemonConfig.from_env()
-    events_cfg = _build_initial_events_config(opts, daemon_cfg)
+    settings: StorageSettings
+    pg_pool: PgPool | None
+    storage_health: object | None
+    stores: StoreFactory
+    embedder: Embedder | None
+    mem_settings: object
 
+    # domain stores
+    artifact_store: object
+    summary_store: object
+    transcript_store: object
+    voice_store: object
+    memory_store: MemoryStore | None
+    usage_store: UsageStore
+    task_registry: TaskRegistry
+    events: Store
+    model_router: object
+
+    #: Set when Postgres was requested but unreachable; surfaced on the user
+    #: timeline once channels exist, so a silent downgrade is impossible.
+    fallback_reason: str | None = None
+
+
+async def build_storage(opts: DaemonOptions) -> StorageSubsystem:
+    """Open the backend, run migrations, and construct every domain store.
+
+    Extracted verbatim from ``build_daemon``. The only change is that its
+    outputs are returned as a record instead of left as locals for the next 600
+    lines to read.
+    """
     # ── storage backend (sqlite default / postgres) ------------------------
     # Opened before everything that persists: the checkpointer and the
     # context/memory stores dispatch on whether the pool came up. A dead
@@ -345,40 +376,37 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     embedder: Embedder | None = Embedder(mem_settings) if pg_pool is not None else None
     _semantic_recall = ContextSettings.from_env().semantic_recall
 
-    # ── context controller stores ------------------------------------------
+    # ── stores -------------------------------------------------------------
+    # One StoreFactory resolves "Postgres or SQLite" ONCE (ADR-002 step 2.6).
+    # This block used to re-decide it inline for every store — thirteen separate
+    # `if pg_pool is not None` branches — and separately wrapped three of them
+    # in RoutedStore with nothing recording why. Both now live in
+    # yuyutsava/storage/factory.py, with failover declared per domain in
+    # storage/domains.py.
+    #
+    # storage_health is built below (it needs pg_pool), so the factory is
+    # created with it in a moment; the stores that want spillover are requested
+    # after that point.
+    storage_health = StorageHealth(pg_pool) if pg_pool is not None else None
+    stores = StoreFactory(
+        storage, pg_pool=pg_pool, health=storage_health, embedder=embedder,
+    )
+
+    artifact_store = stores.artifacts(semantic_recall=_semantic_recall)
+    summary_store = stores.summaries()
+    transcript_store = stores.transcripts()
+    voice_store = stores.voice()
     if pg_pool is not None:
-        artifact_store = PgArtifactStore(
-            pg_pool, embedder=embedder, semantic_recall=_semantic_recall
-        )
-        if artifact_store.supports_recall:
-            logger.info("  ctx recall: pgvector artifact index enabled (ctx_recall)")
-        summary_store = PgThreadSummaryStore(pg_pool)
-        transcript_store = PgTranscriptStore(pg_pool)
-        voice_store = PgVoiceMessageStore(pg_pool)
         # Sessions move to Postgres too (migration v6). Inject the shared pool
         # so the web router's get_default_session_store() reuses it; migrations
         # already ran above, so the store skips its own lazy schema-ensure.
         set_default_session_store(PgSessionStore(storage, pool=pg_pool))
-        # Visuals + feedback default stores are injected below, after
-        # storage_health exists, wrapped in RoutedStore for spillover failover.
-    else:
-        artifact_store = SqliteArtifactStore(state_db_path())
-        summary_store = SqliteThreadSummaryStore(state_db_path())
-        transcript_store = SqliteTranscriptStore(state_db_path())
-        voice_store = SqliteVoiceMessageStore(state_db_path())
 
     # ── task registry (Phase 2: first-class task tracking) -----------------
-    task_store = (
-        PgTaskStore(pg_pool) if pg_pool is not None
-        else SqliteTaskStore(state_db_path())
-    )
-    task_registry = TaskRegistry(task_store)
+    task_registry = TaskRegistry(stores.tasks())
 
     # ── usage accounting + model routing (Phase 4) --------------------------
-    usage_store: UsageStore = (
-        PgUsageStore(pg_pool) if pg_pool is not None
-        else SqliteUsageStore(state_db_path())
-    )
+    usage_store: UsageStore = stores.usage()
     model_router = ModelRouter.from_env()
     if model_router.enabled:
         logger.info("  routing   : complexity-based model routing enabled")
@@ -386,28 +414,16 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     # ── semantic memory (default-on when postgres is live) -----------------
     # mem_settings + embedder were built above (shared with the artifact recall
     # index); memory and skills reuse the same embedder instance.
-    memory_store: MemoryStore | None = None
-    if mem_settings.enabled:
-        if pg_pool is not None and embedder is not None:
-            memory_store = PgMemoryStore(
-                pg_pool, embedder,
-                min_score=mem_settings.min_score,
-                dedup_threshold=mem_settings.dedup_threshold,
-            )
-            logger.info("  memory    : pgvector (embed=%s)", mem_settings.embed_model)
-        else:
-            memory_store = SqliteMemoryStore(state_db_path())
-            logger.info("  memory    : sqlite keyword fallback (no embeddings)")
+    memory_store: MemoryStore | None = stores.memory(mem_settings)
     # (Memory recall for the orchestrator master moved into build_orchestrator
-    # as a per-turn RetrievalInjectionMiddleware — no build-time injector here.)
+    # as a per-turn RetrievalInjectionPolicy — no build-time injector here.)
 
     # ── store (events DB: postgres-primary + sqlite spillover buffer) ------
     # On the Postgres backend each domain becomes a RoutedStore that fails over
     # to a SQLite buffer when Postgres is unreachable; the health probe drains
     # the buffer back on recovery (storage/routing). SQLite mode keeps the
     # SQLite twins as the permanent primary.
-    storage_health = StorageHealth(pg_pool) if pg_pool is not None else None
-    store = Store.for_backend(storage, pg_pool, storage_health)
+    store = stores.events()
     await store.start()
 
     # ── visuals + feedback default stores (Postgres-primary, spillover) ----
@@ -417,32 +433,67 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     # so an outage buffers to SQLite and the Reconciler (below) drains it back on
     # recovery. On the SQLite backend the getters fall back to the twins lazily.
     if pg_pool is not None and storage_health is not None:
-        from yuyutsava.storage.feedback_store import (
-            PgFeedbackStore, SqliteFeedbackStore, set_default_feedback_store,
-        )
-        from yuyutsava.storage.routing.facade import RoutedStore
-        from yuyutsava.visuals.store import (
-            PgVisualStore, SqliteVisualStore, set_default_visual_store,
-        )
+        from yuyutsava.storage.feedback_store import set_default_feedback_store
+        from yuyutsava.todoboard.store import set_default_todo_store
+        from yuyutsava.visuals.store import set_default_visual_store
 
-        set_default_visual_store(RoutedStore(
-            PgVisualStore(pg_pool), SqliteVisualStore(state_db_path()),
-            storage_health, name="visual",
-        ))
-        set_default_feedback_store(RoutedStore(
-            PgFeedbackStore(pg_pool), SqliteFeedbackStore(state_db_path()),
-            storage_health, name="feedback",
-        ))
-        # TODO board: also a REST-path store (the /todos router + todo_* tools),
-        # same spillover treatment; its TableSpecs drain via CONTENT_TABLE_SPECS.
-        from yuyutsava.todoboard.store import (
-            PgTodoStore, SqliteTodoStore, set_default_todo_store,
-        )
-        set_default_todo_store(RoutedStore(
-            PgTodoStore(pg_pool), SqliteTodoStore(state_db_path()),
-            storage_health, name="todo",
-        ))
+        # Spillover is now a DECLARED policy (storage/domains.py: Failover),
+        # not a wiring accident. The factory wraps exactly the domains that ask
+        # for it; these three are the REST-path stores written OUTSIDE a
+        # checkpointed turn, where a raised error loses the write outright.
+        set_default_visual_store(stores.visuals())
+        set_default_feedback_store(stores.feedback())
+        set_default_todo_store(stores.todos())
 
+
+    return StorageSubsystem(
+        settings=storage,
+        pg_pool=pg_pool,
+        storage_health=storage_health,
+        stores=stores,
+        embedder=embedder,
+        mem_settings=mem_settings,
+        artifact_store=artifact_store,
+        summary_store=summary_store,
+        transcript_store=transcript_store,
+        voice_store=voice_store,
+        memory_store=memory_store,
+        usage_store=usage_store,
+        task_registry=task_registry,
+        events=store,
+        model_router=model_router,
+        fallback_reason=storage_fallback_reason,
+    )
+
+
+@dataclass(frozen=True)
+class PolicySubsystem:
+    """User preferences, permission rules and consent grants.
+
+    Phase 3 step 3.3, second slice. Cohesive because all three read from the
+    same events store and all three answer one question: *what is this agent
+    allowed to do?* Extracted together rather than split, because separating
+    them would produce three builders that each take ``store`` and are never
+    used apart.
+    """
+
+    prefs_store: PrefsStore
+    prefs_injector: PrefsInjector
+    runtime_settings: RuntimeSettings
+    policy: PermissionsPolicy
+    cap_enforcer: CapEnforcer
+    consent_registry: ConsentRegistry
+
+
+async def build_policy(store: Store) -> PolicySubsystem:
+    """Load preferences, permission rules and consent grants.
+
+    NOTE: still calls ``set_default_policy`` / ``set_default_consent``, which
+    install process-global singletons (finding ``F-S08``). Those are Phase 3
+    step 3.4; leaving them here keeps this extraction behaviour-preserving, and
+    the globals are now at least confined to one named function instead of
+    being buried mid-way through a 900-line body.
+    """
     # ── user prefs store --------------------------------------------------
     prefs_store = PrefsStore(store)
     prefs_injector = PrefsInjector(prefs_store)
@@ -471,13 +522,45 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     consent_registry = ConsentRegistry(store=store)
     set_default_consent(consent_registry)
 
-    # ── MCP servers -------------------------------------------------------
-    mcp_manager = MCPClientManager()
-    mcp_cfg = MCPConfig.from_file()
-    await mcp_manager.start(mcp_cfg)
-    if mcp_manager.known_servers():
-        logger.info("  mcp       : %s", ", ".join(mcp_manager.known_servers()))
 
+    return PolicySubsystem(
+        prefs_store=prefs_store,
+        prefs_injector=prefs_injector,
+        runtime_settings=runtime_settings,
+        policy=policy,
+        cap_enforcer=cap_enforcer,
+        consent_registry=consent_registry,
+    )
+
+
+@dataclass(frozen=True)
+class RetentionSubsystem:
+    """Checkpointing and the TTL sweeper — what keeps disk bounded.
+
+    Phase 3 step 3.3, third slice. The checkpointer and sweeper belong together:
+    the sweeper needs the saver to age out stale threads, and both answer
+    "what gets kept, and for how long?".
+    """
+
+    checkpointer_saver: CheckpointerSaver
+    checkpointer: object
+    sweeper: UnifiedSweeper
+
+
+async def build_retention(
+    *,
+    workspace: Path,
+    storage: StorageSettings,
+    store: Store,
+    artifact_store: object,
+    storage_health: object | None,
+) -> RetentionSubsystem:
+    """Start the checkpointer and assemble the unified TTL sweeper.
+
+    Inputs are explicit rather than read from enclosing scope — which is the
+    point of the extraction. The sweeper's dependency on the artifact store and
+    the health handle used to be invisible; now it is in the signature.
+    """
     # ── checkpointer (sqlite or postgres; sweeper handles stale threads) --
     checkpointer_saver = CheckpointerSaver(db_path=checkpoints_db_path(), storage=storage)
     checkpointer = await checkpointer_saver.start()
@@ -528,6 +611,127 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         storage_health=storage_health,
     )
 
+
+    return RetentionSubsystem(
+        checkpointer_saver=checkpointer_saver,
+        checkpointer=checkpointer,
+        sweeper=sweeper,
+    )
+
+
+@dataclass(frozen=True)
+class RetrievalSubsystem:
+    """Semantic recall: the skills index and the TODO-board note index.
+
+    Phase 3 step 3.3, fourth slice — and the one that closes a real coverage
+    gap. The note index is built inside
+    ``if pg_pool is not None and embedder is not None``, a **Postgres-only**
+    branch that no test could reach while it lived inside ``build_daemon``
+    (which starts servers and never returns). That is exactly the branch where
+    finding Y's ``NameError`` hid.
+
+    Extracted, it is directly testable on a live Postgres.
+    """
+
+    skill_registry: SkillRegistry
+    skill_store: object
+    #: ``TodoNoteIndex`` on Postgres+embedder; ``None`` otherwise, which leaves
+    #: the exchange's embed-on-write hooks no-oping.
+    note_index: object | None
+
+
+async def build_retrieval(
+    *,
+    home: Path,
+    stores: StoreFactory,
+    mem_settings: object,
+    pg_pool: PgPool | None,
+    embedder: Embedder | None,
+) -> RetrievalSubsystem:
+    """Build the skills index and (on Postgres) the TODO-note recall index.
+
+    Both boot-sync against existing on-disk/DB content so a skill or note
+    written in a prior session is retrievable now. Sync failures are logged and
+    swallowed — a cold index degrades recall, it does not stop the daemon.
+    """
+    note_index: object | None = None
+    # ── skills registry ---------------------------------------------------
+    skill_registry = SkillRegistry(home_dir=home / "skills")
+    logger.info("  skills    : %d bundled, scanning personal + workspace",
+                len([s for s in skill_registry.scan() if s.scope == "bundled"]))
+
+    # Semantic skill index — shares the memory embedder. pgvector when live,
+    # else the SQLite keyword twin. Caught up to on-disk skills at boot so a
+    # skill saved in a prior session is retrievable now.
+    skill_store: object = stores.skills(mem_settings)
+    try:
+        await SkillIndexer.sync(skill_registry, skill_store)
+    except Exception:
+        logger.warning("skills: index sync failed", exc_info=True)
+    # (Skill recall for the orchestrator master likewise rides the per-turn
+    # middleware inside build_orchestrator, scoped agent="orchestrator".)
+
+    # ── TODO-board note recall (pgvector, migration v16) --------------------
+    # Embed-on-write hooks in the exchange resolve this default index; the boot
+    # sync backfills notes written before the feature (or while degraded — a
+    # spillover-drained note has no chunks until this catches it). SQLite-only
+    # deployments leave the singleton unset and every hook no-ops.
+    if pg_pool is not None and embedder is not None:
+        # Imported here, not inherited from an enclosing block: the
+        # build_retention extraction (Phase 3 step 3.3) moved the previous
+        # import into that function's scope, leaving this use unbound. It only
+        # fires on the Postgres path, so no SQLite test caught it — the static
+        # unbound-name check did.
+        from yuyutsava.todoboard.exchange import get_default_exchange
+        from yuyutsava.todoboard.recall import TodoNoteIndex, set_default_note_index
+
+        note_index = TodoNoteIndex(pg_pool, embedder=embedder, min_score=mem_settings.min_score)
+        set_default_note_index(note_index)
+        try:
+            await note_index.sync(get_default_exchange())
+            logger.info("  todo notes: pgvector recall enabled (todo_recall)")
+        except Exception:
+            logger.warning("todo notes: boot index sync failed", exc_info=True)
+
+
+    return RetrievalSubsystem(
+        skill_registry=skill_registry,
+        skill_store=skill_store,
+        note_index=note_index,
+    )
+
+
+@dataclass(frozen=True)
+class EventsSubsystem:
+    """The event bus, its live sources, and the config hot-reload hook.
+
+    Phase 3 step 3.3, fifth slice. ``reload`` is returned as a callable rather
+    than left as a closure in ``build_daemon``'s body: the SIGHUP handler needs
+    it, and a returned function is visible in a signature where a closure buried
+    600 lines up was not.
+    """
+
+    bus: EventBus
+    registry: SourceRegistry
+    events_cfg: EventsConfig
+    #: Re-reads events_config.json and rebinds sources in place.
+    reload: Callable[[], Awaitable[None]]
+
+
+async def build_events(
+    *,
+    events_cfg: EventsConfig,
+    daemon_cfg: DaemonConfig,
+    store: Store,
+    runtime_settings: RuntimeSettings,
+) -> EventsSubsystem:
+    """Start the event bus and every configured source.
+
+    NOTE: this genuinely starts things — webcam capture, filesystem watchers,
+    the voice pipeline — so unlike the earlier slices it is not free to call in
+    a test. It is extracted for the same reason regardless: the SIGHUP reload
+    path and the wake-toggle override were both invisible inside the monolith.
+    """
     # ── bus ---------------------------------------------------------------
     bus = EventBus()
 
@@ -547,237 +751,76 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
             logger.info("config reload: events sources now %s",
                         ", ".join(new_cfg.sources.keys()) or "(none)")
 
-    # ── channels ----------------------------------------------------------
-    channels = ChannelRouter(channels=[], primary_name="web")
-    # Durable Tier-2 asks. Nothing about an ask expires — the agent is parked on
-    # a checkpointed interrupt — so the record has to outlive both the socket
-    # that showed it and this process. Hydrated below with whatever a previous
-    # run left unanswered.
-    ask_registry = AskRegistry(store)
-    channels.ask_registry = ask_registry
-    await ask_registry.hydrate()
-    # Origin-aware HITL routing is always on (Phase 3): CLI attach and
-    # channel plugins both map session ids to their channel. Previously
-    # constructed only when async subagents were enabled.
-    session_origin = SessionOriginMap()
-    channels.session_origin = session_origin
-    web_hub: WebHub | None = None
-    web_server: uvicorn.Server | None = None
 
-    if not opts.headless:
-        web_hub = WebHub(store)
-        channels.channels.append(WebChannel(web_hub))
-
-    # Always include terminal as a fallback (and only channel in headless mode).
-    channels.channels.append(TerminalChannel(verbose=opts.verbose))
-    if opts.headless:
-        channels.primary_name = "terminal"
-
-    # Voice channel — optional, disabled by default (privacy).
-    if opts.voice:
-        try:
-            from yuyutsava.daemon.voice_channel import voice_channel_from_env
-            vc = voice_channel_from_env()
-            channels.channels.append(vc)
-            logger.info("  voice     : enabled (TTS=%s STT=%s)",
-                        os.environ.get("TTS_PROVIDER", "piper"), type(vc._stt).__name__)
-        except Exception:
-            logger.warning("voice channel init failed — running without voice", exc_info=True)
-
-    # Surface any Postgres→SQLite fallback on the user channels — silent
-    # divergence (checkpoints landing where Postgres can't see them) is the
-    # one failure mode that must never be quiet.
-    for reason in (storage_fallback_reason, checkpointer_saver.fallback_reason):
-        if reason:
-            await channels.post_event(ChannelEvent(
-                payload=TimelinePayload(line=f"storage: {reason}", cls="event-error"),
-            ))
-
-    # ── resource governor (Phase 5) ----------------------------------------
-    # Monitor samples psutil into a ring (main.py schedules its run loop);
-    # admission gates heavy tasks (complexity ≥ threshold / heavy hints)
-    # behind a semaphore + load check in OrchestratorLoop._run_task. The
-    # activity probe is assigned after construction because the controller
-    # it asks "is anything running?" needs the monitor first.
-    res_settings = ResourceSettings.from_env()
-    resource_monitor = ResourceMonitor(res_settings, event_sink=channels.post_event)
-    admission = AdmissionController(
-        resource_monitor, res_settings,
-        registry=task_registry, event_sink=channels.post_event,
-    )
-    resource_monitor.activity_probe = lambda: bool(admission.active())
-    logger.info(
-        "  resources : cpu<%.0f%% mem>%dMB disk>%.0fGB, heavy=complexity≥%d (max %d)",
-        res_settings.cpu_high_pct, res_settings.mem_min_mb,
-        res_settings.disk_min_gb, res_settings.heavy_complexity,
-        res_settings.max_heavy_tasks,
+    return EventsSubsystem(
+        bus=bus,
+        registry=registry,
+        events_cfg=events_cfg,
+        reload=_hot_reload_events_config,
     )
 
-    # ── models ------------------------------------------------------------
-    triage_settings = llm_settings_from_env("triage")
-    orchestrator_settings = llm_settings_from_env("orchestrator")
-    subagent_settings = llm_settings_from_env("subagent")
-    # Triage is a single-shot classifier — reasoning is wasteful here and (on
-    # thinking models like gemini-2.5-flash) eats the token budget, truncating
-    # the decision JSON. Disable it so the structured output always completes.
-    triage_model = chat_model(triage_settings, temperature=0.0, disable_reasoning=True)
-    orchestrator_model = chat_model(orchestrator_settings, temperature=0.0)
-    subagent_model = chat_model(subagent_settings, temperature=0.1)
 
-    # Warm the Langfuse reachability probe now — before the async host installs
-    # blockbuster — so the runtime path never does urllib on the event loop.
-    from yuyutsava.core.tracing import warm_reachability_cache
-    await asyncio.to_thread(warm_reachability_cache)
 
-    # Compaction model: role "compaction" so a cheap/local model can own
-    # summarization (COMPACTION_LLM_PROVIDER=ollama …); falls back to the
-    # main provider settings when the role is unset.
-    compaction_model = chat_model(llm_settings_from_env("compaction"), temperature=0.0)
-    context_settings = ContextSettings.from_env(
-        "orchestrator",
-        provider=_env("LLM_PROVIDER", "orchestrator", "groq"),
-    )
-    logger.info(
-        "  context   : compact >%d tokens, keep %d msgs, offload >%d chars",
-        context_settings.compact_trigger_tokens,
-        context_settings.keep_messages,
-        context_settings.offload_threshold_chars,
-    )
+@dataclass(frozen=True)
+class AsyncSubagentSubsystem:
+    """The background-subagent host, its task mirror and its health watcher.
 
-    # ── skills registry ---------------------------------------------------
-    skill_registry = SkillRegistry(home_dir=home / "skills")
-    logger.info("  skills    : %d bundled, scanning personal + workspace",
-                len([s for s in skill_registry.scan() if s.scope == "bundled"]))
+    Phase 3 step 3.3, sixth slice — the **largest** block in ``build_daemon``
+    (152 lines) and the one with the most tangled outputs: five names, all of
+    which stay ``None`` when the feature is off, every one of them read again
+    hundreds of lines further down.
 
-    # Semantic skill index — shares the memory embedder. pgvector when live,
-    # else the SQLite keyword twin. Caught up to on-disk skills at boot so a
-    # skill saved in a prior session is retrievable now.
-    if pg_pool is not None and embedder is not None:
-        skill_store: object = PgSkillStore(pg_pool, embedder, min_score=mem_settings.min_score)
-    else:
-        skill_store = SqliteSkillStore(state_db_path())
-    try:
-        await SkillIndexer.sync(skill_registry, skill_store)
-    except Exception:
-        logger.warning("skills: index sync failed", exc_info=True)
-    # (Skill recall for the orchestrator master likewise rides the per-turn
-    # middleware inside build_orchestrator, scoped agent="orchestrator".)
+    Bundling them means "async subagents are disabled" is a single fact
+    (``enabled``) rather than five independent ``is not None`` checks that could
+    drift apart. ``host`` is ``None`` even when *enabled* if this process
+    attached to a host another process already owns — a distinction that was
+    previously carried only in a comment.
+    """
 
-    # ── TODO-board note recall (pgvector, migration v16) --------------------
-    # Embed-on-write hooks in the exchange resolve this default index; the boot
-    # sync backfills notes written before the feature (or while degraded — a
-    # spillover-drained note has no chunks until this catches it). SQLite-only
-    # deployments leave the singleton unset and every hook no-ops.
-    if pg_pool is not None and embedder is not None:
-        from yuyutsava.todoboard.recall import TodoNoteIndex, set_default_note_index
+    #: True when YUYUTSAVA_ASYNC_SUBAGENTS is set; everything below is None if not.
+    enabled: bool
+    #: Set only when THIS process won the first-come-wins race and owns the host.
+    host: object | None
+    #: The dev-server URL — set whether we own the host or attached to another's.
+    host_url: str | None
+    mirror: object | None
+    watcher: object | None
+    attachment: object | None
 
-        note_index = TodoNoteIndex(pg_pool, embedder=embedder, min_score=mem_settings.min_score)
-        set_default_note_index(note_index)
-        try:
-            await note_index.sync(get_default_exchange())
-            logger.info("  todo notes: pgvector recall enabled (todo_recall)")
-        except Exception:
-            logger.warning("todo notes: boot index sync failed", exc_info=True)
+    @property
+    def available(self) -> bool:
+        """Whether background delegation can actually be offered.
 
-    # ── storage spillover recovery -----------------------------------------
-    # On Postgres recovery the health probe drains the buffered SQLite rows back
-    # into Postgres (drain-and-delete: no duplication) and re-embeds any
-    # vector-less memory/skill rows via their backfill(). The degrade notifier
-    # surfaces the outage on the user timeline (never silently divergent).
-    if storage_health is not None and pg_pool is not None:
-        _backfills = []
-        for _store_with_vectors in (memory_store, skill_store):
-            _bf = getattr(_store_with_vectors, "backfill_embeddings", None)
-            if _bf is not None:
-                _backfills.append(_bf)
-        _reconciler = Reconciler(
-            store.sqlite_backend, pg_pool, backfills=_backfills,
-            content_specs=CONTENT_TABLE_SPECS,  # visuals + feedback (RoutedStore-wrapped)
-        )
-        storage_health.set_recover(_reconciler.reconcile)
+        Reads ``host_url``, not ``host``: an attached process has no host object
+        but can still submit runs. ``build_daemon`` made this distinction
+        correctly in three places by writing ``async_host_url is not None`` — a
+        subtle enough invariant to deserve a name.
+        """
+        return self.host_url is not None
 
-        def _on_storage_degraded(reason: str) -> None:
-            try:
-                asyncio.create_task(channels.post_event(ChannelEvent(
-                    payload=TimelinePayload(
-                        line=f"storage: postgres unreachable — buffering to SQLite ({reason})",
-                        cls="event-error",
-                    ),
-                )))
-            except RuntimeError:
-                pass
 
-        storage_health.set_degrade(_on_storage_degraded)
+async def build_async_subagents(
+    *,
+    bg_subagent_list: list,
+    subagent_settings: LlmSettings,
+    checkpointer: object,
+    artifact_store: object | None,
+    context_settings: ContextSettings,
+    summary_store: object | None,
+    memory_store: object | None,
+    channels: ChannelRouter,
+    task_queue: "asyncio.Queue[OrchestratorTask]",
+    launch_index: LaunchIndex,
+) -> AsyncSubagentSubsystem:
+    """Start (or attach to) the background-subagent host.
 
-    # ── search config (ws_* tools) ---------------------------------------
-    search_config = SearchConfig.from_env()
-    available = search_config.is_available()
-    if any(available.values()):
-        logger.info("  search    : %s", ", ".join(p for p, ok in available.items() if ok))
+    Opt-in via ``YUYUTSAVA_ASYNC_SUBAGENTS=1``. Returns an all-``None`` bundle
+    with ``enabled=False`` otherwise, so callers branch on one flag.
 
-    # ── subagents ---------------------------------------------------------
-    task_runner = TaskRunnerAgent(
-        workspace_root=workspace, policy=policy, consent=consent_registry,
-    )
-    subagent_list = [
-        FileOrganizerAgent(
-            task_runner, store,
-            skill_registry=skill_registry,
-            can_write_skills=True,
-            mcp_manager=mcp_manager,
-            search_config=search_config,
-            cap_enforcer=cap_enforcer,
-            memory_store=memory_store,
-            skill_store=skill_store,
-        ),
-        FaceWatcherAgent(
-            task_runner, store,
-            skill_registry=skill_registry,
-            can_write_skills=True,
-            mcp_manager=mcp_manager,
-            search_config=search_config,
-            cap_enforcer=cap_enforcer,
-            memory_store=memory_store,
-            skill_store=skill_store,
-        ),
-        # name="general-purpose" suppresses deepagents' built-in default.
-        GeneralPurposeAgent(
-            task_runner,
-            skill_registry=skill_registry,
-            can_write_skills=True,
-            mcp_manager=mcp_manager,
-            search_config=search_config,
-            cap_enforcer=cap_enforcer,
-            memory_store=memory_store,
-            skill_store=skill_store,
-        ),
-    ]
-    subagents = {sa.name: sa for sa in subagent_list}
-
-    # Background TinkerAgent (Phase 6): registered as an ASYNC subagent of the
-    # master only — "tinker on card X in the background" from any chat/voice
-    # surface. Deliberately NOT in the sync `subagents` dict: interactive
-    # tinkering has its own per-card bundle (ConversationManager); the master
-    # delegates long tinkering jobs, it doesn't run them inline.
-    from yuyutsava.agents.tinker.subagent import make_tinker_subagent
-    tinker_sub = make_tinker_subagent(
-        skill_registry=skill_registry,
-        search_config=search_config,
-        mcp_manager=mcp_manager,
-        cap_enforcer=cap_enforcer,
-        memory_store=memory_store,
-        skill_store=skill_store,
-        policy=policy,
-        consent=consent_registry,
-    )
-    bg_subagent_list = [*subagent_list, tinker_sub]
-
-    # Orchestrator work queue + the launch index that links a background task
-    # back to the conversation that started it. Created before the async block so
-    # the watcher's completion sink can enqueue master wake-ups onto the queue.
-    task_queue: asyncio.Queue[OrchestratorTask] = asyncio.Queue()
-    launch_index = LaunchIndex()
-
+    ``task_queue`` and ``launch_index`` are inputs rather than outputs because
+    the completion sink defined here enqueues master wake-ups onto that queue —
+    the queue must exist before the watcher starts.
+    """
     # ── async (background) subagent host + mirror + watcher --------------
     # Gated by env so this is opt-in for v1. To enable:
     #   export YUYUTSAVA_ASYNC_SUBAGENTS=1
@@ -789,7 +832,8 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     async_mirror = None
     async_watcher = None
     async_host_attachment = None
-    if os.environ.get("YUYUTSAVA_ASYNC_SUBAGENTS", "").lower() in ("1", "true", "yes"):
+    enabled = os.environ.get("YUYUTSAVA_ASYNC_SUBAGENTS", "").lower() in ("1", "true", "yes")
+    if enabled:
         from yuyutsava.async_subagents.host import (
             AsyncSubagentHost,
             resolve_allow_blocking,
@@ -931,6 +975,363 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     else:
         logger.info("  async subs: disabled (set YUYUTSAVA_ASYNC_SUBAGENTS=1 to enable)")
 
+    return AsyncSubagentSubsystem(
+        enabled=enabled,
+        host=async_host,
+        host_url=async_host_url,
+        mirror=async_mirror,
+        watcher=async_watcher,
+        attachment=async_host_attachment,
+    )
+
+
+
+@dataclass(frozen=True)
+class SubagentSubsystem:
+    """The daemon's subagent roster, sync and background.
+
+    Phase 3 step 3.3, seventh slice. Two lists rather than one because they are
+    genuinely different sets: ``sync`` is what the orchestrator may delegate to
+    inline, ``background`` adds the TinkerAgent, which exists **only** as an
+    async peer. Keeping them apart here is what stops a caller accidentally
+    offering inline tinkering.
+    """
+
+    #: name -> agent, for the orchestrator's delegation table.
+    sync: dict[str, Any]
+    #: Ordered list behind ``sync``, as the async host wants it.
+    sync_list: list
+    #: ``sync_list`` + the TinkerAgent — the roster the background host serves.
+    background: list
+    task_runner: Any
+    #: Mint a FRESH pair of the store-backed peers for another graph.
+    #:
+    #: A deepagent spec must not share tool/middleware objects across graphs, so
+    #: the chat master cannot reuse the orchestrator's instances — it needs its
+    #: own. That requirement is about the *instances*, not the dependency set,
+    #: which is what this preserves: the seven shared kwargs were previously
+    #: written out a second time at the ConversationManager call site, giving
+    #: five hand-maintained copies of one argument list.
+    make_peers: Callable[[], list]
+
+
+def build_subagents(
+    *,
+    workspace: Path,
+    policy: Any,
+    consent: Any,
+    store: Store,
+    skill_registry: SkillRegistry,
+    search_config: SearchConfig,
+    mcp_manager: Any,
+    cap_enforcer: Any,
+    memory_store: Any,
+    skill_store: Any,
+) -> SubagentSubsystem:
+    """Build the subagent roster.
+
+    The three sync agents took the same seven keyword arguments each, written
+    out three times — 21 lines in which a typo in one of them was a silent
+    capability difference between siblings. They share one ``**common`` dict
+    now, so a new shared dependency is added once and cannot reach two of three.
+    """
+    task_runner = TaskRunnerAgent(
+        workspace_root=workspace, policy=policy, consent=consent,
+    )
+    common: dict[str, Any] = {
+        "skill_registry": skill_registry,
+        "can_write_skills": True,
+        "mcp_manager": mcp_manager,
+        "search_config": search_config,
+        "cap_enforcer": cap_enforcer,
+        "memory_store": memory_store,
+        "skill_store": skill_store,
+    }
+    sync_list = [
+        FileOrganizerAgent(task_runner, store, **common),
+        FaceWatcherAgent(task_runner, store, **common),
+        # name="general-purpose" suppresses deepagents' built-in default.
+        # No events store: it answers questions, it does not act on the timeline.
+        GeneralPurposeAgent(task_runner, **common),
+    ]
+
+    # Background TinkerAgent (Phase 6): an ASYNC peer of the master only — "tinker
+    # on card X in the background" from any chat/voice surface. Deliberately NOT
+    # in the sync roster: interactive tinkering has its own per-card bundle
+    # (ConversationManager), so the master delegates long jobs rather than
+    # running them inline.
+    from yuyutsava.agents.tinker.subagent import make_tinker_subagent
+
+    tinker = make_tinker_subagent(
+        skill_registry=skill_registry, search_config=search_config,
+        mcp_manager=mcp_manager, cap_enforcer=cap_enforcer,
+        memory_store=memory_store, skill_store=skill_store,
+        policy=policy, consent=consent,
+    )
+    def _make_peers() -> list:
+        """Fresh store-backed peers for another graph, same dependencies.
+
+        GeneralPurposeAgent is omitted: ``build_agent_stack`` builds its own.
+        """
+        return [
+            FileOrganizerAgent(task_runner, store, **common),
+            FaceWatcherAgent(task_runner, store, **common),
+        ]
+
+    return SubagentSubsystem(
+        sync={sa.name: sa for sa in sync_list},
+        sync_list=sync_list,
+        background=[*sync_list, tinker],
+        task_runner=task_runner,
+        make_peers=_make_peers,
+    )
+
+
+async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
+    """Wire every daemon subsystem and return them as a populated record.
+
+    Boot order matches the original ``daemon/main.py``: store → prefs →
+    policy → MCP → checkpointer → sweeper → bus → sources → channels →
+    models → skills → search → subagents → triage agent → loops. The
+    caller is responsible for installing signal handlers, scheduling the
+    loop tasks, and ordered shutdown.
+    """
+    workspace = opts.workspace.resolve()
+    home = state_dir()
+
+    daemon_cfg = DaemonConfig.from_env()
+    events_cfg = _build_initial_events_config(opts, daemon_cfg)
+
+    # ── storage (extracted: build_storage) ---------------------------------
+    _st = await build_storage(opts)
+    storage = _st.settings
+    pg_pool = _st.pg_pool
+    storage_health = _st.storage_health
+    stores = _st.stores
+    embedder = _st.embedder
+    mem_settings = _st.mem_settings
+    artifact_store = _st.artifact_store
+    summary_store = _st.summary_store
+    transcript_store = _st.transcript_store
+    voice_store = _st.voice_store
+    memory_store = _st.memory_store
+    usage_store = _st.usage_store
+    task_registry = _st.task_registry
+    store = _st.events
+    model_router = _st.model_router
+    storage_fallback_reason = _st.fallback_reason
+
+    # ── policy / consent / prefs (extracted: build_policy) -----------------
+    _pol = await build_policy(store)
+    prefs_store = _pol.prefs_store
+    prefs_injector = _pol.prefs_injector
+    runtime_settings = _pol.runtime_settings
+    policy = _pol.policy
+    cap_enforcer = _pol.cap_enforcer
+    consent_registry = _pol.consent_registry
+
+    # ── MCP servers -------------------------------------------------------
+    mcp_manager = MCPClientManager()
+    mcp_cfg = MCPConfig.from_file()
+    await mcp_manager.start(mcp_cfg)
+    if mcp_manager.known_servers():
+        logger.info("  mcp       : %s", ", ".join(mcp_manager.known_servers()))
+
+    # ── retention: checkpointer + TTL sweeper (extracted: build_retention) --
+    _ret = await build_retention(
+        workspace=workspace, storage=storage, store=store,
+        artifact_store=artifact_store, storage_health=storage_health,
+    )
+    checkpointer_saver = _ret.checkpointer_saver
+    checkpointer = _ret.checkpointer
+    sweeper = _ret.sweeper
+
+    # ── events: bus + sources + hot reload (extracted: build_events) -------
+    _ev = await build_events(
+        events_cfg=events_cfg, daemon_cfg=daemon_cfg,
+        store=store, runtime_settings=runtime_settings,
+    )
+    bus = _ev.bus
+    registry = _ev.registry
+    events_cfg = _ev.events_cfg
+    _hot_reload_events_config = _ev.reload
+
+    # ── channels ----------------------------------------------------------
+    channels = ChannelRouter(channels=[], primary_name="web")
+    # Durable Tier-2 asks. Nothing about an ask expires — the agent is parked on
+    # a checkpointed interrupt — so the record has to outlive both the socket
+    # that showed it and this process. Hydrated below with whatever a previous
+    # run left unanswered.
+    ask_registry = AskRegistry(store)
+    channels.ask_registry = ask_registry
+    await ask_registry.hydrate()
+    # Origin-aware HITL routing is always on (Phase 3): CLI attach and
+    # channel plugins both map session ids to their channel. Previously
+    # constructed only when async subagents were enabled.
+    session_origin = SessionOriginMap()
+    channels.session_origin = session_origin
+    web_hub: WebHub | None = None
+    web_server: uvicorn.Server | None = None
+
+    if not opts.headless:
+        web_hub = WebHub(store)
+        channels.channels.append(WebChannel(web_hub))
+
+    # Always include terminal as a fallback (and only channel in headless mode).
+    channels.channels.append(TerminalChannel(verbose=opts.verbose))
+    if opts.headless:
+        channels.primary_name = "terminal"
+
+    # Voice channel — optional, disabled by default (privacy).
+    if opts.voice:
+        try:
+            from yuyutsava.daemon.voice_channel import voice_channel_from_env
+            vc = voice_channel_from_env()
+            channels.channels.append(vc)
+            logger.info("  voice     : enabled (TTS=%s STT=%s)",
+                        os.environ.get("TTS_PROVIDER", "piper"), type(vc._stt).__name__)
+        except Exception:
+            logger.warning("voice channel init failed — running without voice", exc_info=True)
+
+    # Surface any Postgres→SQLite fallback on the user channels — silent
+    # divergence (checkpoints landing where Postgres can't see them) is the
+    # one failure mode that must never be quiet.
+    for reason in (storage_fallback_reason, checkpointer_saver.fallback_reason):
+        if reason:
+            await channels.post_event(ChannelEvent(
+                payload=TimelinePayload(line=f"storage: {reason}", cls="event-error"),
+            ))
+
+    # ── resource governor (Phase 5) ----------------------------------------
+    # Monitor samples psutil into a ring (main.py schedules its run loop);
+    # admission gates heavy tasks (complexity ≥ threshold / heavy hints)
+    # behind a semaphore + load check in OrchestratorLoop._run_task. The
+    # activity probe is assigned after construction because the controller
+    # it asks "is anything running?" needs the monitor first.
+    res_settings = ResourceSettings.from_env()
+    resource_monitor = ResourceMonitor(res_settings, event_sink=channels.post_event)
+    admission = AdmissionController(
+        resource_monitor, res_settings,
+        registry=task_registry, event_sink=channels.post_event,
+    )
+    resource_monitor.activity_probe = lambda: bool(admission.active())
+    logger.info(
+        "  resources : cpu<%.0f%% mem>%dMB disk>%.0fGB, heavy=complexity≥%d (max %d)",
+        res_settings.cpu_high_pct, res_settings.mem_min_mb,
+        res_settings.disk_min_gb, res_settings.heavy_complexity,
+        res_settings.max_heavy_tasks,
+    )
+
+    # ── models ------------------------------------------------------------
+    triage_settings = llm_settings_from_env("triage")
+    orchestrator_settings = llm_settings_from_env("orchestrator")
+    subagent_settings = llm_settings_from_env("subagent")
+    # Triage is a single-shot classifier — reasoning is wasteful here and (on
+    # thinking models like gemini-2.5-flash) eats the token budget, truncating
+    # the decision JSON. Disable it so the structured output always completes.
+    triage_model = chat_model(triage_settings, temperature=0.0, disable_reasoning=True)
+    orchestrator_model = chat_model(orchestrator_settings, temperature=0.0)
+    subagent_model = chat_model(subagent_settings, temperature=0.1)
+
+    # Warm the Langfuse reachability probe now — before the async host installs
+    # blockbuster — so the runtime path never does urllib on the event loop.
+    from yuyutsava.core.tracing import warm_reachability_cache
+    await asyncio.to_thread(warm_reachability_cache)
+
+    # Compaction model: role "compaction" so a cheap/local model can own
+    # summarization (COMPACTION_LLM_PROVIDER=ollama …); falls back to the
+    # main provider settings when the role is unset.
+    compaction_model = chat_model(llm_settings_from_env("compaction"), temperature=0.0)
+    context_settings = ContextSettings.from_env(
+        "orchestrator",
+        provider=_env("LLM_PROVIDER", "orchestrator", "groq"),
+    )
+    logger.info(
+        "  context   : compact >%d tokens, keep %d msgs, offload >%d chars",
+        context_settings.compact_trigger_tokens,
+        context_settings.keep_messages,
+        context_settings.offload_threshold_chars,
+    )
+
+    # ── retrieval: skills + TODO-note indexes (extracted: build_retrieval) --
+    _rtv = await build_retrieval(
+        home=home, stores=stores, mem_settings=mem_settings,
+        pg_pool=pg_pool, embedder=embedder,
+    )
+    skill_registry = _rtv.skill_registry
+    skill_store = _rtv.skill_store
+    note_index = _rtv.note_index
+
+    # ── storage spillover recovery -----------------------------------------
+    # On Postgres recovery the health probe drains the buffered SQLite rows back
+    # into Postgres (drain-and-delete: no duplication) and re-embeds any
+    # vector-less memory/skill rows via their backfill(). The degrade notifier
+    # surfaces the outage on the user timeline (never silently divergent).
+    if storage_health is not None and pg_pool is not None:
+        # Both stores declare backfill_embeddings unconditionally since
+        # ADR-002 step 2.5b (it returns 0 without vectors), so no getattr probe.
+        # `memory_store` can still be None when memory is switched off.
+        _backfills = [
+            s.backfill_embeddings
+            for s in (memory_store, skill_store) if s is not None
+        ]
+        _reconciler = Reconciler(
+            store.sqlite_backend, pg_pool, backfills=_backfills,
+            content_specs=CONTENT_TABLE_SPECS,  # visuals + feedback (RoutedStore-wrapped)
+        )
+        storage_health.set_recover(_reconciler.reconcile)
+
+        def _on_storage_degraded(reason: str) -> None:
+            try:
+                asyncio.create_task(channels.post_event(ChannelEvent(
+                    payload=TimelinePayload(
+                        line=f"storage: postgres unreachable — buffering to SQLite ({reason})",
+                        cls="event-error",
+                    ),
+                )))
+            except RuntimeError:
+                pass
+
+        storage_health.set_degrade(_on_storage_degraded)
+
+    # ── search config (ws_* tools) ---------------------------------------
+    search_config = SearchConfig.from_env()
+    available = search_config.is_available()
+    if any(available.values()):
+        logger.info("  search    : %s", ", ".join(p for p, ok in available.items() if ok))
+
+    # ── subagents ---------------------------------------------------------
+    subs = build_subagents(
+        workspace=workspace, policy=policy, consent=consent_registry,
+        store=store, skill_registry=skill_registry, search_config=search_config,
+        mcp_manager=mcp_manager, cap_enforcer=cap_enforcer,
+        memory_store=memory_store, skill_store=skill_store,
+    )
+    task_runner = subs.task_runner
+    subagent_list, subagents = subs.sync_list, subs.sync
+    bg_subagent_list = subs.background
+
+    # Orchestrator work queue + the launch index that links a background task
+    # back to the conversation that started it. Created before the async block so
+    # the watcher's completion sink can enqueue master wake-ups onto the queue.
+    task_queue: asyncio.Queue[OrchestratorTask] = asyncio.Queue()
+    launch_index = LaunchIndex()
+
+    # ── async (background) subagent host + mirror + watcher --------------
+    # Opt-in via YUYUTSAVA_ASYNC_SUBAGENTS=1; see build_async_subagents.
+    async_subs = await build_async_subagents(
+        bg_subagent_list=bg_subagent_list,
+        subagent_settings=subagent_settings,
+        checkpointer=checkpointer,
+        artifact_store=artifact_store,
+        context_settings=context_settings,
+        summary_store=summary_store,
+        memory_store=memory_store,
+        channels=channels,
+        task_queue=task_queue,
+        launch_index=launch_index,
+    )
+
     def capabilities_block() -> str:
         """The subagent roster as triage should see it *right now*.
 
@@ -940,7 +1341,7 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         """
         return render_capabilities_block(
             list(subagents.values()),
-            async_subagents=bg_subagent_list if async_host_url is not None else None,
+            async_subagents=bg_subagent_list if async_subs.available else None,
             disabled=runtime_settings.subagents().disabled,
         )
 
@@ -977,10 +1378,9 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     # Transcript RAG for the orchestrator master (Postgres only): the same
     # per-turn ConversationInjector recall the chat/tinker masters get, so a
     # resumed orchestrator thread remembers its own swept turns.
-    orch_transcript_index = None
-    if pg_pool is not None and embedder is not None:
-        from yuyutsava.context.transcript_index import PgTranscriptIndex
-        orch_transcript_index = PgTranscriptIndex(pg_pool, embedder=embedder)
+    # Same selection the CLI and tinker stacks use (Phase 3 step 3.5) — the
+    # two-condition guard lives in StoreFactory, not in three call sites.
+    orch_transcript_index = stores.transcript_index()
 
     orch_deps = OrchestratorDeps(
         subagents=subagents,
@@ -993,9 +1393,9 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         mcp_manager=mcp_manager,
         search_config=search_config,
         cap_enforcer=cap_enforcer,
-        async_subagents=bg_subagent_list if async_host_url is not None else None,
-        async_host_url=async_host_url,
-        async_task_mirror=async_mirror,
+        async_subagents=bg_subagent_list if async_subs.available else None,
+        async_host_url=async_subs.host_url,
+        async_task_mirror=async_subs.mirror,
         artifact_store=artifact_store,
         summary_store=summary_store,
         memory_store=memory_store,
@@ -1071,28 +1471,7 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         # orchestrator's own instances stay on its graph (specs must not
         # share tool/middleware objects across graphs). GeneralPurposeAgent
         # is built inside build_agent_stack; these two join it.
-        chat_extra_subagents = [
-            FileOrganizerAgent(
-                task_runner, store,
-                skill_registry=skill_registry,
-                can_write_skills=True,
-                mcp_manager=mcp_manager,
-                search_config=search_config,
-                cap_enforcer=cap_enforcer,
-                memory_store=memory_store,
-                skill_store=skill_store,
-            ),
-            FaceWatcherAgent(
-                task_runner, store,
-                skill_registry=skill_registry,
-                can_write_skills=True,
-                mcp_manager=mcp_manager,
-                search_config=search_config,
-                cap_enforcer=cap_enforcer,
-                memory_store=memory_store,
-                skill_store=skill_store,
-            ),
-        ]
+        chat_extra_subagents = subs.make_peers()
         conversation_manager = ConversationManager(
             workspace=workspace,
             checkpointer=checkpointer,
@@ -1117,7 +1496,7 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         ask_resume = AskResumeService(
             registry=ask_registry,
             conversation_manager=conversation_manager,
-            watcher=async_watcher,
+            watcher=async_subs.watcher,
             channels=channels,
         )
         decision_service.set_ask_resume(ask_resume)
@@ -1144,8 +1523,8 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
             conversation_manager=conversation_manager,
             voice_store=voice_store,
             transcript_store=transcript_store,
-            async_subagents=async_host_url is not None,
-            async_task_watcher=async_watcher,
+            async_subagents=async_subs.available,
+            async_task_watcher=async_subs.watcher,
             runtime_settings=runtime_settings,
             subagent_roster=subagents,
         )
@@ -1208,10 +1587,10 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         triage_settings=triage_settings,
         orchestrator_settings=orchestrator_settings,
         subagent_names=tuple(subagents.keys()),
-        async_host=async_host,
-        async_task_mirror=async_mirror,
-        async_task_watcher=async_watcher,
+        async_host=async_subs.host,
+        async_task_mirror=async_subs.mirror,
+        async_task_watcher=async_subs.watcher,
         session_origin=session_origin,
-        async_host_attachment=async_host_attachment,
+        async_host_attachment=async_subs.attachment,
         hot_reload_events_config=_hot_reload_events_config,
     )

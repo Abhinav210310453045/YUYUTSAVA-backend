@@ -11,7 +11,6 @@ from yuyutsava.core.config import (
 )
 from yuyutsava.core.engine import (
     AgentBundle,
-    build_agent,
     build_cli_deepagent,
     build_orchestrator,
 )
@@ -29,7 +28,6 @@ __all__ = [
     "OllamaSettings",
     "OpenRouterSettings",
     "astream_agent",
-    "build_agent",
     "build_cli_deepagent",
     "build_orchestrator",
     "llm_settings_from_env",

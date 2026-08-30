@@ -18,7 +18,8 @@ from unittest import mock
 from yuyutsava.core.streaming import StreamEvent
 from yuyutsava.daemon.channels import ChannelRouter, UserChannel
 from yuyutsava.daemon.orchestrator_loop import OrchestratorLoop
-from yuyutsava.daemon.task_registry import SqliteTaskStore, TaskRegistry
+from yuyutsava.daemon.task_registry import TaskRegistry
+from yuyutsava.daemon.task_store_unified import sqlite_task_store
 from yuyutsava.daemon.triage_loop import OrchestratorTask
 
 
@@ -58,7 +59,7 @@ class OrchestratorLoopRegistryTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
         self.registry = TaskRegistry(
-            SqliteTaskStore(Path(self._tmp.name) / "state.db")
+            sqlite_task_store(Path(self._tmp.name) / "state.db")
         )
         self.channel = _RecordingChannel()
         self.store = _RecordingStore()

@@ -82,211 +82,32 @@ class FeedbackStore(ABC):
     async def list_all(self, *, limit: int = DEFAULT_LIST_LIMIT) -> list[MessageFeedback]:
         """All feedback newest first — the corpus a feedback agent mines."""
 
+    @abstractmethod
+    async def delete_for_thread(self, thread_id: str) -> int:
+        """Drop every feedback row for a thread. Returns rows deleted.
+
+        Required by session deletion: a feedback row stores ``user_text`` and
+        ``assistant_text`` verbatim, so leaving it behind would keep the
+        conversation content of a session the user asked to delete.
+        """
+
 
 def _validate(rating: str) -> None:
     if rating not in RATINGS:
         raise ValueError(f"feedback rating must be one of {RATINGS}, got {rating!r}")
 
 
-class SqliteFeedbackStore(BaseSqliteStore, FeedbackStore):
-    """``message_feedback`` table inside ``state.db`` (zero-config)."""
 
-    _SCHEMA_VERSION: ClassVar[int] = 1
-    _META_TABLE: ClassVar[str] = "message_feedback_meta"
-    _SCHEMA_SQL: ClassVar[str] = """
-        CREATE TABLE IF NOT EXISTS message_feedback_meta (
-            key   TEXT PRIMARY KEY,
-            value TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS message_feedback (
-            feedback_id    TEXT PRIMARY KEY,
-            thread_id      TEXT NOT NULL,
-            session_id     TEXT NOT NULL,
-            workspace      TEXT,
-            message_ref    TEXT NOT NULL,
-            rating         TEXT NOT NULL,
-            note           TEXT,
-            user_text      TEXT NOT NULL DEFAULT '',
-            assistant_text TEXT NOT NULL DEFAULT '',
-            created_ts     REAL NOT NULL
-        );
-        CREATE UNIQUE INDEX IF NOT EXISTS message_feedback_target_idx
-            ON message_feedback (thread_id, message_ref);
-        CREATE INDEX IF NOT EXISTS message_feedback_recent_idx
-            ON message_feedback (created_ts);
-    """
-
-    async def upsert(
-        self,
-        *,
-        thread_id: str,
-        session_id: str,
-        message_ref: str,
-        rating: str,
-        user_text: str,
-        assistant_text: str,
-        workspace: str | None = None,
-        note: str | None = None,
-    ) -> MessageFeedback:
-        _validate(rating)
-        workspace = str(workspace) if workspace is not None else None
-        rec = MessageFeedback(
-            feedback_id=f"fb_{ULID()}",
-            thread_id=thread_id,
-            session_id=session_id,
-            workspace=workspace,
-            message_ref=message_ref,
-            rating=rating,
-            note=note,
-            user_text=user_text or "",
-            assistant_text=assistant_text or "",
-            created_ts=time.time(),
-        )
-
-        async def _do(conn):
-            # Re-rating a message replaces the prior row (unique target index).
-            # ON CONFLICT keeps the original feedback_id/created_ts stable would
-            # require RETURNING; simplest correct behavior is delete-then-insert.
-            await conn.execute(
-                "DELETE FROM message_feedback WHERE thread_id = ? AND message_ref = ?",
-                (thread_id, message_ref),
-            )
-            await conn.execute(
-                "INSERT INTO message_feedback (feedback_id, thread_id, session_id, "
-                "workspace, message_ref, rating, note, user_text, assistant_text, created_ts) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (rec.feedback_id, rec.thread_id, rec.session_id, rec.workspace,
-                 rec.message_ref, rec.rating, rec.note, rec.user_text,
-                 rec.assistant_text, rec.created_ts),
-            )
-
-        await self._run_write(_do)
-        return rec
-
-    async def list_for_thread(
-        self, thread_id: str, *, limit: int = DEFAULT_LIST_LIMIT
-    ) -> list[MessageFeedback]:
-        await self._ensure_schema()
-        async with self._conn() as conn:
-            cur = await conn.execute(
-                "SELECT * FROM message_feedback WHERE thread_id = ? "
-                "ORDER BY created_ts DESC LIMIT ?",
-                (thread_id, limit),
-            )
-            rows = await cur.fetchall()
-            await cur.close()
-        return [_row_to_rec(r) for r in rows]
-
-    async def list_all(self, *, limit: int = DEFAULT_LIST_LIMIT) -> list[MessageFeedback]:
-        await self._ensure_schema()
-        async with self._conn() as conn:
-            cur = await conn.execute(
-                "SELECT * FROM message_feedback ORDER BY created_ts DESC LIMIT ?",
-                (limit,),
-            )
-            rows = await cur.fetchall()
-            await cur.close()
-        return [_row_to_rec(r) for r in rows]
+# NOTE: SqliteFeedbackStore was replaced on 2026-08-09 by UnifiedFeedbackStore in
+# storage/feedback_store_unified.py (ADR-002 step 2.5b). Parity verified on both
+# live backends in test/storage/test_feedback_store_parity.py.
 
 
-def _row_to_rec(r) -> MessageFeedback:
-    return MessageFeedback(
-        feedback_id=r["feedback_id"],
-        thread_id=r["thread_id"],
-        session_id=r["session_id"],
-        workspace=r["workspace"],
-        message_ref=r["message_ref"],
-        rating=r["rating"],
-        note=r["note"],
-        user_text=r["user_text"] or "",
-        assistant_text=r["assistant_text"] or "",
-        created_ts=r["created_ts"],
-    )
 
+# NOTE: PgFeedbackStore was replaced on 2026-08-09 by UnifiedFeedbackStore in
+# storage/feedback_store_unified.py (ADR-002 step 2.5b). Parity verified on both
+# live backends in test/storage/test_feedback_store_parity.py.
 
-class PgFeedbackStore(FeedbackStore):
-    """``message_feedback`` table in Postgres (schema owned by pg/migrations v15).
-
-    Postgres is primary on the ``postgres`` backend. No thread FK — feedback
-    survives session deletion by design (durable insight data). Mirrors the
-    dual-backend shape of the voice store.
-    """
-
-    def __init__(self, pool: "PgPool") -> None:
-        self._pool = pool
-
-    async def upsert(
-        self,
-        *,
-        thread_id: str,
-        session_id: str,
-        message_ref: str,
-        rating: str,
-        user_text: str,
-        assistant_text: str,
-        workspace: str | None = None,
-        note: str | None = None,
-    ) -> MessageFeedback:
-        _validate(rating)
-        workspace = str(workspace) if workspace is not None else None
-        rec = MessageFeedback(
-            feedback_id=f"fb_{ULID()}",
-            thread_id=thread_id,
-            session_id=session_id,
-            workspace=workspace,
-            message_ref=message_ref,
-            rating=rating,
-            note=note,
-            user_text=user_text or "",
-            assistant_text=assistant_text or "",
-            created_ts=time.time(),
-        )
-        async with self._pool.connection() as conn:
-            # Re-rating replaces the prior row (unique on thread_id, message_ref).
-            await conn.execute(
-                "DELETE FROM message_feedback WHERE thread_id = %s AND message_ref = %s",
-                (thread_id, message_ref),
-            )
-            await conn.execute(
-                "INSERT INTO message_feedback (feedback_id, thread_id, session_id, "
-                "workspace, message_ref, rating, note, user_text, assistant_text) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
-                (rec.feedback_id, rec.thread_id, rec.session_id, rec.workspace,
-                 rec.message_ref, rec.rating, rec.note, rec.user_text, rec.assistant_text),
-            )
-        return rec
-
-    async def list_for_thread(
-        self, thread_id: str, *, limit: int = DEFAULT_LIST_LIMIT
-    ) -> list[MessageFeedback]:
-        async with self._pool.connection() as conn:
-            cur = await conn.execute(
-                "SELECT feedback_id, thread_id, session_id, workspace, message_ref, "
-                "rating, note, user_text, assistant_text, extract(epoch FROM created_ts) "
-                "FROM message_feedback WHERE thread_id = %s ORDER BY created_ts DESC LIMIT %s",
-                (thread_id, limit),
-            )
-            rows = await cur.fetchall()
-        return [_pg_row_to_rec(r) for r in rows]
-
-    async def list_all(self, *, limit: int = DEFAULT_LIST_LIMIT) -> list[MessageFeedback]:
-        async with self._pool.connection() as conn:
-            cur = await conn.execute(
-                "SELECT feedback_id, thread_id, session_id, workspace, message_ref, "
-                "rating, note, user_text, assistant_text, extract(epoch FROM created_ts) "
-                "FROM message_feedback ORDER BY created_ts DESC LIMIT %s",
-                (limit,),
-            )
-            rows = await cur.fetchall()
-        return [_pg_row_to_rec(r) for r in rows]
-
-
-def _pg_row_to_rec(r) -> MessageFeedback:
-    return MessageFeedback(
-        feedback_id=r[0], thread_id=r[1], session_id=r[2], workspace=r[3],
-        message_ref=r[4], rating=r[5], note=r[6], user_text=r[7] or "",
-        assistant_text=r[8] or "", created_ts=float(r[9]),
-    )
 
 
 # Process-singleton, mirroring get/set_default_session_store(). Postgres is
@@ -303,7 +124,7 @@ def set_default_feedback_store(store: FeedbackStore) -> None:
 def get_default_feedback_store() -> FeedbackStore:
     global _default_store
     if _default_store is None:
-        from yuyutsava.storage.paths import state_db_path
+        from yuyutsava.storage.feedback_store_unified import sqlite_feedback_store
 
-        _default_store = SqliteFeedbackStore(state_db_path())
+        _default_store = sqlite_feedback_store()
     return _default_store

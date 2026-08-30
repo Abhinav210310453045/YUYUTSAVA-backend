@@ -1,7 +1,7 @@
 """Per-LLM-call usage accounting: the ``llm_usage`` table + recorder middleware.
 
 Every model call made by the orchestrator master or a subagent writes one
-row — tokens in/out (from ``usage_metadata``, the ``BudgetMiddleware.
+row — tokens in/out (from ``usage_metadata``, the ``BudgetPolicy.
 _accumulate`` pattern extended to output tokens) plus an estimated USD cost
 from the :mod:`yuyutsava.core.model_router` price table. The join
 ``llm_usage × tasks`` is the audit surface for triage complexity noise
@@ -24,19 +24,19 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from langchain.agents.middleware import AgentMiddleware
-from langchain_core.messages import AIMessage
 from ulid import ULID
 
 from yuyutsava.core.model_router import estimate_cost_usd, load_price_table
+from yuyutsava.policy.base import Policy
+from yuyutsava.policy.types import Directive, Turn
 from yuyutsava.storage.base import BaseSqliteStore
 from yuyutsava.storage.pg.pool import PgPool
 from yuyutsava.storage.pg.threads import ensure_thread
 
 logger = logging.getLogger("yuyutsava.daemon.usage")
 
-GroupBy = Literal["task", "model", "day"]
-_GROUP_BYS = ("task", "model", "day")
+GroupBy = Literal["task", "model", "day", "thread"]
+_GROUP_BYS = ("task", "model", "day", "thread")
 
 
 @dataclass(frozen=True)
@@ -105,8 +105,18 @@ class UsageStore(ABC):
         most expensive group first."""
 
 
+#: SQLite read list — ``ts`` is already a REAL epoch.
 _SELECT_COLS = (
     "id, ts, thread_id, task_id, role, model, "
+    "input_tokens, output_tokens, est_cost_usd"
+)
+
+#: Postgres read list. ``ts`` became TIMESTAMPTZ in migration v20, so it is
+#: projected back to an epoch float — ``UsageRow.ts`` is a float and every
+#: caller does arithmetic on it. ``::float8`` matters: ``extract(epoch ...)``
+#: alone yields ``numeric``, which psycopg returns as ``Decimal``.
+_PG_SELECT_COLS = (
+    "id, extract(epoch FROM ts)::float8 AS ts, thread_id, task_id, role, model, "
     "input_tokens, output_tokens, est_cost_usd"
 )
 
@@ -211,7 +221,8 @@ class SqliteUsageStore(BaseSqliteStore, UsageStore):
 class PgUsageStore(UsageStore):
     """``llm_usage`` table in Postgres (schema owned by pg/migrations.py v3)."""
 
-    _DAY_EXPR = "to_char(to_timestamp(ts), 'YYYY-MM-DD')"
+    # ts is TIMESTAMPTZ since migration v20 — no to_timestamp() needed.
+    _DAY_EXPR = "to_char(ts, 'YYYY-MM-DD')"
 
     def __init__(self, pool: PgPool) -> None:
         self._pool = pool
@@ -233,7 +244,8 @@ class PgUsageStore(UsageStore):
             await conn.execute(
                 "INSERT INTO llm_usage (id, ts, thread_id, task_id, role, "
                 "model, input_tokens, output_tokens, est_cost_usd) "
-                "VALUES (%s, %s, %s, "
+                # ts is TIMESTAMPTZ since migration v20.
+                "VALUES (%s, to_timestamp(%s), %s, "
                 "(SELECT task_id FROM tasks WHERE task_id = %s), "
                 "%s, %s, %s, %s, %s)",
                 (row.id, row.ts, thread_id, task_id, row.role,
@@ -245,10 +257,10 @@ class PgUsageStore(UsageStore):
         self, *, task_id: str | None = None, since: float | None = None,
         limit: int = 200,
     ) -> list[UsageRow]:
-        where, args = _list_filters(task_id, since, "%s")
+        where, args = _list_filters(task_id, since, "%s", "to_timestamp(%s)")
         async with self._pool.connection() as conn:
             cur = await conn.execute(
-                f"SELECT {_SELECT_COLS} FROM llm_usage {where} "
+                f"SELECT {_PG_SELECT_COLS} FROM llm_usage {where} "
                 "ORDER BY id DESC LIMIT %s",
                 (*args, limit),
             )
@@ -259,7 +271,7 @@ class PgUsageStore(UsageStore):
         self, *, since: float | None = None, group_by: GroupBy | None = None,
     ) -> list[UsageAggregate]:
         _check_group_by(group_by)
-        sql, args = _aggregate_sql(group_by, since, self._DAY_EXPR, "%s")
+        sql, args = _aggregate_sql(group_by, since, self._DAY_EXPR, "%s", "to_timestamp(%s)")
         async with self._pool.connection() as conn:
             cur = await conn.execute(sql, args)
             rows = await cur.fetchall()
@@ -267,30 +279,55 @@ class PgUsageStore(UsageStore):
 
 
 def _list_filters(
-    task_id: str | None, since: float | None, ph: str,
+    task_id: str | None, since: float | None, ph: str, ts_ph: str | None = None,
 ) -> tuple[str, list[Any]]:
+    """``ts_ph`` is the placeholder for comparing against ``ts``.
+
+    Separate from ``ph`` because ``llm_usage.ts`` is ``TIMESTAMPTZ`` on Postgres
+    (migration v20) and a REAL epoch on SQLite, so the float bound here needs a
+    ``to_timestamp()`` wrapper on one backend and nothing on the other.
+    """
+    ts_ph = ts_ph or ph
     where: list[str] = []
     args: list[Any] = []
     if task_id:
         where.append(f"task_id = {ph}")
         args.append(task_id)
     if since is not None:
-        where.append(f"ts >= {ph}")
+        where.append(f"ts >= {ts_ph}")
         args.append(since)
     return (f"WHERE {' AND '.join(where)}" if where else ""), args
 
 
 def _aggregate_sql(
     group_by: GroupBy | None, since: float | None, day_expr: str, ph: str,
+    ts_ph: str | None = None,
 ) -> tuple[str, tuple[Any, ...]]:
-    """One GROUP BY statement shared by both backends (placeholder differs)."""
+    """One GROUP BY statement shared by both backends (placeholders differ).
+
+    ``ts_ph`` wraps the ``since`` bound — see :func:`_list_filters`.
+    """
+    ts_ph = ts_ph or ph
     key_expr = {
         # COALESCE keeps task-less rows (NULL task_id on Postgres) grouping
         # under '' exactly as the SQLite twin (NOT NULL DEFAULT '') always has.
         "task": "COALESCE(task_id, '')", "model": "model",
         "day": day_expr, None: "'all'",
+        # Group by conversation rather than orchestrator task.
+        #
+        # ``task_id`` is FK-constrained to ``tasks`` on Postgres, so a tag that
+        # does not name a real task is nulled on insert — the TinkerAgent's
+        # ``tinker:<card_id>`` is exactly that case. The card identity is never
+        # lost, though: it lives in ``thread_id`` (``todo:<card_id>``), which
+        # has no such constraint and is written identically on both backends.
+        #
+        # So "what did card 42 cost me?" was always answerable; the reporting
+        # API just could not reach the column holding the answer. Adding this
+        # grouping is what makes per-conversation cost work on Postgres without
+        # weakening ``llm_usage_task_fk`` or changing what ``task_id`` means.
+        "thread": "COALESCE(thread_id, '')",
     }[group_by]
-    where = f"WHERE ts >= {ph}" if since is not None else ""
+    where = f"WHERE ts >= {ts_ph}" if since is not None else ""
     args: tuple[Any, ...] = (since,) if since is not None else ()
     return (
         f"SELECT {key_expr} AS grp, COUNT(*), SUM(input_tokens), "
@@ -302,19 +339,26 @@ def _aggregate_sql(
 
 
 # ---------------------------------------------------------------------------
-# Recorder middleware
+# Recorder policy
 # ---------------------------------------------------------------------------
 
 
-class UsageRecorder(AgentMiddleware):
-    """Write one ``llm_usage`` row per model call (``aafter_model``).
+class UsagePolicy(Policy):
+    """Write one ``llm_usage`` row per model call.
 
-    Constructed per agent build with the routed model's name and the task's
-    join keys — the orchestrator builds a fresh graph per task, so these
-    are fixed for the recorder's lifetime. Calls without ``usage_metadata``
-    (fakes, providers that omit it) are skipped; a failed write is logged
-    and swallowed — accounting must never break a run.
+    Phase 4 step 4.8, fourteenth and last migration (was ``UsageRecorder``).
+
+    Constructed per agent build with the routed model's name and the task's join
+    keys — the orchestrator builds a fresh graph per task, so these are fixed for
+    the policy's lifetime.
+
+    Two things it must never do: fail a run, and invent numbers. A failed write
+    is logged and swallowed; a call the provider reported no usage for is
+    skipped rather than recorded as zero, because a zero row is
+    indistinguishable from a genuinely free call when the costs are summed.
     """
+
+    name = "UsagePolicy"
 
     def __init__(
         self,
@@ -326,6 +370,7 @@ class UsageRecorder(AgentMiddleware):
         thread_id: str = "",
         prices: dict[str, tuple[float, float]] | None = None,
     ) -> None:
+        super().__init__()
         self._store = store
         self._role = role
         self._model_name = model_name
@@ -333,24 +378,13 @@ class UsageRecorder(AgentMiddleware):
         self._thread_id = thread_id
         self._prices = prices if prices is not None else load_price_table()
 
-    @staticmethod
-    def _tokens(usage: Any, field: str) -> int:
-        n = usage.get(field) if isinstance(usage, dict) else getattr(usage, field, 0)
-        return int(n or 0)
-
-    async def aafter_model(self, state: Any, runtime: Any) -> None:
-        messages = state.get("messages", []) if isinstance(state, dict) else getattr(state, "messages", [])
-        msg = next((m for m in reversed(messages) if isinstance(m, AIMessage)), None)
-        usage = getattr(msg, "usage_metadata", None) if msg is not None else None
-        if not usage:
+    async def after_model(self, turn: Turn) -> Directive | None:
+        usage = turn.usage
+        if usage is None or not usage.any_tokens:
             return None
-        input_tokens = self._tokens(usage, "input_tokens")
-        output_tokens = self._tokens(usage, "output_tokens")
-        if not (input_tokens or output_tokens):
-            return None
-        model = self._model_name or str(
-            (getattr(msg, "response_metadata", None) or {}).get("model_name", "")
-        )
+        # The build-time name wins; `usage.model` is what the provider called it
+        # on this particular response, and is the fallback.
+        model = self._model_name or usage.model
         row = UsageRow(
             id=mint_usage_id(),
             ts=time.time(),
@@ -358,10 +392,10 @@ class UsageRecorder(AgentMiddleware):
             task_id=self._task_id,
             role=self._role,
             model=model,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
+            input_tokens=usage.input_tokens,
+            output_tokens=usage.output_tokens,
             est_cost_usd=estimate_cost_usd(
-                model, input_tokens, output_tokens, self._prices
+                model, usage.input_tokens, usage.output_tokens, self._prices
             ),
         )
         try:

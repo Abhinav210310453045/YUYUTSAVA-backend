@@ -13,7 +13,8 @@ from pathlib import Path
 import httpx
 
 from yuyutsava.daemon.channels import ChannelEvent, LogPayload
-from yuyutsava.daemon.task_registry import SqliteTaskStore, TaskRegistry
+from yuyutsava.daemon.task_registry import TaskRegistry
+from yuyutsava.daemon.task_store_unified import sqlite_task_store
 from yuyutsava.daemon.task_submission import SUBMITTED_TOPIC, TaskSubmissionService
 from yuyutsava.daemon.web.app import create_app
 from yuyutsava.daemon.web.services.stream_service import WebChannel, WebHub
@@ -37,7 +38,7 @@ class TasksApiTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
         self.registry = TaskRegistry(
-            SqliteTaskStore(Path(self._tmp.name) / "state.db")
+            sqlite_task_store(Path(self._tmp.name) / "state.db")
         )
         self.queue: asyncio.Queue = asyncio.Queue()
         self.bus = _RecordingBus()

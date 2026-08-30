@@ -23,6 +23,7 @@ from fastapi.responses import FileResponse
 
 from yuyutsava.core.streaming import _artifact_event_from_result
 from yuyutsava.daemon.web.schemas.session import SessionOut
+from yuyutsava.storage.context import AppContext
 from yuyutsava.storage.purge import purge_session
 from yuyutsava.storage.sessions import (
     SessionNotFound,
@@ -212,14 +213,20 @@ async def get_session_audio(session_id: str, seq: int, request: Request) -> File
 
 
 @router.delete("/sessions/{session_id}", summary="Delete a session + all its data")
-async def delete_session(session_id: str) -> dict[str, int]:
+async def delete_session(session_id: str, request: Request) -> dict[str, int]:
     """Purge every row + file tied to the session (checkpoints, transcript,
     artifacts, summaries, voice history + audio blobs, tasks, usage,
     proposals/decisions, interrupts, and the ephemeral memories), then the
     session row itself. See :func:`yuyutsava.storage.purge.purge_session` for the
-    full teardown + atomicity model."""
+    full teardown + atomicity model.
+
+    Hands over the daemon's already-open events store rather than letting the
+    purge construct a second one per request. Anything not passed still resolves
+    from the process globals, so the CLI path is unchanged.
+    """
+    ctx = AppContext(events_store=getattr(request.app.state, "store", None))
     try:
-        report = await purge_session(session_id)
+        report = await purge_session(session_id, ctx=ctx)
     except SessionNotFound:
         raise HTTPException(status_code=404, detail=f"no session with id {session_id!r}")
     return {

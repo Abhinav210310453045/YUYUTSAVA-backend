@@ -11,6 +11,7 @@ from yuyutsava.llm.base import Provider, require
 
 class MistralProvider(Provider):
     settings_type = MistralSettings
+    key = "mistral"
 
     def build(
         self, settings: MistralSettings, *, temperature: float, disable_reasoning: bool

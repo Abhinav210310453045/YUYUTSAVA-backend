@@ -48,113 +48,18 @@ class ThreadSummaryStore(ABC):
         """Most recent summary for the thread, or ``None``."""
 
 
-class SqliteThreadSummaryStore(BaseSqliteStore, ThreadSummaryStore):
-    _SCHEMA_VERSION = 1
-    _META_TABLE = "thread_summaries_meta"
-    _SCHEMA_SQL = """
-        CREATE TABLE IF NOT EXISTS thread_summaries_meta (
-            key   TEXT PRIMARY KEY,
-            value TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS thread_summaries (
-            thread_id   TEXT NOT NULL,
-            version     INTEGER NOT NULL,
-            summary     TEXT NOT NULL,
-            token_count INTEGER NOT NULL DEFAULT 0,
-            task_id     TEXT,
-            created_ts  REAL NOT NULL,
-            PRIMARY KEY (thread_id, version)
-        );
-    """
-
-    async def put(
-        self,
-        thread_id: str,
-        summary: str,
-        *,
-        token_count: int = 0,
-        task_id: str | None = None,
-    ) -> int:
-        async def _do(conn):
-            cur = await conn.execute(
-                "SELECT COALESCE(MAX(version), 0) + 1 FROM thread_summaries "
-                "WHERE thread_id = ?",
-                (thread_id,),
-            )
-            (version,) = await cur.fetchone()
-            await conn.execute(
-                "INSERT INTO thread_summaries "
-                "(thread_id, version, summary, token_count, task_id, created_ts) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (thread_id, version, summary, token_count, task_id, time.time()),
-            )
-            return version
-
-        return await self._run_write(_do)
-
-    async def latest(self, thread_id: str) -> ThreadSummary | None:
-        await self._ensure_schema()
-        async with self._conn() as conn:
-            cur = await conn.execute(
-                "SELECT thread_id, version, summary, token_count, task_id "
-                "FROM thread_summaries WHERE thread_id = ? "
-                "ORDER BY version DESC LIMIT 1",
-                (thread_id,),
-            )
-            row = await cur.fetchone()
-            await cur.close()
-        if row is None:
-            return None
-        return ThreadSummary(
-            thread_id=row["thread_id"],
-            version=row["version"],
-            summary=row["summary"],
-            token_count=row["token_count"],
-            task_id=row["task_id"],
-        )
-
-
-class PgThreadSummaryStore(ThreadSummaryStore):
-    """``thread_summaries`` table in Postgres (schema in pg/migrations.py)."""
-
-    def __init__(self, pool: PgPool) -> None:
-        self._pool = pool
-
-    async def put(
-        self,
-        thread_id: str,
-        summary: str,
-        *,
-        token_count: int = 0,
-        task_id: str | None = None,
-    ) -> int:
-        async with self._pool.connection() as conn:
-            await ensure_thread(conn, thread_id)  # satisfy thread_summaries_thread_fk
-            cur = await conn.execute(
-                """
-                INSERT INTO thread_summaries
-                    (thread_id, version, summary, token_count, task_id)
-                SELECT %s, COALESCE(MAX(version), 0) + 1, %s, %s, %s
-                FROM thread_summaries WHERE thread_id = %s
-                RETURNING version
-                """,
-                (thread_id, summary, token_count, task_id, thread_id),
-            )
-            row = await cur.fetchone()
-        return int(row[0])
-
-    async def latest(self, thread_id: str) -> ThreadSummary | None:
-        async with self._pool.connection() as conn:
-            cur = await conn.execute(
-                "SELECT thread_id, version, summary, token_count, task_id "
-                "FROM thread_summaries WHERE thread_id = %s "
-                "ORDER BY version DESC LIMIT 1",
-                (thread_id,),
-            )
-            row = await cur.fetchone()
-        if row is None:
-            return None
-        return ThreadSummary(
-            thread_id=row[0], version=row[1], summary=row[2],
-            token_count=row[3], task_id=row[4],
-        )
+# ---------------------------------------------------------------------------
+# NOTE: SqliteThreadSummaryStore and PgThreadSummaryStore lived here until
+# 2026-08-08. Both were replaced by ``summary_store_unified.py``
+# (ADR-002 step 2.5b) — one implementation over the dialect adapter.
+#
+# The migration also FIXED a bug the old PgThreadSummaryStore had: concurrent
+# put() calls on one thread raced on version allocation and one lost with
+# UniqueViolation, because COALESCE(MAX(version),0)+1 reads a transaction
+# snapshot even inside a single INSERT...SELECT. The unified store retries on
+# duplicate-key. See test_summary_store_parity.py, which demonstrated the twin
+# failing and the replacement passing before the twins were deleted.
+#
+# This module keeps the shared vocabulary: ThreadSummary and the
+# ThreadSummaryStore interface.
+# ---------------------------------------------------------------------------

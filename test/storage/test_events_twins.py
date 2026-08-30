@@ -48,6 +48,10 @@ class EventsTwinsTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(await self.store.get_event_payload("missing"))
 
     async def test_proposal_status_flip_is_atomic(self) -> None:
+        # Parent first: schema v5 enforces proposals.event_id -> event_payloads,
+        # mirroring the order every producer already uses.
+        await self.store.put_event_payload(
+            event_id="e1", topic="fs.write", ts=time.time(), payload={})
         await self.store.put_proposal(_proposal("p1"))
         self.assertEqual((await self.store.get_proposal("p1")).status, "pending")
         first = await self.store.try_set_proposal_status(

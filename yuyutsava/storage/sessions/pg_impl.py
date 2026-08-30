@@ -38,10 +38,23 @@ _TASK_PREVIEW_MAX = 200
 _TITLE_MAX = 80
 _SCHEMA_VERSION = 1
 
-# Also the INSERT column list in create() — keep the VALUES placeholder count
-# in sync when adding a column.
-_SELECT_COLS = (
+# Column NAMES, for INSERT. Keep the VALUES placeholder count in sync when
+# adding a column. Split from _SELECT_COLS below because the read list carries
+# expressions, not bare names, and an INSERT cannot take those.
+_INSERT_COLS = (
     "id, thread_id, workspace, status, created_at, updated_at, "
+    "message_count, memory_files_count, db_row_bytes, task_preview, "
+    "schema_version, origin, title"
+)
+
+# Read list. created_at/updated_at are TIMESTAMPTZ since migration v20 and are
+# projected back to epoch floats, so the Session dataclass and the web API's
+# `cursor: float` are unchanged by that migration. ::float8 matters —
+# extract(epoch ...) alone yields numeric, which psycopg returns as Decimal.
+_SELECT_COLS = (
+    "id, thread_id, workspace, status, "
+    "extract(epoch FROM created_at)::float8 AS created_at, "
+    "extract(epoch FROM updated_at)::float8 AS updated_at, "
     "message_count, memory_files_count, db_row_bytes, task_preview, "
     "schema_version, origin, title"
 )
@@ -116,8 +129,9 @@ class PgSessionStore:
                 conn, tid, origin=origin, workspace=ws, status="running"
             )
             await conn.execute(
-                f"INSERT INTO sessions ({_SELECT_COLS}) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                f"INSERT INTO sessions ({_INSERT_COLS}) VALUES "
+                "(%s, %s, %s, %s, to_timestamp(%s), to_timestamp(%s), "
+                "%s, %s, %s, %s, %s, %s, %s)",
                 (tid, tid, ws, "running", now, now, 0, 0, 0, preview,
                  _SCHEMA_VERSION, origin, ""),
             )
@@ -156,7 +170,7 @@ class PgSessionStore:
         async with self._conn() as conn:
             bytes_for_thread = await self._checkpoint_bytes(conn, session_id)
             sets = [
-                "updated_at = %s",
+                "updated_at = to_timestamp(%s)",
                 "message_count = message_count + %s",
                 "db_row_bytes = %s",
             ]
@@ -197,7 +211,7 @@ class PgSessionStore:
         await self._ensure_ready()
         async with self._conn() as conn:
             await conn.execute(
-                "UPDATE sessions SET status = %s, updated_at = %s WHERE id = %s",
+                "UPDATE sessions SET status = %s, updated_at = to_timestamp(%s) WHERE id = %s",
                 (status, time.time(), session_id),
             )
 
@@ -246,7 +260,8 @@ class PgSessionStore:
             clauses.append("origin = %s")
             params.append(origin)
         if cursor is not None:
-            clauses.append(f"{order_by} < %s")
+            # Compares the raw TIMESTAMPTZ column, so the float cursor is cast.
+            clauses.append(f"{order_by} < to_timestamp(%s)")
             params.append(float(cursor))
         if clauses:
             sql += " WHERE " + " AND ".join(clauses)

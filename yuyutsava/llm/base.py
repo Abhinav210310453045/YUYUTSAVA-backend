@@ -30,6 +30,7 @@ from typing import ClassVar
 from langchain_core.language_models import BaseChatModel
 
 from yuyutsava.core.config import LlmSettings
+from yuyutsava.llm.handle import Capability
 
 
 def require(module: str, *, provider: str, install: str) -> ModuleType:
@@ -56,6 +57,17 @@ class Provider(ABC):
     #: provider, which is chosen by exclusion rather than by isinstance.
     settings_type: ClassVar[type | None] = None
 
+    #: Stable identifier, recorded on every :class:`~yuyutsava.llm.handle.ModelHandle`
+    #: this provider builds. Matches the ``LLM_PROVIDER`` value where one maps
+    #: 1:1; :meth:`provider_name` refines it where one provider serves several
+    #: hosts.
+    key: ClassVar[str] = ""
+
+    #: What callers may rely on for models this provider builds. Empty means
+    #: "nothing beyond the base contract" — the common case, and why this is a
+    #: default rather than an abstract member.
+    capabilities: ClassVar[frozenset[Capability]] = frozenset()
+
     @abstractmethod
     def build(
         self,
@@ -68,8 +80,30 @@ class Provider(ABC):
 
         ``disable_reasoning`` is honoured only by providers that actually have a
         reasoning toggle; the rest ignore it (it reaches every provider because it
-        is set per *call site*, not per provider).
+        is set per *call site*, not per provider). Declare
+        :attr:`Capability.REASONING_TOGGLE` if you honour it.
         """
+
+    def model_name(self, settings: LlmSettings) -> str:
+        """The identifier of the model :meth:`build` will construct.
+
+        Answered from *settings*, which is the only source that always has it.
+        Reading it back off the built object was the previous approach and it
+        returns ``""`` for Azure, whose SDK leaves ``model_name`` at ``None``.
+
+        Every settings class carries ``model``, so the default serves all but
+        Azure — which overrides it because there the deployment is authoritative.
+        """
+        return getattr(settings, "model", "") or ""
+
+    def provider_name(self, settings: LlmSettings) -> str:
+        """Which provider this is, for the handle and for logs.
+
+        Overridden only by the OpenAI-compatible provider, where one
+        implementation serves Groq, OpenRouter, Ollama and OpenAI and the
+        implementation name would hide which host is actually being called.
+        """
+        return self.key
 
 
 __all__ = ["Provider", "require"]

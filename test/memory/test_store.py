@@ -9,13 +9,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from yuyutsava.memory.store import SqliteMemoryStore, _keyword_tokens
+from yuyutsava.memory.store import _keyword_tokens
+from yuyutsava.memory.store_unified import sqlite_memory_store
 
 
 class SqliteMemoryStoreTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
-        self.store = SqliteMemoryStore(Path(self._tmp.name) / "state.db")
+        self.store = sqlite_memory_store(Path(self._tmp.name) / "state.db")
 
     async def asyncTearDown(self) -> None:
         self._tmp.cleanup()

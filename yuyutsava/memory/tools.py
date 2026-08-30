@@ -1,7 +1,7 @@
 """mem_* tools: agent-facing search/save over the memory store.
 
 Hidden behind the normal ``tool_search`` discovery flow (the ``mem_``
-prefix is in ``ToolFilterMiddleware._SUPPRESS_PREFIXES``) — unlike ctx_*,
+prefix is suppressed by ``ToolFilterPolicy``) — unlike ctx_*,
 nothing in a tool result forces the model to need these immediately, and
 the orchestrator prompt tells it they exist.
 """

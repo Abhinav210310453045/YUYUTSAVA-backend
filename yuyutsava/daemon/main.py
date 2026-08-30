@@ -277,13 +277,14 @@ async def _run_memory_backfill(subs: DaemonSubsystems) -> None:
     (instead of a storm of per-operation tracebacks) and skips the backfill so
     we don't hammer a dead endpoint. Never fatal — memory is an enhancement.
     """
-    backfill = getattr(subs.memory_store, "backfill_embeddings", None)
-    if backfill is None or subs.embedder is None:
+    # No getattr probe: every memory store declares backfill_embeddings since
+    # ADR-002 step 2.5b. `memory_store` is still None when memory is disabled.
+    if subs.memory_store is None or subs.embedder is None:
         return
     if not await subs.embedder.healthcheck():
         return  # warning already logged by healthcheck
     try:
-        await backfill()
+        await subs.memory_store.backfill_embeddings()
     except Exception:
         logger.exception("memory: startup backfill failed")
 

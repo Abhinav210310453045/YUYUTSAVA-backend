@@ -52,7 +52,7 @@ class PrefsInjector:
 
         ``task_text`` is accepted (and ignored — prefs are not similarity
         gated) so this injector satisfies the same protocol
-        ``RetrievalInjectionMiddleware`` calls on the per-turn masters; the
+        ``RetrievalInjectionPolicy`` calls on the per-turn masters; the
         orchestrator loop keeps calling it with no argument.
         """
         all_prefs: dict[str, Any] = await self._store.all()

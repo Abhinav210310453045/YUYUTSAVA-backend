@@ -1,5 +1,26 @@
 """Orchestrator-side ``spawn_subagent`` tool.
 
+.. warning::
+
+   **ABANDONED DESIGN — DO NOT REGISTER THIS TOOL.**
+
+   ``make_spawn_subagent_tool`` is deliberately never wired into any agent. See
+   the explicit non-registration at ``core/engine.py`` in ``build_orchestrator``
+   ("spawn_subagent is intentionally NOT registered"). The orchestrator delegates
+   dynamic work to the ``general-purpose`` subagent instead, which is
+   checkpointed, resume-able, and budget-governed — none of which the design
+   below achieves.
+
+   The module is retained for reference because the depth-cap and audit-log
+   mechanics are worth reading, not because the tool is pending re-enablement.
+   **If you are here because you found an unused 167-line tool and wondered
+   whether to wire it up: don't.** Use the ``task('general-purpose', …)``
+   delegation path.
+
+   Recorded here because this constraint previously existed only outside the
+   repository, which is exactly how an abandoned design gets accidentally
+   revived. See docs/architecture-review/03-findings-dry-kiss.md (``F-K04``).
+
 Lets the orchestrator build a fresh, throwaway ReAct agent at call time with an
 explicit tool subset. The child is run synchronously inline; its final
 assistant message is returned as the tool result.
@@ -52,6 +73,7 @@ from yuyutsava.core.config import SearchConfig
 from yuyutsava.core.streaming import flatten_content
 from yuyutsava.core.tool_registry import ToolRegistry
 from yuyutsava.storage.events import Store
+from yuyutsava.storage.events.roles import DecisionWriter
 from yuyutsava.skills.registry import SkillRegistry
 from yuyutsava.skills.tools import make_read_skill_tool
 from yuyutsava.tools.search import make_search_tools
@@ -126,7 +148,7 @@ def make_spawn_subagent_tool(
     *,
     model: BaseChatModel,
     workspace_root: Path,
-    store: Store,
+    store: DecisionWriter,
     search_config: SearchConfig | None = None,
     skill_registry: SkillRegistry | None = None,
     cap_enforcer: object | None = None,

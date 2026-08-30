@@ -12,7 +12,7 @@ agent recalls prior topics even after its checkpoint is gone.
 Two entry points feed the index, both idempotent via ``source_id``:
 
 * :meth:`index_messages` — live write-through from
-  :class:`~yuyutsava.context.transcript_middleware.TranscriptRecorderMiddleware`
+  :class:`~yuyutsava.context.transcript_policy.TranscriptRecorderPolicy`
   as new turns run (covers text *and* voice — both flow through the bundle).
 * :meth:`backfill_thread` — reads a thread's existing rows from the durable
   ``transcript_messages`` + ``voice_messages`` tables on first touch, so a

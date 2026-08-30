@@ -28,6 +28,21 @@ from yuyutsava.retrieval.vector import vector_literal
 logger = logging.getLogger("yuyutsava.retrieval.pg")
 
 
+def _by_name_or_position(row: Any, names: tuple[str, ...]) -> tuple[Any, ...]:
+    """Read *names* from a row that may be a mapping **or** a tuple.
+
+    Postgres rows arrive in two shapes here depending on who opened the
+    connection: pooled connections yield tuples, while anything inside
+    ``Dialect.write()`` / ``Dialect.reading()`` yields mappings. A helper that
+    only understands one of them fails at runtime on the other — which is
+    exactly how ``find_duplicate`` broke every embedded memory write.
+    """
+    try:
+        return tuple(row[n] for n in names)
+    except (KeyError, TypeError, IndexError):
+        return tuple(row[i] for i in range(len(names)))
+
+
 @dataclass(frozen=True)
 class PgVectorTable:
     """Column map for one pgvector-backed table."""
@@ -127,11 +142,24 @@ class PgVectorSearch:
         self, conn, qvec: str, threshold: float, *, where: str = "", params: list | tuple = ()
     ) -> str | None:
         """Return the id of an existing row at/above ``threshold`` cosine
-        similarity to ``qvec``, else None. Runs on the caller's connection."""
+        similarity to ``qvec``, else None.
+
+        **Runs on the caller's connection**, and that is the whole difficulty:
+        the caller may hand over a plain pooled connection (rows are tuples) or
+        one inside ``Dialect.write()`` / ``Dialect.reading()`` (rows are
+        mappings). ``UnifiedMemoryStore.add`` does the latter — the dedup probe
+        shares the insert's transaction so a crash cannot commit one without the
+        other — so this ran against ``dict_row`` and a positional ``row[1]``
+        raised ``KeyError: 1``, killing **every** memory write that had an
+        embedding and dedup enabled.
+
+        Reading by name works on both shapes, so the row factory stops mattering.
+        """
         t = self._t
         cur = await conn.execute(
             f"""
-            SELECT {t.id_col}, 1 - ({t.embedding_col} <=> %s::vector) AS score
+            SELECT {t.id_col} AS dup_id,
+                   1 - ({t.embedding_col} <=> %s::vector) AS score
             FROM {t.table}
             WHERE {t.embedding_col} IS NOT NULL {where}
             ORDER BY {t.embedding_col} <=> %s::vector
@@ -140,9 +168,10 @@ class PgVectorSearch:
             [qvec, *params, qvec],
         )
         row = await cur.fetchone()
-        if row and float(row[1]) >= threshold:
-            return row[0]
-        return None
+        if row is None:
+            return None
+        dup_id, score = _by_name_or_position(row, ("dup_id", "score"))
+        return dup_id if float(score) >= threshold else None
 
     async def backfill(
         self, embedder, *, batch_size: int = 64, max_rows: int = 2000

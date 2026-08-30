@@ -26,16 +26,19 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from yuyutsava.storage.events.schema import SCHEMA_SQL, SCHEMA_VERSION, migrate  # noqa: F401
+from yuyutsava.storage.dialect import EventsSqliteDialect, PostgresDialect
+from yuyutsava.storage.events.unified import (
+    UnifiedConsentGrantStore,
+    UnifiedConsentRuleStore,
+    UnifiedDecisionStore,
+    UnifiedEventStore,
+    UnifiedPendingAskStore,
+    UnifiedProposalStore,
+    UnifiedToolCounterStore,
+)
 from yuyutsava.storage.events.sqlite_backend import (
-    SqliteConsentGrantStore,
-    SqliteConsentRuleStore,
-    SqliteDecisionStore,
     SqliteEventsBackend,
-    SqliteEventStore,
-    SqlitePendingAskStore,
     SqlitePrefsBackend,
-    SqliteProposalStore,
-    SqliteToolCounterStore,
 )
 from yuyutsava.storage.models import ConsentRule, Decision, EventRecord, Proposal
 
@@ -56,14 +59,19 @@ class Store:
         # queue is gone; writes serialise inside the SQLite backend now).
         self._backend = SqliteEventsBackend(db_path)
         self.db_path = self._backend._db_path
-        self._events = SqliteEventStore(self._backend)
-        self._proposals = SqliteProposalStore(self._backend)
-        self._decisions = SqliteDecisionStore(self._backend)
-        self._consent_rules = SqliteConsentRuleStore(self._backend)
-        self._counters = SqliteToolCounterStore(self._backend)
+        # Migrated onto the dialect adapter (ADR-002 step 2.5b): one
+        # implementation for both backends, over EventsSqliteDialect here and
+        # PostgresDialect below. Parity verified in
+        # test/storage/test_events_unified_parity.py.
+        _sq_dialect = EventsSqliteDialect(self._backend)
+        self._events = UnifiedEventStore(_sq_dialect)
+        self._proposals = UnifiedProposalStore(_sq_dialect)
+        self._decisions = UnifiedDecisionStore(_sq_dialect)
+        self._consent_rules = UnifiedConsentRuleStore(_sq_dialect)
+        self._counters = UnifiedToolCounterStore(_sq_dialect)
         self._prefs = SqlitePrefsBackend(self._backend)
-        self._grants = SqliteConsentGrantStore(self._backend)
-        self._asks = SqlitePendingAskStore(self._backend)
+        self._grants = UnifiedConsentGrantStore(_sq_dialect)
+        self._asks = UnifiedPendingAskStore(_sq_dialect)
         self._grants_cache: list[Grant] = []
 
     @classmethod
@@ -81,27 +89,34 @@ class Store:
         """
         self = cls()
         if pg_pool is not None and storage.is_postgres() and health is not None:
-            from yuyutsava.storage.events.pg_stores import (
-                PgConsentGrantStore,
-                PgConsentRuleStore,
-                PgDecisionStore,
-                PgEventStore,
-                PgPendingAskStore,
-                PgPrefsBackend,
-                PgProposalStore,
-                PgToolCounterStore,
-            )
+            from yuyutsava.storage.events.pg_stores import PgPrefsBackend
             from yuyutsava.storage.routing.facade import RoutedStore
 
             b = self._backend
-            self._events = RoutedStore(PgEventStore(pg_pool), SqliteEventStore(b), health, name="event_payloads")
-            self._proposals = RoutedStore(PgProposalStore(pg_pool), SqliteProposalStore(b), health, name="proposals")
-            self._decisions = RoutedStore(PgDecisionStore(pg_pool), SqliteDecisionStore(b), health, name="decisions")
-            self._consent_rules = RoutedStore(PgConsentRuleStore(pg_pool), SqliteConsentRuleStore(b), health, name="consent_rules")
-            self._counters = RoutedStore(PgToolCounterStore(pg_pool), SqliteToolCounterStore(b), health, name="tool_call_counters")
+            _pg_dialect = PostgresDialect(pg_pool)
+            _sq_dialect = EventsSqliteDialect(b)
+            self._events = RoutedStore(
+                UnifiedEventStore(_pg_dialect), UnifiedEventStore(_sq_dialect),
+                health, name="event_payloads")
+            self._proposals = RoutedStore(
+                UnifiedProposalStore(_pg_dialect), UnifiedProposalStore(_sq_dialect),
+                health, name="proposals")
+            self._decisions = RoutedStore(
+                UnifiedDecisionStore(_pg_dialect), UnifiedDecisionStore(_sq_dialect),
+                health, name="decisions")
+            self._consent_rules = RoutedStore(
+                UnifiedConsentRuleStore(_pg_dialect), UnifiedConsentRuleStore(_sq_dialect),
+                health, name="consent_rules")
+            self._counters = RoutedStore(
+                UnifiedToolCounterStore(_pg_dialect), UnifiedToolCounterStore(_sq_dialect),
+                health, name="tool_call_counters")
             self._prefs = RoutedStore(PgPrefsBackend(pg_pool), SqlitePrefsBackend(b), health, name="user_prefs")
-            self._grants = RoutedStore(PgConsentGrantStore(pg_pool), SqliteConsentGrantStore(b), health, name="consent_grants")
-            self._asks = RoutedStore(PgPendingAskStore(pg_pool), SqlitePendingAskStore(b), health, name="pending_asks")
+            self._grants = RoutedStore(
+                UnifiedConsentGrantStore(_pg_dialect), UnifiedConsentGrantStore(_sq_dialect),
+                health, name="consent_grants")
+            self._asks = RoutedStore(
+                UnifiedPendingAskStore(_pg_dialect), UnifiedPendingAskStore(_sq_dialect),
+                health, name="pending_asks")
         return self
 
     # ------------------------------------------------------------------ #
@@ -178,6 +193,10 @@ class Store:
     ) -> bool:
         """Mark an ask answered; False when another surface got there first."""
         return await self._asks.resolve(ask_id, response, status=status)
+
+    async def delete_pending_asks_for_thread(self, thread_id: str) -> int:
+        """Drop a thread's pending asks. Used by session deletion."""
+        return await self._asks.delete_for_thread(thread_id)
 
     async def list_pending_asks(self, limit: int = 200) -> list[dict[str, Any]]:
         return await self._asks.list_pending(limit)

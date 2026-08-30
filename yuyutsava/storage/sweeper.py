@@ -36,6 +36,7 @@ import asyncio
 import logging
 import shutil
 import time
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -43,10 +44,47 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from yuyutsava.storage.events import Store
+from yuyutsava.storage.events.roles import EventPayloadSweeper
 from yuyutsava.storage.ids import parse_thread_id_ts
 from yuyutsava.storage.paths import blobs_dir
 
 logger = logging.getLogger("yuyutsava.storage.sweeper")
+
+# Gregorian epoch (1582-10-15) to Unix epoch, in seconds — the offset UUIDv6
+# timestamps are counted from, in 100-nanosecond ticks.
+_GREGORIAN_OFFSET_SEC = 12_219_292_800
+
+
+def _checkpoint_id_ts(checkpoint_id: str) -> float | None:
+    """Unix seconds encoded in a LangGraph ``checkpoint_id``, or None.
+
+    Checkpoint ids are UUIDv6: the 60-bit timestamp is split across the top 64
+    bits as 48 high bits, the 4-bit version, then 12 low bits. Anything that
+    isn't a v6 uuid (a hand-written id, a future format) yields None so the
+    caller can fall back rather than treat it as epoch-zero and delete it.
+    """
+    try:
+        value = uuid.UUID(checkpoint_id)
+    except (AttributeError, TypeError, ValueError):
+        return None
+    if value.version != 6:
+        return None
+    ticks = (value.int >> 80) << 12 | (value.int >> 64) & 0xFFF
+    return ticks / 1e7 - _GREGORIAN_OFFSET_SEC
+
+
+def _last_write_ts(thread_id: str, latest_checkpoint_id: str | None) -> float | None:
+    """When *thread_id* last wrote a checkpoint, in Unix seconds, or None.
+
+    Prefers the newest checkpoint's own timestamp (real activity) and falls
+    back to the thread id's minted timestamp (creation) only when the id can't
+    be decoded. None means "unknown" — the sweeper leaves those alone.
+    """
+    if latest_checkpoint_id:
+        ts = _checkpoint_id_ts(latest_checkpoint_id)
+        if ts is not None:
+            return ts
+    return parse_thread_id_ts(thread_id)
 
 
 @dataclass(frozen=True)
@@ -132,7 +170,7 @@ class UnifiedSweeper:
     def __init__(
         self,
         *,
-        store: Store,
+        store: EventPayloadSweeper,
         checkpoint_saver: BaseCheckpointSaver,
         blob_targets: list[BlobSweepTarget] | None = None,
         config: SweeperConfig | None = None,
@@ -211,24 +249,34 @@ class UnifiedSweeper:
     # ------------------------------------------------------------------
 
     async def _sweep_checkpoints(self) -> int:
-        """Delete every LangGraph thread whose minted timestamp is older than TTL.
+        """Delete every LangGraph thread whose LAST WRITE is older than TTL.
 
-        Threads with unparseable timestamps (e.g. external callers) are left
-        in place — the format ``<role>-<unix_ts>-<uuid>`` is load-bearing here
-        and ``parse_thread_id_ts`` returns None for non-conforming ids.
+        Staleness is measured from the newest checkpoint the thread wrote, not
+        from when its id was minted: a session the user is still typing into is
+        not stale no matter how long ago it was opened. Keying off creation
+        time deleted live conversations mid-session — every sweep tick wiped
+        the checkpoint of any chat older than the TTL, so each turn restarted
+        from an empty history (observed on a ~4h CLI session: input tokens
+        reset to the system-prompt baseline on every turn).
+
+        LangGraph mints ``checkpoint_id`` as a UUIDv6, whose embedded
+        timestamp *is* the write time, so last-activity needs no extra table
+        or dependency. Threads whose id cannot be decoded fall back to the
+        minted ``<role>-<unix_ts>-<uuid>`` thread-id timestamp, and threads
+        with neither are left in place (external callers own their retention).
 
         Enumeration dispatches on saver type (SQLite vs Postgres); deletion
         goes through the shared ``adelete_thread`` API either way.
         """
         cutoff = time.time() - self._config.checkpoint_ttl_sec
         try:
-            thread_ids = await self._enumerate_thread_ids()
+            threads = await self._enumerate_threads()
         except Exception:
             logger.exception("sweeper: failed to enumerate stale checkpoints")
             return 0
         stale = [
-            tid for tid in thread_ids
-            if (ts := parse_thread_id_ts(tid)) is not None and ts < cutoff
+            tid for tid, latest_id in threads
+            if (ts := _last_write_ts(tid, latest_id)) is not None and ts < cutoff
         ]
         deleted = 0
         for tid in stale:
@@ -239,15 +287,22 @@ class UnifiedSweeper:
                 logger.exception("sweeper: failed to delete thread %r", tid)
         return deleted
 
-    async def _enumerate_thread_ids(self) -> list[str]:
-        """List distinct checkpoint thread_ids for the active saver backend."""
+    async def _enumerate_threads(self) -> list[tuple[str, str]]:
+        """List ``(thread_id, newest checkpoint_id)`` for the active backend.
+
+        ``max(checkpoint_id)`` is the thread's most recent write across every
+        checkpoint namespace: UUIDv6 sorts lexicographically by time, which is
+        exactly why LangGraph uses it for checkpoint ids.
+        """
+        query = (
+            "SELECT thread_id, max(checkpoint_id) AS latest "
+            "FROM checkpoints GROUP BY thread_id"
+        )
         if isinstance(self._saver, AsyncSqliteSaver):
-            out: list[str] = []
-            async with self._saver.lock, self._saver.conn.execute(
-                "SELECT DISTINCT thread_id FROM checkpoints"
-            ) as cur:
-                async for (tid,) in cur:
-                    out.append(tid)
+            out: list[tuple[str, str]] = []
+            async with self._saver.lock, self._saver.conn.execute(query) as cur:
+                async for tid, latest in cur:
+                    out.append((tid, latest))
             return out
 
         from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
@@ -257,9 +312,12 @@ class UnifiedSweeper:
             # there is no public query surface, and the table name is part
             # of the package's stable migration contract.
             async with self._saver._cursor() as cur:  # noqa: SLF001
-                await cur.execute("SELECT DISTINCT thread_id FROM checkpoints")
+                await cur.execute(query)
                 rows = await cur.fetchall()
-            return [r["thread_id"] if isinstance(r, dict) else r[0] for r in rows]
+            return [
+                (r["thread_id"], r["latest"]) if isinstance(r, dict) else (r[0], r[1])
+                for r in rows
+            ]
 
         logger.warning(
             "sweeper: unknown checkpointer type %s — skipping checkpoint sweep",

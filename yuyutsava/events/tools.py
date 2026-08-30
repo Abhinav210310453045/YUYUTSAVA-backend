@@ -9,6 +9,9 @@ the orchestrator's context bounded — events are referenced by id, not embedded
 
 from __future__ import annotations
 
+# Each tool declares only what it reads (Phase 2 step 2.7).
+from yuyutsava.storage.events.roles import EventPayloadReader, RecallReader
+
 import json
 from typing import Any
 
@@ -17,7 +20,7 @@ from langchain_core.tools import BaseTool, tool
 from yuyutsava.storage.events import Store
 
 
-def make_fetch_event_tool(store: Store) -> BaseTool:
+def make_fetch_event_tool(store: EventPayloadReader) -> BaseTool:
     """Bind the store to a fresh ``fetch_event`` tool. Per-subagent binding."""
 
     @tool
@@ -48,7 +51,7 @@ def make_fetch_event_tool(store: Store) -> BaseTool:
     return fetch_event
 
 
-def make_recall_tool(store: Store) -> BaseTool:
+def make_recall_tool(store: RecallReader) -> BaseTool:
     """Bind the store to a fresh ``recall`` tool for the orchestrator.
 
     Returns a tool that surfaces recent decision history (one-line summaries)

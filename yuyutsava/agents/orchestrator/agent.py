@@ -10,6 +10,8 @@ ask tool wired to the daemon ChannelRouter).
 
 from __future__ import annotations
 
+from yuyutsava.ports.policy import ContextTuning, RemoteSubagentSpec, TaskMirror
+
 import logging
 import uuid
 from dataclasses import dataclass
@@ -20,6 +22,16 @@ from langchain_core.tools import BaseTool, tool
 
 from yuyutsava.agents.base_sub_agent import BaseSubAgent
 from yuyutsava.daemon.channels import AskPrompt, ChannelRouter
+from yuyutsava.ports import (
+    ArtifactStore,
+    CapEnforcer,
+    ConversationIndex,
+    MemoryStore,
+    RuntimeToggles,
+    SummaryStore,
+    TranscriptStore,
+    UsageStore,
+)
 from yuyutsava.storage.events import Store
 from yuyutsava.core.config import SearchConfig
 from yuyutsava.mcp.loader import MCPClientManager
@@ -32,9 +44,16 @@ logger = logging.getLogger("yuyutsava.agents.orchestrator")
 class OrchestratorDeps:
     """Bag of dependencies the orchestrator and its tools need at call time.
 
-    The ``async_*`` fields are wired in when background subagents are enabled.
-    They are duck-typed (``object | None``) so this module doesn't pull
-    ``async_subagents`` (and transitively ``langgraph_api``) when async is off.
+    The ``async_*`` fields stay duck-typed (``object | None``) so this module
+    does not pull ``async_subagents`` — and transitively ``langgraph_api`` —
+    when background subagents are off. That one is a genuine optional-dependency
+    concern, not a cycle workaround.
+
+    The store fields, by contrast, are now typed against
+    :mod:`yuyutsava.ports`. They used to be ``object | None`` with the real type
+    in a comment because ``agents`` and ``context``/``memory`` import each
+    other; ``ports`` is a leaf both sides can depend on, so the types are real
+    again and a wrong store no longer type-checks (finding ``F-S05``).
 
     - ``async_subagents``: ``list[BaseSubAgent]`` whose graphs are hosted by
       ``async_host``. Optional.
@@ -43,7 +62,7 @@ class OrchestratorDeps:
     - ``remote_async_subagents``: ``list[RemoteAsyncSubagentSpec]`` peers hosted
       elsewhere. Optional.
     - ``async_task_mirror``: ``AsyncTaskMirror`` instance used by
-      ``BackgroundTaskCapMiddleware`` and the turn-start status injector.
+      ``BackgroundTaskCapPolicy`` and the turn-start status injector.
     - ``async_max_concurrent``: cap honoured by the cap middleware.
     """
 
@@ -56,13 +75,13 @@ class OrchestratorDeps:
     workspace_root: Path | None = None
     mcp_manager: MCPClientManager | None = None
     search_config: SearchConfig | None = None
-    cap_enforcer: object | None = None  # tools.search._CapEnforcer
+    cap_enforcer: CapEnforcer | None = None
 
     # Async (background) subagent wiring; all optional.
     async_subagents: list[BaseSubAgent] | None = None
     async_host_url: str | None = None
-    remote_async_subagents: list[object] | None = None
-    async_task_mirror: object | None = None
+    remote_async_subagents: list[RemoteSubagentSpec] | None = None
+    async_task_mirror: TaskMirror | None = None
     async_max_concurrent: int = 8
 
     # Context controller wiring (yuyutsava.context / yuyutsava.memory); all
@@ -79,25 +98,25 @@ class OrchestratorDeps:
     #   compaction middleware (and sizes the offload threshold).
     # - ``compaction_model``: cheap chat model for summarization; falls back
     #   to the agent's own model when None.
-    artifact_store: object | None = None
-    summary_store: object | None = None
-    memory_store: object | None = None
-    transcript_store: object | None = None
+    artifact_store: ArtifactStore | None = None
+    summary_store: SummaryStore | None = None
+    memory_store: MemoryStore | None = None
+    transcript_store: TranscriptStore | None = None
     # context.transcript_index.PgTranscriptIndex — when set, the master gets
     # a per-turn ConversationInjector (recall of its own swept turns).
-    transcript_index: object | None = None
-    context_settings: object | None = None
+    transcript_index: ConversationIndex | None = None
+    context_settings: ContextTuning | None = None
     compaction_model: BaseChatModel | None = None
 
     # Phase 4 cost tracking: daemon.usage.UsageStore — when set, every
-    # master/subagent model call writes one llm_usage row (UsageRecorder).
-    usage_store: object | None = None
+    # master/subagent model call writes one llm_usage row (UsagePolicy).
+    usage_store: UsageStore | None = None
 
     # prefs.runtime.RuntimeSettings — the user's dedicated-subagent switches.
     # Read at build time (a fresh orchestrator graph per task means a disabled
     # subagent simply never enters the roster) and enforced per call by
-    # SubagentGateMiddleware. None → every registered subagent is available.
-    runtime_settings: object | None = None
+    # SubagentGatePolicy. None → every registered subagent is available.
+    runtime_settings: RuntimeToggles | None = None
 
 
 # ---------------------------------------------------------------------------

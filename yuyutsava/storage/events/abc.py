@@ -163,6 +163,15 @@ class PendingAskStore(ABC):
         """Insert a pending ask. Idempotent on ``ask_id``."""
 
     @abstractmethod
+    async def delete_for_thread(self, thread_id: str) -> int:
+        """Drop every pending ask for a thread. Returns rows deleted.
+
+        Required by session deletion: an ask row stores the agent's question
+        (``title``, ``body``) and the user's ``response``, so leaving it behind
+        keeps conversation content from a session the user asked to delete.
+        """
+
+    @abstractmethod
     async def resolve(self, ask_id: str, response: str, *, status: str = "answered") -> bool:
         """Flip pending → answered. False when it was already resolved.
 

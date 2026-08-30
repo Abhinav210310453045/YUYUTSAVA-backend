@@ -22,6 +22,7 @@ from typing import Any
 
 from yuyutsava.events.bus import EventEnvelope
 from yuyutsava.storage.events import ConsentRule, Store
+from yuyutsava.storage.events.roles import ConsentRuleReader
 
 logger = logging.getLogger("yuyutsava.daemon.consent")
 
@@ -44,7 +45,7 @@ class ConsentDecision:
 class ConsentEvaluator:
     """Match an ``EventEnvelope`` against ``state.db::consent_rules``."""
 
-    def __init__(self, store: Store) -> None:
+    def __init__(self, store: ConsentRuleReader) -> None:
         self._store = store
 
     async def evaluate(self, event: EventEnvelope) -> ConsentDecision:

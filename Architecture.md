@@ -24,22 +24,23 @@
 10. [TaskRunner: the Filesystem Permission Gateway](#10-taskrunner-the-filesystem-permission-gateway)
 11. [Async (Background) Subagents](#11-async-background-subagents)
 12. [Streaming & Interrupt Runtime](#12-streaming--interrupt-runtime)
-13. [Channels & Communication Surfaces](#13-channels--communication-surfaces)
-14. [Web API Layer (FastAPI + SSE + WebSocket)](#14-web-api-layer-fastapi--sse--websocket)
-15. [The Context Controller](#15-the-context-controller)
-16. [Memory, Skills & Retrieval (pgvector)](#16-memory-skills--retrieval-pgvector)
-17. [The Model Layer (Providers, Roles, Routing, Cost)](#17-the-model-layer-providers-roles-routing-cost)
-18. [Tool System & Progressive Discovery](#18-tool-system--progressive-discovery)
-19. [Storage Architecture](#19-storage-architecture)
-20. [Visuals Subsystem](#20-visuals-subsystem)
-21. [Voice Subsystem](#21-voice-subsystem)
-22. [Electron Frontend Architecture](#22-electron-frontend-architecture)
-23. [Platform / OS-Invariance Layer](#23-platform--os-invariance-layer)
-24. [Security Design](#24-security-design)
-25. [Startup & Shutdown Sequences](#25-startup--shutdown-sequences)
-26. [End-to-End Walkthroughs](#26-end-to-end-walkthroughs)
-27. [Key Design Decisions](#27-key-design-decisions)
-28. [On-Disk Layout & Config Files](#28-on-disk-layout--config-files)
+13. [The Policy Layer (cross-cutting concerns)](#13-the-policy-layer-cross-cutting-concerns)
+14. [Channels & Communication Surfaces](#14-channels--communication-surfaces)
+15. [Web API Layer (FastAPI + SSE + WebSocket)](#15-web-api-layer-fastapi--sse--websocket)
+16. [The Context Controller](#16-the-context-controller)
+17. [Memory, Skills & Retrieval (pgvector)](#17-memory-skills--retrieval-pgvector)
+18. [The Model Layer (Providers, Roles, Routing, Cost)](#18-the-model-layer-providers-roles-routing-cost)
+19. [Tool System & Progressive Discovery](#19-tool-system--progressive-discovery)
+20. [Storage Architecture](#20-storage-architecture)
+21. [Visuals Subsystem](#21-visuals-subsystem)
+22. [Voice Subsystem](#22-voice-subsystem)
+23. [Electron Frontend Architecture](#23-electron-frontend-architecture)
+24. [Platform / OS-Invariance Layer](#24-platform--os-invariance-layer)
+25. [Security Design](#25-security-design)
+26. [Startup & Shutdown Sequences](#26-startup--shutdown-sequences)
+27. [End-to-End Walkthroughs](#27-end-to-end-walkthroughs)
+28. [Key Design Decisions](#28-key-design-decisions)
+29. [On-Disk Layout & Config Files](#29-on-disk-layout--config-files)
 
 ---
 
@@ -188,16 +189,35 @@ yuyutsava/
 ├── cli/                 CLI entry, chat REPL, session/prefs commands, attach
 │   └── commands/        chat, chat_repl, sessions, prefs, scenarios, attach
 ├── core/                the shared engine
-│   ├── engine.py          build_cli_deepagent / build_orchestrator (graph builders)
-│   ├── streaming.py       astream_agent / astream_agent_iter (drive + interrupts)
+│   ├── engine.py          build_cli_deepagent / build_orchestrator / build_tinker_agent
+│   ├── agent_profiles.py  the master capability matrix, as data (ADR-001)
+│   ├── streaming.py       _drive_graph + two sinks (astream_agent / _iter)
 │   ├── config.py          all env settings (LLM providers, daemon, docker, search)
-│   ├── llm.py             chat_model() provider factory
 │   ├── model_router.py    complexity → tier model + price table
 │   ├── tool_registry.py   progressive tool discovery (tool_search gateway)
-│   ├── *_middleware.py     tool filter, permission, voice-style, retrieval injection
+│   ├── *_policy.py        tool filter · filesystem prompt · voice style ·
+│   │                      subagent gate · permission · retrieval injection
 │   ├── policy.py          permissions.json (auto_approve, ws_* daily caps)
+│   │                      ⚠ unrelated to yuyutsava/policy/ — see section 13
 │   ├── pricing.py         live price fetch + cache
 │   └── docker_sandbox_backend.py
+├── policy/              OUR cross-cutting-concern layer (ADR-004) — see section 13
+│   ├── types.py           ToolCall · ModelCall · Turn · Denied · Raw · Directive
+│   ├── base.py            the Policy contract (no framework import)
+│   ├── adapter.py         LangChainPolicyAdapter — the ONE AgentMiddleware subclass
+│   └── ask.py             LangGraphAskUser / ScriptedAskUser
+├── ports/               dependency-free Protocols (ADR-003); imports nothing internal
+│   ├── agent.py           Agent (astream/aget_state) — the driver's contract
+│   ├── ask.py             AskUser — HITL delivery, decoupled from interrupt()
+│   ├── storage.py         ArtifactStore · MemoryStore · TranscriptStore · …
+│   ├── policy.py          CapEnforcer · RuntimeToggles · TaskMirror · ContextTuning
+│   └── retrieval.py       VectorSearcher · ConversationIndex
+├── llm/                 the provider layer (one module per provider)
+│   ├── factory.py         chat_model() / model_handle() — the one build seam
+│   ├── handle.py          ModelHandle: model + name + provider + capabilities
+│   ├── base.py            Provider ABC (build · model_name · capabilities)
+│   ├── providers/         anthropic · vertex · google · bedrock · azure · … (8)
+│   └── quirks/            gemini_parts · loop_affinity (reusable wire fixes)
 ├── agents/
 │   ├── orchestrator/      master agent: deps, ask_user tool, prompts, capabilities
 │   ├── triage/            LLM event classifier → TriageDecision
@@ -215,7 +235,7 @@ yuyutsava/
 │   ├── orchestrator_loop.py  pops tasks → builds graph → streams → HITL → records
 │   ├── channels.py        UserChannel ABC + ChannelRouter (fan-out, origin routing)
 │   ├── resources.py       ResourceMonitor + AdmissionController (Phase 5)
-│   ├── usage.py           UsageRecorder + UsageStore (Phase 4 cost tracking)
+│   ├── usage.py           UsagePolicy + UsageStore (per-call cost tracking)
 │   ├── task_registry.py   first-class task tracking (GET /tasks)
 │   ├── conversation_manager.py  lazy stack for /ws/converse
 │   └── web/               FastAPI app, routers, schemas, services (SSE hub)
@@ -228,10 +248,15 @@ yuyutsava/
 ├── retrieval/           reusable pgvector engine (shared by memory + skills + ctx)
 ├── consent/             ConsentRegistry allowlist (once/session/project/persistent)
 ├── events/              EventBus, SourceRegistry, sources/*, ev_recall tool
-├── storage/             SQLite + Postgres backends, routing (spillover), sweeper, paths
-│   ├── pg/                pool, migrations (v1–v15), relational threads hub
+├── storage/             SQLite + Postgres behind ONE implementation per domain
+│   ├── dialect.py         Dialect adapter — the 5 backend differences, in one file
+│   ├── factory.py         StoreFactory: one backend decision for every stack
+│   ├── domains.py         domain registry (purge/sweep lists are DERIVED from it)
+│   ├── context.py         AppContext — the seam replacing the get_default_* globals
+│   ├── *_unified.py       one store per domain, both backends (ADR-002)
+│   ├── pg/                pool, migrations (v1–v20), relational threads hub
 │   ├── routing/           RoutedStore, StorageHealth, Reconciler
-│   ├── events/            events domain store (proposals, decisions, rules, …)
+│   ├── events/            events domain store + 13 role Protocols (roles.py)
 │   └── sessions/          session store (sqlite + pg impls)
 ├── visuals/             chart/diagram/table/code/math/timeline render + vis_* tools
 ├── audio_io/            VAD, STT/TTS glue, earcons, announcer (voice)
@@ -323,29 +348,37 @@ handles slash commands (`/new`, `/expand`, `/sessions`, …), prints permission
 prompts on stdin, and bridges background-task status banners between turns. It uses
 `astream_agent` (the printing variant) via the shared `ConversationService.run_turn`.
 
-### 5.4 One deepagent, layered middleware
+### 5.4 One deepagent, one policy stack
 
-`build_cli_deepagent` (in `core/engine.py`) composes the graph. The middleware order
-is load-bearing:
+`build_cli_deepagent` (in `core/engine.py`) composes the graph. Order is
+load-bearing — but **per hook chain**, not per list position (see section 13.4):
+policies are listed below in the order they were assembled, and
+`collapse_policy_adapters()` merges them into one adapter without changing any
+within-chain order.
 
 ```
 create_deep_agent(
   model, tools=[tool_search, …all custom tools],
   backend = LocalShellBackend (virtual_mode, workspace-scoped)  ── or DockerSandboxBackend
   system_prompt = local/docker_system_prompt(...) + tool catalog,
-  middleware = [
-    ToolFilterMiddleware,              # hide tr_*/ws_*/sk_* from the model (lazy discovery)
-    FilesystemPromptOverrideMiddleware,# strip deepagents' built-in FS prose
-    VoiceStyleMiddleware,              # shorten replies on voice turns
-    ToolResultOffloadMiddleware,       # (context) big tool results → artifacts
-    YuyutsavaCompactionMiddleware,     # (context) summarize when over token budget
-    TranscriptRecorderMiddleware,      # (context) persist verbatim transcript
-    PromptInspectorMiddleware,         # (context) debug: dump final prompt
-    PermissionMiddleware,              # pause on dangerous shell patterns
-    RetrievalInjectionMiddleware,      # inject memory + skills + past-turn recall
-    BackgroundTaskCapMiddleware,       # (if async) cap in-flight bg tasks
-    AsyncTaskInterruptPatchMiddleware, # (if async) route bg interrupts
-    CheckAsyncTaskGuardMiddleware,     # (if async) guard check_async_task
+  middleware = [                       # collapsed by collapse_policy_adapters()
+    YuyutsavaCompactionMiddleware,     # summarize when over token budget
+                                       #   (the only framework middleware left)
+    LangChainPolicyAdapter([           # ONE adapter, every policy — see section 13
+      ToolFilterPolicy,                #   hide tr_*/ws_*/sk_* (lazy discovery)
+      FilesystemPromptPolicy,          #   strip deepagents' built-in FS prose
+      VoiceStylePolicy,                #   shorten replies on voice turns
+      SubagentGatePolicy,              #   announce + refuse switched-off subagents
+      ToolResultOffloadPolicy,         #   big tool results → artifacts
+      TranscriptRecorderPolicy,        #   persist verbatim transcript
+      PromptInspectorPolicy,           #   debug: dump final prompt
+      BudgetPolicy, UsagePolicy,       #   token ceiling · one llm_usage row per call
+      PermissionPolicy,                #   pause on dangerous shell patterns
+      RetrievalInjectionPolicy,        #   inject memory + skills + past-turn recall
+      BackgroundTaskCapPolicy,         #   (if async) cap in-flight bg tasks
+      AsyncTaskInterruptPatchPolicy,   #   (if async) heal orphaned bg tool calls
+      CheckAsyncTaskGuardPolicy,       #   (if async) cap check_async_task polling
+    ]),
   ],
   subagents = [general-purpose (+ -bg async peers)],
 )
@@ -359,35 +392,85 @@ The daemon is split cleanly: **`bootstrap.py` wires**, **`main.py` runs**.
 
 ### 6.1 `bootstrap.build_daemon()` — the wiring blueprint
 
-One async function opens every store, starts every long-lived subsystem, and returns
-a frozen `DaemonSubsystems` record. Boot order (each step depends on the previous):
+`build_daemon` opens every store, starts every long-lived subsystem, and returns a
+frozen `DaemonSubsystems` record. It used to be **one 927-line function with 58
+branches**; ADR-003 split it into **seven named builders**, each independently
+testable and under 200 lines. `build_daemon` is now 508 lines / 17 branches and
+reads as a table of contents:
+
+| Builder | Owns | Independently testable? |
+|---|---|---|
+| `build_storage` | backend choice, migrations, every store, embedder | ✅ boots on both backends in <1s |
+| `build_retrieval` | memory/skills indexes, injectors, note index | ✅ incl. the PG-only branch |
+| `build_policy` | permissions.json, consent registry, cap enforcer | ✅ |
+| `build_retention` | TTL sweeper, purge wiring | ✅ |
+| `build_events` | EventBus, SourceRegistry, SIGHUP reload hook | ✅ |
+| `build_subagents` | subagent roster + TaskRunner + peers | ✅ 14 cases |
+| `build_async_subagents` | AsyncSubagentHost, mirror, watcher, LaunchIndex | ✅ 8 cases |
+
+Boot order (each step depends on the previous):
 
 ```
-storage backend (sqlite | postgres + migrations)
-  → embedder (pgvector mode only)
-  → context stores (artifacts / summaries / transcript / voice)
-  → task registry · usage store · model router
-  → memory store (pgvector | sqlite keyword)
-  → events Store (RoutedStore spillover in pg mode)
-  → visuals + feedback stores (RoutedStore)
-  → prefs store · permissions policy · consent registry
-  → MCP manager  → checkpointer  → unified TTL sweeper
-  → EventBus  → SourceRegistry.start_all()
-  → ChannelRouter (+ WebChannel if UI, + TerminalChannel always, + VoiceChannel if --voice)
-  → ResourceMonitor + AdmissionController
-  → models (triage / orchestrator / subagent / compaction) via role env
-  → SkillRegistry + SkillStore (+ SkillIndexer.sync)
-  → storage spillover recovery (Reconciler + degrade notifier)
-  → SearchConfig (ws_* tools)
-  → subagents (file-organizer, face-watcher, general-purpose) + TaskRunner
-  → task_queue + LaunchIndex
-  → [if YUYUTSAVA_ASYNC_SUBAGENTS] AsyncSubagentHost + AsyncTaskMirror + AsyncTaskHealthWatcher
-  → TriageAgent + TriageLoop
-  → TaskSubmissionService (+ ComplexityScorer if routing)
-  → OrchestratorDeps + OrchestratorLoop
-  → DecisionService + channel plugins (Telegram)
-  → FastAPI app + uvicorn.Server (bearer auth iff non-loopback)
+build_storage    → backend (sqlite | postgres + migrations v1–v20) → embedder
+                   → StoreFactory.context_stores() → task registry · usage · memory
+                   → events Store (RoutedStore spillover in pg mode) → visuals · feedback
+build_policy     → prefs store · permissions policy · consent registry
+build_retention  → MCP manager → checkpointer → unified TTL sweeper
+build_events     → EventBus → SourceRegistry.start_all()
+                 → ChannelRouter (+Web if UI, +Terminal always, +Voice if --voice)
+                 → ResourceMonitor + AdmissionController
+                 → models (triage/orchestrator/subagent/compaction) via role env
+build_retrieval  → SkillRegistry + SkillStore (+ SkillIndexer.sync)
+                 → spillover recovery (Reconciler + degrade notifier) → SearchConfig
+build_subagents  → file-organizer · face-watcher · general-purpose + TaskRunner
+build_async_…    → task_queue + LaunchIndex
+                 → [if YUYUTSAVA_ASYNC_SUBAGENTS] Host + Mirror + HealthWatcher
+                 → TriageAgent + TriageLoop
+                 → TaskSubmissionService (+ ComplexityScorer if routing)
+                 → OrchestratorDeps + OrchestratorLoop
+                 → DecisionService + channel plugins (Telegram)
+                 → FastAPI app + uvicorn.Server (bearer auth iff non-loopback)
 ```
+
+> **Why the split was worth it.** An extraction stranded an import in a
+> Postgres-only branch, and *every* suite stayed green — the failure only appeared
+> on a live PG boot. `test/daemon/test_bootstrap_no_unbound_names.py` now catches
+> both shapes of that bug (a name nothing binds, and a local import shadowing a
+> module-level one) statically, in milliseconds, across `bootstrap.py` and
+> `engine.py`.
+
+### 6.1b Dependencies are declared, not looked up
+
+Two habits used to hide the daemon's real dependency graph, and both are being
+retired (ADR-003):
+
+**Module-level singletons.** `get_default_store()` / `set_default_*` pairs let
+any module reach any store, so a function's signature said nothing about what it
+touched — and one process could only ever have one of each. `storage/context.py`
+holds an `AppContext` that resolves the stores explicitly; `purge_session(ctx,
+session_id)` is barely less convenient than `purge_session(session_id)` and is
+honest about the four stores it deletes from. The seam is **additive**: it reads
+from the context when one is installed and falls back to the global otherwise,
+so unmigrated call sites keep working. **91 → 34** call sites moved so far.
+
+**Untyped dependency fields.** `OrchestratorDeps` carried ~11 fields typed
+`object | None` with the real type in a comment — "untyped to avoid cycle". That
+is DIP simulated in prose: a comment saying `# memory.store.MemoryStore` is
+unverifiable and drifts. `ports/` broke the cycle structurally (it imports
+nothing from `yuyutsava`), so those fields are now real types: **11 → 0**.
+
+The web layer does the same through FastAPI. The TODO router's 21 handlers each
+called `get_default_exchange()` in their body — invisible in the signature, and
+untestable against a different board. They now declare
+`ex: TodoExchange = Depends(board)`, which is what makes
+`app.dependency_overrides` work at all.
+
+> A caution learned the hard way: that rewrite replaced the lookup module-wide
+> but added the parameter only to `@router`-decorated handlers, so three
+> module-level helpers referenced an `ex` they never received and every
+> attachment route 500'd with `NameError`. The check written at the time
+> inspected only decorated handlers — the shape that had been edited. It now
+> walks **every** function and calls every GET route.
 
 ### 6.2 `main.py` — lifecycle
 
@@ -462,6 +545,41 @@ flowchart TD
     Orchestrator --> TR
 ```
 
+### 7.0 The capability matrix (`core/agent_profiles.py`)
+
+Three master agents — CLI, orchestrator, tinker — are built by three functions
+that perform the same assembly in the same order and differ in a handful of
+choices. **Those choices used to be recorded nowhere**: they existed only as the
+difference between three ~250-line functions, so "does the tinker master enforce
+the subagent gate?" could only be answered by diffing them.
+
+`AgentProfile` states each one as data — which policies, which injectors, which
+tool families, the `todo_*` scope, the `SkillInjector` agent scope, and the
+Docker/async/env flags. `_policy_middleware` and `_shared_master_tools` then
+*read* the profile, so the matrix is prescriptive, not a comment.
+
+Where the masters differ, the difference is either **declared as intentional or
+counted as unreviewed**:
+
+```python
+KNOWN_DIVERGENCES = {
+    "PermissionPolicy": DivergenceNote(
+        "The orchestrator runs unattended, so a HITL interrupt would have no one "
+        "to answer it and would park the task forever. Consent is enforced one "
+        "level down, at the tr_* tool layer inside subagents."
+    ),
+    ...
+}
+```
+
+`test/core/test_agent_profiles.py` ratchets it: **8 by-design divergences, and
+unreviewed must stay 0.** Writing the matrix down surfaced twelve differences,
+four of which nobody had chosen — those were fixed as separate, individually
+reviewable changes rather than silently inside a refactor.
+
+The claim this bought is measurable: `test/core/test_fourth_master_cost.py`
+builds a **fourth master from ~21 lines of data**, no new builder.
+
 ### 7.1 `BaseSubAgent`
 
 Every subagent subclasses `agents/base_sub_agent.py`, which auto-wires a consistent
@@ -505,7 +623,7 @@ host is enabled.
   `mem_*`, `vis_*` — all behind the `tool_search` gateway;
 - delegates to subagents via deepagents' `task(subagent_type,…)`, and to background
   work via `start_async_task`;
-- runs with a `BudgetMiddleware` token ceiling and a `UsageRecorder` per model call.
+- runs with a `BudgetPolicy` token ceiling and a `UsagePolicy` row per model call.
 
 It does **not** get a `spawn_subagent` tool — dynamic work is delegated to the
 `general-purpose` subagent instead.
@@ -798,13 +916,43 @@ scopes), and all `asyncio` primitives (Queue/Lock/Event). The rules:
 
 ## 12. Streaming & Interrupt Runtime
 
-`core/streaming.py` *drives* the compiled graphs (the engine only builds them). Two
-entrypoints share one interrupt-handling core:
+`core/streaming.py` *drives* the compiled graphs (the engine only builds them).
+
+**One driver, two sinks.** `_drive_graph` owns the loop, interrupt collection and
+the resume handshake; the two entrypoints are sinks over it and re-implement none
+of that:
 
 | Function | Consumer | Output | Interrupts |
 |---|---|---|---|
 | `astream_agent` | CLI | prints tokens/tools to stderr | prompts on stdin (`prompt_permission`) |
 | `astream_agent_iter` | daemon + conversation | yields typed `StreamEvent`s | `ask_handler` callback (channel-routed) |
+
+```
+             ┌──────────────────────────────────────────────┐
+             │  _drive_graph(agent, input, cfg, ask=…)       │
+             │  · astream(stream_mode=[messages, updates])   │
+             │  · collect __interrupt__, ask, resume         │
+             │  · yield ("chunk"|"message"|"pass_end"|…)     │
+             └───────────────┬──────────────────┬───────────┘
+                             │                  │
+              astream_agent  │                  │  astream_agent_iter
+              (stderr + logs)│                  │  (StreamEvent)
+```
+
+The two were ~226 lines each and ~90% identical — and they had **drifted**. The
+multi-interrupt resume protocol was written twice, and only the daemon copy
+handled interrupts arriving with no ids; the CLI copy built `Command(resume={})`
+and **discarded every answer the user had just typed**. One `_resume_command`
+now serves both. `_run_config` likewise: only the daemon path used to seed
+`modality`, so a middleware asking "is this a voice turn?" got no key at all on
+the CLI.
+
+> Honest accounting: the file grew 818 → 844 raw lines while **code** lines fell
+> 599 → 564. The added lines are docstrings explaining the split.
+
+The driver is annotated against `ports.Agent` (`astream` + `aget_state`), not
+`CompiledStateGraph` — so the whole parity suite runs it against a scripted
+double that is not a graph at all.
 
 ```mermaid
 sequenceDiagram
@@ -845,12 +993,142 @@ Details that matter:
   (`input=None`) when resumable state exists, else falls back to a fresh run.
 - **Interrupt types** (`models/interrupts.py`): `user_question` (tr_ask_user /
   ask_user), `task_runner_permission` (filesystem gate), and the bare
-  `PermissionRequestInterrupt` (dangerous-command middleware). Every interrupt is
+  `PermissionRequestInterrupt` (raised by `PermissionPolicy`). Every interrupt is
   optionally persisted to the audit DB (`InterruptsStore`).
 
 ---
 
-## 13. Channels & Communication Surfaces
+## 13. The Policy Layer (cross-cutting concerns)
+
+Permissions, budget ceilings, cost accounting, tool filtering, transcript
+persistence, skill retrieval — these are **YUYUTSAVA's product**. All fourteen of
+them used to be `langchain.agents.middleware.AgentMiddleware` subclasses, which
+meant they were expressed entirely in a vocabulary this project does not own, and
+that testing one required constructing framework objects. ADR-004 drew the
+boundary **around what is ours** (the decision) and deliberately *not* around what
+is theirs (message and tool types).
+
+### 13.1 The shape
+
+```
+   yuyutsava/policy/
+     types.py   ToolCall · ModelCall · Turn        ← what a policy SEES
+                Denied · Raw · Directive           ← what it may ANSWER
+     base.py    Policy: before_tool · after_tool · revise_model_call
+                        before_model · after_model · after_agent
+     adapter.py LangChainPolicyAdapter  ← the ONE AgentMiddleware subclass
+     ask.py     LangGraphAskUser (interrupt()) · ScriptedAskUser (tests)
+```
+
+A `Policy` is a plain object. It is constructed, called and asserted on **without
+a graph, a model, or any framework import**. That was the justification for the
+whole exercise — the policy layer had effectively no tests because testing it was
+expensive.
+
+### 13.2 The fourteen
+
+| Hook | Policies |
+|---|---|
+| `revise_model_call` | ToolFilter · FilesystemPrompt · VoiceStyle · SubagentGate · RetrievalInjection |
+| `before_tool` | SubagentGate · Permission · BackgroundTaskCap · CheckAsyncTaskGuard · AsyncTaskInterruptPatch |
+| `after_tool` | ToolResultOffload · CheckAsyncTaskGuard |
+| `before/after_model`, `after_agent` | TranscriptRecorder · PromptInspector · Budget · Usage |
+
+`SubagentGatePolicy` is the only hybrid: it *tells the model* which subagents are
+off (so it routes around them) **and** refuses the delegation if it tries anyway.
+Prompt-only leaves a disabled subagent one hallucination away from running;
+gate-only turns every attempt into a refused call mid-turn.
+
+### 13.3 What the adapter owns
+
+Middleware nests — first entry outermost — so before-hooks run in list order and
+after-hooks in reverse. Collapsing N policies into one adapter means the framework
+is no longer doing that nesting, so `LangChainPolicyAdapter` reproduces it
+explicitly. It also:
+
+- **resolves `request.tool` once** into `ToolCall.resolved_tool: str | None`.
+  Three middlewares read `request.tool.name`; two guarded the `None` case and one
+  did not, so a **mistyped tool name crashed the whole turn**. Comparing against
+  an `Optional[str]` makes that unwritable.
+- **resolves token usage once** into `Turn.usage`. Budget and the usage recorder
+  each dug it out of `usage_metadata` separately — two copies feeding one spend cap.
+- **owns the prompt-append plumbing** that was written out four times.
+- **raises on the sync path** rather than omitting the hook. An adapter with no
+  `wrap_tool_call` is simply not consulted when a graph is driven synchronously,
+  and every policy — including the permission gate — would stop running silently.
+
+`Raw` is the one escape hatch, used by exactly one policy (the async check guard
+replays a LangGraph `Command`), and ratcheted so a second unrelated use fails.
+
+### 13.4 Ordering is per hook-chain, not per list position
+
+Order *within* a chain is decided by list position; order *between* chains is
+decided by the agent loop. "Offload before compaction" pairs a tool hook with a
+before-model hook — it is true, but it holds however the list is arranged. Three
+of the four ordering rules this project enforced were of that kind, and passed
+while enforcing nothing. The agent fingerprint now records a per-chain `chains`
+map, and a guard asserts every rule fires in at least one configuration.
+
+That correction is what made it safe to collapse the per-policy adapters into
+one: `cli:wired` went **12 middleware entries → 2** with **zero** change to any
+per-chain order across all 9 configurations.
+
+**Measured cost of the layer** (5 real policies, median of 2000 calls):
+`+0.75 µs` per tool call, `+12.75 µs` per model call — against a turn of hundreds
+of milliseconds of network.
+
+---
+
+### 13.5 Containing the framework: ceilings and tripwires
+
+The policy layer is the *structural* containment. This is the operational half,
+and it exists because three couplings reach into **deepagents internals** — not
+its public API — where a routine dependency upgrade changes agent behaviour with
+no error, no test failure and no log line:
+
+| Coupling | What we rely on | If it moves |
+|---|---|---|
+| Filesystem prompt | the wording of deepagents' `## Filesystem Tools` block | the block silently reappears in every prompt, contradicting our `tr_*` routing |
+| `general-purpose` override | our subagent spec wins **by name match** | deepagents' default agent runs instead of ours |
+| Sandbox backend | `DockerSandboxBackend` satisfying the backend protocol | Docker execution mode stops building |
+
+Two things contain it:
+
+**Version ceilings.** Every framework dependency in `pyproject.toml` carries an
+upper bound (`deepagents>=0.6.3,<0.7`, `langchain>=1.3,<2`, …). Without them a
+transitive resolve could pick up a breaking release at install time. The bound
+on deepagents is deliberately tight because the couplings above are to its
+internals.
+
+**Executable tripwires.** `scripts/verify_framework_contract.py` asserts eight
+contracts and — this is the point — each one was verified to go **red** when its
+contract is deliberately broken. A tripwire that has never been seen to fail is
+a guess.
+
+```
+$ .venv/bin/python scripts/verify_framework_contract.py
+  ok  filesystem block stripped (silent-failure seam)
+  ok  lazy-discovery invariant holds
+  ok  general-purpose override applies (silent-failure seam)
+  ok  override still keyed on spec['name'] (silent-failure seam)
+  ok  docker backend satisfies protocol
+  ok  backend= accepts a protocol instance
+  ok  no build path reintroduced a backend factory
+  ok  declared dependency ranges are sane
+```
+
+It is also the **only check that actually builds a graph**, which is why it —
+and nothing else — caught `create_deep_agent` rejecting two adapters with the
+same `name` during the policy migration.
+
+Silence is treated as a failure mode in its own right: `FilesystemPromptPolicy`
+warns (once) when it strips *nothing*, because stripping nothing is never the
+intended outcome and the old behaviour was to return the request unchanged and
+say nothing.
+
+---
+
+## 14. Channels & Communication Surfaces
 
 The daemon talks to the user **only** through `UserChannel` implementations. This is
 what lets the same orchestrator serve a terminal, an Electron window, a phone, a voice
@@ -895,7 +1173,11 @@ at boot via `ChannelPluginRegistry`; their inbound messages land on the same
 
 ---
 
-## 14. Web API Layer (FastAPI + SSE + WebSocket)
+## 15. Web API Layer (FastAPI + SSE + WebSocket)
+
+> Wire-level detail — every transport in the system (stdin, SSE, WebSocket, REST,
+> stdio pipes), the full frame catalogs and the CLI's in-process path — lives in
+> [`docs/Transport.md`](docs/Transport.md).
 
 `daemon/web/` is a modular FastAPI app. `app.create_app()` wires routers, attaches the
 daemon singletons to `app.state` for `Depends(...)`, and mounts **every API router
@@ -957,27 +1239,27 @@ sentence-chunked TTS → PCM back to the client.
 
 ---
 
-## 15. The Context Controller
+## 16. The Context Controller
 
 Long conversations blow up token cost. The `context/` package keeps each turn's prompt
-bounded through three cooperating middlewares (order is load-bearing — offload runs on
+bounded through three cooperating stages (order is load-bearing — offload runs on
 the *tool path* before the compactor ever counts tokens):
 
 ```mermaid
 flowchart TD
-    Tool["ToolMessage (big result)"] --> Off["ToolResultOffloadMiddleware"]
+    Tool["ToolMessage (big result)"] --> Off["ToolResultOffloadPolicy"]
     Off -->|">offload_threshold_chars"| Art[("ArtifactStore<br/>artifacts table")]
     Off -->|digest w/ artifact_id| State["graph state"]
     State --> Comp["YuyutsavaCompactionMiddleware"]
     Comp -->|">compact_trigger_tokens"| Sum["summarize old turns<br/>(cheap compaction model)"]
     Sum --> SumStore[("ThreadSummaryStore")]
     Sum --> MemSink[("MemoryStore<br/>(summary embedded)")]
-    Comp --> Rec["TranscriptRecorderMiddleware"]
+    Comp --> Rec["TranscriptRecorderPolicy"]
     Rec --> TStore[("TranscriptStore<br/>transcript_messages")]
     Rec -.-> TIdx[("TranscriptIndex<br/>transcript_chunks (pgvector)")]
 ```
 
-- **Offload** (`offload_middleware.py` + `artifacts.py`): a tool result larger than
+- **Offload** (`offload_policy.py` + `artifacts.py`): a tool result larger than
   `offload_threshold_chars` is written to the `ArtifactStore` and replaced in state by
   a short digest referencing an `artifact_id`. The agent reads slices back via the
   always-visible `ctx_fetch_artifact` / `ctx_grep_artifact` tools. On Postgres the
@@ -998,7 +1280,7 @@ Artifacts and transcript are *scratch/durable* respectively: artifacts are swept
 
 ---
 
-## 16. Memory, Skills & Retrieval (pgvector)
+## 17. Memory, Skills & Retrieval (pgvector)
 
 ### 16.1 Shared retrieval engine
 
@@ -1039,19 +1321,20 @@ declare via `requires_tools` frontmatter — a data-driven, minimal toolset.
 ### 16.4 Per-turn injection
 
 Because the CLI deepagent is a persistent graph (it can't inject at build time the way
-the per-task orchestrator does), `RetrievalInjectionMiddleware` runs the injectors
+the per-task orchestrator does), `RetrievalInjectionPolicy` runs the injectors
 (`MemoryInjector`, `SkillInjector`, `ConversationInjector`) **each turn** against the
 user's latest message.
 
 ---
 
-## 17. The Model Layer (Providers, Roles, Routing, Cost)
+## 18. The Model Layer (Providers, Roles, Routing, Cost)
 
 ### 17.1 Providers
 
-`core/config.py` + `core/llm.py` support **twelve** providers behind a structural
-`LlmSettings` protocol. OpenAI-compatible ones share the `ChatOpenAI` path; native SDK
-ones are lazy-imported (install the matching extra):
+`core/config.py` (how to *reach* a provider) + `llm/` (how to *build and correct*
+it) support **twelve** providers behind a structural `LlmSettings` protocol.
+OpenAI-compatible ones share the `ChatOpenAI` path; native SDK ones are
+lazy-imported (install the matching extra):
 
 ```
 OpenAI-compatible (ChatOpenAI + base_url):
@@ -1092,17 +1375,47 @@ Because the orchestrator builds a **fresh graph per task**, per-task model selec
 free. Routing off (default) or a misconfigured tier → the booted role model, byte-for-
 byte the pre-routing behaviour (routing must never make a runnable task unrunnable).
 
-### 17.4 Cost accounting
+### 17.4 `ModelHandle` — a model plus what we know about it
 
-A `UsageRecorder` middleware rides every model call and writes one `llm_usage` row
+`BaseChatModel` carries no answer to the two questions this system keeps asking:
+*what is it called?* and *what can it do?* `llm/handle.py` adds both alongside the
+model (it is **not** a wrapper — `.model` is the real thing):
+
+```python
+ModelHandle(model=…, name="gemini-2.5-flash", provider="vertex",
+            capabilities={Capability.LOOP_AFFINE})
+```
+
+The **provider** answers, from settings, at build time. Reading the name back off
+the constructed SDK object was the old approach and it returned `""` for **every
+Azure model** — `AzureChatOpenAI` is built from `azure_deployment` and leaves
+`model_name` at `None`, so Azure usage rows recorded a blank model and nothing
+failed.
+
+Only capabilities with a real call site are declared: `REASONING_TOGGLE` (only the
+OpenAI-compatible provider honours `disable_reasoning`; the other seven accept and
+ignore it) and `LOOP_AFFINE` (both Gemini SDKs bind an async client to the first
+event loop that drives them — see `quirks/loop_affinity.py`).
+
+### 17.5 Cost accounting
+
+A `UsagePolicy` (section 13) rides every model call and writes one `llm_usage` row
 (`daemon/usage.py`). `estimate_cost_usd` uses the `PRICES` table (USD per 1M
-input/output tokens, longest-prefix wins), overridable via
-`~/.yuyutsava/model_prices.json`; `core/pricing.py` best-effort fetches live prices and
-caches them.
+input/output tokens, **longest-prefix wins**), overridable via
+`~/.yuyutsava/model_prices.json`; `core/pricing.py` best-effort fetches live prices
+and caches them.
+
+> **An unpriced model costs $0.00 — loudly.** Prefix matching means
+> `gemini-2.5-flash` in the table does *not* cover `gemini-3.5-flash`, and an
+> unmatched model books every call as free. Found on a live daemon, where the
+> configured model was unpriced and the usage view had been reading zero. The
+> value is still `0.0` — inventing a price would be worse — but
+> `_warn_unpriced_once` now names the model and the file to add it to, once per
+> model per process.
 
 ---
 
-## 18. Tool System & Progressive Discovery
+## 19. Tool System & Progressive Discovery
 
 Injecting every tool's full JSON schema into the prompt is expensive and confusing. The
 `ToolRegistry` (`core/tool_registry.py`) implements **three-tier progressive
@@ -1119,7 +1432,7 @@ flowchart TD
     Build["graph build"] --> Reg["ToolRegistry.register_many(all custom tools)"]
     Reg --> TS["tool_search tool (Tier-1 gateway)"]
     Reg --> Cat["catalog_block() → system prompt (Tier-0)"]
-    Build --> Filter["ToolFilterMiddleware"]
+    Build --> Filter["ToolFilterPolicy"]
     Filter -->|"hides tr_*/ws_*/sk_*/…<br/>from the model"| Model["LLM sees only tool_search<br/>+ the Tier-0 name catalog"]
     Model -->|"tool_search('select:tr_write_file')"| Schema["Tier-2 schema"]
     Schema --> Model
@@ -1127,17 +1440,46 @@ flowchart TD
 ```
 
 The trick: **all** custom tools are registered in the graph (so LangGraph can execute
-them), but `ToolFilterMiddleware` hides everything except `tool_search` from the model.
+them), but `ToolFilterPolicy` hides everything except `tool_search` from the model.
 The model discovers a schema on demand, then calls the tool — which was there for
 execution the whole time. `discovery/` provides the keyword + vector search behind
 `tool_search`.
 
 ---
 
-## 19. Storage Architecture
+## 20. Storage Architecture
 
-Two backends, one interface. **SQLite is the zero-config default**; **Postgres +
-pgvector** is the durable/semantic mode (`YUYUTSAVA_STORAGE_BACKEND=postgres`).
+Two backends, **one implementation per domain**. SQLite is the zero-config
+default; Postgres + pgvector is the durable/semantic mode
+(`YUYUTSAVA_STORAGE_BACKEND=postgres`).
+
+### 19.0 The dialect adapter (ADR-002)
+
+Every domain used to ship **two hand-written stores** — a SQLite one and a
+Postgres twin — 19 pairs in total. They drifted, silently: missing foreign keys,
+two different timestamp clocks, non-portable boolean arithmetic, six positional
+row-mappers that broke under a shared pool.
+
+`storage/dialect.py` names the five things that actually differ and nothing else:
+
+| `Dialect` | SQLite | Postgres |
+|---|---|---|
+| `ph()` | `?` | `%s` |
+| `ts_param()` / `epoch()` | REAL passthrough | `to_timestamp(%s)` / `extract(epoch …)::float8` |
+| `json_param()` / `json_value()` | `json.dumps` / `json.loads` | native `jsonb` |
+| `ensure_parent()` | no-op (no FK) | insert the `threads` hub row |
+| `supports_vectors` | `False` | `True` (pgvector) |
+
+**19 twin pairs → 1 implementation each.** `storage/interrupts.py` went 434 → 76
+lines; `todoboard/store.py` 1122 → 230. Each migration was gated by a parity
+suite written *first* and run against **both old twins** before the rewrite —
+which is how six real cross-backend divergences were found rather than carried
+forward.
+
+`StoreFactory` (`storage/factory.py`) makes the backend decision **once** for the
+CLI, tinker and daemon stacks (it was written out by hand in all three), and
+`storage/domains.py` is a registry from which the purge and sweep table lists are
+**derived** — so a new thread-scoped domain cannot be forgotten by purge.
 
 ### 19.1 On-disk SQLite files (`storage/paths.py`)
 
@@ -1155,10 +1497,21 @@ pgvector** is the durable/semantic mode (`YUYUTSAVA_STORAGE_BACKEND=postgres`).
 └── skills/            personal skills
 ```
 
-### 19.2 Postgres schema (migrations v1–v15)
+### 19.2 Postgres schema (migrations v1–v20)
 
 `storage/pg/migrations.py` — forward-only, numbered, applied under a `pg_advisory_lock`,
-version-anchored in `schema_meta`. Tables:
+version-anchored in `schema_meta`.
+
+**v20 converted all 19 timestamp columns from `DOUBLE PRECISION` epoch to
+`TIMESTAMPTZ`.** The two backends had been keeping two different clocks, so a
+value written on one and compared on the other could disagree. Joins, range
+filters, `interval` arithmetic and `date_trunc` bucketing all work exactly —
+rounding to `TIMESTAMPTZ`'s 1 µs resolution is deterministic and applied to both
+sides of any comparison; all 17 indexes survived `ALTER TYPE` and remain valid.
+The only tolerance that exists is comparing an in-memory Python float to a stored
+value. SQLite events schema **v5** added the matching foreign keys.
+
+Tables:
 
 ```
 artifacts · artifact_chunks · thread_summaries · transcript_messages · transcript_chunks
@@ -1208,7 +1561,7 @@ deepagents scratch dirs at 24h), and artifact rows (7 days). Enrolled-faces data
 
 ---
 
-## 20. Visuals Subsystem
+## 21. Visuals Subsystem
 
 `visuals/` turns agent output into rendered images. Eight `vis_*` tools are always
 available (like `ctx_*`/`mem_*`), to the master and every subagent:
@@ -1237,7 +1590,7 @@ charts/tables/math, Kroki (`docker-compose.kroki.yml`) for diagrams.
 
 ---
 
-## 21. Voice Subsystem
+## 22. Voice Subsystem
 
 A Siri-like voice loop reuses the same conversational deepagent. Two halves:
 **capture/wake** (mic → wake word → utterance) and **converse** (STT → agent → TTS).
@@ -1271,7 +1624,7 @@ Design points:
 
 ---
 
-## 22. Electron Frontend Architecture
+## 23. Electron Frontend Architecture
 
 ```
 electron-app/
@@ -1326,7 +1679,7 @@ API over the host's tailnet with bearer auth.
 
 ---
 
-## 23. Platform / OS-Invariance Layer
+## 24. Platform / OS-Invariance Layer
 
 `platform/` is the **only** OS-specific code in the tree. Everything else stays portable
 by going through it:
@@ -1344,7 +1697,7 @@ per-OS critical prefixes, and Windows Electron packaging works from the same cod
 
 ---
 
-## 24. Security Design
+## 25. Security Design
 
 - **Loopback by default.** The FastAPI app **refuses to bind** to a non-loopback host
   unless bearer-token auth is active (`create_app` raises otherwise) — a network-exposed
@@ -1366,7 +1719,7 @@ per-OS critical prefixes, and Windows Electron packaging works from the same cod
 
 ---
 
-## 25. Startup & Shutdown Sequences
+## 26. Startup & Shutdown Sequences
 
 ### 25.1 Startup (Electron-launched)
 
@@ -1407,7 +1760,7 @@ SIGTERM/SIGINT → stop_event.set()
 
 ---
 
-## 26. End-to-End Walkthroughs
+## 27. End-to-End Walkthroughs
 
 ### 26.1 A file lands in ~/Downloads (autonomous, daemon)
 
@@ -1464,7 +1817,7 @@ yuyutsava "summarise report.pdf"
 
 ---
 
-## 27. Key Design Decisions
+## 28. Key Design Decisions
 
 | Concern | Decision |
 |---|---|
@@ -1475,7 +1828,13 @@ yuyutsava "summarise report.pdf"
 | Surface independence | Orchestrator talks only to `UserChannel`; new surfaces (voice, Telegram, mobile) plug in without touching agents. |
 | Answer-from-anywhere | `WebHub` broadcasts `*_resolved` so a decision on any surface clears the prompt everywhere. |
 | Origin-aware HITL | `SessionOriginMap` routes a run's prompts back to the surface that started it. |
-| Tool context | Progressive discovery (`tool_search` + `ToolFilterMiddleware`) keeps schemas out of the prompt until needed. |
+| Tool context | Progressive discovery (`tool_search` + `ToolFilterPolicy`) keeps schemas out of the prompt until needed. |
+| Cross-cutting concerns | Our own `Policy` contract + **one** `LangChainPolicyAdapter` (section 13) — 14 framework subclasses became 1, and every policy is testable with no framework import. |
+| Framework boundary | Drawn around what is ours (policy, HITL delivery, agent identity), **not** around message/tool types — wrapping `BaseChatModel` was rejected as disproportionate. |
+| Acyclic typing | `ports/` holds dependency-free Protocols both sides of a cycle import; `object \| None` dependency fields went 10 → 0. |
+| Storage twins | One implementation per domain over a `Dialect` adapter (section 20) — 19 twin pairs collapsed, and six silent cross-backend divergences surfaced in the process. |
+| Model identity | `ModelHandle` carries name + capabilities from the **provider**, not probed off the SDK object (which returned `""` for every Azure model). |
+| HITL delivery | `ports.AskUser` — domain code asks; a `LangGraphAskUser` adapter is the only thing that calls `interrupt()`. |
 | Durability | SQLite zero-config default; Postgres+pgvector durable mode; `RoutedStore` spillover so a PG blip never loses REST-path writes. |
 | Background work | In-process LangGraph host (first-come-wins), watcher wakes the launching conversation on completion. |
 | Long-run resume | Task registry + persisted `thread_id` → interrupted tasks resume from their last checkpoint after a restart. |
@@ -1485,7 +1844,7 @@ yuyutsava "summarise report.pdf"
 
 ---
 
-## 28. On-Disk Layout & Config Files
+## 29. On-Disk Layout & Config Files
 
 | Path | Purpose |
 |---|---|
@@ -1519,7 +1878,22 @@ YUYUTSAVA_EXECUTION=docker + YUYUTSAVA_DOCKER_* (sandbox)
 
 ---
 
-*This document reflects the current source tree. When you change a subsystem's wiring
-(`daemon/bootstrap.py`), a middleware order (`core/engine.py`), a storage migration
-(`storage/pg/migrations.py`), or a channel/consent contract, update the corresponding
-section here so the map stays true to the territory.*
+*This document reflects the current source tree (updated after the Phase 0–4
+architecture remediation — see `docs/architecture-review/`). When you change a
+subsystem's wiring (`daemon/bootstrap.py`), a policy or its ordering
+(`yuyutsava/policy/`, `core/engine.py`), a storage migration
+(`storage/pg/migrations.py`), or a channel/consent contract, update the
+corresponding section here so the map stays true to the territory.*
+
+**Guardrails that keep this document honest** — each is executable:
+
+| Check | Protects |
+|---|---|
+| `scripts/verify_framework_contract.py` | the 8 framework couplings; the only check that actually **builds** a graph |
+| `test/core/test_agent_fingerprint.py` | middleware/tool/prompt structure across 9 configurations, per hook chain |
+| `test/core/test_agent_profiles.py` | the capability matrix; unreviewed divergences must stay 0 |
+| `test/daemon/test_bootstrap_no_unbound_names.py` | stranded and shadowed imports in `bootstrap.py` / `engine.py` |
+| `test/test_ports_is_a_leaf.py` | `ports/` imports nothing internal; Protocols match their implementations |
+| `scripts/measure_framework_surface.py` | framework surface: importers, `AgentMiddleware` subclasses, migrated policies |
+| `test/policy/*_parity.py` | every migrated policy against a golden record of the middleware it replaced |
+| `scripts/verify_diagrams.py` | every Mermaid diagram in these two docs actually renders (a broken one is invisible — the Markdown stays valid) |

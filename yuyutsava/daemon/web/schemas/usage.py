@@ -22,7 +22,7 @@ class UsageOut(BaseModel):
     since: float | None = Field(
         None, description="Epoch-seconds lower bound that was applied (if any)",
     )
-    group_by: Literal["task", "model", "day"] | None = None
+    group_by: Literal["task", "model", "day", "thread"] | None = None
     rows: list[UsageRowOut] = Field(
         description="Aggregates, most expensive group first",
     )

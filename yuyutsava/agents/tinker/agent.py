@@ -25,10 +25,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from yuyutsava.agents.general_purpose.agent import GeneralPurposeAgent
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
 from yuyutsava.cli.agent_stack import _build_retrieval_stores
-from yuyutsava.context.artifacts import PgArtifactStore, SqliteArtifactStore
 from yuyutsava.context.config import ContextSettings
-from yuyutsava.context.summary_store import PgThreadSummaryStore, SqliteThreadSummaryStore
-from yuyutsava.context.transcript_store import PgTranscriptStore, SqliteTranscriptStore
 from yuyutsava.core.config import LlmSettings, SearchConfig, _env, llm_settings_from_env
 from yuyutsava.core.engine import AgentBundle, build_tinker_agent
 from yuyutsava.llm import chat_model
@@ -81,21 +78,17 @@ async def build_tinker_stack(
         skill_registry
     )
 
-    if pg_pool is not None:
-        artifact_store = PgArtifactStore(
-            pg_pool, embedder=embedder, semantic_recall=context_settings.semantic_recall
-        )
-        summary_store = PgThreadSummaryStore(pg_pool)
-        transcript_store = PgTranscriptStore(pg_pool)
-    else:
-        artifact_store = SqliteArtifactStore(state_db_path())
-        summary_store = SqliteThreadSummaryStore(state_db_path())
-        transcript_store = SqliteTranscriptStore(state_db_path())
+    # One selection, shared with the CLI and the daemon (Phase 3 step 3.5).
+    from yuyutsava.storage.backend import StorageSettings as _SS
+    from yuyutsava.storage.factory import StoreFactory as _SF
 
-    transcript_index = None
-    if pg_pool is not None and embedder is not None:
-        from yuyutsava.context.transcript_index import PgTranscriptIndex
-        transcript_index = PgTranscriptIndex(pg_pool, embedder=embedder)
+    _ctx = _SF(_SS.from_env(), pg_pool=pg_pool, embedder=embedder).context_stores(
+        semantic_recall=context_settings.semantic_recall
+    )
+    artifact_store = _ctx.artifacts
+    summary_store = _ctx.summaries
+    transcript_store = _ctx.transcripts
+    transcript_index = _ctx.transcript_index
 
     # The general-purpose subagent works inside the SAME card workspace, so a
     # delegated research/build step lands its files on the card. Consent rides

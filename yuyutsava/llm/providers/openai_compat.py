@@ -17,12 +17,44 @@ from langchain_core.language_models import BaseChatModel
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 
-from yuyutsava.core.config import LlmSettings
+from yuyutsava.core.config import (
+    GroqSettings,
+    LlmSettings,
+    OllamaSettings,
+    OpenAISettings,
+    OpenRouterSettings,
+)
 from yuyutsava.llm.base import Provider
+from yuyutsava.llm.handle import Capability
+
+# Which host a settings type means, for the handle's ``provider`` field. Keys
+# match the ``LLM_PROVIDER`` values that select them; anything not listed is the
+# generic escape hatch and reports the provider's own key.
+_HOSTS: tuple[tuple[type, str], ...] = (
+    (GroqSettings, "groq"),
+    (OpenRouterSettings, "openrouter"),
+    (OllamaSettings, "ollama"),
+    (OpenAISettings, "openai"),
+)
 
 
 class OpenAICompatibleProvider(Provider):
     settings_type = None  # the fallback — see providers/__init__.provider_for
+    key = "openai_compatible"
+    #: The only provider with a reasoning toggle — see ``build`` below.
+    capabilities = frozenset({Capability.REASONING_TOGGLE})
+
+    def provider_name(self, settings: LlmSettings) -> str:
+        """The host, not the implementation.
+
+        Five hosts share this one provider. Recording ``openai_compatible`` on a
+        usage row would make a Groq call and an Ollama call indistinguishable,
+        which is the one thing the field is for.
+        """
+        for settings_type, host in _HOSTS:
+            if isinstance(settings, settings_type):
+                return host
+        return self.key
 
     def build(
         self, settings: LlmSettings, *, temperature: float, disable_reasoning: bool

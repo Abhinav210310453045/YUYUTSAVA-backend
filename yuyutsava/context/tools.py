@@ -1,13 +1,14 @@
 """ctx_* tools: read offloaded tool results back on demand + compact on request.
 
 The fetch/grep pair is the retrieval half of the offload contract — every
-digest the :class:`ToolResultOffloadMiddleware` injects names them in its
+digest the :class:`~yuyutsava.context.offload_policy.ToolResultOffloadPolicy`
+injects names them in its
 ``hint`` field. ``ctx_compact`` is the agent-facing trigger for the
 :class:`~yuyutsava.context.compaction.YuyutsavaCompactionMiddleware` (which
 otherwise only fires on the token threshold). Unlike the other prefixed tool families they are **always
 visible** to the model (no ``tool_search`` discovery step): a digest is
 useless if the model can't immediately act on it, so ``ctx_`` is *not* in
-``ToolFilterMiddleware._SUPPRESS_PREFIXES``.
+``ToolFilterPolicy``'s suppressed prefixes.
 
 Responses are plain text with a one-line bracket header (not JSON) — the
 payloads are large free-form bodies and JSON-escaping them only burns
