@@ -1,8 +1,28 @@
 [project]
 name = "yuyutsava"
 version = "0.1.0"
-description = "YUYUTSAVA — an AI agent that executes natural language tasks"
+description = "A local-first AI agent runtime: one-shot CLI and a long-running daemon with a desktop app"
+readme = "README.md"
 requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "Abhinav" }]
+keywords = ["ai", "agent", "llm", "langgraph", "mcp", "daemon", "assistant"]
+classifiers = [
+    # No "License ::" classifier here on purpose: PEP 639 deprecates them once
+    # `license` carries an SPDX expression, and some backends now error on both.
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+]
+
 dependencies = [
     "uvicorn[standard]>=0.32.0",
     "fastapi>=0.135.1",
@@ -35,7 +55,6 @@ dependencies = [
     "langchain>=1.3,<2",
     "langchain-core>=1.4,<2",
     "langgraph>=1.2,<2",
-    "streamlit>=1.56.0",
     "watchdog>=4.0.0",
     "python-ulid>=2.7.0",
     "pyyaml>=6.0.0",
@@ -60,10 +79,21 @@ dependencies = [
     "psutil>=5.9",
 ]
 
+[project.urls]
+Homepage = "https://github.com/Abhinav210310453045/YUYUTSAVA-backend"
+Repository = "https://github.com/Abhinav210310453045/YUYUTSAVA-backend"
+Issues = "https://github.com/Abhinav210310453045/YUYUTSAVA-backend/issues"
+
 [project.optional-dependencies]
 deepface = [
     "deepface>=0.0.93",
     "tf-keras>=2.15.0",
+]
+# Moved out of the base dependencies: streamlit pulls pydeck/altair/tornado/
+# gitpython and is not imported anywhere in the tree. Install with
+# `uv sync --extra streamlit` if a Streamlit UI is ever wired up.
+streamlit = [
+    "streamlit>=1.56.0",
 ]
 vision = [
     "opencv-python>=4.10.0",
@@ -134,7 +164,9 @@ all-providers = [
 yuyutsava = "yuyutsava.cli.cli:main"
 
 [build-system]
-requires = ["hatchling>=1.26.0"]
+# >=1.27 for PEP 639: the SPDX `license` string and the `license-files` array
+# in [project] are both silently dropped by older hatchling.
+requires = ["hatchling>=1.27.0"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]

@@ -361,3 +361,12 @@ key is configured). Subagents only see `ws_*` tools whose name matches a
 `file-organizer` has no skill that lists `ws_*`, so it gets zero search tools
 in its prompt. Add a skill with `requires_tools: [ws_tavily_search]` and that
 single tool appears on its next build.
+
+---
+
+## License
+
+Licensed under the [Apache License 2.0](LICENSE).
+
+Copyright 2026 Abhinav. See [NOTICE](NOTICE) for attribution and third-party
+dependency notes.

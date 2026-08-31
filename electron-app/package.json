@@ -3,6 +3,12 @@
   "productName": "YUYUTSAVA",
   "version": "0.1.0",
   "description": "YUYUTSAVA Terminal — native desktop app",
+  "license": "Apache-2.0",
+  "author": "Abhinav",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Abhinav210310453045/YUYUTSAVA-backend.git"
+  },
   "main": "src/main/index.js",
   "scripts": {
     "dev": "concurrently -k -n VITE,ELECTRON -c cyan,green \"vite\" \"wait-on http://localhost:5173 && node scripts/launch-electron.js\"",
