@@ -1,366 +1,264 @@
 # YUYUTSAVA
 
-An AI agent that executes natural language tasks using file read/write and shell execution tools. Powered by Groq or OpenRouter LLMs via LangGraph.
+A local-first AI agent runtime. It runs on your machine, works on your files
+with your tools, and keeps its state in your own database.
+
+It has two operating modes that share the same agent stack:
+
+- **CLI** — a one-shot or interactive agent in your terminal. `yuyutsava "…"`,
+  and it reads, writes, and runs things in a workspace you nominate.
+- **Daemon** — an always-on background process with a desktop app. It watches
+  events (files, clipboard, hotkeys, app focus), routes work to specialist
+  subagents, talks over voice, and persists everything it does.
+
+Built on [LangGraph](https://github.com/langchain-ai/langgraph) and
+[deepagents](https://github.com/langchain-ai/deepagents), with a permission
+layer between the model and your filesystem.
+
+> **Status: alpha.** It is used daily by its author, and the internals still
+> move. Interfaces are not yet stable. See
+> [docs/architecture/review/](docs/architecture/review/) for a candid
+> assessment of the codebase's current structural debt.
+
+<!-- TODO: screenshot of the Electron app goes here -->
 
 ---
 
-## Prerequisites
+## Requirements
 
-- Python 3.11+
-- [`uv`](https://docs.astral.sh/uv/) (recommended) or `pip`
-- Docker (only for Docker sandbox mode)
+- **Python 3.11+**
+- **[uv](https://docs.astral.sh/uv/)** (recommended) or pip
+- **Node 18+** — only for the desktop app
+- **Docker** — only for the sandboxed execution mode
+- **PostgreSQL 15+ with pgvector** — only for durable/semantic-memory mode
+  (SQLite is the zero-config default)
 
 ---
 
-## Setup
+## Quick start
 
-### 1. Install dependencies
-
-**With uv (recommended):**
 ```bash
+git clone https://github.com/Abhinav210310453045/YUYUTSAVA-backend.git
+cd YUYUTSAVA-backend
 uv sync
+
+cp .env.example .env      # then set ONE provider key, e.g. GROQ_API_KEY
 ```
 
-**With pip:**
+Run a task:
+
 ```bash
-pip install -e .
+uv run yuyutsava "list every Python file in this repo and count the lines"
 ```
 
-### 2. Configure `.env`
+`.env.example` is the configuration reference — 16 numbered sections, each
+stating its own defaults. **Everything in it is optional except one API key.**
 
-Create a `.env` file in the project root:
+### Choosing a model provider
 
-```env
-# Choose provider: "groq" (default) or "openrouter"
-LLM_PROVIDER=groq
+Set `LLM_PROVIDER` to any of:
 
-# --- Groq ---
-GROQ_API_KEY=your_groq_api_key
-# Optional overrides:
-# GROQ_MODEL=llama-3.3-70b-versatile
-# GROQ_BASE_URL=https://api.groq.com/openai/v1
+| Kind | Values |
+|---|---|
+| OpenAI-compatible (no extra install) | `groq` · `openrouter` · `ollama` · `openai` · `openai_compatible` |
+| Native SDK (`uv sync --extra <name>`) | `anthropic` · `google` (alias `gemini`) · `vertex` · `bedrock` (alias `aws`) · `azure` · `mistral` · `cohere` |
 
-# --- OpenRouter (if LLM_PROVIDER=openrouter) ---
-# OPENROUTER_API_KEY=your_openrouter_api_key
-# OPENROUTER_MODEL=openai/gpt-4o-mini
-# OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
-# OPENROUTER_HTTP_REFERER=https://yoursite.com   # optional
-# OPENROUTER_APP_TITLE=MyApp                      # optional
+`openai_compatible` plus a base URL covers xAI, DeepSeek, Together, Fireworks,
+Perplexity, Cerebras, DeepInfra and anything else speaking that API. `ollama`
+runs fully local with no key.
 
-# --- Docker sandbox (optional) ---
-# YUYUTSAVA_EXECUTION=local          # "local" or "docker"
-# YUYUTSAVA_DOCKER_IMAGE=deepagent-sandbox:local
-# YUYUTSAVA_DOCKER_EXPORT_DIR=/path/to/export
-# YUYUTSAVA_DOCKER_NETWORK=bridge    # "bridge" or "none"
+Any role can override the main provider, so cheap work can go to a cheap model:
+
+```bash
+LLM_PROVIDER=anthropic
+TRIAGE_LLM_PROVIDER=ollama
+TRIAGE_OLLAMA_MODEL=llama3.2:3b
 ```
+
+Roles: `triage` · `orchestrator` · `subagent` · `compaction` · `tier_light` ·
+`cli` · `embed`.
 
 ---
 
-## Running the Agent
-
-### Method 1 — CLI (installed entry point)
+## The CLI
 
 ```bash
-# Run a natural language task
-yuyutsava "list all Python files in the workspace and count lines"
-
-# With a custom workspace directory
-yuyutsava --workspace ./my_project "summarize the README"
-
-# Verbose mode (shows tool calls and results)
-yuyutsava --verbose "write hello world to output.txt"
+yuyutsava "your task"                 # one-shot
+yuyutsava chat                        # interactive REPL
+yuyutsava --continue "and now …"      # resume the latest session here
+yuyutsava --resume <id> "…"           # resume a specific session
+yuyutsava --list-sessions             # what's persisted
 ```
 
-### Method 2 — uv run (no install needed)
+Useful flags: `--workspace/-w` (the root the agent may touch, default cwd),
+`--verbose/-v`, `--execution docker`, `--print-tools`, `--list-scenarios`.
+Full list via `yuyutsava --help`.
+
+### Sandboxed execution
+
+Tools can run inside a container instead of on the host:
 
 ```bash
-uv run yuyutsava "your task here"
-```
+docker build -t yuyutsava-sandbox:local -f yuyutsava/docker_sandbox/Dockerfile .
 
-### Method 3 — Python module
-
-```bash
-python -m yuyutsava.cli.cli "your task here"
-```
-
----
-
-## Built-in Scenarios
-
-Use `--scenario` to run predefined demo tasks:
-
-```bash
-# List available scenarios
-yuyutsava --list-scenarios
-
-# Run a scenario
-yuyutsava --scenario explore_bash
-yuyutsava --scenario read_then_summarize
-yuyutsava --scenario write_artifact
-yuyutsava --scenario full_loop
-```
-
-| Scenario ID          | Description                              |
-|----------------------|------------------------------------------|
-| `explore_bash`       | List workspace with execute tool         |
-| `read_then_summarize`| Read workspace README and summarize it   |
-| `write_artifact`     | Write a file describing the agent's tools|
-| `full_loop`          | execute + read_file + write_file loop    |
-
----
-
-## Docker Sandbox Mode
-
-Run tools inside an isolated Docker container instead of on the host.
-
-### Step 1 — Build the sandbox image
-
-```bash
-docker build -t deepagent-sandbox:local -f yuyutsava/docker_sandbox/Dockerfile .
-```
-
-### Step 2 — Run with Docker execution
-
-```bash
-yuyutsava --execution docker --docker-image deepagent-sandbox:local "your task"
-
-# With an export directory for deliverables
 yuyutsava --execution docker \
-          --docker-image deepagent-sandbox:local \
+          --docker-image yuyutsava-sandbox:local \
+          --docker-network none \
           --docker-export-dir ./output \
           "generate a report and save it to /output/report.txt"
-
-# Isolated network (no outbound internet in container)
-yuyutsava --execution docker --docker-network none "your task"
-
-# Pull specific paths out of the container after the run
-yuyutsava --execution docker \
-          --docker-export-dir ./output \
-          --docker-pull-paths /workspace/result.txt,/workspace/data.csv \
-          "your task"
 ```
+
+`--docker-memory`, `--docker-cpus` and `--docker-pids-limit` bound the
+container; `--docker-network none` removes outbound network.
 
 ---
 
-## All CLI Flags
-
-```
-yuyutsava [task] [options]
-
-Positional:
-  task                    Natural language task to run
-
-Options:
-  --scenario, -s ID       Run a built-in scenario
-  --list-scenarios        Print available scenarios and exit
-  --print-tools           Print built-in tool reference (JSON) and exit
-  --workspace, -w PATH    Workspace root the agent may read/write/run in (default: cwd)
-  --verbose, -v           Print tool calls, results, and assistant text
-  --recursion-limit N     LangGraph recursion limit (default: 200)
-  --bash-timeout N        Seconds before shell command is killed (default: 120)
-  --generate_agent_graph  Export agent state graph as PNG (requires network)
-  --graph-dir DIR         Output directory for the graph PNG
-
-Docker options:
-  --execution {local,docker}        Where tools run (default: local)
-  --docker-image IMAGE              Docker image to use
-  --docker-export-dir DIR           Host directory mounted at /output in container
-  --docker-network {bridge,none}    Container network mode (default: bridge)
-  --docker-pull-paths PATHS         Comma-separated container paths to copy out after run
-```
-
----
-
-## Utility Commands
+## The daemon and desktop app
 
 ```bash
-# Print all available built-in tools as JSON
-yuyutsava --print-tools
-
-# Export the agent's LangGraph state machine as a PNG
-yuyutsava --generate_agent_graph
-yuyutsava --generate_agent_graph --graph-dir ./diagrams
+uv run yuyutsava daemon               # add --verbose to watch it work
+uv run yuyutsava daemon --status      # PID, URLs, uptime
+uv run yuyutsava daemon --stop
 ```
 
----
+It serves on `http://127.0.0.1:7654`. Loopback binds skip auth; binding
+elsewhere requires `YUYUTSAVA_API_TOKEN`.
 
-## MCP servers (`~/.yuyutsava/mcp_config.json`)
+> Do **not** pass `--no-ui` if you want the desktop app — that flag is headless
+> mode and shuts off the web API the app connects to.
 
-The daemon picks up MCP (Model Context Protocol) servers from
-`~/.yuyutsava/mcp_config.json` at boot. The schema mirrors Claude Code's, so
-existing configs can be copy-pasted:
+The desktop app is an Electron client in [`electron-app/`](electron-app/):
 
-```json
-{
-  "mcpServers": {
-    "filesystem": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "~/Documents"]
-    },
-    "spotify-local": { "url": "http://localhost:8765/mcp" }
-  },
-  "scopes": {
-    "orchestrator":   ["spotify-local"],
-    "file-organizer": ["filesystem"]
-  },
-  "default_scope": []
-}
+```bash
+cd electron-app
+npm install
+npm run dev       # Vite + Electron together
+npm run dist      # package a distributable
 ```
 
-- `mcpServers`: name → either `{command, args, env}` (stdio) or `{url}` (SSE).
-  `env` values support `$VAR` / `${VAR}` expansion for secrets.
-- `scopes`: agent name → list of MCP server names whose tools that agent
-  receives. Agents not listed get `default_scope`.
-- Tools are exposed as `<server>__<tool>` so two servers can each provide a
-  `read` tool without collision.
-- Set `max_tools: N` on a server to cap how many tools it can expose (default
-  32) — useful for misbehaving servers that flood the agent prompt.
+Other subcommands — these are dispatched before argument parsing, so they do
+**not** appear in `yuyutsava --help`:
 
-**Hot reload:** send `SIGHUP` to the daemon (`kill -HUP <pid>`) to re-read the
-config. Added / removed / changed servers are diffed; in-flight tasks finish
-with the old tool list, new tasks see the new one.
-
-Failures are non-fatal: a server that fails to start is logged and skipped;
-the rest of the daemon continues normally.
-
-### Bundled MCP server: `deepface`
-
-YUYUTSAVA ships an in-tree DeepFace server for face detection,
-identification, and enrollment. Enable it by adding to `mcp_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "deepface": {
-      "command": "uv",
-      "args": ["run", "python", "-m", "yuyutsava.mcp_servers.deepface.server"]
-    }
-  },
-  "scopes": {
-    "orchestrator": ["deepface"]
-  }
-}
-```
-
-Install the optional dependency once: `uv sync --extra deepface` (pulls in
-`deepface` + `tf-keras`, ~hundreds of MB on first run as TensorFlow caches
-its weights).
-
-Exposed tools (namespaced as `deepface__*`):
-
-| Tool | Purpose |
+| Command | Purpose |
 |---|---|
-| `detect_faces(image_path)` | Bounding boxes for every face in the image. |
-| `enroll(identity, image_paths)` | Embed reference image(s) and store under `identity`. |
-| `identify(image_path, threshold?)` | Closest enrolled identity (cosine ≥ threshold, default 0.4) or `null`. |
-| `list_identities()` | Enrolled names + sample counts. |
-| `delete_identity(identity)` | Remove every embedding for an identity. |
-
-Embeddings live at `$YUYUTSAVA_HOME/deepface/db.sqlite` (default
-`~/.yuyutsava/deepface/db.sqlite`). The default model is `Facenet512`;
-embeddings stored under one model are only matched against queries from the
-same model.
-
-If the `deepface` package is missing, the server still boots and serves
-`list_identities` / `delete_identity`; tool calls that need detection return
-a clean error pointing at `uv sync --extra deepface`.
+| `yuyutsava chat` | Interactive REPL |
+| `yuyutsava daemon` | Run the background daemon |
+| `yuyutsava attach` | Attach a terminal to a running daemon's session |
+| `yuyutsava prefs {list\|get\|set\|delete}` | Read/write user preference rows |
 
 ---
 
-## Permission policy (`~/.yuyutsava/permissions.json`)
+## What it does
 
-By default every out-of-workspace `tr_*` call shows a Tier-2 permission prompt.
-The policy file lets you pre-categorise tools so trusted operations skip the
-prompt and so quota-bound tools (web search) get a daily cap.
+**Agent core** — a task-runner gateway that mediates every filesystem and shell
+call through a zone/permission model, with a tiered prompt/auto-approve policy
+you configure rather than patch.
 
-```json
-{
-  "tool_categories": {
-    "tr_read_*":  { "policy": "auto_approve" },
-    "tr_write_*": { "policy": "propose" },
-    "ws_*":       { "policy": "auto_approve", "daily_cap": 50 }
-  }
-}
+**Background work** — long jobs run as detached subagents; completion wakes the
+orchestrator on the parent thread rather than blocking a turn.
+
+**Event-driven triage** — filesystem, clipboard, hotkey and app-focus sources
+feed a bus; a cheap triage model decides what deserves the expensive one.
+
+**Voice** — speech in, speech out, over the same WebSocket the text chat uses.
+Wake word, VAD, barge-in. Providers are configurable (faster-whisper/Groq for
+STT, Piper/ElevenLabs for TTS), with a zero-config macOS `say` fallback.
+
+**TODO board** — a persistent planning surface with a dedicated agent that
+works cards, attaches artifacts, and delegates.
+
+**Memory and retrieval** — pgvector-backed semantic memory and skill recall,
+with automatic context compaction and tool-result offloading.
+
+**MCP** — connects to Model Context Protocol servers (stdio or SSE), scoped per
+agent so each subagent sees only the tools it should, hot-reloadable on
+`SIGHUP`. Ships an in-tree DeepFace server as a worked example.
+
+**Visuals** — charts, styled tables, syntax-highlighted code, math and diagrams
+rendered to images the agent can hand back.
+
+**Storage** — SQLite by default, PostgreSQL when you want durability and
+semantic search, behind one dialect layer.
+
+---
+
+## Configuration
+
+Three optional JSON files in `~/.yuyutsava/` (override with `YUYUTSAVA_HOME`):
+
+| File | Controls |
+|---|---|
+| `mcp_config.json` | Which MCP servers start; which agents see their tools |
+| `permissions.json` | Which tool calls skip the prompt; daily caps |
+| `events_config.json` | Which event sources run, and their tuning |
+
+Full schemas and examples: **[docs/reference/configuration.md](docs/reference/configuration.md)**.
+
+---
+
+## Documentation
+
+Start at **[docs/](docs/README.md)**.
+
+| | |
+|---|---|
+| [Architecture overview](docs/architecture/overview.md) | The whole system, both modes, all subsystems |
+| [Daemon flows](docs/architecture/daemon.md) | Boot, events, triage, orchestration, shutdown |
+| [Transport](docs/architecture/transport.md) | Wire level — SSE/WebSocket frames, the voice PCM path |
+| [`/v1` API](docs/reference/api-v1.md) | The daemon's HTTP contract |
+| [Architecture review](docs/architecture/review/) | SOLID/DRY/KISS findings, ADRs, remediation plan |
+
+---
+
+## Project layout
+
+```
+yuyutsava/
+  core/          agent construction, engine, streaming, config
+  llm/           provider layer — one module per provider, plus quirks
+  cli/           terminal entry point and rich REPL
+  daemon/        always-on process: web server, orchestrator, triage
+  agents/        task runner, orchestrator, tinker, subagents
+  ports/         dependency-free protocols (the acyclic layer)
+  policy/        cross-cutting policy in our own types, not the framework's
+  storage/       SQLite/Postgres behind one dialect adapter
+  context/       compaction and tool-result offloading
+  memory/        semantic long-term memory (pgvector)
+  retrieval/     shared retrieval base for memory and skills
+  events/        bus, store, sources, registry
+  mcp/           MCP client manager, tool adapter, scoping
+  mcp_servers/   in-tree MCP servers (deepface)
+  todoboard/     planning surface, cards, artifact blocks
+  artifacts/     non-card artifact store for chat and voice
+  audio_io/      VAD, earcons, synthesis, announcer
+  conversation/  I/O-agnostic turn loop shared by CLI, app and voice
+  skills/        SKILL.md pattern library
+  visuals/       delivery-agnostic rendering library
+  platform/      the ONE place OS-specific primitives live
+  consent/       allowlist / risk-gated consent engine
+electron-app/    desktop client (React + Vite + Electron)
+docs/            documentation
+test/            tests
 ```
 
-- Pattern keys use `fnmatch` globs; first match wins, so list specific rules
-  before broad ones.
-- `policy`:
-  - `auto_approve` — skip the prompt for matching `tr_*` calls.
-  - `propose` (default) — current behaviour; user sees a prompt.
-  - `queue_for_user`, `refuse_when_no_ui` — recognised but treated as
-    `propose` until the Phase-2 notification work lands.
-- `daily_cap` — only meaningful for tools that pass through the cap enforcer
-  (today: `ws_*`). The counter is keyed by UTC date and lives in
-  `~/.yuyutsava/state.db.tool_call_counters`; the 4th call after the cap is
-  hit returns a JSON refusal string instead of running.
+---
 
-The TaskRunner consults the policy **only on the PROMPT branch** of its rule
-table — a system-critical zone is still hard-blocked regardless.
+## Contributing
+
+Issues and pull requests are welcome. Branch from `main` using a
+`feat/`, `fix/`, `docs/`, `chore/`, `refactor/`, `perf/` or `test/` prefix,
+keep one logical change per PR, and title it as a
+[Conventional Commit](https://www.conventionalcommits.org/) — PRs are squashed,
+so the title becomes the commit message.
 
 ---
 
-## Event sources (`~/.yuyutsava/events_config.json`)
+## Acknowledgements
 
-Sources are registered at daemon startup and each emits onto the bus. Four
-sources ship in-tree:
-
-```json
-{
-  "sources": {
-    "fs":        { "enabled": true, "roots": ["~/Downloads"],
-                   "coalesce_window_ms": 2000 },
-    "clipboard": { "enabled": true, "poll_ms": 500, "max_chars": 16384 },
-    "hotkey":    { "enabled": true,
-                   "bindings": { "<cmd>+<shift>+y": "ask",
-                                 "<cmd>+<shift>+u": "summarize_clipboard" } },
-    "appfocus":  { "enabled": true, "poll_ms": 1000,
-                   "exclude_bundles": ["com.electron.yuyutsava"] }
-  }
-}
-```
-
-| Source | Topic | Per-event hints |
-|---|---|---|
-| `fs` | `fs.changed` | `path`, `ext`, `kind` (created / modified / deleted / moved) |
-| `clipboard` | `clipboard.copied` | `kind` (url / path / text), `length` |
-| `hotkey` | `hotkey.pressed` | `combo`, `action` (the semantic name from `bindings`) |
-| `appfocus` | `app.focused` | `bundle_id`, `name` |
-
-macOS notes:
-
-- `hotkey` and `appfocus` require **Accessibility** permission for the parent
-  terminal / Electron app (System Settings → Privacy & Security → Accessibility).
-- `appfocus` is macOS-only today (uses `NSWorkspace`); on other platforms the
-  source logs `unavailable` and idles. Linux parity is tracked in §9 of
-  `PHASE_2_PLAN.md`.
-
-The clipboard source dedupes via SHA-256 so a single Cmd+C only fires one
-event; identical re-copies are silently dropped until the contents change.
-
----
-
-## Skill-driven search scoping (`requires_tools`)
-
-Phase-2 narrows which subagents see the web-search tools (`ws_*`). Every
-`SKILL.md` may declare which tools it needs in its frontmatter:
-
-```yaml
----
-name: tavily-research
-description: |
-  ...
-requires_tools:
-  - ws_tavily_search
----
-```
-
-The orchestrator is always research-capable (gets every `ws_*` tool whose API
-key is configured). Subagents only see `ws_*` tools whose name matches a
-`requires_tools` glob in **at least one** of their visible skills. Today
-`file-organizer` has no skill that lists `ws_*`, so it gets zero search tools
-in its prompt. Add a skill with `requires_tools: [ws_tavily_search]` and that
-single tool appears on its next build.
+Built on [LangGraph](https://github.com/langchain-ai/langgraph),
+[LangChain](https://github.com/langchain-ai/langchain) and
+[deepagents](https://github.com/langchain-ai/deepagents), and speaks the
+[Model Context Protocol](https://modelcontextprotocol.io/).
 
 ---
 
@@ -369,4 +267,4 @@ single tool appears on its next build.
 Licensed under the [Apache License 2.0](LICENSE).
 
 Copyright 2026 Abhinav. See [NOTICE](NOTICE) for attribution and third-party
-dependency notes.
+dependency notes, including the LGPL position on `pynput` and `psycopg`.

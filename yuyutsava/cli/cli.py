@@ -40,9 +40,10 @@ def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="yuyutsava",
         description=(
-            "YUYUTSAVA: AI agent for natural language tasks. "
-            "Uses Groq or OpenRouter + local or Docker sandbox "
-            "(read_file/write_file/execute). Set LLM_PROVIDER and API keys in .env."
+            "YUYUTSAVA: AI agent for natural language tasks. Runs tools on the "
+            "host or in a Docker sandbox. Set LLM_PROVIDER and the matching API "
+            "key in .env — see .env.example for the supported providers. "
+            "Subcommands (not listed below): chat, daemon, attach, prefs."
         ),
     )
     p.add_argument(
