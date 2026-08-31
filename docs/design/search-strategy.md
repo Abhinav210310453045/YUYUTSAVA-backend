@@ -2,7 +2,7 @@
 
 **Status:** Proposal. Not implemented. For review before any code changes are scoped.
 **Scope:** Bug 2 from the `the-tr-read-velvet-clarke` plan — agent operational discipline for search.
-**Related:** Bug 1 (path-resolution heuristic) is fixed separately at [yuyutsava/agents/task_runner/tools.py](../yuyutsava/agents/task_runner/tools.py) — see the `_resolve_path` change. This proposal assumes that fix has landed.
+**Related:** Bug 1 (path-resolution heuristic) is fixed separately at [yuyutsava/agents/task_runner/tools.py](../../yuyutsava/agents/task_runner/tools.py) — see the `_resolve_path` change. This proposal assumes that fix has landed.
 
 ---
 
@@ -78,7 +78,7 @@ Args: ...
 
 No "RECURSION RULES" wall of text. No prompt-section duplication. One sentence of intent, then the schema.
 
-The current docstrings ([tools.py:111-443](../yuyutsava/agents/task_runner/tools.py#L111-L443)) already cover mechanics correctly; the change is additive — one opening sentence per tool, plus removing the now-stale "convert virtual ls/glob paths first" lines once Bug 1 lands.
+The current docstrings ([tools.py:111-443](../../yuyutsava/agents/task_runner/tools.py#L111-L443)) already cover mechanics correctly; the change is additive — one opening sentence per tool, plus removing the now-stale "convert virtual ls/glob paths first" lines once Bug 1 lands.
 
 ### Pillar 4 — Principle-based prompt, not rule-based
 

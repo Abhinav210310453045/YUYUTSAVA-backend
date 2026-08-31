@@ -5,8 +5,7 @@ dialect adapter. Derived from three completed migrations (visuals, thread
 summaries, voice messages), each of which surfaced something the previous one
 had not.
 
-**Status:** 3 of 19 pairs done. Live count and per-domain notes in
-[PROGRESS.md](PROGRESS.md).
+**Status:** 3 of 19 pairs done at the time of writing.
 
 ---
 

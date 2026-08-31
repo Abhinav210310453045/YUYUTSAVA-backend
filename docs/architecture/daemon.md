@@ -1,14 +1,14 @@
 # Yuyutsava Daemon — Architecture & Flow Diagrams
 
-> **Scope.** Diagram-first companion to [`Architecture.md`](Architecture.md),
+> **Scope.** Diagram-first companion to [`Architecture.md`](overview.md),
 > focused on the **daemon's runtime flows**. Architecture.md is the prose
 > reference and covers both operating modes; this file is the picture book for
 > boot, event ingestion, triage, orchestration and shutdown. For the wire-level
 > view of the SSE/WebSocket surfaces drawn below — frame catalogs, `seq`/replay
-> semantics, the voice PCM path — see [`docs/Transport.md`](docs/Transport.md).
+> semantics, the voice PCM path — see [`docs/Transport.md`](transport.md).
 >
 > **Updated** after the Phase 0–4 architecture remediation
-> (`docs/architecture-review/`). The structural changes that show up here:
+> (`docs/architecture/review/`). The structural changes that show up here:
 > `build_daemon` split into seven builders, the fourteen middleware classes
 > replaced by one `LangChainPolicyAdapter` over plain policies, the two stream
 > drivers merged into `_drive_graph` + two sinks, and the SQLite/Postgres store

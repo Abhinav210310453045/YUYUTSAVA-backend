@@ -1,7 +1,7 @@
 """The ``Policy`` contract — a YUYUTSAVA cross-cutting concern, in our own types.
 
-Phase 4 step 4.2, [ADR-004](../../docs/architecture-review/adr/ADR-004-framework-boundary.md)
-item 1, addressing [`F-T01`](../../docs/architecture-review/04-findings-thirdparty-coupling.md#f-t01).
+Phase 4 step 4.2, [ADR-004](../../docs/architecture/review/adr/ADR-004-framework-boundary.md)
+item 1, addressing [`F-T01`](../../docs/architecture/review/04-findings-thirdparty-coupling.md#f-t01).
 
 Fourteen classes implementing this system's own policies — permissions, budget
 ceilings, cost accounting, tool filtering, transcript persistence, skill

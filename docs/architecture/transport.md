@@ -58,8 +58,8 @@ async for event in agent.astream(
 ):
 ```
 
-That call lives inside `_drive_graph()` ([`core/streaming.py:427`](../yuyutsava/core/streaming.py#L427)),
-which is wrapped by `astream_agent_iter()` ([`core/streaming.py:519`](../yuyutsava/core/streaming.py#L519)) —
+That call lives inside `_drive_graph()` ([`core/streaming.py:427`](../../yuyutsava/core/streaming.py#L427)),
+which is wrapped by `astream_agent_iter()` ([`core/streaming.py:519`](../../yuyutsava/core/streaming.py#L519)) —
 an **async generator that yields typed `StreamEvent` objects**:
 
 ```python
@@ -104,11 +104,11 @@ process that read your keystroke. No socket, no serialization, no daemon. See [�
 
 | # | Transport | Direction | Carries | Primary code |
 |---|---|---|---|---|
-| **1** | **In-process async generator** (no wire) | — | the entire CLI conversation | [`core/streaming.py:519`](../yuyutsava/core/streaming.py#L519) |
-| **2** | **SSE** — `GET /stream` | daemon → clients | channel events, HITL asks, wake word, settings, background-task progress | [`daemon/web/routers/stream.py:43`](../yuyutsava/daemon/web/routers/stream.py#L43) |
-| **3** | **WebSocket** — `WS /ws/converse` | daemon ↔ clients | live agent turns, in-band HITL, mic PCM up, TTS PCM down | [`daemon/web/routers/converse.py:310`](../yuyutsava/daemon/web/routers/converse.py#L310) |
-| **4** | **HTTP / REST** | clients → daemon, daemon → provider | ~50 CRUD endpoints, polling, LLM provider SDK calls | [`daemon/web/app.py:111`](../yuyutsava/daemon/web/app.py#L111), [`llm/providers/`](../yuyutsava/llm/providers/) |
-| **5** | **stdio pipes** (subprocess stdin/stdout) | parent ↔ child process | MCP JSON-RPC, wake-word NDJSON, daemon logs | [`mcp/loader.py:165`](../yuyutsava/mcp/loader.py#L165), [`events/sources/voice.py:91`](../yuyutsava/events/sources/voice.py#L91) |
+| **1** | **In-process async generator** (no wire) | — | the entire CLI conversation | [`core/streaming.py:519`](../../yuyutsava/core/streaming.py#L519) |
+| **2** | **SSE** — `GET /stream` | daemon → clients | channel events, HITL asks, wake word, settings, background-task progress | [`daemon/web/routers/stream.py:43`](../../yuyutsava/daemon/web/routers/stream.py#L43) |
+| **3** | **WebSocket** — `WS /ws/converse` | daemon ↔ clients | live agent turns, in-band HITL, mic PCM up, TTS PCM down | [`daemon/web/routers/converse.py:310`](../../yuyutsava/daemon/web/routers/converse.py#L310) |
+| **4** | **HTTP / REST** | clients → daemon, daemon → provider | ~50 CRUD endpoints, polling, LLM provider SDK calls | [`daemon/web/app.py:111`](../../yuyutsava/daemon/web/app.py#L111), [`llm/providers/`](../../yuyutsava/llm/providers) |
+| **5** | **stdio pipes** (subprocess stdin/stdout) | parent ↔ child process | MCP JSON-RPC, wake-word NDJSON, daemon logs | [`mcp/loader.py:165`](../../yuyutsava/mcp/loader.py#L165), [`events/sources/voice.py:91`](../../yuyutsava/events/sources/voice.py#L91) |
 
 Two facts that surprise people:
 
@@ -193,12 +193,12 @@ Two different senses, and it matters which you mean.
 
 **(a) The user's keyboard.** `sys.stdin` appears in exactly **one** functional place in
 the entire `yuyutsava` package — the REPL's TTY probe at
-[`cli/commands/chat_repl.py:808`](../yuyutsava/cli/commands/chat_repl.py#L808).
+[`cli/commands/chat_repl.py:808`](../../yuyutsava/cli/commands/chat_repl.py#L808).
 Everything else that reads the keyboard goes through blocking `input()` calls for
 human-in-the-loop prompts (see [§6.2](#62-the-hitl-readers-that-steal-stdin)).
 
 There is **no "pipe a task in" mode.** A one-shot task comes from argv, not stdin
-([`cli/cli.py:48-52`](../yuyutsava/cli/cli.py#L48-L52)). `echo "hi" | yuyutsava chat`
+([`cli/cli.py:48-52`](../../yuyutsava/cli/cli.py#L48-L52)). `echo "hi" | yuyutsava chat`
 does work, but only because the REPL falls back to `input()` and treats each piped line
 as one turn.
 
@@ -208,7 +208,7 @@ source (NDJSON out), and the Docker sandbox exec. See [§13](#13-stdio--subproce
 
 ### Where do we use SSE?
 
-**One endpoint**, [`GET /stream`](../yuyutsava/daemon/web/routers/stream.py#L43), built on
+**One endpoint**, [`GET /stream`](../../yuyutsava/daemon/web/routers/stream.py#L43), built on
 `sse_starlette`. It is the daemon's **broadcast firehose**: anything that any surface
 might want to know about, without being tied to one conversation. Eight event names
 (`hello`, `event`, `proposal`, `ask`, `ask_resolved`, `proposal_resolved`, `wake`,
@@ -219,13 +219,13 @@ in attach mode (`yuyutsava attach`, hand-rolled SSE parse over `httpx`).
 
 ### Where do we use WebSocket?
 
-**One endpoint**, [`WS /ws/converse`](../yuyutsava/daemon/web/routers/converse.py#L310).
+**One endpoint**, [`WS /ws/converse`](../../yuyutsava/daemon/web/routers/converse.py#L310).
 It is the **conversation** transport: bidirectional, per-thread, ordered, replayable.
 
 Crucially it is **one socket per conversation, not one multiplexed socket**. Open the
 chat pane, a voice overlay and two TODO-card tinker threads and you have four live
 sockets, keyed `origin|agent|card|resumeId`
-([`renderer/conversations/store.js:35-37`](../electron-app/src/renderer/conversations/store.js#L35-L37)).
+([`renderer/conversations/store.js:35-37`](../../electron-app/src/renderer/conversations/store.js#L35-L37)).
 
 ---
 ---
@@ -236,7 +236,7 @@ sockets, keyed `origin|agent|card|resumeId`
 
 ### 6.1 Reading input
 
-`yuyutsava` dispatches on `sys.argv[1:]` ([`cli/cli.py:269-284`](../yuyutsava/cli/cli.py#L269-L284)).
+`yuyutsava` dispatches on `sys.argv[1:]` ([`cli/cli.py:269-284`](../../yuyutsava/cli/cli.py#L269-L284)).
 The task text is an argv rest-arg:
 
 ```python
@@ -309,17 +309,17 @@ that means grabbing stdin back from the renderer:
 
 | Where | Call |
 |---|---|
-| [`cli/commands/chat_repl.py:345-407`](../yuyutsava/cli/commands/chat_repl.py#L345-L407) | `make_ask_handler` — `renderer.pause()`, then `input("> ")` in an executor, retried 3× |
-| [`core/streaming.py:209,236,266`](../yuyutsava/core/streaming.py#L209) | one-shot path — `await asyncio.to_thread(input, "  Allow? [y/N]: ")` |
-| [`cli/async_hitl.py:249`](../yuyutsava/cli/async_hitl.py#L249) | `CliHitlBridge.post_ask` — same executor pattern |
+| [`cli/commands/chat_repl.py:345-407`](../../yuyutsava/cli/commands/chat_repl.py#L345-L407) | `make_ask_handler` — `renderer.pause()`, then `input("> ")` in an executor, retried 3× |
+| [`core/streaming.py:209,236,266`](../../yuyutsava/core/streaming.py#L209) | one-shot path — `await asyncio.to_thread(input, "  Allow? [y/N]: ")` |
+| [`cli/async_hitl.py:249`](../../yuyutsava/cli/async_hitl.py#L249) | `CliHitlBridge.post_ask` — same executor pattern |
 
 This is why `--no-permission-check` exists: automated pipelines have no stdin to prompt
-on ([`cli/cli.py:193-201`](../yuyutsava/cli/cli.py#L193-L201)).
+on ([`cli/cli.py:193-201`](../../yuyutsava/cli/cli.py#L193-L201)).
 
 ### 6.3 From keystroke to model — no wire
 
 The REPL builds the agent stack once, in-process
-([`chat_repl.py:709`](../yuyutsava/cli/commands/chat_repl.py#L709)), then hands each turn
+([`chat_repl.py:709`](../../yuyutsava/cli/commands/chat_repl.py#L709)), then hands each turn
 to the shared `ConversationService` — the *same* class the WebSocket handler uses:
 
 ```python
@@ -348,9 +348,9 @@ async for ev in astream_agent_iter(
 ### 6.4 Writing output
 
 Renderer selection is gated on **stdout**'s TTY-ness (a different check from the input
-fork): `RichChatRenderer` (rich `Live`, [`cli/render/renderer.py`](../yuyutsava/cli/render/renderer.py))
+fork): `RichChatRenderer` (rich `Live`, [`cli/render/renderer.py`](../../yuyutsava/cli/render/renderer.py))
 on a terminal, plain ANSI otherwise
-([`cli/render/console.py:31-46`](../yuyutsava/cli/render/console.py#L31-L46)).
+([`cli/render/console.py:31-46`](../../yuyutsava/cli/render/console.py#L31-L46)).
 
 ```python
 # yuyutsava/cli/render/plain.py:114-125
@@ -368,7 +368,7 @@ async def render(self, ev: StreamEvent) -> None:
         return
 ```
 
-`TokenSmoother` ([`cli/stream_smoother.py:30-152`](../yuyutsava/cli/stream_smoother.py#L30-L152))
+`TokenSmoother` ([`cli/stream_smoother.py:30-152`](../../yuyutsava/cli/stream_smoother.py#L30-L152))
 is a background asyncio task that paces characters to `sys.stdout.write` at
 `YUYUTSAVA_REPL_SMOOTH_CPS` (default 180). It is **disabled when stdout is not a TTY**
 so piped output stays byte-identical.
@@ -443,7 +443,7 @@ sequenceDiagram
 
 ## 7. The Electron UI: Three Concurrent Transports
 
-The renderer lives in [`electron-app/src/renderer/`](../electron-app/src/renderer/) (Vite +
+The renderer lives in [`electron-app/src/renderer/`](../../electron-app/src/renderer) (Vite +
 React, two HTML entries: `index.html` = main window, `overlay.html` = always-on-top voice
 overlay).
 
@@ -481,11 +481,11 @@ _proc.stderr.on('data', d => _log(d.toString()))
 
 `detached: true` puts the child in its own POSIX process group so `kill(-pid)` reaches
 both `uv` and the Python grandchild; Windows uses `taskkill /T` instead
-([`daemon.js:190-203`](../electron-app/src/main/daemon.js#L190-L203)).
+([`daemon.js:190-203`](../../electron-app/src/main/daemon.js#L190-L203)).
 
 ### 7.2 Transport A — REST (`fetch`)
 
-[`api/client.js`](../electron-app/src/renderer/api/client.js) wraps ~50 endpoints over a
+[`api/client.js`](../../electron-app/src/renderer/api/client.js) wraps ~50 endpoints over a
 single `_json()` helper. No axios anywhere in the tree. Used for everything that isn't a
 live stream: sessions, todos, artifacts, skills, settings, config, feedback.
 
@@ -497,7 +497,7 @@ const url = `${getBase()}/stream`
 this._es = new EventSource(url)
 ```
 
-Eight named listeners follow ([`sse.js:26-62`](../electron-app/src/renderer/api/sse.js#L26-L62)),
+Eight named listeners follow ([`sse.js:26-62`](../../electron-app/src/renderer/api/sse.js#L26-L62)),
 one per server event name. Reconnect is exponential, reset **on `hello`** rather than on
 socket open:
 
@@ -519,9 +519,9 @@ _scheduleReconnect() {
 
 | Consumer | File | Why separate |
 |---|---|---|
-| `SSEProvider` (app-wide) | [`hooks/useSSE.jsx:168`](../electron-app/src/renderer/hooks/useSSE.jsx#L168) | events, logs, proposals, asks, bg-tasks, wake, tray |
-| `useRuntimeSettings` | [`hooks/useRuntimeSettings.js:38`](../electron-app/src/renderer/hooks/useRuntimeSettings.js#L38) | self-subscribing, so the overlay (no `SSEProvider`) still gets `settings` |
-| `useStandaloneAsks` (overlay) | [`hooks/useAsks.jsx:139`](../electron-app/src/renderer/hooks/useAsks.jsx#L139) | ask-only; mounting `SSEProvider` here would make the overlay pop at itself |
+| `SSEProvider` (app-wide) | [`hooks/useSSE.jsx:168`](../../electron-app/src/renderer/hooks/useSSE.jsx#L168) | events, logs, proposals, asks, bg-tasks, wake, tray |
+| `useRuntimeSettings` | [`hooks/useRuntimeSettings.js:38`](../../electron-app/src/renderer/hooks/useRuntimeSettings.js#L38) | self-subscribing, so the overlay (no `SSEProvider`) still gets `settings` |
+| `useStandaloneAsks` (overlay) | [`hooks/useAsks.jsx:139`](../../electron-app/src/renderer/hooks/useAsks.jsx#L139) | ask-only; mounting `SSEProvider` here would make the overlay pop at itself |
 
 ### 7.4 Transport C — WebSocket (one per conversation)
 
@@ -638,7 +638,7 @@ the single most commonly misremembered detail in the system:
 sendAudio(int16) { return this._send({ type: 'audio', pcm: int16ToBase64(int16) }) }
 ```
 
-Decoded server-side at [`converse.py:942-950`](../yuyutsava/daemon/web/routers/converse.py#L942-L950).
+Decoded server-side at [`converse.py:942-950`](../../yuyutsava/daemon/web/routers/converse.py#L942-L950).
 
 **Downlink TTS uses the same trick.** The daemon synthesises PCM and chops it into
 ~0.5 s frames:
@@ -660,7 +660,7 @@ async def _send_audio(pcm: bytes, rate: int) -> None:
         await asyncio.sleep(0)  # let the pumps drain between frames
 ```
 
-Prose is sentence-chunked by `SentenceChunker` ([`audio_io/sentence.py`](../yuyutsava/audio_io/sentence.py))
+Prose is sentence-chunked by `SentenceChunker` ([`audio_io/sentence.py`](../../yuyutsava/audio_io/sentence.py))
 before synthesis, so audio starts playing on sentence one rather than at the end of the
 turn.
 
@@ -668,21 +668,21 @@ turn.
 
 | Piece | Side | Code |
 |---|---|---|
-| Mic capture, resample, framing | **Renderer** (Web Audio) | [`renderer/audio/capture.js`](../electron-app/src/renderer/audio/capture.js) |
-| VAD segmentation | **Daemon** | [`audio_io/vad.py`](../yuyutsava/audio_io/vad.py) via [`voice_pipeline.py:64`](../yuyutsava/daemon/web/voice_pipeline.py#L64) |
-| STT | **Daemon** | [`io/stt.py`](../yuyutsava/io/stt.py) |
-| TTS synthesis → PCM | **Daemon** | [`audio_io/synth.py:25-37`](../yuyutsava/audio_io/synth.py#L25-L37) |
-| TTS playback | **Renderer** | [`renderer/audio/index.js:159-177`](../electron-app/src/renderer/audio/index.js#L159-L177) |
-| Earcons | **Renderer** (oscillators) | [`audio/index.js:16-22`](../electron-app/src/renderer/audio/index.js#L16-L22), mirroring [`audio_io/earcons.py:38-44`](../yuyutsava/audio_io/earcons.py#L38-L44) |
-| Announcer (`say()` on daemon speakers) | **Daemon only** | [`audio_io/announcer.py`](../yuyutsava/audio_io/announcer.py) — used by `VoiceChannel`, *not* the Electron path |
+| Mic capture, resample, framing | **Renderer** (Web Audio) | [`renderer/audio/capture.js`](../../electron-app/src/renderer/audio/capture.js) |
+| VAD segmentation | **Daemon** | [`audio_io/vad.py`](../../yuyutsava/audio_io/vad.py) via [`voice_pipeline.py:64`](../../yuyutsava/daemon/web/voice_pipeline.py#L64) |
+| STT | **Daemon** | [`io/stt.py`](../../yuyutsava/io/stt.py) |
+| TTS synthesis → PCM | **Daemon** | [`audio_io/synth.py:25-37`](../../yuyutsava/audio_io/synth.py#L25-L37) |
+| TTS playback | **Renderer** | [`renderer/audio/index.js:159-177`](../../electron-app/src/renderer/audio/index.js#L159-L177) |
+| Earcons | **Renderer** (oscillators) | [`audio/index.js:16-22`](../../electron-app/src/renderer/audio/index.js#L16-L22), mirroring [`audio_io/earcons.py:38-44`](../../yuyutsava/audio_io/earcons.py#L38-L44) |
+| Announcer (`say()` on daemon speakers) | **Daemon only** | [`audio_io/announcer.py`](../../yuyutsava/audio_io/announcer.py) — used by `VoiceChannel`, *not* the Electron path |
 
 Playback deliberately lives on the client because the daemon may be remote — the
 rationale is stated in the file header at
-[`renderer/audio/index.js:1-13`](../electron-app/src/renderer/audio/index.js#L1-L13).
+[`renderer/audio/index.js:1-13`](../../electron-app/src/renderer/audio/index.js#L1-L13).
 
 The half-duplex gate is enforced client-side: when barge-in is off, mic frames are
 dropped rather than sent while the agent is speaking
-([`store.js:653-658`](../electron-app/src/renderer/conversations/store.js#L653-L658)).
+([`store.js:653-658`](../../electron-app/src/renderer/conversations/store.js#L653-L658)).
 
 ### 8.2 Path A′ — dictation (same socket, no agent)
 
@@ -722,7 +722,7 @@ self._proc = await asyncio.create_subprocess_exec(
 
 The wire is **line-delimited JSON on the child's stdout** (`ready`, `heartbeat`, `wake`,
 `error`), read with an 8-second heartbeat watchdog
-([`voice.py:122,149-153`](../yuyutsava/events/sources/voice.py#L122)).
+([`voice.py:122,149-153`](../../yuyutsava/events/sources/voice.py#L122)).
 
 From there the signal is relayed across four more transports before a socket exists:
 
@@ -790,7 +790,7 @@ registered channel, of which `WebChannel` is the one that reaches SSE.
 
 Clients scope the firehose with query params rather than opening a dedicated stream:
 `GET /stream?task_id=…` filters at the responder
-([`stream.py:23-40`](../yuyutsava/daemon/web/routers/stream.py#L23-L40)), and
+([`stream.py:23-40`](../../yuyutsava/daemon/web/routers/stream.py#L23-L40)), and
 `GET /tasks/{id}/events` replays the last 500 items for a client that reconnects
 mid-task.
 
@@ -842,7 +842,7 @@ data: {"type":"ask","ask_id":"…","title":"Allow shell command?","body":"…","
 ### 10.2 Event names (the outer `type`)
 
 From the `StreamItem` union at
-[`services/stream_service.py:185`](../yuyutsava/daemon/web/services/stream_service.py#L185):
+[`services/stream_service.py:185`](../../yuyutsava/daemon/web/services/stream_service.py#L185):
 
 | Event | Payload | Meaning |
 |---|---|---|
@@ -857,14 +857,14 @@ From the `StreamItem` union at
 
 ### 10.3 Inner `kind` values (inside an `event`)
 
-From the `ChannelPayload` union at [`daemon/channels.py:178`](../yuyutsava/daemon/channels.py#L178):
+From the `ChannelPayload` union at [`daemon/channels.py:178`](../../yuyutsava/daemon/channels.py#L178):
 
 `log` · `token` · `tool_call` · `tool_result` · `timeline` · `http_log` ·
 `system_metrics` · `async_task_started` · `async_task_progress` ·
 `async_task_awaiting_user` · `async_task_completed`
 
 Note `http_log`: every non-`/stream` HTTP request is fanned back onto the SSE hub by
-middleware ([`app.py:174-197`](../yuyutsava/daemon/web/app.py#L174-L197)) — a transport
+middleware ([`app.py:174-197`](../../yuyutsava/daemon/web/app.py#L174-L197)) — a transport
 that feeds itself, which is why `/stream` is excluded from it.
 
 ### 10.4 The hub: queues, drops, and rings
@@ -899,7 +899,7 @@ async def broadcast(self, item: StreamItem) -> None:
 with no notification. That is acceptable because SSE carries *notifications*, not
 conversation content — the authoritative record is in the database, and the replay ring
 (`TASK_RING_SIZE = 500`, `MAX_TRACKED_TASKS = 64`,
-[`stream_service.py:200-206`](../yuyutsava/daemon/web/services/stream_service.py#L200-L206))
+[`stream_service.py:200-206`](../../yuyutsava/daemon/web/services/stream_service.py#L200-L206))
 covers the reconnect case via `GET /tasks/{id}/events`.
 
 Contrast this with the WebSocket path, whose per-viewer queues are **unbounded** for
@@ -908,9 +908,9 @@ prose precisely because conversation frames must never be dropped ([§11.4](#114
 ### 10.5 Producers and consumers
 
 **Producer:** `WebChannel(UserChannel)` at
-[`stream_service.py:286`](../yuyutsava/daemon/web/services/stream_service.py#L286), registered
+[`stream_service.py:286`](../../yuyutsava/daemon/web/services/stream_service.py#L286), registered
 into the router during bootstrap
-([`bootstrap.py:1177-1178`](../yuyutsava/daemon/bootstrap.py#L1177-L1178)).
+([`bootstrap.py:1177-1178`](../../yuyutsava/daemon/bootstrap.py#L1177-L1178)).
 
 **Consumers:** the three renderer `EventSource`s ([§7.3](#73-transport-b--sse-eventsource))
 and the CLI's `CliAttachClient` ([§6.5](#65-the-one-place-the-cli-does-open-a-socket)).
@@ -920,7 +920,7 @@ and the CLI's `CliAttachClient` ([§6.5](#65-the-one-place-the-cli-does-open-a-s
 ## 11. WebSocket Reference
 
 The authoritative protocol spec is the module docstring at
-[`routers/converse.py:1-69`](../yuyutsava/daemon/web/routers/converse.py#L1-L69). This
+[`routers/converse.py:1-69`](../../yuyutsava/daemon/web/routers/converse.py#L1-L69). This
 section expands it.
 
 ### 11.1 Connect
@@ -941,7 +941,7 @@ section expands it.
 ### 11.2 Client → server frames
 
 All JSON **text** frames, read with `ws.receive_text()`
-([`converse.py:886-1015`](../yuyutsava/daemon/web/routers/converse.py#L886-L1015)).
+([`converse.py:886-1015`](../../yuyutsava/daemon/web/routers/converse.py#L886-L1015)).
 
 | `type` | Fields | Handler | Notes |
 |---|---|---|---|
@@ -987,17 +987,17 @@ that thread, stamped with a monotonic `seq`:
 
 | `type` | Fields | Source |
 |---|---|---|
-| `turn_start` | `run_id`, `text`, `kind` (`text`\|`voice`) | [`turn_registry.py:292`](../yuyutsava/daemon/turn_registry.py#L292) |
-| `token` | `text`, `node`, `ns` | [`streaming.py:628`](../yuyutsava/core/streaming.py#L628) |
-| `tool_call` | `name`, `args` | [`streaming.py:636`](../yuyutsava/core/streaming.py#L636) |
-| `tool_result` | `name`, `preview`, `full?` | [`streaming.py:647`](../yuyutsava/core/streaming.py#L647) |
-| `image` | `visual_id`, `url`, `kind`, `title`, `mime` | [`streaming.py:651`](../yuyutsava/core/streaming.py#L651) |
-| `artifact` | `artifact_id`, `attachment_id`, `url`, `kind` | [`streaming.py:655`](../yuyutsava/core/streaming.py#L655) |
-| `log` | `text` | [`streaming.py:661`](../yuyutsava/core/streaming.py#L661) |
-| `final` | `text` | [`streaming.py:675`](../yuyutsava/core/streaming.py#L675) |
-| `ask` / `ask_resolved` | ask payload / `ask_id` | `_ask_handler`, [`converse.py:504`](../yuyutsava/daemon/web/routers/converse.py#L504) |
-| `speaking_start` / `audio_chunk` / `speaking_end` | — / `pcm`+`sample_rate` / — | [`converse.py:633`](../yuyutsava/daemon/web/routers/converse.py#L633) |
-| `turn_end` | `status` | [`turn_registry.py`](../yuyutsava/daemon/turn_registry.py) |
+| `turn_start` | `run_id`, `text`, `kind` (`text`\|`voice`) | [`turn_registry.py:292`](../../yuyutsava/daemon/turn_registry.py#L292) |
+| `token` | `text`, `node`, `ns` | [`streaming.py:628`](../../yuyutsava/core/streaming.py#L628) |
+| `tool_call` | `name`, `args` | [`streaming.py:636`](../../yuyutsava/core/streaming.py#L636) |
+| `tool_result` | `name`, `preview`, `full?` | [`streaming.py:647`](../../yuyutsava/core/streaming.py#L647) |
+| `image` | `visual_id`, `url`, `kind`, `title`, `mime` | [`streaming.py:651`](../../yuyutsava/core/streaming.py#L651) |
+| `artifact` | `artifact_id`, `attachment_id`, `url`, `kind` | [`streaming.py:655`](../../yuyutsava/core/streaming.py#L655) |
+| `log` | `text` | [`streaming.py:661`](../../yuyutsava/core/streaming.py#L661) |
+| `final` | `text` | [`streaming.py:675`](../../yuyutsava/core/streaming.py#L675) |
+| `ask` / `ask_resolved` | ask payload / `ask_id` | `_ask_handler`, [`converse.py:504`](../../yuyutsava/daemon/web/routers/converse.py#L504) |
+| `speaking_start` / `audio_chunk` / `speaking_end` | — / `pcm`+`sample_rate` / — | [`converse.py:633`](../../yuyutsava/daemon/web/routers/converse.py#L633) |
+| `turn_end` | `status` | [`turn_registry.py`](../../yuyutsava/daemon/turn_registry.py) |
 
 The conversion from `StreamEvent` to frame is one line — the frame *is* the event,
 flattened:
@@ -1017,7 +1017,7 @@ def _event_sink(run: TurnRun):
 ### 11.4 `seq`, replay, and the viewer model
 
 The socket is **a viewer, not the owner** of the conversation
-([`converse.py:9-15`](../yuyutsava/daemon/web/routers/converse.py#L9-L15)). Turns belong to
+([`converse.py:9-15`](../../yuyutsava/daemon/web/routers/converse.py#L9-L15)). Turns belong to
 the `TurnRegistry` and are addressed by `thread_id`; a socket attaches on connect and
 merely *detaches* on disconnect. Closing a tinker pane, switching TODO cards or reloading
 the renderer does not kill the agent — only `interrupt` or
@@ -1078,13 +1078,13 @@ Ring and queue policy:
 
 The subscriber queues are **unbounded** — "prose must never be dropped, and a viewer whose
 socket has genuinely died is detached by its pump task's teardown"
-([`turn_registry.py:145-147`](../yuyutsava/daemon/turn_registry.py#L145-L147)).
+([`turn_registry.py:145-147`](../../yuyutsava/daemon/turn_registry.py#L145-L147)).
 
 ### 11.5 Client-side session management
 
 One `ConverseClient` per conversation, held in a module-level `Map` keyed
 `origin|agent|card|resumeId`
-([`store.js:35-37`](../electron-app/src/renderer/conversations/store.js#L35-L37)), with
+([`store.js:35-37`](../../electron-app/src/renderer/conversations/store.js#L35-L37)), with
 `MAX_SESSIONS = 24` and `IDLE_DISCONNECT_MS = 10 min`.
 
 Reconnect backoff resets on the app-level `hello`, not on `onopen` — and the comment
@@ -1102,15 +1102,15 @@ let helloReceived = false
 ```
 
 Three consecutive pre-`hello` errors while resuming retire the thread
-(`MAX_RESUME_FAILURES = 3`, [`converse.js:148`](../electron-app/src/renderer/api/converse.js#L148)),
+(`MAX_RESUME_FAILURES = 3`, [`converse.js:148`](../../electron-app/src/renderer/api/converse.js#L148)),
 surfacing "this chat is no longer available" instead of an infinite retry loop.
 
 ### 11.6 Where the renderer maps frames
 
-[`renderer/conversations/store.js:401-595`](../electron-app/src/renderer/conversations/store.js#L401-L595)
+[`renderer/conversations/store.js:401-595`](../../electron-app/src/renderer/conversations/store.js#L401-L595)
 is the single `switch`. Every frame type in [§11.3](#113-server--client-frames) has a case
 there; `transcript` and `dictate_done` are additionally handled in
-[`hooks/useDictation.js:47-50`](../electron-app/src/renderer/hooks/useDictation.js#L47-L50).
+[`hooks/useDictation.js:47-50`](../../electron-app/src/renderer/hooks/useDictation.js#L47-L50).
 
 Note what is **not** a WS frame: `todo`. The TODO board is REST plus a 5-second poll
 ([§14.2](#142-polling)). Background-task progress is **SSE**, not WS.
@@ -1160,10 +1160,10 @@ converse() receive loop                             routers/converse.py:927
 ```
 
 **HITL branches out sideways and lands on the other transport.** When the graph
-interrupts mid-turn, `_ask_handler` ([`converse.py:504`](../yuyutsava/daemon/web/routers/converse.py#L504))
+interrupts mid-turn, `_ask_handler` ([`converse.py:504`](../../yuyutsava/daemon/web/routers/converse.py#L504))
 builds an `AskPrompt`, routes it through `ChannelRouter.post_ask`
-([`daemon/channels.py:341`](../yuyutsava/daemon/channels.py#L341)) → `WebChannel.post_ask`
-([`stream_service.py:315`](../yuyutsava/daemon/web/services/stream_service.py#L315)), which
+([`daemon/channels.py:341`](../../yuyutsava/daemon/channels.py#L341)) → `WebChannel.post_ask`
+([`stream_service.py:315`](../../yuyutsava/daemon/web/services/stream_service.py#L315)), which
 parks an `asyncio.Future` and broadcasts an SSE `ask` item. So **a single turn can be
 streaming tokens on a WebSocket while its permission prompt travels over SSE**, and the
 answer can come back from a completely different surface.
@@ -1200,7 +1200,7 @@ async with AsyncExitStack() as stack:
 
 Only **stdio** and **SSE** are supported — no streamable-HTTP, and
 `langchain-mcp-adapters`/`MultiServerMCPClient` are not used anywhere
-([`mcp/tool_adapter.py`](../yuyutsava/mcp/tool_adapter.py) hand-rolls the `BaseTool`
+([`mcp/tool_adapter.py`](../../yuyutsava/mcp/tool_adapter.py) hand-rolls the `BaseTool`
 wrapper).
 
 **Transport is inferred from config shape, not declared:**
@@ -1231,7 +1231,7 @@ A worked `~/.yuyutsava/mcp_config.json`:
 
 The first entry gets stdio (child process, bidirectional JSON-RPC over its stdin/stdout);
 the second gets SSE. `$VAR` in `env` is expanded
-([`config.py:127-129`](../yuyutsava/mcp/config.py#L127-L129)). Absent file ⇒ zero servers.
+([`config.py:127-129`](../../yuyutsava/mcp/config.py#L127-L129)). Absent file ⇒ zero servers.
 
 Each server runs in its own dedicated `asyncio.Task` so the anyio cancel scope exits in
 the task that entered it — the docstring is explicit about why:
@@ -1254,21 +1254,21 @@ closed here — required by the anyio cancel scopes the MCP SDK uses.
 ```
 
 So `yuyutsava chat` gets **zero** MCP tools. The in-tree server
-([`mcp_servers/deepface/server.py:103-109`](../yuyutsava/mcp_servers/deepface/server.py#L103-L109))
+([`mcp_servers/deepface/server.py:103-109`](../../yuyutsava/mcp_servers/deepface/server.py#L103-L109))
 uses a bare `mcp.run()`, i.e. FastMCP's default stdio transport.
 
 ### 13.2 Every pipe in the tree
 
 | Where | Pipes | Code |
 |---|---|---|
-| Electron → daemon | `['ignore','pipe','pipe']` — **log-only**, stdin ignored | [`main/daemon.js:164-181`](../electron-app/src/main/daemon.js#L164-L181) |
-| MCP stdio servers | full bidirectional JSON-RPC | [`mcp/loader.py:173`](../yuyutsava/mcp/loader.py#L173) |
-| Wake-word mic source | NDJSON on child stdout, 8 s heartbeat | [`events/sources/voice.py:91-153`](../yuyutsava/events/sources/voice.py#L91-L153) |
-| Webcam source | same NDJSON pattern | [`events/sources/webcam.py:101-165`](../yuyutsava/events/sources/webcam.py#L101-L165) |
-| Docker sandbox exec | `stdin/stdout/stderr = PIPE` + `communicate()` | [`core/docker_sandbox_backend.py:338-370`](../yuyutsava/core/docker_sandbox_backend.py#L338-L370) |
-| Generic capture helper | stdout/stderr PIPE, one-shot | [`platform/process.py:185-190`](../yuyutsava/platform/process.py#L185-L190) |
-| Daemon → Electron/vite UI | **deliberately not piped** — DEVNULL, own session | [`platform/process.py:106-143`](../yuyutsava/platform/process.py#L106-L143) |
-| Task runner exec | `create_subprocess_exec` with explicit argv | [`agents/task_runner/executor.py:92,192`](../yuyutsava/agents/task_runner/executor.py#L92) |
+| Electron → daemon | `['ignore','pipe','pipe']` — **log-only**, stdin ignored | [`main/daemon.js:164-181`](../../electron-app/src/main/daemon.js#L164-L181) |
+| MCP stdio servers | full bidirectional JSON-RPC | [`mcp/loader.py:173`](../../yuyutsava/mcp/loader.py#L173) |
+| Wake-word mic source | NDJSON on child stdout, 8 s heartbeat | [`events/sources/voice.py:91-153`](../../yuyutsava/events/sources/voice.py#L91-L153) |
+| Webcam source | same NDJSON pattern | [`events/sources/webcam.py:101-165`](../../yuyutsava/events/sources/webcam.py#L101-L165) |
+| Docker sandbox exec | `stdin/stdout/stderr = PIPE` + `communicate()` | [`core/docker_sandbox_backend.py:338-370`](../../yuyutsava/core/docker_sandbox_backend.py#L338-L370) |
+| Generic capture helper | stdout/stderr PIPE, one-shot | [`platform/process.py:185-190`](../../yuyutsava/platform/process.py#L185-L190) |
+| Daemon → Electron/vite UI | **deliberately not piped** — DEVNULL, own session | [`platform/process.py:106-143`](../../yuyutsava/platform/process.py#L106-L143) |
+| Task runner exec | `create_subprocess_exec` with explicit argv | [`agents/task_runner/executor.py:92,192`](../../yuyutsava/agents/task_runner/executor.py#L92) |
 
 ---
 
@@ -1276,7 +1276,7 @@ uses a bare `mcp.run()`, i.e. FastMCP's default stdio transport.
 
 ### 14.1 Shape
 
-The app factory is [`daemon/web/app.py:73`](../yuyutsava/daemon/web/app.py#L73):
+The app factory is [`daemon/web/app.py:73`](../../yuyutsava/daemon/web/app.py#L73):
 
 ```python
 # yuyutsava/daemon/web/app.py:111
@@ -1300,15 +1300,15 @@ Routers, by area: `health`, `server_info`, `stream`, `proposals`, `rules`, `deci
 `usage`, `system`, `converse`, `visuals`, `feedback`, `todos` (21 routes), `artifacts`,
 `db` (env-gated), `static_files`.
 
-**For endpoint-level detail see [`docs/api_v1.md`](api_v1.md)** — this document does not
+**For endpoint-level detail see [`docs/api_v1.md`](../reference/api-v1.md)** — this document does not
 duplicate the contract. The transport-relevant summary: everything except `GET /stream`
 and `WS /ws/converse` is plain request/response JSON or a `FileResponse`; there is no
 `StreamingResponse` in the app.
 
-The server runs under uvicorn ([`bootstrap.py:1534`](../yuyutsava/daemon/bootstrap.py#L1534)),
-started alongside the daemon loop ([`daemon/main.py:202,434`](../yuyutsava/daemon/main.py#L202)).
+The server runs under uvicorn ([`bootstrap.py:1534`](../../yuyutsava/daemon/bootstrap.py#L1534)),
+started alongside the daemon loop ([`daemon/main.py:202,434`](../../yuyutsava/daemon/main.py#L202)).
 A bind-policy guard refuses a non-loopback bind without bearer auth
-([`app.py:103`](../yuyutsava/daemon/web/app.py#L103)).
+([`app.py:103`](../../yuyutsava/daemon/web/app.py#L103)).
 
 ### 14.2 Polling
 
@@ -1316,18 +1316,18 @@ Where no push transport exists, the UI polls on a timer. There is no long-pollin
 
 | What | File | Interval |
 |---|---|---|
-| TODO board list | [`todos/TodosPanel.jsx:254`](../electron-app/src/renderer/components/todos/TodosPanel.jsx#L254) | 5 s (paused while a card is open) |
-| Sessions list | [`sessions/SessionsPanel.jsx:142`](../electron-app/src/renderer/components/sessions/SessionsPanel.jsx#L142) | 5 s |
-| Background-task transcript | [`background-tasks/TaskDetail.jsx:139`](../electron-app/src/renderer/components/background-tasks/TaskDetail.jsx#L139) | 1.5 s, only while live |
-| Daemon status (via IPC) | [`settings/SettingsPanel.jsx:101`](../electron-app/src/renderer/components/settings/SettingsPanel.jsx#L101) | 3 s |
-| Tray status (main process) | [`main/index.js:199`](../electron-app/src/main/index.js#L199) → `GET /health` | 4 s |
+| TODO board list | [`todos/TodosPanel.jsx:254`](../../electron-app/src/renderer/components/todos/TodosPanel.jsx#L254) | 5 s (paused while a card is open) |
+| Sessions list | [`sessions/SessionsPanel.jsx:142`](../../electron-app/src/renderer/components/sessions/SessionsPanel.jsx#L142) | 5 s |
+| Background-task transcript | [`background-tasks/TaskDetail.jsx:139`](../../electron-app/src/renderer/components/background-tasks/TaskDetail.jsx#L139) | 1.5 s, only while live |
+| Daemon status (via IPC) | [`settings/SettingsPanel.jsx:101`](../../electron-app/src/renderer/components/settings/SettingsPanel.jsx#L101) | 3 s |
+| Tray status (main process) | [`main/index.js:199`](../../electron-app/src/main/index.js#L199) → `GET /health` | 4 s |
 
 ### 14.3 Electron main's own HTTP client
 
 The main process does not go through the renderer; it has a raw `http.request` client for
-config endpoints ([`main/ipc-handlers.js:9-35`](../electron-app/src/main/ipc-handlers.js#L9-L35))
+config endpoints ([`main/ipc-handlers.js:9-35`](../../electron-app/src/main/ipc-handlers.js#L9-L35))
 and a health probe used by `waitUntilReady` (400 ms × up to 45 s on restart,
-[`main/daemon.js:255-285`](../electron-app/src/main/daemon.js#L255-L285)).
+[`main/daemon.js:255-285`](../../electron-app/src/main/daemon.js#L255-L285)).
 
 ---
 
@@ -1338,10 +1338,10 @@ No hand-written HTTP calls to any model. Each provider module returns a LangChai
 
 | Provider | Class | Underlying transport |
 |---|---|---|
-| [`llm/providers/anthropic.py:16`](../yuyutsava/llm/providers/anthropic.py#L16) | `ChatAnthropic` | HTTP/1.1 via `httpx`; **SSE** for streaming |
-| [`llm/providers/vertex.py:14`](../yuyutsava/llm/providers/vertex.py#L14) | `ChatVertexAI` | **gRPC** (`grpc.aio`), server-streaming RPC |
-| [`llm/providers/google.py:15`](../yuyutsava/llm/providers/google.py#L15) | `ChatGoogleGenerativeAI` | same loop-bound async client family |
-| [`llm/providers/openai_compat.py:41`](../yuyutsava/llm/providers/openai_compat.py#L41) | `ChatOpenAI` | HTTP/1.1 `httpx`, SSE streaming |
+| [`llm/providers/anthropic.py:16`](../../yuyutsava/llm/providers/anthropic.py#L16) | `ChatAnthropic` | HTTP/1.1 via `httpx`; **SSE** for streaming |
+| [`llm/providers/vertex.py:14`](../../yuyutsava/llm/providers/vertex.py#L14) | `ChatVertexAI` | **gRPC** (`grpc.aio`), server-streaming RPC |
+| [`llm/providers/google.py:15`](../../yuyutsava/llm/providers/google.py#L15) | `ChatGoogleGenerativeAI` | same loop-bound async client family |
+| [`llm/providers/openai_compat.py:41`](../../yuyutsava/llm/providers/openai_compat.py#L41) | `ChatOpenAI` | HTTP/1.1 `httpx`, SSE streaming |
 | `azure.py`, `bedrock.py`, `cohere.py`, `mistral.py` | — | HTTPS (Bedrock = sigv4 over `botocore`) |
 
 The gRPC nature of Vertex/Google is load-bearing, not trivia — it forces a whole
@@ -1349,21 +1349,21 @@ loop-affinity discipline:
 
 > a `grpc.aio` `PredictionServiceAsyncClient` … binds permanently to the event loop
 > running at creation time
-> — [`llm/quirks/loop_affinity.py:6`](../yuyutsava/llm/quirks/loop_affinity.py#L6)
+> — [`llm/quirks/loop_affinity.py:6`](../../yuyutsava/llm/quirks/loop_affinity.py#L6)
 
-declared as a capability at [`vertex.py:19`](../yuyutsava/llm/providers/vertex.py#L19):
+declared as a capability at [`vertex.py:19`](../../yuyutsava/llm/providers/vertex.py#L19):
 `capabilities = frozenset({Capability.LOOP_AFFINE})`.
 
 **Other outbound transports worth knowing about:**
 
 - Embeddings: `httpx.AsyncClient`, one per event loop
-  ([`memory/embedder.py:44`](../yuyutsava/memory/embedder.py#L44)).
-- Diagram rendering: HTTP POST to Kroki ([`visuals/_kroki.py`](../yuyutsava/visuals/_kroki.py)).
+  ([`memory/embedder.py:44`](../../yuyutsava/memory/embedder.py#L44)).
+- Diagram rendering: HTTP POST to Kroki ([`visuals/_kroki.py`](../../yuyutsava/visuals/_kroki.py)).
 - **A second in-process ASGI server**: async subagents run on a LangGraph Agent Protocol
   server started in a daemon thread with its own uvicorn loop on an ephemeral loopback
-  port ([`async_subagents/host.py:19,214-228`](../yuyutsava/async_subagents/host.py#L19)).
+  port ([`async_subagents/host.py:19,214-228`](../../yuyutsava/async_subagents/host.py#L19)).
   The CLI reaches it over HTTP as `bundle.async_host_url`.
-  `RemoteAsyncSubagentSpec` ([`async_subagents/remote.py:24`](../yuyutsava/async_subagents/remote.py#L24))
+  `RemoteAsyncSubagentSpec` ([`async_subagents/remote.py:24`](../../yuyutsava/async_subagents/remote.py#L24))
   points the master at *remote* Agent Protocol servers over HTTPS.
 
 ---
@@ -1374,8 +1374,8 @@ declared as a capability at [`vertex.py:19`](../yuyutsava/llm/providers/vertex.p
 
 Worth repeating because it inverts the usual mental model. `yuyutsava chat` runs the agent
 in the same process that read your keystroke
-([`chat_repl.py:709`](../yuyutsava/cli/commands/chat_repl.py#L709),
-[`conversation/service.py:214`](../yuyutsava/conversation/service.py#L214)). The only
+([`chat_repl.py:709`](../../yuyutsava/cli/commands/chat_repl.py#L709),
+[`conversation/service.py:214`](../../yuyutsava/conversation/service.py#L214)). The only
 CLI↔daemon traffic is HITL approvals over HTTP+SSE. If you are debugging "why doesn't the
 CLI see X", the answer is usually that X lives in the daemon and the CLI never asked.
 
@@ -1419,20 +1419,20 @@ def install_auth_middleware(app: FastAPI, settings: AuthSettings) -> None:
 
 Starlette's `@app.middleware("http")` only sees HTTP scopes, so **WebSocket connections
 bypass the bearer check entirely**, even on a network bind. This contradicts the
-docstring at [`converse.py:67`](../yuyutsava/daemon/web/routers/converse.py#L67), which
+docstring at [`converse.py:67`](../../yuyutsava/daemon/web/routers/converse.py#L67), which
 states that `?token=` is consumed by the middleware. Loopback binds are unaffected in
 practice; a Tailscale/LAN bind is the exposure. Treat as a security note.
 
 Related: `_PUBLIC_PATHS = {"/health","/v1/health"}` and
 `_QUERY_TOKEN_PATHS = {"/stream","/v1/stream"}`
-([`auth.py:37-41`](../yuyutsava/daemon/web/auth.py#L37-L41)) — the query-token exemption
+([`auth.py:37-41`](../../yuyutsava/daemon/web/auth.py#L37-L41)) — the query-token exemption
 exists because `EventSource` cannot set an `Authorization` header. Access logging is
 disabled when auth is enforced, so tokens don't leak into logs
-([`bootstrap.py:1534`](../yuyutsava/daemon/bootstrap.py#L1534)).
+([`bootstrap.py:1534`](../../yuyutsava/daemon/bootstrap.py#L1534)).
 
 ### 16.5 No client keep-alive
 
-The server implements `ping`/`pong` ([`converse.py:896-898`](../yuyutsava/daemon/web/routers/converse.py#L896-L898)),
+The server implements `ping`/`pong` ([`converse.py:896-898`](../../yuyutsava/daemon/web/routers/converse.py#L896-L898)),
 but **no renderer code ever sends a ping**. Idle sockets rely on the reconnect path
 instead. Fine on loopback; something to revisit if the daemon is ever reached through a
 proxy with an idle timeout.
@@ -1448,7 +1448,7 @@ for prose and drops **only** `audio_chunk` past `EPHEMERAL_BACKLOG`
 
 It is fanned live and never ringed, because a turn's PCM is megabytes. Replay of spoken
 replies goes through the persisted WAV
-(`_persist_voice_message` → `write_voice_wav`, [`converse.py:585-611`](../yuyutsava/daemon/web/routers/converse.py#L585-L611))
+(`_persist_voice_message` → `write_voice_wav`, [`converse.py:585-611`](../../yuyutsava/daemon/web/routers/converse.py#L585-L611))
 and an `audio_url` on the history row — not through the frame ring.
 
 ### 16.8 Voice PCM is base64-in-JSON, not binary frames
@@ -1461,17 +1461,17 @@ is not the bottleneck.
 ### 16.9 The Selector-loop constraint on new pipe transports
 
 > a Selector loop cannot `create_subprocess_exec`
-> — [`yuyutsava/aio/run.py:19`](../yuyutsava/aio/run.py#L19)
+> — [`yuyutsava/aio/run.py:19`](../../yuyutsava/aio/run.py#L19)
 
 The CLI runs on a Selector event loop, so subprocess spawning is pushed off-loop into a
-thread ([`platform/process.py:157-185`](../yuyutsava/platform/process.py#L157-L185),
-[`agents/task_runner/executor.py:114`](../yuyutsava/agents/task_runner/executor.py#L114)).
+thread ([`platform/process.py:157-185`](../../yuyutsava/platform/process.py#L157-L185),
+[`agents/task_runner/executor.py:114`](../../yuyutsava/agents/task_runner/executor.py#L114)).
 **Any new pipe transport added on the CLI path hits this** — spawn off-loop or it will
 fail only under the CLI and work fine under the daemon.
 
 ### 16.10 Every route exists twice
 
-`/tasks` and `/v1/tasks` are the same handler ([`app.py:231`](../yuyutsava/daemon/web/app.py#L231)).
+`/tasks` and `/v1/tasks` are the same handler ([`app.py:231`](../../yuyutsava/daemon/web/app.py#L231)).
 `/v1` is canonical; the bare form is a legacy alias hidden from the OpenAPI schema. When
 grepping for a route, expect two mounts and one definition.
 

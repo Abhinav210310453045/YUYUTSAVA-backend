@@ -33,7 +33,7 @@ dependencies = [
     "requests>=2.32.5",
     # --- Agent framework -------------------------------------------------
     # Upper bounds are deliberate. This codebase couples to framework
-    # internals (see docs/architecture-review/04-findings-thirdparty-coupling.md),
+    # internals (see docs/architecture/review/04-findings-thirdparty-coupling.md),
     # and some of those couplings fail SILENTLY on upgrade. Do not relax a
     # ceiling without running test/framework_contract/.
     #

@@ -24,7 +24,7 @@ Do not "fix" a divergence by editing this file alone — that would make the
 matrix lie. Change the builder, then update the profile (the conformance test
 fails until both agree).
 
-See docs/architecture-review/adr/ADR-001-agent-build-pipeline.md.
+See docs/architecture/review/adr/ADR-001-agent-build-pipeline.md.
 """
 
 from __future__ import annotations

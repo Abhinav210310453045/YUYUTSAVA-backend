@@ -32,7 +32,7 @@ import urllib.error
 import urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-DOCS = ("Architecture.md", "DAEMON_ARCHITECTURE.md")
+DOCS = ("docs/architecture/overview.md", "docs/architecture/daemon.md")
 DEFAULT_KROKI = "http://127.0.0.1:8000"
 
 #: Characters that are structural in a Mermaid mindmap node label. Flagged

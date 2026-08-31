@@ -659,7 +659,7 @@ MIGRATIONS: list[tuple[int, str]] = [
     ),
     (
         16,
-        # TODO board (docs/TODO_BOARD_PLAN.md). Cards are the user's GLOBAL
+        # TODO board (docs/design/todo-board.md). Cards are the user's GLOBAL
         # planning/thinking surface — durable user data like message_feedback:
         # DELIBERATELY no thread FK and NOT listed in purge_session's tables, so
         # the board survives session deletion. Notes/attachments hang off a card

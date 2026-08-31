@@ -1,6 +1,6 @@
 """The one place this system knows about ``AgentMiddleware``.
 
-Phase 4 step 4.2, [ADR-004](../../docs/architecture-review/adr/ADR-004-framework-boundary.md)
+Phase 4 step 4.2, [ADR-004](../../docs/architecture/review/adr/ADR-004-framework-boundary.md)
 item 1. Fourteen framework subclasses collapse to one adapter; a hook-signature
 change becomes a one-file change instead of a fourteen-file change.
 

@@ -3,7 +3,8 @@
 Walks through running every code path added by the async-subagents work so you
 can validate the system end-to-end on your machine.
 
-Time budget: **~20 minutes** for the full sweep.
+Time budget: **~20 minutes** for the full sweep. `$REPO` below stands for
+wherever you cloned the repository.
 
 ---
 
@@ -129,7 +130,7 @@ Type your answer and hit Enter; the run resumes.
 > reasonably split, e.g. *"organise my Downloads folder in the background and
 > in the meantime tell me about the latest news"*. The system prompt
 > explicitly tells the master to prefer `start_async_task` for long-running
-> work — see [`yuyutsava/core/prompts.py`](../yuyutsava/core/prompts.py)
+> work — see [`yuyutsava/core/prompts.py`](../../yuyutsava/core/prompts.py)
 > (`ASYNC_SUBAGENT_GUIDANCE`).
 
 ---
@@ -297,7 +298,6 @@ The master sees them automatically — there's no extra config on our side.
 
 ## 7. Where the code lives
 
-* Plan + design notes: `$HOME/.claude/plans/i-want-you-to-immutable-phoenix.md`
 * Backend Python: `yuyutsava/async_subagents/` (host, mirror, watcher, cap, remote, session_origin)
 * CLI side: `yuyutsava/cli/async_hitl.py`, `yuyutsava/cli/remote_attach.py`, `yuyutsava/cli/commands/attach.py`
 * Daemon side: `yuyutsava/daemon/cli_remote_channel.py`, `yuyutsava/daemon/web/routers/cli_attach.py`

@@ -19,7 +19,7 @@
 
    Recorded here because this constraint previously existed only outside the
    repository, which is exactly how an abandoned design gets accidentally
-   revived. See docs/architecture-review/03-findings-dry-kiss.md (``F-K04``).
+   revived. See docs/architecture/review/03-findings-dry-kiss.md (``F-K04``).
 
 Lets the orchestrator build a fresh, throwaway ReAct agent at call time with an
 explicit tool subset. The child is run synchronously inline; its final

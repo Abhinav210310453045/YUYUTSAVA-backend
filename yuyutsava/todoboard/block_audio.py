@@ -1,6 +1,6 @@
 """Audio artifact block: audio files on cards + TTS-generated voice notes.
 
-Phase-7 proof of the pluggability contract (docs/TODO_BOARD_PLAN.md §8): the
+Phase-7 proof of the pluggability contract (docs/design/todo-board.md §8): the
 whole backend of the block is this module plus one ``register_block`` entry
 in ``artifacts.py`` — zero edits to exchange/store/router/tools. Rows ride
 the closed V1 kind vocabulary as ``kind="file"`` refined by ``audio/*``

@@ -3,11 +3,11 @@
 **Status:** Proposal. Not implemented. For review before any code changes are scoped.
 **Scope:** The `ToolRegistry` lazy-discovery mechanism — how tool schemas are served to the LLM on demand. This is about *which tool definitions enter the context*, NOT about file/shell search behavior (that is a separate concern).
 **Related code:**
-- [yuyutsava/core/tool_registry.py](../yuyutsava/core/tool_registry.py) — `ToolRegistry`, `search()`, `schema_block()`, `make_tool_search_tool()`
-- [yuyutsava/core/tool_filter_middleware.py](../yuyutsava/core/tool_filter_middleware.py) — prefix/name suppression of tool schemas
-- [yuyutsava/core/prompts.py](../yuyutsava/core/prompts.py) — `_TOOL_DISCOVERY_SECTION`
-- [yuyutsava/core/engine.py](../yuyutsava/core/engine.py) — `_build_tool_registry_and_tools()`
-- [yuyutsava/agents/base_sub_agent.py](../yuyutsava/agents/base_sub_agent.py) — same pattern for sub-agents
+- [yuyutsava/core/tool_registry.py](../../yuyutsava/core/tool_registry.py) — `ToolRegistry`, `search()`, `schema_block()`, `make_tool_search_tool()`
+- [yuyutsava/core/tool_filter_policy.py](../../yuyutsava/core/tool_filter_policy.py) — prefix/name suppression of tool schemas
+- [yuyutsava/core/prompts.py](../../yuyutsava/core/prompts.py) — `_TOOL_DISCOVERY_SECTION`
+- [yuyutsava/core/engine.py](../../yuyutsava/core/engine.py) — `_build_tool_registry_and_tools()`
+- [yuyutsava/agents/base_sub_agent.py](../../yuyutsava/agents/base_sub_agent.py) — same pattern for sub-agents
 
 ---
 
@@ -22,7 +22,7 @@ Two stages, today:
 1. **Before search** — `ToolFilterMiddleware` strips every `tr_* / ws_* / sk_* / fo_* / ev_* / db_*` tool and the deepagents built-ins from the model's tool list on every LLM call. The model sees only `tool_search` plus the prose hints in `_TOOL_DISCOVERY_SECTION` (prefix patterns + a comma-separated list of bare verb names — no descriptions, no parameters).
 2. **After `tool_search(pattern)`** — `ToolRegistry.search()` does `fnmatch.fnmatchcase(name, pattern)` over the registry and `schema_block()` renders `{name, description, full JSON parameter schema}` for **all** matches into the result.
 
-The defect lives entirely in step 2: `search()` returns the whole match set ([tool_registry.py:57-62](../yuyutsava/core/tool_registry.py#L57-L62)) and `schema_block()` serializes all of them ([tool_registry.py:64-77](../yuyutsava/core/tool_registry.py#L64-L77)). Grouping (the `tr_`/`ws_` prefix convention) is being used as the retrieval key, when it should only be a namespace.
+The defect lives entirely in step 2: `search()` returns the whole match set ([tool_registry.py:57-62](../../yuyutsava/core/tool_registry.py#L57-L62)) and `schema_block()` serializes all of them ([tool_registry.py:64-77](../../yuyutsava/core/tool_registry.py#L64-L77)). Grouping (the `tr_`/`ws_` prefix convention) is being used as the retrieval key, when it should only be a namespace.
 
 ## 3. What the industry actually does (the target behavior)
 

@@ -109,7 +109,7 @@ TinkerAgent registered via `as_async_subagent_spec()` so the master can delegate
 JSX-sandbox renderer (sandboxed iframe/webview, CSP, no remote fetch) and audio artifacts (TTS pipeline) — each as a new block module proving the pluggability claim.
 
 ## Conventions
-- Track progress in `docs/TODO_BOARD_PLAN.md` + progress file (mirrors the `docs/MASTER_PLAN.md` protocol); commit locally per phase, never push; pause for review between phases.
+- Build phase by phase; each phase should leave the board working end to end.
 - Testing: fast standalone python checks (no full pytest / app-importing tests — slow langgraph import), `vite build` for renderer changes, manual daemon/Electron runs for e2e.
 
 ## Key files touched (representative)

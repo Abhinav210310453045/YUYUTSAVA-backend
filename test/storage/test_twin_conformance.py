@@ -29,7 +29,7 @@ import re
 import unittest
 
 #: (module, interface, sqlite impl, pg impl) for every domain with two backends.
-#: Derived from docs/architecture-review/01-evidence-and-metrics.md § M3.
+#: Derived from docs/architecture/review/01-evidence-and-metrics.md § M3.
 TWINS: tuple[tuple[str, str, str, str], ...] = (
     ("yuyutsava.daemon.usage", "UsageStore", "SqliteUsageStore", "PgUsageStore"),
 )

@@ -1,6 +1,6 @@
 """JSX sandbox artifact block (backend half).
 
-Phase-7 proof of the pluggability contract (docs/TODO_BOARD_PLAN.md §8): one
+Phase-7 proof of the pluggability contract (docs/design/todo-board.md §8): one
 module plus one ``register_block`` entry in ``artifacts.py``. Rows ride the
 closed V1 ``artifact`` kind refined by the ``text/jsx`` mime (HTML artifacts
 already flow as ``file``/``text/html`` through the text block's mimes — the

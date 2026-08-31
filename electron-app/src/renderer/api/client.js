@@ -87,7 +87,7 @@ export const getTaskLogs = (taskId) =>
 export const getLogLevel = () => _json('GET', '/logs/level')
 export const setLogLevel = (level) => _json('PUT', '/logs/level', { level })
 
-// TODO board (docs/TODO_BOARD_PLAN.md). Responses are the versioned exchange
+// TODO board (docs/design/todo-board.md). Responses are the versioned exchange
 // models (TodoCardV1 / TodoCardSummaryV1 / TodoNoteV1); note PATCH/DELETE are
 // scoped under the card so the daemon can 404 cross-card note ids.
 export const listTodos = (status = null, tag = null, limit = 500) => {

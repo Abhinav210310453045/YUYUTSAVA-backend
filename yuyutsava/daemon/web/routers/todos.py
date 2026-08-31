@@ -1,4 +1,4 @@
-"""HTTP endpoints for the TODO board (docs/TODO_BOARD_PLAN.md).
+"""HTTP endpoints for the TODO board (docs/design/todo-board.md).
 
 CRUD over the exchange protocol — this router never touches the store or its
 tables. Typed exchange exceptions map deterministically onto HTTP statuses:

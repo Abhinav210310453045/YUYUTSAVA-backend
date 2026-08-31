@@ -54,7 +54,7 @@ class VisualOut(BaseModel):
 
 class RenderIn(BaseModel):
     kind: str = Field(..., description="chart | diagram | table | code | math | timeline")
-    spec: dict[str, Any] = Field(..., description="Renderer spec (see docs/VISUAL_TOOLS.md)")
+    spec: dict[str, Any] = Field(..., description="Renderer spec (see docs/reference/visual-tools.md)")
     thread_id: str = Field("rest", description="Thread/session to file the visual under")
 
 

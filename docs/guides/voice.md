@@ -1,18 +1,12 @@
-# YUYUTSAVA Voice Interface — What Was Built & How to Test It
+# Voice Interface — What Was Built & How to Test It
 
 > **Status:** All 7 phases are **code-complete and statically verified**
 > (`py_compile`, `vite build`, `npx tsc --noEmit`). What remains is **live
-> end-to-end verification** against a running daemon and **on-device mobile
-> testing** — this document is your checklist for that.
+> end-to-end verification** against a running daemon — this document is your
+> checklist for that.
 >
-> **Source plan (single source of truth):**
-> [`~/.claude/plans/hey-i-want-to-cryptic-spark.md`]($HOME/.claude/plans/hey-i-want-to-cryptic-spark.md)
-> — read the top **IMPLEMENTATION STATUS** block there for the per-phase done/pending detail.
->
-> **Repos**
-> - Backend: `$REPO` (branch `yuyutsava-daemon`)
-> - Mobile: `$MOBILE_REPO` (branch `main`)
-> - Electron app: `YUYUTSAVA-backend/electron-app`
+> **Paths below** are written relative to the repository root; `$REPO` stands
+> for wherever you cloned it. The Electron app lives at `$REPO/electron-app`.
 
 ---
 
@@ -93,7 +87,7 @@ The mobile voice path uses a native audio module
 (`react-native-live-audio-stream`), so Expo Go won't work. Build a dev client:
 
 ```bash
-cd $MOBILE_REPO
+cd $MOBILE_REPO   # the separate yuyutsava-mobile checkout
 npm install
 npx expo run:ios        # or: npx expo run:android   (creates the custom dev build)
 ```
@@ -330,4 +324,3 @@ Audio blobs live at `~/.yuyutsava/blobs/voice/<thread_id>/*.wav`.
 
 ---
 
-*Plan & live status:* [`~/.claude/plans/hey-i-want-to-cryptic-spark.md`]($HOME/.claude/plans/hey-i-want-to-cryptic-spark.md)

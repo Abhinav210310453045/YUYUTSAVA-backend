@@ -13,7 +13,7 @@ has moved; the failure message names the file to fix.
 Why this exists: three of the couplings it checks fail with **no exception, no
 log line, and no test failure** — the agent simply behaves differently and the
 change gets blamed on the model. See
-docs/architecture-review/04-findings-thirdparty-coupling.md (F-T04).
+docs/architecture/review/04-findings-thirdparty-coupling.md (F-T04).
 
 Covers:
   1. deepagents filesystem prompt block is still stripped     (silent failure)

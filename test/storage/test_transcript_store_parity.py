@@ -1,7 +1,7 @@
 """``UnifiedTranscriptStore`` behaves identically on SQLite and Postgres.
 
 Phase 2 step 2.5b, playbook order 8. Written **before** the unified store, per
-``docs/architecture-review/07-migration-playbook.md`` step 2.
+``docs/architecture/review/07-migration-playbook.md`` step 2.
 
 This is the first migration to exercise every capability the dialect offers at
 once, which is why it is worth doing before the larger stores:

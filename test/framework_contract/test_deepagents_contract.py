@@ -17,7 +17,7 @@ built, no model is called, nothing hits the network.
 Run directly:  .venv/bin/python test/framework_contract/test_deepagents_contract.py
 Or via pytest: pytest test/framework_contract/
 
-See docs/architecture-review/04-findings-thirdparty-coupling.md (F-T04).
+See docs/architecture/review/04-findings-thirdparty-coupling.md (F-T04).
 """
 
 from __future__ import annotations

@@ -14,7 +14,7 @@ items remain to be done **when we package**. This doc is the checklist.
 macOS LaunchServices caches the dock/display name keyed to that bundle, so the
 name is sticky regardless of what we set at runtime. We already apply a
 best-effort dev workaround in
-[electron-app/scripts/launch-electron.js](../electron-app/scripts/launch-electron.js):
+[electron-app/scripts/launch-electron.js](../../electron-app/scripts/launch-electron.js):
 it patches the bundle's `Info.plist` (`CFBundleName`, `CFBundleDisplayName`,
 `CFBundleExecutable`, and `CFBundleIdentifier` → `com.yuyutsava.terminal`),
 renames the binary, removes the stale `Electron` binary, then runs `lsregister`
@@ -24,9 +24,9 @@ dev. **The packaging step is what makes the name stick.**
 ## What is already done (no action needed)
 
 - `app.setName('YUYUTSAVA')` is called before `app.whenReady()` —
-  [electron-app/src/main/index.js:2](../electron-app/src/main/index.js#L2).
+  [electron-app/src/main/index.js:2](../../electron-app/src/main/index.js#L2).
 - Packager is fully configured —
-  [electron-app/electron-builder.config.js](../electron-app/electron-builder.config.js):
+  [electron-app/electron-builder.config.js](../../electron-app/electron-builder.config.js):
   - `appId: 'com.yuyutsava.terminal'`
   - `productName: 'YUYUTSAVA Terminal'`
   - `mac.icon: 'assets/icon.icns'`
@@ -53,7 +53,7 @@ Info.plist correctly.
 The bold app menu next to the Apple logo comes from the **application menu**, not
 from `productName`. We have not added one yet (only a tray menu exists). When
 packaging, add to the main process (e.g. in
-[electron-app/src/main/index.js](../electron-app/src/main/index.js), after the
+[electron-app/src/main/index.js](../../electron-app/src/main/index.js), after the
 window is created):
 
 ```js
@@ -99,7 +99,7 @@ unaffected.
 
 | Concern | File |
 |---|---|
-| Runtime app name | [electron-app/src/main/index.js](../electron-app/src/main/index.js) (`app.setName`) |
-| Packaged name / appId / icon | [electron-app/electron-builder.config.js](../electron-app/electron-builder.config.js) |
-| Dev-mode dock workaround | [electron-app/scripts/launch-electron.js](../electron-app/scripts/launch-electron.js) |
+| Runtime app name | [electron-app/src/main/index.js](../../electron-app/src/main/index.js) (`app.setName`) |
+| Packaged name / appId / icon | [electron-app/electron-builder.config.js](../../electron-app/electron-builder.config.js) |
+| Dev-mode dock workaround | [electron-app/scripts/launch-electron.js](../../electron-app/scripts/launch-electron.js) |
 | Build command | `npm run dist` (in `electron-app/`) |

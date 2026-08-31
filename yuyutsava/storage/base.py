@@ -13,7 +13,7 @@ Changing its transaction or retry behaviour changes all of them at once.
 Note that only the *SQLite* twins inherit from it — the Postgres twins reach
 the pool directly and therefore do NOT get its ``BEGIN IMMEDIATE`` wrapper or
 its retry policy. That asymmetry is a known LSP defect (finding ``F-S10`` in
-docs/architecture-review/); it is resolved by ADR-002, which moves the
+docs/architecture/review/); it is resolved by ADR-002, which moves the
 transaction policy into a shared dialect adapter.
 """
 

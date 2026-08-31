@@ -1177,7 +1177,7 @@ at boot via `ChannelPluginRegistry`; their inbound messages land on the same
 
 > Wire-level detail — every transport in the system (stdin, SSE, WebSocket, REST,
 > stdio pipes), the full frame catalogs and the CLI's in-process path — lives in
-> [`docs/Transport.md`](docs/Transport.md).
+> [`docs/Transport.md`](transport.md).
 
 `daemon/web/` is a modular FastAPI app. `app.create_app()` wires routers, attaches the
 daemon singletons to `app.state` for `Depends(...)`, and mounts **every API router
@@ -1879,7 +1879,7 @@ YUYUTSAVA_EXECUTION=docker + YUYUTSAVA_DOCKER_* (sandbox)
 ---
 
 *This document reflects the current source tree (updated after the Phase 0–4
-architecture remediation — see `docs/architecture-review/`). When you change a
+architecture remediation — see `docs/architecture/review/`). When you change a
 subsystem's wiring (`daemon/bootstrap.py`), a policy or its ordering
 (`yuyutsava/policy/`, `core/engine.py`), a storage migration
 (`storage/pg/migrations.py`), or a channel/consent contract, update the

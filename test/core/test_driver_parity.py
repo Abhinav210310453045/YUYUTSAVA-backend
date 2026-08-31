@@ -1,6 +1,6 @@
 """One driver, two surfaces: ``astream_agent`` still behaves as it did.
 
-Phase 4 step 4.5, addressing [`F-D03`](../../docs/architecture-review/03-findings-dry-kiss.md#f-d03)
+Phase 4 step 4.5, addressing [`F-D03`](../../docs/architecture/review/03-findings-dry-kiss.md#f-d03)
 and ADR-004 item 5 — *"collapse ``astream_agent`` / ``astream_agent_iter`` into
 one driver plus a sink"*.
 

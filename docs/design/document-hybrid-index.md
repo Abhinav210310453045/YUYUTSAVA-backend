@@ -5,7 +5,7 @@
 Today YUYUTSAVA can only read **UTF-8 plain text**. The single content path is
 `tr_read_file` → `execute_read` → `_sync_read_paginated`, which does
 `path.read_text(encoding="utf-8", errors="replace")`
-([executor.py:242](yuyutsava/agents/task_runner/executor.py#L242)). Consequences:
+([executor.py:242](../../yuyutsava/agents/task_runner/executor.py#L242)). Consequences:
 
 - **Binary docs (PDF/DOCX/XLSX/PPTX) return replacement-char garbage**, silently — no error.
 - **Non-UTF-8 text/code** (latin-1, utf-16, cp1252, shift-jis …) is mangled.
@@ -92,7 +92,7 @@ tools already enforce for oversized tool results — we reuse it, not reinvent i
 
 Mirrors the existing pluggable-registry idiom (`todoboard/artifacts.py`
 `ArtifactBlock` registry + `_MAGIC` byte-signatures in
-[tools.py:60](yuyutsava/agents/task_runner/tools.py#L60)).
+[tools.py:60](../../yuyutsava/agents/task_runner/tools.py#L60)).
 
 - `documents/extractors/base.py` — contract:
   ```python
@@ -127,7 +127,7 @@ Mirrors the existing pluggable-registry idiom (`todoboard/artifacts.py`
     slide + speaker notes, locator `{"slide":n}`.
   - (optional) `markitdown_ext.py` — long-tail formats only.
 
-### 2. Storage — PG migration **v17** in [migrations.py](yuyutsava/storage/pg/migrations.py)
+### 2. Storage — PG migration **v17** in [migrations.py](../../yuyutsava/storage/pg/migrations.py)
 
 Append `(17, sql)` (current max is v16 — never edit an applied migration). Two tables:
 
@@ -173,13 +173,13 @@ transcript/artifact chunks); resilience is NULL-row backfill + boot re-index.
 
 ### 3. Index pipeline — new `yuyutsava/documents/index.py :: PgDocumentIndex`
 
-Direct analogue of [transcript_index.py](yuyutsava/context/transcript_index.py)
+Direct analogue of [transcript_index.py](../../yuyutsava/context/transcript_index.py)
 `PgTranscriptIndex` — copy its structure:
 
 - `index_document(path, thread_id=None)` — **idempotent by sha256**: if a
   `documents` row with the same hash exists and file unchanged, skip. Else
   extract → `chunk_text(seg.text, target_chars=1200)` (reuse
-  [chunking.py](yuyutsava/retrieval/chunking.py), carrying each chunk's `locator`
+  [chunking.py](../../yuyutsava/retrieval/chunking.py), carrying each chunk's `locator`
   + `char_offset`) → `embedder.embed(texts, mode="document")` → INSERT
   `documents` + `document_chunks`. On embed failure store **NULL-embedding rows**
   (keyword-findable, later re-embedded by `PgVectorSearch.backfill`). Never raises.
@@ -189,7 +189,7 @@ Direct analogue of [transcript_index.py](yuyutsava/context/transcript_index.py)
 - `sync()` / boot re-index of `status='indexing'` stragglers, wired in bootstrap
   like `TodoNoteIndex.sync`.
 
-### 4. Hybrid search — extend [pg.py](yuyutsava/retrieval/pg.py) `PgVectorSearch`
+### 4. Hybrid search — extend [pg.py](../../yuyutsava/retrieval/pg.py) `PgVectorSearch`
 
 Add an optional `text_search_col: str | None = None` to `PgVectorTable`, and a
 new method (keeps the caller-owns-connection + `where`/`params` contract):
@@ -213,7 +213,7 @@ later upgrade memory/skills to hybrid too.
 ### 5. Agent surface — new `doc_*` tool family
 
 New factory `yuyutsava/tools/documents.py :: make_document_tools(...)` (mirror
-`make_search_tools` in [search.py](yuyutsava/tools/search.py)):
+`make_search_tools` in [search.py](../../yuyutsava/tools/search.py)):
 
 - `doc_index(path, reason)` → `{doc_id, mime, pages, chunk_count, outline}` — small manifest.
 - `doc_search(query, doc_id=None, k=8, reason)` → ranked snippets + locators,
@@ -223,31 +223,31 @@ New factory `yuyutsava/tools/documents.py :: make_document_tools(...)` (mirror
 - `doc_list(reason)` → indexed docs for this thread.
 
 **Registration** — one edit in `_build_tool_registry_and_tools`
-([engine.py:302](yuyutsava/core/engine.py#L302)): add `document_tools` to
+([engine.py:302](../../yuyutsava/core/engine.py#L302)): add `document_tools` to
 `all_custom_tools` (covers CLI agent + orchestrator via `master_tools`). Add
 `"doc_"` to `_SUPPRESS_PREFIXES`
-([tool_filter_middleware.py:48](yuyutsava/core/tool_filter_middleware.py#L48))
+([tool_filter_policy.py:46](../../yuyutsava/core/tool_filter_policy.py#L46))
 for lazy discovery. Subagents opt in via `extra_tools()`
-([base_sub_agent.py](yuyutsava/agents/base_sub_agent.py#L225)).
+([base_sub_agent.py](../../yuyutsava/agents/base_sub_agent.py#L225)).
 
 **Prompt** — add a short section to
-[task_runner/prompts.py](yuyutsava/agents/task_runner/prompts.py): "For
+[task_runner/prompts.py](../../yuyutsava/agents/task_runner/prompts.py): "For
 PDF/DOCX/XLSX/PPTX or large docs use `doc_index`/`doc_search`/`doc_read` — never
 `tr_read_file` (which only reads UTF-8 text)."
 
 **`tr_read_file` binary guard** — small, high-value fix in
-[executor.py](yuyutsava/agents/task_runner/executor.py): sniff `b"\x00"` in the
+[executor.py](../../yuyutsava/agents/task_runner/executor.py): sniff `b"\x00"` in the
 first 8 KB (the grep path already does this at
-[executor.py:363](yuyutsava/agents/task_runner/executor.py#L363)) and, for a
+[executor.py:363](../../yuyutsava/agents/task_runner/executor.py#L363)) and, for a
 binary/non-text file, return the **already-existing-but-unused**
 `SuppressedContentNotice.binary_content()`
-([tool_messages.py:153](yuyutsava/models/tool_messages.py#L153)) with a recovery
+([tool_messages.py:153](../../yuyutsava/models/tool_messages.py#L153)) with a recovery
 hint pointing at `doc_index`, instead of replacement-char garbage.
 
 ### 6. Auto-on-attach
 
 Hook the existing attachment path so uploaded/attached docs index in the
-background. In [todoboard/artifacts.py](yuyutsava/todoboard/artifacts.py) the
+background. In [todoboard/artifacts.py](../../yuyutsava/todoboard/artifacts.py) the
 `file` block already accepts `application/pdf`; extend `upload_mimes` to the doc
 mimes and, on successful attach, fire `PgDocumentIndex.index_document(path,
 thread_id)` fire-and-forget (best-effort, mirrors `TodoNoteIndex.schedule`).
@@ -255,8 +255,8 @@ thread_id)` fire-and-forget (best-effort, mirrors `TodoNoteIndex.schedule`).
 ### 7. Wiring
 
 - Construct `PgDocumentIndex(pg_pool, embedder=embedder)` where
-  `PgTranscriptIndex` is built — [agent_stack.py:227](yuyutsava/cli/agent_stack.py#L227)
-  (CLI) and [daemon/bootstrap.py](yuyutsava/daemon/bootstrap.py) (daemon); `None`
+  `PgTranscriptIndex` is built — [agent_stack.py:227](../../yuyutsava/cli/agent_stack.py#L227)
+  (CLI) and [daemon/bootstrap.py](../../yuyutsava/daemon/bootstrap.py) (daemon); `None`
   on the SQLite/no-PG fallback (docs simply not indexable then, like transcript recall).
 - Pass into `make_document_tools`; register per §5.
 - Lifecycle: `document_chunks` CASCADEs from `documents`; session-scoped

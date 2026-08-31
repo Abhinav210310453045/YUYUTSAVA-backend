@@ -3,7 +3,7 @@
 The review measured the cost of adding a master agent at ~475 lines, ~85% of it
 copied from an existing builder, plus an undocumented capability decision on each
 of the divergent capabilities (12 at the time). See
-docs/architecture-review/05-change-cost-scenarios.md, Scenario A.
+docs/architecture/review/05-change-cost-scenarios.md, Scenario A.
 
 This test defines a hypothetical fourth master entirely as **data** and drives
 the shared assembly helpers with it. It measures the real cost and fails if that
@@ -148,7 +148,7 @@ class FourthMasterCost(unittest.TestCase):
         """The headline number, guarded.
 
         Baseline before ADR-001 work: ~475 lines, ~85% copied from an existing
-        builder (docs/architecture-review/05-change-cost-scenarios.md).
+        builder (docs/architecture/review/05-change-cost-scenarios.md).
 
         Now: the profile above, plus per-role prompt/workspace glue. This asserts
         the *declaration* stays small — if someone reintroduces per-role branches
