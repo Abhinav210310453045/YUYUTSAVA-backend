@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>YUYUTSAVA</title>
+<link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+<header>
+  <div class="brand">YUYUTSAVA</div>
+  <div class="status" id="status">connecting…</div>
+</header>
+
+<main>
+  <section class="pane timeline">
+    <h2>Timeline</h2>
+    <ol id="timeline"></ol>
+  </section>
+
+  <section class="pane agent">
+    <h2>Agent</h2>
+    <div id="agent-panel">
+      <div class="empty">No active proposals.</div>
+    </div>
+    <h3>Live</h3>
+    <pre id="live-stream" aria-live="polite"></pre>
+  </section>
+
+  <section class="pane rules">
+    <h2>Consent rules</h2>
+    <ul id="rules"></ul>
+  </section>
+</main>
+
+<script src="/static/app.js" defer></script>
+</body>
+</html>

@@ -8,25 +8,19 @@ Zone priority (highest → lowest): SYSTEM_CRITICAL → SANDBOX → WORKSPACE �
 from __future__ import annotations
 
 import os
-from pathlib import Path
 
 from yuyutsava.models.operations import FilesystemZone
+from yuyutsava.platform import host_profile
 
 # ---------------------------------------------------------------------------
-# System-critical path prefixes — always denied, checked first
+# System-critical path prefixes — always denied, checked first.
+# Sourced from the HostProfile so the list is correct per-OS (POSIX /etc,…;
+# Windows C:\Windows, C:\Program Files, …).
 # ---------------------------------------------------------------------------
 
-SYSTEM_CRITICAL_PREFIXES: list[str] = [
-    "/etc",
-    "/sys",
-    "/proc",
-    "/dev",
-    "/boot",
-    "/root",
-    "/usr/bin",
-    "/usr/sbin",
-    "/var/log",
-]
+
+def _system_critical_prefixes() -> tuple[str, ...]:
+    return host_profile().system_critical_prefixes
 
 
 def canonicalize(path: str) -> str:
@@ -34,13 +28,20 @@ def canonicalize(path: str) -> str:
     return os.path.normpath(os.path.realpath(os.path.abspath(os.path.expanduser(path))))
 
 
+def _norm(path: str) -> str:
+    """Case/separator-normalized path — no-op on POSIX; lowercases + '\\' on Windows."""
+    return os.path.normcase(os.path.normpath(path))
+
+
+def _matches_prefix(path: str, prefix: str) -> bool:
+    """True if *path* equals *prefix* or is a descendant — OS-separator aware."""
+    p, pre = _norm(path), _norm(prefix)
+    return p == pre or p.startswith(pre + os.sep)
+
+
 def _is_within(path: str, directory: str) -> bool:
     """Return True if *path* is equal to or a descendant of *directory*."""
-    try:
-        Path(path).relative_to(directory)
-        return True
-    except ValueError:
-        return False
+    return _matches_prefix(path, directory)
 
 
 def classify_zone(
@@ -70,15 +71,14 @@ def classify_zone(
     # - Symlink attacks are caught by the canonical path check.
     # - On macOS /etc → /private/etc, so realpath changes the prefix; checking
     #   the original path handles that transparently.
-    _paths_to_check = {path, canonical}
-    for _p in _paths_to_check:
-        for prefix in SYSTEM_CRITICAL_PREFIXES:
-            if _p == prefix or _p.startswith(prefix + "/"):
+    prefixes = _system_critical_prefixes()
+    for _p in {path, canonical}:
+        for prefix in prefixes:
+            if _matches_prefix(_p, prefix):
                 return FilesystemZone.SYSTEM_CRITICAL
     # Also canonicalize the prefixes themselves (handles macOS /etc→/private/etc)
-    for prefix in SYSTEM_CRITICAL_PREFIXES:
-        canon_prefix = canonicalize(prefix)
-        if canonical == canon_prefix or canonical.startswith(canon_prefix + "/"):
+    for prefix in prefixes:
+        if _matches_prefix(canonical, canonicalize(prefix)):
             return FilesystemZone.SYSTEM_CRITICAL
 
     # 2. Sandbox — within sandbox_root (a subdirectory of workspace)

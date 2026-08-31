@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>YUYUTSAVA — MCP Connectivity</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #161a22;
+    --panel2: #1d222c;
+    --line: #2a3140;
+    --accent: #6ea8fe;
+    --accent2: #f0b429;
+    --green: #4ade80;
+    --red: #f87171;
+    --text: #e6e9ef;
+    --muted: #99a2b3;
+    --code: #0b0d12;
+  }
+  html, body { background: var(--bg); color: var(--text); font-family: ui-sans-serif, -apple-system, system-ui, Segoe UI, Inter, sans-serif; margin: 0; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 28px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 28px 0 10px; color: var(--accent); border-left: 3px solid var(--accent); padding-left: 8px;}
+  h3 { font-size: 13px; margin: 14px 0 6px; color: var(--accent2); }
+  p, li { font-size: 13px; line-height: 1.55; color: var(--text); }
+  code, pre { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12.5px; }
+  pre { background: var(--code); padding: 12px 14px; border-radius: 8px; overflow:auto; border:1px solid var(--line); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  .pill { display: inline-block; padding: 2px 8px; border: 1px solid var(--line); border-radius: 999px; font-size: 11px; color: var(--muted); margin-right: 6px;}
+  .ok { color: var(--green); }
+  .no { color: var(--red); }
+  .muted { color: var(--muted); }
+  .legend span { display:inline-flex; align-items:center; gap:6px; margin-right: 14px; font-size: 12px;}
+  .dot { width:10px;height:10px;border-radius:50%; display:inline-block;}
+  svg { width: 100%; height: auto; background: var(--panel); border:1px solid var(--line); border-radius:10px;}
+  text { fill: var(--text); font-family: ui-sans-serif, system-ui, sans-serif; }
+  .label { font-size: 12px; }
+  .small { font-size: 10.5px; fill: var(--muted); }
+  .title { font-size: 13px; font-weight: 600; fill: #fff; }
+  rect.node { fill: #1d222c; stroke: #3a4459; stroke-width: 1.2; }
+  rect.node.daemon { fill:#172033; stroke:#3868a8;}
+  rect.node.mgr { fill:#1b2a1f; stroke:#3e8a55;}
+  rect.node.srv { fill:#2a2018; stroke:#a4711a;}
+  rect.node.agent { fill:#22182a; stroke:#7c5aa8;}
+  rect.node.remote { fill:#251720; stroke:#9b3a5c;}
+  line.edge, path.edge { stroke:#8ea0bd; stroke-width:1.5; fill:none; }
+  line.edge.dashed { stroke-dasharray:5 4; }
+  path.edge.bold { stroke:#6ea8fe; stroke-width:2;}
+  .marker-arrow { fill:#8ea0bd; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>YUYUTSAVA — MCP Connectivity</h1>
+<p class="muted">How the daemon connects to MCP servers, how tools reach the orchestrator and subagents, and what is <em>not</em> handled.</p>
+
+<div class="legend" style="margin-top:8px">
+  <span><span class="dot" style="background:#3868a8"></span> daemon process</span>
+  <span><span class="dot" style="background:#3e8a55"></span> client manager</span>
+  <span><span class="dot" style="background:#a4711a"></span> spawned stdio server</span>
+  <span><span class="dot" style="background:#9b3a5c"></span> remote SSE server</span>
+  <span><span class="dot" style="background:#7c5aa8"></span> agents / consumers</span>
+</div>
+
+<h2>1. Overall topology</h2>
+<svg viewBox="0 0 1140 560" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="marker-arrow"/>
+    </marker>
+  </defs>
+
+  <!-- DAEMON OUTER -->
+  <rect class="node daemon" x="20" y="20" width="780" height="520" rx="12"/>
+  <text class="title" x="40" y="46">YUYUTSAVA Daemon (yuyutsava/daemon/main.py + bootstrap.py)</text>
+  <text class="small" x="40" y="62">main.py owns lifecycle; bootstrap.py wires subsystems. CLI does not use MCP.</text>
+
+  <!-- Config -->
+  <rect class="node" x="50" y="84" width="220" height="70" rx="8"/>
+  <text class="title" x="62" y="106">~/.yuyutsava/mcp_config.json</text>
+  <text class="small" x="62" y="124">mcpServers, scopes, default_scope</text>
+  <text class="small" x="62" y="140">loaded by MCPConfig.from_file()</text>
+
+  <!-- Manager -->
+  <rect class="node mgr" x="50" y="184" width="320" height="135" rx="8"/>
+  <text class="title" x="64" y="208">MCPClientManager</text>
+  <text class="small" x="64" y="226">yuyutsava/mcp/loader.py</text>
+  <text class="small" x="64" y="244">• constructed in daemon/bootstrap.py</text>
+  <text class="small" x="64" y="260">• start(cfg) → spawn one task per server</text>
+  <text class="small" x="64" y="276">• tools_for(agent_name) → scoped BaseTools</text>
+  <text class="small" x="64" y="292">• hot_reload(new_cfg)  on SIGHUP</text>
+  <text class="small" x="64" y="308">• stop() — AsyncExitStack per server</text>
+
+  <!-- Adapter -->
+  <rect class="node" x="50" y="335" width="320" height="70" rx="8"/>
+  <text class="title" x="64" y="357">tool_adapter.adapt()</text>
+  <text class="small" x="64" y="375">mcp.types.Tool → langchain StructuredTool</text>
+  <text class="small" x="64" y="391">name = "&lt;server&gt;__&lt;tool&gt;"  (collision-safe)</text>
+
+  <!-- Sessions -->
+  <rect class="node" x="50" y="420" width="320" height="100" rx="8"/>
+  <text class="title" x="64" y="442">ClientSession × N (one per server)</text>
+  <text class="small" x="64" y="460">from `mcp` SDK — official Python client</text>
+  <text class="small" x="64" y="476">stdio_client( ) or sse_client( ) transport</text>
+  <text class="small" x="64" y="492">sampling_callback / elicitation_callback:</text>
+  <text class="small" x="64" y="508">&nbsp;&nbsp;defaults → "INVALID_REQUEST" stubs</text>
+
+  <!-- Agents -->
+  <rect class="node agent" x="430" y="184" width="350" height="270" rx="8"/>
+  <text class="title" x="446" y="208">Consumers of MCP tools</text>
+  <text class="small" x="446" y="226">All ask MCPClientManager.tools_for(name)</text>
+
+  <rect class="node" x="446" y="240" width="320" height="38" rx="6"/>
+  <text class="label" x="458" y="263">Orchestrator   →   tools_for("orchestrator")</text>
+
+  <rect class="node" x="446" y="288" width="320" height="38" rx="6"/>
+  <text class="label" x="458" y="311">FileOrganizerAgent   →   tools_for("file-organizer")</text>
+
+  <rect class="node" x="446" y="336" width="320" height="38" rx="6"/>
+  <text class="label" x="458" y="359">FaceWatcherAgent   →   tools_for("face-watcher")</text>
+
+  <rect class="node" x="446" y="384" width="320" height="38" rx="6"/>
+  <text class="label" x="458" y="407">GeneralPurposeAgent   →   tools_for("general-purpose")</text>
+
+  <!-- Reload handler -->
+  <rect class="node" x="430" y="476" width="350" height="44" rx="8"/>
+  <text class="small" x="446" y="494">SIGHUP → daemon/main.py _reload_loop</text>
+  <text class="small" x="446" y="510">→ MCPConfig.from_file() → subs.mcp_manager.hot_reload(new)</text>
+
+  <!-- Arrows inside daemon -->
+  <line class="edge" x1="160" y1="154" x2="160" y2="184" marker-end="url(#arr)"/>
+  <line class="edge" x1="210" y1="319" x2="210" y2="335" marker-end="url(#arr)"/>
+  <line class="edge" x1="210" y1="405" x2="210" y2="420" marker-end="url(#arr)"/>
+  <path class="edge bold" d="M370,250 C400,250 410,250 446,259" marker-end="url(#arr)"/>
+  <path class="edge bold" d="M370,260 C400,300 410,300 446,307" marker-end="url(#arr)"/>
+  <path class="edge bold" d="M370,270 C400,340 410,340 446,355" marker-end="url(#arr)"/>
+  <path class="edge bold" d="M370,280 C400,380 410,380 446,403" marker-end="url(#arr)"/>
+
+  <!-- Servers panel (outside daemon process) -->
+  <rect class="node srv" x="820" y="40" width="300" height="220" rx="10"/>
+  <text class="title" x="836" y="64">stdio MCP server processes (children)</text>
+  <text class="small" x="836" y="82">spawned by stdio_client → subprocess</text>
+
+  <rect class="node" x="836" y="96" width="270" height="46" rx="6"/>
+  <text class="label" x="850" y="118">deepface  (yuyutsava/mcp_servers/deepface)</text>
+  <text class="small" x="850" y="134">python -m yuyutsava.mcp_servers.deepface.server</text>
+
+  <rect class="node" x="836" y="152" width="270" height="46" rx="6"/>
+  <text class="label" x="850" y="174">filesystem  (third-party, npx)</text>
+  <text class="small" x="850" y="190">npx -y @modelcontextprotocol/server-filesystem ~</text>
+
+  <rect class="node" x="836" y="208" width="270" height="40" rx="6"/>
+  <text class="label" x="850" y="232">any other "command/args" entry…</text>
+
+  <rect class="node remote" x="820" y="280" width="300" height="170" rx="10"/>
+  <text class="title" x="836" y="304">Remote MCP servers (HTTP/SSE)</text>
+  <text class="small" x="836" y="322">sse_client(url) — no auth wiring yet</text>
+
+  <rect class="node" x="836" y="338" width="270" height="44" rx="6"/>
+  <text class="label" x="850" y="360">Spotify-like:  "url": "http://host/mcp"</text>
+
+  <rect class="node" x="836" y="390" width="270" height="50" rx="6"/>
+  <text class="label" x="850" y="412">Any SSE-capable remote MCP server</text>
+  <text class="small" x="850" y="428">streamable-http NOT used today</text>
+
+  <!-- Transport edges (daemon ↔ servers) -->
+  <path class="edge bold" d="M370,460 C600,460 700,180 836,138" marker-end="url(#arr)"/>
+  <text class="small" x="600" y="448">stdio (pipes)</text>
+
+  <path class="edge bold" d="M370,470 C600,470 700,360 836,360" marker-end="url(#arr)"/>
+  <text class="small" x="600" y="466">SSE (HTTP)</text>
+
+</svg>
+
+<h2>2. Boot sequence</h2>
+<pre>
+daemon/main.py                                    # lifecycle only (~261 lines)
+   ├─ load .env  /  argparse  /  _setup_logging
+   ├─ opts = DaemonOptions(workspace, headless, voice, verbose)
+   ├─ subs = await build_daemon(opts)             ← daemon/bootstrap.py
+   │    │
+   │    │   bootstrap.py — single async function, owns all wiring:
+   │    │
+   │    ├─ Store.start()
+   │    ├─ PrefsStore(store) / PrefsInjector
+   │    ├─ PermissionsPolicy.from_file() + StorePolicyCapEnforcer
+   │    ├─ MCPClientManager()                     # owns all sessions
+   │    ├─ MCPConfig.from_file()                  # ~/.yuyutsava/mcp_config.json
+   │    ├─ await mcp_manager.start(mcp_cfg)
+   │    │     └─ for each server → asyncio.create_task(_run_server)
+   │    │          ├─ stdio_client(StdioServerParameters(...))  ← spawn process
+   │    │          │  or sse_client(url)                        ← open SSE
+   │    │          ├─ ClientSession(read, write).initialize()
+   │    │          ├─ session.list_tools() → cap at spec.max_tools
+   │    │          ├─ adapt(session, name, tool) for each       ← StructuredTool wrappers
+   │    │          └─ park on stop_event (same task owns AsyncExitStack)
+   │    ├─ CheckpointerSaver / UnifiedSweeper / EventBus / SourceRegistry
+   │    ├─ ChannelRouter (+ WebChannel, TerminalChannel, optional VoiceChannel)
+   │    ├─ build subagents — each gets mcp_manager
+   │    │     (FileOrganizer, FaceWatcher, GeneralPurpose)
+   │    ├─ build TriageAgent + TriageLoop / OrchestratorDeps + OrchestratorLoop
+   │    │     (orchestrator graph itself is built lazily per-task via
+   │    │      core/engine.build_orchestrator — also receives mcp_manager)
+   │    └─ return DaemonSubsystems(...)           ← frozen record
+   │
+   ├─ install signal handlers + schedule loop tasks
+   ├─ run until stop_event
+   └─ on SIGHUP → main.py _reload_loop
+        → MCPConfig.from_file() → subs.mcp_manager.hot_reload(new_cfg)
+          (diff add/remove/changed)
+</pre>
+
+<h2>3. How tools get into an agent</h2>
+<svg viewBox="0 0 1140 230" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="marker-arrow"/>
+    </marker>
+  </defs>
+
+  <rect class="node mgr" x="20" y="40" width="220" height="150" rx="8"/>
+  <text class="title" x="34" y="64">MCPClientManager</text>
+  <text class="small" x="34" y="84">_servers: {name → _ServerEntry}</text>
+  <text class="small" x="34" y="102">_ServerEntry.tools: [BaseTool, …]</text>
+  <text class="small" x="34" y="128">tools_for(agent_name):</text>
+  <text class="small" x="34" y="144">  scopes.get(name, default_scope)</text>
+  <text class="small" x="34" y="160">  → flatten across servers</text>
+  <text class="small" x="34" y="176">  → list[StructuredTool]</text>
+
+  <rect class="node" x="280" y="40" width="240" height="150" rx="8"/>
+  <text class="title" x="294" y="64">BaseSubAgent.mcp_tools()</text>
+  <text class="small" x="294" y="84">returns mcp_manager.tools_for(self.name)</text>
+  <text class="small" x="294" y="108">all_tools() =</text>
+  <text class="small" x="294" y="124">  task_runner_tools  (tr_*)</text>
+  <text class="small" x="294" y="140">  + skill_tools  (sk_*)</text>
+  <text class="small" x="294" y="156">  + search_tools  (ws_*)</text>
+  <text class="small" x="294" y="172">  + mcp_tools     ★</text>
+
+  <rect class="node agent" x="560" y="40" width="260" height="150" rx="8"/>
+  <text class="title" x="574" y="64">create_react_agent / deepagent</text>
+  <text class="small" x="574" y="84">tool_search prepended (ToolRegistry)</text>
+  <text class="small" x="574" y="100">→ tools register in LangGraph node</text>
+  <text class="small" x="574" y="120">LLM picks "deepface__identify(...)"</text>
+  <text class="small" x="574" y="140">node calls StructuredTool._call →</text>
+  <text class="small" x="574" y="156">  session.call_tool("identify", {...})</text>
+  <text class="small" x="574" y="172">  → _flatten_content(result) → str</text>
+
+  <rect class="node srv" x="860" y="40" width="260" height="150" rx="8"/>
+  <text class="title" x="874" y="64">MCP server (child or remote)</text>
+  <text class="small" x="874" y="84">FastMCP @mcp.tool() handler runs</text>
+  <text class="small" x="874" y="100">returns content blocks</text>
+  <text class="small" x="874" y="124">If it tried sampling/elicitation:</text>
+  <text class="small" x="874" y="140">  client replies INVALID_REQUEST</text>
+  <text class="small" x="874" y="156">  ("Sampling not supported",</text>
+  <text class="small" x="874" y="172">   "Elicitation not supported")</text>
+
+  <line class="edge" x1="240" y1="115" x2="280" y2="115" marker-end="url(#arr2)"/>
+  <line class="edge" x1="520" y1="115" x2="560" y2="115" marker-end="url(#arr2)"/>
+  <line class="edge" x1="820" y1="115" x2="860" y2="115" marker-end="url(#arr2)"/>
+</svg>
+
+<h2>4. Config schema (drop into <code>~/.yuyutsava/mcp_config.json</code>)</h2>
+<pre>
+{
+  "mcpServers": {
+    "deepface":   { "command": "python",
+                    "args": ["-m", "yuyutsava.mcp_servers.deepface.server"] },
+    "filesystem": { "command": "npx",
+                    "args": ["-y", "@modelcontextprotocol/server-filesystem", "~/Documents"] },
+    "spotify":    { "url": "http://localhost:8765/mcp" }           ← remote SSE
+  },
+  "scopes": {
+    "orchestrator":   ["spotify"],
+    "file-organizer": ["filesystem"],
+    "face-watcher":   ["deepface"]
+  },
+  "default_scope": []
+}
+</pre>
+<p class="muted">After editing, send <code>kill -HUP &lt;daemon-pid&gt;</code> → MCPClientManager.hot_reload runs the diff (stop removed/changed, start added/changed) — no daemon restart needed.</p>
+
+<h2>5. Internal vs remote — what's actually supported</h2>
+<div class="grid">
+  <div class="card">
+    <h3>Internal / local stdio</h3>
+    <p>Set <code>command</code> + <code>args</code> + <code>env</code>. The manager calls <code>stdio_client(StdioServerParameters)</code> which <strong>spawns a child process</strong> and pipes JSON-RPC over its stdin/stdout. The shipped <code>deepface</code> server (built with FastMCP) is the in-tree example.</p>
+  </div>
+  <div class="card">
+    <h3>Remote (SSE only)</h3>
+    <p>Set <code>url</code>. The manager uses <code>sse_client(url)</code>. <span class="no">No auth headers, no OAuth, no streamable-http</span> — only public/loopback SSE works today. To add auth you'd need to wrap <code>sse_client</code> or thread <code>httpx</code> headers in <code>loader.py:_run_server</code>.</p>
+  </div>
+</div>
+
+<h2>6. Is there a "YUYUTSAVA MCP client"?</h2>
+<p>No custom client was written. The MCP client is the official <code>mcp.ClientSession</code> from the Python SDK (vendored via <code>pyproject.toml</code>). Our code provides three things on top:</p>
+<ul>
+  <li><strong>MCPClientManager</strong> — multi-server lifecycle (start / hot-reload / stop) with one asyncio task per server so anyio cancel scopes close in the same task that opened them.</li>
+  <li><strong>tool_adapter.adapt()</strong> — wraps each MCP tool as a LangChain <code>StructuredTool</code> with namespaced name and content-flattening.</li>
+  <li><strong>Scopes</strong> — the <code>scopes</code> map in config decides which servers' tools each agent sees, with <code>default_scope</code> as fallback. Implemented in <code>tools_for()</code>.</li>
+</ul>
+
+<h2>7. Sampling and Elicitation — current status</h2>
+<div class="grid">
+  <div class="card">
+    <h3 class="no">Sampling</h3>
+    <p><span class="no">NOT handled.</span> <code>ClientSession()</code> is constructed in <code>loader.py:177</code> with no <code>sampling_callback</code>. SDK default returns <code>ErrorData(INVALID_REQUEST, "Sampling not supported")</code>, and <code>initialize()</code> does not advertise the <code>sampling</code> capability — so MCP servers won't even try.</p>
+  </div>
+  <div class="card">
+    <h3 class="no">Elicitation</h3>
+    <p><span class="no">NOT handled.</span> Same picture: no <code>elicitation_callback</code> passed in; SDK default rejects with <code>"Elicitation not supported"</code> and capability isn't advertised. The daemon already has a <code>ChannelRouter.ask()</code> path (HITL prompts) that could be plumbed in if we ever want to support it.</p>
+  </div>
+</div>
+
+<h2>8. Where in the codebase</h2>
+<ul>
+  <li><a href="../yuyutsava/mcp/config.py">yuyutsava/mcp/config.py</a> — <code>MCPConfig</code>, <code>MCPServerSpec</code></li>
+  <li><a href="../yuyutsava/mcp/loader.py">yuyutsava/mcp/loader.py</a> — <code>MCPClientManager</code>, per-server runner task</li>
+  <li><a href="../yuyutsava/mcp/tool_adapter.py">yuyutsava/mcp/tool_adapter.py</a> — <code>adapt()</code>, <code>_flatten_content()</code></li>
+  <li><a href="../yuyutsava/daemon/bootstrap.py#L199">yuyutsava/daemon/bootstrap.py:199-203</a> — <code>MCPClientManager()</code> construction + <code>mcp_manager.start(mcp_cfg)</code></li>
+  <li><a href="../yuyutsava/daemon/main.py#L143">yuyutsava/daemon/main.py:143-146</a> — SIGHUP reload loop calls <code>subs.mcp_manager.hot_reload(...)</code></li>
+  <li><a href="../yuyutsava/agents/base_sub_agent.py#L150">yuyutsava/agents/base_sub_agent.py:150</a> — <code>mcp_tools()</code> on every subagent</li>
+  <li><a href="../yuyutsava/core/engine.py#L316">yuyutsava/core/engine.py:316</a> — <code>build_orchestrator</code> pulls MCP tools via <code>deps.mcp_manager.tools_for("orchestrator")</code></li>
+  <li><a href="../yuyutsava/mcp_servers/deepface/server.py">yuyutsava/mcp_servers/deepface/server.py</a> — in-tree FastMCP example</li>
+  <li><span class="muted">yuyutsava/cli/cli.py — <strong>no MCP integration</strong> (CLI is daemon-less; agent stack built by <code>cli/agent_stack.py</code> does not receive an <code>MCPClientManager</code>)</span></li>
+</ul>
+
+</div>
+</body>
+</html>

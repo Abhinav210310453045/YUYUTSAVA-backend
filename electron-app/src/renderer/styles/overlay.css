@@ -1,0 +1,15 @@
+/* Overlay window only.
+ *
+ * The overlay is frameless and transparent — only the cards inside it should
+ * paint, so it floats over whatever app the user is actually in. But it shares
+ * globals.css with the main window, which sets an opaque `--bg-deep` on
+ * html/body/#root, and Vite injects that stylesheet AFTER overlay.html's inline
+ * <style>. The result is a solid black rectangle behind the card.
+ *
+ * This file is imported last in overlay.jsx purely to win that ordering.
+ */
+html,
+body,
+#root {
+  background: transparent !important;
+}

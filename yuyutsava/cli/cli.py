@@ -1,37 +1,39 @@
 """
 YUYUTSAVA — command-line AI agent that executes natural language tasks.
 
-Loads ``.env``, builds a Deep Agent with Groq or OpenRouter (see ``LLM_PROVIDER``)
-and ``LocalShellBackend``, then invokes the graph.
+This file is the entry-point: build the argparse parser, dispatch to the
+handler in ``cli/commands/*``. All the actual work lives in those handlers
+(chat, sessions, prefs, scenarios). Procedural by design — see
+RESTRUCTURE_HANDOFF.md §5 / plan §11.1 for why we do not make this a class.
 """
 
 from __future__ import annotations
 
 import argparse
-import asyncio
 import dataclasses
 import os
 import sys
-import uuid
-from typing import Literal
 from pathlib import Path
+from typing import Literal
 
 try:
     from dotenv import load_dotenv
 except ImportError:
     load_dotenv = None  # type: ignore[assignment, misc]
 
-from yuyutsava.cli.scenarios import format_scenario_list, get_scenario
-from yuyutsava.core.config import DockerSettings, LocalSettings, llm_settings_from_env
+from yuyutsava.aio import run as aio_run
+from yuyutsava.cli.commands.chat import run_chat
+from yuyutsava.cli.commands.prefs import run_prefs
+from yuyutsava.cli.commands.scenarios import format_scenario_list, get_scenario
+from yuyutsava.cli.commands.sessions import delete_session, print_sessions_table
+from yuyutsava.core.config import DockerSettings, LocalSettings, SearchConfig, llm_settings_from_env
 from yuyutsava.core.engine import (
-    _cleanup_local_sandbox,
-    astream_agent,
-    build_agent,
+    build_cli_deepagent,
     builtin_tools_reference_json,
     export_agent_state_graph_png,
     setup_logging,
 )
-from yuyutsava.core.docker_sandbox_backend import pull_virtual_paths_to_host
+from yuyutsava.storage.paths import ensure_state_dirs
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -88,6 +90,43 @@ def _build_parser() -> argparse.ArgumentParser:
         "-v",
         action="store_true",
         help="Print tool calls, results, and assistant text to stderr.",
+    )
+    p.add_argument(
+        "--debug-plumbing",
+        action="store_true",
+        help=(
+            "Show uvicorn / langgraph runtime / httpx logs (debugging only). "
+            "Off by default — these are normally silenced regardless of --verbose. "
+            "Also honoured via YUYUTSAVA_DEBUG_PLUMBING=1."
+        ),
+    )
+    p.add_argument(
+        "--list-sessions",
+        action="store_true",
+        help="List persisted sessions across all workspaces (id, workspace, timestamps, message count) and exit.",
+    )
+    p.add_argument(
+        "--this-workspace",
+        action="store_true",
+        help="With --list-sessions: restrict to sessions whose workspace == --workspace (default cwd).",
+    )
+    p.add_argument(
+        "--delete-session",
+        metavar="ID",
+        default=None,
+        help="Delete the session row AND its LangGraph checkpoint rows, then exit.",
+    )
+    p.add_argument(
+        "--resume",
+        metavar="ID",
+        default=None,
+        help="Resume the session with this id (see --list-sessions). The given task is appended as the next user message.",
+    )
+    p.add_argument(
+        "--continue",
+        dest="continue_",
+        action="store_true",
+        help="Resume the most recently-updated session for the current --workspace.",
     )
     p.add_argument(
         "--generate_agent_graph",
@@ -227,22 +266,30 @@ def _local_settings_from_args(args: argparse.Namespace) -> LocalSettings:
     return cfg
 
 
-def _parse_pull_paths(s: str) -> list[str]:
-    parts = [p.strip() for p in s.split(",") if p.strip()]
-    return parts
-
-
 def main(argv: list[str] | None = None) -> int:
     """Sync entry point required by setuptools console_scripts. Drives async logic."""
-    return asyncio.run(_async_main(argv))
+    ensure_state_dirs()
+    raw = list(argv) if argv is not None else sys.argv[1:]
+    if raw and raw[0] == "daemon":
+        # Hand off to the always-on daemon. The rest of argv is the daemon's own.
+        from yuyutsava.daemon.main import main as daemon_main
+        return daemon_main(raw[1:])
+    if raw and raw[0] == "prefs":
+        return run_prefs(raw[1:])
+    if raw and raw[0] == "attach":
+        from yuyutsava.cli.commands.attach import run_attach
+        return run_attach(raw[1:])
+    if raw and raw[0] == "chat":
+        return aio_run(_async_main(raw[1:], force_chat=True))
+    return aio_run(_async_main(raw))
 
 
-async def _async_main(argv: list[str] | None = None) -> int:
+async def _async_main(argv: list[str] | None = None, *, force_chat: bool = False) -> int:
     if load_dotenv:
         load_dotenv()
 
     args = _build_parser().parse_args(argv)
-    setup_logging(verbose=args.verbose)
+    setup_logging(verbose=args.verbose, debug_plumbing=args.debug_plumbing)
 
     if args.list_scenarios:
         sys.stdout.write(format_scenario_list())
@@ -251,6 +298,17 @@ async def _async_main(argv: list[str] | None = None) -> int:
     if args.print_tools:
         sys.stdout.write(builtin_tools_reference_json() + "\n")
         return 0
+
+    if args.list_sessions:
+        # Short-circuit before build_cli_deepagent — no model, no Docker, no LLM keys needed.
+        # Default: show every session so the user can discover ids regardless of cwd.
+        # --this-workspace narrows to the current --workspace.
+        ws_filter = args.workspace.resolve() if args.this_workspace else None
+        return await print_sessions_table(workspace_filter=ws_filter)
+
+    if args.delete_session:
+        # Short-circuit: no model/sandbox needed to remove a session.
+        return await delete_session(args.delete_session)
 
     if args.generate_agent_graph:
         if args.scenario or args.task:
@@ -261,7 +319,7 @@ async def _async_main(argv: list[str] | None = None) -> int:
             return 2
         settings = llm_settings_from_env()
         workspace = args.workspace.resolve()
-        graph_bundle = build_agent(
+        graph_bundle = build_cli_deepagent(
             workspace,
             settings,
             bash_timeout_sec=args.bash_timeout,
@@ -297,59 +355,43 @@ async def _async_main(argv: list[str] | None = None) -> int:
             return 2
     else:
         task = " ".join(args.task).strip()
-        if not task:
-            print(
-                "Error: provide a task, or use --scenario, or --list-scenarios / --print-tools.",
-                file=sys.stderr,
+        # No task + no scenario → drop into the interactive chat REPL.
+        # Also when invoked explicitly via `yuyutsava chat`.
+        if force_chat or not task:
+            from yuyutsava.cli.commands.chat_repl import run_chat_repl
+
+            return await run_chat_repl(
+                workspace=args.workspace.resolve(),
+                settings=llm_settings_from_env(),
+                execution_mode=_resolved_execution_mode(args),
+                docker_settings=_docker_settings_from_args(args),
+                local_settings=_local_settings_from_args(args),
+                search_config=SearchConfig.from_env(),
+                bash_timeout_sec=args.bash_timeout,
+                recursion_limit=args.recursion_limit,
+                permission_check=not args.no_permission_check,
+                resume_id=args.resume,
+                continue_latest=args.continue_,
+                verbose=args.verbose,
+                debug_plumbing=args.debug_plumbing,
             )
-            return 2
 
-    settings = llm_settings_from_env()
-    workspace = args.workspace.resolve()
-    execution = _resolved_execution_mode(args)
-    docker_cfg = _docker_settings_from_args(args)
-    local_cfg = _local_settings_from_args(args)
-
-    bundle = build_agent(
-        workspace,
-        settings,
+    return await run_chat(
+        task=task,
+        workspace=args.workspace.resolve(),
+        settings=llm_settings_from_env(),
+        execution_mode=_resolved_execution_mode(args),
+        docker_settings=_docker_settings_from_args(args),
+        local_settings=_local_settings_from_args(args),
+        search_config=SearchConfig.from_env(),
         bash_timeout_sec=args.bash_timeout,
-        execution_mode=execution,
-        docker_settings=docker_cfg,
-        local_settings=local_cfg,
+        recursion_limit=args.recursion_limit,
         permission_check=not args.no_permission_check,
+        resume_id=args.resume,
+        continue_latest=args.continue_,
+        docker_pull_paths=args.docker_pull_paths,
+        verbose=args.verbose,
     )
-    try:
-        thread_id = str(uuid.uuid4())
-        final = await astream_agent(
-            bundle.agent,
-            task,
-            thread_id=thread_id,
-            recursion_limit=args.recursion_limit,
-        )
-        pulls = _parse_pull_paths(args.docker_pull_paths)
-        if pulls:
-            if bundle.docker_backend is None:
-                print(
-                    "Warning: --docker-pull-paths only applies with --execution docker; ignored.",
-                    file=sys.stderr,
-                )
-            else:
-                dest = (
-                    (docker_cfg.export_dir / "_pulled").resolve()
-                    if docker_cfg.export_dir is not None
-                    else (workspace / "_docker_pull").resolve()
-                )
-                written = pull_virtual_paths_to_host(bundle.docker_backend, pulls, dest)
-                if args.verbose and written:
-                    print(f"Docker pull wrote: {written}", file=sys.stderr)
-        if execution == "local" and bundle.sandbox_root is not None:
-            _cleanup_local_sandbox(workspace, bundle.sandbox_root)
-        if final.strip() and not args.verbose:
-            print(final.strip())
-    finally:
-        bundle.close()
-    return 0
 
 
 if __name__ == "__main__":

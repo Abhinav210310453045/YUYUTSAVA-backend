@@ -1,0 +1,29 @@
+{
+  "name": "yuyutsava-terminal",
+  "productName": "YUYUTSAVA",
+  "version": "0.1.0",
+  "description": "YUYUTSAVA Terminal — native desktop app",
+  "main": "src/main/index.js",
+  "scripts": {
+    "dev": "concurrently -k -n VITE,ELECTRON -c cyan,green \"vite\" \"wait-on http://localhost:5173 && node scripts/launch-electron.js\"",
+    "build": "vite build",
+    "dist": "vite build && electron-builder",
+    "electron": "node scripts/launch-electron.js"
+  },
+  "dependencies": {
+    "@babel/standalone": "^8.0.4",
+    "@fontsource/jetbrains-mono": "^5.2.8",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "concurrently": "^8.2.2",
+    "electron": "^42.0.0",
+    "electron-builder": "^24.13.3",
+    "vite": "^5.4.10",
+    "wait-on": "^7.2.0"
+  }
+}

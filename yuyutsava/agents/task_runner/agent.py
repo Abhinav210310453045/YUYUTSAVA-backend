@@ -30,6 +30,7 @@ from yuyutsava.agents.task_runner.permissions import (
     get_risk_level,
 )
 from yuyutsava.agents.task_runner.zones import classify_zone
+from yuyutsava.consent.models import parse_consent_decision as _parse_consent_decision
 from yuyutsava.models.operations import (
     FilesystemZone,
     OperationRequest,
@@ -37,7 +38,14 @@ from yuyutsava.models.operations import (
     OperationType,
     PermissionAction,
 )
-from yuyutsava.models.results import DeleteResult, ReadResult, ShellResult, WriteResult
+from yuyutsava.models.results import (
+    DeleteResult,
+    DirEntry,
+    ListResult,
+    ReadResult,
+    ShellResult,
+    WriteResult,
+)
 from yuyutsava.models.tool_messages import SuppressedContentNotice
 
 logger = logging.getLogger("yuyutsava.task_runner")
@@ -64,14 +72,78 @@ class TaskRunnerAgent:
     def __init__(
         self,
         workspace_root: Path,
-        sandbox_subdir: str = "_sandbox",
         sandbox_root: Path | None = None,
+        policy: object | None = None,  # PermissionsPolicy; untyped to avoid daemon-side import
+        consent: object | None = None,  # consent.ConsentRegistry; duck-typed (allowlist)
     ) -> None:
         self.workspace_root: Path = workspace_root.resolve()
         self.sandbox_root: Path = (
             sandbox_root.resolve() if sandbox_root is not None
-            else (self.workspace_root / sandbox_subdir).resolve()
+            else (self.workspace_root / "_sandbox").resolve()
         )
+        self._policy = policy
+        self._consent = consent
+
+    @staticmethod
+    def _policy_tool_name(op: OperationType) -> str:
+        """Map an operation type to the conventional ``tr_*`` tool name.
+
+        Used to look the request up in the permission policy file. The mapping
+        mirrors the names defined in :mod:`yuyutsava.agents.task_runner.tools`
+        — keep them in sync.
+        """
+        return {
+            OperationType.READ:    "tr_read_file",
+            OperationType.WRITE:   "tr_write_file",
+            OperationType.CREATE:  "tr_write_file",
+            OperationType.DELETE:  "tr_delete_file",
+            OperationType.EXECUTE: "tr_execute",
+            OperationType.CHMOD:   "tr_chmod",
+            OperationType.LIST:    "tr_ls",
+            OperationType.GLOB:    "tr_glob",
+        }.get(op, "tr_unknown")
+
+    # ------------------------------------------------------------------
+    # Consent (allowlist) helpers
+    # ------------------------------------------------------------------
+
+    def _consent_verdict(self, request: OperationRequest, zone: FilesystemZone) -> str:
+        """Return 'allow' / 'deny' / 'prompt' from the consent registry."""
+        from yuyutsava.core.agent_context import current_context
+
+        session_id = current_context().get("session_id")
+        try:
+            return self._consent.check_tool_permission(  # type: ignore[attr-defined]
+                operation=request.operation.value, zone=zone.value,
+                paths=request.paths, session_id=session_id,
+                workspace=str(self.workspace_root),
+            )
+        except Exception:
+            logger.exception("consent check failed; falling through to prompt")
+            return "prompt"
+
+    async def _record_consent_grant(
+        self, request: OperationRequest, zone: FilesystemZone, scope: str
+    ) -> None:
+        """Persist/remember an 'allow for <scope>' grant for this op+zone.
+
+        For in-workspace operations the grant is widened to the **workspace root**
+        so one approval covers the operation type everywhere under the workspace
+        (no per-subfolder re-asks). External paths (e.g. the ``/host`` sentinel
+        used by bash/``tr_execute``) keep their auto-derived directory.
+        """
+        from yuyutsava.core.agent_context import current_context
+
+        session_id = current_context().get("session_id")
+        directory = str(self.workspace_root) if zone == FilesystemZone.WORKSPACE else None
+        try:
+            await self._consent.grant_tool_permission(  # type: ignore[attr-defined]
+                operation=request.operation.value, zone=zone.value,
+                paths=request.paths, scope=scope, session_id=session_id,
+                workspace=str(self.workspace_root), directory=directory,
+            )
+        except Exception:
+            logger.exception("consent grant failed (continuing)")
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -135,27 +207,69 @@ class TaskRunnerAgent:
 
         # 4. PROMPT — ask the user via LangGraph interrupt()
         if action == PermissionAction.PROMPT:
-            payload = build_interrupt_payload(request, zone)
-            decision: str = interrupt(payload.to_interrupt_dict())
+            # Elevated (admin/root) commands are CRITICAL: never satisfied by a
+            # policy auto_approve or a cached consent grant — always ask fresh,
+            # and never widen a grant afterwards.
+            elevated = bool((request.additional_context or {}).get("elevated"))
+            # Tier-1.5 policy override: a matching ``auto_approve`` entry in
+            # ~/.yuyutsava/permissions.json bypasses the prompt entirely.
+            if self._policy is not None and not elevated:
+                tool_name = self._policy_tool_name(request.operation)
+                if self._policy.policy_for(tool_name) == "auto_approve":  # type: ignore[attr-defined]
+                    logger.info(
+                        "TaskRunner | POLICY auto_approve | %s | %s",
+                        request.operation.value.upper(), primary_path,
+                    )
+                    action = PermissionAction.ALLOW  # fall through to execute
+            # Allowlist (consent) check: a prior "allow for session/project" grant
+            # covering this op+zone+directory skips the prompt entirely. This is
+            # what stops the per-file re-approval storm.
+            if action == PermissionAction.PROMPT and self._consent is not None and not elevated:
+                verdict = self._consent_verdict(request, zone)
+                if verdict == "allow":
+                    logger.info(
+                        "TaskRunner | CONSENT allow (grant) | %s | %s",
+                        request.operation.value.upper(), primary_path,
+                    )
+                    action = PermissionAction.ALLOW
+                elif verdict == "deny":
+                    error_msg = (
+                        f"A standing rule denies {request.operation.value.upper()} "
+                        f"on '{primary_path}'."
+                    )
+                    self._log_denied(request, zone, action, error_msg, user_decision="reject")
+                    return self._denied(
+                        request, operation_id, error=error_msg,
+                        error_code=_EC_USER_DENIED, zone=zone,
+                        alternatives=get_alternatives(zone, request.operation),
+                    )
+            if action == PermissionAction.PROMPT:
+                payload = build_interrupt_payload(request, zone)
+                decision: str = interrupt(payload.to_interrupt_dict())
 
-            if decision != "approve":
-                error_msg = (
-                    f"User denied permission for {request.operation.value.upper()} "
-                    f"on '{primary_path}'."
-                )
-                self._log_denied(request, zone, action, error_msg, user_decision="reject")
-                return self._denied(
-                    request, operation_id,
-                    error=error_msg,
-                    error_code=_EC_USER_DENIED,
-                    zone=zone,
-                    alternatives=get_alternatives(zone, request.operation),
-                )
+                # The resume token carries both the verdict and the scope the user
+                # chose (once / session / project). Record a grant when asked.
+                allow, scope = _parse_consent_decision(decision)
+                if not allow:
+                    error_msg = (
+                        f"User denied permission for {request.operation.value.upper()} "
+                        f"on '{primary_path}'."
+                    )
+                    self._log_denied(request, zone, action, error_msg, user_decision="reject")
+                    return self._denied(
+                        request, operation_id,
+                        error=error_msg,
+                        error_code=_EC_USER_DENIED,
+                        zone=zone,
+                        alternatives=get_alternatives(zone, request.operation),
+                    )
+                if scope is not None and self._consent is not None and not elevated:
+                    await self._record_consent_grant(request, zone, scope)
 
-            logger.info(
-                "TaskRunner | APPROVED by user | %s | %s",
-                request.operation.value.upper(), primary_path,
-            )
+                logger.info(
+                    "TaskRunner | APPROVED by user (%s) | %s | %s",
+                    scope or "once", request.operation.value.upper(), primary_path,
+                )
 
         # 5. ALLOW (or user-approved) — execute
         try:
@@ -192,7 +306,7 @@ class TaskRunnerAgent:
 
     async def _execute(
         self, request: OperationRequest
-    ) -> ShellResult | WriteResult | DeleteResult | ReadResult:
+    ) -> ShellResult | WriteResult | DeleteResult | ReadResult | ListResult:
         """Dispatch to the appropriate executor and return a typed result model."""
         path = Path(request.paths[0])
         ctx = request.additional_context or {}
@@ -234,16 +348,84 @@ class TaskRunnerAgent:
                 return DeleteResult(deleted=str(path))
 
             case OperationType.EXECUTE:
+                # tr_grep / tr_fetch_url route pure-Python ops through EXECUTE so
+                # the zone/permission path is byte-identical to a shell command;
+                # the executor implementation is selected by additional_context.
+                if "search" in ctx:
+                    sc = ctx["search"]
+                    raw = await _exec.execute_grep(
+                        str(sc["pattern"]),
+                        Path(str(sc["path"])),
+                        context_lines=int(sc.get("context_lines", 3)),
+                        case_insensitive=bool(sc.get("case_insensitive", False)),
+                        max_matches=int(sc.get("max_matches", 100)),
+                    )
+                    return ShellResult(
+                        stdout=raw["stdout"], stderr=raw["stderr"], exit_code=raw["exit_code"],
+                    )
+                if "fetch" in ctx:
+                    fc = ctx["fetch"]
+                    raw = await _exec.execute_fetch(
+                        str(fc["url"]),
+                        Path(str(fc["dest"])),
+                        user_agent=str(fc["user_agent"]),
+                        timeout=int(fc.get("timeout", 120)),
+                    )
+                    return ShellResult(
+                        stdout=raw["stdout"], stderr=raw["stderr"], exit_code=raw["exit_code"],
+                    )
+                if "python" in ctx:
+                    pc = ctx["python"]
+                    raw = await _exec.execute_python(
+                        Path(str(pc["script_path"])),
+                        Path(str(pc.get("cwd", self.sandbox_root))),
+                        timeout=int(pc.get("timeout", 120)),
+                    )
+                    return ShellResult(
+                        stdout=raw["stdout"], stderr=raw["stderr"], exit_code=raw["exit_code"],
+                    )
+                # default: a real command in the host's native shell (L3 channel)
                 command = str(ctx.get("command", ""))
                 _timeout = ctx.get("timeout", 120)
                 timeout = int(_timeout) if isinstance(_timeout, (int, float, str)) else 120
                 _cwd = ctx.get("cwd")
                 cwd = Path(str(_cwd)) if _cwd is not None else self.sandbox_root
-                raw = await _exec.execute_run(command, cwd, timeout)
+                raw = await _exec.execute_run(
+                    command, cwd, timeout, elevated=bool(ctx.get("elevated", False))
+                )
                 return ShellResult(
                     stdout=raw["stdout"],
                     stderr=raw["stderr"],
                     exit_code=raw["exit_code"],
+                )
+
+            case OperationType.LIST:
+                _max = ctx.get("max_entries", 500)
+                max_entries = int(_max) if isinstance(_max, (int, float, str)) else 500
+                data = await _exec.execute_list(path, max_entries=max_entries)
+                entries = [DirEntry(**e) for e in data["entries"]]
+                return ListResult(
+                    root=str(path),
+                    pattern=None,
+                    entries=entries,
+                    returned=len(entries),
+                    total=data["total"],
+                    has_more=data["has_more"],
+                )
+
+            case OperationType.GLOB:
+                pattern = str(ctx.get("pattern", "*"))
+                _max = ctx.get("max_entries", 500)
+                max_entries = int(_max) if isinstance(_max, (int, float, str)) else 500
+                data = await _exec.execute_glob(path, pattern, max_entries=max_entries)
+                entries = [DirEntry(**e) for e in data["entries"]]
+                return ListResult(
+                    root=str(path),
+                    pattern=pattern,
+                    entries=entries,
+                    returned=len(entries),
+                    total=data["total"],
+                    has_more=data["has_more"],
                 )
 
             case _:

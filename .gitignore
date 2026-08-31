@@ -78,6 +78,19 @@ workspace/
 sandbox/
 playground/
 
+# deepagents on-disk scratch (durable copies live in the DB:
+# artifacts + transcript_messages tables). CLI deletes these on exit;
+# the daemon TTL-sweeps them — never commit them.
+large_tool_results/
+conversation_history/
+
+# LangGraph in-proc dev-server state (AsyncSubagentHost / langgraph_api).
+# Regenerated on every run and rewritten continuously while the daemon is up,
+# so committing it produces a ~660KB..5MB binary diff per commit that conflicts
+# on every branch. It also carries real run history (thread/run ids, Human/AI
+# message payloads, token usage) — never commit them.
+.langgraph_api/
+
 # Diagrams (generated artifacts)
 diagrams/
 
@@ -89,5 +102,5 @@ _sandbox
 .venv
 .vscode
 content
-yuyutsava
-.env
+.env.gcloud/
+.gcloud/

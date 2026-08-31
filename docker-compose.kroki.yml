@@ -1,0 +1,26 @@
+# Optional diagram backend for the visuals library (vis_diagram / Mermaid,
+# PlantUML, D2, ...). Charts, tables, code and math render in-process and do
+# NOT need this. Graphviz works via a local `dot` if installed.
+#
+#   docker compose -f docker-compose.kroki.yml up -d
+#
+# Then point the app at it (this is also the default):
+#   export YUYUTSAVA_KROKI_URL=http://localhost:8000
+services:
+  kroki:
+    image: yuzutech/kroki:latest
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    environment:
+      - KROKI_MERMAID_HOST=mermaid
+    depends_on:
+      - mermaid
+
+  # Companion service Kroki proxies mermaid/{png,svg} requests to. Without
+  # it, mermaid renders 503 ("Connection refused: /127.0.0.1:8002") even
+  # though the core kroki container is healthy — graphviz/d2/plantuml don't
+  # need a companion so they work fine on their own.
+  mermaid:
+    image: yuzutech/kroki-mermaid:latest
+    restart: unless-stopped

@@ -8,6 +8,7 @@ discriminated union so callers always know exactly what fields are available.
   WriteResult   — path confirmation from tr_write_file / CREATE
   DeleteResult  — path confirmation from tr_delete_file
   ReadResult    — text content from tr_read_file (supports pagination)
+  ListResult    — directory entries from tr_ls / tr_glob
 
 When a result field would overflow the LLM context, the system replaces the
 bulk content with a ``SuppressedContentNotice`` (see models/tool_messages.py).
@@ -81,3 +82,29 @@ class ReadResult(BaseModel):
     total_lines:        int = 0
     has_more:           bool = False
     truncation_notice:  SuppressedContentNotice | None = None
+
+
+class DirEntry(BaseModel):
+    """Single entry in a directory listing or glob match."""
+
+    name: str   # base name (e.g. "README.md")
+    path: str   # absolute real path
+    type: Literal["file", "dir", "symlink", "other"]
+    size: int | None = None  # bytes for files; None for dirs/symlinks
+
+
+class ListResult(BaseModel):
+    """Result of a directory list (tr_ls) or glob match (tr_glob).
+
+    ``entries`` holds up to ``returned`` items; ``total`` is the unfiltered
+    count. When ``has_more`` is True the listing was truncated to keep the
+    LLM payload small — the LLM should narrow the path or pattern.
+    """
+
+    kind:     Literal["list"] = "list"
+    root:     str               # absolute real path of the directory searched
+    pattern:  str | None = None # glob pattern (None for plain tr_ls)
+    entries:  list[DirEntry] = []
+    returned: int = 0
+    total:    int = 0
+    has_more: bool = False

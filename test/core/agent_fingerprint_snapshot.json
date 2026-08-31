@@ -1,0 +1,1073 @@
+{
+  "cli:async": {
+    "backend": "LocalShellBackend",
+    "chains": {
+      "after_agent": [
+        "TranscriptRecorderPolicy"
+      ],
+      "after_model": [
+        "TranscriptRecorderPolicy",
+        "BudgetPolicy",
+        "UsagePolicy"
+      ],
+      "before_model": [
+        "YuyutsavaCompactionMiddleware",
+        "TranscriptRecorderPolicy",
+        "PromptInspectorPolicy"
+      ],
+      "model_call": [
+        "ToolFilterPolicy",
+        "FilesystemPromptPolicy",
+        "VoiceStylePolicy",
+        "SubagentGatePolicy",
+        "RetrievalInjectionPolicy"
+      ],
+      "tool_after": [
+        "ToolResultOffloadPolicy",
+        "CheckAsyncTaskGuardPolicy"
+      ],
+      "tool_before": [
+        "SubagentGatePolicy",
+        "PermissionPolicy",
+        "BackgroundTaskCapPolicy",
+        "AsyncTaskInterruptPatchPolicy",
+        "CheckAsyncTaskGuardPolicy"
+      ]
+    },
+    "has_checkpointer": true,
+    "middleware": [
+      "YuyutsavaCompactionMiddleware",
+      "LangChainPolicyAdapter[ToolFilterPolicy,FilesystemPromptPolicy,VoiceStylePolicy,SubagentGatePolicy,ToolResultOffloadPolicy,TranscriptRecorderPolicy,PromptInspectorPolicy,BudgetPolicy,UsagePolicy,PermissionPolicy,RetrievalInjectionPolicy[MemoryInjector,SkillInjector(cli),ConversationInjector,PrefsInjector],BackgroundTaskCapPolicy,AsyncTaskInterruptPatchPolicy,CheckAsyncTaskGuardPolicy]"
+    ],
+    "order": [
+      "YuyutsavaCompactionMiddleware",
+      "ToolFilterPolicy",
+      "FilesystemPromptPolicy",
+      "VoiceStylePolicy",
+      "SubagentGatePolicy",
+      "ToolResultOffloadPolicy",
+      "TranscriptRecorderPolicy",
+      "PromptInspectorPolicy",
+      "BudgetPolicy",
+      "UsagePolicy",
+      "PermissionPolicy",
+      "RetrievalInjectionPolicy",
+      "BackgroundTaskCapPolicy",
+      "AsyncTaskInterruptPatchPolicy",
+      "CheckAsyncTaskGuardPolicy"
+    ],
+    "policies": [
+      "AsyncTaskInterruptPatchPolicy",
+      "BackgroundTaskCapPolicy",
+      "BudgetPolicy",
+      "CheckAsyncTaskGuardPolicy",
+      "FilesystemPromptPolicy",
+      "PermissionPolicy",
+      "PromptInspectorPolicy",
+      "RetrievalInjectionPolicy",
+      "SubagentGatePolicy",
+      "ToolFilterPolicy",
+      "ToolResultOffloadPolicy",
+      "TranscriptRecorderPolicy",
+      "UsagePolicy",
+      "VoiceStylePolicy",
+      "YuyutsavaCompactionMiddleware"
+    ],
+    "prompt_len": 14517,
+    "prompt_sha": "34e89f89501e4cb5",
+    "subagents": [
+      {
+        "kind": "async",
+        "middleware": [],
+        "name": "bg-worker",
+        "tools": []
+      },
+      {
+        "kind": "sync",
+        "middleware": [
+          "YuyutsavaCompactionMiddleware",
+          "LangChainPolicyAdapter[ToolFilterPolicy,ToolResultOffloadPolicy,PromptInspectorPolicy]"
+        ],
+        "name": "general-purpose",
+        "tools": [
+          "ctx_compact",
+          "ctx_fetch_artifact",
+          "ctx_grep_artifact",
+          "sk_read_skill",
+          "sk_write_skill",
+          "tool_search",
+          "tr_ask_user",
+          "tr_delete_file",
+          "tr_execute",
+          "tr_execute_in_sandbox",
+          "tr_fetch_url",
+          "tr_glob",
+          "tr_grep",
+          "tr_ls",
+          "tr_read_file",
+          "tr_run_python",
+          "tr_sysinfo",
+          "tr_write_file",
+          "vis_chart",
+          "vis_code",
+          "vis_diagram",
+          "vis_list_artifacts",
+          "vis_math",
+          "vis_show_artifact",
+          "vis_table",
+          "vis_timeline",
+          "ws_exa_get_contents",
+          "ws_exa_search",
+          "ws_tavily_search"
+        ]
+      },
+      {
+        "kind": "async",
+        "middleware": [],
+        "name": "peer-daemon",
+        "tools": []
+      }
+    ],
+    "tools": [
+      "artifact_create",
+      "artifact_show",
+      "ctx_compact",
+      "ctx_fetch_artifact",
+      "ctx_grep_artifact",
+      "db_list",
+      "db_query",
+      "db_schema",
+      "mem_save",
+      "mem_search",
+      "sk_read_skill",
+      "sk_search_skill",
+      "sk_write_skill",
+      "todo_add",
+      "todo_get",
+      "todo_list",
+      "todo_recall",
+      "tool_search",
+      "tr_ask_user",
+      "tr_delete_file",
+      "tr_execute",
+      "tr_execute_in_sandbox",
+      "tr_fetch_url",
+      "tr_glob",
+      "tr_grep",
+      "tr_ls",
+      "tr_read_file",
+      "tr_run_python",
+      "tr_sysinfo",
+      "tr_write_file",
+      "um_note",
+      "um_read",
+      "vis_chart",
+      "vis_code",
+      "vis_diagram",
+      "vis_list_artifacts",
+      "vis_math",
+      "vis_show_artifact",
+      "vis_table",
+      "vis_timeline",
+      "ws_exa_get_contents",
+      "ws_exa_search",
+      "ws_tavily_search"
+    ]
+  },
+  "cli:bare": {
+    "backend": "LocalShellBackend",
+    "chains": {
+      "after_agent": [],
+      "after_model": [],
+      "before_model": [
+        "PromptInspectorPolicy"
+      ],
+      "model_call": [
+        "ToolFilterPolicy",
+        "FilesystemPromptPolicy",
+        "VoiceStylePolicy",
+        "SubagentGatePolicy"
+      ],
+      "tool_after": [],
+      "tool_before": [
+        "SubagentGatePolicy",
+        "PermissionPolicy"
+      ]
+    },
+    "has_checkpointer": true,
+    "middleware": [
+      "LangChainPolicyAdapter[ToolFilterPolicy,FilesystemPromptPolicy,VoiceStylePolicy,SubagentGatePolicy,PromptInspectorPolicy,PermissionPolicy]"
+    ],
+    "order": [
+      "ToolFilterPolicy",
+      "FilesystemPromptPolicy",
+      "VoiceStylePolicy",
+      "SubagentGatePolicy",
+      "PromptInspectorPolicy",
+      "PermissionPolicy"
+    ],
+    "policies": [
+      "FilesystemPromptPolicy",
+      "PermissionPolicy",
+      "PromptInspectorPolicy",
+      "SubagentGatePolicy",
+      "ToolFilterPolicy",
+      "VoiceStylePolicy"
+    ],
+    "prompt_len": 14072,
+    "prompt_sha": "07a6808214606d59",
+    "subagents": [
+      {
+        "kind": "sync",
+        "middleware": [
+          "LangChainPolicyAdapter[ToolFilterPolicy,PromptInspectorPolicy]"
+        ],
+        "name": "general-purpose",
+        "tools": [
+          "sk_read_skill",
+          "sk_write_skill",
+          "tool_search",
+          "tr_ask_user",
+          "tr_delete_file",
+          "tr_execute",
+          "tr_execute_in_sandbox",
+          "tr_fetch_url",
+          "tr_glob",
+          "tr_grep",
+          "tr_ls",
+          "tr_read_file",
+          "tr_run_python",
+          "tr_sysinfo",
+          "tr_write_file",
+          "vis_chart",
+          "vis_code",
+          "vis_diagram",
+          "vis_list_artifacts",
+          "vis_math",
+          "vis_show_artifact",
+          "vis_table",
+          "vis_timeline",
+          "ws_exa_get_contents",
+          "ws_exa_search",
+          "ws_tavily_search"
+        ]
+      }
+    ],
+    "tools": [
+      "artifact_create",
+      "artifact_show",
+      "db_list",
+      "db_query",
+      "db_schema",
+      "sk_read_skill",
+      "sk_write_skill",
+      "todo_add",
+      "todo_get",
+      "todo_list",
+      "todo_recall",
+      "tool_search",
+      "tr_ask_user",
+      "tr_delete_file",
+      "tr_execute",
+      "tr_execute_in_sandbox",
+      "tr_fetch_url",
+      "tr_glob",
+      "tr_grep",
+      "tr_ls",
+      "tr_read_file",
+      "tr_run_python",
+      "tr_sysinfo",
+      "tr_write_file",
+      "um_note",
+      "um_read",
+      "vis_chart",
+      "vis_code",
+      "vis_diagram",
+      "vis_list_artifacts",
+      "vis_math",
+      "vis_show_artifact",
+      "vis_table",
+      "vis_timeline",
+      "ws_exa_get_contents",
+      "ws_exa_search",
+      "ws_tavily_search"
+    ]
+  },
+  "cli:wired": {
+    "backend": "LocalShellBackend",
+    "chains": {
+      "after_agent": [
+        "TranscriptRecorderPolicy"
+      ],
+      "after_model": [
+        "TranscriptRecorderPolicy",
+        "BudgetPolicy",
+        "UsagePolicy"
+      ],
+      "before_model": [
+        "YuyutsavaCompactionMiddleware",
+        "TranscriptRecorderPolicy",
+        "PromptInspectorPolicy"
+      ],
+      "model_call": [
+        "ToolFilterPolicy",
+        "FilesystemPromptPolicy",
+        "VoiceStylePolicy",
+        "SubagentGatePolicy",
+        "RetrievalInjectionPolicy"
+      ],
+      "tool_after": [
+        "ToolResultOffloadPolicy"
+      ],
+      "tool_before": [
+        "SubagentGatePolicy",
+        "PermissionPolicy"
+      ]
+    },
+    "has_checkpointer": true,
+    "middleware": [
+      "YuyutsavaCompactionMiddleware",
+      "LangChainPolicyAdapter[ToolFilterPolicy,FilesystemPromptPolicy,VoiceStylePolicy,SubagentGatePolicy,ToolResultOffloadPolicy,TranscriptRecorderPolicy,PromptInspectorPolicy,BudgetPolicy,UsagePolicy,PermissionPolicy,RetrievalInjectionPolicy[MemoryInjector,SkillInjector(cli),ConversationInjector,PrefsInjector]]"
+    ],
+    "order": [
+      "YuyutsavaCompactionMiddleware",
+      "ToolFilterPolicy",
+      "FilesystemPromptPolicy",
+      "VoiceStylePolicy",
+      "SubagentGatePolicy",
+      "ToolResultOffloadPolicy",
+      "TranscriptRecorderPolicy",
+      "PromptInspectorPolicy",
+      "BudgetPolicy",
+      "UsagePolicy",
+      "PermissionPolicy",
+      "RetrievalInjectionPolicy"
+    ],
+    "policies": [
+      "BudgetPolicy",
+      "FilesystemPromptPolicy",
+      "PermissionPolicy",
+      "PromptInspectorPolicy",
+      "RetrievalInjectionPolicy",
+      "SubagentGatePolicy",
+      "ToolFilterPolicy",
+      "ToolResultOffloadPolicy",
+      "TranscriptRecorderPolicy",
+      "UsagePolicy",
+      "VoiceStylePolicy",
+      "YuyutsavaCompactionMiddleware"
+    ],
+    "prompt_len": 14517,
+    "prompt_sha": "34e89f89501e4cb5",
+    "subagents": [
+      {
+        "kind": "sync",
+        "middleware": [
+          "YuyutsavaCompactionMiddleware",
+          "LangChainPolicyAdapter[ToolFilterPolicy,ToolResultOffloadPolicy,PromptInspectorPolicy]"
+        ],
+        "name": "general-purpose",
+        "tools": [
+          "ctx_compact",
+          "ctx_fetch_artifact",
+          "ctx_grep_artifact",
+          "sk_read_skill",
+          "sk_write_skill",
+          "tool_search",
+          "tr_ask_user",
+          "tr_delete_file",
+          "tr_execute",
+          "tr_execute_in_sandbox",
+          "tr_fetch_url",
+          "tr_glob",
+          "tr_grep",
+          "tr_ls",
+          "tr_read_file",
+          "tr_run_python",
+          "tr_sysinfo",
+          "tr_write_file",
+          "vis_chart",
+          "vis_code",
+          "vis_diagram",
+          "vis_list_artifacts",
+          "vis_math",
+          "vis_show_artifact",
+          "vis_table",
+          "vis_timeline",
+          "ws_exa_get_contents",
+          "ws_exa_search",
+          "ws_tavily_search"
+        ]
+      }
+    ],
+    "tools": [
+      "artifact_create",
+      "artifact_show",
+      "ctx_compact",
+      "ctx_fetch_artifact",
+      "ctx_grep_artifact",
+      "db_list",
+      "db_query",
+      "db_schema",
+      "mem_save",
+      "mem_search",
+      "sk_read_skill",
+      "sk_search_skill",
+      "sk_write_skill",
+      "todo_add",
+      "todo_get",
+      "todo_list",
+      "todo_recall",
+      "tool_search",
+      "tr_ask_user",
+      "tr_delete_file",
+      "tr_execute",
+      "tr_execute_in_sandbox",
+      "tr_fetch_url",
+      "tr_glob",
+      "tr_grep",
+      "tr_ls",
+      "tr_read_file",
+      "tr_run_python",
+      "tr_sysinfo",
+      "tr_write_file",
+      "um_note",
+      "um_read",
+      "vis_chart",
+      "vis_code",
+      "vis_diagram",
+      "vis_list_artifacts",
+      "vis_math",
+      "vis_show_artifact",
+      "vis_table",
+      "vis_timeline",
+      "ws_exa_get_contents",
+      "ws_exa_search",
+      "ws_tavily_search"
+    ]
+  },
+  "orchestrator:async": {
+    "backend": "LocalShellBackend",
+    "chains": {
+      "after_agent": [
+        "TranscriptRecorderPolicy"
+      ],
+      "after_model": [
+        "TranscriptRecorderPolicy",
+        "BudgetPolicy",
+        "UsagePolicy"
+      ],
+      "before_model": [
+        "YuyutsavaCompactionMiddleware",
+        "TranscriptRecorderPolicy",
+        "PromptInspectorPolicy"
+      ],
+      "model_call": [
+        "ToolFilterPolicy",
+        "FilesystemPromptPolicy",
+        "VoiceStylePolicy",
+        "SubagentGatePolicy",
+        "RetrievalInjectionPolicy"
+      ],
+      "tool_after": [
+        "ToolResultOffloadPolicy",
+        "CheckAsyncTaskGuardPolicy"
+      ],
+      "tool_before": [
+        "SubagentGatePolicy",
+        "BackgroundTaskCapPolicy",
+        "AsyncTaskInterruptPatchPolicy",
+        "CheckAsyncTaskGuardPolicy"
+      ]
+    },
+    "has_checkpointer": true,
+    "middleware": [
+      "YuyutsavaCompactionMiddleware",
+      "LangChainPolicyAdapter[ToolFilterPolicy,FilesystemPromptPolicy,VoiceStylePolicy,SubagentGatePolicy,ToolResultOffloadPolicy,TranscriptRecorderPolicy,PromptInspectorPolicy,BudgetPolicy,UsagePolicy,RetrievalInjectionPolicy[MemoryInjector,SkillInjector(orchestrator),ConversationInjector],BackgroundTaskCapPolicy,AsyncTaskInterruptPatchPolicy,CheckAsyncTaskGuardPolicy]"
+    ],
+    "order": [
+      "YuyutsavaCompactionMiddleware",
+      "ToolFilterPolicy",
+      "FilesystemPromptPolicy",
+      "VoiceStylePolicy",
+      "SubagentGatePolicy",
+      "ToolResultOffloadPolicy",
+      "TranscriptRecorderPolicy",
+      "PromptInspectorPolicy",
+      "BudgetPolicy",
+      "UsagePolicy",
+      "RetrievalInjectionPolicy",
+      "BackgroundTaskCapPolicy",
+      "AsyncTaskInterruptPatchPolicy",
+      "CheckAsyncTaskGuardPolicy"
+    ],
+    "policies": [
+      "AsyncTaskInterruptPatchPolicy",
+      "BackgroundTaskCapPolicy",
+      "BudgetPolicy",
+      "CheckAsyncTaskGuardPolicy",
+      "FilesystemPromptPolicy",
+      "PromptInspectorPolicy",
+      "RetrievalInjectionPolicy",
+      "SubagentGatePolicy",
+      "ToolFilterPolicy",
+      "ToolResultOffloadPolicy",
+      "TranscriptRecorderPolicy",
+      "UsagePolicy",
+      "VoiceStylePolicy",
+      "YuyutsavaCompactionMiddleware"
+    ],
+    "prompt_len": 9414,
+    "prompt_sha": "18884cf8850affda",
+    "subagents": [
+      {
+        "kind": "async",
+        "middleware": [],
+        "name": "bg-worker",
+        "tools": []
+      },
+      {
+        "kind": "async",
+        "middleware": [],
+        "name": "peer-daemon",
+        "tools": []
+      }
+    ],
+    "tools": [
+      "artifact_create",
+      "artifact_show",
+      "ask_user",
+      "ctx_compact",
+      "ctx_fetch_artifact",
+      "ctx_grep_artifact",
+      "mem_save",
+      "mem_search",
+      "recall",
+      "sk_read_skill",
+      "sk_search_skill",
+      "sk_write_skill",
+      "todo_add",
+      "todo_get",
+      "todo_list",
+      "todo_recall",
+      "tool_search",
+      "um_note",
+      "um_read",
+      "ws_exa_get_contents",
+      "ws_exa_search",
+      "ws_tavily_search"
+    ]
+  },
+  "orchestrator:bare": {
+    "backend": "LocalShellBackend",
+    "chains": {
+      "after_agent": [],
+      "after_model": [
+        "BudgetPolicy"
+      ],
+      "before_model": [
+        "PromptInspectorPolicy"
+      ],
+      "model_call": [
+        "ToolFilterPolicy",
+        "FilesystemPromptPolicy",
+        "VoiceStylePolicy",
+        "SubagentGatePolicy"
+      ],
+      "tool_after": [],
+      "tool_before": [
+        "SubagentGatePolicy"
+      ]
+    },
+    "has_checkpointer": true,
+    "middleware": [
+      "LangChainPolicyAdapter[ToolFilterPolicy,FilesystemPromptPolicy,VoiceStylePolicy,SubagentGatePolicy,PromptInspectorPolicy,BudgetPolicy]"
+    ],
+    "order": [
+      "ToolFilterPolicy",
+      "FilesystemPromptPolicy",
+      "VoiceStylePolicy",
+      "SubagentGatePolicy",
+      "PromptInspectorPolicy",
+      "BudgetPolicy"
+    ],
+    "policies": [
+      "BudgetPolicy",
+      "FilesystemPromptPolicy",
+      "PromptInspectorPolicy",
+      "SubagentGatePolicy",
+      "ToolFilterPolicy",
+      "VoiceStylePolicy"
+    ],
+    "prompt_len": 12928,
+    "prompt_sha": "562597334b699ffb",
+    "subagents": [],
+    "tools": [
+      "artifact_create",
+      "artifact_show",
+      "ask_user",
+      "recall",
+      "sk_read_skill",
+      "sk_write_skill",
+      "todo_add",
+      "todo_get",
+      "todo_list",
+      "todo_recall",
+      "tool_search",
+      "um_note",
+      "um_read",
+      "ws_exa_get_contents",
+      "ws_exa_search",
+      "ws_tavily_search"
+    ]
+  },
+  "orchestrator:wired": {
+    "backend": "LocalShellBackend",
+    "chains": {
+      "after_agent": [
+        "TranscriptRecorderPolicy"
+      ],
+      "after_model": [
+        "TranscriptRecorderPolicy",
+        "BudgetPolicy",
+        "UsagePolicy"
+      ],
+      "before_model": [
+        "YuyutsavaCompactionMiddleware",
+        "TranscriptRecorderPolicy",
+        "PromptInspectorPolicy"
+      ],
+      "model_call": [
+        "ToolFilterPolicy",
+        "FilesystemPromptPolicy",
+        "VoiceStylePolicy",
+        "SubagentGatePolicy",
+        "RetrievalInjectionPolicy"
+      ],
+      "tool_after": [
+        "ToolResultOffloadPolicy"
+      ],
+      "tool_before": [
+        "SubagentGatePolicy"
+      ]
+    },
+    "has_checkpointer": true,
+    "middleware": [
+      "YuyutsavaCompactionMiddleware",
+      "LangChainPolicyAdapter[ToolFilterPolicy,FilesystemPromptPolicy,VoiceStylePolicy,SubagentGatePolicy,ToolResultOffloadPolicy,TranscriptRecorderPolicy,PromptInspectorPolicy,BudgetPolicy,UsagePolicy,RetrievalInjectionPolicy[MemoryInjector,SkillInjector(orchestrator),ConversationInjector]]"
+    ],
+    "order": [
+      "YuyutsavaCompactionMiddleware",
+      "ToolFilterPolicy",
+      "FilesystemPromptPolicy",
+      "VoiceStylePolicy",
+      "SubagentGatePolicy",
+      "ToolResultOffloadPolicy",
+      "TranscriptRecorderPolicy",
+      "PromptInspectorPolicy",
+      "BudgetPolicy",
+      "UsagePolicy",
+      "RetrievalInjectionPolicy"
+    ],
+    "policies": [
+      "BudgetPolicy",
+      "FilesystemPromptPolicy",
+      "PromptInspectorPolicy",
+      "RetrievalInjectionPolicy",
+      "SubagentGatePolicy",
+      "ToolFilterPolicy",
+      "ToolResultOffloadPolicy",
+      "TranscriptRecorderPolicy",
+      "UsagePolicy",
+      "VoiceStylePolicy",
+      "YuyutsavaCompactionMiddleware"
+    ],
+    "prompt_len": 9159,
+    "prompt_sha": "e85114e16756c25c",
+    "subagents": [],
+    "tools": [
+      "artifact_create",
+      "artifact_show",
+      "ask_user",
+      "ctx_compact",
+      "ctx_fetch_artifact",
+      "ctx_grep_artifact",
+      "mem_save",
+      "mem_search",
+      "recall",
+      "sk_read_skill",
+      "sk_search_skill",
+      "sk_write_skill",
+      "todo_add",
+      "todo_get",
+      "todo_list",
+      "todo_recall",
+      "tool_search",
+      "um_note",
+      "um_read",
+      "ws_exa_get_contents",
+      "ws_exa_search",
+      "ws_tavily_search"
+    ]
+  },
+  "tinker:async": {
+    "backend": "LocalShellBackend",
+    "chains": {
+      "after_agent": [
+        "TranscriptRecorderPolicy"
+      ],
+      "after_model": [
+        "TranscriptRecorderPolicy",
+        "BudgetPolicy",
+        "UsagePolicy"
+      ],
+      "before_model": [
+        "YuyutsavaCompactionMiddleware",
+        "TranscriptRecorderPolicy",
+        "PromptInspectorPolicy"
+      ],
+      "model_call": [
+        "ToolFilterPolicy",
+        "FilesystemPromptPolicy",
+        "VoiceStylePolicy",
+        "SubagentGatePolicy",
+        "RetrievalInjectionPolicy"
+      ],
+      "tool_after": [
+        "ToolResultOffloadPolicy",
+        "CheckAsyncTaskGuardPolicy"
+      ],
+      "tool_before": [
+        "SubagentGatePolicy",
+        "PermissionPolicy",
+        "BackgroundTaskCapPolicy",
+        "AsyncTaskInterruptPatchPolicy",
+        "CheckAsyncTaskGuardPolicy"
+      ]
+    },
+    "has_checkpointer": true,
+    "middleware": [
+      "YuyutsavaCompactionMiddleware",
+      "LangChainPolicyAdapter[ToolFilterPolicy,FilesystemPromptPolicy,VoiceStylePolicy,SubagentGatePolicy,ToolResultOffloadPolicy,TranscriptRecorderPolicy,PromptInspectorPolicy,BudgetPolicy,UsagePolicy,PermissionPolicy,RetrievalInjectionPolicy[MemoryInjector,SkillInjector(tinker),ConversationInjector,TodoNoteInjector,PrefsInjector],BackgroundTaskCapPolicy,AsyncTaskInterruptPatchPolicy,CheckAsyncTaskGuardPolicy]"
+    ],
+    "order": [
+      "YuyutsavaCompactionMiddleware",
+      "ToolFilterPolicy",
+      "FilesystemPromptPolicy",
+      "VoiceStylePolicy",
+      "SubagentGatePolicy",
+      "ToolResultOffloadPolicy",
+      "TranscriptRecorderPolicy",
+      "PromptInspectorPolicy",
+      "BudgetPolicy",
+      "UsagePolicy",
+      "PermissionPolicy",
+      "RetrievalInjectionPolicy",
+      "BackgroundTaskCapPolicy",
+      "AsyncTaskInterruptPatchPolicy",
+      "CheckAsyncTaskGuardPolicy"
+    ],
+    "policies": [
+      "AsyncTaskInterruptPatchPolicy",
+      "BackgroundTaskCapPolicy",
+      "BudgetPolicy",
+      "CheckAsyncTaskGuardPolicy",
+      "FilesystemPromptPolicy",
+      "PermissionPolicy",
+      "PromptInspectorPolicy",
+      "RetrievalInjectionPolicy",
+      "SubagentGatePolicy",
+      "ToolFilterPolicy",
+      "ToolResultOffloadPolicy",
+      "TranscriptRecorderPolicy",
+      "UsagePolicy",
+      "VoiceStylePolicy",
+      "YuyutsavaCompactionMiddleware"
+    ],
+    "prompt_len": 20004,
+    "prompt_sha": "6592639e12af40dd",
+    "subagents": [
+      {
+        "kind": "async",
+        "middleware": [],
+        "name": "bg-worker",
+        "tools": []
+      },
+      {
+        "kind": "async",
+        "middleware": [],
+        "name": "peer-daemon",
+        "tools": []
+      }
+    ],
+    "tools": [
+      "artifact_create",
+      "artifact_show",
+      "ctx_compact",
+      "ctx_fetch_artifact",
+      "ctx_grep_artifact",
+      "db_list",
+      "db_query",
+      "db_schema",
+      "mem_save",
+      "mem_search",
+      "sk_read_skill",
+      "sk_search_skill",
+      "sk_write_skill",
+      "todo_add",
+      "todo_add_note",
+      "todo_add_objective",
+      "todo_assign_note",
+      "todo_attach_artifact",
+      "todo_generate_artifact",
+      "todo_get",
+      "todo_list",
+      "todo_recall",
+      "todo_set_status",
+      "todo_update",
+      "todo_update_objective",
+      "tool_search",
+      "tr_ask_user",
+      "tr_delete_file",
+      "tr_execute",
+      "tr_execute_in_sandbox",
+      "tr_fetch_url",
+      "tr_glob",
+      "tr_grep",
+      "tr_ls",
+      "tr_read_file",
+      "tr_run_python",
+      "tr_sysinfo",
+      "tr_write_file",
+      "um_note",
+      "um_read",
+      "vis_chart",
+      "vis_code",
+      "vis_diagram",
+      "vis_list_artifacts",
+      "vis_math",
+      "vis_show_artifact",
+      "vis_table",
+      "vis_timeline",
+      "ws_exa_get_contents",
+      "ws_exa_search",
+      "ws_tavily_search"
+    ]
+  },
+  "tinker:bare": {
+    "backend": "LocalShellBackend",
+    "chains": {
+      "after_agent": [],
+      "after_model": [
+        "BudgetPolicy"
+      ],
+      "before_model": [
+        "PromptInspectorPolicy"
+      ],
+      "model_call": [
+        "ToolFilterPolicy",
+        "FilesystemPromptPolicy",
+        "VoiceStylePolicy",
+        "SubagentGatePolicy"
+      ],
+      "tool_after": [],
+      "tool_before": [
+        "SubagentGatePolicy",
+        "PermissionPolicy"
+      ]
+    },
+    "has_checkpointer": true,
+    "middleware": [
+      "LangChainPolicyAdapter[ToolFilterPolicy,FilesystemPromptPolicy,VoiceStylePolicy,SubagentGatePolicy,PromptInspectorPolicy,BudgetPolicy,PermissionPolicy]"
+    ],
+    "order": [
+      "ToolFilterPolicy",
+      "FilesystemPromptPolicy",
+      "VoiceStylePolicy",
+      "SubagentGatePolicy",
+      "PromptInspectorPolicy",
+      "BudgetPolicy",
+      "PermissionPolicy"
+    ],
+    "policies": [
+      "BudgetPolicy",
+      "FilesystemPromptPolicy",
+      "PermissionPolicy",
+      "PromptInspectorPolicy",
+      "SubagentGatePolicy",
+      "ToolFilterPolicy",
+      "VoiceStylePolicy"
+    ],
+    "prompt_len": 23467,
+    "prompt_sha": "96ab407c93989659",
+    "subagents": [],
+    "tools": [
+      "artifact_create",
+      "artifact_show",
+      "db_list",
+      "db_query",
+      "db_schema",
+      "sk_read_skill",
+      "sk_write_skill",
+      "todo_add",
+      "todo_add_note",
+      "todo_add_objective",
+      "todo_assign_note",
+      "todo_attach_artifact",
+      "todo_generate_artifact",
+      "todo_get",
+      "todo_list",
+      "todo_recall",
+      "todo_set_status",
+      "todo_update",
+      "todo_update_objective",
+      "tool_search",
+      "tr_ask_user",
+      "tr_delete_file",
+      "tr_execute",
+      "tr_execute_in_sandbox",
+      "tr_fetch_url",
+      "tr_glob",
+      "tr_grep",
+      "tr_ls",
+      "tr_read_file",
+      "tr_run_python",
+      "tr_sysinfo",
+      "tr_write_file",
+      "um_note",
+      "um_read",
+      "vis_chart",
+      "vis_code",
+      "vis_diagram",
+      "vis_list_artifacts",
+      "vis_math",
+      "vis_show_artifact",
+      "vis_table",
+      "vis_timeline",
+      "ws_exa_get_contents",
+      "ws_exa_search",
+      "ws_tavily_search"
+    ]
+  },
+  "tinker:wired": {
+    "backend": "LocalShellBackend",
+    "chains": {
+      "after_agent": [
+        "TranscriptRecorderPolicy"
+      ],
+      "after_model": [
+        "TranscriptRecorderPolicy",
+        "BudgetPolicy",
+        "UsagePolicy"
+      ],
+      "before_model": [
+        "YuyutsavaCompactionMiddleware",
+        "TranscriptRecorderPolicy",
+        "PromptInspectorPolicy"
+      ],
+      "model_call": [
+        "ToolFilterPolicy",
+        "FilesystemPromptPolicy",
+        "VoiceStylePolicy",
+        "SubagentGatePolicy",
+        "RetrievalInjectionPolicy"
+      ],
+      "tool_after": [
+        "ToolResultOffloadPolicy"
+      ],
+      "tool_before": [
+        "SubagentGatePolicy",
+        "PermissionPolicy"
+      ]
+    },
+    "has_checkpointer": true,
+    "middleware": [
+      "YuyutsavaCompactionMiddleware",
+      "LangChainPolicyAdapter[ToolFilterPolicy,FilesystemPromptPolicy,VoiceStylePolicy,SubagentGatePolicy,ToolResultOffloadPolicy,TranscriptRecorderPolicy,PromptInspectorPolicy,BudgetPolicy,UsagePolicy,PermissionPolicy,RetrievalInjectionPolicy[MemoryInjector,SkillInjector(tinker),ConversationInjector,TodoNoteInjector,PrefsInjector]]"
+    ],
+    "order": [
+      "YuyutsavaCompactionMiddleware",
+      "ToolFilterPolicy",
+      "FilesystemPromptPolicy",
+      "VoiceStylePolicy",
+      "SubagentGatePolicy",
+      "ToolResultOffloadPolicy",
+      "TranscriptRecorderPolicy",
+      "PromptInspectorPolicy",
+      "BudgetPolicy",
+      "UsagePolicy",
+      "PermissionPolicy",
+      "RetrievalInjectionPolicy"
+    ],
+    "policies": [
+      "BudgetPolicy",
+      "FilesystemPromptPolicy",
+      "PermissionPolicy",
+      "PromptInspectorPolicy",
+      "RetrievalInjectionPolicy",
+      "SubagentGatePolicy",
+      "ToolFilterPolicy",
+      "ToolResultOffloadPolicy",
+      "TranscriptRecorderPolicy",
+      "UsagePolicy",
+      "VoiceStylePolicy",
+      "YuyutsavaCompactionMiddleware"
+    ],
+    "prompt_len": 20004,
+    "prompt_sha": "6592639e12af40dd",
+    "subagents": [],
+    "tools": [
+      "artifact_create",
+      "artifact_show",
+      "ctx_compact",
+      "ctx_fetch_artifact",
+      "ctx_grep_artifact",
+      "db_list",
+      "db_query",
+      "db_schema",
+      "mem_save",
+      "mem_search",
+      "sk_read_skill",
+      "sk_search_skill",
+      "sk_write_skill",
+      "todo_add",
+      "todo_add_note",
+      "todo_add_objective",
+      "todo_assign_note",
+      "todo_attach_artifact",
+      "todo_generate_artifact",
+      "todo_get",
+      "todo_list",
+      "todo_recall",
+      "todo_set_status",
+      "todo_update",
+      "todo_update_objective",
+      "tool_search",
+      "tr_ask_user",
+      "tr_delete_file",
+      "tr_execute",
+      "tr_execute_in_sandbox",
+      "tr_fetch_url",
+      "tr_glob",
+      "tr_grep",
+      "tr_ls",
+      "tr_read_file",
+      "tr_run_python",
+      "tr_sysinfo",
+      "tr_write_file",
+      "um_note",
+      "um_read",
+      "vis_chart",
+      "vis_code",
+      "vis_diagram",
+      "vis_list_artifacts",
+      "vis_math",
+      "vis_show_artifact",
+      "vis_table",
+      "vis_timeline",
+      "ws_exa_get_contents",
+      "ws_exa_search",
+      "ws_tavily_search"
+    ]
+  }
+}

@@ -28,6 +28,8 @@ _RULES: dict[tuple[FilesystemZone, OperationType], PermissionAction] = {
     (FilesystemZone.SANDBOX, OperationType.DELETE):  PermissionAction.ALLOW,
     (FilesystemZone.SANDBOX, OperationType.EXECUTE): PermissionAction.ALLOW,
     (FilesystemZone.SANDBOX, OperationType.CHMOD):   PermissionAction.ALLOW,
+    (FilesystemZone.SANDBOX, OperationType.LIST):    PermissionAction.ALLOW,
+    (FilesystemZone.SANDBOX, OperationType.GLOB):    PermissionAction.ALLOW,
 
     # ── WORKSPACE: read/write/create auto-allowed; delete prompts; rest denied
     (FilesystemZone.WORKSPACE, OperationType.READ):    PermissionAction.ALLOW,
@@ -36,6 +38,8 @@ _RULES: dict[tuple[FilesystemZone, OperationType], PermissionAction] = {
     (FilesystemZone.WORKSPACE, OperationType.DELETE):  PermissionAction.PROMPT,
     (FilesystemZone.WORKSPACE, OperationType.EXECUTE): PermissionAction.DENY,
     (FilesystemZone.WORKSPACE, OperationType.CHMOD):   PermissionAction.DENY,
+    (FilesystemZone.WORKSPACE, OperationType.LIST):    PermissionAction.ALLOW,
+    (FilesystemZone.WORKSPACE, OperationType.GLOB):    PermissionAction.ALLOW,
 
     # ── EXTERNAL: all operations require user confirmation ────────────────
     (FilesystemZone.EXTERNAL, OperationType.READ):    PermissionAction.PROMPT,
@@ -44,6 +48,8 @@ _RULES: dict[tuple[FilesystemZone, OperationType], PermissionAction] = {
     (FilesystemZone.EXTERNAL, OperationType.DELETE):  PermissionAction.PROMPT,
     (FilesystemZone.EXTERNAL, OperationType.EXECUTE): PermissionAction.PROMPT,
     (FilesystemZone.EXTERNAL, OperationType.CHMOD):   PermissionAction.PROMPT,
+    (FilesystemZone.EXTERNAL, OperationType.LIST):    PermissionAction.PROMPT,
+    (FilesystemZone.EXTERNAL, OperationType.GLOB):    PermissionAction.PROMPT,
 
     # ── SYSTEM_CRITICAL: always denied ───────────────────────────────────
     (FilesystemZone.SYSTEM_CRITICAL, OperationType.READ):    PermissionAction.DENY,
@@ -52,6 +58,8 @@ _RULES: dict[tuple[FilesystemZone, OperationType], PermissionAction] = {
     (FilesystemZone.SYSTEM_CRITICAL, OperationType.DELETE):  PermissionAction.DENY,
     (FilesystemZone.SYSTEM_CRITICAL, OperationType.EXECUTE): PermissionAction.DENY,
     (FilesystemZone.SYSTEM_CRITICAL, OperationType.CHMOD):   PermissionAction.DENY,
+    (FilesystemZone.SYSTEM_CRITICAL, OperationType.LIST):    PermissionAction.DENY,
+    (FilesystemZone.SYSTEM_CRITICAL, OperationType.GLOB):    PermissionAction.DENY,
 }
 
 # ---------------------------------------------------------------------------
@@ -64,11 +72,17 @@ _RISK_LEVELS: dict[tuple[FilesystemZone, OperationType], str] = {
     (FilesystemZone.SANDBOX,         OperationType.CREATE):  "LOW",
     (FilesystemZone.SANDBOX,         OperationType.DELETE):  "LOW",
     (FilesystemZone.SANDBOX,         OperationType.EXECUTE): "LOW",
+    (FilesystemZone.SANDBOX,         OperationType.LIST):    "LOW",
+    (FilesystemZone.SANDBOX,         OperationType.GLOB):    "LOW",
     (FilesystemZone.WORKSPACE,       OperationType.READ):    "LOW",
     (FilesystemZone.WORKSPACE,       OperationType.WRITE):   "LOW",
     (FilesystemZone.WORKSPACE,       OperationType.CREATE):  "LOW",
     (FilesystemZone.WORKSPACE,       OperationType.DELETE):  "MEDIUM",
+    (FilesystemZone.WORKSPACE,       OperationType.LIST):    "LOW",
+    (FilesystemZone.WORKSPACE,       OperationType.GLOB):    "LOW",
     (FilesystemZone.EXTERNAL,        OperationType.READ):    "LOW",
+    (FilesystemZone.EXTERNAL,        OperationType.LIST):    "LOW",
+    (FilesystemZone.EXTERNAL,        OperationType.GLOB):    "LOW",
     (FilesystemZone.EXTERNAL,        OperationType.WRITE):   "MEDIUM",
     (FilesystemZone.EXTERNAL,        OperationType.CREATE):  "MEDIUM",
     (FilesystemZone.EXTERNAL,        OperationType.DELETE):  "HIGH",
@@ -140,6 +154,19 @@ def build_interrupt_payload(
     zone: FilesystemZone,
 ) -> TaskRunnerPermissionInterrupt:
     """Build the typed interrupt payload passed to LangGraph's ``interrupt()``."""
+    from yuyutsava.core.agent_context import current_context
+
+    ctx = current_context()
+    parent_path = ctx.get("agent_path") or "orchestrator"
+    # If a subagent (anything other than the default "agent" sentinel) requested
+    # the op, append its name so the UI shows e.g. "orchestrator/file-organizer"
+    # rather than the orchestrator's path. The check is idempotent: re-nesting is
+    # avoided so repeated calls within one subagent stay shallow.
+    asker = request.requesting_agent
+    if asker and asker != "agent" and not parent_path.endswith(f"/{asker}"):
+        agent_path = f"{parent_path}/{asker}"
+    else:
+        agent_path = parent_path
     return TaskRunnerPermissionInterrupt(
         operation=request.operation.value,
         paths=request.paths,
@@ -150,4 +177,6 @@ def build_interrupt_payload(
         task_id=request.task_id,
         task_description=request.task_description,
         risk_level=get_risk_level(zone, request.operation),
+        session_id=ctx.get("session_id"),
+        agent_path=agent_path,
     )
