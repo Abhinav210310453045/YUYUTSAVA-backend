@@ -1,0 +1,137 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# A new push to a PR cancels the previous run for that PR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # Syntax gate over the whole package. Deliberately dependency-free: it
+      # needs no API keys, no Postgres and no model, so it cannot flake.
+      - name: Compile all sources
+        run: python -m compileall -q yuyutsava test scripts
+
+      # Catches packaging regressions -- a broken [project] table, a license
+      # that stops being emitted, a hatchling floor that is too low.
+      - name: Build wheel
+        run: uv build --wheel
+
+      - name: Check wheel carries its license
+        run: |
+          python - <<'EOF'
+          import zipfile, glob, sys
+          whl = glob.glob("dist/*.whl")[0]
+          names = zipfile.ZipFile(whl).namelist()
+          meta = next(n for n in names if n.endswith("METADATA"))
+          text = zipfile.ZipFile(whl).read(meta).decode()
+          missing = []
+          if "License-Expression: Apache-2.0" not in text:
+              missing.append("License-Expression")
+          for f in ("LICENSE", "NOTICE"):
+              if not any(n.endswith(f"licenses/{f}") for n in names):
+                  missing.append(f)
+          if missing:
+              sys.exit(f"wheel is missing: {', '.join(missing)}")
+          print("wheel license metadata OK")
+          EOF
+
+  electron:
+    name: Electron renderer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: electron-app/package-lock.json
+
+      - name: Install
+        working-directory: electron-app
+        run: npm ci
+
+      - name: Build renderer
+        working-directory: electron-app
+        run: npm run build
+
+  hygiene:
+    name: Repo hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # These have all been committed by accident before. Cheap to check,
+      # expensive to undo once public.
+      - name: No run artefacts, OS junk, or absolute home paths
+        run: |
+          fail=0
+
+          if git ls-files | grep -E '(^|/)\.DS_Store$|\.pckl$|(^|/)\.langgraph_api/'; then
+            echo "::error::run artefacts or OS junk are tracked (see above)"
+            fail=1
+          fi
+
+          # Real home directories, not the placeholders docs legitimately use
+          # (/Users/me, /Users/x, /Users/you, /Users/username, /home/user...).
+          if git ls-files -z \
+             | xargs -0 grep -nIE '(/Users/|/home/)[a-z][a-z0-9._-]{2,}' 2>/dev/null \
+             | grep -vE '(/Users/|/home/)(me|you|x|user|username|youruser|example|someone|dev|runner)([/"'"'"'`[:space:]]|$)'; then
+            echo "::error::a real home-directory path looks committed (see above)"
+            fail=1
+          fi
+
+          if git ls-files | grep -qxF '.env'; then
+            echo "::error::.env is tracked"
+            fail=1
+          fi
+
+          exit $fail
+
+      - name: Documentation links resolve
+        run: |
+          python - <<'EOF'
+          import re, sys
+          from pathlib import Path
+          LINK = re.compile(r'\[([^\]]*)\]\(([^)]+)\)')
+          bad = []
+          for f in list(Path().glob("*.md")) + list(Path("docs").rglob("*.md")):
+              for m in LINK.finditer(f.read_text(encoding="utf-8", errors="replace")):
+                  t = m.group(2).split("#")[0].strip()
+                  if not t or t.startswith(("http://", "https://", "mailto:")):
+                      continue
+                  if not (f.parent / t).exists():
+                      bad.append(f"{f}: {t}")
+          if bad:
+              print("\n".join(f"::error::broken link {b}" for b in bad))
+              sys.exit(f"{len(bad)} broken documentation links")
+          print("all documentation links resolve")
+          EOF

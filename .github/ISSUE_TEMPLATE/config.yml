@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/Abhinav210310453045/YUYUTSAVA-backend/security/advisories/new
+    about: Report privately. Do not open a public issue for a security problem.
+  - name: Documentation
+    url: https://github.com/Abhinav210310453045/YUYUTSAVA-backend/tree/main/docs
+    about: Architecture, API contract, configuration reference and guides.
