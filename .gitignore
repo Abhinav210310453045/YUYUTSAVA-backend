@@ -76,7 +76,11 @@ Thumbs.db
 # Sandbox & runtime workspace
 workspace/
 sandbox/
+_sandbox/
 playground/
+
+# Agent deliverables written by tr_write_file / the export dir
+_output/
 
 # deepagents on-disk scratch (durable copies live in the DB:
 # artifacts + transcript_messages tables). CLI deletes these on exit;
@@ -90,17 +94,16 @@ conversation_history/
 # on every branch. It also carries real run history (thread/run ids, Human/AI
 # message payloads, token usage) — never commit them.
 .langgraph_api/
+*.pckl
 
-# Diagrams (generated artifacts)
-diagrams/
+# Generated diagrams at the repo root. Anchored with a leading slash so that
+# docs/diagrams/ — which holds hand-authored, committed diagrams — is not
+# swept up by the same rule.
+/diagrams/
 
+# YouTube series production notes — drafted in-tree, published elsewhere.
 content/
 
-
-_sandbox
-.claude
-.venv
-.vscode
-content
+# Google Cloud credentials written by `gcloud auth`
 .env.gcloud/
 .gcloud/

@@ -24,17 +24,19 @@ if _os.environ.get("YUYUTSAVA_ALLOW_BILLABLE") != "1":
 
 import asyncio
 import sys
-sys.path.insert(0, "$REPO")
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
 
 from dotenv import load_dotenv
-load_dotenv("$REPO/.env")
+load_dotenv(REPO_ROOT / ".env")
 
 from yuyutsava.core import build_cli_deepagent, astream_agent, llm_settings_from_env
-from pathlib import Path
 
 async def main():
     settings = llm_settings_from_env()
-    workspace = Path("$REPO")
+    workspace = REPO_ROOT
     bundle = build_cli_deepagent(workspace, settings)
 
     # Run two tasks concurrently — proves astream_agent is truly async
