@@ -3,6 +3,9 @@
 .env.local
 .env.*.local
 
+# Editor local-history snapshots (can contain copies of .env)
+.history/
+
 # Python
 __pycache__/
 *.py[cod]
