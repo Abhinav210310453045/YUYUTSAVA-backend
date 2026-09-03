@@ -104,7 +104,7 @@ jobs:
           # (/Users/me, /Users/x, /Users/you, /Users/username, /home/user...).
           if git ls-files -z \
              | xargs -0 grep -nIE '(/Users/|/home/)[a-z][a-z0-9._-]{2,}' 2>/dev/null \
-             | grep -vE '(/Users/|/home/)(me|you|x|user|username|youruser|example|someone|dev|runner)([/"'"'"'`[:space:]]|$)'; then
+             | grep -vE '(/Users/|/home/)(me|you|x|user|username|youruser|example|someone|dev|runner)([^a-z0-9._-]|$)'; then
             echo "::error::a real home-directory path looks committed (see above)"
             fail=1
           fi

@@ -19,10 +19,10 @@ the License.
 Prior licensing
 --------------------------------------------------------------------------------
 
-Commits up to and including 8896902 ("Added MIT license", 2026-05-06) were
-published under the MIT License. That grant is irrevocable for those revisions:
-anyone who obtained the work at or before that commit retains MIT terms for it.
-All subsequent revisions, including this one, are licensed under Apache-2.0.
+Revisions of this project published before 2026-08-31 carried the MIT License.
+That grant is irrevocable for those revisions: anyone who obtained the work
+under MIT retains MIT terms for the copy they received. All revisions from
+2026-08-31 onward, including this one, are licensed under Apache-2.0.
 
 --------------------------------------------------------------------------------
 Third-party dependencies

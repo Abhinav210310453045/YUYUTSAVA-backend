@@ -11,7 +11,7 @@ While the version stays `0.x`, minor bumps may contain breaking changes.
 ### Changed
 - `main` now carries the full development history and the current code. It had
   been stalled four months behind the working branch.
-- Relicensed from MIT to Apache-2.0. Revisions up to and including `8896902`
+- Relicensed from MIT to Apache-2.0. Revisions published before 2026-08-31
   remain available under MIT; see [NOTICE](NOTICE).
 - `streamlit` moved from a base dependency to the `streamlit` extra — it pulled
   pydeck, altair, tornado and gitpython into every install and is imported
@@ -43,9 +43,13 @@ While the version stays `0.x`, minor bumps may contain breaking changes.
 
 ## [0.1.0] — unreleased
 
-The first public release. Development ran from 2026-04-10 in a private
-repository; this entry summarises what exists at the point of opening it up
-rather than itemising that history.
+The first tagged release. Development ran from 2026-04-10 and the commit
+history is intact; this entry summarises what the project contains at the
+point of its first release rather than itemising that history.
+
+Developer machine paths, an unrelated project's files committed by accident,
+and LangGraph dev-server state containing real prompts and model output were
+removed from the history before publication.
 
 ### Added
 
