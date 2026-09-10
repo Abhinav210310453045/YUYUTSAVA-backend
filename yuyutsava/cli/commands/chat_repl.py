@@ -926,6 +926,14 @@ async def run_chat_repl(
                     # of range") into an unattributable one-liner, and the frame
                     # it came from is the only thing that makes it fixable. The
                     # turn still fails soft — the session stays open either way.
+                    if type(exc).__name__ == "ResourceExhausted":
+                        print(
+                            f"{_DIM}hint: the model provider returned 429 (quota / "
+                            "capacity) and retries were exhausted — wait a minute "
+                            "and resend; VERTEX_MAX_RETRIES raises the retry "
+                            f"count.{_RESET}",
+                            file=sys.stderr,
+                        )
                     print(
                         f"{_RED}error:{_RESET} {type(exc).__name__}: {exc}",
                         file=sys.stderr,
