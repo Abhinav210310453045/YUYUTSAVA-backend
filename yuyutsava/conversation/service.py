@@ -63,7 +63,7 @@ class ConversationService:
         bundle: AgentBundle | None = None,
         bundle_factory: "Callable[[], Awaitable[AgentBundle]] | None" = None,
         agent_path: str = "cli",
-        recursion_limit: int = 200,
+        recursion_limit: int = 1000,
         bookkeep: bool = True,
     ) -> None:
         if bundle is None and bundle_factory is None:
@@ -135,7 +135,7 @@ class ConversationService:
         resume_id: str | None = None,
         continue_latest: bool = False,
         agent_path: str = "cli",
-        recursion_limit: int = 200,
+        recursion_limit: int = 1000,
         task: str = "(interactive)",
         bookkeep: bool = True,
     ) -> tuple["ConversationService", bool]:

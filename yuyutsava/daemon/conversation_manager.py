@@ -77,7 +77,7 @@ class ConversationManager:
         checkpointer: Any,
         settings: LlmSettings | None = None,
         search_config: SearchConfig | None = None,
-        recursion_limit: int = 200,
+        recursion_limit: int = 1000,
         store: SessionStore | None = None,
         voice_store: Any | None = None,
         usage_store: Any | None = None,

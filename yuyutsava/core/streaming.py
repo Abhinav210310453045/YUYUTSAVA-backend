@@ -521,7 +521,7 @@ async def astream_agent_iter(
     task: str,
     *,
     thread_id: str | None = None,
-    recursion_limit: int = 200,
+    recursion_limit: int = 1000,
     ask_handler=None,  # async (interrupt_value: dict) -> str
     run_name: str = "agent",
     agent_path: str = "orchestrator",
@@ -680,7 +680,7 @@ async def astream_agent(
     task: str,
     *,
     thread_id: str | None = None,
-    recursion_limit: int = 200,
+    recursion_limit: int = 1000,
     on_tick=None,  # async (steps: int) -> None — progress hook for session bookkeeping
     agent_path: str = "cli",
     session_id: str | None = None,

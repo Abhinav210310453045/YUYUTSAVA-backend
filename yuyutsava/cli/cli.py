@@ -77,8 +77,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--recursion-limit",
         type=int,
-        default=200,
-        help="LangGraph recursion limit for one invocation (default: 200).",
+        default=1000,
+        help="LangGraph recursion limit for one invocation (default: 1000).",
     )
     p.add_argument(
         "--bash-timeout",
