@@ -42,6 +42,16 @@ logger = logging.getLogger("yuyutsava.core.tracing")
 # Process-wide cache for the reachability probe. ``None`` = not yet probed.
 _reachable: bool | None = None
 
+# Dead switch: flipped by the exporter the first time a span batch cannot be
+# delivered (Langfuse stopped mid-session, or something else took its port).
+# Once dead, ``get_callback`` hands out nothing and the exporter drops whatever
+# is still queued — no retries, no log spam, no requests at a stranger's port.
+# Dead stays dead for the process; Langfuse is opt-in, not a thing to chase.
+_dead: bool = False
+
+# The one Langfuse client this process owns (built lazily with our exporter).
+_client = None
+
 
 def _explicitly_disabled() -> bool:
     """True only when ``LANGFUSE_ENABLED`` is set to an explicit off value.
@@ -66,9 +76,123 @@ def is_configured() -> bool:
 
 
 def reset_reachability_cache() -> None:
-    """Clear the cached reachability result (mainly for tests)."""
-    global _reachable
+    """Clear the cached reachability result and the dead switch (mainly for tests).
+
+    Does not tear down an already-built Langfuse client — its resource manager
+    is a per-key singleton inside the SDK; tests that need a fresh one call
+    ``LangfuseResourceManager.reset()`` themselves.
+    """
+    global _reachable, _dead, _client
     _reachable = None
+    _dead = False
+    _client = None
+
+
+def is_dead() -> bool:
+    """True once a span export has failed in this process (tracing switched off)."""
+    return _dead
+
+
+def _mark_dead(reason: str) -> None:
+    """Flip the dead switch exactly once, with a single quiet INFO line."""
+    global _reachable, _dead
+    if _dead:
+        return
+    _dead = True
+    _reachable = False
+    host = (os.getenv("LANGFUSE_HOST") or "").rstrip("/")
+    logger.info(
+        "Langfuse unreachable at %s (%s) — tracing disabled for this process",
+        host or "<unset>",
+        reason,
+    )
+
+
+def _dead_switch_exporter_class():
+    """Build (once) the exporter subclass; imports are lazy so this module
+    stays importable when langfuse/opentelemetry are not installed."""
+    global _ExporterClass
+    if _ExporterClass is not None:
+        return _ExporterClass
+
+    from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+    from opentelemetry.sdk.trace.export import SpanExportResult
+
+    class _DeadSwitchExporter(OTLPSpanExporter):
+        """OTLP exporter that gives up for good on the first failed batch.
+
+        The stock exporter retries transient failures with backoff and logs
+        every non-retryable status at ERROR, forever, batch after batch. We let
+        it try once (its own retry loop is bounded by the export timeout); if
+        the batch does not land, tracing is over for this process and every
+        later batch is discarded without touching the network.
+        """
+
+        def export(self, spans):  # type: ignore[override]
+            if _dead:
+                return SpanExportResult.SUCCESS
+            try:
+                result = super().export(spans)
+            except Exception as exc:  # noqa: BLE001 — never let tracing raise
+                _mark_dead(f"{type(exc).__name__}: {exc}")
+                return SpanExportResult.SUCCESS
+            if result is SpanExportResult.SUCCESS:
+                return result
+            _mark_dead("span export failed")
+            return SpanExportResult.SUCCESS
+
+    _ExporterClass = _DeadSwitchExporter
+    return _ExporterClass
+
+
+_ExporterClass = None
+
+
+def _build_exporter():
+    """Our exporter, wired exactly as langfuse's ``LangfuseSpanProcessor`` would
+    wire its default one (endpoint, Basic auth, SDK headers, timeout)."""
+    import base64
+    from importlib.metadata import PackageNotFoundError, version
+
+    host = (os.getenv("LANGFUSE_HOST") or "").rstrip("/")
+    public_key = os.getenv("LANGFUSE_PUBLIC_KEY") or ""
+    secret_key = os.getenv("LANGFUSE_SECRET_KEY") or ""
+    try:
+        sdk_version = version("langfuse")
+    except PackageNotFoundError:
+        sdk_version = "unknown"
+    try:
+        timeout = int(os.getenv("LANGFUSE_TIMEOUT") or 5)
+    except ValueError:
+        timeout = 5
+
+    auth = base64.b64encode(f"{public_key}:{secret_key}".encode()).decode("ascii")
+    headers = {
+        "Authorization": f"Basic {auth}",
+        "x-langfuse-sdk-name": "python",
+        "x-langfuse-sdk-version": sdk_version,
+        "x-langfuse-public-key": public_key,
+    }
+    export_path = os.getenv("LANGFUSE_OTEL_TRACES_EXPORT_PATH")
+    endpoint = f"{host}/{export_path}" if export_path else f"{host}/api/public/otel/v1/traces"
+    cls = _dead_switch_exporter_class()
+    return cls(endpoint=endpoint, headers=headers, timeout=timeout)
+
+
+def _ensure_client():
+    """Construct the process's Langfuse client once, with the dead-switch exporter.
+
+    The SDK's ``LangfuseResourceManager`` is a per-public-key singleton, so a
+    client built here first is the one every later ``CallbackHandler()`` /
+    ``get_client()`` reuses — which is what makes the injected exporter stick.
+    """
+    global _client
+    if _client is not None:
+        return _client
+    from langfuse import Langfuse
+
+    _client = Langfuse(span_exporter=_build_exporter())
+    return _client
 
 
 def warm_reachability_cache() -> None:
@@ -120,11 +244,12 @@ def get_callback():
     """
     if not is_configured():
         return None
-    if not _langfuse_reachable():
+    if _dead or not _langfuse_reachable():
         return None
     try:
         from langfuse.langchain import CallbackHandler
 
+        _ensure_client()
         return CallbackHandler()
     except ImportError:
         logger.warning("langfuse is not installed — tracing disabled. Run: uv add langfuse")

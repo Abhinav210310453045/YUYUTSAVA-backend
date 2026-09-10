@@ -24,7 +24,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-DEFAULT_PG_DSN = "postgresql://yuyutsava:yuyutsava@127.0.0.1:5433/yuyutsava"
+DEFAULT_PG_DSN = "postgresql://yuyutsava:yuyutsava@127.0.0.1:5435/yuyutsava"
 
 
 @dataclass(frozen=True)

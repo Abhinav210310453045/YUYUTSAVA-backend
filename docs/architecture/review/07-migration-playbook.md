@@ -48,7 +48,7 @@ summary-store race was found exactly this way — a test written to confirm an
 assumption disproved it instead.
 
 Postgres cases must skip cleanly when no server is reachable, so the suite runs
-anywhere. With the daemon's Postgres up (`127.0.0.1:5433`), all four run.
+anywhere. With the daemon's Postgres up (`127.0.0.1:5435`), all four run.
 
 ### 3. Write the unified store
 

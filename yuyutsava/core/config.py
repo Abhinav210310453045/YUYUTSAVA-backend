@@ -353,6 +353,10 @@ class VertexSettings:
     project: str
     location: str = "us-central1"
     model: str = "gemini-2.5-flash"
+    # Retries for transient Vertex errors (429 RESOURCE_EXHAUSTED, 503, …).
+    # Applies to both the SDK's own tenacity wrapper (non-streaming) and the
+    # first-chunk retry quirk that covers the streaming path the SDK misses.
+    max_retries: int = 6
 
     @property
     def api_key(self) -> str:  # ADC auth — no key
@@ -372,7 +376,12 @@ class VertexSettings:
             )
         location = _env("VERTEX_LOCATION", role, "us-central1")
         model = _env("VERTEX_MODEL", role, "gemini-2.5-flash")
-        return cls(project=project, location=location, model=model)
+        raw_retries = _env("VERTEX_MAX_RETRIES", role, "6")
+        try:
+            max_retries = max(0, int(raw_retries))
+        except (TypeError, ValueError):
+            max_retries = 6
+        return cls(project=project, location=location, model=model, max_retries=max_retries)
 
 
 @dataclass(frozen=True)

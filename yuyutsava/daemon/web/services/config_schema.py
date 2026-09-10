@@ -170,7 +170,7 @@ _GROUPS: list[ConfigGroup] = [
                        "task restarts from the beginning."),
         ConfigVar("YUYUTSAVA_PG_DSN", "Postgres DSN", "password", secret=True,
                   reload_class=RESTART_NO_RESUME,
-                  placeholder="postgresql://yuyutsava:yuyutsava@127.0.0.1:5433/yuyutsava",
+                  placeholder="postgresql://yuyutsava:yuyutsava@127.0.0.1:5435/yuyutsava",
                   depends_key="YUYUTSAVA_STORAGE_BACKEND", depends_value="postgres"),
         ConfigVar("YUYUTSAVA_PG_POOL_MIN", "PG pool min", "number", default="1",
                   reload_class=RESTART_NO_RESUME, placeholder="1",

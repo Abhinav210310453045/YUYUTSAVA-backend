@@ -10,12 +10,12 @@
 #
 # One server, two databases:
 #   - "yuyutsava"  app + pgvector. Default DSN already matches:
-#                  postgresql://yuyutsava:yuyutsava@127.0.0.1:5433/yuyutsava
+#                  postgresql://yuyutsava:yuyutsava@127.0.0.1:5435/yuyutsava
 #   - "langfuse"   vendor-managed Langfuse metadata (created on demand; never
 #                  co-mingled with the app schema). Langfuse's trace/cost
 #                  analytics still live in ClickHouse, not here.
 #
-# Host port 5433 (not 5432) so a system Postgres install never clashes.
+# Host port 5435 (not 5432) so a system Postgres install never clashes.
 #
 # Stop:  docker compose --profile langfuse down
 # Wipe:  docker compose --profile langfuse down -v
@@ -73,7 +73,7 @@ services:
       POSTGRES_PASSWORD: yuyutsava
       POSTGRES_DB: yuyutsava
     ports:
-      - "127.0.0.1:5433:5432"
+      - "127.0.0.1:5435:5432"
     volumes:
       - yuyutsava_pg_data:/var/lib/postgresql/data
       # Runs ONLY on a fresh data volume — creates the "langfuse" DB up front.
@@ -120,8 +120,8 @@ services:
       LANGFUSE_INIT_ORG_NAME: YUYUTSAVA
       LANGFUSE_INIT_PROJECT_ID: yuyutsava-project
       LANGFUSE_INIT_PROJECT_NAME: YUYUTSAVA
-      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: pk-lf-REPLACE_ME
-      LANGFUSE_INIT_PROJECT_SECRET_KEY: sk-lf-REPLACE_ME
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: "${LANGFUSE_PUBLIC_KEY:-pk-lf-REPLACE_ME}"
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: "${LANGFUSE_SECRET_KEY:-sk-lf-REPLACE_ME}"
       LANGFUSE_INIT_USER_EMAIL: admin@yuyutsava.local
       LANGFUSE_INIT_USER_NAME: admin
       LANGFUSE_INIT_USER_PASSWORD: yuyutsava

@@ -7,6 +7,7 @@ from langchain_core.language_models import BaseChatModel
 from yuyutsava.core.config import VertexSettings
 from yuyutsava.llm.base import Provider, require
 from yuyutsava.llm.handle import Capability
+from yuyutsava.llm.quirks.first_chunk_retry import first_chunk_retry
 from yuyutsava.llm.quirks.gemini_parts import parts_safe
 from yuyutsava.llm.quirks.loop_affinity import loop_pinned
 
@@ -26,15 +27,19 @@ class VertexProvider(Provider):
         )
         # Gemini 400s the whole request if any message renders to zero parts,
         # which permanently wedges a checkpointed thread. See quirks/gemini_parts.
+        # The SDK's retry decorator covers only the stream *open*; a 429/503 that
+        # lands on the first read escapes it and kills the turn. See
+        # quirks/first_chunk_retry.
         # The grpc.aio client binds to the first event loop that uses it; see
         # quirks/loop_affinity for the one-instance-per-loop rule it enforces.
-        cls = loop_pinned(parts_safe(mod.ChatVertexAI))
+        cls = loop_pinned(first_chunk_retry(parts_safe(mod.ChatVertexAI)))
         return cls(
             model=settings.model,
             project=settings.project,
             location=settings.location,
             temperature=temperature,
             max_output_tokens=4096,
+            max_retries=settings.max_retries,
         )
 
 

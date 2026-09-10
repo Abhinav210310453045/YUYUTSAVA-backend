@@ -211,7 +211,7 @@ async def run_session(
     workspace: Path,
     resume_id: str | None = None,
     continue_latest: bool = False,
-    recursion_limit: int = 200,
+    recursion_limit: int = 1000,
     agent_path: str = "cli",
     origin: str = "cli",
     interrupts_store: InterruptsStore | None = None,
