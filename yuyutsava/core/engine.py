@@ -102,6 +102,21 @@ _PLUMBING_ERROR_LOGGERS = (
 )
 
 
+def _ensure_null_handler(lg: logging.Logger) -> None:
+    """Give a silenced logger a handler so its *children* stay silent too.
+
+    ``propagate = False`` on a parent stops records reaching the root handlers,
+    and ``disabled = True`` only applies to records emitted on that exact
+    logger. A child (``opentelemetry.exporter.otlp.proto.http.trace_exporter``
+    logging at ERROR) walks up to the parent, finds *no* handler anywhere, and
+    Python then falls back to ``logging.lastResort`` — a bare stderr print. That
+    is how "Failed to export span batch code: 404" reached the terminal despite
+    the silencing. A ``NullHandler`` makes the search succeed and swallow.
+    """
+    if not any(isinstance(h, logging.NullHandler) for h in lg.handlers):
+        lg.addHandler(logging.NullHandler())
+
+
 def silence_plumbing_loggers() -> None:
     """Raise plumbing loggers above the chatter floor.
 
@@ -117,11 +132,13 @@ def silence_plumbing_loggers() -> None:
         lg = logging.getLogger(name)
         lg.setLevel(logging.WARNING)
         lg.propagate = False
+        _ensure_null_handler(lg)
     for name in _PLUMBING_ERROR_LOGGERS:
         lg = logging.getLogger(name)
         lg.setLevel(logging.ERROR)
         lg.propagate = False
         lg.disabled = True
+        _ensure_null_handler(lg)
     warnings.filterwarnings("ignore", category=DeprecationWarning)
     warnings.filterwarnings("ignore", category=PendingDeprecationWarning)
 
