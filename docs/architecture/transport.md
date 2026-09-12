@@ -1217,10 +1217,10 @@ A worked `~/.yuyutsava/mcp_config.json`:
 ```json
 {
   "mcpServers": {
-    "deepface": {
-      "command": "python",
-      "args": ["-m", "yuyutsava.mcp_servers.deepface.server"],
-      "env": { "DEEPFACE_HOME": "$HOME/.deepface" }
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "$GITHUB_TOKEN" }
     },
     "some-remote": {
       "url": "https://mcp.example.com/sse"
@@ -1253,9 +1253,7 @@ closed here — required by the anyio cancel scopes the MCP SDK uses.
 # tinker-bg graph simply gets no MCP tools when the CLI owns the host.
 ```
 
-So `yuyutsava chat` gets **zero** MCP tools. The in-tree server
-([`mcp_servers/deepface/server.py:103-109`](../../yuyutsava/mcp_servers/deepface/server.py#L103-L109))
-uses a bare `mcp.run()`, i.e. FastMCP's default stdio transport.
+So `yuyutsava chat` gets **zero** MCP tools.
 
 ### 13.2 Every pipe in the tree
 

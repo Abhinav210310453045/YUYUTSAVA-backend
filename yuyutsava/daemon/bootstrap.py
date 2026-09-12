@@ -570,8 +570,8 @@ async def build_retention(
     # ── unified TTL sweeper (checkpoints + on-disk blobs + event rows) ---
     # Webcam frames pile up fast (potentially one every few seconds for
     # hours). Keep ~1h of history then delete files + matching
-    # event_payloads rows. Enrolled-faces DB at ~/.yuyutsava/deepface/ is
-    # in a sibling directory and is NEVER swept — that's user data.
+    # event_payloads rows. Only registered blob dirs are swept; anything an
+    # MCP server keeps (e.g. enrolled identities) lives elsewhere — user data.
     sweeper = UnifiedSweeper(
         store=store,
         checkpoint_saver=checkpointer,

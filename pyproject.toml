@@ -27,7 +27,6 @@ dependencies = [
     "uvicorn[standard]>=0.32.0",
     "fastapi>=0.135.1",
     "httpx>=0.28.1",
-    "mcp-swagger-ui>=0.1.1",
     "mcp[cli]>=1.26.0",
     "python-dotenv>=1.0.1",
     "requests>=2.32.5",
@@ -85,10 +84,6 @@ Repository = "https://github.com/Abhinav210310453045/YUYUTSAVA-backend"
 Issues = "https://github.com/Abhinav210310453045/YUYUTSAVA-backend/issues"
 
 [project.optional-dependencies]
-deepface = [
-    "deepface>=0.0.93",
-    "tf-keras>=2.15.0",
-]
 # Moved out of the base dependencies: streamlit pulls pydeck/altair/tornado/
 # gitpython and is not imported anywhere in the tree. Install with
 # `uv sync --extra streamlit` if a Streamlit UI is ever wired up.

@@ -148,9 +148,9 @@ class BlobSweepTarget:
     matching ``event_payloads`` rows whose ``blob_path`` lives under
     ``directory/``. Directories are *never* removed — only files inside.
 
-    The deepface enrolled-faces store at ``~/.yuyutsava/deepface/`` is in a
-    sibling directory entirely and is never registered here: that's user data
-    with indefinite retention; blobs are scratch.
+    Only scratch directories are ever registered here. User data with
+    indefinite retention (e.g. an MCP server's enrolled identities) lives in
+    its own directory and never becomes a target; blobs are scratch.
     """
 
     name: str           # human label, e.g. "webcam"

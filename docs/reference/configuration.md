@@ -55,48 +55,6 @@ with the old tool list, new tasks see the new one.
 Failures are non-fatal: a server that fails to start is logged and skipped;
 the rest of the daemon continues normally.
 
-### Bundled MCP server: `deepface`
-
-YUYUTSAVA ships an in-tree DeepFace server for face detection,
-identification, and enrollment. Enable it by adding to `mcp_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "deepface": {
-      "command": "uv",
-      "args": ["run", "python", "-m", "yuyutsava.mcp_servers.deepface.server"]
-    }
-  },
-  "scopes": {
-    "orchestrator": ["deepface"]
-  }
-}
-```
-
-Install the optional dependency once: `uv sync --extra deepface` (pulls in
-`deepface` + `tf-keras`, ~hundreds of MB on first run as TensorFlow caches
-its weights).
-
-Exposed tools (namespaced as `deepface__*`):
-
-| Tool | Purpose |
-|---|---|
-| `detect_faces(image_path)` | Bounding boxes for every face in the image. |
-| `enroll(identity, image_paths)` | Embed reference image(s) and store under `identity`. |
-| `identify(image_path, threshold?)` | Closest enrolled identity (cosine ≥ threshold, default 0.4) or `null`. |
-| `list_identities()` | Enrolled names + sample counts. |
-| `delete_identity(identity)` | Remove every embedding for an identity. |
-
-Embeddings live at `$YUYUTSAVA_HOME/deepface/db.sqlite` (default
-`~/.yuyutsava/deepface/db.sqlite`). The default model is `Facenet512`;
-embeddings stored under one model are only matched against queries from the
-same model.
-
-If the `deepface` package is missing, the server still boots and serves
-`list_identities` / `delete_identity`; tool calls that need detection return
-a clean error pointing at `uv sync --extra deepface`.
-
 ---
 
 ## Permission policy (`~/.yuyutsava/permissions.json`)

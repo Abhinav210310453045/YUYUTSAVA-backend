@@ -35,6 +35,11 @@ While the version stays `0.x`, minor bumps may contain breaking changes.
   provider layer grew to twelve providers.
 
 ### Removed
+- The in-tree DeepFace MCP server (`yuyutsava/mcp_servers/deepface/`) and the
+  `deepface` extra. An agent daemon is not the place to host a face-recognition
+  service; the `face-watcher` subagent now uses whatever face-recognition MCP
+  server you scope to it in `mcp_config.json`.
+- The unused `mcp-swagger-ui` dependency (FastAPI serves its own Swagger UI).
 - Tracked build and run artefacts: `.DS_Store`, a stray
   `electron-app/.langgraph_api/*.pckl`, a leftover agent deliverable, and a
   stale branch-topology diagram.
@@ -83,8 +88,8 @@ card-pinned chat.
 over a shared retrieval base, with context compaction and tool-result
 offloading.
 
-**MCP** — a client manager for stdio and SSE servers, per-agent tool scoping,
-`SIGHUP` hot reload, and an in-tree DeepFace server as a worked example.
+**MCP** — a client manager for stdio and SSE servers, per-agent tool scoping
+and `SIGHUP` hot reload.
 
 **Visuals** — charts, styled tables, syntax-highlighted code, math and diagrams
 rendered to images the agent can return.

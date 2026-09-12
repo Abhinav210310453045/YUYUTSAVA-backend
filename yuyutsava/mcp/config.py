@@ -4,8 +4,8 @@ Schema mirrors Claude Code's so users can copy-paste configs::
 
     {
       "mcpServers": {
-        "deepface":    {"command": "python", "args": ["-m", "..."], "env": {}},
         "filesystem":  {"command": "npx", "args": ["-y", "@.../server-filesystem", "~/Documents"]},
+        "github":      {"command": "npx", "args": ["-y", "@.../server-github"], "env": {"GITHUB_TOKEN": "$GITHUB_TOKEN"}},
         "spotify":     {"url": "http://localhost:8765/mcp"}
       },
       "scopes": {

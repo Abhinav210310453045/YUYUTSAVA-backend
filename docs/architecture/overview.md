@@ -262,7 +262,6 @@ yuyutsava/
 ├── audio_io/            VAD, STT/TTS glue, earcons, announcer (voice)
 ├── io/                  audio/stt/tts/wake backends
 ├── mcp/                 MCP client manager + tool adapter (external tool servers)
-├── mcp_servers/         bundled MCP servers (deepface face recognition)
 ├── platform/            OS-invariance: FileLock, HostProfile, elevation, process
 ├── prefs/               PrefsInjector (user prefs → prompt block)
 ├── tools/               ws_* web search tools (Tavily, Exa)
@@ -605,7 +604,7 @@ WORKSPACE/SANDBOX/OUTPUT paths, since it can't see the master's prompt) + the
 | Subagent | Role |
 |---|---|
 | **file-organizer** | Moves/organises files (Downloads → Inbox), reacts to `fs.changed` events; can write skills. |
-| **face-watcher** | Processes webcam frames / face events via the bundled deepface MCP server. |
+| **face-watcher** | Processes webcam frames / face events via whichever face-recognition MCP server is scoped to it. |
 | **general-purpose** | Catch-all delegate. Registered under the name `general-purpose` to *override* deepagents' built-in default, so `task('general-purpose', …)` hits our tighter spec. It is the CLI's only sync subagent. |
 
 Each also exists as a `-bg` **async peer** (`file-organizer-bg`, etc.) when the async
@@ -1555,8 +1554,8 @@ timeline notice so a Postgres outage is **never silent**.
 
 `storage/sweeper.py :: UnifiedSweeper` runs one loop that enforces TTLs across three
 kinds of target: stale LangGraph checkpoints, on-disk blobs (webcam frames at ~1h;
-deepagents scratch dirs at 24h), and artifact rows (7 days). Enrolled-faces data is
-*never* swept — that's user data. Session deletion has its own shared `purge_session`
+deepagents scratch dirs at 24h), and artifact rows (7 days). Only registered scratch
+directories are swept — user data is never a target. Session deletion has its own shared `purge_session`
 (`storage/purge.py`) called by both the CLI and `DELETE /sessions/{id}`.
 
 ---
@@ -1714,7 +1713,7 @@ per-OS critical prefixes, and Windows Electron packaging works from the same cod
   `DockerSandboxBackend` isolates in an ephemeral container with memory/CPU/PID limits
   and an optional `network: none`.
 - **Privacy by default.** Webcam frames are swept after ~1h; voice is off unless
-  `--voice`; enrolled-face data is never swept.
+  `--voice`; only scratch blobs are ever swept, never user data.
 - **Singleton locks** prevent duplicate daemons/hosts corrupting shared state.
 
 ---

@@ -172,7 +172,7 @@ with automatic context compaction and tool-result offloading.
 
 **MCP** — connects to Model Context Protocol servers (stdio or SSE), scoped per
 agent so each subagent sees only the tools it should, hot-reloadable on
-`SIGHUP`. Ships an in-tree DeepFace server as a worked example.
+`SIGHUP`.
 
 **Visuals** — charts, styled tables, syntax-highlighted code, math and diagrams
 rendered to images the agent can hand back.
@@ -227,7 +227,6 @@ yuyutsava/
   retrieval/     shared retrieval base for memory and skills
   events/        bus, store, sources, registry
   mcp/           MCP client manager, tool adapter, scoping
-  mcp_servers/   in-tree MCP servers (deepface)
   todoboard/     planning surface, cards, artifact blocks
   artifacts/     non-card artifact store for chat and voice
   audio_io/      VAD, earcons, synthesis, announcer

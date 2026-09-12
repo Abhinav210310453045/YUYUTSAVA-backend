@@ -49,8 +49,3 @@ an electron-builder artifact. In that case LGPL-3.0 sections 4 and 5 attach to
 the combined work, and the distributor must provide the means to relink
 against a modified version of the LGPL component. Anyone packaging YUYUTSAVA
 for distribution should confirm this before shipping.
-
-The bundled optional DeepFace integration (yuyutsava/mcp_servers/deepface/)
-imports the `deepface` package (MIT) only when the `deepface` extra is
-installed; the model weights it downloads at first use carry their own upstream
-licenses and are not redistributed here.
