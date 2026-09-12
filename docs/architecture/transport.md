@@ -1245,15 +1245,15 @@ closed here — required by the anyio cancel scopes the MCP SDK uses.
 """
 ```
 
-**MCP is daemon-only.** The CLI stack deliberately has no manager:
-
-```python
-# yuyutsava/cli/agent_stack.py:285-287
-# … No MCP manager in this stack (daemon-only subsystem); the
-# tinker-bg graph simply gets no MCP tools when the CLI owns the host.
-```
-
-So `yuyutsava chat` gets **zero** MCP tools.
+**Two owners.** The daemon starts one manager at boot from
+`MCPConfig.load(workspace)` — the global file merged with the workspace's
+trusted `.yuyutsava/mcp_config.json` — and hot-reloads it on `SIGHUP`. The
+standalone CLI starts its own through
+[`mcp/loader.py`](../../yuyutsava/mcp/loader.py) `start_manager_for_workspace`
+when no daemon-provided manager is passed in; the `AgentBundle` owns it and
+stops it first in `aclose()`, because the sessions live on the CLI's loop.
+When the daemon builds the same chat stack it passes its manager and the CLI
+path never starts a second one.
 
 ### 13.2 Every pipe in the tree
 

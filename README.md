@@ -188,7 +188,7 @@ Three optional JSON files in `~/.yuyutsava/` (override with `YUYUTSAVA_HOME`):
 
 | File | Controls |
 |---|---|
-| `mcp_config.json` | Which MCP servers start; which agents see their tools |
+| `mcp_config.json` | Which MCP servers start; which agents see their tools. A trusted workspace can add its own in `<workspace>/.yuyutsava/mcp_config.json` |
 | `permissions.json` | Which tool calls skip the prompt; daily caps |
 | `events_config.json` | Which event sources run, and their tuning |
 

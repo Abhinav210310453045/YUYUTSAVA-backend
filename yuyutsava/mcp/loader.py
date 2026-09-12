@@ -1,9 +1,11 @@
 """MCP server lifecycle: spawn/connect, list tools, scope, hot-reload, stop.
 
 The :class:`MCPClientManager` is the single owner of every MCP client session.
-It is created and started in :mod:`yuyutsava.daemon.main` after the store and
-before the agents; agents then call :meth:`tools_for` to get a list of
-``BaseTool`` instances scoped to them.
+The daemon creates and starts one in ``daemon/bootstrap.py`` after the store
+and before the agents; the standalone CLI gets its own through
+:func:`start_manager_for_workspace` (owned by the ``AgentBundle``, stopped in
+``aclose``). Agents then call :meth:`tools_for` to get a list of ``BaseTool``
+instances scoped to them.
 
 Failure of one MCP server does not affect others: each server is tracked in an
 ``AsyncExitStack`` so partial shutdown stays clean.
@@ -13,8 +15,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
+from pathlib import Path
 
 from langchain_core.tools import BaseTool
 from mcp import ClientSession, StdioServerParameters
@@ -198,7 +202,10 @@ class MCPClientManager:
                 runner=asyncio.current_task(),  # type: ignore[arg-type]
                 stop_event=stop_event,
             )
-            logger.info("MCP server %r started — %d tool(s)", name, len(adapted))
+            logger.info(
+                "MCP server %r started — %d tool(s)%s",
+                name, len(adapted), f" (from {spec.source})" if spec.source else "",
+            )
             ready.set()
 
             # Park until shutdown is requested. The AsyncExitStack will
@@ -227,3 +234,24 @@ class MCPClientManager:
                 pass
         except Exception as exc:  # noqa: BLE001
             logger.warning("MCP server %r stop raised %s", name, exc)
+
+
+async def start_manager_for_workspace(
+    workspace: Path | None,
+    *,
+    factory: Callable[[], MCPClientManager] | None = None,
+) -> MCPClientManager | None:
+    """Standalone-CLI entry point: load global + workspace config, start a manager.
+
+    Returns ``None`` when no server is configured — there is nothing to own,
+    and callers behave exactly as they did before MCP existed. The file I/O
+    runs off the loop; the sessions themselves are created on the caller's
+    loop, which is why the caller must also be the one to ``stop()`` it
+    (``AgentBundle.aclose``). *factory* exists for tests.
+    """
+    cfg = await asyncio.to_thread(MCPConfig.load, workspace)
+    if not cfg.servers:
+        return None
+    manager = (factory or MCPClientManager)()
+    await manager.start(cfg)
+    return manager

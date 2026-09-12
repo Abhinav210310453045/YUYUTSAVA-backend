@@ -1,11 +1,12 @@
 """MCP (Model Context Protocol) integration for YUYUTSAVA.
 
-Exposes :class:`MCPConfig` (loaded from ``~/.yuyutsava/mcp_config.json``) and
-:class:`MCPClientManager` (lifecycle of all configured MCP servers). Tools
+:class:`MCPConfig` loads and merges the global ``~/.yuyutsava/mcp_config.json``
+with a trusted workspace's ``<ws>/.yuyutsava/mcp_config.json``;
+:class:`MCPClientManager` owns the lifecycle of every configured server. Tools
 discovered from each server are adapted to ``langchain_core.tools.BaseTool``
-and scoped per agent via the config's ``scopes`` map.
-
-See ``PHASE_2_PLAN.md`` §1 for the design.
+(``<server>__<tool>``) and scoped per agent via the config's ``scopes`` map.
+The daemon starts one manager at boot (and hot-reloads it on SIGHUP); the
+standalone CLI starts its own via :func:`~yuyutsava.mcp.loader.start_manager_for_workspace`.
 """
 
 from yuyutsava.mcp.config import MCPConfig, MCPServerSpec

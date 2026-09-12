@@ -31,6 +31,7 @@ from yuyutsava.core.config import DockerSettings, LlmSettings, LocalSettings, Se
 from yuyutsava.core.engine import AgentBundle, build_cli_deepagent
 from yuyutsava.llm import chat_model
 from yuyutsava.core.config import llm_settings_from_env
+from yuyutsava.mcp.loader import start_manager_for_workspace
 from yuyutsava.memory.config import MemorySettings
 from yuyutsava.skills.registry import SkillRegistry
 from yuyutsava.storage.paths import WorkspaceLayout, state_db_path
@@ -141,6 +142,7 @@ async def build_agent_stack(
     search_config: SearchConfig,
     checkpointer: BaseCheckpointSaver,
     mcp_manager: Any | None = None,
+    mcp_manager_factory: Any | None = None,
     usage_store: Any | None = None,
     budget_tokens: int | None = None,
     prefs_store: Any | None = None,
@@ -153,7 +155,11 @@ async def build_agent_stack(
 
     The trailing keyword group is daemon-supplied wiring (all default to
     None, keeping the standalone CLI's behavior unchanged): ``mcp_manager``
-    scopes user-configured MCP tools to ``"cli"``; ``usage_store`` /
+    scopes user-configured MCP tools to ``"cli"`` — when the daemon passes
+    none, the stack starts its OWN from the merged global + workspace
+    ``mcp_config.json`` (``start_manager_for_workspace``; ``None`` when
+    nothing is configured) and hands it to the bundle, which stops it in
+    ``aclose``; ``mcp_manager_factory`` is that helper's test seam; ``usage_store`` /
     ``budget_tokens`` attach the orchestrator's UsagePolicy/BudgetPolicy pair;
     ``prefs_store`` adds the per-turn USER PREFERENCES injector;
     ``runtime_settings`` carries the user's dedicated-subagent switches (this
@@ -271,6 +277,14 @@ async def build_agent_stack(
         skill_store=skill_store,
     )
 
+    # MCP: the daemon passes its manager; standalone, start our own from the
+    # merged global + workspace config (None when nothing is configured). The
+    # bundle owns — and stops — only the one started here.
+    owned_mcp = None
+    if mcp_manager is None:
+        owned_mcp = await start_manager_for_workspace(workspace, factory=mcp_manager_factory)
+        mcp_manager = owned_mcp
+
     async_subagents = None
     async_host_url = None
     async_host = None
@@ -290,14 +304,16 @@ async def build_agent_stack(
         # The background TinkerAgent rides along as an async-only peer so the
         # conversational master can delegate "tinker on card X in the
         # background" — async-only: interactive tinkering has its own per-card
-        # bundle. No MCP manager in this stack (daemon-only subsystem); the
-        # tinker-bg graph simply gets no MCP tools when the CLI owns the host.
+        # bundle. It gets the same MCP manager as the master (scope "tinker");
+        # its graph runs on the host's loop, and mcp/tool_adapter marshals
+        # calls back to the manager's loop.
         from yuyutsava.agents.tinker.subagent import make_tinker_subagent
         tinker_sub = make_tinker_subagent(
             skill_registry=skill_registry,
             search_config=search_config,
             memory_store=memory_store,
             skill_store=skill_store,
+            mcp_manager=mcp_manager,
             consent=consent_registry,
         )
         async_subagents = [general_purpose, tinker_sub]
@@ -393,9 +409,11 @@ async def build_agent_stack(
         runtime_settings=runtime_settings,
         extra_tools=extra_tools,
     )
-    # Hand the CLI-owned pool + embedder to the bundle so teardown closes them.
+    # Hand the CLI-owned pool + embedder (+ MCP manager, when this stack started
+    # one) to the bundle so teardown closes them.
     bundle.pg_pool = pg_pool
     bundle.embedder = embedder
+    bundle.mcp_manager = owned_mcp
     return bundle
 
 

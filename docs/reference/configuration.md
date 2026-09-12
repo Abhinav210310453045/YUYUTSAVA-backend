@@ -16,11 +16,19 @@ sections and states its own defaults.
 
 ---
 
-## MCP servers (`~/.yuyutsava/mcp_config.json`)
+## MCP servers (`mcp_config.json`, global + per workspace)
 
-The daemon picks up MCP (Model Context Protocol) servers from
-`~/.yuyutsava/mcp_config.json` at boot. The schema mirrors Claude Code's, so
-existing configs can be copy-pasted:
+MCP (Model Context Protocol) servers are read from two files with the same
+schema — it mirrors Claude Code's, so existing configs can be copy-pasted:
+
+| File | Scope |
+|---|---|
+| `~/.yuyutsava/mcp_config.json` | global — every workspace |
+| `<workspace>/.yuyutsava/mcp_config.json` | this workspace only; honoured when the workspace is **trusted** (below) |
+
+Both the daemon (at boot, for its `--workspace`) and the standalone CLI
+(`yuyutsava …`, for its `--workspace`) load the merged result and start the
+servers; the CLI stops them again when it exits.
 
 ```json
 {
@@ -29,31 +37,50 @@ existing configs can be copy-pasted:
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-filesystem", "~/Documents"]
     },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "$GITHUB_TOKEN" }
+    },
     "spotify-local": { "url": "http://localhost:8765/mcp" }
   },
   "scopes": {
-    "orchestrator":   ["spotify-local"],
+    "cli":            ["filesystem", "github"],
+    "orchestrator":   ["spotify-local", "github"],
     "file-organizer": ["filesystem"]
   },
-  "default_scope": []
+  "default_scope": [],
+  "trusted_workspaces": ["/Users/me/projects/app"]
 }
 ```
 
 - `mcpServers`: name → either `{command, args, env}` (stdio) or `{url}` (SSE).
-  `env` values support `$VAR` / `${VAR}` expansion for secrets.
+  `$VAR` / `${VAR}` expand in `command`, every `args` item, `url` and `env`
+  values; `${YUYUTSAVA_WORKSPACE}` is the workspace root the config is loaded
+  for, so a workspace file can point at its own `.yuyutsava/scripts/`.
 - `scopes`: agent name → list of MCP server names whose tools that agent
-  receives. Agents not listed get `default_scope`.
+  receives. Agents not listed get `default_scope`. The masters are `cli`
+  (chat/voice and the standalone CLI), `orchestrator` (daemon) and `tinker`;
+  subagents use their names (`file-organizer`, `face-watcher`,
+  `general-purpose`).
+- `trusted_workspaces` (global file only): a workspace file spawns processes,
+  so it is used only for workspaces listed here. Any other workspace's file is
+  logged (`mcp: … ignored — add … to "trusted_workspaces"`) and skipped.
+- **Merge:** a workspace server overrides a global one of the same name;
+  `scopes` and `default_scope` are unioned per agent (global first).
 - Tools are exposed as `<server>__<tool>` so two servers can each provide a
   `read` tool without collision.
 - Set `max_tools: N` on a server to cap how many tools it can expose (default
   32) — useful for misbehaving servers that flood the agent prompt.
 
-**Hot reload:** send `SIGHUP` to the daemon (`kill -HUP <pid>`) to re-read the
-config. Added / removed / changed servers are diffed; in-flight tasks finish
-with the old tool list, new tasks see the new one.
+**Hot reload:** send `SIGHUP` to the daemon (`kill -HUP <pid>`) to re-read
+both files. Added / removed / changed servers are diffed; in-flight tasks
+finish with the old tool list, new tasks see the new one.
 
 Failures are non-fatal: a server that fails to start is logged and skipped;
-the rest of the daemon continues normally.
+the rest of the daemon (or CLI) continues normally. In the interactive CLI,
+server output during startup is suppressed with the rest of the plumbing
+noise — failures still reach the log.
 
 ---
 

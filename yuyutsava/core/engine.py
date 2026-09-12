@@ -232,9 +232,16 @@ class AgentBundle:
     async_task_mirror: Any | None = None   # AsyncTaskMirror
     pg_pool: Any | None = None             # PgPool owned by the CLI (closed in aclose)
     embedder: Any | None = None            # memory.Embedder owned by the CLI
+    mcp_manager: Any | None = None         # MCPClientManager owned by the CLI (stopped in aclose)
 
     async def aclose(self) -> None:
-        """Async teardown: close the CLI-owned pool + embedder, then close()."""
+        """Async teardown: stop the CLI-owned MCP manager (its sessions live on
+        this loop, so it must go first), close the pool + embedder, then close()."""
+        if self.mcp_manager is not None:
+            try:
+                await self.mcp_manager.stop()
+            except Exception:
+                logger.exception("AgentBundle: mcp_manager.stop failed")
         if self.embedder is not None:
             try:
                 await self.embedder.aclose()

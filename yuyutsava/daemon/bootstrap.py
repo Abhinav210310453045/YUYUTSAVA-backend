@@ -1148,12 +1148,17 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     cap_enforcer = _pol.cap_enforcer
     consent_registry = _pol.consent_registry
 
-    # ── MCP servers -------------------------------------------------------
+    # ── MCP servers: global ~/.yuyutsava/mcp_config.json merged with the
+    #    workspace's .yuyutsava/mcp_config.json when the workspace is trusted --
     mcp_manager = MCPClientManager()
-    mcp_cfg = MCPConfig.from_file()
+    mcp_cfg = MCPConfig.load(workspace)
     await mcp_manager.start(mcp_cfg)
     if mcp_manager.known_servers():
-        logger.info("  mcp       : %s", ", ".join(mcp_manager.known_servers()))
+        _ws_cfg = str(WorkspaceLayout.for_workspace(workspace).mcp_config)
+        logger.info("  mcp       : %s", ", ".join(
+            f"{n} (workspace)" if mcp_cfg.servers[n].source == _ws_cfg else n
+            for n in mcp_manager.known_servers()
+        ))
 
     # ── retention: checkpointer + TTL sweeper (extracted: build_retention) --
     _ret = await build_retention(

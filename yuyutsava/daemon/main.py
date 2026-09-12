@@ -302,7 +302,7 @@ async def _reload_loop(
         if stop_event.is_set():
             return
         try:
-            new_mcp = MCPConfig.from_file()
+            new_mcp = MCPConfig.load(subs.workspace)
             await subs.mcp_manager.hot_reload(new_mcp)
             logger.info("config reload: mcp servers now %s",
                         ", ".join(subs.mcp_manager.known_servers()) or "(none)")
