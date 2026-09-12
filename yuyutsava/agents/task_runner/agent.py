@@ -23,6 +23,7 @@ from pathlib import Path
 from langgraph.types import interrupt
 
 from yuyutsava.agents.task_runner import executor as _exec
+from yuyutsava.agents.task_runner.exec_backend import ExecBackend, HostExecBackend
 from yuyutsava.agents.task_runner.permissions import (
     build_interrupt_payload,
     decide,
@@ -47,6 +48,7 @@ from yuyutsava.models.results import (
     WriteResult,
 )
 from yuyutsava.models.tool_messages import SuppressedContentNotice
+from yuyutsava.storage.paths import WorkspaceLayout
 
 logger = logging.getLogger("yuyutsava.task_runner")
 
@@ -75,14 +77,20 @@ class TaskRunnerAgent:
         sandbox_root: Path | None = None,
         policy: object | None = None,  # PermissionsPolicy; untyped to avoid daemon-side import
         consent: object | None = None,  # consent.ConsentRegistry; duck-typed (allowlist)
+        exec_backend: ExecBackend | None = None,
     ) -> None:
         self.workspace_root: Path = workspace_root.resolve()
+        # Default sandbox = <ws>/.yuyutsava/sandbox — from the one layout helper.
         self.sandbox_root: Path = (
             sandbox_root.resolve() if sandbox_root is not None
-            else (self.workspace_root / "_sandbox").resolve()
+            else WorkspaceLayout.for_workspace(self.workspace_root).sandbox
         )
         self._policy = policy
         self._consent = consent
+        # WHERE sandbox-cwd commands/scripts run once allowed: the host by
+        # default, the Docker container when the docker bundle installs its
+        # backend (see exec_backend.py). Zones/permissions are unaffected.
+        self.exec_backend: ExecBackend = exec_backend or HostExecBackend()
 
     @staticmethod
     def _policy_tool_name(op: OperationType) -> str:
@@ -340,7 +348,9 @@ class TaskRunnerAgent:
 
             case OperationType.WRITE | OperationType.CREATE:
                 content = str(ctx.get("content", ""))
-                await _exec.execute_write(path, content)
+                await _exec.execute_write(
+                    path, content, append=bool(ctx.get("append", False))
+                )
                 return WriteResult(written_to=str(path))
 
             case OperationType.DELETE:
@@ -376,23 +386,30 @@ class TaskRunnerAgent:
                     )
                 if "python" in ctx:
                     pc = ctx["python"]
-                    raw = await _exec.execute_python(
+                    # tr_run_python: the exec backend decides WHERE (host or
+                    # the Docker container); cwd is always the sandbox.
+                    raw = await self.exec_backend.run_python(
                         Path(str(pc["script_path"])),
                         Path(str(pc.get("cwd", self.sandbox_root))),
-                        timeout=int(pc.get("timeout", 120)),
+                        int(pc.get("timeout", 120)),
                     )
                     return ShellResult(
                         stdout=raw["stdout"], stderr=raw["stderr"], exit_code=raw["exit_code"],
                     )
-                # default: a real command in the host's native shell (L3 channel)
                 command = str(ctx.get("command", ""))
                 _timeout = ctx.get("timeout", 120)
                 timeout = int(_timeout) if isinstance(_timeout, (int, float, str)) else 120
                 _cwd = ctx.get("cwd")
                 cwd = Path(str(_cwd)) if _cwd is not None else self.sandbox_root
-                raw = await _exec.execute_run(
-                    command, cwd, timeout, elevated=bool(ctx.get("elevated", False))
-                )
+                elevated = bool(ctx.get("elevated", False))
+                if ctx.get("sandboxed") and not elevated:
+                    # tr_execute_in_sandbox: sandbox-cwd shell command — the
+                    # exec backend decides WHERE it runs.
+                    raw = await self.exec_backend.run(command, cwd, timeout)
+                else:
+                    # tr_execute: the host's native shell (L3 channel), and any
+                    # elevated run — host-side by definition.
+                    raw = await _exec.execute_run(command, cwd, timeout, elevated=elevated)
                 return ShellResult(
                     stdout=raw["stdout"],
                     stderr=raw["stderr"],

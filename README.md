@@ -104,8 +104,7 @@ docker build -t yuyutsava-sandbox:local -f yuyutsava/docker_sandbox/Dockerfile .
 yuyutsava --execution docker \
           --docker-image yuyutsava-sandbox:local \
           --docker-network none \
-          --docker-export-dir ./output \
-          "generate a report and save it to /output/report.txt"
+          "generate a report and save it to the deliverables dir"
 ```
 
 `--docker-memory`, `--docker-cpus` and `--docker-pids-limit` bound the
@@ -172,7 +171,7 @@ with automatic context compaction and tool-result offloading.
 
 **MCP** — connects to Model Context Protocol servers (stdio or SSE), scoped per
 agent so each subagent sees only the tools it should, hot-reloadable on
-`SIGHUP`. Ships an in-tree DeepFace server as a worked example.
+`SIGHUP`.
 
 **Visuals** — charts, styled tables, syntax-highlighted code, math and diagrams
 rendered to images the agent can hand back.
@@ -188,9 +187,16 @@ Three optional JSON files in `~/.yuyutsava/` (override with `YUYUTSAVA_HOME`):
 
 | File | Controls |
 |---|---|
-| `mcp_config.json` | Which MCP servers start; which agents see their tools |
+| `mcp_config.json` | Which MCP servers start; which agents see their tools. A trusted workspace can add its own in `<workspace>/.yuyutsava/mcp_config.json` |
 | `permissions.json` | Which tool calls skip the prompt; daily caps |
 | `events_config.json` | Which event sources run, and their tuning |
+
+Inside each workspace, everything yuyutsava writes lives under
+`<workspace>/.yuyutsava/` — scratch sandbox, reusable scripts, deliverables,
+`ChangeLog.md` / `Assumptions.md` / `workspace_memory.md`, workspace skills
+and an optional workspace-level `mcp_config.json`. It carries its own `*`
+`.gitignore`, so none of it is ever committed. In Docker mode that directory
+is the container's only writable mount.
 
 Full schemas and examples: **[docs/reference/configuration.md](docs/reference/configuration.md)**.
 
@@ -227,7 +233,6 @@ yuyutsava/
   retrieval/     shared retrieval base for memory and skills
   events/        bus, store, sources, registry
   mcp/           MCP client manager, tool adapter, scoping
-  mcp_servers/   in-tree MCP servers (deepface)
   todoboard/     planning surface, cards, artifact blocks
   artifacts/     non-card artifact store for chat and voice
   audio_io/      VAD, earcons, synthesis, announcer

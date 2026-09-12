@@ -5,7 +5,8 @@ Two flavours:
   * :func:`docker_system_prompt` — Docker sandbox with bind-mounted workspace.
 
 Both share the same TOOL DISCOVERY + RULES sections; only the WORKSPACE CONTEXT
-block differs.
+block differs. Every path in the rules comes from one
+:class:`~yuyutsava.storage.paths.WorkspaceLayout` — nothing is joined by hand.
 
 The orchestrator's system prompt is composed elsewhere
 (:mod:`yuyutsava.agents.orchestrator.prompts`) — this module is CLI-only.
@@ -16,6 +17,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from yuyutsava.platform import host_profile
+from yuyutsava.storage.paths import (
+    CONTAINER_STATE_MOUNT,
+    CONTAINER_WORKSPACE_MOUNT,
+    WorkspaceLayout,
+)
 
 
 def _tool_discovery_section(tool_catalog: str = "") -> str:
@@ -104,22 +110,47 @@ um_read(name) fetches one in full when its line isn't enough to act on.
 """
 
 
-def _rules_section(workspace_root: Path, sandbox_root: Path, output_dir: Path) -> str:
+def workspace_state_block(layout: WorkspaceLayout) -> str:
+    """The ``.yuyutsava`` contract every agent gets: what lives where, how the
+    knowledge files are appended, how to recall from them.
+
+    Shared by the CLI, tinker and subagent prompts so the rules cannot drift.
+    """
+    st = layout.state
+    return f"""\
+## WORKSPACE STATE ({st}/)
+The only place you write inside the workspace, apart from files the user asked you to change.
+sandbox/ scratch (wiped after the task) · scripts/ reusable scripts you write (run with tr_run_python / tr_execute_in_sandbox) · outputs/ deliverables · tmp/ internal, never touch
+ChangeLog.md · Assumptions.md · workspace_memory.md are append-only Markdown: ALWAYS tr_write_file(..., append=True); never overwrite them.
+BEFORE starting: tr_grep(<task keywords>, "{st}") to recall earlier changes, assumptions and facts; read a whole file only when it is small.
+Workspace-root tr_grep/tr_glob skip {st}/ — search it explicitly.
+AFTER changing anything, append to ChangeLog.md:
+  ## <ISO-8601 UTC> · <agent role> · <task gist, ≤80 chars>
+  - <path relative to workspace> — <what changed> (<file|module|config|docs|test|deps>)
+When you assume something the user did not state, append to Assumptions.md:
+  ## <ISO-8601 UTC> · <task gist>
+  - ASSUMED: <what> — because <why>
+When you learn a durable fact about this workspace, append ONE tagged bullet to workspace_memory.md
+(skip facts already there):  - <YYYY-MM-DD> [layout|conventions|gotchas|decisions] <fact>"""
+
+
+def _rules_section(layout: WorkspaceLayout) -> str:
     """Operational rules every CLI agent always needs. No per-tool examples."""
     return f"""\
 ## ZONES
 | Zone | Path | r/w | delete | execute |
-| SANDBOX | {sandbox_root}/ | auto | auto | auto |
-| WORKSPACE | {workspace_root}/ | auto | asks user | DENIED |
+| SANDBOX | {layout.sandbox}/ | auto | auto | auto |
+| WORKSPACE | {layout.root}/ | auto | asks user | DENIED |
 | EXTERNAL | outside workspace | asks user | asks user | asks user |
 | SYSTEM-CRITICAL | OS system dirs (POSIX /etc,/usr/bin…; Windows C:\\Windows, Program Files) | DENIED | DENIED | DENIED |
 Every tr_* tool returns JSON: status = success | denied (read alternatives) | error.
 reason= is shown to the user — be specific.
 
 ## OUTPUT FILES
-Deliverables → {output_dir}/ (permanent). Scratch → {sandbox_root}/ (deleted after task).
-Binary or text > 200 lines → {output_dir}/ then report path. NEVER base64 binaries.
-Sandbox dir is created by the first tr_write_file into it; do not run a sandbox command before that.
+Deliverables → {layout.outputs}/ (permanent). Scratch → {layout.sandbox}/ (wiped after the task). Reusable scripts → {layout.scripts}/.
+Binary or text > 200 lines → {layout.outputs}/ then report path. NEVER base64 binaries.
+
+{workspace_state_block(layout)}
 
 ## VISUALS — charts, diagrams, tables, code, math, timelines (vis_* tools ONLY)
 To SHOW the user ANY visual — a chart, diagram, table, code snapshot, equation,
@@ -193,21 +224,13 @@ Read files before editing — understand existing content before changing it.
 Mimic existing style, naming conventions, and patterns."""
 
 
-def local_system_prompt(
-    workspace_root: Path,
-    sandbox_root: Path | None = None,
-    output_dir: Path | None = None,
-    tool_catalog: str = "",
-) -> str:
-    root = workspace_root.resolve()
-    sb = sandbox_root.resolve() if sandbox_root is not None else root / "_sandbox"
-    out = output_dir.resolve() if output_dir is not None else root / "_output"
+def local_system_prompt(layout: WorkspaceLayout, tool_catalog: str = "") -> str:
     return f"""\
 {_tool_discovery_section(tool_catalog)}
-{_rules_section(root, sb, out)}
+{_rules_section(layout)}
 
 ## WORKSPACE CONTEXT
-Root: {root} | Mode: real disk + local shell. Output dir: {out}.
+Root: {layout.root} | Mode: real disk + local shell. Output dir: {layout.outputs}.
 All tr_* tools (including tr_ls / tr_glob) take REAL absolute paths.
 WORKSPACE and SANDBOX zones auto-allow reads/lists; EXTERNAL prompts once.
 
@@ -245,21 +268,36 @@ def async_subagent_guidance() -> str:
 
 
 def docker_system_prompt(
-    workspace_root: Path, export_host: Path | None, tool_catalog: str = ""
+    layout: WorkspaceLayout, export_host: Path | None, tool_catalog: str = ""
 ) -> str:
-    root = workspace_root.resolve()
-    sandbox = root / "_sandbox"
-    out = export_host.resolve() if export_host is not None else root / "_output"
+    """Docker mode: host-side file tools, container-side sandbox execution.
+
+    The container mounts the workspace's ``.yuyutsava`` read-write at
+    ``/yuyutsava`` and the workspace read-only at ``/workspace``; both are the
+    same files the host-side tr_* tools touch, so nothing needs copying.
+    """
+    st, ws = CONTAINER_STATE_MOUNT, CONTAINER_WORKSPACE_MOUNT
+    if layout.sandbox.is_relative_to(layout.state):
+        sandbox_in = f"{st}/{layout.sandbox.relative_to(layout.state).as_posix()}"
+    else:
+        sandbox_in = (
+            f"(sandbox {layout.sandbox} is outside {layout.state} and is NOT mounted — "
+            "sandbox commands cannot run in Docker; fix the sandbox override)"
+        )
     extra = ""
     if export_host is not None:
-        extra = f" Host {out} → /output in container — write deliverables to /output/."
+        extra = f"\nLegacy export mount: host {export_host.resolve()} → /output in the container."
     return f"""\
 {_tool_discovery_section(tool_catalog)}
-{_rules_section(root, sandbox, out)}
+{_rules_section(layout)}
 
 ## WORKSPACE CONTEXT
-Mode: Docker sandbox (isolated from host shell). Mount: host {root} → /workspace.{extra}
-All tr_* tools (including tr_ls / tr_glob) take REAL absolute paths
-(use /workspace/... inside the container).
+Root: {layout.root} | Mode: Docker sandbox.
+File tools (tr_read_file/tr_write_file/tr_ls/tr_glob/tr_grep/tr_delete_file/tr_fetch_url) run on the HOST — pass HOST absolute paths, exactly as in local mode.
+tr_execute_in_sandbox and tr_run_python run INSIDE the container, cwd {sandbox_in}, with host {layout.state} → {st} (read-write) and host {layout.root} → {ws} (READ-ONLY).
+Inside a command or script use CONTAINER paths: {layout.scripts}/x.py is {st}/scripts/x.py; {layout.root}/a.txt is {ws}/a.txt. Write only under {st}.
+Deliverables → {layout.outputs} on the host (= {st}/outputs in the container).{extra}
+
+{host_profile().prompt_block()}
 
 Complete the user's task; be concise."""

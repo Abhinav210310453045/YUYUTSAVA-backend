@@ -1,12 +1,14 @@
 """Face-watcher subagent.
 
-Consumes a single ``face.frame`` event, calls the DeepFace MCP server's
-``identify`` tool, returns a one-line summary. Enrollment is explicitly
-out of scope — that path runs through a user-approved proposal, never
-on the subagent's own initiative.
+Consumes a single ``face.frame`` event, calls a face-identification tool,
+returns a one-line summary. Enrollment is explicitly out of scope — that
+path runs through a user-approved proposal, never on the subagent's own
+initiative.
 
-DeepFace tools are not bundled here: they arrive via ``mcp_tools()`` if
-``mcp_config.json`` lists ``"face-watcher": ["deepface"]`` under scopes.
+No face-recognition tools are bundled: they arrive via ``mcp_tools()`` from
+whatever MCP server ``mcp_config.json`` scopes to ``"face-watcher"``. The
+prompt discovers the tool by keyword (``tool_search('identify a face')``),
+so any server exposing an identify-style tool works.
 
 TODO(future): authorized-user presence gating.
     Planned follow-up feature: the daemon proactively schedules face.frame
@@ -28,7 +30,7 @@ TODO(future): authorized-user presence gating.
         ``presence.authorised_identities = [...]``.
       - New "lockout" channel state in ``ChannelRouter`` that drops
         non-confirmation asks while gated.
-      - Re-use existing deepface ``identify`` tool — no model changes.
+      - Re-use the scoped face-identification MCP tool — no model changes.
     Out of scope right now: implement only when the user explicitly asks.
 """
 
@@ -49,7 +51,8 @@ from yuyutsava.skills.registry import SkillRegistry
 class FaceWatcherAgent(BaseSubAgent):
     name = "face-watcher"
     description = (
-        "Identify the person in a face.frame event using the deepface MCP tools. "
+        "Identify the person in a face.frame event using the face-recognition "
+        "MCP tools scoped to face-watcher in mcp_config.json. "
         "Use for face.frame events when the user wants presence-aware behaviour. "
         "Does not enroll new identities."
     )

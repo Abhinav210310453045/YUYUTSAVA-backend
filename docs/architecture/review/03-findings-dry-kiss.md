@@ -238,12 +238,12 @@ depends on which backend it is for and when it was written.
 **Central:** `storage/pg/migrations.py` — 866 lines, a numbered forward-only
 sequence (referenced in project notes up to v18).
 
-**Distributed:** 16 modules carry `CREATE TABLE` statements —
+**Distributed:** 15 modules carry `CREATE TABLE` statements —
 `context/artifacts.py`, `context/summary_store.py`, `context/transcript_store.py`,
 `daemon/task_registry.py`, `daemon/usage.py`, `memory/store.py`, `skills/store.py`,
 `storage/base.py`, `storage/events/schema.py`, `storage/feedback_store.py`,
 `storage/interrupts.py`, `storage/sessions/sqlite_impl.py`, `storage/voice_store.py`,
-`todoboard/store.py`, `visuals/store.py`, `mcp_servers/deepface/store.py`.
+`todoboard/store.py`, `visuals/store.py`.
 
 **Two migration frameworks.** `BaseSqliteStore` provides its own versioning —
 `_SCHEMA_VERSION`, `_SCHEMA_SQL`, `_META_TABLE`, `_migrate()`

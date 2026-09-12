@@ -127,7 +127,7 @@
   <!-- Reload handler -->
   <rect class="node" x="430" y="476" width="350" height="44" rx="8"/>
   <text class="small" x="446" y="494">SIGHUP → daemon/main.py _reload_loop</text>
-  <text class="small" x="446" y="510">→ MCPConfig.from_file() → subs.mcp_manager.hot_reload(new)</text>
+  <text class="small" x="446" y="510">→ MCPConfig.load(workspace) → subs.mcp_manager.hot_reload(new)</text>
 
   <!-- Arrows inside daemon -->
   <line class="edge" x1="160" y1="154" x2="160" y2="184" marker-end="url(#arr)"/>
@@ -144,8 +144,8 @@
   <text class="small" x="836" y="82">spawned by stdio_client → subprocess</text>
 
   <rect class="node" x="836" y="96" width="270" height="46" rx="6"/>
-  <text class="label" x="850" y="118">deepface  (yuyutsava/mcp_servers/deepface)</text>
-  <text class="small" x="850" y="134">python -m yuyutsava.mcp_servers.deepface.server</text>
+  <text class="label" x="850" y="118">github  (third-party, npx)</text>
+  <text class="small" x="850" y="134">npx -y @modelcontextprotocol/server-github</text>
 
   <rect class="node" x="836" y="152" width="270" height="46" rx="6"/>
   <text class="label" x="850" y="174">filesystem  (third-party, npx)</text>
@@ -187,7 +187,8 @@ daemon/main.py                                    # lifecycle only (~261 lines)
    │    ├─ PrefsStore(store) / PrefsInjector
    │    ├─ PermissionsPolicy.from_file() + StorePolicyCapEnforcer
    │    ├─ MCPClientManager()                     # owns all sessions
-   │    ├─ MCPConfig.from_file()                  # ~/.yuyutsava/mcp_config.json
+   │    ├─ MCPConfig.load(workspace)              # ~/.yuyutsava/mcp_config.json
+   │    │                                         #  + trusted &lt;ws&gt;/.yuyutsava/mcp_config.json
    │    ├─ await mcp_manager.start(mcp_cfg)
    │    │     └─ for each server → asyncio.create_task(_run_server)
    │    │          ├─ stdio_client(StdioServerParameters(...))  ← spawn process
@@ -208,8 +209,8 @@ daemon/main.py                                    # lifecycle only (~261 lines)
    ├─ install signal handlers + schedule loop tasks
    ├─ run until stop_event
    └─ on SIGHUP → main.py _reload_loop
-        → MCPConfig.from_file() → subs.mcp_manager.hot_reload(new_cfg)
-          (diff add/remove/changed)
+        → MCPConfig.load(workspace) → subs.mcp_manager.hot_reload(new_cfg)
+          (diff add/remove/changed; both files re-read)
 </pre>
 
 <h2>3. How tools get into an agent</h2>
@@ -242,9 +243,9 @@ daemon/main.py                                    # lifecycle only (~261 lines)
   <text class="title" x="574" y="64">create_react_agent / deepagent</text>
   <text class="small" x="574" y="84">tool_search prepended (ToolRegistry)</text>
   <text class="small" x="574" y="100">→ tools register in LangGraph node</text>
-  <text class="small" x="574" y="120">LLM picks "deepface__identify(...)"</text>
+  <text class="small" x="574" y="120">LLM picks "filesystem__read_file(...)"</text>
   <text class="small" x="574" y="140">node calls StructuredTool._call →</text>
-  <text class="small" x="574" y="156">  session.call_tool("identify", {...})</text>
+  <text class="small" x="574" y="156">  session.call_tool("read_file", {...})</text>
   <text class="small" x="574" y="172">  → _flatten_content(result) → str</text>
 
   <rect class="node srv" x="860" y="40" width="260" height="150" rx="8"/>
@@ -261,31 +262,33 @@ daemon/main.py                                    # lifecycle only (~261 lines)
   <line class="edge" x1="820" y1="115" x2="860" y2="115" marker-end="url(#arr2)"/>
 </svg>
 
-<h2>4. Config schema (drop into <code>~/.yuyutsava/mcp_config.json</code>)</h2>
+<h2>4. Config schema (global <code>~/.yuyutsava/mcp_config.json</code>, plus a per-workspace <code>&lt;ws&gt;/.yuyutsava/mcp_config.json</code>)</h2>
 <pre>
 {
   "mcpServers": {
-    "deepface":   { "command": "python",
-                    "args": ["-m", "yuyutsava.mcp_servers.deepface.server"] },
     "filesystem": { "command": "npx",
                     "args": ["-y", "@modelcontextprotocol/server-filesystem", "~/Documents"] },
+    "github":     { "command": "npx",
+                    "args": ["-y", "@modelcontextprotocol/server-github"],
+                    "env":  { "GITHUB_PERSONAL_ACCESS_TOKEN": "$GITHUB_TOKEN" } },
     "spotify":    { "url": "http://localhost:8765/mcp" }           ← remote SSE
   },
   "scopes": {
-    "orchestrator":   ["spotify"],
-    "file-organizer": ["filesystem"],
-    "face-watcher":   ["deepface"]
+    "cli":            ["filesystem", "github"],
+    "orchestrator":   ["spotify", "github"],
+    "file-organizer": ["filesystem"]
   },
-  "default_scope": []
+  "default_scope": [],
+  "trusted_workspaces": ["/abs/path/to/project"]                   ← global file only
 }
 </pre>
-<p class="muted">After editing, send <code>kill -HUP &lt;daemon-pid&gt;</code> → MCPClientManager.hot_reload runs the diff (stop removed/changed, start added/changed) — no daemon restart needed.</p>
+<p class="muted">Same schema in both files. <code>MCPConfig.load(workspace)</code> merges them — a workspace server overrides a global one of the same name, scopes are unioned — but only when the workspace is listed in <code>trusted_workspaces</code>; otherwise the workspace file is logged and skipped. <code>${YUYUTSAVA_WORKSPACE}</code> expands to the workspace root in command/args/url/env. After editing, send <code>kill -HUP &lt;daemon-pid&gt;</code> → MCPClientManager.hot_reload runs the diff (stop removed/changed, start added/changed) — no daemon restart needed.</p>
 
 <h2>5. Internal vs remote — what's actually supported</h2>
 <div class="grid">
   <div class="card">
     <h3>Internal / local stdio</h3>
-    <p>Set <code>command</code> + <code>args</code> + <code>env</code>. The manager calls <code>stdio_client(StdioServerParameters)</code> which <strong>spawns a child process</strong> and pipes JSON-RPC over its stdin/stdout. The shipped <code>deepface</code> server (built with FastMCP) is the in-tree example.</p>
+    <p>Set <code>command</code> + <code>args</code> + <code>env</code>. The manager calls <code>stdio_client(StdioServerParameters)</code> which <strong>spawns a child process</strong> and pipes JSON-RPC over its stdin/stdout. Any stdio MCP server works — the official reference servers via <code>npx</code>, or your own FastMCP script.</p>
   </div>
   <div class="card">
     <h3>Remote (SSE only)</h3>
@@ -322,8 +325,7 @@ daemon/main.py                                    # lifecycle only (~261 lines)
   <li><a href="../yuyutsava/daemon/main.py#L143">yuyutsava/daemon/main.py:143-146</a> — SIGHUP reload loop calls <code>subs.mcp_manager.hot_reload(...)</code></li>
   <li><a href="../yuyutsava/agents/base_sub_agent.py#L150">yuyutsava/agents/base_sub_agent.py:150</a> — <code>mcp_tools()</code> on every subagent</li>
   <li><a href="../yuyutsava/core/engine.py#L316">yuyutsava/core/engine.py:316</a> — <code>build_orchestrator</code> pulls MCP tools via <code>deps.mcp_manager.tools_for("orchestrator")</code></li>
-  <li><a href="../yuyutsava/mcp_servers/deepface/server.py">yuyutsava/mcp_servers/deepface/server.py</a> — in-tree FastMCP example</li>
-  <li><span class="muted">yuyutsava/cli/cli.py — <strong>no MCP integration</strong> (CLI is daemon-less; agent stack built by <code>cli/agent_stack.py</code> does not receive an <code>MCPClientManager</code>)</span></li>
+  <li><a href="../yuyutsava/cli/agent_stack.py">yuyutsava/cli/agent_stack.py</a> — the standalone CLI starts its own manager via <code>mcp/loader.py:start_manager_for_workspace</code> (scope <code>"cli"</code>); the <code>AgentBundle</code> owns it and stops it in <code>aclose()</code>. When the daemon builds the same stack it passes its manager instead.</li>
 </ul>
 
 </div>

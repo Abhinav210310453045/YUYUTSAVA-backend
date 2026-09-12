@@ -18,6 +18,7 @@ from pathlib import Path
 import httpx
 
 from yuyutsava.platform.process import run_capture
+from yuyutsava.storage.paths import WORKSPACE_STATE_DIRNAME
 
 
 async def execute_read(
@@ -42,9 +43,15 @@ async def execute_read(
     return await asyncio.to_thread(_sync_read_paginated, path, offset, limit)
 
 
-async def execute_write(path: Path, content: str) -> None:
-    """Write *content* to *path*, creating parent directories as needed."""
-    await asyncio.to_thread(_sync_write, path, content)
+async def execute_write(path: Path, content: str, *, append: bool = False) -> None:
+    """Write *content* to *path*, creating parent directories as needed.
+
+    ``append=True`` appends instead of overwriting (still creating the file
+    and its parents when missing) — the ``.yuyutsava`` knowledge files are
+    append-only, and a read-modify-write of a whole log would be both slow
+    and clobber-prone.
+    """
+    await asyncio.to_thread(_sync_write, path, content, append)
 
 
 async def execute_delete(path: Path) -> None:
@@ -241,9 +248,10 @@ def _sync_read_paginated(
     }
 
 
-def _sync_write(path: Path, content: str) -> None:
+def _sync_write(path: Path, content: str, append: bool = False) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
+    with path.open("a" if append else "w", encoding="utf-8") as fh:
+        fh.write(content)
 
 
 def _sync_delete(path: Path) -> None:
@@ -283,12 +291,28 @@ def _sync_list(path: Path, max_entries: int) -> dict:
     }
 
 
+def _skips_state_dir(root: Path) -> bool:
+    """A search rooted OUTSIDE ``.yuyutsava`` must not descend into it.
+
+    The per-workspace state dir holds offloaded tool dumps and scratch that
+    would swamp a code search; the prompt tells the model to target the state
+    dir explicitly when it wants the knowledge files — and a search rooted
+    inside it sees everything.
+    """
+    return WORKSPACE_STATE_DIRNAME not in root.parts
+
+
 def _sync_glob(root: Path, pattern: str, max_entries: int) -> dict:
     if not root.exists():
         raise FileNotFoundError(f"Root path does not exist: {root}")
     if not root.is_dir():
         raise NotADirectoryError(f"Root path is not a directory: {root}")
     iterator = root.rglob(pattern) if "**" in pattern else root.glob(pattern)
+    if _skips_state_dir(root):
+        iterator = (
+            p for p in iterator
+            if WORKSPACE_STATE_DIRNAME not in p.relative_to(root).parts
+        )
     collected: list[Path] = []
     total = 0
     for p in iterator:
@@ -305,9 +329,12 @@ def _sync_glob(root: Path, pattern: str, max_entries: int) -> dict:
 
 # Dirs never worth scanning + a per-file size cap. Skipping these (not being
 # written in C) is what keeps the pure-Python search fast on real trees.
+# The per-workspace state dir is pruned as a CHILD only (see _skips_state_dir):
+# a walk rooted inside it never meets it as a child, so it sees everything.
 _GREP_IGNORE_DIRS: frozenset[str] = frozenset({
     ".git", "node_modules", "__pycache__", ".venv", "venv", ".mypy_cache",
     ".pytest_cache", ".tox", ".ruff_cache", "dist", "build", ".idea", ".DS_Store",
+    WORKSPACE_STATE_DIRNAME,
 })
 _GREP_MAX_FILE_BYTES = 5 * 1024 * 1024
 

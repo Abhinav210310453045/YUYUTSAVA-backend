@@ -14,10 +14,9 @@ duplicating those blocks would only let them drift.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from yuyutsava.core.prompts import _rules_section, _tool_discovery_section
 from yuyutsava.platform import host_profile
+from yuyutsava.storage.paths import WorkspaceLayout
 
 
 _IDENTITY = """\
@@ -117,22 +116,24 @@ sk_read_skill before leaning on one.
 def render_tinker_system_prompt(
     *,
     card_id: str,
-    card_workspace: Path,
-    sandbox_root: Path,
-    output_dir: Path,
+    layout: WorkspaceLayout,
     tool_catalog: str = "",
     skills_index: str = "",
     agent_memory_block: str = "",
 ) -> str:
-    """Compose the full TinkerAgent system prompt for one card."""
-    ws = card_workspace.resolve()
+    """Compose the full TinkerAgent system prompt for one card.
+
+    ``layout`` is the card workspace's :class:`WorkspaceLayout` — its root is
+    the card's blob dir (the WORKSPACE zone), and sandbox/outputs/state all
+    hang off ``<card>/.yuyutsava`` like any other workspace.
+    """
     memory_section = f"\n{agent_memory_block}\n" if agent_memory_block else ""
     return f"""\
 {_IDENTITY}
-{_CARD_CONTEXT.format(card_id=card_id, card_workspace=ws)}
+{_CARD_CONTEXT.format(card_id=card_id, card_workspace=layout.root)}
 {_WAYS_OF_WORKING.format(skills_index=skills_index)}{memory_section}
 {_tool_discovery_section(tool_catalog)}
-{_rules_section(ws, sandbox_root.resolve(), output_dir.resolve())}
+{_rules_section(layout)}
 
 {host_profile().prompt_block()}
 

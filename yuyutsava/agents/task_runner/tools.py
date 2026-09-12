@@ -25,6 +25,7 @@ from langgraph.types import interrupt
 
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
 from yuyutsava.models.operations import OperationRequest, OperationType
+from yuyutsava.storage.paths import WorkspaceLayout
 
 _log = logging.getLogger("yuyutsava.agents.task_runner.tools")
 
@@ -191,12 +192,18 @@ def set_default_consent(consent: object | None) -> None:
 
 
 def _get_or_create_agent(workspace_root: Path, sandbox_root: Path | None = None) -> TaskRunnerAgent:
-    ws = str(workspace_root.resolve())
-    sb = str(sandbox_root.resolve()) if sandbox_root is not None else ""
+    ws = workspace_root.resolve()
+    # Resolve the default BEFORE keying: a caller that omits sandbox_root and
+    # one that passes the layout default must land on the SAME cached agent
+    # (master, subagents and spawn.py used to mint three per workspace).
+    sb = (
+        sandbox_root.resolve() if sandbox_root is not None
+        else WorkspaceLayout.for_workspace(ws).sandbox
+    )
     key = f"{ws}|{sb}"
     if key not in _registry:
         _registry[key] = TaskRunnerAgent(
-            workspace_root, sandbox_root=sandbox_root,
+            ws, sandbox_root=sb,
             policy=_default_policy, consent=_default_consent,
         )
     return _registry[key]
@@ -212,6 +219,7 @@ def bind_tools(
     sandbox_root: Path | None = None,
     *,
     agent_name: str = "agent",
+    exec_backend: Any | None = None,
 ) -> list[BaseTool]:
     """
     Return the TaskRunner tools bound to *workspace_root*.
@@ -229,8 +237,15 @@ def bind_tools(
     ``agent_name`` flows into ``OperationRequest.requesting_agent`` and is used
     by the HITL machinery to append ``/<agent_name>`` to ``agent_path`` in
     every interrupt payload — so the UI knows which subagent is asking.
+
+    ``exec_backend`` (an ``agents.task_runner.exec_backend.ExecBackend``)
+    decides WHERE sandbox commands and scripts run. It is installed on the
+    cached per-workspace agent, so subagents bound to the same workspace run
+    theirs in the same place (the Docker bundle's container, for instance).
     """
     agent = _get_or_create_agent(workspace_root, sandbox_root)
+    if exec_backend is not None:
+        agent.exec_backend = exec_backend
 
     # ------------------------------------------------------------------ #
     # tr_read_file                                                         #
@@ -275,19 +290,28 @@ def bind_tools(
     # ------------------------------------------------------------------ #
 
     @tool
-    async def tr_write_file(path: str, content: str, reason: str) -> str:
+    async def tr_write_file(
+        path: str, content: str, reason: str, append: bool = False,
+    ) -> str:
         """Write/create a file (zone-checked, creates parent dirs). Returns JSON {status, result: {written_to}, error}.
 
         First write into the sandbox creates the sandbox dir.
         Deliverables → output_dir (from system prompt); scratch → sandbox.
+        append=True appends to the file (creating it if missing) instead of
+        overwriting — use it for ChangeLog.md / Assumptions.md /
+        workspace_memory.md, which are append-only.
 
         Args:
             path: Absolute real path to write.
             content: Text content to write.
             reason: Specific purpose shown to user in permission prompts.
+            append: Append instead of overwrite (default False).
         """
         real_path = _resolve_path(path, workspace_root)
-        _log.debug("[tr_write_file] path=%s bytes=%d", real_path, len(content.encode()))
+        _log.debug(
+            "[tr_write_file] path=%s bytes=%d append=%s",
+            real_path, len(content.encode()), append,
+        )
         request = OperationRequest(
             request_id=str(uuid.uuid4()),
             requesting_agent=agent_name,
@@ -296,7 +320,7 @@ def bind_tools(
             operation=OperationType.WRITE,
             paths=[real_path],
             reason=reason,
-            additional_context={"content": content},
+            additional_context={"content": content, "append": append},
         )
         response = await agent.handle(request)
         _log.debug("[tr_write_file] status=%s", response.status)
@@ -342,10 +366,9 @@ def bind_tools(
         reason: str,
         timeout: int = 120,
     ) -> str:
-        """Run a shell command in the sandbox (auto-allowed, cwd=_sandbox/). Returns JSON {status, result: {stdout, stderr, exit_code}, error}.
+        """Run a shell command in the sandbox (auto-allowed, cwd = the sandbox dir). Returns JSON {status, result: {stdout, stderr, exit_code}, error}.
 
-        No network. CWD = sandbox dir; use relative paths.
-        Sandbox dir is created by the first tr_write_file — do not call this before any write.
+        No network. CWD = sandbox dir (created on demand); use relative paths.
         Script lifecycle: tr_write_file → this → read result.stdout → tr_delete_file.
         Do NOT tr_read_file a script you just wrote; read the execution result.
 
@@ -368,6 +391,9 @@ def bind_tools(
                 "command": command,
                 "timeout": timeout,
                 "cwd": sandbox_path,
+                # Marks the sandbox-cwd shell path so the dispatcher can hand
+                # it to the exec backend (docker mode) without path heuristics.
+                "sandboxed": True,
             },
         )
         response = await agent.handle(request)
@@ -388,8 +414,9 @@ def bind_tools(
         unzipping files). Returns JSON {status, result: {stdout, stderr, exit_code}, error}.
 
         Lifecycle: tr_write_file('script.py', ...) → tr_run_python('script.py') →
-        read result.stdout → tr_delete_file. CWD = sandbox dir; reference workspace
-        files by absolute path, write outputs with relative paths. Do NOT tr_read_file
+        read result.stdout → tr_delete_file (or keep it under .yuyutsava/scripts/
+        when it is reusable). CWD = sandbox dir; reference workspace files by
+        absolute path, write outputs with relative paths. Do NOT tr_read_file
         the script you just wrote — read the execution result.
 
         Args:
@@ -433,6 +460,8 @@ def bind_tools(
 
         Use this, NOT the built-in grep (which only works on virtual paths).
         Pass real absolute paths; returned line numbers feed tr_read_file offset.
+        A directory search skips .yuyutsava/ unless that dir IS the search root
+        (pass the state dir explicitly to recall ChangeLog/assumptions/memory).
 
         Args:
             pattern:          Regex or fixed string to search for.

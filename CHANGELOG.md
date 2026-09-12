@@ -8,7 +8,32 @@ While the version stays `0.x`, minor bumps may contain breaking changes.
 
 ## [Unreleased]
 
+### Added
+- Per-workspace state directory `<workspace>/.yuyutsava/` — the only place
+  yuyutsava writes inside a workspace: `sandbox/`, `scripts/`, `outputs/`,
+  `tmp/`, workspace `skills/`, the append-only `ChangeLog.md`,
+  `Assumptions.md` and `workspace_memory.md`, and an optional workspace-level
+  `mcp_config.json`. It carries its own `*` `.gitignore`. `WorkspaceLayout`
+  (`storage/paths.py`) is the single source of truth for these paths.
+- `tr_write_file(append=True)` for the append-only knowledge files, and a
+  shared WORKSPACE STATE prompt block telling every agent what lives where and
+  how to recall from it (`tr_grep` the state dir before starting).
+- Workspace-level MCP config, merged with the global one and gated by a
+  `trusted_workspaces` list; `${YUYUTSAVA_WORKSPACE}` and `$VAR` expand in
+  `command`, `args`, `url` and `env`. The standalone CLI now starts MCP servers
+  too — previously only the daemon did.
+- Docker mode runs `tr_execute_in_sandbox` and `tr_run_python` inside the
+  container; before, the container was started but every tool ran on the host.
+
 ### Changed
+- Scratch, deliverables and deepagents temp moved from `<ws>/_sandbox`,
+  `<ws>/_output`, `<ws>/large_tool_results` and `<ws>/conversation_history`
+  into `<ws>/.yuyutsava/{sandbox,outputs,tmp}`. Existing directories are left
+  where they are. Workspace skills are read from `<ws>/.yuyutsava/skills/`.
+- Docker mounts: `<ws>/.yuyutsava` read-write at `/yuyutsava` (the container
+  workdir), the workspace read-only at `/workspace`; `/tmp` is a tmpfs.
+  `YUYUTSAVA_DOCKER_EXPORT_DIR` still works but is no longer needed.
+- `tr_grep` / `tr_glob` skip `.yuyutsava/` unless it is the search root.
 - `main` now carries the full development history and the current code. It had
   been stalled four months behind the working branch.
 - Relicensed from MIT to Apache-2.0. Revisions published before 2026-08-31
@@ -22,6 +47,15 @@ While the version stays `0.x`, minor bumps may contain breaking changes.
   memory, MCP and all twelve providers.
 
 ### Fixed
+- Every subagent's `tr_*` tools were bound to the default sandbox even when its
+  `TaskRunnerAgent` had been built with another one — the background tinker's
+  sandbox, deliberately placed outside the TODO-board root, was never used.
+- The master, its subagents and `spawn.py` each minted their own
+  `TaskRunnerAgent` for the same workspace; the default sandbox is now resolved
+  before the registry key so they share one.
+- `SkillRegistry`, `AgentMemoryStore`, the earcon cache and the webcam/voice
+  blob directories hardcoded `~/.yuyutsava` and ignored `YUYUTSAVA_HOME`.
+- The daemon never scanned workspace skills at the documented location.
 - `.gitignore` matched `diagrams/` at any depth, so `docs/diagrams/` had been
   silently ignored since 2026-06-14 and two intentional assets were never
   committed. The rule is now anchored to `/diagrams/`.
@@ -35,6 +69,11 @@ While the version stays `0.x`, minor bumps may contain breaking changes.
   provider layer grew to twelve providers.
 
 ### Removed
+- The in-tree DeepFace MCP server (`yuyutsava/mcp_servers/deepface/`) and the
+  `deepface` extra. An agent daemon is not the place to host a face-recognition
+  service; the `face-watcher` subagent now uses whatever face-recognition MCP
+  server you scope to it in `mcp_config.json`.
+- The unused `mcp-swagger-ui` dependency (FastAPI serves its own Swagger UI).
 - Tracked build and run artefacts: `.DS_Store`, a stray
   `electron-app/.langgraph_api/*.pckl`, a leftover agent deliverable, and a
   stale branch-topology diagram.
@@ -83,8 +122,8 @@ card-pinned chat.
 over a shared retrieval base, with context compaction and tool-result
 offloading.
 
-**MCP** — a client manager for stdio and SSE servers, per-agent tool scoping,
-`SIGHUP` hot reload, and an in-tree DeepFace server as a worked example.
+**MCP** — a client manager for stdio and SSE servers, per-agent tool scoping
+and `SIGHUP` hot reload.
 
 **Visuals** — charts, styled tables, syntax-highlighted code, math and diagrams
 rendered to images the agent can return.

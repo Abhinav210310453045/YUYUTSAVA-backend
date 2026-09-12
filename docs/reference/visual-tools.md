@@ -127,7 +127,7 @@ open("out.png", "wb").write(result.image_bytes)
 
 ## Storage & retention
 
-PNGs are written to `_output/visuals/` in the workspace (so the CLI can point at
+PNGs are written to `.yuyutsava/outputs/visuals/` in the workspace (so the CLI can point at
 them) and indexed in the `visual_artifacts` table in `state.db`. They are
 session-scoped user output: removed when the session is deleted (`purge_session`),
 not aged out by the TTL sweeper.

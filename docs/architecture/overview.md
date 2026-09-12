@@ -262,7 +262,6 @@ yuyutsava/
 ├── audio_io/            VAD, STT/TTS glue, earcons, announcer (voice)
 ├── io/                  audio/stt/tts/wake backends
 ├── mcp/                 MCP client manager + tool adapter (external tool servers)
-├── mcp_servers/         bundled MCP servers (deepface face recognition)
 ├── platform/            OS-invariance: FileLock, HostProfile, elevation, process
 ├── prefs/               PrefsInjector (user prefs → prompt block)
 ├── tools/               ws_* web search tools (Tavily, Exa)
@@ -605,7 +604,7 @@ WORKSPACE/SANDBOX/OUTPUT paths, since it can't see the master's prompt) + the
 | Subagent | Role |
 |---|---|
 | **file-organizer** | Moves/organises files (Downloads → Inbox), reacts to `fs.changed` events; can write skills. |
-| **face-watcher** | Processes webcam frames / face events via the bundled deepface MCP server. |
+| **face-watcher** | Processes webcam frames / face events via whichever face-recognition MCP server is scoped to it. |
 | **general-purpose** | Catch-all delegate. Registered under the name `general-purpose` to *override* deepagents' built-in default, so `task('general-purpose', …)` hits our tighter spec. It is the CLI's only sync subagent. |
 
 Each also exists as a `-bg` **async peer** (`file-organizer-bg`, etc.) when the async
@@ -1555,8 +1554,8 @@ timeline notice so a Postgres outage is **never silent**.
 
 `storage/sweeper.py :: UnifiedSweeper` runs one loop that enforces TTLs across three
 kinds of target: stale LangGraph checkpoints, on-disk blobs (webcam frames at ~1h;
-deepagents scratch dirs at 24h), and artifact rows (7 days). Enrolled-faces data is
-*never* swept — that's user data. Session deletion has its own shared `purge_session`
+deepagents scratch dirs at 24h), and artifact rows (7 days). Only registered scratch
+directories are swept — user data is never a target. Session deletion has its own shared `purge_session`
 (`storage/purge.py`) called by both the CLI and `DELETE /sessions/{id}`.
 
 ---
@@ -1576,14 +1575,14 @@ flowchart LR
     Agent["agent calls vis_chart(...)"] --> Render["render.py"]
     Render --> MPL["_mpl.py (matplotlib)"]
     Render --> Kroki["_kroki.py (diagrams via Kroki)"]
-    MPL & Kroki --> File["_output/visuals/*.png"]
+    MPL & Kroki --> File[".yuyutsava/outputs/visuals/*.png"]
     Render --> Store[("VisualStore<br/>visual_artifacts (RoutedStore)")]
     Store --> API["GET /v1/visuals/:id"]
     File --> Stream["streaming: vis_* result → StreamEvent('image')"]
     Stream --> UI["Electron Artifacts panel (inline)"]
 ```
 
-Files land in the workspace `_output/visuals` (so the CLI can point the user at them)
+Files land in the workspace's `.yuyutsava/outputs/visuals` (so the CLI can point the user at them)
 and are indexed in the `VisualStore`, so a chart made by a background subagent shows up
 in the UI Artifacts panel exactly like one made by the master. Backends: matplotlib for
 charts/tables/math, Kroki (`docker-compose.kroki.yml`) for diagrams.
@@ -1714,7 +1713,7 @@ per-OS critical prefixes, and Windows Electron packaging works from the same cod
   `DockerSandboxBackend` isolates in an ephemeral container with memory/CPU/PID limits
   and an optional `network: none`.
 - **Privacy by default.** Webcam frames are swept after ~1h; voice is off unless
-  `--voice`; enrolled-face data is never swept.
+  `--voice`; only scratch blobs are ever swept, never user data.
 - **Singleton locks** prevent duplicate daemons/hosts corrupting shared state.
 
 ---
@@ -1812,7 +1811,7 @@ yuyutsava "summarise report.pdf"
   → build_agent_stack → build_cli_deepagent (one graph, MemorySaver)
   → astream_agent (prints to stderr, prompts on stdin for permissions)
   → tr_read_file (workspace zone → allowed) → LLM summary → final text to stdout
-  → cleanup_local_sandbox (delete _sandbox + deepagents scratch)
+  → cleanup_local_sandbox (wipe .yuyutsava/sandbox + .yuyutsava/tmp/*)
 ```
 
 ---
@@ -1860,8 +1859,13 @@ yuyutsava "summarise report.pdf"
 | `~/.yuyutsava/api_token` | auto-generated bearer token for non-loopback binds |
 | `~/.yuyutsava/skills/` | personal skills |
 | `<repo>/yuyutsava/events/events_config.json` | event source config (project artifact, hot-reloadable) |
-| `<workspace>/_sandbox/` | ephemeral scratch (deleted after each CLI run) |
-| `<workspace>/_output/` | agent deliverables, incl. `_output/visuals/` |
+| `<workspace>/.yuyutsava/` | everything yuyutsava writes inside a workspace (`WorkspaceLayout`, `storage/paths.py`); carries its own `*` `.gitignore` |
+| `<workspace>/.yuyutsava/sandbox/` | ephemeral scratch — the SANDBOX zone (wiped after each CLI run) |
+| `<workspace>/.yuyutsava/outputs/` | agent deliverables, incl. `outputs/visuals/` |
+| `<workspace>/.yuyutsava/scripts/` | reusable agent-written scripts (kept) |
+| `<workspace>/.yuyutsava/tmp/` | deepagents scratch: `large_tool_results/`, `conversation_history/` (CLI wipes; daemon TTL-sweeps) |
+| `<workspace>/.yuyutsava/{ChangeLog,Assumptions,workspace_memory}.md` | append-only project knowledge the agent writes and greps |
+| `<workspace>/.yuyutsava/skills/`, `mcp_config.json` | workspace-scope skills; workspace-level MCP servers (trust-gated) |
 
 **Key env vars** (non-exhaustive; see `.env.example`):
 

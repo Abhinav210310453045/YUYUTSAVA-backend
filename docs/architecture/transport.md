@@ -1217,10 +1217,10 @@ A worked `~/.yuyutsava/mcp_config.json`:
 ```json
 {
   "mcpServers": {
-    "deepface": {
-      "command": "python",
-      "args": ["-m", "yuyutsava.mcp_servers.deepface.server"],
-      "env": { "DEEPFACE_HOME": "$HOME/.deepface" }
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "$GITHUB_TOKEN" }
     },
     "some-remote": {
       "url": "https://mcp.example.com/sse"
@@ -1245,17 +1245,15 @@ closed here — required by the anyio cancel scopes the MCP SDK uses.
 """
 ```
 
-**MCP is daemon-only.** The CLI stack deliberately has no manager:
-
-```python
-# yuyutsava/cli/agent_stack.py:285-287
-# … No MCP manager in this stack (daemon-only subsystem); the
-# tinker-bg graph simply gets no MCP tools when the CLI owns the host.
-```
-
-So `yuyutsava chat` gets **zero** MCP tools. The in-tree server
-([`mcp_servers/deepface/server.py:103-109`](../../yuyutsava/mcp_servers/deepface/server.py#L103-L109))
-uses a bare `mcp.run()`, i.e. FastMCP's default stdio transport.
+**Two owners.** The daemon starts one manager at boot from
+`MCPConfig.load(workspace)` — the global file merged with the workspace's
+trusted `.yuyutsava/mcp_config.json` — and hot-reloads it on `SIGHUP`. The
+standalone CLI starts its own through
+[`mcp/loader.py`](../../yuyutsava/mcp/loader.py) `start_manager_for_workspace`
+when no daemon-provided manager is passed in; the `AgentBundle` owns it and
+stops it first in `aclose()`, because the sessions live on the CLI's loop.
+When the daemon builds the same chat stack it passes its manager and the CLI
+path never starts a second one.
 
 ### 13.2 Every pipe in the tree
 
@@ -1265,7 +1263,8 @@ uses a bare `mcp.run()`, i.e. FastMCP's default stdio transport.
 | MCP stdio servers | full bidirectional JSON-RPC | [`mcp/loader.py:173`](../../yuyutsava/mcp/loader.py#L173) |
 | Wake-word mic source | NDJSON on child stdout, 8 s heartbeat | [`events/sources/voice.py:91-153`](../../yuyutsava/events/sources/voice.py#L91-L153) |
 | Webcam source | same NDJSON pattern | [`events/sources/webcam.py:101-165`](../../yuyutsava/events/sources/webcam.py#L101-L165) |
-| Docker sandbox exec | `stdin/stdout/stderr = PIPE` + `communicate()` | [`core/docker_sandbox_backend.py:338-370`](../../yuyutsava/core/docker_sandbox_backend.py#L338-L370) |
+| Docker sandbox exec (deepagents `execute`) | `stdin/stdout/stderr = PIPE` + `communicate()` | [`core/docker_sandbox_backend.py`](../../yuyutsava/core/docker_sandbox_backend.py) `aexecute` |
+| Docker sandbox exec (`tr_execute_in_sandbox` / `tr_run_python`) | argv `docker exec -w <cwd> … sh -c` / `python3` via loop-agnostic `platform.run_capture` — no stdin | [`agents/task_runner/exec_backend.py`](../../yuyutsava/agents/task_runner/exec_backend.py) |
 | Generic capture helper | stdout/stderr PIPE, one-shot | [`platform/process.py:185-190`](../../yuyutsava/platform/process.py#L185-L190) |
 | Daemon → Electron/vite UI | **deliberately not piped** — DEVNULL, own session | [`platform/process.py:106-143`](../../yuyutsava/platform/process.py#L106-L143) |
 | Task runner exec | `create_subprocess_exec` with explicit argv | [`agents/task_runner/executor.py:92,192`](../../yuyutsava/agents/task_runner/executor.py#L92) |

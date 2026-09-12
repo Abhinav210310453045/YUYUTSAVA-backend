@@ -29,8 +29,8 @@ Config (params from ``events_config.json``)::
 Frames go to disk; only the path travels through the bus envelope. The
 :class:`yuyutsava.storage.sweeper.UnifiedSweeper` deletes stale JPEGs
 (default TTL ~1h) and the matching ``event_payloads.blob_path`` rows.
-The deepface enrolled-faces DB at ``~/.yuyutsava/deepface/`` is in a
-separate directory and is never touched by this sweep.
+Only this frames directory is swept; whatever a face-recognition MCP
+server stores (enrolled identities) lives elsewhere and is never touched.
 """
 
 from __future__ import annotations
@@ -44,6 +44,7 @@ from pathlib import Path
 
 from yuyutsava.events.registry import register_source
 from yuyutsava.events.source import EventSource, SourceContext
+from yuyutsava.storage.paths import blobs_dir
 
 logger = logging.getLogger("yuyutsava.events.sources.webcam")
 
@@ -73,9 +74,7 @@ class WebcamSource(EventSource):
         # Webcam frames go to their own subdir so the BlobSweeper can wipe
         # them aggressively (TTL ~1h) without touching blobs from other
         # sources that may have different retention needs.
-        blob_dir_raw = str(
-            ctx.params.get("blob_dir") or (Path.home() / ".yuyutsava" / "blobs" / "webcam")
-        )
+        blob_dir_raw = str(ctx.params.get("blob_dir") or (blobs_dir() / "webcam"))
         blob_dir = Path(blob_dir_raw).expanduser()
         blob_dir.mkdir(parents=True, exist_ok=True)
 

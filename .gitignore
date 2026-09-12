@@ -82,6 +82,9 @@ sandbox/
 _sandbox/
 playground/
 
+# Per-workspace YUYUTSAVA state (the directory also carries its own '*' .gitignore)
+.yuyutsava/
+
 # Agent deliverables written by tr_write_file / the export dir
 _output/
 

@@ -73,7 +73,13 @@ from yuyutsava.storage.backend import StorageSettings
 from yuyutsava.memory.store import MemoryStore
 from yuyutsava.storage.factory import StoreFactory
 from yuyutsava.storage.events import Store
-from yuyutsava.storage.paths import blobs_dir, checkpoints_db_path, state_db_path, state_dir
+from yuyutsava.storage.paths import (
+    WorkspaceLayout,
+    blobs_dir,
+    checkpoints_db_path,
+    state_db_path,
+    state_dir,
+)
 from yuyutsava.storage.pg import migrations as pg_migrations
 from yuyutsava.storage.pg.pool import PgPool
 from yuyutsava.storage.routing.health import StorageHealth
@@ -570,8 +576,9 @@ async def build_retention(
     # ── unified TTL sweeper (checkpoints + on-disk blobs + event rows) ---
     # Webcam frames pile up fast (potentially one every few seconds for
     # hours). Keep ~1h of history then delete files + matching
-    # event_payloads rows. Enrolled-faces DB at ~/.yuyutsava/deepface/ is
-    # in a sibling directory and is NEVER swept — that's user data.
+    # event_payloads rows. Only registered blob dirs are swept; anything an
+    # MCP server keeps (e.g. enrolled identities) lives elsewhere — user data.
+    layout = WorkspaceLayout.for_workspace(workspace)
     sweeper = UnifiedSweeper(
         store=store,
         checkpoint_saver=checkpointer,
@@ -582,7 +589,7 @@ async def build_retention(
                 ttl_sec=3600,
                 glob="*.jpg",
             ),
-            # deepagents scratch under the daemon workspace: the eviction cache
+            # deepagents scratch under <ws>/.yuyutsava/tmp: the eviction cache
             # (large tool results) and the summarization transcript dumps. The
             # durable copies live in the DB (artifacts + transcript_messages),
             # so these files are disposable. 24h TTL outlives any single task
@@ -591,13 +598,13 @@ async def build_retention(
             # deletes the same dirs synchronously via cleanup_local_sandbox.
             BlobSweepTarget(
                 name="large_tool_results",
-                directory=workspace / "large_tool_results",
+                directory=layout.large_tool_results,
                 ttl_sec=24 * 3600,
                 glob="*",
             ),
             BlobSweepTarget(
                 name="conversation_history",
-                directory=workspace / "conversation_history",
+                directory=layout.conversation_history,
                 ttl_sec=24 * 3600,
                 glob="*",
             ),
@@ -643,6 +650,7 @@ class RetrievalSubsystem:
 async def build_retrieval(
     *,
     home: Path,
+    workspace: Path,
     stores: StoreFactory,
     mem_settings: object,
     pg_pool: PgPool | None,
@@ -656,7 +664,12 @@ async def build_retrieval(
     """
     note_index: object | None = None
     # ── skills registry ---------------------------------------------------
-    skill_registry = SkillRegistry(home_dir=home / "skills")
+    # Workspace scope = <ws>/.yuyutsava/skills; without it the registry fell
+    # back to the process cwd and the daemon never scanned workspace skills.
+    skill_registry = SkillRegistry(
+        home_dir=home / "skills",
+        workspace_dir=WorkspaceLayout.for_workspace(workspace).skills,
+    )
     logger.info("  skills    : %d bundled, scanning personal + workspace",
                 len([s for s in skill_registry.scan() if s.scope == "bundled"]))
 
@@ -1036,7 +1049,9 @@ def build_subagents(
     now, so a new shared dependency is added once and cannot reach two of three.
     """
     task_runner = TaskRunnerAgent(
-        workspace_root=workspace, policy=policy, consent=consent,
+        workspace_root=workspace,
+        sandbox_root=WorkspaceLayout.for_workspace(workspace).sandbox,
+        policy=policy, consent=consent,
     )
     common: dict[str, Any] = {
         "skill_registry": skill_registry,
@@ -1098,6 +1113,9 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     """
     workspace = opts.workspace.resolve()
     home = state_dir()
+    # Materialize <ws>/.yuyutsava — the only place the daemon writes inside
+    # its workspace (sync mkdir → off-loop; see storage.paths).
+    await asyncio.to_thread(WorkspaceLayout.for_workspace(workspace).ensure)
 
     daemon_cfg = DaemonConfig.from_env()
     events_cfg = _build_initial_events_config(opts, daemon_cfg)
@@ -1130,12 +1148,17 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     cap_enforcer = _pol.cap_enforcer
     consent_registry = _pol.consent_registry
 
-    # ── MCP servers -------------------------------------------------------
+    # ── MCP servers: global ~/.yuyutsava/mcp_config.json merged with the
+    #    workspace's .yuyutsava/mcp_config.json when the workspace is trusted --
     mcp_manager = MCPClientManager()
-    mcp_cfg = MCPConfig.from_file()
+    mcp_cfg = MCPConfig.load(workspace)
     await mcp_manager.start(mcp_cfg)
     if mcp_manager.known_servers():
-        logger.info("  mcp       : %s", ", ".join(mcp_manager.known_servers()))
+        _ws_cfg = str(WorkspaceLayout.for_workspace(workspace).mcp_config)
+        logger.info("  mcp       : %s", ", ".join(
+            f"{n} (workspace)" if mcp_cfg.servers[n].source == _ws_cfg else n
+            for n in mcp_manager.known_servers()
+        ))
 
     # ── retention: checkpointer + TTL sweeper (extracted: build_retention) --
     _ret = await build_retention(
@@ -1255,6 +1278,7 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
 
     # ── retrieval: skills + TODO-note indexes (extracted: build_retrieval) --
     _rtv = await build_retrieval(
+        workspace=workspace,
         home=home, stores=stores, mem_settings=mem_settings,
         pg_pool=pg_pool, embedder=embedder,
     )

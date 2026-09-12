@@ -46,7 +46,7 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from yuyutsava.storage.events import Store
 from yuyutsava.storage.events.roles import EventPayloadSweeper
 from yuyutsava.storage.ids import parse_thread_id_ts
-from yuyutsava.storage.paths import blobs_dir
+from yuyutsava.storage.paths import WORKSPACE_STATE_DIRNAME, blobs_dir
 
 logger = logging.getLogger("yuyutsava.storage.sweeper")
 
@@ -148,9 +148,9 @@ class BlobSweepTarget:
     matching ``event_payloads`` rows whose ``blob_path`` lives under
     ``directory/``. Directories are *never* removed — only files inside.
 
-    The deepface enrolled-faces store at ``~/.yuyutsava/deepface/`` is in a
-    sibling directory entirely and is never registered here: that's user data
-    with indefinite retention; blobs are scratch.
+    Only scratch directories are ever registered here. User data with
+    indefinite retention (e.g. an MCP server's enrolled identities) lives in
+    its own directory and never becomes a target; blobs are scratch.
     """
 
     name: str           # human label, e.g. "webcam"
@@ -416,6 +416,12 @@ class UnifiedSweeper:
             removed = 0
             for entry in root.iterdir():
                 if not entry.is_dir() or entry.name in live:
+                    continue
+                # The board root doubles as the background tinker's workspace
+                # root, so its WorkspaceLayout state dir (.yuyutsava — outputs,
+                # ChangeLog.md, …) lives here too. It has no card row and must
+                # never be mistaken for an orphaned card workspace.
+                if entry.name == WORKSPACE_STATE_DIRNAME:
                     continue
                 try:
                     if entry.stat().st_mtime >= cutoff:

@@ -39,6 +39,7 @@ from pathlib import Path
 
 from yuyutsava.events.registry import register_source
 from yuyutsava.events.source import EventSource, SourceContext
+from yuyutsava.storage.paths import blobs_dir
 
 logger = logging.getLogger("yuyutsava.events.sources.voice")
 
@@ -53,9 +54,7 @@ class VoiceSource(EventSource):
         self._proc: asyncio.subprocess.Process | None = None
 
     async def start(self, ctx: SourceContext) -> None:
-        blob_dir_raw = str(
-            ctx.params.get("blob_dir") or (Path.home() / ".yuyutsava" / "blobs" / "voice")
-        )
+        blob_dir_raw = str(ctx.params.get("blob_dir") or (blobs_dir() / "voice"))
         blob_dir = Path(blob_dir_raw).expanduser()
         blob_dir.mkdir(parents=True, exist_ok=True)
 

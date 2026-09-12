@@ -15,6 +15,7 @@ resolve it lazily through ``get_default_exchange()``.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from pathlib import Path
@@ -30,7 +31,7 @@ from yuyutsava.core.config import LlmSettings, SearchConfig, _env, llm_settings_
 from yuyutsava.core.engine import AgentBundle, build_tinker_agent
 from yuyutsava.llm import chat_model
 from yuyutsava.skills.registry import SkillRegistry
-from yuyutsava.storage.paths import state_db_path
+from yuyutsava.storage.paths import WorkspaceLayout, state_db_path
 
 logger = logging.getLogger("yuyutsava.agents.tinker")
 
@@ -68,7 +69,9 @@ async def build_tinker_stack(
     )
     compaction_model = chat_model(llm_settings_from_env("compaction"), temperature=0.0)
 
-    skill_registry = SkillRegistry(workspace_dir=workspace)
+    skill_registry = SkillRegistry(
+        workspace_dir=WorkspaceLayout.for_workspace(workspace).skills
+    )
 
     # Same retrieval wiring as the conversational stack: pgvector stores when
     # Postgres is up (the sync inside also indexes the bundled tinker skills,
@@ -94,9 +97,12 @@ async def build_tinker_stack(
     # delegated research/build step lands its files on the card. Consent rides
     # the process default the daemon bootstrap installed (set_default_consent).
     card_ws = card_workspace.resolve()
+    card_layout = WorkspaceLayout.for_workspace(card_ws)
+    # Materialize <card>/.yuyutsava (sync mkdir → off-loop; see storage.paths).
+    await asyncio.to_thread(card_layout.ensure)
     task_runner = TaskRunnerAgent(
         workspace_root=card_ws,
-        sandbox_root=card_ws / "_sandbox",
+        sandbox_root=card_layout.sandbox,
     )
     general_purpose = GeneralPurposeAgent(
         task_runner=task_runner,

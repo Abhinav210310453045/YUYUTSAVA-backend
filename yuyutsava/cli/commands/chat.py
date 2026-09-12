@@ -16,6 +16,7 @@ from yuyutsava.core.config import DockerSettings, LlmSettings, LocalSettings, Se
 from yuyutsava.core.docker_sandbox_backend import pull_virtual_paths_to_host
 from yuyutsava.core.engine import cleanup_local_sandbox
 from yuyutsava.sessions import ResumeFailed, run_session
+from yuyutsava.storage.paths import WorkspaceLayout
 from yuyutsava.storage.sessions import (
     SessionsSettings,
     build_checkpointer,
@@ -101,17 +102,16 @@ async def run_chat(
                         file=sys.stderr,
                     )
                 else:
+                    layout = bundle.layout or WorkspaceLayout.for_workspace(workspace)
                     dest = (
                         (docker_settings.export_dir / "_pulled").resolve()
                         if docker_settings.export_dir is not None
-                        else (workspace / "_docker_pull").resolve()
+                        else layout.outputs / "_pulled"
                     )
                     written = pull_virtual_paths_to_host(bundle.docker_backend, pulls, dest)
                     if verbose and written:
                         print(f"Docker pull wrote: {written}", file=sys.stderr)
 
-            if execution_mode == "local" and bundle.sandbox_root is not None:
-                cleanup_local_sandbox(workspace, bundle.sandbox_root)
             if final.strip() and not verbose:
                 print(final.strip())
 
@@ -127,4 +127,8 @@ async def run_chat(
                 except Exception:
                     pass
             await bundle.aclose()
+            # After teardown: in docker mode the container is gone, so the
+            # sandbox is no longer anyone's cwd — wipe scratch in either mode.
+            if bundle.layout is not None:
+                cleanup_local_sandbox(bundle.layout)
     return 0

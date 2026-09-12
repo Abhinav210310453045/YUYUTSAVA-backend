@@ -14,13 +14,25 @@ Environment variables are documented inline in
 [`.env.example`](../../.env.example), which is organised into 16 numbered
 sections and states its own defaults.
 
+Everything yuyutsava writes *inside* a workspace lives in one hidden
+directory, `<workspace>/.yuyutsava/` — see
+[Per-workspace state](#per-workspace-state-workspaceyuyutsava).
+
 ---
 
-## MCP servers (`~/.yuyutsava/mcp_config.json`)
+## MCP servers (`mcp_config.json`, global + per workspace)
 
-The daemon picks up MCP (Model Context Protocol) servers from
-`~/.yuyutsava/mcp_config.json` at boot. The schema mirrors Claude Code's, so
-existing configs can be copy-pasted:
+MCP (Model Context Protocol) servers are read from two files with the same
+schema — it mirrors Claude Code's, so existing configs can be copy-pasted:
+
+| File | Scope |
+|---|---|
+| `~/.yuyutsava/mcp_config.json` | global — every workspace |
+| `<workspace>/.yuyutsava/mcp_config.json` | this workspace only; honoured when the workspace is **trusted** (below) |
+
+Both the daemon (at boot, for its `--workspace`) and the standalone CLI
+(`yuyutsava …`, for its `--workspace`) load the merged result and start the
+servers; the CLI stops them again when it exits.
 
 ```json
 {
@@ -29,73 +41,89 @@ existing configs can be copy-pasted:
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-filesystem", "~/Documents"]
     },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "$GITHUB_TOKEN" }
+    },
     "spotify-local": { "url": "http://localhost:8765/mcp" }
   },
   "scopes": {
-    "orchestrator":   ["spotify-local"],
+    "cli":            ["filesystem", "github"],
+    "orchestrator":   ["spotify-local", "github"],
     "file-organizer": ["filesystem"]
   },
-  "default_scope": []
+  "default_scope": [],
+  "trusted_workspaces": ["/Users/me/projects/app"]
 }
 ```
 
 - `mcpServers`: name → either `{command, args, env}` (stdio) or `{url}` (SSE).
-  `env` values support `$VAR` / `${VAR}` expansion for secrets.
+  `$VAR` / `${VAR}` expand in `command`, every `args` item, `url` and `env`
+  values; `${YUYUTSAVA_WORKSPACE}` is the workspace root the config is loaded
+  for, so a workspace file can point at its own `.yuyutsava/scripts/`.
 - `scopes`: agent name → list of MCP server names whose tools that agent
-  receives. Agents not listed get `default_scope`.
+  receives. Agents not listed get `default_scope`. The masters are `cli`
+  (chat/voice and the standalone CLI), `orchestrator` (daemon) and `tinker`;
+  subagents use their names (`file-organizer`, `face-watcher`,
+  `general-purpose`).
+- `trusted_workspaces` (global file only): a workspace file spawns processes,
+  so it is used only for workspaces listed here. Any other workspace's file is
+  logged (`mcp: … ignored — add … to "trusted_workspaces"`) and skipped.
+- **Merge:** a workspace server overrides a global one of the same name;
+  `scopes` and `default_scope` are unioned per agent (global first).
 - Tools are exposed as `<server>__<tool>` so two servers can each provide a
   `read` tool without collision.
 - Set `max_tools: N` on a server to cap how many tools it can expose (default
   32) — useful for misbehaving servers that flood the agent prompt.
 
-**Hot reload:** send `SIGHUP` to the daemon (`kill -HUP <pid>`) to re-read the
-config. Added / removed / changed servers are diffed; in-flight tasks finish
-with the old tool list, new tasks see the new one.
+**Hot reload:** send `SIGHUP` to the daemon (`kill -HUP <pid>`) to re-read
+both files. Added / removed / changed servers are diffed; in-flight tasks
+finish with the old tool list, new tasks see the new one.
 
 Failures are non-fatal: a server that fails to start is logged and skipped;
-the rest of the daemon continues normally.
+the rest of the daemon (or CLI) continues normally. In the interactive CLI,
+server output during startup is suppressed with the rest of the plumbing
+noise — failures still reach the log.
 
-### Bundled MCP server: `deepface`
+---
 
-YUYUTSAVA ships an in-tree DeepFace server for face detection,
-identification, and enrollment. Enable it by adding to `mcp_config.json`:
+## Per-workspace state (`<workspace>/.yuyutsava/`)
 
-```json
-{
-  "mcpServers": {
-    "deepface": {
-      "command": "uv",
-      "args": ["run", "python", "-m", "yuyutsava.mcp_servers.deepface.server"]
-    }
-  },
-  "scopes": {
-    "orchestrator": ["deepface"]
-  }
-}
-```
+Everything yuyutsava writes *inside* a workspace lives in one hidden
+directory, created on first use. `WorkspaceLayout` in
+[`yuyutsava/storage/paths.py`](../../yuyutsava/storage/paths.py) is the single
+source of truth for these paths — nothing joins them by hand.
 
-Install the optional dependency once: `uv sync --extra deepface` (pulls in
-`deepface` + `tf-keras`, ~hundreds of MB on first run as TensorFlow caches
-its weights).
-
-Exposed tools (namespaced as `deepface__*`):
-
-| Tool | Purpose |
+| Path | Purpose |
 |---|---|
-| `detect_faces(image_path)` | Bounding boxes for every face in the image. |
-| `enroll(identity, image_paths)` | Embed reference image(s) and store under `identity`. |
-| `identify(image_path, threshold?)` | Closest enrolled identity (cosine ≥ threshold, default 0.4) or `null`. |
-| `list_identities()` | Enrolled names + sample counts. |
-| `delete_identity(identity)` | Remove every embedding for an identity. |
+| `.gitignore` | Contains `*`: the whole directory is machine-local and never committed. Your own `.gitignore` is not touched. |
+| `ChangeLog.md` | Appended after every task that changed files: `## <UTC ISO> · <agent> · <gist>` then one `- <path> — <what changed> (<level>)` line per file, level ∈ file/module/config/docs/test/deps. A gist, never the diff. |
+| `Assumptions.md` | Appended when the agent settles something you left ambiguous: `## <UTC ISO> · <gist>` then `- ASSUMED: <what> — because <why>`. |
+| `workspace_memory.md` | Durable facts about this workspace, one dated, tagged bullet each: `- <YYYY-MM-DD> [layout\|conventions\|gotchas\|decisions] <fact>`. |
+| `mcp_config.json` | Optional workspace-level MCP servers (see above; needs `trusted_workspaces`). |
+| `skills/<name>/SKILL.md` | Workspace-scope skills — highest precedence in the skill registry. |
+| `scripts/` | Reusable scripts the agent wrote; run with `tr_run_python`. Kept across tasks. |
+| `outputs/` | Deliverables (`YUYUTSAVA_OUTPUT_DIR` / `--output-dir` override the location). |
+| `sandbox/` | Scratch — the SANDBOX zone (`YUYUTSAVA_SANDBOX_DIR` / `--sandbox-dir` override). Created on demand, wiped after each CLI task. |
+| `tmp/` | deepagents scratch (`large_tool_results/`, `conversation_history/`): wiped after a CLI task, TTL-swept (24 h) by the daemon. |
 
-Embeddings live at `$YUYUTSAVA_HOME/deepface/db.sqlite` (default
-`~/.yuyutsava/deepface/db.sqlite`). The default model is `Facenet512`;
-embeddings stored under one model are only matched against queries from the
-same model.
+The three Markdown files are append-only (`tr_write_file(append=True)`). The
+agent greps them for the task's keywords (`tr_grep … <workspace>/.yuyutsava`)
+before starting rather than reading them whole, and a workspace-wide
+`tr_grep` / `tr_glob` skips `.yuyutsava/` unless it is the search root, so
+scratch never pollutes a code search.
 
-If the `deepface` package is missing, the server still boots and serves
-`list_identities` / `delete_identity`; tool calls that need detection return
-a clean error pointing at `uv sync --extra deepface`.
+Running from your home directory — where `.yuyutsava` *is* the global state
+dir — routes the per-workspace state to `~/.yuyutsava/workspaces/home/`.
+
+**Docker mode** (`--execution docker`): `<workspace>/.yuyutsava` is mounted
+read-write at `/yuyutsava` and the workspace read-only at `/workspace`.
+`tr_execute_in_sandbox` and `tr_run_python` run inside the container (cwd
+`/yuyutsava/sandbox`); every other `tr_*` tool works on the host over the
+same files, so a deliverable written to `/yuyutsava/outputs` is already in
+`<workspace>/.yuyutsava/outputs`. Keep any sandbox override under
+`.yuyutsava`, or it will not be visible inside the container.
 
 ---
 
