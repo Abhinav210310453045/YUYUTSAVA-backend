@@ -24,6 +24,7 @@ from yuyutsava.core.streaming import astream_agent
 from yuyutsava.storage.interrupts import InterruptsStore
 from yuyutsava.storage.interrupts_unified import sqlite_interrupts_store
 from yuyutsava.storage.models import Session
+from yuyutsava.storage.paths import WorkspaceLayout
 from yuyutsava.storage.sessions import SessionNotFound, SessionStore, SessionsSettings
 
 logger = logging.getLogger("yuyutsava.sessions.runner")
@@ -98,9 +99,9 @@ def _count_memory_files(workspace: Path) -> int:
     """Count workspace-scoped skill files. Cheap, defensive against missing dirs.
 
     Matches the convention used by ``SkillRegistry`` — workspace skills live in
-    ``<workspace>/.skills/<slug>/SKILL.md``.
+    ``<workspace>/.yuyutsava/skills/<slug>/SKILL.md`` (``WorkspaceLayout.skills``).
     """
-    skills_dir = workspace / ".skills"
+    skills_dir = WorkspaceLayout.for_workspace(workspace).skills
     if not skills_dir.is_dir():
         return 0
     try:

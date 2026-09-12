@@ -11,6 +11,17 @@ stores additionally mkdir-on-open via ``asyncio.to_thread`` as defence in
 depth; doing the sync mkdir inside ``async def`` would trip
 ``blockbuster`` when ``langgraph dev`` is in the process.
 
+Two roots
+---------
+- **Global state** — ``state_dir()`` (``~/.yuyutsava``): per-user skills,
+  agent memory, blobs, the SQLite files, ``mcp_config.json`` …
+- **Per-workspace state** — :class:`WorkspaceLayout`
+  (``<workspace>/.yuyutsava/``): the ONLY place yuyutsava writes inside a
+  workspace — scratch sandbox, reusable scripts, deliverables, deepagents
+  temp, the project knowledge files and the workspace-level MCP config.
+  ``WorkspaceLayout.ensure()`` is sync like ``ensure_state_dirs``; call it
+  from a sync entry point, or wrap it in ``asyncio.to_thread``.
+
 Env overrides
 -------------
 - ``YUYUTSAVA_HOME``           override state dir (default: ``~/.yuyutsava``)
@@ -19,12 +30,19 @@ Env overrides
 - ``YUYUTSAVA_CHECKPOINTS_DB`` override checkpoints.db path (LangGraph saver)
 - ``YUYUTSAVA_INTERRUPTS_DB``  override interrupts.db path (HITL audit)
 - ``YUYUTSAVA_BLOBS_DIR``      override blobs/ root (webcam frames, audio clips)
+- ``YUYUTSAVA_SANDBOX_DIR`` / ``YUYUTSAVA_OUTPUT_DIR`` — per-workspace sandbox /
+  deliverables overrides, applied by the caller through ``WorkspaceLayout``
+  (see ``core.config.LocalSettings``)
 """
 
 from __future__ import annotations
 
+import logging
 import os
+from dataclasses import dataclass
 from pathlib import Path
+
+logger = logging.getLogger("yuyutsava.storage.paths")
 
 
 def state_dir() -> Path:
@@ -110,3 +128,167 @@ def ensure_state_dirs() -> None:
         interrupts_db_path(),
     ):
         p.parent.mkdir(parents=True, exist_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# Per-workspace state — <workspace>/.yuyutsava/
+# ---------------------------------------------------------------------------
+
+WORKSPACE_STATE_DIRNAME = ".yuyutsava"
+
+# Written once into <ws>/.yuyutsava/.gitignore. Everything in the directory is
+# machine-local — scratch, temp, deliverables, per-checkout knowledge — so it
+# is ignored wholesale, the way virtualenv/uv ignore .venv. The user's own
+# .gitignore is never touched.
+WORKSPACE_GITIGNORE = "*\n"
+
+_CHANGELOG_SEED = """\
+# ChangeLog
+
+<!-- Appended by YUYUTSAVA after every task that changed files. One entry per task:
+## <ISO-8601 UTC> · <agent role> · <task gist, ≤80 chars>
+- <path relative to workspace> — <what changed> (<file|module|config|docs|test|deps>)
+-->
+"""
+
+_ASSUMPTIONS_SEED = """\
+# Assumptions
+
+<!-- Appended by YUYUTSAVA when it settles something the user left ambiguous:
+## <ISO-8601 UTC> · <task gist>
+- ASSUMED: <what> — because <why>
+-->
+"""
+
+_MEMORY_SEED = """\
+# Workspace memory
+
+<!-- Durable facts about THIS workspace, appended by YUYUTSAVA. One dated, tagged bullet each:
+- <YYYY-MM-DD> [layout|conventions|gotchas|decisions] <fact>
+-->
+"""
+
+_home_collision_warned = False
+
+
+@dataclass(frozen=True)
+class WorkspaceLayout:
+    """Every path yuyutsava owns inside one workspace — the single source of truth.
+
+    ::
+
+        <ws>/.yuyutsava/
+          .gitignore            "*" — the whole directory is machine-local
+          ChangeLog.md          what changed, per task (appended by the agent)
+          Assumptions.md        what the agent assumed when the user was ambiguous
+          workspace_memory.md   durable facts about this workspace
+          mcp_config.json       optional workspace-level MCP servers/scopes
+          skills/<name>/SKILL.md  workspace-scope skills
+          scripts/              reusable agent-written scripts (WORKSPACE zone)
+          outputs/              deliverables (WORKSPACE zone)
+          sandbox/              scratch (SANDBOX zone) — created on demand,
+                                wiped after a CLI task
+          tmp/                  deepagents scratch: large_tool_results/,
+                                conversation_history/
+
+    Build one with :meth:`for_workspace`; never join these names by hand.
+    All fields are absolute. ``sandbox`` and ``outputs`` honour the explicit
+    ``YUYUTSAVA_SANDBOX_DIR`` / ``YUYUTSAVA_OUTPUT_DIR`` overrides when the
+    caller passes them through.
+
+    The one special case: a workspace whose ``.yuyutsava`` *is* the global
+    state dir (running from ``~``, or ``YUYUTSAVA_HOME`` pointing inside the
+    workspace). Its per-workspace state is routed to
+    ``state_dir()/workspaces/home`` so the two never share a directory.
+    """
+
+    root: Path
+    state: Path
+    sandbox: Path
+    outputs: Path
+    scripts: Path
+    tmp: Path
+    skills: Path
+    changelog: Path
+    assumptions: Path
+    memory: Path
+    mcp_config: Path
+    gitignore: Path
+
+    @classmethod
+    def for_workspace(
+        cls,
+        workspace: Path | str,
+        *,
+        sandbox_override: Path | None = None,
+        outputs_override: Path | None = None,
+    ) -> WorkspaceLayout:
+        """Pure: derive the layout for *workspace*. Touches no filesystem."""
+        root = Path(workspace).expanduser().resolve()
+        state = root / WORKSPACE_STATE_DIRNAME
+        if state == state_dir().expanduser().resolve():
+            state = state_dir() / "workspaces" / "home"
+            _warn_home_collision_once(root, state)
+        return cls(
+            root=root,
+            state=state,
+            sandbox=(
+                sandbox_override.expanduser().resolve()
+                if sandbox_override is not None else state / "sandbox"
+            ),
+            outputs=(
+                outputs_override.expanduser().resolve()
+                if outputs_override is not None else state / "outputs"
+            ),
+            scripts=state / "scripts",
+            tmp=state / "tmp",
+            skills=state / "skills",
+            changelog=state / "ChangeLog.md",
+            assumptions=state / "Assumptions.md",
+            memory=state / "workspace_memory.md",
+            mcp_config=state / "mcp_config.json",
+            gitignore=state / ".gitignore",
+        )
+
+    @property
+    def large_tool_results(self) -> Path:
+        """deepagents' eviction cache (offloaded large tool results)."""
+        return self.tmp / "large_tool_results"
+
+    @property
+    def conversation_history(self) -> Path:
+        """deepagents' summarization transcript dumps."""
+        return self.tmp / "conversation_history"
+
+    def ensure(self, *, seed_files: bool = True) -> None:
+        """Materialize the layout. Sync, idempotent.
+
+        Creates ``state``, ``scripts``, ``outputs`` and ``tmp``; writes the
+        ``.gitignore`` and seeds the three knowledge files **only when they
+        are absent** (never rewrites user/agent content). Deliberately does
+        NOT create ``sandbox`` — the executor creates it on the first write
+        or run, and the CLI wipes it after each task.
+        """
+        for d in (self.state, self.scripts, self.outputs, self.tmp):
+            d.mkdir(parents=True, exist_ok=True)
+        if not seed_files:
+            return
+        for path, body in (
+            (self.gitignore, WORKSPACE_GITIGNORE),
+            (self.changelog, _CHANGELOG_SEED),
+            (self.assumptions, _ASSUMPTIONS_SEED),
+            (self.memory, _MEMORY_SEED),
+        ):
+            if not path.exists():
+                path.write_text(body, encoding="utf-8")
+
+
+def _warn_home_collision_once(root: Path, state: Path) -> None:
+    global _home_collision_warned
+    if _home_collision_warned:
+        return
+    _home_collision_warned = True
+    logger.warning(
+        "workspace %s contains the global state dir; its per-workspace state "
+        "lives at %s instead", root, state,
+    )

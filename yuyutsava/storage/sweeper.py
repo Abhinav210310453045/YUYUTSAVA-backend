@@ -46,7 +46,7 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from yuyutsava.storage.events import Store
 from yuyutsava.storage.events.roles import EventPayloadSweeper
 from yuyutsava.storage.ids import parse_thread_id_ts
-from yuyutsava.storage.paths import blobs_dir
+from yuyutsava.storage.paths import WORKSPACE_STATE_DIRNAME, blobs_dir
 
 logger = logging.getLogger("yuyutsava.storage.sweeper")
 
@@ -416,6 +416,12 @@ class UnifiedSweeper:
             removed = 0
             for entry in root.iterdir():
                 if not entry.is_dir() or entry.name in live:
+                    continue
+                # The board root doubles as the background tinker's workspace
+                # root, so its WorkspaceLayout state dir (.yuyutsava — outputs,
+                # ChangeLog.md, …) lives here too. It has no card row and must
+                # never be mistaken for an orphaned card workspace.
+                if entry.name == WORKSPACE_STATE_DIRNAME:
                     continue
                 try:
                     if entry.stat().st_mtime >= cutoff:

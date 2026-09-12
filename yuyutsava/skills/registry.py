@@ -2,7 +2,7 @@
 SkillRegistry — discovers, indexes, and serves SKILL.md files.
 
 Three scopes (highest-precedence first, workspace wins on name conflict):
-  1. workspace  — <cwd>/.skills/<name>/SKILL.md
+  1. workspace  — <workspace>/.yuyutsava/skills/<name>/SKILL.md
   2. personal   — ~/.yuyutsava/skills/<name>/SKILL.md  (runtime-written)
   3. bundled    — <package>/skills/bundled/<agent>/<name>/SKILL.md
 
@@ -21,6 +21,7 @@ from pathlib import Path
 import yaml
 
 from yuyutsava.core.config import LIMITS
+from yuyutsava.storage.paths import WorkspaceLayout, state_dir
 
 logger = logging.getLogger("yuyutsava.skills")
 
@@ -50,8 +51,10 @@ class SkillRegistry:
         workspace_dir: Path | None = None,
         bundled_dir: Path | None = None,
     ) -> None:
-        self._home_dir = home_dir or (Path.home() / ".yuyutsava" / "skills")
-        self._workspace_dir = workspace_dir or (Path.cwd() / ".skills")
+        self._home_dir = home_dir or (state_dir() / "skills")
+        self._workspace_dir = (
+            workspace_dir or WorkspaceLayout.for_workspace(Path.cwd()).skills
+        )
         self._bundled_dir = bundled_dir or (Path(__file__).parent / "bundled")
         self._cache: list[SkillMeta] | None = None
 

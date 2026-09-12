@@ -25,6 +25,8 @@ import logging
 import re
 from pathlib import Path
 
+from yuyutsava.storage.paths import state_dir
+
 logger = logging.getLogger("yuyutsava.memory.agent_memory")
 
 INDEX_NAME = "MEMORY.md"
@@ -51,7 +53,7 @@ class AgentMemoryStore:
 
     def __init__(self, agent_name: str, home: Path | None = None) -> None:
         self.agent_name = agent_name
-        base = home or (Path.home() / ".yuyutsava")
+        base = home or state_dir()
         self._dir = base / "agents" / agent_name / "memory"
 
     # ── read side ─────────────────────────────────────────────────────

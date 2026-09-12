@@ -15,7 +15,8 @@ Resolution order for :func:`earcon_path`:
 
 1. ``$YUYUTSAVA_EARCONS_DIR/{name}.wav`` (user override), if present
 2. bundled ``assets/earcons/{name}.wav``, if present
-3. cache ``~/.yuyutsava/earcons/{name}.wav`` — synthesized on demand
+3. cache ``<state dir>/earcons/{name}.wav`` (``~/.yuyutsava`` unless
+   ``YUYUTSAVA_HOME`` says otherwise) — synthesized on demand
 """
 
 from __future__ import annotations
@@ -25,6 +26,8 @@ import os
 import struct
 import wave
 from pathlib import Path
+
+from yuyutsava.storage.paths import state_dir
 
 # Match the capture/playback sample rate used elsewhere (io/audio.SAMPLE_RATE).
 _SAMPLE_RATE = 16_000
@@ -56,7 +59,7 @@ def _override_dir() -> Path | None:
 
 
 def _cache_dir() -> Path:
-    return Path.home() / ".yuyutsava" / "earcons"
+    return state_dir() / "earcons"
 
 
 def _synthesize_wav(tones: list[tuple[float, float]], out_path: Path) -> None:
