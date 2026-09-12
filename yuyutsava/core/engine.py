@@ -1022,11 +1022,19 @@ def build_cli_deepagent(
     final_subagent_specs = subagent_specs or None
 
     if execution_mode == "docker":
+        from yuyutsava.agents.task_runner.exec_backend import DockerExecBackend
+        from yuyutsava.storage.paths import CONTAINER_STATE_MOUNT, CONTAINER_WORKSPACE_MOUNT
+
         docker_cfg = docker_settings or DockerSettings()
         export = docker_cfg.export_dir.resolve() if docker_cfg.export_dir else None
+        # The container's read-write mount is the workspace's .yuyutsava
+        # (sandbox, scripts, outputs, tmp) — it is also the deepagents virtual
+        # root; the workspace itself is mounted read-only beside it.
         docker_backend = DockerSandboxBackend(
             image=docker_cfg.image,
-            workspace_host=ws,
+            workspace_host=layout.state,
+            container_workdir=CONTAINER_STATE_MOUNT,
+            extra_mounts=[(layout.root, CONTAINER_WORKSPACE_MOUNT, True)],
             export_host=export,
             network=docker_cfg.network,
             timeout=bash_timeout_sec,
@@ -1034,8 +1042,19 @@ def build_cli_deepagent(
             cpus=docker_cfg.cpus,
             pids_limit=docker_cfg.pids_limit,
         )
+        if not sandbox_root.is_relative_to(layout.state):
+            logger.warning(
+                "docker: sandbox %s is outside %s and is not mounted in the "
+                "container — tr_execute_in_sandbox / tr_run_python will fail; "
+                "drop the sandbox override in docker mode",
+                sandbox_root, layout.state,
+            )
+        # tr_execute_in_sandbox / tr_run_python run INSIDE the container; every
+        # other tr_* tool stays host-side (the bind mounts share the files).
+        exec_backend = DockerExecBackend(docker_backend, layout)
         startup_tools, _registry = _build_tool_registry_and_tools(
-            _bind_task_runner_tools(ws), search_config, skill_registry,
+            _bind_task_runner_tools(ws, sandbox_root, exec_backend=exec_backend),
+            search_config, skill_registry,
             extra_tools=context_tools, skill_store=skill_store, agent_name="cli",
             cap_enforcer=cap_enforcer,
         )
@@ -1047,7 +1066,9 @@ def build_cli_deepagent(
         graph = create_deep_agent(
             model=model,
             tools=startup_tools,
-            backend=docker_backend,
+            # Virtual root = /yuyutsava, so "/tmp/large_tool_results" is
+            # <ws>/.yuyutsava/tmp/large_tool_results on the host.
+            backend=_scratch_root_backend(docker_backend, "/tmp"),
             system_prompt=_prompt,
             checkpointer=checkpointer,
             middleware=collapse_policy_adapters(middleware),
@@ -1057,6 +1078,8 @@ def build_cli_deepagent(
         return AgentBundle(
             agent=graph,
             docker_backend=docker_backend,
+            sandbox_root=sandbox_root,
+            output_dir=output_dir,
             layout=layout,
             async_host=async_host,
             async_host_url=async_host_url,

@@ -136,6 +136,12 @@ def ensure_state_dirs() -> None:
 
 WORKSPACE_STATE_DIRNAME = ".yuyutsava"
 
+# Where the two workspace roots appear INSIDE the Docker sandbox container:
+# the state dir is mounted read-write (and is the container workdir / the
+# deepagents virtual root); the workspace itself is mounted read-only.
+CONTAINER_STATE_MOUNT = "/yuyutsava"
+CONTAINER_WORKSPACE_MOUNT = "/workspace"
+
 # Written once into <ws>/.yuyutsava/.gitignore. Everything in the directory is
 # machine-local — scratch, temp, deliverables, per-checkout knowledge — so it
 # is ignored wholesale, the way virtualenv/uv ignore .venv. The user's own

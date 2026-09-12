@@ -1,7 +1,22 @@
 """
 Local Docker sandbox for Deep Agents: extends ``BaseSandbox`` so file tools and
-``execute`` run inside a container. Mount host workspace (and optional export dir)
-with ``docker run -v``; use ``download_files`` / ``upload_files`` or bind mounts for artifacts.
+``execute`` run inside a container.
+
+Mounts (set up by ``core.engine``'s docker branch):
+
+* ``workspace_host`` → ``container_workdir`` — the workspace's ``.yuyutsava``
+  state dir at ``/yuyutsava`` (read-write): sandbox, scripts, outputs, tmp.
+  It is also the virtual root deepagents' built-ins see.
+* ``extra_mounts`` — the workspace itself at ``/workspace``, read-only, so a
+  container process can read project files but can only write under
+  ``/yuyutsava``.
+* optional ``export_host`` → ``/output`` (legacy; deliverables now land in
+  ``/yuyutsava/outputs`` = ``<ws>/.yuyutsava/outputs`` on the host).
+
+``tr_execute_in_sandbox`` / ``tr_run_python`` reach the container through
+:meth:`DockerSandboxBackend.exec_argv` (see
+``agents.task_runner.exec_backend``); ``upload_files`` / ``download_files``
+remain for one-off copies.
 """
 
 from __future__ import annotations
@@ -13,8 +28,11 @@ import shlex
 import subprocess
 import tempfile
 import uuid
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Literal
+
+from yuyutsava.storage.paths import CONTAINER_STATE_MOUNT, CONTAINER_WORKSPACE_MOUNT
 
 _slog = logging.getLogger("yuyutsava.sandbox")
 
@@ -47,7 +65,7 @@ class DockerSandboxBackend(BaseSandbox):
         *,
         image: str,
         workspace_host: Path,
-        container_workdir: str = "/workspace",
+        container_workdir: str = CONTAINER_WORKSPACE_MOUNT,
         export_host: Path | None = None,
         container_export_path: str = "/output",
         network: Literal["bridge", "none"] = "bridge",
@@ -56,13 +74,20 @@ class DockerSandboxBackend(BaseSandbox):
         memory: str = "512m",
         cpus: str = "1.0",
         pids_limit: int = 100,
+        extra_mounts: Sequence[tuple[Path, str, bool]] = (),
     ) -> None:
+        """``extra_mounts`` are ``(host_dir, container_path, read_only)`` bind
+        mounts added verbatim to ``docker run`` alongside the workspace mount."""
         if timeout <= 0:
             msg = f"timeout must be positive, got {timeout}"
             raise ValueError(msg)
         self._image = image
         self._workspace_host = workspace_host.resolve()
         self._container_workdir = container_workdir
+        self._extra_mounts: list[tuple[Path, str, bool]] = [
+            (Path(host).resolve(), cpath, bool(read_only))
+            for host, cpath, read_only in extra_mounts
+        ]
         self._export_host = export_host.resolve() if export_host else None
         self._container_export_path = container_export_path
         self._network = network
@@ -137,8 +162,14 @@ class DockerSandboxBackend(BaseSandbox):
         return ["docker", *args]
 
     def _start_container(self) -> None:
+        # Host-side mkdir so the mount source is owned by the host user, not
+        # created by the Docker daemon as root.
+        self._workspace_host.mkdir(parents=True, exist_ok=True)
         ws = _host_path_for_docker(self._workspace_host)
         vols: list[str] = ["-v", f"{ws}:{self._container_workdir}"]
+        for host, cpath, read_only in self._extra_mounts:
+            spec = f"{_host_path_for_docker(host)}:{cpath}" + (":ro" if read_only else "")
+            vols.extend(["-v", spec])
         if self._export_host is not None:
             exp = _host_path_for_docker(self._export_host)
             self._export_host.mkdir(parents=True, exist_ok=True)
@@ -157,6 +188,9 @@ class DockerSandboxBackend(BaseSandbox):
             "--cpus", self._cpus,
             "--pids-limit", str(self._pids_limit),
             "--read-only",
+            # The rootfs is read-only; give scripts a writable /tmp so
+            # tempfile/pip/etc. work without loosening anything else.
+            "--tmpfs", "/tmp:rw,size=64m",
             "--security-opt", "no-new-privileges",
             self._image,
             "sleep",
@@ -195,6 +229,18 @@ class DockerSandboxBackend(BaseSandbox):
             msg = "container not started"
             raise RuntimeError(msg)
         return self._container_id
+
+    def exec_argv(self, *, cwd: str | None = None) -> list[str]:
+        """``docker exec`` prefix for one command in this container.
+
+        Callers append the program argv (``sh -c <cmd>``, ``python3 <file>``)
+        and run it through ``platform.run_capture`` — argv form, no stdin, no
+        second shell layer, and loop-agnostic (``execute``/``aexecute`` fold
+        stderr into one string and need ``create_subprocess_exec``, which the
+        Windows Selector loop cannot provide). ``cwd`` is a CONTAINER path;
+        it defaults to the container workdir (the state mount).
+        """
+        return self._docker_cmd("exec", "-w", cwd or self._container_workdir, self.container_id)
 
     def stop(self) -> None:
         """Stop and remove the sandbox container."""

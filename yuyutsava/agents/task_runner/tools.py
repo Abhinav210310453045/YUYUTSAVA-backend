@@ -219,6 +219,7 @@ def bind_tools(
     sandbox_root: Path | None = None,
     *,
     agent_name: str = "agent",
+    exec_backend: Any | None = None,
 ) -> list[BaseTool]:
     """
     Return the TaskRunner tools bound to *workspace_root*.
@@ -236,8 +237,15 @@ def bind_tools(
     ``agent_name`` flows into ``OperationRequest.requesting_agent`` and is used
     by the HITL machinery to append ``/<agent_name>`` to ``agent_path`` in
     every interrupt payload — so the UI knows which subagent is asking.
+
+    ``exec_backend`` (an ``agents.task_runner.exec_backend.ExecBackend``)
+    decides WHERE sandbox commands and scripts run. It is installed on the
+    cached per-workspace agent, so subagents bound to the same workspace run
+    theirs in the same place (the Docker bundle's container, for instance).
     """
     agent = _get_or_create_agent(workspace_root, sandbox_root)
+    if exec_backend is not None:
+        agent.exec_backend = exec_backend
 
     # ------------------------------------------------------------------ #
     # tr_read_file                                                         #

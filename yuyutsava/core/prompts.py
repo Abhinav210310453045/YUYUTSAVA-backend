@@ -17,7 +17,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from yuyutsava.platform import host_profile
-from yuyutsava.storage.paths import WorkspaceLayout
+from yuyutsava.storage.paths import (
+    CONTAINER_STATE_MOUNT,
+    CONTAINER_WORKSPACE_MOUNT,
+    WorkspaceLayout,
+)
 
 
 def _tool_discovery_section(tool_catalog: str = "") -> str:
@@ -266,20 +270,34 @@ def async_subagent_guidance() -> str:
 def docker_system_prompt(
     layout: WorkspaceLayout, export_host: Path | None, tool_catalog: str = ""
 ) -> str:
-    root = layout.root
+    """Docker mode: host-side file tools, container-side sandbox execution.
+
+    The container mounts the workspace's ``.yuyutsava`` read-write at
+    ``/yuyutsava`` and the workspace read-only at ``/workspace``; both are the
+    same files the host-side tr_* tools touch, so nothing needs copying.
+    """
+    st, ws = CONTAINER_STATE_MOUNT, CONTAINER_WORKSPACE_MOUNT
+    if layout.sandbox.is_relative_to(layout.state):
+        sandbox_in = f"{st}/{layout.sandbox.relative_to(layout.state).as_posix()}"
+    else:
+        sandbox_in = (
+            f"(sandbox {layout.sandbox} is outside {layout.state} and is NOT mounted — "
+            "sandbox commands cannot run in Docker; fix the sandbox override)"
+        )
     extra = ""
     if export_host is not None:
-        extra = (
-            f" Host {export_host.resolve()} → /output in container — "
-            "write deliverables to /output/."
-        )
+        extra = f"\nLegacy export mount: host {export_host.resolve()} → /output in the container."
     return f"""\
 {_tool_discovery_section(tool_catalog)}
 {_rules_section(layout)}
 
 ## WORKSPACE CONTEXT
-Mode: Docker sandbox (isolated from host shell). Mount: host {root} → /workspace.{extra}
-All tr_* tools (including tr_ls / tr_glob) take REAL absolute paths
-(use /workspace/... inside the container).
+Root: {layout.root} | Mode: Docker sandbox.
+File tools (tr_read_file/tr_write_file/tr_ls/tr_glob/tr_grep/tr_delete_file/tr_fetch_url) run on the HOST — pass HOST absolute paths, exactly as in local mode.
+tr_execute_in_sandbox and tr_run_python run INSIDE the container, cwd {sandbox_in}, with host {layout.state} → {st} (read-write) and host {layout.root} → {ws} (READ-ONLY).
+Inside a command or script use CONTAINER paths: {layout.scripts}/x.py is {st}/scripts/x.py; {layout.root}/a.txt is {ws}/a.txt. Write only under {st}.
+Deliverables → {layout.outputs} on the host (= {st}/outputs in the container).{extra}
+
+{host_profile().prompt_block()}
 
 Complete the user's task; be concise."""
