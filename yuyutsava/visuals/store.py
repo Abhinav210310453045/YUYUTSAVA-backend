@@ -5,7 +5,7 @@ PNG lives on disk and the DB row holds its absolute path, so the HTTP layer can
 serve it by id regardless of where it was written. Two write locations:
 
   * a tool call passes the agent's ``OUTPUT_DIR`` so the file lands in the user's
-    workspace (``_output/visuals/…``) and the CLI can point at it;
+    workspace (``.yuyutsava/outputs/visuals/…``) and the CLI can point at it;
   * the REST endpoint passes nothing, so it falls back to the canonical blob dir
     (:func:`yuyutsava.storage.paths.blobs_dir` / ``visuals``).
 

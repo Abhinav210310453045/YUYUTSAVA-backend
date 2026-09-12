@@ -206,7 +206,7 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="PATHS",
         help=(
             "After the run (docker only): comma-separated virtual paths to copy out via "
-            "docker cp into <export-dir>/_pulled or <workspace>/_docker_pull."
+            "docker cp into <export-dir>/_pulled or <workspace>/.yuyutsava/outputs/_pulled."
         ),
     )
     p.add_argument(
@@ -216,7 +216,7 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="DIR",
         help=(
             "Local sandbox directory for temporary work (default: YUYUTSAVA_SANDBOX_DIR "
-            "or <workspace>/_sandbox). Deleted after each run."
+            "or <workspace>/.yuyutsava/sandbox). Deleted after each run."
         ),
     )
     p.add_argument(
@@ -226,7 +226,7 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="DIR",
         help=(
             "Directory where the agent writes output files (default: YUYUTSAVA_OUTPUT_DIR "
-            "or <workspace>/_output)."
+            "or <workspace>/.yuyutsava/outputs)."
         ),
     )
     return p

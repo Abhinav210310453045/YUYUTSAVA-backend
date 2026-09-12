@@ -42,7 +42,9 @@ from yuyutsava.agents.task_runner.tools import bind_tools
 from yuyutsava.ports import CapEnforcer, MemoryStore
 from yuyutsava.core.config import SearchConfig
 from yuyutsava.core.tool_registry import ToolRegistry
+from yuyutsava.core.prompts import workspace_state_block
 from yuyutsava.mcp.loader import MCPClientManager
+from yuyutsava.storage.paths import WorkspaceLayout
 from yuyutsava.skills.registry import SkillRegistry
 from yuyutsava.skills.tools import make_read_skill_tool
 
@@ -131,17 +133,19 @@ class BaseSubAgent(ABC):
         """
         ws = self._task_runner.workspace_root
         sb = self._task_runner.sandbox_root
-        out = (ws / "_output").resolve()
+        layout = WorkspaceLayout.for_workspace(ws, sandbox_override=sb)
         return (
             "## WORKSPACE CONTEXT\n"
             f"WORKSPACE_ROOT: {ws}\n"
             f"SANDBOX_ROOT:   {sb}\n"
-            f"OUTPUT_DIR:     {out}\n"
+            f"OUTPUT_DIR:     {layout.outputs}\n"
+            f"STATE_DIR:      {layout.state}\n"
             "All tr_* tools take REAL absolute paths. Pass paths under "
             "WORKSPACE_ROOT for workspace ops; under SANDBOX_ROOT for scratch "
             "work (tr_execute_in_sandbox cwd is SANDBOX_ROOT). Deliverables go "
             "under OUTPUT_DIR. Do NOT invent paths like /sandbox, /workspace, "
-            "or /tmp — they will not exist.\n"
+            "or /tmp — they will not exist.\n\n"
+            f"{workspace_state_block(layout)}\n"
         )
 
     def rendered_system_prompt(self) -> str:
@@ -158,8 +162,16 @@ class BaseSubAgent(ABC):
 
         ``self.name`` is threaded into each tool so HITL interrupts carry the
         subagent's identity in their ``agent_path`` (e.g. ``orchestrator/file-organizer``).
+        The sandbox is passed through too: dropping it used to bind every
+        subagent to the default sandbox even when its TaskRunnerAgent was built
+        with another one (the background tinker's, deliberately outside the
+        board root).
         """
-        return bind_tools(self._task_runner.workspace_root, agent_name=self.name)
+        return bind_tools(
+            self._task_runner.workspace_root,
+            self._task_runner.sandbox_root,
+            agent_name=self.name,
+        )
 
     def skill_tools(self) -> list[BaseTool]:
         """Return skill tools based on the can_write_skills flag.
@@ -225,13 +237,16 @@ class BaseSubAgent(ABC):
     def visual_tools(self) -> list[BaseTool]:
         """Return the vis_* tools so background subagents can produce visuals too.
 
-        Files land in the same workspace ``_output/visuals`` dir and are indexed
-        in the shared SQLite store, so a chart made by a subagent shows up in the
-        UI Artifacts panel exactly like one made by the master.
+        Files land in the workspace's ``.yuyutsava/outputs/visuals`` dir and are
+        indexed in the shared SQLite store, so a chart made by a subagent shows
+        up in the UI Artifacts panel exactly like one made by the master.
         """
         from yuyutsava.visuals.tools import make_visual_tools
-        out = (self._task_runner.workspace_root / "_output").resolve()
-        return make_visual_tools(output_dir=out)
+        layout = WorkspaceLayout.for_workspace(
+            self._task_runner.workspace_root,
+            sandbox_override=self._task_runner.sandbox_root,
+        )
+        return make_visual_tools(output_dir=layout.outputs)
 
     def all_tools(self) -> list[BaseTool]:
         """Combined list: TaskRunner + skill + memory + search + MCP + visual + extra_tools()."""

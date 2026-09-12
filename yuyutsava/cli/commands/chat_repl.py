@@ -965,12 +965,14 @@ async def run_chat_repl(
                 with contextlib.suppress(Exception):
                     await cli_remote.stop()
             await runtime_toggles.aclose()
-            if execution_mode == "local" and bundle.sandbox_root is not None:
+            await bundle.aclose()
+            # After teardown: in docker mode the container is gone, so the
+            # sandbox is no longer anyone's cwd — wipe scratch in either mode.
+            if bundle.layout is not None:
                 try:
-                    cleanup_local_sandbox(workspace, bundle.sandbox_root)
+                    cleanup_local_sandbox(bundle.layout)
                 except Exception:
                     pass
-            await bundle.aclose()
 
     print(f"{_DIM}— chat closed —{_RESET}", file=sys.stderr)
     return exit_code

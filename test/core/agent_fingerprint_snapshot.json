@@ -1,6 +1,6 @@
 {
   "cli:async": {
-    "backend": "LocalShellBackend",
+    "backend": "CompositeBackend",
     "chains": {
       "after_agent": [
         "TranscriptRecorderPolicy"
@@ -73,8 +73,8 @@
       "VoiceStylePolicy",
       "YuyutsavaCompactionMiddleware"
     ],
-    "prompt_len": 14517,
-    "prompt_sha": "34e89f89501e4cb5",
+    "prompt_len": 15934,
+    "prompt_sha": "6a306028805206c8",
     "subagents": [
       {
         "kind": "async",
@@ -175,7 +175,7 @@
     ]
   },
   "cli:bare": {
-    "backend": "LocalShellBackend",
+    "backend": "CompositeBackend",
     "chains": {
       "after_agent": [],
       "after_model": [],
@@ -214,8 +214,8 @@
       "ToolFilterPolicy",
       "VoiceStylePolicy"
     ],
-    "prompt_len": 14072,
-    "prompt_sha": "07a6808214606d59",
+    "prompt_len": 15489,
+    "prompt_sha": "4e8257981a14de91",
     "subagents": [
       {
         "kind": "sync",
@@ -294,7 +294,7 @@
     ]
   },
   "cli:wired": {
-    "backend": "LocalShellBackend",
+    "backend": "CompositeBackend",
     "chains": {
       "after_agent": [
         "TranscriptRecorderPolicy"
@@ -357,8 +357,8 @@
       "VoiceStylePolicy",
       "YuyutsavaCompactionMiddleware"
     ],
-    "prompt_len": 14517,
-    "prompt_sha": "34e89f89501e4cb5",
+    "prompt_len": 15934,
+    "prompt_sha": "6a306028805206c8",
     "subagents": [
       {
         "kind": "sync",
@@ -447,7 +447,7 @@
     ]
   },
   "orchestrator:async": {
-    "backend": "LocalShellBackend",
+    "backend": "CompositeBackend",
     "chains": {
       "after_agent": [
         "TranscriptRecorderPolicy"
@@ -517,8 +517,8 @@
       "VoiceStylePolicy",
       "YuyutsavaCompactionMiddleware"
     ],
-    "prompt_len": 9414,
-    "prompt_sha": "18884cf8850affda",
+    "prompt_len": 9416,
+    "prompt_sha": "c71459cbdafb4a25",
     "subagents": [
       {
         "kind": "async",
@@ -559,7 +559,7 @@
     ]
   },
   "orchestrator:bare": {
-    "backend": "LocalShellBackend",
+    "backend": "CompositeBackend",
     "chains": {
       "after_agent": [],
       "after_model": [
@@ -599,8 +599,8 @@
       "ToolFilterPolicy",
       "VoiceStylePolicy"
     ],
-    "prompt_len": 12928,
-    "prompt_sha": "562597334b699ffb",
+    "prompt_len": 13836,
+    "prompt_sha": "f3857a55272256fb",
     "subagents": [],
     "tools": [
       "artifact_create",
@@ -622,7 +622,7 @@
     ]
   },
   "orchestrator:wired": {
-    "backend": "LocalShellBackend",
+    "backend": "CompositeBackend",
     "chains": {
       "after_agent": [
         "TranscriptRecorderPolicy"
@@ -682,8 +682,8 @@
       "VoiceStylePolicy",
       "YuyutsavaCompactionMiddleware"
     ],
-    "prompt_len": 9159,
-    "prompt_sha": "e85114e16756c25c",
+    "prompt_len": 9161,
+    "prompt_sha": "65bda6a1262c0fcf",
     "subagents": [],
     "tools": [
       "artifact_create",
@@ -711,7 +711,7 @@
     ]
   },
   "tinker:async": {
-    "backend": "LocalShellBackend",
+    "backend": "CompositeBackend",
     "chains": {
       "after_agent": [
         "TranscriptRecorderPolicy"
@@ -784,8 +784,8 @@
       "VoiceStylePolicy",
       "YuyutsavaCompactionMiddleware"
     ],
-    "prompt_len": 20004,
-    "prompt_sha": "6592639e12af40dd",
+    "prompt_len": 21482,
+    "prompt_sha": "d9f0e8d5d87b2b51",
     "subagents": [
       {
         "kind": "async",
@@ -855,7 +855,7 @@
     ]
   },
   "tinker:bare": {
-    "backend": "LocalShellBackend",
+    "backend": "CompositeBackend",
     "chains": {
       "after_agent": [],
       "after_model": [
@@ -898,8 +898,8 @@
       "ToolFilterPolicy",
       "VoiceStylePolicy"
     ],
-    "prompt_len": 23467,
-    "prompt_sha": "96ab407c93989659",
+    "prompt_len": 25851,
+    "prompt_sha": "1217ec0b42b48816",
     "subagents": [],
     "tools": [
       "artifact_create",
@@ -950,7 +950,7 @@
     ]
   },
   "tinker:wired": {
-    "backend": "LocalShellBackend",
+    "backend": "CompositeBackend",
     "chains": {
       "after_agent": [
         "TranscriptRecorderPolicy"
@@ -1013,8 +1013,8 @@
       "VoiceStylePolicy",
       "YuyutsavaCompactionMiddleware"
     ],
-    "prompt_len": 20004,
-    "prompt_sha": "6592639e12af40dd",
+    "prompt_len": 21482,
+    "prompt_sha": "d9f0e8d5d87b2b51",
     "subagents": [],
     "tools": [
       "artifact_create",

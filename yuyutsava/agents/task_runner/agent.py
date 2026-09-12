@@ -47,6 +47,7 @@ from yuyutsava.models.results import (
     WriteResult,
 )
 from yuyutsava.models.tool_messages import SuppressedContentNotice
+from yuyutsava.storage.paths import WorkspaceLayout
 
 logger = logging.getLogger("yuyutsava.task_runner")
 
@@ -77,9 +78,10 @@ class TaskRunnerAgent:
         consent: object | None = None,  # consent.ConsentRegistry; duck-typed (allowlist)
     ) -> None:
         self.workspace_root: Path = workspace_root.resolve()
+        # Default sandbox = <ws>/.yuyutsava/sandbox — from the one layout helper.
         self.sandbox_root: Path = (
             sandbox_root.resolve() if sandbox_root is not None
-            else (self.workspace_root / "_sandbox").resolve()
+            else WorkspaceLayout.for_workspace(self.workspace_root).sandbox
         )
         self._policy = policy
         self._consent = consent
@@ -340,7 +342,9 @@ class TaskRunnerAgent:
 
             case OperationType.WRITE | OperationType.CREATE:
                 content = str(ctx.get("content", ""))
-                await _exec.execute_write(path, content)
+                await _exec.execute_write(
+                    path, content, append=bool(ctx.get("append", False))
+                )
                 return WriteResult(written_to=str(path))
 
             case OperationType.DELETE:

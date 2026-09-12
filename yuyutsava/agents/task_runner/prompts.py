@@ -1,14 +1,15 @@
 """
 System prompt content for the TaskRunnerAgent security gateway.
 
-``TASK_RUNNER_SYSTEM_PROMPT`` is the raw template (with {workspace_root} and
-{sandbox_root} placeholders).  Use ``task_runner_rules_section()`` to render
-it with the actual paths substituted in.
+``TASK_RUNNER_SYSTEM_PROMPT`` is the raw template (with {workspace_root},
+{sandbox_root}, {output_dir} and {scripts_dir} placeholders).  Use
+``task_runner_rules_section(layout)`` to render it with the workspace's real
+paths substituted in.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
+from yuyutsava.storage.paths import WorkspaceLayout
 
 TASK_RUNNER_SYSTEM_PROMPT: str = """\
 ## FILE AND SHELL OPERATIONS
@@ -73,18 +74,18 @@ Missing capability: try stdlib → download via tr_fetch_url / HTTP API via tr_e
 ## OUTPUT FILES
 
 User deliverables → {output_dir}/  (permanent)
-Scratch work      → {sandbox_root}/  (deleted after task)
+Scratch work      → {sandbox_root}/  (wiped after the task; created on demand)
+Reusable scripts  → {scripts_dir}/  (kept; run them with tr_run_python)
 
 - Diagrams: write Mermaid/SVG source in a .md fenced block; PNG only if explicitly requested.
 - Binary or text > 200 lines: write to {output_dir}/, report the path. NEVER base64-encode binaries.
 
 Sandbox: tr_execute_in_sandbox CWD is always {sandbox_root}/ — use relative paths inside it.
-The sandbox dir is created on the first tr_write_file into it. Do NOT call tr_execute_in_sandbox
-before writing at least one file — the dir won't exist yet and the call will fail.
 
 To run a script: tr_write_file the script → tr_execute_in_sandbox to run it → read stdout from
-the result field → tr_delete_file the temp script. Never tr_read_file a script you just wrote to
-get its output — read the execution result instead.
+the result field → tr_delete_file the temp script (or keep it under {scripts_dir}/ if it is
+reusable). Never tr_read_file a script you just wrote to get its output — read the execution
+result instead.
 
 ## ZONES
 
@@ -99,15 +100,11 @@ Every tr_* tool returns JSON: check "status" — "success" / "denied" (read "alt
 """
 
 
-def task_runner_rules_section(
-    workspace_root: Path,
-    sandbox_root: Path,
-    output_dir: Path | None = None,
-) -> str:
-    """Render the system prompt with actual workspace, sandbox, and output paths."""
-    out = output_dir.resolve() if output_dir is not None else workspace_root.resolve() / "_output"
+def task_runner_rules_section(layout: WorkspaceLayout) -> str:
+    """Render the system prompt with the workspace's real paths (from its layout)."""
     return TASK_RUNNER_SYSTEM_PROMPT.format(
-        workspace_root=workspace_root.resolve(),
-        sandbox_root=sandbox_root.resolve(),
-        output_dir=out,
+        workspace_root=layout.root,
+        sandbox_root=layout.sandbox,
+        output_dir=layout.outputs,
+        scripts_dir=layout.scripts,
     )

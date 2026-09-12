@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from deepagents import create_deep_agent
-from deepagents.backends import LocalShellBackend
+from deepagents.backends import CompositeBackend, LocalShellBackend
 from langchain_core.language_models import BaseChatModel
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
@@ -54,6 +54,7 @@ from yuyutsava.core.tool_registry import ToolRegistry
 from yuyutsava.agents.task_runner.tools import bind_tools as _bind_task_runner_tools
 from yuyutsava.skills.registry import SkillRegistry
 from yuyutsava.skills.tools import make_skill_tools
+from yuyutsava.storage.paths import WORKSPACE_STATE_DIRNAME, WorkspaceLayout
 from yuyutsava.tools.search import make_search_tools
 
 # ---------------------------------------------------------------------------
@@ -224,6 +225,7 @@ class AgentBundle:
     docker_backend: DockerSandboxBackend | None = None
     sandbox_root: Path | None = None
     output_dir: Path | None = None
+    layout: WorkspaceLayout | None = None  # per-workspace .yuyutsava paths (post-task cleanup)
     async_host: Any | None = None          # AsyncSubagentHost — duck-typed to avoid cycle
     async_host_url: str | None = None
     async_host_attachment: Any | None = None  # HostAttachment
@@ -328,6 +330,27 @@ def _local_shell_backend(
         timeout=bash_timeout_sec,
         inherit_env=inherit_env,
     )
+
+
+# Virtual path (relative to a backend whose root is the workspace) under which
+# deepagents keeps its scratch: large_tool_results/ and conversation_history/.
+_SCRATCH_ROOT = f"/{WORKSPACE_STATE_DIRNAME}/tmp"
+
+
+def _scratch_root_backend(backend: Any, artifacts_root: str) -> CompositeBackend:
+    """Route deepagents' scratch under *artifacts_root* without changing the root.
+
+    ``FilesystemMiddleware`` and the summarization middleware write offloaded
+    tool results and transcript dumps to ``{artifacts_root}/large_tool_results``
+    and ``{artifacts_root}/conversation_history`` — but only read
+    ``artifacts_root`` off a ``CompositeBackend`` (deepagents 0.6.3,
+    ``middleware/filesystem.py`` and ``middleware/summarization.py``). With
+    ``routes={}`` every file op and ``execute`` still go to *backend*
+    unchanged, so the virtual root (and every backend docstring above) holds;
+    only the scratch moves — into ``<ws>/.yuyutsava/tmp`` for a workspace-rooted
+    backend. This is an instance, not a factory (see ``_local_shell_backend``).
+    """
+    return CompositeBackend(default=backend, routes={}, artifacts_root=artifacts_root)
 
 
 # ---------------------------------------------------------------------------
@@ -957,9 +980,10 @@ def build_cli_deepagent(
     ))
 
     loc = local_settings or LocalSettings()
-    ws = workspace_root.resolve()
-    sandbox_root = (loc.sandbox_dir.resolve() if loc.sandbox_dir else ws / "_sandbox")
-    output_dir   = (loc.output_dir.resolve()  if loc.output_dir  else ws / "_output")
+    layout = WorkspaceLayout.for_workspace(
+        workspace_root, sandbox_override=loc.sandbox_dir, outputs_override=loc.output_dir,
+    )
+    ws, sandbox_root, output_dir = layout.root, layout.sandbox, layout.outputs
 
     context_tools, agent_memory_block = _shared_master_tools(
         profile=CLI_PROFILE,
@@ -970,7 +994,7 @@ def build_cli_deepagent(
         extra_tools=extra_tools,
     )
 
-    skill_registry = SkillRegistry(workspace_dir=ws)
+    skill_registry = SkillRegistry(workspace_dir=layout.skills)
 
     subagent_specs: list[dict] = []
     if subagents:
@@ -1016,7 +1040,7 @@ def build_cli_deepagent(
             cap_enforcer=cap_enforcer,
         )
         _prompt = docker_system_prompt(
-            workspace_root, docker_cfg.export_dir, _registry.catalog_block()
+            layout, docker_cfg.export_dir, _registry.catalog_block()
         )
         if agent_memory_block:
             _prompt = f"{_prompt}\n\n{agent_memory_block}"
@@ -1033,21 +1057,22 @@ def build_cli_deepagent(
         return AgentBundle(
             agent=graph,
             docker_backend=docker_backend,
+            layout=layout,
             async_host=async_host,
             async_host_url=async_host_url,
             async_host_attachment=async_host_attachment,
             async_task_mirror=async_task_mirror,
         )
 
-    backend = _local_shell_backend(workspace_root, bash_timeout_sec)
+    backend = _scratch_root_backend(
+        _local_shell_backend(workspace_root, bash_timeout_sec), _SCRATCH_ROOT,
+    )
     startup_tools, _registry = _build_tool_registry_and_tools(
         _bind_task_runner_tools(ws, sandbox_root), search_config, skill_registry,
         extra_tools=context_tools, skill_store=skill_store, agent_name="cli",
         cap_enforcer=cap_enforcer,
     )
-    _prompt = local_system_prompt(
-        workspace_root, sandbox_root, output_dir, _registry.catalog_block()
-    )
+    _prompt = local_system_prompt(layout, _registry.catalog_block())
     if agent_memory_block:
         _prompt = f"{_prompt}\n\n{agent_memory_block}"
     graph = create_deep_agent(
@@ -1065,6 +1090,7 @@ def build_cli_deepagent(
         docker_backend=None,
         sandbox_root=sandbox_root,
         output_dir=output_dir,
+        layout=layout,
         async_host=async_host,
         async_host_url=async_host_url,
         async_host_attachment=async_host_attachment,
@@ -1249,9 +1275,13 @@ def build_orchestrator(
     # Instance, not a factory closure — see _local_shell_backend. The
     # orchestrator runs unattended, so it takes a tighter timeout and does NOT
     # inherit the user's environment.
-    orchestrator_backend = _local_shell_backend(
+    orchestrator_backend: Any = _local_shell_backend(
         workspace_root, bash_timeout_sec=10, inherit_env=False
     )
+    if deps.workspace_root:
+        # deepagents scratch (large_tool_results/, conversation_history/) goes
+        # under <ws>/.yuyutsava/tmp — the dirs the daemon's sweeper TTL-sweeps.
+        orchestrator_backend = _scratch_root_backend(orchestrator_backend, _SCRATCH_ROOT)
 
     # Order: tool filter → offload (tool path) → compaction (model path) →
     # budget (absolute ceiling, must see post-compaction usage last) →
@@ -1366,9 +1396,8 @@ def build_tinker_agent(
 
     model = chat_model(settings)
     checkpointer = checkpointer or MemorySaver()
-    ws = card_workspace.resolve()
-    sandbox_root = ws / "_sandbox"
-    output_dir = ws / "_output"
+    layout = WorkspaceLayout.for_workspace(card_workspace)
+    ws, sandbox_root, output_dir = layout.root, layout.sandbox, layout.outputs
 
     # Tinker honours the same subagent toggle as its siblings: a bundle is
     # cached per card and can outlive a toggle change, so without the gate a
@@ -1449,7 +1478,7 @@ def build_tinker_agent(
     subagent_specs.extend(_async_specs)
     middleware.extend(_async_mw)
 
-    backend = _local_shell_backend(ws, bash_timeout_sec)
+    backend = _scratch_root_backend(_local_shell_backend(ws, bash_timeout_sec), _SCRATCH_ROOT)
     startup_tools, _registry = _build_tool_registry_and_tools(
         _bind_task_runner_tools(ws, sandbox_root, agent_name="tinker"),
         search_config, skill_registry,
@@ -1469,9 +1498,7 @@ def build_tinker_agent(
         backend=backend,
         system_prompt=render_tinker_system_prompt(
             card_id=card_id,
-            card_workspace=ws,
-            sandbox_root=sandbox_root,
-            output_dir=output_dir,
+            layout=layout,
             tool_catalog=_registry.catalog_block(),
             skills_index=skills_index,
             agent_memory_block=agent_memory_block,
@@ -1486,6 +1513,7 @@ def build_tinker_agent(
         docker_backend=None,
         sandbox_root=sandbox_root,
         output_dir=output_dir,
+        layout=layout,
         async_host=async_host,
         async_host_url=async_host_url,
         async_host_attachment=async_host_attachment,
@@ -1539,26 +1567,32 @@ def export_agent_state_graph_png(
 # ---------------------------------------------------------------------------
 
 
-def cleanup_local_sandbox(workspace_root: Path, sandbox_root: Path) -> None:
-    """Delete sandbox + deepagents scratch dirs after a local task completes.
+def cleanup_local_sandbox(layout: WorkspaceLayout) -> None:
+    """Delete the sandbox + deepagents scratch after a CLI task completes.
 
-    - sandbox_root: deleted entirely (temp work; output files go to output_dir)
-    - workspace_root/large_tool_results: deepagents eviction cache (the durable
-      copy is in the artifacts DB table)
-    - workspace_root/conversation_history: deepagents summarization transcript
-      dumps (the durable copy is in the transcript_messages DB table)
+    - ``layout.sandbox``: deleted entirely (temp work; deliverables live in
+      ``outputs/``, reusable scripts in ``scripts/`` — both untouched)
+    - ``layout.tmp/*``: deepagents' eviction cache (``large_tool_results``) and
+      summarization dumps (``conversation_history``); the durable copies are in
+      the artifacts / transcript_messages DB tables.
 
-    The daemon cleans the same scratch dirs via the UnifiedSweeper's TTL
-    targets instead, since its workspace is long-lived and shared across tasks.
+    Runs in local AND docker mode — the sandbox is a host dir under
+    ``.yuyutsava`` either way. Callers invoke it after ``AgentBundle.aclose()``
+    so no container still has the directory as its cwd. The daemon cleans the
+    same scratch via the UnifiedSweeper's TTL targets instead, since its
+    workspace is long-lived and shared across tasks.
     """
-    for target in (
-        sandbox_root,
-        workspace_root / "large_tool_results",
-        workspace_root / "conversation_history",
-    ):
-        if target.exists():
-            try:
+    targets: list[Path] = [layout.sandbox]
+    if layout.tmp.is_dir():
+        targets.extend(layout.tmp.iterdir())
+    for target in targets:
+        if not target.exists():
+            continue
+        try:
+            if target.is_dir():
                 shutil.rmtree(target)
-                logger.debug("Cleaned up %s", target)
-            except Exception as exc:
-                logger.warning("Could not remove %s: %s", target, exc)
+            else:
+                target.unlink()
+            logger.debug("Cleaned up %s", target)
+        except Exception as exc:
+            logger.warning("Could not remove %s: %s", target, exc)

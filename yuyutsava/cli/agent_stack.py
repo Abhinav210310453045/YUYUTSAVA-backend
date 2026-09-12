@@ -33,7 +33,7 @@ from yuyutsava.llm import chat_model
 from yuyutsava.core.config import llm_settings_from_env
 from yuyutsava.memory.config import MemorySettings
 from yuyutsava.skills.registry import SkillRegistry
-from yuyutsava.storage.paths import state_db_path
+from yuyutsava.storage.paths import WorkspaceLayout, state_db_path
 
 logger = logging.getLogger("yuyutsava.cli.agent_stack")
 
@@ -184,7 +184,15 @@ async def build_agent_stack(
     )
     compaction_model = chat_model(llm_settings_from_env("compaction"), temperature=0.0)
 
-    skill_registry = SkillRegistry(workspace_dir=workspace)
+    # Every per-workspace path (sandbox, outputs, skills, scratch) comes from
+    # the one layout helper; the explicit --sandbox-dir/--output-dir overrides
+    # ride through it rather than around it.
+    layout = WorkspaceLayout.for_workspace(
+        workspace,
+        sandbox_override=local_settings.sandbox_dir,
+        outputs_override=local_settings.output_dir,
+    )
+    skill_registry = SkillRegistry(workspace_dir=layout.skills)
 
     # Long-term memory + skill retrieval. On the Postgres backend the CLI owns
     # its own pool (the daemon owns one; the CLI didn't until now) so memory and
@@ -241,18 +249,17 @@ async def build_agent_stack(
     # the SQLite fallback, which the middleware treats as a no-op.
     transcript_index = _ctx.transcript_index
 
-    sandbox_root_for_tr = (
-        local_settings.sandbox_dir.resolve()
-        if local_settings.sandbox_dir is not None
-        else (workspace / "_sandbox").resolve()
-    )
+    # Materialize <ws>/.yuyutsava (sync mkdir → off-loop; see storage.paths).
+    # Idempotent, so the daemon's ConversationManager building this same stack
+    # lazily is harmless.
+    await asyncio.to_thread(layout.ensure)
     # Consent (allowlist) registry — session-scoped only in standalone CLI mode
     # (no events store here; PROJECT grants persist only in the daemon path).
     consent_registry = ConsentRegistry()
     set_default_consent(consent_registry)
     task_runner = TaskRunnerAgent(
         workspace_root=workspace,
-        sandbox_root=sandbox_root_for_tr,
+        sandbox_root=layout.sandbox,
         consent=consent_registry,
     )
     general_purpose = GeneralPurposeAgent(

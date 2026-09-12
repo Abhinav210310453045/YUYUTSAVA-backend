@@ -100,7 +100,8 @@ _RISK_LEVELS: dict[tuple[FilesystemZone, OperationType], str] = {
 
 _ALTERNATIVES: dict[tuple[FilesystemZone, OperationType], list[str]] = {
     (FilesystemZone.WORKSPACE, OperationType.EXECUTE): [
-        "Copy the script to workspace_root/_sandbox/ and use tr_execute_in_sandbox instead.",
+        "Copy the script into the SANDBOX dir (or .yuyutsava/scripts/) and run it "
+        "with tr_run_python / tr_execute_in_sandbox instead.",
     ],
     (FilesystemZone.WORKSPACE, OperationType.CHMOD): [
         "Permission changes are not allowed in the workspace zone.",
@@ -121,7 +122,8 @@ _ALTERNATIVES: dict[tuple[FilesystemZone, OperationType], list[str]] = {
         "Ask the user to delete the file manually.",
     ],
     (FilesystemZone.EXTERNAL, OperationType.EXECUTE): [
-        "Copy the script to workspace_root/_sandbox/ and use tr_execute_in_sandbox.",
+        "Copy the script into the SANDBOX dir (or .yuyutsava/scripts/) and run it "
+        "with tr_run_python / tr_execute_in_sandbox.",
     ],
 }
 
