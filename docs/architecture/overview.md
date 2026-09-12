@@ -1575,14 +1575,14 @@ flowchart LR
     Agent["agent calls vis_chart(...)"] --> Render["render.py"]
     Render --> MPL["_mpl.py (matplotlib)"]
     Render --> Kroki["_kroki.py (diagrams via Kroki)"]
-    MPL & Kroki --> File["_output/visuals/*.png"]
+    MPL & Kroki --> File[".yuyutsava/outputs/visuals/*.png"]
     Render --> Store[("VisualStore<br/>visual_artifacts (RoutedStore)")]
     Store --> API["GET /v1/visuals/:id"]
     File --> Stream["streaming: vis_* result → StreamEvent('image')"]
     Stream --> UI["Electron Artifacts panel (inline)"]
 ```
 
-Files land in the workspace `_output/visuals` (so the CLI can point the user at them)
+Files land in the workspace's `.yuyutsava/outputs/visuals` (so the CLI can point the user at them)
 and are indexed in the `VisualStore`, so a chart made by a background subagent shows up
 in the UI Artifacts panel exactly like one made by the master. Backends: matplotlib for
 charts/tables/math, Kroki (`docker-compose.kroki.yml`) for diagrams.
@@ -1811,7 +1811,7 @@ yuyutsava "summarise report.pdf"
   → build_agent_stack → build_cli_deepagent (one graph, MemorySaver)
   → astream_agent (prints to stderr, prompts on stdin for permissions)
   → tr_read_file (workspace zone → allowed) → LLM summary → final text to stdout
-  → cleanup_local_sandbox (delete _sandbox + deepagents scratch)
+  → cleanup_local_sandbox (wipe .yuyutsava/sandbox + .yuyutsava/tmp/*)
 ```
 
 ---
@@ -1859,8 +1859,13 @@ yuyutsava "summarise report.pdf"
 | `~/.yuyutsava/api_token` | auto-generated bearer token for non-loopback binds |
 | `~/.yuyutsava/skills/` | personal skills |
 | `<repo>/yuyutsava/events/events_config.json` | event source config (project artifact, hot-reloadable) |
-| `<workspace>/_sandbox/` | ephemeral scratch (deleted after each CLI run) |
-| `<workspace>/_output/` | agent deliverables, incl. `_output/visuals/` |
+| `<workspace>/.yuyutsava/` | everything yuyutsava writes inside a workspace (`WorkspaceLayout`, `storage/paths.py`); carries its own `*` `.gitignore` |
+| `<workspace>/.yuyutsava/sandbox/` | ephemeral scratch — the SANDBOX zone (wiped after each CLI run) |
+| `<workspace>/.yuyutsava/outputs/` | agent deliverables, incl. `outputs/visuals/` |
+| `<workspace>/.yuyutsava/scripts/` | reusable agent-written scripts (kept) |
+| `<workspace>/.yuyutsava/tmp/` | deepagents scratch: `large_tool_results/`, `conversation_history/` (CLI wipes; daemon TTL-sweeps) |
+| `<workspace>/.yuyutsava/{ChangeLog,Assumptions,workspace_memory}.md` | append-only project knowledge the agent writes and greps |
+| `<workspace>/.yuyutsava/skills/`, `mcp_config.json` | workspace-scope skills; workspace-level MCP servers (trust-gated) |
 
 **Key env vars** (non-exhaustive; see `.env.example`):
 

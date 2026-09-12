@@ -14,6 +14,10 @@ Environment variables are documented inline in
 [`.env.example`](../../.env.example), which is organised into 16 numbered
 sections and states its own defaults.
 
+Everything yuyutsava writes *inside* a workspace lives in one hidden
+directory, `<workspace>/.yuyutsava/` — see
+[Per-workspace state](#per-workspace-state-workspaceyuyutsava).
+
 ---
 
 ## MCP servers (`mcp_config.json`, global + per workspace)
@@ -81,6 +85,45 @@ Failures are non-fatal: a server that fails to start is logged and skipped;
 the rest of the daemon (or CLI) continues normally. In the interactive CLI,
 server output during startup is suppressed with the rest of the plumbing
 noise — failures still reach the log.
+
+---
+
+## Per-workspace state (`<workspace>/.yuyutsava/`)
+
+Everything yuyutsava writes *inside* a workspace lives in one hidden
+directory, created on first use. `WorkspaceLayout` in
+[`yuyutsava/storage/paths.py`](../../yuyutsava/storage/paths.py) is the single
+source of truth for these paths — nothing joins them by hand.
+
+| Path | Purpose |
+|---|---|
+| `.gitignore` | Contains `*`: the whole directory is machine-local and never committed. Your own `.gitignore` is not touched. |
+| `ChangeLog.md` | Appended after every task that changed files: `## <UTC ISO> · <agent> · <gist>` then one `- <path> — <what changed> (<level>)` line per file, level ∈ file/module/config/docs/test/deps. A gist, never the diff. |
+| `Assumptions.md` | Appended when the agent settles something you left ambiguous: `## <UTC ISO> · <gist>` then `- ASSUMED: <what> — because <why>`. |
+| `workspace_memory.md` | Durable facts about this workspace, one dated, tagged bullet each: `- <YYYY-MM-DD> [layout\|conventions\|gotchas\|decisions] <fact>`. |
+| `mcp_config.json` | Optional workspace-level MCP servers (see above; needs `trusted_workspaces`). |
+| `skills/<name>/SKILL.md` | Workspace-scope skills — highest precedence in the skill registry. |
+| `scripts/` | Reusable scripts the agent wrote; run with `tr_run_python`. Kept across tasks. |
+| `outputs/` | Deliverables (`YUYUTSAVA_OUTPUT_DIR` / `--output-dir` override the location). |
+| `sandbox/` | Scratch — the SANDBOX zone (`YUYUTSAVA_SANDBOX_DIR` / `--sandbox-dir` override). Created on demand, wiped after each CLI task. |
+| `tmp/` | deepagents scratch (`large_tool_results/`, `conversation_history/`): wiped after a CLI task, TTL-swept (24 h) by the daemon. |
+
+The three Markdown files are append-only (`tr_write_file(append=True)`). The
+agent greps them for the task's keywords (`tr_grep … <workspace>/.yuyutsava`)
+before starting rather than reading them whole, and a workspace-wide
+`tr_grep` / `tr_glob` skips `.yuyutsava/` unless it is the search root, so
+scratch never pollutes a code search.
+
+Running from your home directory — where `.yuyutsava` *is* the global state
+dir — routes the per-workspace state to `~/.yuyutsava/workspaces/home/`.
+
+**Docker mode** (`--execution docker`): `<workspace>/.yuyutsava` is mounted
+read-write at `/yuyutsava` and the workspace read-only at `/workspace`.
+`tr_execute_in_sandbox` and `tr_run_python` run inside the container (cwd
+`/yuyutsava/sandbox`); every other `tr_*` tool works on the host over the
+same files, so a deliverable written to `/yuyutsava/outputs` is already in
+`<workspace>/.yuyutsava/outputs`. Keep any sandbox override under
+`.yuyutsava`, or it will not be visible inside the container.
 
 ---
 

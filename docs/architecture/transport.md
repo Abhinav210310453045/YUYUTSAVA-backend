@@ -1263,7 +1263,8 @@ path never starts a second one.
 | MCP stdio servers | full bidirectional JSON-RPC | [`mcp/loader.py:173`](../../yuyutsava/mcp/loader.py#L173) |
 | Wake-word mic source | NDJSON on child stdout, 8 s heartbeat | [`events/sources/voice.py:91-153`](../../yuyutsava/events/sources/voice.py#L91-L153) |
 | Webcam source | same NDJSON pattern | [`events/sources/webcam.py:101-165`](../../yuyutsava/events/sources/webcam.py#L101-L165) |
-| Docker sandbox exec | `stdin/stdout/stderr = PIPE` + `communicate()` | [`core/docker_sandbox_backend.py:338-370`](../../yuyutsava/core/docker_sandbox_backend.py#L338-L370) |
+| Docker sandbox exec (deepagents `execute`) | `stdin/stdout/stderr = PIPE` + `communicate()` | [`core/docker_sandbox_backend.py`](../../yuyutsava/core/docker_sandbox_backend.py) `aexecute` |
+| Docker sandbox exec (`tr_execute_in_sandbox` / `tr_run_python`) | argv `docker exec -w <cwd> … sh -c` / `python3` via loop-agnostic `platform.run_capture` — no stdin | [`agents/task_runner/exec_backend.py`](../../yuyutsava/agents/task_runner/exec_backend.py) |
 | Generic capture helper | stdout/stderr PIPE, one-shot | [`platform/process.py:185-190`](../../yuyutsava/platform/process.py#L185-L190) |
 | Daemon → Electron/vite UI | **deliberately not piped** — DEVNULL, own session | [`platform/process.py:106-143`](../../yuyutsava/platform/process.py#L106-L143) |
 | Task runner exec | `create_subprocess_exec` with explicit argv | [`agents/task_runner/executor.py:92,192`](../../yuyutsava/agents/task_runner/executor.py#L92) |
