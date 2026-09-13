@@ -41,14 +41,35 @@ from yuyutsava.policy.types import ToolCall
 
 logger = logging.getLogger("yuyutsava.context.offload")
 
-# Tools whose output must never be offloaded: the ctx_* readers themselves
-# (offloading a fetch would loop), and small structured built-ins.
+# Tools whose output must NEVER be offloaded, at any size: the ctx_* readers
+# themselves (offloading a read-back would loop — the digest would replace the
+# very content the agent asked to see) plus write_todos, whose result is a
+# small fixed structure.
+#
+# Safe only because every ctx_* reader bounds its own output to
+# ``MAX_SLICE_CHARS`` (40k) and appends a ``[more: …]`` line, keeping it under
+# ``LIMITS.max_tool_result_chars`` (100k) where ``guard_tool_result`` would
+# otherwise replace the body with a notice. Adding a reader here without that
+# bound would reintroduce unrecoverable truncation.
 DEFAULT_EXCLUDE_TOOLS: frozenset[str] = frozenset({
     "ctx_fetch_artifact",
     "ctx_grep_artifact",
     "ctx_recall",
-    "tool_search",
+    "ctx_history",
+    "ctx_history_message",
+    "ctx_history_grep",
     "write_todos",
+})
+
+# Tools exempt from the *always-offload prefix* rule but still subject to the
+# size threshold. ``task`` and ``tool_search`` results are normally small and
+# worth keeping inline verbatim — but a subagent can return tens of thousands
+# of characters, and these were previously exempt at every size, so an
+# oversized one reached ``guard_tool_result`` and came back as a "too large"
+# notice with the body nowhere. Size-offloading them instead stores the whole
+# thing and hands the agent an artifact id.
+SIZE_ONLY_TOOLS: frozenset[str] = frozenset({
+    "tool_search",
     "task",
 })
 
@@ -64,12 +85,14 @@ class ToolResultOffloadPolicy(Policy):
         settings: ContextSettings,
         *,
         exclude_tools: frozenset[str] = DEFAULT_EXCLUDE_TOOLS,
+        size_only_tools: frozenset[str] = SIZE_ONLY_TOOLS,
     ) -> None:
         super().__init__()
         self._store = store
         self._threshold = settings.offload_threshold_chars
         self._always_prefixes = tuple(settings.always_offload_prefixes)
         self._exclude = exclude_tools
+        self._size_only = size_only_tools
 
     def _should_offload(self, tool_name: str, content: str) -> bool:
         """Offload when over the size threshold OR a reference-class tool.
@@ -77,9 +100,15 @@ class ToolResultOffloadPolicy(Policy):
         ``always_offload_prefixes`` (default ``("ws_",)``) forces offload of
         small-but-accumulating results (web search) regardless of size; every
         other tool keeps the original size-gated behaviour exactly.
+
+        Tools in ``size_only_tools`` skip the prefix rule but keep the size
+        check, so they stay inline when small and become a recoverable
+        artifact when large.
         """
         if len(content) > self._threshold:
             return True
+        if tool_name in self._size_only:
+            return False
         return any(tool_name.startswith(p) for p in self._always_prefixes)
 
     async def after_tool(self, call: ToolCall, result: Any) -> Any:
@@ -121,4 +150,4 @@ class ToolResultOffloadPolicy(Policy):
         )
 
 
-__all__ = ["DEFAULT_EXCLUDE_TOOLS", "ToolResultOffloadPolicy"]
+__all__ = ["DEFAULT_EXCLUDE_TOOLS", "SIZE_ONLY_TOOLS", "ToolResultOffloadPolicy"]

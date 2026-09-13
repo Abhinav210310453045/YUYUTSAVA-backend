@@ -17,7 +17,11 @@ from typing import Any
 from langchain_core.messages import ToolMessage
 
 from yuyutsava.core.config import LIMITS
-from yuyutsava.models.tool_messages import SuppressedContentNotice, SuppressedReason
+from yuyutsava.models.tool_messages import (
+    RecoveryHint,
+    SuppressedContentNotice,
+    SuppressedReason,
+)
 
 
 def guard_tool_result(content: str, tool_name: str) -> str:
@@ -69,9 +73,9 @@ def guard_tool_result(content: str, tool_name: str) -> str:
             tool=tool_name,
             human_message=(
                 f"Tool result was {len(content):,} chars — too large to pass to the LLM. "
-                f"Write large outputs to a file in the sandbox and reference the path."
+                f"Re-run it in smaller pieces, or read the offloaded copy back."
             ),
-            recovery=[],
+            recovery=_generic_recovery(tool_name),
         )
         data["result"] = notice.model_dump()
         return json.dumps(data)
@@ -84,11 +88,48 @@ def guard_tool_result(content: str, tool_name: str) -> str:
             tool=tool_name,
             human_message=(
                 f"Tool output was {len(content):,} chars and could not be parsed. "
-                f"Write large outputs to a file and reference the path."
+                f"Re-run it in smaller pieces, or read the offloaded copy back."
             ),
-            recovery=[],
+            recovery=_generic_recovery(tool_name),
         )
         return json.dumps({"suppressed": True, "notice": notice.model_dump()})
+
+
+def _generic_recovery(tool_name: str) -> list[RecoveryHint]:
+    """Concrete next moves for an oversized result of an unknown tool.
+
+    An empty ``recovery`` list used to leave the model with nothing but "write
+    large outputs to a file", which is not actionable for a tool that has
+    already run. Anything this large was almost certainly offloaded first (the
+    threshold is 20k chars against this 100k ceiling), so the artifact readers
+    are the real recovery — and they page, so they can always finish the job.
+    """
+    return [
+        RecoveryHint(
+            action="read_offloaded_copy",
+            description=(
+                "If an earlier result for this tool carried an artifact_id, the full "
+                "output is stored there: search it with ctx_grep_artifact, or page it "
+                "with ctx_fetch_artifact."
+            ),
+            example='ctx_grep_artifact(artifact_id="art_…", pattern="<what you need>")',
+        ),
+        RecoveryHint(
+            action="narrow_the_call",
+            description=(
+                f"Re-run {tool_name} over a smaller scope — one path instead of a tree, "
+                "a narrower pattern, or with offset/limit if it paginates."
+            ),
+        ),
+        RecoveryHint(
+            action="redirect_to_file",
+            description=(
+                "For a command, write the output to a file in the sandbox and read it "
+                "back in pages instead of returning it inline."
+            ),
+            example='tr_execute_in_sandbox(command="<cmd> > out.txt", …) then tr_read_file("out.txt", limit=200)',
+        ),
+    ]
 
 
 def is_tool_error(msg: ToolMessage, body: str) -> bool:

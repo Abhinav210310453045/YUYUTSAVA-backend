@@ -73,8 +73,8 @@
       "VoiceStylePolicy",
       "YuyutsavaCompactionMiddleware"
     ],
-    "prompt_len": 15934,
-    "prompt_sha": "6a306028805206c8",
+    "prompt_len": 16374,
+    "prompt_sha": "9102c5ef1559f20a",
     "subagents": [
       {
         "kind": "async",
@@ -134,6 +134,9 @@
       "ctx_compact",
       "ctx_fetch_artifact",
       "ctx_grep_artifact",
+      "ctx_history",
+      "ctx_history_grep",
+      "ctx_history_message",
       "db_list",
       "db_query",
       "db_schema",
@@ -214,8 +217,8 @@
       "ToolFilterPolicy",
       "VoiceStylePolicy"
     ],
-    "prompt_len": 15489,
-    "prompt_sha": "4e8257981a14de91",
+    "prompt_len": 15669,
+    "prompt_sha": "c0985154899616cb",
     "subagents": [
       {
         "kind": "sync",
@@ -357,8 +360,8 @@
       "VoiceStylePolicy",
       "YuyutsavaCompactionMiddleware"
     ],
-    "prompt_len": 15934,
-    "prompt_sha": "6a306028805206c8",
+    "prompt_len": 16374,
+    "prompt_sha": "9102c5ef1559f20a",
     "subagents": [
       {
         "kind": "sync",
@@ -406,6 +409,9 @@
       "ctx_compact",
       "ctx_fetch_artifact",
       "ctx_grep_artifact",
+      "ctx_history",
+      "ctx_history_grep",
+      "ctx_history_message",
       "db_list",
       "db_query",
       "db_schema",
@@ -517,8 +523,8 @@
       "VoiceStylePolicy",
       "YuyutsavaCompactionMiddleware"
     ],
-    "prompt_len": 9416,
-    "prompt_sha": "c71459cbdafb4a25",
+    "prompt_len": 9676,
+    "prompt_sha": "0a01a3f99cb1ab04",
     "subagents": [
       {
         "kind": "async",
@@ -540,6 +546,9 @@
       "ctx_compact",
       "ctx_fetch_artifact",
       "ctx_grep_artifact",
+      "ctx_history",
+      "ctx_history_grep",
+      "ctx_history_message",
       "mem_save",
       "mem_search",
       "recall",
@@ -682,8 +691,8 @@
       "VoiceStylePolicy",
       "YuyutsavaCompactionMiddleware"
     ],
-    "prompt_len": 9161,
-    "prompt_sha": "65bda6a1262c0fcf",
+    "prompt_len": 9421,
+    "prompt_sha": "398f5162803fcf73",
     "subagents": [],
     "tools": [
       "artifact_create",
@@ -692,6 +701,9 @@
       "ctx_compact",
       "ctx_fetch_artifact",
       "ctx_grep_artifact",
+      "ctx_history",
+      "ctx_history_grep",
+      "ctx_history_message",
       "mem_save",
       "mem_search",
       "recall",
@@ -784,8 +796,8 @@
       "VoiceStylePolicy",
       "YuyutsavaCompactionMiddleware"
     ],
-    "prompt_len": 21482,
-    "prompt_sha": "d9f0e8d5d87b2b51",
+    "prompt_len": 21742,
+    "prompt_sha": "053d9aac79e2dee5",
     "subagents": [
       {
         "kind": "async",
@@ -806,6 +818,9 @@
       "ctx_compact",
       "ctx_fetch_artifact",
       "ctx_grep_artifact",
+      "ctx_history",
+      "ctx_history_grep",
+      "ctx_history_message",
       "db_list",
       "db_query",
       "db_schema",
@@ -1013,8 +1028,8 @@
       "VoiceStylePolicy",
       "YuyutsavaCompactionMiddleware"
     ],
-    "prompt_len": 21482,
-    "prompt_sha": "d9f0e8d5d87b2b51",
+    "prompt_len": 21742,
+    "prompt_sha": "053d9aac79e2dee5",
     "subagents": [],
     "tools": [
       "artifact_create",
@@ -1022,6 +1037,9 @@
       "ctx_compact",
       "ctx_fetch_artifact",
       "ctx_grep_artifact",
+      "ctx_history",
+      "ctx_history_grep",
+      "ctx_history_message",
       "db_list",
       "db_query",
       "db_schema",

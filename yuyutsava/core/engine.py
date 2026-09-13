@@ -548,6 +548,10 @@ def _context_middleware(
                 summary_store=summary_store,
                 memory_sink=memory_store,
                 role=role,
+                # A transcript store means the ctx_history* readers exist, so
+                # the summary may tell the model the evicted turns are still
+                # readable. Without one, promising that would be false.
+                history_readback=transcript_store is not None,
             )
         )
     if transcript_store is not None:
@@ -575,6 +579,7 @@ def _shared_master_tools(
     profile: "AgentProfile",
     artifact_store: Any | None = None,
     memory_store: Any | None = None,
+    transcript_store: Any | None = None,
     output_dir: Path | None = None,
     mcp_tools: "Sequence[Any] | None" = None,
     extra_tools: "Sequence[Any] | None" = None,
@@ -609,8 +614,11 @@ def _shared_master_tools(
     fams = profile.tools
 
     if ToolFamily.CONTEXT in fams and artifact_store is not None:
+        # transcript_store adds the ctx_history* trio — the read-back path for
+        # turns compaction evicted. Absent it (no transcript wiring) the
+        # offload readers are still offered; only the history readers drop.
         from yuyutsava.context.tools import make_context_tools
-        tools.extend(make_context_tools(artifact_store))
+        tools.extend(make_context_tools(artifact_store, transcript_store))
 
     if ToolFamily.MEMORY in fams and memory_store is not None:
         from yuyutsava.memory.tools import make_memory_tools
@@ -996,6 +1004,7 @@ def build_cli_deepagent(
         profile=CLI_PROFILE,
         artifact_store=artifact_store,
         memory_store=memory_store,
+        transcript_store=transcript_store,
         output_dir=output_dir,
         mcp_tools=mcp_tools,
         extra_tools=extra_tools,
@@ -1217,6 +1226,7 @@ def build_orchestrator(
         profile=ORCHESTRATOR_PROFILE,
         artifact_store=deps.artifact_store,
         memory_store=deps.memory_store,
+        transcript_store=getattr(deps, "transcript_store", None),
         mcp_tools=(
             deps.mcp_manager.tools_for("orchestrator")
             if deps.mcp_manager is not None else None
@@ -1475,6 +1485,7 @@ def build_tinker_agent(
         profile=TINKER_PROFILE,
         artifact_store=artifact_store,
         memory_store=memory_store,
+        transcript_store=transcript_store,
         output_dir=output_dir,
         mcp_tools=mcp_tools,
         extra_tools=extra_tools,

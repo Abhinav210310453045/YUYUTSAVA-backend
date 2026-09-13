@@ -17,11 +17,21 @@ from yuyutsava.core.config import _env
 # Conservative per-provider input-context defaults. These are *budgets* the
 # compactor steers under, not API hard limits — erring low just compacts a
 # little earlier.
+#
+# Erring low is not free, though: compaction is the one step that drops
+# messages from state, so an under-set budget summarizes away history the
+# model could still have held verbatim. Gemini on Vertex takes ~1M input
+# tokens; without an entry here it inherited the 128k default and compacted
+# at 89.6k — 8x earlier than the model required. Keep these at the model's
+# real input window and let ``compact_fraction`` provide the headroom.
 _PROVIDER_MAX_INPUT_TOKENS: dict[str, int] = {
     "anthropic": 200_000,
     "groq": 128_000,
     "openrouter": 128_000,
     "ollama": 8_192,
+    "vertex": 1_000_000,
+    "gemini": 1_000_000,
+    "google_vertexai": 1_000_000,
 }
 _DEFAULT_MAX_INPUT_TOKENS = 128_000
 
