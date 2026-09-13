@@ -8,7 +8,56 @@ While the version stays `0.x`, minor bumps may contain breaking changes.
 
 ## [Unreleased]
 
+### Fixed
+- **A conversation could go permanently silent.** Sending a message while a
+  tool call was running made LangGraph cancel the call and fabricate a
+  `status="success"` result saying "cancelled"; from then on every model call
+  returned `finish_reason: STOP` with zero output tokens and the prompt cache
+  dropped to nothing. Four messages, ~70,000 input tokens each, no reply and no
+  error. The repair for this existed but ran only on CLI `--resume`; it now
+  lives in `conversation/repair.py` and every turn — CLI, app, voice, and
+  subagents, whose cancelled `task` calls land in the parent's history — runs
+  it before sending. A turn that still produces nothing repairs, retries once,
+  and then *says so*: `log` events may be dropped by a renderer with nowhere to
+  put them (which is exactly what swallowed four warnings), so there is a new
+  `notice` kind that may not be.
+- **Typing during a turn no longer kills the tool call.** The message is
+  queued and sent when the turn ends, with an explicit *send now* that
+  interrupts — safe, because the next turn repairs the interrupted history.
+  `Ctrl+S` in the CLI.
+- **The chat showed only the final reply.** The renderer kept one bubble per
+  turn and then let `final` replace everything in it, so prose → tool → prose
+  collapsed into a blob and the reasoning between steps was lost. A tool call
+  now closes the block, as the CLI has always done.
+- **A question could not be answered from the chat.** `AskCard` sets
+  `overflow: hidden`, which makes its flex minimum size 0, so in a long thread
+  it was crushed to an invisible sliver and the only way to answer was the
+  Inbox. Also, a second question silently replaced the first and left it
+  blocking its agent — asks are a queue now.
+- **Scrolling during a reply was impossible**: auto-scroll pinned to the bottom
+  on every streaming frame. It now follows only when you are already there.
+- **The split terminal view painted outside itself.** Long lines from
+  `warnings.warn` and from `logging` bled through the context column, the
+  banner was wiped by the alternate screen, log records landed on top of the
+  prompt, PgUp/PgDn did nothing, and the panel truncated. Wrapping is now
+  ANSI- and width-aware at render time, every writer is captured (not just the
+  root logger), and the panel fits its height by priority.
+- **The context meter reported `system prompt ≈0`** on every call, because it
+  looked for a `SystemMessage` in state and the framework passes the prompt as
+  `request.system_message`.
+
 ### Added
+- **The Logs panel shows what the daemon is doing.** It used to contain only
+  HTTP access lines — the UI's own polling — while ~500 log records across
+  ~150 loggers went to stderr. A log bridge now forwards them as structured
+  `app_log` events with level and subsystem, and the panel gained a filter, a
+  minimum-level select and an HTTP toggle. The titlebar log-level dropdown
+  finally affects what you can see.
+- Transient asides (provider retries, an unpriced model) appear in the CLI's
+  context column instead of printing over the transcript or the prompt.
+- `docs/design/computer-use.md` — the accessibility-tree-first design for GUI
+  control, with what is already installed and permitted, and the two genuine
+  gaps. Design only; nothing is implemented.
 - Context and cost telemetry, in both fronts. A context meter measures every
   model call — how full the input window is and what it is made of (system
   prompt, tool schemas, memory, skills, messages), plus the call's reported
