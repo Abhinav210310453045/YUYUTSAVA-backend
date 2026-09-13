@@ -25,6 +25,7 @@ import contextlib
 import os
 import re
 import sys
+import time
 import traceback
 from pathlib import Path
 from typing import Any
@@ -200,6 +201,7 @@ def _print_help() -> None:
     print(file=sys.stderr)
     print(f"  {_DIM}/voice{_RESET}        voice mode: /voice on|off, /voice wake off, /voice tts off", file=sys.stderr)
     print(f"  {_DIM}/subagents{_RESET}    dedicated subagents: /subagents off face-watcher", file=sys.stderr)
+    print(f"  {_DIM}/usage{_RESET}        tokens and estimated cost for this session", file=sys.stderr)
     print(file=sys.stderr)
     print(f"{_DIM}Ctrl+C cancels the current turn but keeps the session open.{_RESET}", file=sys.stderr)
     print(file=sys.stderr)
@@ -268,6 +270,7 @@ _SLASH_COMMANDS: dict[str, str] = {
     "/reply": "answer a background question by id",
     "/voice": "show or set voice mode (/voice on|off|wake on|tts off)",
     "/subagents": "list dedicated subagents (/subagents on|off <name>)",
+    "/usage": "tokens and estimated cost for this session",
 }
 
 
@@ -502,6 +505,68 @@ def _on_off(word: str) -> bool | None:
     if w in ("off", "false", "no", "0", "disable", "disabled"):
         return False
     return None
+
+
+async def _usage_rows(store: Any, thread_id: str, since: float) -> list[Any]:
+    """This thread's ``llm_usage`` rows since *since*. Never raises.
+
+    ``UsageStore.list`` filters by task, not thread — the daemon groups by
+    task because a task is its unit of work, while a chat's unit is the
+    thread. Rather than widen the store interface (two backends and a parity
+    suite), the window is narrowed by time and filtered here; a turn or a
+    session is a small number of rows either way.
+    """
+    if store is None or not thread_id:
+        return []
+    try:
+        rows = await store.list(since=since, limit=2_000)
+    except Exception:  # noqa: BLE001 — reporting must never break the REPL
+        import logging as _logging
+
+        _logging.getLogger("yuyutsava.cli.usage").debug(
+            "usage read failed", exc_info=True
+        )
+        return []
+    return [r for r in rows if getattr(r, "thread_id", "") == thread_id]
+
+
+def _fmt_usage(rows: list[Any]) -> str:
+    """``3 calls · in 41,087 · out 64 · ~$0.0032`` (empty when nothing to say)."""
+    if not rows:
+        return ""
+    calls = len(rows)
+    tin = sum(r.input_tokens for r in rows)
+    tout = sum(r.output_tokens for r in rows)
+    cost = sum(r.est_cost_usd for r in rows)
+    out = f"{calls} call{'s' if calls != 1 else ''} · in {tin:,} · out {tout:,}"
+    # A zero estimate means the model is missing from the price table, which
+    # is not the same as free — say nothing rather than "$0.00".
+    return f"{out} · ~${cost:,.4f}" if cost > 0 else out
+
+
+async def _print_usage_summary(store: Any, thread_id: str, since: float) -> None:
+    """``/usage``: session totals, broken down by model."""
+    rows = await _usage_rows(store, thread_id, since)
+    if not rows:
+        print(
+            f"  {_DIM}no recorded model calls yet in this session{_RESET}",
+            file=sys.stderr,
+        )
+        return
+    print(f"  {_DIM}session: {_fmt_usage(rows)}{_RESET}", file=sys.stderr)
+    by_model: dict[str, list[Any]] = {}
+    for r in rows:
+        by_model.setdefault(r.model or "?", []).append(r)
+    if len(by_model) > 1:
+        for model, subset in sorted(
+            by_model.items(), key=lambda kv: -sum(r.input_tokens for r in kv[1])
+        ):
+            print(f"    {_DIM}{model}: {_fmt_usage(subset)}{_RESET}", file=sys.stderr)
+    peak = max(r.input_tokens for r in rows)
+    print(
+        f"    {_DIM}largest single request: {peak:,} input tokens{_RESET}",
+        file=sys.stderr,
+    )
 
 
 async def _handle_settings_command(cmd: str, runtime_settings: Any) -> bool:
@@ -901,6 +966,13 @@ async def run_chat_repl(
                     ):
                         continue
 
+                # /usage — async because it reads the usage store.
+                if user_input.strip().split()[0] == "/usage":
+                    await _print_usage_summary(
+                        bundle.usage_store, session.thread_id, session.created_at
+                    )
+                    continue
+
                 slash_result = _handle_slash(
                     user_input, session_id=session.id, workspace=workspace, renderer=renderer,
                 )
@@ -922,6 +994,7 @@ async def run_chat_repl(
                 # Run one turn through the shared conversation engine. The
                 # renderer is the terminal output adapter; _ask_handler is the
                 # terminal HITL bridge.
+                turn_started = time.time()
                 try:
                     renderer.begin_turn()
                     await convo.run_turn(
@@ -970,6 +1043,18 @@ async def run_chat_repl(
                     continue
 
                 await renderer.end_of_turn()
+
+                # What the turn cost, from the rows the graph just wrote. The
+                # input count climbs with the conversation (the whole history
+                # is re-sent every call), and that was invisible from inside a
+                # session until now.
+                _turn_usage = _fmt_usage(
+                    await _usage_rows(
+                        bundle.usage_store, session.thread_id, turn_started
+                    )
+                )
+                if _turn_usage:
+                    print(f"{_DIM}  {_turn_usage}{_RESET}", file=sys.stderr)
 
             # Loop exited — flush bookkeeping and mark the session done.
             try:

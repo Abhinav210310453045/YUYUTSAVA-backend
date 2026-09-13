@@ -218,12 +218,22 @@ async def build_agent_stack(
     from yuyutsava.storage.backend import StorageSettings as _SS
     from yuyutsava.storage.factory import StoreFactory as _SF
 
-    _ctx = _SF(_SS.from_env(), pg_pool=pg_pool, embedder=embedder).context_stores(
+    _factory = _SF(_SS.from_env(), pg_pool=pg_pool, embedder=embedder)
+    _ctx = _factory.context_stores(
         semantic_recall=context_settings.semantic_recall
     )
     artifact_store = _ctx.artifacts
     summary_store = _ctx.summaries
     transcript_store = _ctx.transcripts
+
+    # Token accounting. The kwarg exists for the daemon to pass its own store,
+    # but nothing filled it in standalone mode, so a CLI session wrote zero
+    # llm_usage rows — the 12 Sep post-mortem had to reconstruct 4M input
+    # tokens from usage_metadata on recorded messages, and only because the
+    # transcript happened to be on. The rows are the same table the daemon
+    # writes, so /usage and the daemon's ledger agree.
+    if usage_store is None:
+        usage_store = _factory.usage()
 
     # TODO board: point the todo_* capture tools at the SAME board the daemon
     # serves. With a pool the Pg store is primary (get_default_todo_store()
@@ -414,6 +424,9 @@ async def build_agent_stack(
     bundle.pg_pool = pg_pool
     bundle.embedder = embedder
     bundle.mcp_manager = owned_mcp
+    # Not owned (nothing to close) — exposed so the front can report what the
+    # turn cost, reading the same rows the graph just wrote.
+    bundle.usage_store = usage_store
     return bundle
 
 

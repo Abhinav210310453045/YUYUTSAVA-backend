@@ -233,6 +233,7 @@ class AgentBundle:
     pg_pool: Any | None = None             # PgPool owned by the CLI (closed in aclose)
     embedder: Any | None = None            # memory.Embedder owned by the CLI
     mcp_manager: Any | None = None         # MCPClientManager owned by the CLI (stopped in aclose)
+    usage_store: Any | None = None         # UsageStore the graph writes to — read for /usage
 
     async def aclose(self) -> None:
         """Async teardown: stop the CLI-owned MCP manager (its sessions live on

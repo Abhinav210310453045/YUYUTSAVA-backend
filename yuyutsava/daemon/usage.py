@@ -388,7 +388,12 @@ class UsagePolicy(Policy):
         row = UsageRow(
             id=mint_usage_id(),
             ts=time.time(),
-            thread_id=self._thread_id,
+            # A pinned thread wins; otherwise take the one the adapter already
+            # resolved for this call. The orchestrator can pin because it
+            # builds a graph per task, but a chat bundle is shared across
+            # every conversation — pinning nothing left the rows thread-less
+            # and therefore unattributable to a session.
+            thread_id=self._thread_id or turn.thread_id,
             task_id=self._task_id,
             role=self._role,
             model=model,
