@@ -608,8 +608,8 @@
       "ToolFilterPolicy",
       "VoiceStylePolicy"
     ],
-    "prompt_len": 13836,
-    "prompt_sha": "f3857a55272256fb",
+    "prompt_len": 14087,
+    "prompt_sha": "905e4883c5b4defd",
     "subagents": [],
     "tools": [
       "artifact_create",
@@ -913,8 +913,8 @@
       "ToolFilterPolicy",
       "VoiceStylePolicy"
     ],
-    "prompt_len": 26603,
-    "prompt_sha": "0409fca6e74c1e2d",
+    "prompt_len": 26854,
+    "prompt_sha": "4a78f56301c8a4d3",
     "subagents": [],
     "tools": [
       "artifact_create",
