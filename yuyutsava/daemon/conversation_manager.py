@@ -59,12 +59,20 @@ def _bash_timeout_sec() -> int:
         return 300
 
 
-def _chat_budget_tokens() -> int:
-    """Absolute per-call input-token ceiling for the shared chat master."""
-    try:
-        return max(1, int(os.environ.get("YUYUTSAVA_CHAT_BUDGET_TOKENS", "120000")))
-    except ValueError:
-        return 120_000
+# No BudgetPolicy on the conversational bundle (removed 2026-09-13).
+#
+# It was wired with a 120k "per-call input-token ceiling", but BudgetPolicy
+# *accumulates* each call's input tokens for the lifetime of the bundle and is
+# never reset (``reset()`` has no callers). The chat bundle is shared across
+# every conversation, so on a normal session — 30-70k input tokens per call
+# once a few tool results are in context — the cap was crossed within three
+# calls and the agent was handed "Stop calling tools. Summarise what you have
+# done so far", mid-task, for reasons the user could not see.
+#
+# Compaction is the correct control here and is always on: it bounds the
+# context instead of bounding the conversation. The orchestrator keeps its own
+# BudgetPolicy, where the cap is per *task* and exhausting it genuinely means
+# the task is over-spending. ``YUYUTSAVA_CHAT_BUDGET_TOKENS`` no longer exists.
 
 
 class ConversationManager:
@@ -197,7 +205,6 @@ class ConversationManager:
             checkpointer=self._checkpointer,
             mcp_manager=self._mcp_manager,
             usage_store=self._usage_store,
-            budget_tokens=_chat_budget_tokens(),
             prefs_store=self._prefs_store,
             runtime_settings=self._runtime_settings,
             cap_enforcer=self._cap_enforcer,

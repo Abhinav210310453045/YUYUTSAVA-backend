@@ -79,6 +79,24 @@ class ChatRenderer:
     def begin_turn(self) -> None:
         """Turn-start hook. The rich subclass starts its spinner here."""
 
+    def note_retry(
+        self, model: str, attempt: int, retries: int, delay: float, exc: BaseException
+    ) -> None:
+        """Report a provider retry (429/503) in the renderer's own voice.
+
+        Registered with ``llm.quirks.first_chunk_retry.set_retry_listener``.
+        The provider's own retry logger writes several structlog lines per
+        attempt, which in the rich renderer tore straight through the Live
+        region and told the user nothing they could act on; here it is one
+        line that names the wait.
+        """
+        print(
+            f"  provider busy ({type(exc).__name__}) — retry {attempt}/{retries} "
+            f"in {delay:.0f}s",
+            file=sys.stderr,
+            flush=True,
+        )
+
     @contextlib.contextmanager
     def pause(self):
         """No-op display pause. The rich subclass stops its Live region."""
@@ -159,6 +177,29 @@ class ChatRenderer:
             elif is_err:
                 self._render_tool_result_compact_error(name, full or body, idx)
             # else: suppress on success in non-verbose
+            return
+
+        if ev.kind == "artifact":
+            # Was dropped entirely here, so an artifact the agent built (a
+            # table, a document) left no trace in a piped transcript. Read
+            # from disk, printed only — never fed back into the context.
+            from yuyutsava.cli.render import artifact_view as av
+
+            info = av.load_artifact(ev.data)
+            if info is None:
+                title, kind = av.artifact_summary(ev.data)
+                print(f"  ◨ artifact: {title}{f' ({kind})' if kind else ''}",
+                      file=sys.stderr, flush=True)
+                return
+            head = f"  ◨ {info['title']} [{info['kind'] or info['mime']}]"
+            print(head, file=sys.stderr, flush=True)
+            if info["text"]:
+                print(info["text"], file=sys.stderr, flush=True)
+                if info["clipped"]:
+                    print(f"  … clipped — full file: {info['path']}",
+                          file=sys.stderr, flush=True)
+            elif info["path"]:
+                print(f"  open {info['path']}", file=sys.stderr, flush=True)
             return
 
         if ev.kind == "log":

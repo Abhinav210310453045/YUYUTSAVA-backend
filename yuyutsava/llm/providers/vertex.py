@@ -39,7 +39,14 @@ class VertexProvider(Provider):
             location=settings.location,
             temperature=temperature,
             max_output_tokens=4096,
-            max_retries=settings.max_retries,
+            # ONE retry ladder, not two nested ones. The SDK's decorator wraps
+            # the stream *open* and ours covers the first read, so with both at
+            # 6 a quota storm became 6x6 attempts: minutes of silence per call.
+            # The quirk owns the policy (it is the layer that sees the error
+            # that actually kills turns, and it has the wall-clock budget), so
+            # the SDK keeps only a token retry for non-streaming calls.
+            # VERTEX_MAX_RETRIES still steers the quirk via settings.
+            max_retries=min(2, settings.max_retries),
         )
 
 

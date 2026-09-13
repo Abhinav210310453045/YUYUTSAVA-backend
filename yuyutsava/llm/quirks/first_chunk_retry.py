@@ -21,19 +21,64 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import random
 import time
 from functools import lru_cache
+from typing import Callable
 
 logger = logging.getLogger("yuyutsava.llm.retry")
 
 # Indirections so tests can patch the sleeps without touching asyncio/time.
 _asleep = asyncio.sleep
 _sleep = time.sleep
+_now = time.monotonic
 
 # Default backoff when the model carries no ``wait_exponential_kwargs``:
 # 2, 4, 8, 16, 30, 30 … seconds (before jitter).
 _DEFAULT_WAIT = {"multiplier": 2.0, "exp_base": 2.0, "min": 2.0, "max": 30.0}
+
+# Wall-clock ceiling across ALL attempts for one call. ``max_retries`` alone
+# bounds the count, not the time: six attempts on the default ladder is ~3.5
+# minutes of a frozen spinner, and the provider's own retry decorator nests
+# inside each of those. A user watching a terminal needs the turn to come back
+# and say what happened.
+_DEFAULT_BUDGET_SEC = 90.0
+
+
+def _budget_sec() -> float:
+    raw = os.environ.get("VERTEX_RETRY_BUDGET_SEC", "").strip()
+    if not raw:
+        return _DEFAULT_BUDGET_SEC
+    try:
+        value = float(raw)
+    except ValueError:
+        return _DEFAULT_BUDGET_SEC
+    return value if value > 0 else _DEFAULT_BUDGET_SEC
+
+
+#: Called on every retry with ``(model, attempt, retries, delay, exc)``.
+#: The terminal front registers one so a 429 storm shows up as spinner text
+#: instead of a wall of provider log lines. Process-global and best-effort:
+#: a listener that raises is dropped, never propagated into a model call.
+RetryListener = Callable[[str, int, int, float, BaseException], None]
+_listener: RetryListener | None = None
+
+
+def set_retry_listener(callback: RetryListener | None) -> None:
+    """Install (or clear, with ``None``) the retry notification hook."""
+    global _listener
+    _listener = callback
+
+
+def _notify(model: str, attempt: int, retries: int, delay: float, exc: BaseException) -> None:
+    cb = _listener
+    if cb is None:
+        return
+    try:
+        cb(model, attempt, retries, delay, exc)
+    except Exception:  # noqa: BLE001 — a broken listener must not fail the call
+        logger.debug("retry listener raised", exc_info=True)
 
 
 def _is_transient(exc: BaseException) -> bool:
@@ -66,9 +111,20 @@ def _is_transient(exc: BaseException) -> bool:
 
 
 def _max_retries(model: object) -> int:
-    raw = getattr(model, "max_retries", 6)
+    """How many times *this* quirk retries — not what the SDK is set to.
+
+    The provider pins the SDK's own ``max_retries`` low on purpose (see
+    ``llm/providers/vertex.py``): its decorator covers the stream open, ours
+    covers the first read, and at 6 each they multiplied into minutes of
+    silence per call. So the user-facing knob is read here, where the retry
+    that actually saves a turn happens, and the model field is only the
+    fallback for a model built without it.
+    """
+    raw: object = os.environ.get("VERTEX_MAX_RETRIES", "").strip()
+    if not raw:
+        raw = getattr(model, "max_retries", 6)
     try:
-        return max(0, int(raw))
+        return max(0, int(raw))  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return 6
 
@@ -93,6 +149,8 @@ class _FirstChunkRetryMixin:
 
     async def _astream(self, messages, stop=None, run_manager=None, **kwargs):  # type: ignore[no-untyped-def]
         retries = _max_retries(self)
+        budget = _budget_sec()
+        started = _now()
         attempt = 0
         while True:
             agen = super()._astream(messages, stop=stop, run_manager=run_manager, **kwargs)
@@ -101,14 +159,11 @@ class _FirstChunkRetryMixin:
             except StopAsyncIteration:
                 return
             except Exception as exc:  # noqa: BLE001 — filtered by _is_transient
-                if attempt >= retries or not _is_transient(exc):
+                delay = self._plan_retry(exc, attempt, retries, started, budget)
+                if delay is None:
                     raise
-                delay = _backoff(attempt, self)
                 attempt += 1
-                logger.warning(
-                    "%s: %s before first chunk — retry %d/%d in %.1fs",
-                    _label(self), type(exc).__name__, attempt, retries, delay,
-                )
+                _notify(_label(self), attempt, retries, delay, exc)
                 await _asleep(delay)
                 continue
             yield first
@@ -118,6 +173,8 @@ class _FirstChunkRetryMixin:
 
     def _stream(self, messages, stop=None, run_manager=None, **kwargs):  # type: ignore[no-untyped-def]
         retries = _max_retries(self)
+        budget = _budget_sec()
+        started = _now()
         attempt = 0
         while True:
             gen = super()._stream(messages, stop=stop, run_manager=run_manager, **kwargs)
@@ -126,19 +183,55 @@ class _FirstChunkRetryMixin:
             except StopIteration:
                 return
             except Exception as exc:  # noqa: BLE001 — filtered by _is_transient
-                if attempt >= retries or not _is_transient(exc):
+                delay = self._plan_retry(exc, attempt, retries, started, budget)
+                if delay is None:
                     raise
-                delay = _backoff(attempt, self)
                 attempt += 1
-                logger.warning(
-                    "%s: %s before first chunk — retry %d/%d in %.1fs",
-                    _label(self), type(exc).__name__, attempt, retries, delay,
-                )
+                _notify(_label(self), attempt, retries, delay, exc)
                 _sleep(delay)
                 continue
             yield first
             yield from gen
             return
+
+    def _plan_retry(
+        self,
+        exc: BaseException,
+        attempt: int,
+        retries: int,
+        started: float,
+        budget: float,
+    ) -> float | None:
+        """Seconds to wait before the next attempt, or ``None`` to give up.
+
+        Gives up on a non-transient error, on the attempt count, and — the
+        addition — when the next wait would run past the wall-clock budget.
+        Stopping at the budget is what turns a quota storm into one honest
+        error the caller can report instead of a spinner that never returns.
+        """
+        if not _is_transient(exc):
+            return None
+        label = _label(self)
+        if attempt >= retries:
+            logger.warning(
+                "%s: %s before first chunk — giving up after %d attempt(s)",
+                label, type(exc).__name__, attempt,
+            )
+            return None
+        delay = _backoff(attempt, self)
+        elapsed = _now() - started
+        if elapsed + delay > budget:
+            logger.warning(
+                "%s: %s before first chunk — giving up after %.0fs "
+                "(VERTEX_RETRY_BUDGET_SEC=%.0f); the provider is still busy",
+                label, type(exc).__name__, elapsed, budget,
+            )
+            return None
+        logger.warning(
+            "%s: %s before first chunk — retry %d/%d in %.1fs",
+            label, type(exc).__name__, attempt + 1, retries, delay,
+        )
+        return delay
 
 
 @lru_cache(maxsize=None)
@@ -151,4 +244,4 @@ def first_chunk_retry(base: type) -> type:
     return type(f"FirstChunkRetry{base.__name__}", (_FirstChunkRetryMixin, base), {})
 
 
-__all__ = ["first_chunk_retry"]
+__all__ = ["first_chunk_retry", "set_retry_listener", "RetryListener"]

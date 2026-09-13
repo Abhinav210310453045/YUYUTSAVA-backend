@@ -25,6 +25,7 @@ import contextlib
 import os
 import re
 import sys
+import time
 import traceback
 from pathlib import Path
 from typing import Any
@@ -162,6 +163,33 @@ def _print_banner(
     print(file=sys.stderr)
 
 
+# prompt_toolkit's FileHistory appends forever. It is only the up-arrow
+# buffer — the agent never reads it and it never enters a prompt — but it
+# accumulates every line the user has ever typed, so it is worth a ceiling.
+_HISTORY_MAX_BYTES = 10 * 1024 * 1024
+
+
+def _rotate_history(path: Path) -> None:
+    """Keep ``chat_history`` under the size ceiling. Never raises.
+
+    Rotates rather than truncates so the previous file is still there if the
+    user wants it, and keeps the newest half in place so recent up-arrow
+    history survives the rotation.
+    """
+    try:
+        if not path.is_file() or path.stat().st_size <= _HISTORY_MAX_BYTES:
+            return
+        text = path.read_text(encoding="utf-8", errors="replace")
+        path.replace(path.with_suffix(".1"))
+        # FileHistory entries are "# <ts>" followed by "+<line>" blocks; cut on
+        # an entry boundary so the kept tail parses.
+        tail = text[len(text) // 2 :]
+        marker = tail.find("\n# ")
+        path.write_text(tail[marker + 1 :] if marker >= 0 else "", encoding="utf-8")
+    except OSError:
+        pass
+
+
 def _startup_status_line(sessions_settings: SessionsSettings) -> str:
     """One dim line summarizing what the silenced startup logs used to say.
 
@@ -179,8 +207,22 @@ def _startup_status_line(sessions_settings: SessionsSettings) -> str:
         from langgraph_api import __version__ as _lg_version
     except Exception:
         _lg_version = "?"
+    # The EFFECTIVE backend, not SessionsSettings.backend. That field reads
+    # YUYUTSAVA_SESSIONS_BACKEND, which only selects the checkpointer's own
+    # default and is almost never set — so the banner announced "sqlite" while
+    # every store and the checkpointer were on Postgres, and a whole session's
+    # analysis started from the wrong assumption about where its data was.
+    try:
+        from yuyutsava.storage.backend import StorageSettings
+
+        storage = (
+            "postgres" if StorageSettings.from_env().is_postgres()
+            else sessions_settings.backend
+        )
+    except Exception:
+        storage = sessions_settings.backend
     return (
-        f"storage: {sessions_settings.backend} · "
+        f"storage: {storage} · "
         f"tracing: {'on' if tracing_on else 'off'} · "
         f"langgraph-api {_lg_version}"
     )
@@ -200,6 +242,8 @@ def _print_help() -> None:
     print(file=sys.stderr)
     print(f"  {_DIM}/voice{_RESET}        voice mode: /voice on|off, /voice wake off, /voice tts off", file=sys.stderr)
     print(f"  {_DIM}/subagents{_RESET}    dedicated subagents: /subagents off face-watcher", file=sys.stderr)
+    print(f"  {_DIM}/usage{_RESET}        tokens and estimated cost for this session", file=sys.stderr)
+    print(f"  {_DIM}/skills{_RESET}       skills recalled this turn, and all available ones", file=sys.stderr)
     print(file=sys.stderr)
     print(f"{_DIM}Ctrl+C cancels the current turn but keeps the session open.{_RESET}", file=sys.stderr)
     print(file=sys.stderr)
@@ -268,6 +312,8 @@ _SLASH_COMMANDS: dict[str, str] = {
     "/reply": "answer a background question by id",
     "/voice": "show or set voice mode (/voice on|off|wake on|tts off)",
     "/subagents": "list dedicated subagents (/subagents on|off <name>)",
+    "/usage": "tokens and estimated cost for this session",
+    "/skills": "skills recalled this turn, and all available ones",
 }
 
 
@@ -504,6 +550,108 @@ def _on_off(word: str) -> bool | None:
     return None
 
 
+async def _usage_rows(store: Any, thread_id: str, since: float) -> list[Any]:
+    """This thread's ``llm_usage`` rows since *since*. Never raises.
+
+    ``UsageStore.list`` filters by task, not thread — the daemon groups by
+    task because a task is its unit of work, while a chat's unit is the
+    thread. Rather than widen the store interface (two backends and a parity
+    suite), the window is narrowed by time and filtered here; a turn or a
+    session is a small number of rows either way.
+    """
+    if store is None or not thread_id:
+        return []
+    try:
+        rows = await store.list(since=since, limit=2_000)
+    except Exception:  # noqa: BLE001 — reporting must never break the REPL
+        import logging as _logging
+
+        _logging.getLogger("yuyutsava.cli.usage").debug(
+            "usage read failed", exc_info=True
+        )
+        return []
+    return [r for r in rows if getattr(r, "thread_id", "") == thread_id]
+
+
+def _fmt_usage(rows: list[Any]) -> str:
+    """``3 calls · in 41,087 · out 64 · ~$0.0032`` (empty when nothing to say)."""
+    if not rows:
+        return ""
+    calls = len(rows)
+    tin = sum(r.input_tokens for r in rows)
+    tout = sum(r.output_tokens for r in rows)
+    cost = sum(r.est_cost_usd for r in rows)
+    out = f"{calls} call{'s' if calls != 1 else ''} · in {tin:,} · out {tout:,}"
+    # A zero estimate means the model is missing from the price table, which
+    # is not the same as free — say nothing rather than "$0.00".
+    return f"{out} · ~${cost:,.4f}" if cost > 0 else out
+
+
+async def _print_usage_summary(store: Any, thread_id: str, since: float) -> None:
+    """``/usage``: session totals, broken down by model."""
+    rows = await _usage_rows(store, thread_id, since)
+    if not rows:
+        print(
+            f"  {_DIM}no recorded model calls yet in this session{_RESET}",
+            file=sys.stderr,
+        )
+        return
+    print(f"  {_DIM}session: {_fmt_usage(rows)}{_RESET}", file=sys.stderr)
+    by_model: dict[str, list[Any]] = {}
+    for r in rows:
+        by_model.setdefault(r.model or "?", []).append(r)
+    if len(by_model) > 1:
+        for model, subset in sorted(
+            by_model.items(), key=lambda kv: -sum(r.input_tokens for r in kv[1])
+        ):
+            print(f"    {_DIM}{model}: {_fmt_usage(subset)}{_RESET}", file=sys.stderr)
+    peak = max(r.input_tokens for r in rows)
+    print(
+        f"    {_DIM}largest single request: {peak:,} input tokens{_RESET}",
+        file=sys.stderr,
+    )
+
+
+def _print_skills(layout: Any) -> None:
+    """``/skills``: what was recalled last turn, and what is available at all.
+
+    Retrieval happens inside the graph, so until now there was no way to tell
+    whether a skill reached the prompt — which matters, because a skill the
+    agent never sees is indistinguishable from one that does not exist.
+    """
+    from yuyutsava.skills.injector import last_recalled
+    from yuyutsava.skills.registry import SkillRegistry
+
+    recalled = last_recalled()
+    if recalled:
+        print(f"  {_CYAN}recalled last turn:{_RESET} {', '.join(recalled)}", file=sys.stderr)
+    else:
+        print(
+            f"  {_DIM}nothing recalled yet this session (the block is built per "
+            f"turn from the message text){_RESET}",
+            file=sys.stderr,
+        )
+    try:
+        registry = (
+            SkillRegistry(workspace_dir=layout.skills) if layout is not None
+            else SkillRegistry()
+        )
+        skills = registry.scan(agent="cli")
+    except Exception:  # noqa: BLE001 — a listing must never break the REPL
+        return
+    if not skills:
+        return
+    print(f"  {_DIM}available ({len(skills)}):{_RESET}", file=sys.stderr)
+    for s in sorted(skills, key=lambda s: (s.scope, s.name)):
+        mark = "*" if s.name in recalled else " "
+        print(f"   {mark} {_DIM}{s.scope:9}{_RESET} {s.name}", file=sys.stderr)
+    print(
+        f"  {_DIM}the agent can also search these itself with "
+        f"sk_search_skill{_RESET}",
+        file=sys.stderr,
+    )
+
+
 async def _handle_settings_command(cmd: str, runtime_settings: Any) -> bool:
     """Handle ``/voice`` and ``/subagents`` (async — they hit ``state.db``).
 
@@ -664,6 +812,7 @@ async def run_chat_repl(
     # History file lives under the standard YUYUTSAVA state dir so it
     # follows the same lifecycle as the SQLite session store.
     history_path = state_dir() / "chat_history"
+    _rotate_history(history_path)
 
     # Rich transcript on real TTYs; the plain ANSI renderer for pipes and
     # dumb terminals stays byte-identical to the historical behavior.
@@ -681,6 +830,14 @@ async def run_chat_repl(
         renderer = ChatRenderer(verbose=verbose, workspace=workspace)
     ask_handler = make_ask_handler(renderer, console)
     exit_code = 0
+
+    # Provider retries (429/503) speak through the renderer, not the log. The
+    # SDK's own retry logger emits several structlog lines per attempt, which
+    # printed straight through the Live region and still left the user unable
+    # to tell whether the turn was alive. Cleared in the finally block below.
+    from yuyutsava.llm.quirks.first_chunk_retry import set_retry_listener
+
+    set_retry_listener(renderer.note_retry)
 
     # The renderer is the only voice the user should hear in chat mode.
     # Without this, the TaskRunner / tool_registry / task_runner.tools
@@ -703,6 +860,17 @@ async def run_chat_repl(
         ):
             _logging.getLogger(_name).setLevel(_logging.WARNING)
 
+        # Retry chatter is rendered on the spinner instead (note_retry above).
+        # These two emit at WARNING, so the level filter above cannot reach
+        # them — and between them a single 429 storm produced a dozen lines
+        # through the Live region. --verbose keeps them.
+        if not verbose:
+            for _name in (
+                "langchain_google_vertexai._retry",
+                "yuyutsava.llm.retry",
+            ):
+                _logging.getLogger(_name).setLevel(_logging.ERROR)
+
     async with build_checkpointer(sessions_settings) as checkpointer:
         # Build the agent stack ONCE. Swallow the LangGraph host's startup
         # banner unless the user asked for the firehose.
@@ -716,6 +884,9 @@ async def run_chat_repl(
             permission_check=permission_check,
             search_config=search_config,
             checkpointer=checkpointer,
+            # This reply is going to a terminal, not the desktop app: no
+            # Artifacts tab, no card to click, HTML unreadable.
+            front="terminal",
         )
         # Always wrap build_cli_agent_stack in fd-level stdio suppression —
         # the LangGraph host writes its startup banner from a daemon thread
@@ -882,6 +1053,17 @@ async def run_chat_repl(
                     ):
                         continue
 
+                # /usage — async because it reads the usage store.
+                if user_input.strip().split()[0] == "/usage":
+                    await _print_usage_summary(
+                        bundle.usage_store, session.thread_id, session.created_at
+                    )
+                    continue
+
+                if user_input.strip().split()[0] == "/skills":
+                    _print_skills(bundle.layout)
+                    continue
+
                 slash_result = _handle_slash(
                     user_input, session_id=session.id, workspace=workspace, renderer=renderer,
                 )
@@ -903,6 +1085,7 @@ async def run_chat_repl(
                 # Run one turn through the shared conversation engine. The
                 # renderer is the terminal output adapter; _ask_handler is the
                 # terminal HITL bridge.
+                turn_started = time.time()
                 try:
                     renderer.begin_turn()
                     await convo.run_turn(
@@ -912,7 +1095,22 @@ async def run_chat_repl(
                         run_name="cli-chat",
                         keep_full_payloads=True,
                     )
-                except KeyboardInterrupt:
+                except (KeyboardInterrupt, asyncio.CancelledError):
+                    # Ctrl+C during a turn does NOT arrive as KeyboardInterrupt
+                    # here: asyncio.Runner installs a SIGINT handler that
+                    # cancels the main task, so the await raises
+                    # CancelledError — which `except Exception` below does not
+                    # catch either (it is a BaseException). It escaped to the
+                    # runner, which re-raised KeyboardInterrupt, and the user
+                    # got a 20-frame traceback instead of their prompt back.
+                    #
+                    # uncancel() clears the request so the REPL can keep
+                    # awaiting; without it the next await re-raises at once and
+                    # the runner still turns the cancelled task into a
+                    # KeyboardInterrupt exit.
+                    task = asyncio.current_task()
+                    if task is not None:
+                        task.uncancel()
                     await renderer.end_of_turn()
                     print(
                         f"{_DIM}(turn cancelled — session still open){_RESET}",
@@ -921,19 +1119,25 @@ async def run_chat_repl(
                     continue
                 except Exception as exc:  # noqa: BLE001
                     await renderer.end_of_turn()
-                    # Name the exception type and keep the traceback: a bare
-                    # str(exc) turns a library-internal failure ("list index out
-                    # of range") into an unattributable one-liner, and the frame
-                    # it came from is the only thing that makes it fixable. The
-                    # turn still fails soft — the session stays open either way.
-                    if type(exc).__name__ == "ResourceExhausted":
+                    # Provider capacity is not a bug in this program, and its
+                    # traceback is 30 frames of SDK internals that say nothing
+                    # the user can act on. One line, and the session stays
+                    # open so the message can simply be resent.
+                    if type(exc).__name__ in ("ResourceExhausted", "ServiceUnavailable"):
+                        code = "429" if type(exc).__name__ == "ResourceExhausted" else "503"
                         print(
-                            f"{_DIM}hint: the model provider returned 429 (quota / "
-                            "capacity) and retries were exhausted — wait a minute "
-                            "and resend; VERTEX_MAX_RETRIES raises the retry "
-                            f"count.{_RESET}",
+                            f"{_RED}provider busy ({code}){_RESET} — retries gave up. "
+                            f"{_DIM}Resend to try again; VERTEX_RETRY_BUDGET_SEC (default 90) "
+                            f"and VERTEX_MAX_RETRIES control how long it keeps trying. "
+                            f"Session still open.{_RESET}",
                             file=sys.stderr,
                         )
+                        continue
+                    # Otherwise name the exception type and keep the traceback:
+                    # a bare str(exc) turns a library-internal failure ("list
+                    # index out of range") into an unattributable one-liner, and
+                    # the frame it came from is the only thing that makes it
+                    # fixable. The turn still fails soft either way.
                     print(
                         f"{_RED}error:{_RESET} {type(exc).__name__}: {exc}",
                         file=sys.stderr,
@@ -946,6 +1150,18 @@ async def run_chat_repl(
 
                 await renderer.end_of_turn()
 
+                # What the turn cost, from the rows the graph just wrote. The
+                # input count climbs with the conversation (the whole history
+                # is re-sent every call), and that was invisible from inside a
+                # session until now.
+                _turn_usage = _fmt_usage(
+                    await _usage_rows(
+                        bundle.usage_store, session.thread_id, turn_started
+                    )
+                )
+                if _turn_usage:
+                    print(f"{_DIM}  {_turn_usage}{_RESET}", file=sys.stderr)
+
             # Loop exited — flush bookkeeping and mark the session done.
             try:
                 await convo.finish("done")
@@ -953,6 +1169,10 @@ async def run_chat_repl(
                 pass
 
         finally:
+            # The listener is process-global; a renderer that outlives this
+            # REPL would keep drawing on a dead Live region.
+            with contextlib.suppress(Exception):
+                set_retry_listener(None)
             with contextlib.suppress(Exception):
                 if renderer._smoother is not None:
                     await renderer._smoother.aclose()

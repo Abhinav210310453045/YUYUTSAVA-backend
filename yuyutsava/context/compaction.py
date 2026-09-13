@@ -98,6 +98,7 @@ Where the work stands right now and the single next concrete action.
 Unresolved questions, blockers, or things awaiting the user.
 </instructions>
 
+{readback_note}
 Respond ONLY with the extracted context in the format above. No preamble,
 no closing remarks.
 
@@ -105,6 +106,46 @@ no closing remarks.
 Messages to summarize:
 {messages}
 </messages>"""
+
+# Spliced into the prompt above (by replace, not format — ``{messages}`` is
+# langchain's placeholder and must survive untouched) only when the agent
+# actually has the ctx_history* tools.
+_READBACK_NOTE = """
+Note: these messages are not being deleted — they stay readable verbatim via
+ctx_history / ctx_history_grep / ctx_history_message(seq). So prefer naming
+where a detail lives (an artifact id, a file path, a tool call) over copying
+it out in full, and never invent a value you are unsure of: it can be looked
+up.
+"""
+
+# Appended to the summary that replaces the evicted turns, so the surviving
+# state itself says where the rest went. Without this the model has a summary
+# and no reason to believe anything more is available.
+_READBACK_FOOTER = (
+    "\n\nThe summarized turns are still recorded verbatim. Recover any detail "
+    "with ctx_history_grep(pattern) to find it, ctx_history(after_seq=N) to "
+    "list turns, or ctx_history_message(seq) to read one in full."
+)
+
+# Tool-call arguments worth stubbing once the turn they belong to is old: the
+# content was already written somewhere durable, so carrying a second copy in
+# every later request buys nothing. Value = the argument holding the bulk, and
+# the argument naming where it landed (``None`` = recoverable only through the
+# verbatim history).
+_STUBBABLE_ARGS: dict[str, tuple[str, str | None]] = {
+    "tr_write_file": ("content", "path"),
+    "sk_write_skill": ("body", "name"),
+    "artifact_create": ("content", None),
+}
+
+# Below this an argument is not worth stubbing — the stub itself costs tokens.
+_STUB_MIN_CHARS = 1_000
+
+# Recent messages never stubbed: the agent may still be working on what it
+# just wrote. Applied only at compaction time, so the boundary is fixed once
+# rather than sliding every turn (a sliding boundary would rewrite the cached
+# prompt prefix on every call and cost far more than the stub saves).
+_STUB_KEEP_RECENT = 6
 
 
 class YuyutsavaCompactionMiddleware(SummarizationMiddleware):
@@ -118,18 +159,26 @@ class YuyutsavaCompactionMiddleware(SummarizationMiddleware):
         summary_store: ThreadSummaryStore | None = None,
         memory_sink: Any | None = None,  # duck-typed MemoryStore (async .add)
         role: str = "agent",
+        history_readback: bool = False,
     ) -> None:
         super().__init__(
             model,
             trigger=("tokens", settings.compact_trigger_tokens),
             keep=("messages", settings.keep_messages),
-            summary_prompt=YUYUTSAVA_SUMMARY_PROMPT,
+            summary_prompt=YUYUTSAVA_SUMMARY_PROMPT.replace(
+                "{readback_note}", _READBACK_NOTE if history_readback else ""
+            ),
             trim_tokens_to_summarize=settings.summarizer_input_tokens,
         )
         self._settings = settings
         self._summary_store = summary_store
         self._memory = memory_sink
         self._role = role
+        # True when a transcript store is wired, i.e. the ctx_history* tools
+        # exist for this agent. Everything that promises the model a read-back
+        # path is conditional on it — a promise we cannot keep is worse than
+        # no promise, because the model stops preserving detail in summaries.
+        self._history_readback = history_readback
 
     # ------------------------------------------------------------------
     # Compaction (async path — the whole runtime streams via astream)
@@ -165,7 +214,11 @@ class YuyutsavaCompactionMiddleware(SummarizationMiddleware):
         # Pinned messages are included in the summarizer's *input* (so the
         # summary is anchored to the real task) but stay verbatim in state.
         summary = await self._acreate_summary([*pinned, *to_summarize])
-        new_messages = self._build_new_messages(summary)
+        new_messages = self._build_new_messages(self._with_readback(summary))
+        # Compaction is the one moment the prompt prefix is rewritten anyway,
+        # so it is also the only cheap moment to drop bulky already-persisted
+        # tool arguments from the surviving tail.
+        preserved = self._stub_bulky_args(preserved)
 
         logger.info(
             "%s: compacted %d msgs (~%d tokens) → summary + %d pinned + %d kept",
@@ -205,8 +258,8 @@ class YuyutsavaCompactionMiddleware(SummarizationMiddleware):
             "messages": [
                 RemoveMessage(id=REMOVE_ALL_MESSAGES),
                 *pinned,
-                *self._build_new_messages(summary),
-                *preserved,
+                *self._build_new_messages(self._with_readback(summary)),
+                *self._stub_bulky_args(preserved),
             ]
         }
 
@@ -244,7 +297,7 @@ class YuyutsavaCompactionMiddleware(SummarizationMiddleware):
         return {
             "messages": [
                 SystemMessage(
-                    content=(
+                    content=self._with_readback(
                         "Recovered context from a previous session of this "
                         f"thread (summary v{row.version}):\n\n{row.summary}"
                     ),
@@ -255,6 +308,100 @@ class YuyutsavaCompactionMiddleware(SummarizationMiddleware):
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    def _with_readback(self, summary: str) -> str:
+        """Summary text plus the read-back footer, when there is one to offer."""
+        return f"{summary}{_READBACK_FOOTER}" if self._history_readback else summary
+
+    def _stub_bulky_args(self, messages: list[AnyMessage]) -> list[AnyMessage]:
+        """Replace already-persisted bulk tool arguments with a pointer.
+
+        A ``tr_write_file(content=…)`` or ``artifact_create(content=…)`` call
+        carries the whole payload, and that payload is then re-sent with every
+        later request for the rest of the session — this session re-sent 7,564
+        chars of artifact HTML on all 97 calls. The file and the artifact are
+        on disk, so the copy in the prompt is pure duplication.
+
+        This is **not** truncation: the transcript store dedups on message id,
+        so the row it already holds keeps the original arguments in full, and
+        the stub names how to read them back. Nothing becomes unreachable.
+
+        The provider payload is built straight from ``tool_calls`` (Vertex:
+        ``FunctionCall({"name": tc["name"], "args": tc["args"]})``), so only
+        ``args`` values change — ``id`` and ``name`` are preserved, which is
+        also what keeps Gemini thought-signature lookups matching.
+        """
+        if len(messages) <= _STUB_KEEP_RECENT:
+            return messages
+        cutoff = len(messages) - _STUB_KEEP_RECENT
+        out: list[AnyMessage] = []
+        stubbed = 0
+        saved = 0
+        for i, msg in enumerate(messages):
+            calls = getattr(msg, "tool_calls", None)
+            if i >= cutoff or not calls:
+                out.append(msg)
+                continue
+            new_calls = []
+            changed = False
+            for call in calls:
+                rewritten, freed = self._stub_one_call(call)
+                if freed:
+                    changed = True
+                    stubbed += 1
+                    saved += freed
+                new_calls.append(rewritten)
+            if not changed:
+                out.append(msg)
+                continue
+            try:
+                out.append(msg.model_copy(update={"tool_calls": new_calls}))
+            except Exception:  # noqa: BLE001 — never drop a message over this
+                logger.debug("compaction: could not stub args on %r", msg, exc_info=True)
+                out.append(msg)
+        if stubbed:
+            logger.info(
+                "%s: stubbed %d bulky tool arg(s) in the kept tail (~%d chars freed "
+                "per later call)", self._role, stubbed, saved,
+            )
+        return out
+
+    def _stub_one_call(self, call: Any) -> tuple[Any, int]:
+        """``(call, chars_freed)`` — ``chars_freed == 0`` means untouched."""
+        if not isinstance(call, dict):
+            return call, 0
+        spec = _STUBBABLE_ARGS.get(str(call.get("name") or ""))
+        if spec is None:
+            return call, 0
+        arg_name, locator_arg = spec
+        args = call.get("args")
+        if not isinstance(args, dict):
+            return call, 0
+        value = args.get(arg_name)
+        if not isinstance(value, str) or len(value) < _STUB_MIN_CHARS:
+            return call, 0
+
+        locator = str(args.get(locator_arg) or "") if locator_arg else ""
+        if locator_arg and not locator:
+            # No path/name to point at: leave the argument alone rather than
+            # replace it with a stub nobody can resolve.
+            return call, 0
+        if locator_arg == "path":
+            how = f'read it back with tr_read_file("{locator}")'
+        elif locator_arg == "name":
+            how = f'read it back with sk_read_skill("{locator}")'
+        elif self._history_readback:
+            how = "find it with ctx_history_grep, then ctx_history_message(seq)"
+        else:
+            # Nothing to point at and no history readers wired.
+            return call, 0
+
+        new_args = dict(args)
+        new_args[arg_name] = (
+            f"<stubbed: {len(value):,} chars, already written — {how}>"
+        )
+        freed = len(value) - len(new_args[arg_name])
+        return {**call, "args": new_args}, max(0, freed)
 
     def _pinned_head(self, messages: list[AnyMessage]) -> list[AnyMessage]:
         """Leading Human/System messages (the task) — never summarized away.
