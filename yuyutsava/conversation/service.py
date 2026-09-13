@@ -51,6 +51,32 @@ EventSink = Callable[[StreamEvent], Awaitable[None] | None]
 AskHandler = Callable[[object], Awaitable[str]]
 
 
+def _repair_summary(found: Any, *, close_turn: bool = True) -> str:
+    """Plain-English list of what a repair changed, for a user-facing notice.
+
+    "1 tool call was cancelled" was the only story the notice could tell, so a
+    repair that closed an unfinished turn or dropped an empty reply announced
+    itself as something it was not.
+    """
+    parts: list[str] = []
+    n = len(getattr(found, "cancelled", ()))
+    if n:
+        parts.append(f"{n} cancelled tool call{'s' if n != 1 else ''}")
+    n = len(getattr(found, "dangling", ()))
+    if n:
+        parts.append(f"{n} tool call{'s' if n != 1 else ''} with no result")
+    n = len(getattr(found, "empty_assistant", ()))
+    if n:
+        parts.append(f"{n} empty repl{'ies' if n != 1 else 'y'}")
+    if close_turn and getattr(found, "unclosed_turn", False):
+        parts.append("an unfinished turn")
+    if not parts:
+        return "nothing to repair"
+    if len(parts) == 1:
+        return parts[0]
+    return ", ".join(parts[:-1]) + " and " + parts[-1]
+
+
 class ConversationService:
     """One live multi-turn conversation bound to a session + agent bundle."""
 
@@ -216,7 +242,15 @@ class ConversationService:
         # next turn — from any front — repairs before it sends. Subagents come
         # free, because a cancelled `task` call leaves its fabricated result in
         # the *parent's* history, which is the history being repaired here.
-        await self._repair_before_turn(bundle, on_event)
+        #
+        # ``close_turn`` is off when resuming: that turn is still the model's to
+        # finish, so declaring it interrupted would be a lie. When starting a
+        # new turn it is on, and it is the half that was missing — cancelling a
+        # run left the assistant's turn hanging open and the next user message
+        # landed straight after a tool result.
+        await self._repair_before_turn(
+            bundle, on_event, close_turn=resume_value is None,
+        )
 
         async def _drive(user_text: str | None, resume: object | None) -> tuple[str, int]:
             """One pass of the graph. Returns ``(final_text, steps)``."""
@@ -303,7 +337,7 @@ class ConversationService:
             return False
 
     async def _repair_before_turn(
-        self, bundle: AgentBundle, on_event: "EventSink",
+        self, bundle: AgentBundle, on_event: "EventSink", *, close_turn: bool = True,
     ) -> None:
         """Repair an interrupted tool call before sending anything new.
 
@@ -316,7 +350,7 @@ class ConversationService:
         """
         from yuyutsava.conversation.repair import (
             Cause,
-            needs_repair,
+            diagnose,
             repair_orphan_tool_calls,
         )
 
@@ -325,10 +359,12 @@ class ConversationService:
                 {"configurable": {"thread_id": self.thread_id}}
             )
             messages = state.values.get("messages", []) if state and state.values else []
-            if not needs_repair(messages):
+            found = diagnose(messages)
+            if not found.any(close_turn=close_turn):
                 return
             repaired = await repair_orphan_tool_calls(
                 bundle.agent, self.thread_id, cause=Cause.INTERRUPTED_BY_USER,
+                close_turn=close_turn,
             )
         except Exception:  # noqa: BLE001 — a failed repair must not block a turn
             logger.debug("pre-turn repair failed", exc_info=True)
@@ -336,11 +372,9 @@ class ConversationService:
         if repaired:
             await self._emit(on_event, StreamEvent("notice", {
                 "level": "info",
-                "text": (
-                    f"Picking up after an interruption — {repaired} tool call"
-                    f"{'s' if repaired != 1 else ''} was cancelled mid-flight "
-                    f"and did not run."
-                ),
+                "text": "Picking up after an interruption — " + _repair_summary(
+                    found, close_turn=close_turn,
+                ) + ".",
             }))
 
     async def _recover_empty_turn(
@@ -356,28 +390,37 @@ class ConversationService:
 
         Two steps, in order:
 
-        1. If the history carries an interrupted tool call, repair it (see
-           :mod:`yuyutsava.conversation.repair`) and drive the graph once more
-           with no new user message, so the agent answers the message already
-           in its history.
+        1. Repair whatever the history is carrying (see
+           :mod:`yuyutsava.conversation.repair`) and drive the graph **once**
+           more with no new user message, so the agent answers the message
+           already in its history.
         2. Whatever happens, emit a ``notice`` the user can see. Silence is
            indistinguishable from a hang, and it is the one outcome a
            conversational agent must never produce.
+
+        The retry is unconditional, and that is the correction the 14 Sep
+        session forced. It used to fire only when the marker-based check had
+        found something, so a turn that came back empty for any *other* reason
+        got no retry at all — the log read ``(repaired=0) — surfaced to the
+        user`` and the conversation stopped. It happened twice in a row on
+        60,813 and 60,978 input tokens, and the user's very next message went
+        through untouched: the turn was recoverable and nothing tried. One
+        extra call against a conversation that is otherwise dead is a trade
+        worth making; it stays at exactly one so an unrecoverable thread cannot
+        spend in a loop.
         """
-        from yuyutsava.conversation.repair import (
-            Cause,
-            needs_repair,
-            repair_orphan_tool_calls,
-        )
+        from yuyutsava.conversation.repair import Cause, diagnose, repair_orphan_tool_calls
 
         steps = 0
         repaired = 0
+        found = None
         try:
             state = await bundle.agent.aget_state(
                 {"configurable": {"thread_id": self.thread_id}}
             )
             messages = state.values.get("messages", []) if state and state.values else []
-            if needs_repair(messages):
+            found = diagnose(messages)
+            if found.any():
                 repaired = await repair_orphan_tool_calls(
                     bundle.agent, self.thread_id,
                     cause=Cause.INTERRUPTED_BY_USER,
@@ -385,37 +428,46 @@ class ConversationService:
         except Exception:  # noqa: BLE001 — recovery must not raise over a reply
             logger.debug("empty-turn inspection failed", exc_info=True)
 
-        if repaired:
+        if repaired and found is not None:
             await self._emit(on_event, StreamEvent("notice", {
                 "level": "warning",
                 "text": (
-                    f"The previous turn left {repaired} interrupted tool call"
-                    f"{'s' if repaired != 1 else ''} in the history, which the "
-                    f"model would not continue from. Repaired — retrying."
+                    "The previous turn left the history in a shape the model "
+                    "would not continue from (" + _repair_summary(found)
+                    + "). Repaired — retrying."
                 ),
             }))
-            # No new user message: theirs is already in the history, and
-            # sending it twice would make the model answer itself.
-            try:
-                final, steps = await drive(None, None)
-            except Exception:  # noqa: BLE001
-                logger.exception("retry after repair failed")
-                final = ""
-            if final:
-                return final, steps
+        else:
+            await self._emit(on_event, StreamEvent("notice", {
+                "level": "warning",
+                "text": (
+                    "The model returned nothing. Retrying once — an empty "
+                    "response is often transient."
+                ),
+            }))
+        # No new user message: theirs is already in the history, and sending it
+        # twice would make the model answer itself.
+        try:
+            final, steps = await drive(None, None)
+        except Exception:  # noqa: BLE001
+            logger.exception("retry after an empty turn failed")
+            final = ""
+        if final:
+            return final, steps
 
         await self._emit(on_event, StreamEvent("notice", {
             "level": "error",
             "text": (
-                "The model returned an empty response — no text and no tool "
-                "call. This usually means the conversation's history is in a "
-                "state it will not continue from. Try /new for a fresh "
-                "session, or ask again; the last message is still in history."
+                "The model returned an empty response twice — no text and no "
+                "tool call, before and after a repair. The conversation's "
+                "history is in a state it will not continue from. Try /new for "
+                "a fresh session; your last message is still in the history, "
+                "so nothing you wrote is lost."
             ),
         }))
         logger.warning(
-            "empty turn on thread=%s (repaired=%d) — surfaced to the user",
-            self.thread_id, repaired,
+            "empty turn on thread=%s (repaired=%d, retried=1) — surfaced to "
+            "the user", self.thread_id, repaired,
         )
         return "", steps
 
