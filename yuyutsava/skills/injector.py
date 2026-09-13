@@ -12,10 +12,15 @@ A thin wrapper over the generic
 
 from __future__ import annotations
 
+import logging
+import re
+
 from yuyutsava.core.config import LIMITS
 from yuyutsava.retrieval.hit import Hit
 from yuyutsava.retrieval.injector import RetrievalInjector
 from yuyutsava.skills.store import SkillStore
+
+logger = logging.getLogger("yuyutsava.skills.injector")
 
 _PREFIX = (
     "RELEVANT SKILLS (matched to this task; read the full body with "
@@ -25,6 +30,24 @@ _PREFIX = (
 
 def _render(h: Hit) -> str:
     return f"  - {h.payload.get('name', h.id)}: {h.text}"
+
+
+# Names from the most recent injection, newest last. Retrieval happens deep
+# inside a graph run where nothing is returned to the caller, so "which skills
+# did it actually see?" was unanswerable — and a session that re-derived two
+# procedures from scratch while 31 skills sat indexed is exactly when you want
+# to know. Process-global and purely diagnostic: the ``/skills`` command reads
+# it, nothing branches on it.
+_last_recalled: tuple[str, ...] = ()
+
+#: Matches the line ``_render`` above produces. Parser and format live
+#: together on purpose — one is the other's only reader.
+_LINE = re.compile(r"^ {2}- ([^:]+):")
+
+
+def last_recalled() -> tuple[str, ...]:
+    """Skill names from the most recent per-turn injection (may be empty)."""
+    return _last_recalled
 
 
 class SkillInjector:
@@ -44,4 +67,14 @@ class SkillInjector:
 
     async def build_block(self, task_text: str) -> str:
         """Return the skills block string, or empty string. Never raises."""
-        return await self._inner.build_block(task_text)
+        global _last_recalled
+        block = await self._inner.build_block(task_text)
+        names = tuple(
+            m.group(1).strip() for m in (_LINE.match(ln) for ln in block.splitlines()) if m
+        )
+        _last_recalled = names
+        if names:
+            logger.info("skills recalled for this turn: %s", ", ".join(names))
+        else:
+            logger.debug("skills: nothing matched this turn")
+        return block

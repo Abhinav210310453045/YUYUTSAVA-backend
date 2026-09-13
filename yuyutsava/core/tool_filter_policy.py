@@ -40,16 +40,31 @@ _SUPPRESS_NAMES: frozenset[str] = frozenset({
 # upfront. Their names stay visible in the system-prompt catalog; the agent
 # pulls a schema on demand via tool_search(\'select:<name>\') or a keyword search.
 #
-# ctx_* is deliberately NOT here: offload digests reference
-# ctx_fetch_artifact / ctx_grep_artifact directly, so the model must always
-# see their schemas (same always-visible treatment as tool_search itself).
+# ctx_* is deliberately NOT here: offload digests and compaction summaries
+# reference ctx_fetch_artifact / ctx_grep_artifact / ctx_history directly, so
+# the model must always see their schemas (same always-visible treatment as
+# tool_search itself). ``_ALWAYS_VISIBLE`` below carves out the one sk_* tool
+# that needs the same reachability.
 _SUPPRESS_PREFIXES: tuple[str, ...] = (
     "tr_", "ws_", "sk_", "fo_", "ev_", "db_", "mem_", "todo_", "um_", "orch_",
 )
 
+# Always-visible exceptions to the prefix rule. Lazy discovery costs one extra
+# hop, which is fine for a tool the model already knows it wants — and fatal
+# for one it has to think of. ``sk_search_skill`` is the entry point to every
+# saved procedure; behind ``tool_search`` it sat two hops away
+# (tool_search -> sk_search_skill -> sk_read_skill) and in a 97-call session
+# that re-derived a Chrome profile lookup and a WhatsApp database schema from
+# web searches, the model took neither hop. A skill nobody can find is not a
+# skill. Same reasoning as ctx_* (which is exempt via its absent prefix):
+# recovery and recall paths must be reachable in one move.
+_ALWAYS_VISIBLE: frozenset[str] = frozenset({"sk_search_skill"})
+
 
 def should_suppress(name: str) -> bool:
     """Whether *name*\'s schema is hidden from the model\'s initial view."""
+    if name in _ALWAYS_VISIBLE:
+        return False
     if name in _SUPPRESS_NAMES:
         return True
     return name.startswith(_SUPPRESS_PREFIXES)

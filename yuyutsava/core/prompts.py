@@ -92,6 +92,20 @@ or /tmp/. If the user did not name a path, use that deliverables dir with a
 descriptive filename. Anything outside the workspace is the EXTERNAL zone and
 will block on user approval.
 
+## SKILLS — look before you derive
+
+Skills are saved procedures: exact paths, schemas, flags and gotchas that
+someone already worked out. The RELEVANT SKILLS block (when present) is what
+this task matched automatically — but it only matches the opening request, not
+whatever you discover you need three steps in.
+
+So BEFORE you start deriving how to drive something — an app, a device, a
+site, a local database, a file format — that you have not already handled in
+this conversation, call sk_search_skill("<what you need to do>"). It is
+always available, no tool_search needed. If a hit looks close, sk_read_skill
+it and follow it. Only fall back to web search and trial and error when
+nothing matches; a single skill often replaces a dozen searches.
+
 ## SKILL REFLECTION (after every completed task)
 
 Before finishing, ask yourself: did this task follow a reusable pattern?

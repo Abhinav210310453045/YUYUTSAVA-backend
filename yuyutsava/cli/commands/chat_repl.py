@@ -202,6 +202,7 @@ def _print_help() -> None:
     print(f"  {_DIM}/voice{_RESET}        voice mode: /voice on|off, /voice wake off, /voice tts off", file=sys.stderr)
     print(f"  {_DIM}/subagents{_RESET}    dedicated subagents: /subagents off face-watcher", file=sys.stderr)
     print(f"  {_DIM}/usage{_RESET}        tokens and estimated cost for this session", file=sys.stderr)
+    print(f"  {_DIM}/skills{_RESET}       skills recalled this turn, and all available ones", file=sys.stderr)
     print(file=sys.stderr)
     print(f"{_DIM}Ctrl+C cancels the current turn but keeps the session open.{_RESET}", file=sys.stderr)
     print(file=sys.stderr)
@@ -271,6 +272,7 @@ _SLASH_COMMANDS: dict[str, str] = {
     "/voice": "show or set voice mode (/voice on|off|wake on|tts off)",
     "/subagents": "list dedicated subagents (/subagents on|off <name>)",
     "/usage": "tokens and estimated cost for this session",
+    "/skills": "skills recalled this turn, and all available ones",
 }
 
 
@@ -565,6 +567,46 @@ async def _print_usage_summary(store: Any, thread_id: str, since: float) -> None
     peak = max(r.input_tokens for r in rows)
     print(
         f"    {_DIM}largest single request: {peak:,} input tokens{_RESET}",
+        file=sys.stderr,
+    )
+
+
+def _print_skills(layout: Any) -> None:
+    """``/skills``: what was recalled last turn, and what is available at all.
+
+    Retrieval happens inside the graph, so until now there was no way to tell
+    whether a skill reached the prompt — which matters, because a skill the
+    agent never sees is indistinguishable from one that does not exist.
+    """
+    from yuyutsava.skills.injector import last_recalled
+    from yuyutsava.skills.registry import SkillRegistry
+
+    recalled = last_recalled()
+    if recalled:
+        print(f"  {_CYAN}recalled last turn:{_RESET} {', '.join(recalled)}", file=sys.stderr)
+    else:
+        print(
+            f"  {_DIM}nothing recalled yet this session (the block is built per "
+            f"turn from the message text){_RESET}",
+            file=sys.stderr,
+        )
+    try:
+        registry = (
+            SkillRegistry(workspace_dir=layout.skills) if layout is not None
+            else SkillRegistry()
+        )
+        skills = registry.scan(agent="cli")
+    except Exception:  # noqa: BLE001 — a listing must never break the REPL
+        return
+    if not skills:
+        return
+    print(f"  {_DIM}available ({len(skills)}):{_RESET}", file=sys.stderr)
+    for s in sorted(skills, key=lambda s: (s.scope, s.name)):
+        mark = "*" if s.name in recalled else " "
+        print(f"   {mark} {_DIM}{s.scope:9}{_RESET} {s.name}", file=sys.stderr)
+    print(
+        f"  {_DIM}the agent can also search these itself with "
+        f"sk_search_skill{_RESET}",
         file=sys.stderr,
     )
 
@@ -971,6 +1013,10 @@ async def run_chat_repl(
                     await _print_usage_summary(
                         bundle.usage_store, session.thread_id, session.created_at
                     )
+                    continue
+
+                if user_input.strip().split()[0] == "/skills":
+                    _print_skills(bundle.layout)
                     continue
 
                 slash_result = _handle_slash(
