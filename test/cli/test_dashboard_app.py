@@ -24,11 +24,13 @@ import contextlib
 import logging
 import sys
 import unittest
+import warnings
 
 from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 
 import yuyutsava.core.config  # noqa: F401 — import first (core/__init__ cycle)
+from yuyutsava.cli.render.ansi_wrap import visible_width
 from yuyutsava.cli.render.dashboard import ChatDashboard
 from yuyutsava.context.meter import ContextSnapshot, bus
 
@@ -233,6 +235,117 @@ class SnapshotsReachThePanel(_DashboardCase):
         bus().publish(ContextSnapshot(thread_id="t1", model="after-stop",
                                       max_input_tokens=1))
         self.assertIs(self.dash._snapshot, before)
+
+
+class PaneIntegrity(_DashboardCase):
+    """The pane cannot paint outside itself, whoever did the writing.
+
+    Each of these reproduces a writer that actually bled into the context
+    column: a `warnings.warn`, a `logging` record from the `yuyutsava` tree
+    (whose handler is attached to that logger with propagate=False, which a
+    root-only retarget missed), and an unbounded raw print.
+    """
+
+    async def test_no_rendered_row_can_exceed_the_pane(self):
+        await self.dash.start()
+        self.dash.buffer.write("Z" * 2_000 + "\n")
+        self.dash.console.print("R" * 2_000)
+        rows = self.dash._display_rows(500, self.dash.left_width)
+        widest = max((visible_width(r) for r in rows), default=0)
+        self.assertLessEqual(widest, self.dash.left_width)
+
+    async def test_a_warning_lands_in_the_pane_not_the_terminal(self):
+        await self.dash.start()
+        warnings.warn("a long credentials warning " + "x" * 300, stacklevel=1)
+        self.assertTrue(
+            any("credentials warning" in ln for ln in self.dash.buffer.lines()))
+
+    async def test_a_logger_with_its_own_handler_is_captured(self):
+        # core.engine.setup_logging attaches the CLI handler to the
+        # `yuyutsava` logger with propagate=False. Retargeting only root left
+        # every warning in the tree painting on top of the prompt.
+        log = logging.getLogger("yuyutsava.test.pane")
+        root = logging.getLogger("yuyutsava")
+        handler = logging.StreamHandler(sys.stderr)
+        root.addHandler(handler)
+        root.propagate = False
+        try:
+            await self.dash.start()
+            log.warning("captured into the pane")
+            self.assertTrue(
+                any("captured into the pane" in ln
+                    for ln in self.dash.buffer.lines()))
+            await self.dash.stop()
+            self.assertIsNot(handler.stream, self.dash.buffer)
+        finally:
+            root.removeHandler(handler)
+            root.propagate = True
+
+    async def test_narrowing_the_pane_rewraps_instead_of_bleeding(self):
+        await self.dash.start()
+        self.dash.buffer.write("W" * 300 + "\n")
+        for width in (200, 120, 60, 30):
+            rows = self.dash._display_rows(200, width)
+            self.assertLessEqual(
+                max(visible_width(r) for r in rows), width, f"width={width}")
+
+    async def test_the_panel_never_exceeds_its_height(self):
+        from yuyutsava.cli.render.context_panel import panel_fragments
+
+        snap = ContextSnapshot(
+            thread_id="t", model="m", max_input_tokens=1_000,
+            messages_tokens=100, call_no=1, input_tokens=10, calls=1)
+        for height in range(1, 45):
+            text = "".join(t for _s, t in panel_fragments(
+                snap, width=34, height=height, notices=["a notice"]))
+            rows = [ln for ln in text.split("\n") if ln]
+            self.assertLessEqual(len(rows), height, f"height={height}")
+            self.assertEqual({len(r) for r in rows}, {34}, f"height={height}")
+
+
+class Notices(_DashboardCase):
+    """Transient asides belong in the panel, never over the transcript."""
+
+    async def test_a_notice_appears_and_expires(self):
+        self.dash.notice("provider busy (429)", ttl=100.0)
+        self.assertIn("provider busy (429)", self.dash.notices())
+        self.dash._notices = [("stale", 0.0)]
+        self.assertEqual(self.dash.notices(), [])
+
+    async def test_notices_are_deduplicated(self):
+        for _ in range(5):
+            self.dash.notice("same thing")
+        self.assertEqual(self.dash.notices().count("same thing"), 1)
+
+    async def test_notices_are_bounded(self):
+        for i in range(10):
+            self.dash.notice(f"notice {i}")
+        self.assertLessEqual(len(self.dash.notices()), 3)
+
+    async def test_an_empty_notice_is_ignored(self):
+        self.dash.notice("")
+        self.assertEqual(self.dash.notices(), [])
+
+    async def test_an_unpriced_model_is_said_once_in_the_panel(self):
+        await self.dash.start()
+        for _ in range(3):
+            bus().publish(ContextSnapshot(
+                thread_id="t1", model="no-price-model", max_input_tokens=1_000,
+                call_no=1, input_tokens=10, priced=False))
+        joined = " ".join(self.dash.notices())
+        self.assertIn("no price entry", joined)
+        self.assertEqual(len(self.dash.notices()), 1)
+
+    async def test_a_priced_model_says_nothing(self):
+        await self.dash.start()
+        bus().publish(ContextSnapshot(
+            thread_id="t1", model="claude-sonnet-4-5", max_input_tokens=1_000,
+            call_no=1, input_tokens=10, priced=True))
+        self.assertEqual(self.dash.notices(), [])
+
+    async def test_a_retry_becomes_a_notice(self):
+        self.dash.note_retry("m", 2, 6, 4.0, RuntimeError("ResourceExhausted"))
+        self.assertTrue(any("provider busy" in n for n in self.dash.notices()))
 
 
 class StreamCapture(_DashboardCase):

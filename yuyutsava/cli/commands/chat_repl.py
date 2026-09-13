@@ -944,7 +944,18 @@ async def run_chat_repl(
     # to tell whether the turn was alive. Cleared in the finally block below.
     from yuyutsava.llm.quirks.first_chunk_retry import set_retry_listener
 
-    set_retry_listener(renderer.note_retry)
+    def _on_retry(model, attempt, retries, delay, exc):
+        """Retries speak on the status line AND in the panel's notices.
+
+        The status line is transient and easy to miss during a long wait; the
+        panel keeps it up for the length of the backoff. Neither writes into
+        the transcript, which is what the user asked for.
+        """
+        renderer.note_retry(model, attempt, retries, delay, exc)
+        if dashboard is not None:
+            dashboard.note_retry(model, attempt, retries, delay, exc)
+
+    set_retry_listener(_on_retry)
 
     # The renderer is the only voice the user should hear in chat mode.
     # Without this, the TaskRunner / tool_registry / task_runner.tools
@@ -1069,6 +1080,14 @@ async def run_chat_repl(
             )
             session = convo.session
 
+            # The split view must be up BEFORE anything is printed: it takes
+            # the alternate screen, which wipes whatever is already on the
+            # terminal. The banner used to be drawn first and then erased, so
+            # `yuyutsava chat` opened on a bare screen with a stray Google
+            # credentials warning at the top.
+            if dashboard is not None:
+                await dashboard.start()
+
             # Surface any langgraph-api upgrade/support notice once, cleanly,
             # right above the banner rather than mid-chat.
             _print_version_notice(full=debug_plumbing)
@@ -1102,8 +1121,6 @@ async def run_chat_repl(
                 if is_tty and dashboard is None
                 else None
             )
-            if dashboard is not None:
-                await dashboard.start()
 
             async def _read_input() -> str:
                 if dashboard is not None:

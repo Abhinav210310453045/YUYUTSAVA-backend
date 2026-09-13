@@ -61,11 +61,16 @@ import io
 import logging
 import os
 import sys
+import time
+import warnings
 from collections import deque
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from prompt_toolkit.layout.controls import FormattedTextControl
+
+from yuyutsava.cli.render.ansi_wrap import visible_width, wrap_ansi
 from yuyutsava.cli.render.context_panel import (
     MIN_DASHBOARD_COLS,
     panel_fragments,
@@ -77,6 +82,10 @@ logger = logging.getLogger("yuyutsava.cli.dashboard")
 #: Lines of transcript kept. The alternate screen has no scrollback of its own,
 #: so this IS the history the user can scroll through.
 DEFAULT_SCROLLBACK = 5_000
+
+#: How long a panel notice stays up, and how many can stack.
+_NOTICE_TTL_SEC = 30.0
+_NOTICE_MAX = 3
 
 #: Height of the left pane's fallback when prompt_toolkit has not rendered yet
 #: (``render_info`` is None before the first frame) — one frame of slightly
@@ -206,6 +215,32 @@ class TranscriptBuffer:
         self._partial = ""
 
 
+class _ScrollableTextControl(FormattedTextControl):
+    """A text control whose wheel events scroll the owner instead of the window.
+
+    ``FormattedTextControl`` only dispatches mouse events that were attached to
+    individual fragments, and this pane's fragments come from parsed ANSI, so
+    there is nothing to attach them to. Overriding the method is the documented
+    way in; returning ``NotImplemented`` for anything else leaves clicks and
+    selection to prompt_toolkit.
+    """
+
+    def __init__(self, text: Any, *, on_scroll: Callable[[int], None]) -> None:
+        super().__init__(text)
+        self._on_scroll = on_scroll
+
+    def mouse_handler(self, mouse_event):  # noqa: ANN001, ANN201
+        from prompt_toolkit.mouse_events import MouseEventType
+
+        if mouse_event.event_type == MouseEventType.SCROLL_UP:
+            self._on_scroll(3)
+            return None
+        if mouse_event.event_type == MouseEventType.SCROLL_DOWN:
+            self._on_scroll(-3)
+            return None
+        return NotImplemented
+
+
 class ChatDashboard:
     """Owns the application, the transcript sink and the Rich console."""
 
@@ -231,6 +266,10 @@ class ChatDashboard:
         self._meter_token: int | None = None
         self._saved_streams: tuple[Any, Any] | None = None
         self._retargeted: list[tuple[Any, Any]] = []
+        self._saved_showwarning: Any = None
+        #: (text, expiry) transient panel lines — see notice().
+        self._notices: list[tuple[str, float]] = []
+        self._said_unpriced = False
         self._app_task: asyncio.Task | None = None
         self._queue: asyncio.Queue[str | None] = asyncio.Queue()
 
@@ -288,16 +327,19 @@ class ChatDashboard:
             multiline=False,
         )
 
-        self._out_control = FormattedTextControl(self._visible_transcript)
+        self._out_control = _ScrollableTextControl(
+            self._visible_transcript, on_scroll=self._on_wheel,
+        )
         self._out_window = Window(
             content=self._out_control, wrap_lines=False, always_hide_cursor=True,
         )
-        panel = Window(
+        self._panel_window = Window(
             content=FormattedTextControl(self._panel_text),
             width=lambda: self._panel_width,
             wrap_lines=False,
             always_hide_cursor=True,
         )
+        panel = self._panel_window
         divider = Window(width=1, char="│", style="class:ctx.border")
         panel_visible = Condition(lambda: self._panel_visible)
 
@@ -327,6 +369,11 @@ class ChatDashboard:
             style=Style.from_dict(_STYLE),
             full_screen=True,
             mouse_support=True,
+            # prompt_toolkit enables these by default in full screen, and they
+            # bind PgUp/PgDn against the FOCUSED window — the one-row input —
+            # so the transcript could not be scrolled at all. This pane owns
+            # its own scrolling.
+            enable_page_navigation_bindings=False,
             output=self._output,
             **({"input": self._input} if self._input is not None else {}),
             # The panel is driven by model calls, not by a clock; a periodic
@@ -387,6 +434,16 @@ class ChatDashboard:
     def page_down(self) -> None:
         self._scroll_by(-self._page())
 
+    def _on_wheel(self, lines: int) -> None:
+        """Wheel over the transcript scrolls it.
+
+        Handled on the control as well as via the ScrollUp/ScrollDown keys:
+        terminals differ over whether a wheel arrives as a mouse event or as a
+        synthetic key, and the wheel is how people actually scroll.
+        """
+        self._scroll_by(lines)
+        self._invalidate()
+
     def _key_bindings(self):
         from prompt_toolkit.key_binding import KeyBindings
         from prompt_toolkit.keys import Keys
@@ -421,25 +478,44 @@ class ChatDashboard:
     def _page(self) -> int:
         return max(1, self._height() - 1)
 
+    def _display_rows(self, need: int, width: int) -> list[str]:
+        """The last *need* display rows, wrapping logical lines from the end.
+
+        Wrapping happens here, not on write, so a narrower terminal re-wraps
+        instead of painting across the panel. Walking backwards keeps the cost
+        proportional to what is on screen rather than to the whole scrollback —
+        which matters at a 5,000-line buffer and several frames a second.
+        """
+        out: list[str] = []
+        for line in reversed(self.buffer.lines()):
+            rows = wrap_ansi(line, width)
+            out.extend(reversed(rows))
+            if len(out) >= need:
+                break
+        out.reverse()
+        return out[-need:] if len(out) > need else out
+
+    def _display_count(self, width: int) -> int:
+        """Total display rows at this width. Only called on a scroll key."""
+        return sum(len(wrap_ansi(line, width)) for line in self.buffer.lines())
+
     def _scroll_by(self, lines: int) -> None:
-        limit = max(0, self.buffer.line_count() - self._height())
+        width = self.left_width
+        limit = max(0, self._display_count(width) - self._height())
         self._scroll = max(0, min(limit, self._scroll + lines))
 
     def _visible_transcript(self):
-        """Only the visible slice, converted to fragments.
-
-        Converting the whole scrollback each frame would be O(total chars) —
-        5,000 lines at 10 fps — so the window is sliced before the ANSI is
-        parsed. This is also why the lines are stored pre-wrapped.
-        """
+        """The visible rows, wrapped to the pane and converted to fragments."""
         from prompt_toolkit.formatted_text import ANSI, to_formatted_text
 
         self._sync_width()
-        lines = self.buffer.lines()
+        width = self.left_width
         height = self._height()
-        end = max(0, len(lines) - self._scroll)
-        start = max(0, end - height)
-        visible = lines[start:end]
+        rows = self._display_rows(height + self._scroll, width)
+        # Scrolled back: drop the rows below the viewport.
+        if self._scroll:
+            rows = rows[: max(0, len(rows) - self._scroll)]
+        visible = rows[-height:] if len(rows) > height else rows
         if not visible:
             return []
         try:
@@ -450,10 +526,35 @@ class ChatDashboard:
     def _panel_text(self):
         if not self._panel_visible:
             return []
+        info = self._panel_window.render_info
+        height = info.window_height if info is not None else None
         return panel_fragments(
-            self._snapshot, width=self._panel_width,
+            self._snapshot, width=self._panel_width, height=height,
             status=self._safe(self._status), tool=self._safe(self._tool),
+            notices=self.notices(),
         )
+
+    # -- notices ------------------------------------------------------------
+
+    def notice(self, text: str, *, ttl: float = _NOTICE_TTL_SEC) -> None:
+        """Show a transient line in the panel.
+
+        Where a provider retry, an unpriced model or any other aside belongs:
+        the user asked for these on the right, never over the transcript and
+        never over the prompt. Deduplicated, because "no price for this model"
+        said once is information and said per call is noise.
+        """
+        if not text:
+            return
+        now = time.monotonic()
+        self._notices = [(t, e) for t, e in self._notices if e > now and t != text]
+        self._notices.append((text, now + ttl))
+        del self._notices[:-_NOTICE_MAX]
+        self._invalidate()
+
+    def notices(self) -> list[str]:
+        now = time.monotonic()
+        return [t for t, expiry in self._notices if expiry > now]
 
     def _status_text(self):
         status = self._safe(self._status)
@@ -516,7 +617,25 @@ class ChatDashboard:
 
     def _on_snapshot(self, snap: Any) -> None:
         self._snapshot = snap
+        # Say the unpriced-model fact here, once, instead of letting a logger
+        # warning land in the transcript. The panel's cost row already reads
+        # "unpriced"; this explains what to do about it.
+        if snap is not None and snap.call_no and not snap.priced and not self._said_unpriced:
+            self._said_unpriced = True
+            self.notice(
+                f"{snap.model or 'this model'} has no price entry — cost is "
+                f"unknown, not zero. Add it to ~/.yuyutsava/model_prices.json",
+                ttl=120.0,
+            )
         self._invalidate()
+
+    def note_retry(
+        self, model: str, attempt: int, retries: int, delay: float, exc: BaseException
+    ) -> None:
+        """Provider-busy retries as a panel notice as well as a status line."""
+        code = "429" if "ResourceExhausted" in type(exc).__name__ else "503"
+        self.notice(f"provider busy ({code}) — retry {attempt}/{retries} in {delay:.0f}s",
+                    ttl=max(5.0, delay + 5.0))
 
     async def read_input(self) -> str | None:
         """Next submitted line, or ``None`` when the user asked to quit."""
@@ -547,25 +666,67 @@ class ChatDashboard:
         """Route every write into the transcript pane.
 
         One interception instead of editing ~75 print sites — and it also
-        catches library logging and the async-HITL notices that are written
-        straight to stdout from a background task.
+        catches the async-HITL notices written straight to stdout from a
+        background task.
 
-        ``logging.StreamHandler`` binds its stream at construction, so handlers
-        that already exist have to be retargeted explicitly; they are restored
-        on the way out.
+        Three separate write paths, all of which reached the real terminal and
+        painted over a full-screen application:
+
+        1. ``sys.stdout`` / ``sys.stderr`` — swapped.
+        2. **``logging``.** ``StreamHandler`` binds its stream at construction,
+           so existing handlers must be retargeted. The first version of this
+           walked only the ROOT logger, and ``core.engine.setup_logging``
+           attaches the CLI's handler to the ``yuyutsava`` logger with
+           ``propagate=False`` — so every warning in the tree kept writing to
+           the real stderr, landing on top of the prompt in yellow. Walk every
+           logger that has handlers.
+        3. **``warnings``.** ``warnings.showwarning`` writes to
+           ``sys.stderr`` it captured earlier; Google's
+           ``_CLOUD_SDK_CREDENTIALS_WARNING`` arrived that way and was the
+           first line on screen. Redirected explicitly.
+
+        What is genuinely out of reach: a child process that inherits fd 1/2
+        and writes to the tty directly. It does not arise here because the
+        ``tr_*`` tools capture their subprocess output and return it as a tool
+        result rather than letting it through.
         """
         self._saved_streams = (sys.stdout, sys.stderr)
+        old_out, old_err = self._saved_streams
         sys.stdout = self.buffer  # type: ignore[assignment]
         sys.stderr = self.buffer  # type: ignore[assignment]
-        old_out, old_err = self._saved_streams
-        for handler in list(logging.getLogger().handlers):
-            stream = getattr(handler, "stream", None)
-            if stream is old_out or stream is old_err:
-                self._retargeted.append((handler, stream))
-                with contextlib.suppress(Exception):
-                    handler.setStream(self.buffer)  # type: ignore[attr-defined]
+
+        for logger_obj in self._all_loggers():
+            for handler in list(getattr(logger_obj, "handlers", []) or []):
+                stream = getattr(handler, "stream", None)
+                if stream is old_out or stream is old_err:
+                    self._retargeted.append((handler, stream))
+                    with contextlib.suppress(Exception):
+                        handler.setStream(self.buffer)  # type: ignore[attr-defined]
+
+        self._saved_showwarning = warnings.showwarning
+        warnings.showwarning = self._show_warning
+
+    @staticmethod
+    def _all_loggers() -> list[Any]:
+        """Root plus every configured logger. Placeholders have no handlers."""
+        out: list[Any] = [logging.getLogger()]
+        manager = logging.getLogger().manager
+        for obj in list(getattr(manager, "loggerDict", {}).values()):
+            if isinstance(obj, logging.Logger):
+                out.append(obj)
+        return out
+
+    def _show_warning(self, message, category, filename, lineno, file=None, line=None):
+        """``warnings.showwarning`` replacement that writes into the pane."""
+        with contextlib.suppress(Exception):
+            text = warnings.formatwarning(message, category, filename, lineno, line)
+            self.buffer.write(text if text.endswith("\n") else text + "\n")
 
     def _restore_streams(self) -> None:
+        if self._saved_showwarning is not None:
+            with contextlib.suppress(Exception):
+                warnings.showwarning = self._saved_showwarning
+            self._saved_showwarning = None
         for handler, stream in self._retargeted:
             with contextlib.suppress(Exception):
                 handler.setStream(stream)  # type: ignore[attr-defined]

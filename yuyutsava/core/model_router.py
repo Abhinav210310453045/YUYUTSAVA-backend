@@ -161,7 +161,13 @@ def _warn_unpriced_once(model: str) -> None:
     if not model or model in _UNPRICED_SEEN:
         return
     _UNPRICED_SEEN.add(model)
-    logger.warning(
+    # DEBUG, not WARNING. Every surface now reports this where it belongs — the
+    # CLI panel and the app aside show "unpriced" on the cost row,
+    # GET /usage/summary lists `unpriced_models`, and the dashboard says what
+    # to do about it in its notices column. As a WARNING it was a yellow line
+    # landing on top of the user's prompt, restating what the screen already
+    # said. Kept for operators running with DEBUG.
+    logger.debug(
         "no price entry for model %r — its llm_usage rows will record "
         "est_cost_usd=0.00 and the usage totals will under-report. Add it to "
         "~/.yuyutsava/model_prices.json as {\"%s\": [<$/1M in>, <$/1M out>]} "

@@ -22,6 +22,7 @@ numbers and carry no mark. An unpriced model reads ``unpriced``, never
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # pragma: no cover — typing only
@@ -37,6 +38,17 @@ MAX_PANEL_WIDTH = 40
 MIN_DASHBOARD_COLS = 90
 
 _APPROX = "≈"
+
+# Row priorities, lowest number kept longest. A short terminal loses detail
+# from the bottom up; it never loses the window occupancy at the top.
+_P_ESSENTIAL = 0
+_P_SEGMENTS = 1
+_P_LAST_CALL = 2
+_P_SESSION = 3
+_P_STATUS = 4
+_P_NOTICE = 5
+_P_DETAIL = 6
+_P_FOOTER = 7
 
 
 def panel_width_for(cols: int) -> int:
@@ -112,95 +124,154 @@ def panel_fragments(
     snap: Any | None,
     *,
     width: int,
+    height: int | None = None,
     status: str = "",
     tool: str = "",
+    notices: Sequence[str] = (),
 ) -> list[tuple[str, str]]:
     """The live context column, as ``(style, text)`` fragments with newlines.
 
     *status* is the spinner-equivalent line (``Running tr_run_python…``) and
     *tool* the tool in flight; both come from the renderer, which owns that
-    state — the meter has no idea a tool is running.
+    state — the meter has no idea a tool is running. *notices* are transient
+    lines (a provider retry, an unpriced model) that belong here rather than
+    printed over the transcript or the prompt.
+
+    Every row is padded to exactly *width*, because a short row lets the
+    transcript beside it show through and a long one paints over it.
+
+    When *height* is given the column is made to **fit**: rows carry a
+    priority and the least important are dropped until it does. Letting
+    prompt_toolkit clip instead truncated the bottom of the panel — which is
+    where the session totals live — and a number cut in half is worse than a
+    number that stepped aside.
     """
     w = max(MIN_PANEL_WIDTH, width)
-    out: list[tuple[str, str]] = []
+    rows: list[tuple[int, list[tuple[str, str]]]] = []
 
-    def line(text: str = "", style: str = "class:ctx.dim") -> None:
-        out.append((style, text.ljust(w)[:w]))
-        out.append(("", "\n"))
+    def row(prio: int, text: str = "", style: str = "class:ctx.dim") -> None:
+        rows.append((prio, [(style, text.ljust(w)[:w])]))
 
-    line(" CONTEXT", "class:ctx.title")
+    def raw(prio: int, frags: list[tuple[str, str]]) -> None:
+        used = sum(len(t) for _s, t in frags)
+        pad = max(0, w - used)
+        rows.append((prio, [*frags, ("", " " * pad)] if pad else frags))
+
+    row(_P_ESSENTIAL, " CONTEXT", "class:ctx.title")
 
     if snap is None:
-        line()
-        line(" no model call yet", "class:ctx.dim")
-        line(" numbers appear once", "class:ctx.dim")
-        line(" the agent runs", "class:ctx.dim")
-        return out
+        row(_P_ESSENTIAL)
+        row(_P_ESSENTIAL, " no model call yet", "class:ctx.dim")
+        row(_P_DETAIL, " numbers appear once", "class:ctx.dim")
+        row(_P_DETAIL, " the agent runs", "class:ctx.dim")
+        return _fit(rows, height)
 
-    line(f" {snap.model or 'model unknown'}", "class:ctx.accent")
+    row(_P_ESSENTIAL, f" {snap.model or 'model unknown'}", "class:ctx.accent")
 
-    # Occupancy bar. Built fragment by fragment (three styles on one row) and
-    # padded by hand to exactly `w`: every line in this column must be the
-    # panel's full width or the transcript beside it shows through.
     inner = w - 2
     bar_w = max(1, w - 7)
     filled, empty = bar(snap.used_fraction, bar_w)
     tail = f" {fmt_pct(snap.used_fraction):>4}"
-    out.append(("", " "))
-    out.append(("class:ctx.bar.fill", "▓" * filled))
-    out.append(("class:ctx.bar.empty", "░" * empty))
-    out.append(("class:ctx.value", tail))
-    pad = w - 1 - bar_w - len(tail)
-    if pad > 0:
-        out.append(("", " " * pad))
-    out.append(("", "\n"))
-    line(
-        " " + _row(
-            f"{fmt_tokens(snap.used_tokens)} / {fmt_tokens(snap.max_input_tokens)}",
-            "", inner,
-        ),
-        "class:ctx.dim",
-    )
+    raw(_P_ESSENTIAL, [
+        ("", " "),
+        ("class:ctx.bar.fill", "▓" * filled),
+        ("class:ctx.bar.empty", "░" * empty),
+        ("class:ctx.value", tail),
+    ])
+    row(_P_ESSENTIAL, " " + _row(
+        f"{fmt_tokens(snap.used_tokens)} / {fmt_tokens(snap.max_input_tokens)}",
+        "", inner,
+    ), "class:ctx.dim")
     if snap.compact_trigger_tokens and snap.used_tokens >= snap.compact_trigger_tokens:
-        line(" compaction imminent", "class:ctx.warn")
+        row(_P_ESSENTIAL, " compaction imminent", "class:ctx.warn")
 
-    line()
+    row(_P_SEGMENTS)
     for _key, label, tokens in snap.segments():
-        line(" " + _row(label, fmt_tokens(tokens), inner, approx=True))
-    line(" " + _row("free", fmt_tokens(snap.free_tokens), inner, approx=True))
+        row(_P_SEGMENTS, " " + _row(label, fmt_tokens(tokens), inner, approx=True))
+    row(_P_SEGMENTS, " " + _row("free", fmt_tokens(snap.free_tokens), inner, approx=True))
 
-    # Last call — provider numbers, no approximation mark.
-    line()
-    line(f" LAST CALL  #{snap.call_no}", "class:ctx.title")
+    row(_P_LAST_CALL)
+    row(_P_LAST_CALL, f" LAST CALL  #{snap.call_no}", "class:ctx.title")
     cache = f"  ↺{fmt_pct(snap.cache_hit_fraction)}" if snap.cache_read_tokens else ""
-    line(" " + _row("in", fmt_tokens(snap.input_tokens) + cache, inner),
-         "class:ctx.value")
-    line(" " + _row("out", fmt_tokens(snap.output_tokens), inner), "class:ctx.value")
-    line(" " + _row("cost", fmt_cost(snap.est_cost_usd, snap.priced), inner))
+    row(_P_LAST_CALL, " " + _row("in", fmt_tokens(snap.input_tokens) + cache, inner),
+        "class:ctx.value")
+    row(_P_LAST_CALL, " " + _row("out", fmt_tokens(snap.output_tokens), inner),
+        "class:ctx.value")
+    row(_P_LAST_CALL, " " + _row("cost", fmt_cost(snap.est_cost_usd, snap.priced), inner))
 
-    line()
-    line(" SESSION", "class:ctx.title")
-    line(" " + _row("calls", str(snap.calls), inner))
-    line(" " + _row("in", fmt_tokens(snap.session_input_tokens), inner))
-    line(" " + _row("out", fmt_tokens(snap.session_output_tokens), inner))
+    row(_P_SESSION)
+    row(_P_SESSION, " SESSION", "class:ctx.title")
+    row(_P_SESSION, " " + _row("calls", str(snap.calls), inner))
+    row(_P_SESSION, " " + _row("in", fmt_tokens(snap.session_input_tokens), inner))
+    row(_P_SESSION, " " + _row("out", fmt_tokens(snap.session_output_tokens), inner))
     if snap.session_cache_read_tokens:
-        line(" " + _row("cached", fmt_tokens(snap.session_cache_read_tokens), inner))
-    line(" " + _row("cost", fmt_cost(snap.session_cost_usd, snap.priced), inner))
-    line(" " + _row("compacted", str(snap.compactions), inner))
-    line(" " + _row("offloaded", str(snap.offloads), inner))
+        row(_P_DETAIL, " " + _row("cached",
+                                  fmt_tokens(snap.session_cache_read_tokens), inner))
+    row(_P_SESSION, " " + _row("cost", fmt_cost(snap.session_cost_usd, snap.priced), inner))
+    row(_P_DETAIL, " " + _row("compacted", str(snap.compactions), inner))
+    row(_P_DETAIL, " " + _row("offloaded", str(snap.offloads), inner))
     if snap.offloaded_digests:
-        line(" " + _row("digests in ctx", str(snap.offloaded_digests), inner))
+        row(_P_DETAIL, " " + _row("digests in ctx", str(snap.offloaded_digests), inner))
 
     if status or tool:
-        line()
-        label = tool or status
-        line(f" ● {label}"[:w], "class:ctx.accent")
+        row(_P_STATUS)
+        row(_P_STATUS, f" ● {tool or status}"[:w], "class:ctx.accent")
 
-    line()
-    line(
+    # Transient notices, newest last. The user asked for these here rather than
+    # over the transcript; they are also the only place a provider retry or an
+    # unpriced model gets said now that the log no longer paints on screen.
+    for text in notices:
+        row(_P_NOTICE)
+        for line in _wrap_plain(f" {text}", w):
+            row(_P_NOTICE, line, "class:ctx.warn")
+
+    row(_P_FOOTER)
+    row(_P_FOOTER,
         f" {_APPROX} estimated" + ("" if snap.calibrated else ", uncalibrated"),
-        "class:ctx.dim",
-    )
+        "class:ctx.dim")
+    return _fit(rows, height)
+
+
+def _wrap_plain(text: str, width: int) -> list[str]:
+    """Word-wrap plain text to the panel width, padding each row.
+
+    Word-aware because notices are sentences, not data: breaking
+    "no price entry" across two rows mid-word makes a 34-column column
+    genuinely hard to read. Over-long single words still hard-break.
+    """
+    import textwrap
+
+    if not text:
+        return [""]
+    rows = textwrap.wrap(
+        text, width=width, break_long_words=True, break_on_hyphens=False,
+    ) or [""]
+    return [r.ljust(width)[:width] for r in rows]
+
+
+def _fit(
+    rows: list[tuple[int, list[tuple[str, str]]]], height: int | None
+) -> list[tuple[str, str]]:
+    """Drop the least important rows until the column fits, then flatten."""
+    if height is not None and height > 0 and len(rows) > height:
+        # Trim from the least important priority upward, and within a priority
+        # from the bottom, so a section shortens rather than losing its header.
+        for prio in sorted({p for p, _ in rows}, reverse=True):
+            while len(rows) > height:
+                victim = next(
+                    (i for i in range(len(rows) - 1, -1, -1) if rows[i][0] == prio),
+                    None,
+                )
+                if victim is None:
+                    break
+                rows.pop(victim)
+            if len(rows) <= height:
+                break
+        rows = rows[:height]
+    out: list[tuple[str, str]] = []
+    for _prio, frags in rows:
+        out.extend(frags)
+        out.append(("", "\n"))
     return out
 
 
