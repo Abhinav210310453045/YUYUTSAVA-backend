@@ -50,6 +50,20 @@ def run(coro):
     return asyncio.run(coro)
 
 
+#: The framework hands the prompt over as ``request.system_message``, which the
+#: adapter surfaces as ``ModelCall.system_texts`` — NOT as a message in state
+#: (``ModelRequest.messages`` is documented "excluding system message"). A call
+#: built without it is not a realistic call, which is how "system prompt ≈0"
+#: went unnoticed.
+SYSTEM_PROMPT = "YOU ARE YUYUTSAVA.\n" + ("prompt body. " * 400)
+
+
+def model_call(**kw) -> ModelCall:
+    kw.setdefault("system_texts", (SYSTEM_PROMPT,))
+    kw.setdefault("tool_names", ())
+    return ModelCall(**kw)
+
+
 class _FakeTool:
     def __init__(self, name: str, schema_len: int) -> None:
         self.name = name
@@ -302,7 +316,7 @@ class PolicyPublishing(unittest.TestCase):
 
     def test_the_window_and_the_trigger_come_from_the_settings(self):
         run(self.policy.before_model(self._turn()))
-        run(self.policy.revise_model_call(ModelCall(tool_names=("tool_search",))))
+        run(self.policy.revise_model_call(model_call(tool_names=("tool_search",))))
         snap = self.seen[-1]
         self.assertEqual(snap.max_input_tokens, 1_000_000)
         self.assertEqual(snap.compact_trigger_tokens,
@@ -310,22 +324,52 @@ class PolicyPublishing(unittest.TestCase):
 
     def test_the_reviser_publishes_tool_schema_cost_and_the_count(self):
         run(self.policy.before_model(self._turn()))
-        run(self.policy.revise_model_call(ModelCall(tool_names=("tool_search",))))
+        run(self.policy.revise_model_call(model_call(tool_names=("tool_search",))))
         snap = self.seen[-1]
         self.assertGreater(snap.tools_tokens, 0)
         self.assertEqual(snap.tool_count, 1)
         self.assertGreater(snap.system_tokens, 0)
         self.assertGreater(snap.messages_tokens, 0)
 
+    def test_the_system_prompt_is_never_reported_as_zero(self):
+        """The bug the panel showed on every call: "system prompt ≈0".
+
+        It came from segmenting ``turn.messages``, which excludes the system
+        message — the prompt travels as ``request.system_message``. A prompt
+        was sent, so a prompt must be counted.
+        """
+        run(self.policy.before_model(self._turn()))
+        run(self.policy.revise_model_call(model_call()))
+        snap = self.seen[-1]
+        self.assertGreater(snap.system_tokens, 500, "the prompt vanished again")
+
+    def test_a_system_message_in_state_is_not_counted_twice(self):
+        # If a SystemMessage also appears in state it is the same bytes the
+        # framework moved into system_message — counting both would inflate
+        # the window by the size of the prompt.
+        run(self.policy.before_model(Turn(
+            messages=(SystemMessage(content=SYSTEM_PROMPT),), thread_id="t1")))
+        run(self.policy.revise_model_call(model_call()))
+        only_prompt = self.seen[-1]
+        run(self.policy.before_model(Turn(messages=(), thread_id="t1")))
+        run(self.policy.revise_model_call(model_call()))
+        self.assertEqual(only_prompt.system_tokens, self.seen[-1].system_tokens)
+
+    def test_the_agent_memory_block_inside_the_prompt_is_attributed(self):
+        run(self.policy.before_model(self._turn()))
+        run(self.policy.revise_model_call(model_call(
+            system_texts=(SYSTEM_PROMPT + "\n\n" + INDEX_BLOCK_HEADER + "x" * 900,))))
+        self.assertGreater(self.seen[-1].memory_tokens, 0)
+
     def test_offloaded_digests_are_counted_not_charged_as_prose(self):
         run(self.policy.before_model(self._turn()))
-        run(self.policy.revise_model_call(ModelCall(tool_names=())))
+        run(self.policy.revise_model_call(model_call()))
         self.assertEqual(self.seen[-1].offloaded_digests, 1)
 
     def test_revise_model_call_records_no_edits(self):
         # Pure observability: the adapter must hand the request through
         # untouched, so `changed` has to stay False.
-        call = ModelCall(tool_names=("tool_search",))
+        call = model_call(tool_names=("tool_search",))
         run(self.policy.before_model(self._turn()))
         run(self.policy.revise_model_call(call))
         self.assertFalse(call.changed)
@@ -366,29 +410,29 @@ class PolicyPublishing(unittest.TestCase):
 
     def test_estimates_are_marked_uncalibrated_until_a_call_completes(self):
         run(self.policy.before_model(self._turn()))
-        run(self.policy.revise_model_call(ModelCall(tool_names=())))
+        run(self.policy.revise_model_call(model_call()))
         self.assertFalse(self.seen[-1].calibrated)
         run(self.policy.after_model(self._turn(usage=Usage(input_tokens=500))))
         self.assertTrue(self.seen[-1].calibrated)
 
     def test_calibration_pulls_the_estimate_toward_the_reported_number(self):
         run(self.policy.before_model(self._turn()))
-        run(self.policy.revise_model_call(ModelCall(tool_names=())))
+        run(self.policy.revise_model_call(model_call()))
         estimated = self.seen[-1].used_tokens
         # Provider says the same prompt was worth ~1.5x our estimate.
         run(self.policy.after_model(self._turn(
             usage=Usage(input_tokens=int(estimated * 1.5)))))
         run(self.policy.before_model(self._turn()))
-        run(self.policy.revise_model_call(ModelCall(tool_names=())))
+        run(self.policy.revise_model_call(model_call()))
         self.assertGreater(self.seen[-1].used_tokens, estimated)
 
     def test_a_wild_ratio_is_clamped_rather_than_trusted(self):
         run(self.policy.before_model(self._turn()))
-        run(self.policy.revise_model_call(ModelCall(tool_names=())))
+        run(self.policy.revise_model_call(model_call()))
         estimated = self.seen[-1].used_tokens
         run(self.policy.after_model(self._turn(usage=Usage(input_tokens=10_000_000))))
         run(self.policy.before_model(self._turn()))
-        run(self.policy.revise_model_call(ModelCall(tool_names=())))
+        run(self.policy.revise_model_call(model_call()))
         self.assertLessEqual(self.seen[-1].used_tokens, estimated * 2 + 1)
 
     def test_an_unpriced_model_says_so_instead_of_showing_a_confident_zero(self):
@@ -411,13 +455,13 @@ class PolicyPublishing(unittest.TestCase):
         note_offload("t1")
         note_offload("t1")
         run(self.policy.before_model(self._turn()))
-        run(self.policy.revise_model_call(ModelCall(tool_names=())))
+        run(self.policy.revise_model_call(model_call()))
         self.assertEqual(self.seen[-1].compactions, 1)
         self.assertEqual(self.seen[-1].offloads, 2)
 
     def test_a_reviser_without_a_preceding_measurement_publishes_nothing(self):
         before = len(self.seen)
-        run(self.policy.revise_model_call(ModelCall(tool_names=("tool_search",))))
+        run(self.policy.revise_model_call(model_call(tool_names=("tool_search",))))
         self.assertEqual(len(self.seen), before)
 
     def test_hooks_return_none_so_nothing_is_injected(self):
@@ -455,14 +499,14 @@ class SubagentsReportSpendButNotTheWindow(unittest.TestCase):
             messages=(SystemMessage(content="base " + "b" * 2_000),
                       HumanMessage(content="q" * 800)),
             thread_id="t1")))
-        run(self.master.revise_model_call(ModelCall(tool_names=())))
+        run(self.master.revise_model_call(model_call()))
 
     def test_a_subagent_does_not_redraw_the_segments(self):
         self._master_measure()
         master_rows = bus().latest("t1").segments()
         run(self.sub.before_model(Turn(
             messages=(SystemMessage(content="tiny"),), thread_id="t1")))
-        run(self.sub.revise_model_call(ModelCall(tool_names=())))
+        run(self.sub.revise_model_call(model_call()))
         self.assertEqual(bus().latest("t1").segments(), master_rows)
 
     def test_a_subagents_tokens_add_to_the_conversation_total(self):
@@ -528,7 +572,7 @@ class InjectedBlocksAreCounted(unittest.TestCase):
             settings=ContextSettings(max_input_tokens=1_000), role="cli")
         run(policy.before_model(Turn(
             messages=(SystemMessage(content="base"),), thread_id="t")))
-        run(policy.revise_model_call(ModelCall(tool_names=())))
+        run(policy.revise_model_call(model_call()))
         self.assertGreater(self.seen[-1].skills_tokens, 0)
         ri._last_blocks.clear()
 
@@ -541,7 +585,7 @@ class InjectedBlocksAreCounted(unittest.TestCase):
             settings=ContextSettings(max_input_tokens=1_000), role="cli")
         run(policy.before_model(Turn(
             messages=(SystemMessage(content="base"),), thread_id="t")))
-        run(policy.revise_model_call(ModelCall(tool_names=())))
+        run(policy.revise_model_call(model_call()))
         self.assertEqual(self.seen[-1].skills_tokens, 0)
         ri._last_blocks.clear()
 

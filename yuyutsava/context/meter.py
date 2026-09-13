@@ -507,6 +507,20 @@ def split_system_chars(text: str) -> dict[str, int]:
     return out
 
 
+def _injected_block_chars() -> dict[str, int]:
+    """Sizes of the blocks the retrieval injectors last rendered.
+
+    Lazy import: ``retrieval.injector`` is cheap but this module is imported
+    from engine's middleware assembly, and the fewer edges there the better.
+    """
+    try:
+        from yuyutsava.retrieval.injector import last_block_chars
+
+        return last_block_chars()
+    except Exception:  # noqa: BLE001
+        return {}
+
+
 def _is_offloaded_digest(content: Any) -> bool:
     return isinstance(content, str) and content.lstrip().startswith('{"offloaded": true')
 
@@ -616,15 +630,41 @@ class ContextMeterPolicy(Policy):
         if snap is None:
             return
         try:
+            state = self._state(snap.thread_id)
+            cal = state.calibration
+
             tools_chars = catalog_chars(self._role) + tool_schema_chars(
                 self._role, call.tool_names
             )
-            state = self._state(snap.thread_id)
-            tools = self._scaled(approx_tokens_chars(tools_chars, model=self._model),
-                                 state.calibration)
+            # The system prompt is segmented HERE, not from turn.messages.
+            # ``ModelRequest.messages`` is documented "excluding system
+            # message" — the prompt travels as ``request.system_message``, so
+            # looking for a SystemMessage in state found nothing and the panel
+            # reported "system prompt ≈0" on every single call, hiding both the
+            # prompt itself and the agent-memory block baked into it.
+            system_chars = {"system": 0, "memory": 0, "skills": 0}
+            for text in call.system_texts:
+                if not text:
+                    continue
+                for key, chars in split_system_chars(text).items():
+                    system_chars[key] = system_chars.get(key, 0) + chars
+            # Blocks the retrieval injectors append at model-call time. They are
+            # real prompt bytes but are added after every before_model hook has
+            # run, so counting the message list alone under-reports the prompt.
+            for prefix, chars in _injected_block_chars().items():
+                key = self._segment_for_prefix(prefix)
+                system_chars[key] = system_chars.get(key, 0) + chars
+
             snap = replace(
                 snap,
-                tools_tokens=tools,
+                tools_tokens=self._scaled(
+                    approx_tokens_chars(tools_chars, model=self._model), cal),
+                system_tokens=self._scaled(
+                    approx_tokens_chars(system_chars["system"], model=self._model), cal),
+                memory_tokens=self._scaled(
+                    approx_tokens_chars(system_chars["memory"], model=self._model), cal),
+                skills_tokens=self._scaled(
+                    approx_tokens_chars(system_chars["skills"], model=self._model), cal),
                 tool_count=len(call.tool_names),
             )
             # The calibration divisor must describe the prompt that produced
@@ -668,33 +708,27 @@ class ContextMeterPolicy(Policy):
         return int(round(snap.used_tokens / calibration))
 
     def _measure(self, turn: Turn) -> ContextSnapshot:
-        """Segment the message list. Tool schemas are added by the reviser."""
-        from yuyutsava.retrieval.injector import last_block_chars
+        """Segment the conversation.
 
+        Only the message side. The system prompt and the tool schemas are added
+        by ``revise_model_call``, which is the hook that can actually see them
+        — the framework hands the prompt over as ``request.system_message``,
+        not as a message in state. A ``SystemMessage`` that does appear in
+        state is skipped rather than counted, so the same bytes are not
+        attributed twice.
+        """
         state = self._state(turn.thread_id)
         cal = state.calibration
 
-        system_chars = {"system": 0, "memory": 0, "skills": 0}
         convo: list[Any] = []
         offloaded = 0
         for msg in turn.messages:
             content = getattr(msg, "content", "")
             if getattr(msg, "type", "") == "system":
-                text = content if isinstance(content, str) else str(content)
-                for key, chars in split_system_chars(text).items():
-                    system_chars[key] = system_chars.get(key, 0) + chars
                 continue
             convo.append(msg)
             if _is_offloaded_digest(content):
                 offloaded += 1
-
-        # Blocks the retrieval injectors append at model-call time. They are
-        # real prompt bytes but arrive after every before_model hook has run,
-        # so counting the message list alone under-reports the prompt.
-        injected = last_block_chars()
-        for prefix, chars in injected.items():
-            key = self._segment_for_prefix(prefix)
-            system_chars[key] = system_chars.get(key, 0) + chars
 
         return ContextSnapshot(
             role=self._role,
@@ -704,12 +738,6 @@ class ContextMeterPolicy(Policy):
             compact_trigger_tokens=int(
                 getattr(self._settings, "compact_trigger_tokens", 0) or 0
             ),
-            system_tokens=self._scaled(
-                approx_tokens_chars(system_chars["system"], model=self._model), cal),
-            memory_tokens=self._scaled(
-                approx_tokens_chars(system_chars["memory"], model=self._model), cal),
-            skills_tokens=self._scaled(
-                approx_tokens_chars(system_chars["skills"], model=self._model), cal),
             messages_tokens=self._scaled(
                 approx_tokens(convo, model=self._model), cal),
             message_count=len(turn.messages),
