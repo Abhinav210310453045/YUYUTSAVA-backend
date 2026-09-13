@@ -224,8 +224,9 @@ export default function ChatPanel({
 }) {
   const {
     messages, connected, busy, pendingAsk, pendingAsks, hello, listening, speaking,
-    playingId, paused, usage,
+    playingId, paused, usage, queued,
     send, answerAsk, interrupt, startVoice, stopVoice, replay, togglePause, newSession,
+    sendNow, discardQueued,
   } = useConverse({ origin, resumeId, agent, card, sessionKey, active })
   const [draft, setDraft] = useState('')
   const [fb, setFb] = useState({}) // messageId -> 'up' | 'down' (local selection)
@@ -493,6 +494,47 @@ export default function ChatPanel({
         </div>
       )}
 
+      {/* A message typed mid-turn is held, not dropped and not allowed to kill
+          the running tool call. Both choices are offered explicitly, because
+          silently doing either is what made the agent look broken. */}
+      {queued && (
+        <div style={{
+          margin: '0 24px 8px', padding: '8px 12px', position: 'relative', zIndex: 1,
+          borderRadius: 'var(--radius-card)', flexShrink: 0,
+          border: '1px solid var(--border-amber)',
+          background: 'rgba(255,255,255,0.03)',
+          display: 'flex', alignItems: 'center', gap: 10, fontSize: 12,
+        }}>
+          <span style={{ color: 'var(--neon-amber)', fontFamily: 'var(--font-mono)' }}>⏸</span>
+          <span style={{
+            flex: 1, color: 'var(--text-secondary)', overflow: 'hidden',
+            textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>
+            queued — sends when this turn ends: “{queued.text}”
+          </span>
+          <button
+            onClick={() => sendNow()}
+            title="Interrupt the turn and send now"
+            style={{
+              padding: '3px 10px', borderRadius: 'var(--radius-btn)', cursor: 'pointer',
+              fontFamily: 'var(--font-mono)', fontSize: 10,
+              background: 'rgba(var(--accent-rgb), 0.12)',
+              border: '1px solid rgba(var(--accent-rgb), 0.3)',
+              color: 'var(--neon-green)',
+            }}
+          >send now</button>
+          <button
+            onClick={discardQueued}
+            title="Discard the queued message"
+            style={{
+              padding: '3px 8px', borderRadius: 'var(--radius-btn)', cursor: 'pointer',
+              background: 'transparent', border: '1px solid var(--border-subtle)',
+              color: 'var(--text-muted)', fontSize: 11,
+            }}
+          >✕</button>
+        </div>
+      )}
+
       {/* composer */}
       <div style={{
         display: 'flex', gap: 8, padding: '12px 24px 18px', position: 'relative', zIndex: 1,
@@ -503,7 +545,7 @@ export default function ChatPanel({
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={onKeyDown}
           rows={1}
-          placeholder={busy ? 'agent is working…' : placeholder}
+          placeholder={busy ? 'agent is working — your message will be queued' : placeholder}
           style={{
             flex: 1, resize: 'none', background: 'var(--glass-bg)', color: 'var(--text-primary)',
             border: '1px solid var(--glass-border)', borderRadius: 22, padding: '11px 16px',

@@ -390,13 +390,39 @@ class ChatDashboard:
     # (Enter is ControlM) instead of the behaviour.
 
     def submit(self) -> None:
-        """Hand the current line to the REPL."""
+        """Hand the current line to the REPL.
+
+        While a turn is running the REPL is not reading, so the line waits in
+        the queue and is picked up the moment the turn ends. That is the safe
+        default — it cannot kill a running tool call — but it used to be
+        invisible, so the panel now says so and offers Ctrl+S to interrupt.
+        """
         text = self._buf.text
         self._buf.reset(append_to_history=bool(text.strip()))
         # A new turn means "follow the output again": leaving the view parked
         # 200 lines up would hide the reply about to arrive.
         self._scroll = 0
         self._queue.put_nowait(text)
+        task = self._turn_task
+        if text.strip() and task is not None and not task.done():
+            self.notice(
+                "queued — sends when this turn ends. Ctrl+S to interrupt and "
+                "send it now.",
+                ttl=90.0,
+            )
+
+    def send_now(self) -> None:
+        """Interrupt the running turn so a queued message goes immediately.
+
+        Safe because the next turn repairs the interrupted tool call before it
+        sends anything (conversation/repair.py) — the agent resumes with an
+        accurate history rather than a fabricated success.
+        """
+        task = self._turn_task
+        if task is None or task.done():
+            return
+        self.notice("interrupting — your message goes next", ttl=20.0)
+        task.cancel()
 
     def interrupt(self) -> None:
         """Cancel the running turn, or clear the line when none is running.
@@ -467,6 +493,7 @@ class ChatDashboard:
         bind("end", self.follow)
         bind("c-l", self.clear_transcript)
         bind("c-g", self.toggle_panel)
+        bind("c-s", self.send_now)
         return kb
 
     # -- rendering ----------------------------------------------------------

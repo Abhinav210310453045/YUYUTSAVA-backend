@@ -166,6 +166,61 @@ class Keys(_DashboardCase):
         self.assertEqual(self.dash.buffer.lines(), [])
 
 
+class MidTurnMessages(_DashboardCase):
+    """Typing during a turn queues; it never kills the running tool call."""
+
+    async def test_a_mid_turn_submit_is_queued_and_announced(self):
+        async def _long():
+            await asyncio.sleep(30)
+
+        task = asyncio.create_task(_long())
+        self.dash.set_turn_task(task)
+        try:
+            self.dash._buf.text = "and also check the logs"
+            self.dash.submit()
+            self.assertEqual(
+                await asyncio.wait_for(self.dash.read_input(), 2),
+                "and also check the logs")
+            self.assertTrue(any("queued" in n for n in self.dash.notices()))
+            self.assertFalse(task.done(), "the running turn must survive")
+        finally:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+
+    async def test_submitting_with_no_turn_running_says_nothing(self):
+        self.dash.set_turn_task(None)
+        self.dash._buf.text = "hello"
+        self.dash.submit()
+        self.assertEqual(self.dash.notices(), [])
+
+    async def test_send_now_cancels_the_turn(self):
+        async def _long():
+            await asyncio.sleep(30)
+
+        task = asyncio.create_task(_long())
+        self.dash.set_turn_task(task)
+        self.dash.send_now()
+        await asyncio.sleep(0)
+        self.assertTrue(task.cancelling() or task.cancelled() or task.done())
+        self.assertTrue(any("interrupting" in n for n in self.dash.notices()))
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+    async def test_send_now_with_no_turn_is_a_no_op(self):
+        self.dash.set_turn_task(None)
+        self.dash.send_now()
+        self.assertEqual(self.dash.notices(), [])
+
+    async def test_ctrl_s_is_bound(self):
+        from prompt_toolkit.keys import Keys
+
+        bound = set()
+        for b in self.dash._app.key_bindings.bindings:
+            bound.update(str(k) for k in b.keys)
+        self.assertIn(str(Keys.ControlS), bound)
+
+
 class VisibleSlice(_DashboardCase):
     async def test_only_the_visible_window_is_converted(self):
         # Converting 5,000 lines per frame is O(everything); this is why the

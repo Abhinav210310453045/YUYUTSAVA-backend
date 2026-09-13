@@ -210,6 +210,14 @@ class ConversationService:
         bundle = await self._ensure_bundle()
         self._turns_ran += 1
 
+        # No turn ever starts from a history the model will not continue from.
+        # This is what makes "send now" work everywhere without each front
+        # implementing it: a front cancels its turn however it likes, and the
+        # next turn — from any front — repairs before it sends. Subagents come
+        # free, because a cancelled `task` call leaves its fabricated result in
+        # the *parent's* history, which is the history being repaired here.
+        await self._repair_before_turn(bundle, on_event)
+
         async def _drive(user_text: str | None, resume: object | None) -> tuple[str, int]:
             """One pass of the graph. Returns ``(final_text, steps)``."""
             final_text = ""
@@ -293,6 +301,47 @@ class ConversationService:
         except Exception:  # noqa: BLE001 — cleanup is best-effort
             logger.debug("discard_if_unused: delete failed", exc_info=True)
             return False
+
+    async def _repair_before_turn(
+        self, bundle: AgentBundle, on_event: "EventSink",
+    ) -> None:
+        """Repair an interrupted tool call before sending anything new.
+
+        Costs one checkpoint read per turn, which is nothing beside a model
+        call, and buys an unconditional guarantee: a conversation cannot be
+        sent into the model in a shape it refuses to continue from. The
+        alternative — repairing only where a front happens to know it just
+        cancelled something — is how the app path ended up with no repair at
+        all while the CLI resume path had one.
+        """
+        from yuyutsava.conversation.repair import (
+            Cause,
+            needs_repair,
+            repair_orphan_tool_calls,
+        )
+
+        try:
+            state = await bundle.agent.aget_state(
+                {"configurable": {"thread_id": self.thread_id}}
+            )
+            messages = state.values.get("messages", []) if state and state.values else []
+            if not needs_repair(messages):
+                return
+            repaired = await repair_orphan_tool_calls(
+                bundle.agent, self.thread_id, cause=Cause.INTERRUPTED_BY_USER,
+            )
+        except Exception:  # noqa: BLE001 — a failed repair must not block a turn
+            logger.debug("pre-turn repair failed", exc_info=True)
+            return
+        if repaired:
+            await self._emit(on_event, StreamEvent("notice", {
+                "level": "info",
+                "text": (
+                    f"Picking up after an interruption — {repaired} tool call"
+                    f"{'s' if repaired != 1 else ''} was cancelled mid-flight "
+                    f"and did not run."
+                ),
+            }))
 
     async def _recover_empty_turn(
         self, bundle: AgentBundle, *, on_event: "EventSink", drive: Any,

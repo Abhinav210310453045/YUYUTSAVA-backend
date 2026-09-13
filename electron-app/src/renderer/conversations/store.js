@@ -117,6 +117,9 @@ export class ConversationSession {
       // voice overlay, useConverse callers) need no change.
       pendingAsks: [],
       pendingAsk: null,
+      // A message typed while a turn was running: held, then sent when the
+      // turn ends. Never silently dropped, never allowed to kill a tool call.
+      queued: null,
       hello: null,        // { session_id, thread_id, run, … }
       listening: false,   // mic capture active
       speaking: false,    // agent TTS playing
@@ -149,6 +152,8 @@ export class ConversationSession {
     this.actions = {
       send: this.send.bind(this),
       answerAsk: this.answerAsk.bind(this),
+      sendNow: this.sendNow.bind(this),
+      discardQueued: this.discardQueued.bind(this),
       interrupt: this.interrupt.bind(this),
       startVoice: this.startVoice.bind(this),
       stopVoice: this.stopVoice.bind(this),
@@ -663,6 +668,9 @@ export class ConversationSession {
         this._stopSmoother()
         this._finalizeStreaming()
         this._set({ busy: false, speaking: false, pendingAsks: [] })
+        // Anything typed during the turn goes now. Deferred a tick so `busy`
+        // is observably false first — otherwise send() would re-queue it.
+        if (this.state.queued) setTimeout(() => this._flushQueued(), 0)
         // Nothing is watching and nothing is running — start the idle countdown.
         if (this.refs === 0) this._armIdle()
         break
@@ -700,9 +708,22 @@ export class ConversationSession {
   // local bubble and transcript render only the typed text. Returns whether
   // the frame actually left, so callers can consume one-shot context (chips)
   // only on success.
+  // Send, or park it. Typing mid-turn used to be dropped on the floor here
+  // (`if busy: return false`) — and the daemon's own path was worse: a message
+  // that did land cancelled the running tool call, and the fabricated
+  // "cancelled" result wedged the thread so nothing answered again.
+  //
+  // Now a mid-turn message is QUEUED and sent the moment the turn ends, so a
+  // tool call is never killed by accident. `sendNow` is the explicit escape
+  // hatch: interrupt, then send — safe because every turn repairs an
+  // interrupted history before it starts.
   send(text, { context } = {}) {
     const t = (text || '').trim()
-    if (!t || this.state.busy) return false
+    if (!t) return false
+    if (this.state.busy) {
+      this._set({ queued: { text: t, context: context || null } })
+      return true
+    }
     const ok = this.client?.sendText(t, context || null)
     if (!ok) {
       this._setMessages((cur) => [...cur, {
@@ -712,8 +733,32 @@ export class ConversationSession {
       return false
     }
     this._setMessages((cur) => [...cur, { id: nextId(), role: 'user', text: t, events: [] }])
-    this._set({ busy: true })
+    this._set({ busy: true, queued: null })
     return true
+  }
+
+  // Interrupt the running turn and send the queued (or given) message. The
+  // turn_end handler flushes the queue, and run_turn repairs the interrupted
+  // tool call before it sends — so "continue where it got interrupted" is a
+  // decision the agent makes with accurate history rather than a guess.
+  sendNow(text = null, { context } = {}) {
+    const t = (text || this.state.queued?.text || '').trim()
+    if (!t) return false
+    this._set({ queued: { text: t, context: context || this.state.queued?.context || null } })
+    if (this.state.busy) {
+      this.interrupt()
+      return true
+    }
+    return this._flushQueued()
+  }
+
+  discardQueued() { this._set({ queued: null }) }
+
+  _flushQueued() {
+    const q = this.state.queued
+    if (!q) return false
+    this._set({ queued: null })
+    return this.send(q.text, { context: q.context })
   }
 
   // Answer the inline ask. Goes back over the socket carrying the ask_id, so

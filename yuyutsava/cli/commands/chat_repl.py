@@ -250,7 +250,9 @@ def _print_help() -> None:
     print(
         f"{_DIM}In the split view: PgUp/PgDn or the wheel scrolls, End follows "
         f"the output again, Ctrl+G hides the context panel, Ctrl+L clears the "
-        f"transcript. Start with --classic for the single-pane view.{_RESET}",
+        f"transcript. Typing during a turn queues your message; Ctrl+S "
+        f"interrupts the turn and sends it now. Start with --classic for the "
+        f"single-pane view.{_RESET}",
         file=sys.stderr,
     )
     print(file=sys.stderr)
