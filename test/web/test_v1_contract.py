@@ -83,13 +83,24 @@ class _Monitor:
 
 
 class _UsageStore:
+    """The whole UsageStore read surface the usage router touches.
+
+    Mirrors every field of UsageAggregate/ThreadTotals, cache counts included —
+    the router reads them directly, and a stub missing a field only proves the
+    stub is stale.
+    """
+
     async def aggregate(self, since=None, group_by=None):
-        # Mirrors every field of UsageAggregate, cache counts included — the
-        # router reads them directly, and a stub missing a field only proves
-        # the stub is stale.
         return [SimpleNamespace(key="all", calls=2, input_tokens=100,
                                 output_tokens=20, est_cost_usd=0.003,
                                 cache_read_tokens=60, cache_creation_tokens=4)]
+
+    async def thread_totals(self, since=None, limit=50):
+        return [SimpleNamespace(
+            thread_id="th", calls=2, input_tokens=100, output_tokens=20,
+            cache_read_tokens=60, est_cost_usd=0.003,
+            first_ts=1000.0, last_ts=1100.0, models=("claude-haiku-4-5",),
+        )]
 
 
 class _ChannelPlugins:
@@ -337,7 +348,8 @@ class V1ContractTests(unittest.IsolatedAsyncioTestCase):
         await self.client.post("/v1/tasks", json={"instruction": "x"})
         for path in (
             "/server-info", "/decisions", "/rules", "/skills", "/tasks",
-            "/usage", "/system/metrics", "/channels", "/sessions",
+            "/usage", "/usage/summary", "/usage/sessions",
+            "/system/metrics", "/channels", "/sessions",
         ):
             with self.subTest(path=path):
                 legacy = await self.client.get(path)

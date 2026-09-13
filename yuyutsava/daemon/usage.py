@@ -89,6 +89,28 @@ class UsageAggregate:
     cache_creation_tokens: int = 0
 
 
+@dataclass(frozen=True)
+class ThreadTotals:
+    """What one conversation has spent, with no session metadata attached.
+
+    Deliberately unjoined. On SQLite ``sessions`` lives in a different database
+    file from ``llm_usage``, so a SQL join is not available on one of the two
+    backends — and a query that only works on Postgres is the kind of
+    divergence this codebase keeps paying for. The caller joins by
+    ``thread_id`` against the session store, which knows where sessions live.
+    """
+
+    thread_id: str
+    calls: int
+    input_tokens: int
+    output_tokens: int
+    cache_read_tokens: int
+    est_cost_usd: float
+    first_ts: float
+    last_ts: float
+    models: tuple[str, ...] = ()
+
+
 def mint_usage_id() -> str:
     return f"usg_{ULID()}"
 
@@ -117,6 +139,17 @@ class UsageStore(ABC):
     ) -> list[UsageAggregate]:
         """Sums per group (or one ``key="all"`` row when ungrouped),
         most expensive group first."""
+
+    @abstractmethod
+    async def thread_totals(
+        self, *, since: float | None = None, limit: int = 50,
+    ) -> list[ThreadTotals]:
+        """Per-conversation totals, most recently active first.
+
+        Not paginated: the row count is bounded by the number of conversations
+        that have made a model call, which is orders of magnitude smaller than
+        the row count ``list`` pages through. ``since`` narrows the window.
+        """
 
 
 #: SQLite read list — ``ts`` is already a REAL epoch.
@@ -264,6 +297,19 @@ class SqliteUsageStore(BaseSqliteStore, UsageStore):
             await cur.close()
         return _agg_rows(rows)
 
+    async def thread_totals(
+        self, *, since: float | None = None, limit: int = 50,
+    ) -> list[ThreadTotals]:
+        await self._ensure_schema()
+        sql, args = _thread_totals_sql(
+            since, "?", "GROUP_CONCAT(DISTINCT model)", "{agg}(ts)",
+        )
+        async with self._conn() as conn:
+            cur = await conn.execute(sql, (*args, limit))
+            rows = await cur.fetchall()
+            await cur.close()
+        return _thread_rows(rows)
+
 
 class PgUsageStore(UsageStore):
     """``llm_usage`` table in Postgres (schema owned by pg/migrations.py v3)."""
@@ -327,6 +373,18 @@ class PgUsageStore(UsageStore):
             rows = await cur.fetchall()
         return _agg_rows(rows)
 
+    async def thread_totals(
+        self, *, since: float | None = None, limit: int = 50,
+    ) -> list[ThreadTotals]:
+        sql, args = _thread_totals_sql(
+            since, "%s", "string_agg(DISTINCT model, \',\')",
+            "extract(epoch FROM {agg}(ts))::float8", "to_timestamp(%s)",
+        )
+        async with self._pool.connection() as conn:
+            cur = await conn.execute(sql, (*args, limit))
+            rows = await cur.fetchall()
+        return _thread_rows(rows)
+
 
 def _list_filters(
     task_id: str | None, thread_id: str | None, since: float | None, ph: str,
@@ -351,6 +409,44 @@ def _list_filters(
         where.append(f"ts >= {ts_ph}")
         args.append(since)
     return (f"WHERE {' AND '.join(where)}" if where else ""), args
+
+
+def _thread_totals_sql(
+    since: float | None, ph: str, model_agg: str, ts_expr: str,
+    ts_ph: str | None = None,
+) -> tuple[str, tuple[Any, ...]]:
+    """One statement for both backends; only the dialect bits are arguments.
+
+    ``model_agg`` differs (GROUP_CONCAT vs string_agg) and ``ts_expr`` wraps the
+    timestamp columns, which are REAL epochs on SQLite and TIMESTAMPTZ on
+    Postgres since migration v20.
+    """
+    ts_ph = ts_ph or ph
+    where = f"WHERE ts >= {ts_ph}" if since is not None else ""
+    args: tuple[Any, ...] = (since,) if since is not None else ()
+    return (
+        f"SELECT COALESCE(thread_id, '') AS grp, COUNT(*), SUM(input_tokens), "
+        f"SUM(output_tokens), SUM(cache_read_tokens), SUM(est_cost_usd), "
+        f"{ts_expr.format(agg='MIN')}, {ts_expr.format(agg='MAX')}, {model_agg} "
+        f"FROM llm_usage {where} GROUP BY grp ORDER BY 8 DESC LIMIT {ph}",
+        args,
+    )
+
+
+def _thread_rows(rows: list[Any]) -> list[ThreadTotals]:
+    out: list[ThreadTotals] = []
+    for r in rows:
+        models = tuple(
+            sorted({m.strip() for m in str(r[8] or "").split(",") if m.strip()})
+        )
+        out.append(ThreadTotals(
+            thread_id=str(r[0] or ""), calls=int(r[1]),
+            input_tokens=int(r[2] or 0), output_tokens=int(r[3] or 0),
+            cache_read_tokens=int(r[4] or 0), est_cost_usd=float(r[5] or 0.0),
+            first_ts=float(r[6] or 0.0), last_ts=float(r[7] or 0.0),
+            models=models,
+        ))
+    return out
 
 
 def _aggregate_sql(

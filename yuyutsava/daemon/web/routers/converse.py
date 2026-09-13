@@ -72,6 +72,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import json
 import logging
 import os
@@ -93,6 +94,23 @@ from yuyutsava.daemon.web.schemas.proposal import OkOut
 from yuyutsava.daemon.web.voice_pipeline import VoicePipeline
 
 logger = logging.getLogger("yuyutsava.daemon.web.routers.converse")
+
+
+def _latest_usage_snapshot(thread_id: str) -> dict | None:
+    """Last context-meter reading for a thread, or None. Never raises.
+
+    Telemetry must not be able to fail a handshake, so a bad read degrades to
+    "no numbers yet" — which is also what a fresh conversation looks like.
+    """
+    try:
+        from yuyutsava.context.meter import bus
+
+        snap = bus().latest(thread_id)
+        return snap.as_dict() if snap is not None else None
+    except Exception:  # noqa: BLE001
+        logger.debug("usage snapshot unavailable for hello", exc_info=True)
+        return None
+
 
 router = APIRouter(tags=["converse"])
 
@@ -418,6 +436,10 @@ async def converse(ws: WebSocket) -> None:
             _voice_toggles.voice().to_dict() if _voice_toggles is not None
             else {"wake_enabled": True, "tts_enabled": True}
         ),
+        # Last known context/spend reading for this conversation, so a panel
+        # opened between turns shows real numbers instead of waiting for the
+        # next model call to say anything.
+        "usage": _latest_usage_snapshot(convo.thread_id),
     })
     # The gap this client missed while it was away (or the in-flight turn from
     # its start, for a client with no prior state), oldest first.
@@ -492,6 +514,31 @@ async def converse(ws: WebSocket) -> None:
         })
         await _send({"type": "turn_end"})
 
+    @contextlib.asynccontextmanager
+    async def _meter_frames(run: TurnRun):
+        """Forward context-meter snapshots to this conversation's viewers.
+
+        Subscribed per turn rather than per socket so the frames stop when the
+        turn does, and scoped to this thread so a second conversation's window
+        never lands on this one's panel.
+
+        Not a ``StreamEvent`` kind on purpose: the meter publishes from inside
+        the model step, and routing it through the graph stream would mean
+        teaching core/streaming, both CLI renderers, the SSE payload union and
+        the static web UI about a frame only this handler can use.
+        """
+        from yuyutsava.context.meter import bus
+
+        def _forward(snap) -> None:
+            # emit() is a put_nowait fan-out; safe to call from the model step.
+            run.emit({"type": "usage", **snap.as_dict()})
+
+        token = bus().subscribe(convo.thread_id, _forward)
+        try:
+            yield
+        finally:
+            bus().unsubscribe(token)
+
     def _event_sink(run: TurnRun):
         async def _sink(ev: StreamEvent) -> None:
             # Link any background task this turn launches back to this
@@ -561,13 +608,14 @@ async def converse(ws: WebSocket) -> None:
         try:
             if not convo.bundle_ready:
                 run.emit({"type": "log", "text": "preparing agent (first run)…"})
-            await convo.run_turn(
-                run.text,
-                on_event=_event_sink(run),
-                ask_handler=_ask_handler(run),
-                run_name=f"{origin}-chat",
-                keep_full_payloads=True,
-            )
+            async with _meter_frames(run):
+                await convo.run_turn(
+                    run.text,
+                    on_event=_event_sink(run),
+                    ask_handler=_ask_handler(run),
+                    run_name=f"{origin}-chat",
+                    keep_full_payloads=True,
+                )
         finally:
             agent_active = False
 
@@ -698,14 +746,15 @@ async def converse(ws: WebSocket) -> None:
                     await tts_queue.put(rest)
 
         try:
-            await convo.run_turn(
-                run.text,
-                on_event=_voice_on_event,
-                ask_handler=_ask_handler(run),
-                run_name=f"{origin}-voice",
-                keep_full_payloads=True,
-                modality="voice",
-            )
+            async with _meter_frames(run):
+                await convo.run_turn(
+                    run.text,
+                    on_event=_voice_on_event,
+                    ask_handler=_ask_handler(run),
+                    run_name=f"{origin}-voice",
+                    keep_full_payloads=True,
+                    modality="voice",
+                )
         except asyncio.CancelledError:
             cancel.set()
             raise
