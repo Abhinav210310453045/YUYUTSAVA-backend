@@ -1,6 +1,14 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useConverse } from '../../hooks/useConverse'
+import { useViewState } from '../../nav/useViewState'
 import NewSessionButton from '../common/NewSessionButton'
+import ResizeHandle from '../common/ResizeHandle'
+import ContextAside, { ContextMeter } from './ContextAside'
+
+// Context column bounds, matching the card view's tinker aside.
+const CTX_MIN_W = 200
+const CTX_MAX_W = 420
+const CTX_DEFAULT_W = 260
 import Markdown from './Markdown'
 import MessageImages from './MessageImages'
 import MessageArtifacts from './MessageArtifacts'
@@ -183,15 +191,46 @@ export default function ChatPanel({
   // the same coordinates (the TODO card view's "New chat", which has no
   // resumeId yet) must pass its own so they don't collide.
   sessionKey = null,
+  // Show the live context/spend column. Off where the chat is already a
+  // sidebar itself (the TODO card view's tinker aside) — a panel inside a
+  // panel has no room to be read.
+  showContext = false,
 }) {
   const {
     messages, connected, busy, pendingAsk, hello, listening, speaking, playingId, paused,
+    usage,
     send, answerAsk, interrupt, startVoice, stopVoice, replay, togglePause, newSession,
   } = useConverse({ origin, resumeId, agent, card, sessionKey, active })
   const [draft, setDraft] = useState('')
   const [fb, setFb] = useState({}) // messageId -> 'up' | 'down' (local selection)
   const scrollRef = useRef(null)
   const wasBusyRef = useRef(false)
+
+  // Context column: open/closed and width both survive a tab switch, the same
+  // way the card view's tinker aside does.
+  const [ctxOpen, setCtxOpen] = useViewState(`ctx:open:${origin}`, false)
+  const [ctxW, setCtxW] = useViewState(`ctx:w:${origin}`, CTX_DEFAULT_W)
+  const [ctxDragging, setCtxDragging] = useState(false)
+  const startCtxDrag = useCallback((e) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const startW = ctxW
+    setCtxDragging(true)
+    const onMove = (ev) => {
+      setCtxW(Math.min(CTX_MAX_W, Math.max(CTX_MIN_W, startW - (ev.clientX - startX))))
+    }
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      setCtxDragging(false)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+  }, [ctxW, setCtxW])
 
   useEffect(() => {
     const el = scrollRef.current
@@ -244,7 +283,8 @@ export default function ChatPanel({
   }
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
+    <div style={{ flex: 1, display: 'flex', minWidth: 0, overflow: 'hidden' }}>
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden', position: 'relative' }}>
       {/* header */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8,
@@ -259,8 +299,15 @@ export default function ChatPanel({
           fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.1em',
           textTransform: 'uppercase', color: 'var(--text-primary)', fontWeight: 'var(--fw-semibold)',
         }}>{title}</span>
-        {(headerActions || showNewSession) && (
+        {(headerActions || showNewSession || showContext) && (
           <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            {showContext && (
+              <ContextMeter
+                usage={usage}
+                open={ctxOpen}
+                onClick={() => setCtxOpen(!ctxOpen)}
+              />
+            )}
             {headerActions}
             {showNewSession && <NewSessionButton onClick={newSession} label="New chat" />}
           </span>
@@ -417,6 +464,19 @@ export default function ChatPanel({
           {speaking ? '▸ agent speaking…' : '● listening — speak, then pause (or stop the mic)'}
         </div>
       )}
+    </div>
+    {showContext && ctxOpen && (
+      <>
+        <ResizeHandle onMouseDown={startCtxDrag} side="right" />
+        <div style={{
+          width: ctxW, minWidth: CTX_MIN_W, maxWidth: CTX_MAX_W, flexShrink: 0,
+          borderLeft: '1px solid var(--border-subtle)', overflow: 'hidden',
+          transition: ctxDragging ? 'none' : 'width 0.15s ease',
+        }}>
+          <ContextAside usage={usage} />
+        </div>
+      </>
+    )}
     </div>
   )
 }

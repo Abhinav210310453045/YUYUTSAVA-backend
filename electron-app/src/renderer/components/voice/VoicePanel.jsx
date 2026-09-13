@@ -7,6 +7,14 @@ import VoiceOrb from './VoiceOrb'
 import Markdown from '../chat/Markdown'
 import MessageImages from '../chat/MessageImages'
 import AskCard from '../asks/AskCard'
+import ResizeHandle from '../common/ResizeHandle'
+import ContextAside, { ContextMeter } from '../chat/ContextAside'
+import { useViewState } from '../../nav/useViewState'
+
+// Context column bounds, shared with the chat screen.
+const CTX_MIN_W = 200
+const CTX_MAX_W = 420
+const CTX_DEFAULT_W = 260
 
 // Persisted flag (in the daemon .env via main/settings.js) for the dismissible
 // "wake keywords live in Settings" note. Stored as a UI-only env key.
@@ -246,12 +254,37 @@ export default function VoicePanel({
   voiceSettings = { wake_enabled: true, tts_enabled: true },
 }) {
   const {
-    messages, connected, busy, pendingAsk, listening, speaking, playingId,
+    messages, connected, busy, pendingAsk, listening, speaking, playingId, usage,
     answerAsk, startVoice, stopVoice, interrupt, replay, newSession, getMicAnalyser,
   } = useConverse({ origin: 'voice', resumeId, active })
   const { settings, loading: settingsLoading, save } = useSettings()
   const scrollRef = useRef(null)
   const panelRef = useRef(null)
+
+  // Context column, same state shape as the chat screen.
+  const [ctxOpen, setCtxOpen] = useViewState('ctx:open:voice', false)
+  const [ctxW, setCtxW] = useViewState('ctx:w:voice', CTX_DEFAULT_W)
+  const [ctxDragging, setCtxDragging] = useState(false)
+  const startCtxDrag = useCallback((e) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const startW = ctxW
+    setCtxDragging(true)
+    const onMove = (ev) => {
+      setCtxW(Math.min(CTX_MAX_W, Math.max(CTX_MIN_W, startW - (ev.clientX - startX))))
+    }
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      setCtxDragging(false)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+  }, [ctxW, setCtxW])
 
   const wakeOn = voiceSettings?.wake_enabled !== false
   const ttsOn = voiceSettings?.tts_enabled !== false
@@ -319,7 +352,11 @@ export default function VoicePanel({
     : 'tap to talk · drag to move'
 
   return (
-    <div ref={panelRef} style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
+    <div style={{ flex: 1, display: 'flex', minWidth: 0, overflow: 'hidden' }}>
+    {/* panelRef stays on THIS column, not the row: it is the mic's drag
+        bounds, so keeping it here is what stops the floating mic from parking
+        underneath the context panel. */}
+    <div ref={panelRef} style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden', position: 'relative' }}>
       {needsOnboarding && (
         <WakeWordOnboarding save={save} onDone={() => {}} />
       )}
@@ -346,6 +383,7 @@ export default function VoicePanel({
           background: 'linear-gradient(90deg, #cdd9ff, var(--text-info) 60%, #8b5cf6)',
           WebkitBackgroundClip: 'text', backgroundClip: 'text', WebkitTextFillColor: 'transparent',
         }}>Voice — talk to YUYUTSAVA</span>
+        <ContextMeter usage={usage} open={ctxOpen} onClick={() => setCtxOpen(!ctxOpen)} />
         <NewSessionButton onClick={() => { stopVoice(); newSession() }} label="New" color={BLUE} />
       </div>
 
@@ -452,6 +490,19 @@ export default function VoicePanel({
         }}
         onStop={interrupt}
       />
+    </div>
+    {ctxOpen && (
+      <>
+        <ResizeHandle onMouseDown={startCtxDrag} side="right" />
+        <div style={{
+          width: ctxW, minWidth: CTX_MIN_W, maxWidth: CTX_MAX_W, flexShrink: 0,
+          borderLeft: '1px solid var(--border-subtle)', overflow: 'hidden',
+          transition: ctxDragging ? 'none' : 'width 0.15s ease',
+        }}>
+          <ContextAside usage={usage} />
+        </div>
+      </>
+    )}
     </div>
   )
 }

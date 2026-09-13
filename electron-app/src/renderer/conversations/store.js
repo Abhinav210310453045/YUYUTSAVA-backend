@@ -118,6 +118,10 @@ export class ConversationSession {
       speaking: false,    // agent TTS playing
       playingId: null,    // id of the message whose audio is audible
       paused: false,      // that clip is user-paused
+      // Context-window + spend reading from the daemon's context meter. Null
+      // until the first model call of the session reports one; `hello` carries
+      // the last known value so a panel opened between turns is not blank.
+      usage: null,
     }
 
     // The last per-thread `seq` we rendered. Sent as ?since_seq on every
@@ -400,7 +404,9 @@ export class ConversationSession {
 
     switch (msg.type) {
       case 'hello': {
-        this._set({ hello: msg })
+        // Adopt the handshake's usage snapshot, but never overwrite a live one
+        // with null: a reconnect mid-turn would blank a panel that is correct.
+        this._set(msg.usage ? { hello: msg, usage: msg.usage } : { hello: msg })
         // Whether the server allows voice barge-in (talk-over). Default off:
         // while off we mute the mic and ignore interrupt-y events until the
         // reply finishes PLAYING, so background noise can't cut it off.
@@ -552,6 +558,12 @@ export class ConversationSession {
           // and name this conversation as the one the titlebar transport drives.
           if (this.streamingId) this._watchPlayback(this.streamingId)
         } catch { /* ignore */ }
+        break
+      // Context-meter reading, twice per model call. Ephemeral on the wire —
+      // never replayed — so this is the only place it lands, and the last one
+      // simply wins.
+      case 'usage':
+        this._set({ usage: msg })
         break
       case 'speaking_start':
         this._set({ speaking: true })

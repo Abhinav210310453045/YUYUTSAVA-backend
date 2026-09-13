@@ -200,7 +200,10 @@ function AppShell() {
             )}
             {visited.chat && (
               <div style={{ flex: 1, display: activePanel === 'chat' ? 'flex' : 'none', overflow: 'hidden', minWidth: 0 }}>
-                <ChatPanel resumeId={chatResumeId} active={activePanel === 'chat'} />
+                {/* showContext: the chat screen has the room for the live
+                    context column. The card view's tinker chat does not — it
+                    is already an aside. */}
+                <ChatPanel resumeId={chatResumeId} active={activePanel === 'chat'} showContext />
               </div>
             )}
             {visited.voice && (
