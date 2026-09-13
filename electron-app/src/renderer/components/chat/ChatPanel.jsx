@@ -5,6 +5,9 @@ import NewSessionButton from '../common/NewSessionButton'
 import ResizeHandle from '../common/ResizeHandle'
 import ContextAside, { ContextMeter } from './ContextAside'
 
+// How close to the bottom still counts as "following the output".
+const NEAR_BOTTOM_PX = 80
+
 // Context column bounds, matching the card view's tinker aside.
 const CTX_MIN_W = 200
 const CTX_MAX_W = 420
@@ -64,7 +67,30 @@ function PlayPauseIcon({ playing }) {
   )
 }
 
+// A standalone row for something the system needs to say — the model returned
+// nothing, a history was repaired. Not a bubble: it is not something the agent
+// said, and styling it as speech would misattribute it.
+function NoticeRow({ m }) {
+  const tone = {
+    error: { fg: 'var(--neon-red)', bd: 'var(--border-red)', mark: '✗' },
+    warning: { fg: 'var(--neon-amber)', bd: 'var(--border-amber)', mark: '⚠' },
+    info: { fg: 'var(--text-muted)', bd: 'var(--border-subtle)', mark: '·' },
+  }[m.level || 'info']
+  return (
+    <div style={{
+      display: 'flex', gap: 8, alignItems: 'flex-start', flexShrink: 0,
+      padding: '8px 12px', borderRadius: 'var(--radius-card)',
+      border: `1px solid ${tone.bd}`, background: 'rgba(255,255,255,0.03)',
+      fontSize: 12, lineHeight: 1.6, color: tone.fg,
+    }}>
+      <span style={{ fontFamily: 'var(--font-mono)' }}>{tone.mark}</span>
+      <span style={{ color: 'var(--text-secondary)' }}>{m.text}</span>
+    </div>
+  )
+}
+
 function Bubble({ m, userText, sessionId, onRegenerate, onFeedback, playing, paused, onReplay, onTogglePause }) {
+  if (m.role === 'notice') return <NoticeRow m={m} />
   const isUser = m.role === 'user'
   const [hover, setHover] = useState(false)
   const empty = !m.text && (!m.images || m.images.length === 0) && (!m.artifacts || m.artifacts.length === 0)
@@ -197,8 +223,8 @@ export default function ChatPanel({
   showContext = false,
 }) {
   const {
-    messages, connected, busy, pendingAsk, hello, listening, speaking, playingId, paused,
-    usage,
+    messages, connected, busy, pendingAsk, pendingAsks, hello, listening, speaking,
+    playingId, paused, usage,
     send, answerAsk, interrupt, startVoice, stopVoice, replay, togglePause, newSession,
   } = useConverse({ origin, resumeId, agent, card, sessionKey, active })
   const [draft, setDraft] = useState('')
@@ -232,10 +258,22 @@ export default function ChatPanel({
     document.body.style.userSelect = 'none'
   }, [ctxW, setCtxW])
 
+  // Follow the output only when the user is already at the bottom. This used
+  // to pin scrollTop unconditionally, and `messages` gets a new identity on
+  // every smoother tick (~60 Hz), so scrolling up during a reply was
+  // impossible — the next frame yanked it back.
+  const [atBottom, setAtBottom] = useState(true)
+  const onScroll = useCallback(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const slack = el.scrollHeight - el.scrollTop - el.clientHeight
+    setAtBottom(slack <= NEAR_BOTTOM_PX)
+  }, [])
+
   useEffect(() => {
     const el = scrollRef.current
-    if (el) el.scrollTop = el.scrollHeight
-  }, [messages, pendingAsk])
+    if (el && atBottom) el.scrollTop = el.scrollHeight
+  }, [messages, pendingAsks, atBottom])
 
   // Notify the host view when a turn finishes (busy true → false).
   useEffect(() => {
@@ -322,7 +360,7 @@ export default function ChatPanel({
       }} />
 
       {/* messages */}
-      <div ref={scrollRef} style={{
+      <div ref={scrollRef} onScroll={onScroll} style={{
         flex: 1, overflowY: 'auto', padding: '20px 24px', position: 'relative', zIndex: 1,
         display: 'flex', flexDirection: 'column', gap: 12,
       }}>
@@ -361,12 +399,45 @@ export default function ChatPanel({
             the Inbox and the overlay instead, never through someone's open
             chat. Same card as those surfaces, so the option set (including the
             approve/session/project consent scopes) is identical everywhere. */}
-        {pendingAsk && (
-          <AskCard
-            ask={pendingAsk}
-            onAnswer={(_ask, response) => answerAsk(response)}
-          />
+        {/* Every pending question, oldest first.
+            The wrapper is load-bearing: AskCard sets `overflow: hidden`, which
+            per CSS flexbox makes its automatic minimum size 0, so in a long
+            thread flexbox took all the negative free space out of the card and
+            crushed it to an invisible sliver — the reason a question could
+            only be answered from the Inbox. Its bubble siblings have visible
+            overflow and refuse to shrink, so the card was the only victim.
+            overflow: visible + flexShrink: 0 is exactly what ProposalsPanel
+            does, which is why the same card behaves there. */}
+        {/* jump back to live, when the user has scrolled away */}
+        {!atBottom && (
+          <button
+            onClick={() => {
+              const el = scrollRef.current
+              if (el) el.scrollTop = el.scrollHeight
+              setAtBottom(true)
+            }}
+            style={{
+              position: 'sticky', bottom: 4, alignSelf: 'center', zIndex: 3,
+              padding: '3px 12px', borderRadius: 12, cursor: 'pointer',
+              fontFamily: 'var(--font-mono)', fontSize: 10,
+              background: 'var(--bg-elevated)',
+              border: '1px solid var(--border-subtle)',
+              color: 'var(--text-secondary)',
+            }}
+          >↓ latest</button>
         )}
+
+        {pendingAsks.map((ask) => (
+          <div
+            key={ask.ask_id || 'ask'}
+            style={{ display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0 }}
+          >
+            <AskCard
+              ask={ask}
+              onAnswer={(_ask, response) => answerAsk(response, ask.ask_id)}
+            />
+          </div>
+        ))}
       </div>
 
       {/* selection-context chips — what the next message will be scoped to */}

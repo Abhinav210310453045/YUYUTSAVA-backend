@@ -468,7 +468,7 @@ export default function VoicePanel({
         {pendingAsk && (
           <AskCard
             ask={pendingAsk}
-            onAnswer={(_ask, response) => answerAsk(response)}
+            onAnswer={(ask, response) => answerAsk(response, ask?.ask_id)}
           />
         )}
       </div>

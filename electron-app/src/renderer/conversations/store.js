@@ -112,7 +112,11 @@ export class ConversationSession {
       messages: [],
       connected: false,
       busy: false,
-      pendingAsk: null,   // { payload }
+      // Every question waiting on this conversation, oldest first. `pendingAsk`
+      // is kept as a derived alias of the head so existing consumers (the
+      // voice overlay, useConverse callers) need no change.
+      pendingAsks: [],
+      pendingAsk: null,
       hello: null,        // { session_id, thread_id, run, … }
       listening: false,   // mic capture active
       speaking: false,    // agent TTS playing
@@ -172,6 +176,12 @@ export class ConversationSession {
 
   _set(patch) {
     this.state = { ...this.state, ...patch }
+    // `pendingAsk` is derived, always the head of the queue. Keeping it in
+    // sync here means every existing reader (the voice overlay, useConverse
+    // consumers) keeps working while the chat renders the whole queue.
+    if ('pendingAsks' in patch) {
+      this.state.pendingAsk = this.state.pendingAsks[0] || null
+    }
     for (const fn of this.listeners) { try { fn() } catch { /* ignore */ } }
   }
 
@@ -256,7 +266,7 @@ export class ConversationSession {
             id: nextId(), role: 'assistant', error: true, events: [],
             text: '⚠ this chat is no longer available — start a new one',
           }])
-          this._set({ connected: false, busy: false, pendingAsk: null })
+          this._set({ connected: false, busy: false, pendingAsks: [] })
         },
       },
       { origin: this.origin, resumeId: this.resumeId, agent: this.agent, card: this.card },
@@ -325,6 +335,54 @@ export class ConversationSession {
     const id = this.streamingId
     this.streamingId = null
     if (id) this._setMessages((cur) => cur.map((m) => (m.id === id ? { ...m, streaming: false } : m)))
+  }
+
+  // The newest assistant block, streaming or just closed. `tool_call` closes
+  // the block it belongs to, so its result and logs have to attach to the
+  // last one rather than conjuring a fresh empty bubble.
+  _lastAssistantId() {
+    const msgs = this.state.messages
+    for (let i = msgs.length - 1; i >= 0; i -= 1) {
+      if (msgs[i].role === 'assistant') return msgs[i].id
+    }
+    return null
+  }
+
+  _appendToLastAssistant(patch) {
+    const id = this.streamingId || this._lastAssistantId()
+    if (!id) return
+    this._setMessages((cur) => cur.map((m) => (m.id === id ? patch(m) : m)))
+  }
+
+  // A standalone row for something the user must see with no bubble to hang
+  // it on. The `role` keeps it out of the conversation proper — it is not
+  // something the agent said.
+  _pushNotice(text, level = 'info') {
+    if (!text) return
+    this._setMessages((cur) => [...cur, {
+      id: nextId(), role: 'notice', level, text, events: [], images: [],
+      artifacts: [], streaming: false,
+    }])
+  }
+
+  // ---- pending asks ---------------------------------------------------
+  //
+  // A queue, not a slot. It was a single field, so a second question silently
+  // replaced the first — and the overwritten one went on blocking its agent
+  // with no way to answer it except the Inbox.
+
+  _pushAsk(ask) {
+    if (!ask) return
+    const asks = this.state.pendingAsks.filter((a) => a.ask_id !== ask.ask_id)
+    this._set({ pendingAsks: [...asks, ask] })
+  }
+
+  _resolveAsk(askId) {
+    // No id means "the turn ended" — everything parked on it is moot.
+    const asks = askId
+      ? this.state.pendingAsks.filter((a) => a.ask_id !== askId)
+      : []
+    this._set({ pendingAsks: asks })
   }
 
   // Reveal buffered prose immediately — call before rendering any non-prose
@@ -435,7 +493,7 @@ export class ConversationSession {
           this._flushSmoother()
           this._stopSmoother()
           this._finalizeStreaming()
-          this._set({ busy: false, pendingAsk: null })
+          this._set({ busy: false, pendingAsks: [] })
         }
         break
       }
@@ -494,29 +552,60 @@ export class ConversationSession {
         break
       }
       case 'tool_call':
-        this._flushSmoother() // show buffered prose before the tool row
+        // Flush the prose, attach the tool row, then CLOSE the bubble so the
+        // next token opens a new one. Without the close, a whole turn of
+        // prose -> tool -> prose -> tool collapsed into one blob with every
+        // tool row underneath it, and the reasoning between steps was
+        // unreadable. This is what the CLI renderer does (`self._md.flush()`
+        // before printing the tool line) and why its transcript reads right.
+        this._flushSmoother()
         this._appendToStreaming((m) => ({ ...m, events: [...m.events, { kind: 'tool_call', name: msg.name, args: msg.args }] }))
+        this._finalizeStreaming()
         break
       case 'tool_result':
+        // Attach to the block that issued the call, which tool_call just
+        // closed — not to a new bubble that has no text of its own.
         this._flushSmoother()
-        this._appendToStreaming((m) => ({ ...m, events: [...m.events, { kind: 'tool_result', name: msg.name, preview: msg.preview }] }))
+        this._appendToLastAssistant((m) => ({
+          ...m, events: [...m.events, { kind: 'tool_result', name: msg.name, preview: msg.preview }],
+        }))
         break
       case 'log':
-        // Surfaced as a transient event on the streaming message, or dropped —
-        // a bare log ("preparing agent…", "(turn cancelled)") must not conjure
-        // an empty assistant bubble of its own.
+        // Attach to the block in flight when there is one; otherwise show it
+        // as its own row. It used to be DROPPED in that case — which is how
+        // four consecutive "no assistant text" warnings reached the user as
+        // silence on a wedged thread.
         this._flushSmoother()
-        this._appendToStreaming((m) => ({ ...m, events: [...m.events, { kind: 'log', text: msg.text }] }))
+        if (this.streamingId || this._lastAssistantId()) {
+          this._appendToLastAssistant((m) => ({
+            ...m, events: [...m.events, { kind: 'log', text: msg.text }],
+          }))
+        } else {
+          this._pushNotice(msg.text, 'info')
+        }
+        break
+      case 'notice':
+        // Never attached, never dropped: a notice is the channel for "the
+        // model returned nothing", and it has to be visible on its own.
+        this._flushSmoother()
+        this._pushNotice(msg.text, msg.level || 'info')
         break
       case 'final':
-        // Drain buffered prose, then snap to the canonical final text. A
-        // correct final is always ≥ the streamed text (same chunks), so a
-        // SHORTER final can only be a server-side truncation — keep the
-        // accumulated text rather than snapping the bubble back to a stub.
+        // Drain buffered prose and stop. `final` carries only the LAST
+        // assistant message (streaming.last_assistant_text), not the turn, so
+        // the old "snap to the canonical text" step replaced every earlier
+        // block with the closing one whenever the comparison happened to
+        // favour it. The token stream is the transcript — the CLI ignores
+        // `final.text` entirely for exactly this reason.
+        //
+        // The one case it still earns its keep: nothing streamed at all (a
+        // replayed turn whose tokens fell off the ring), where there is no
+        // accumulated text to lose.
         this._flushSmoother()
-        if (msg.text) this._appendToStreaming((m) => (
-          msg.text.length >= m.text.length ? { ...m, text: msg.text } : m
-        ))
+        if (msg.text && !this.streamingId && !this._lastAssistantId()) {
+          this._ensureStreaming()
+          this._appendToStreaming((m) => ({ ...m, text: msg.text }))
+        }
         break
       case 'ask':
         // The full ask record — the same shape the Inbox and the overlay get,
@@ -524,14 +613,12 @@ export class ConversationSession {
         // channel is what makes it ours: an ask is only ever emitted to the
         // conversation that raised it, so an inline card can't leak into
         // somebody else's session.
-        this._set({ pendingAsk: msg.ask || msg.payload || null })
+        this._pushAsk(msg.ask || msg.payload || null)
         break
       case 'ask_resolved':
         // Answered somewhere — here, the Inbox, the overlay, or the CLI — or
         // the turn was cancelled. Either way the prompt is no longer live.
-        if (!msg.ask_id || this.state.pendingAsk?.ask_id === msg.ask_id) {
-          this._set({ pendingAsk: null })
-        }
+        this._resolveAsk(msg.ask_id)
         break
       case 'speech_started':
         // The user is talking — cut off any agent audio still playing (barge-in).
@@ -575,7 +662,7 @@ export class ConversationSession {
         this._flushSmoother()
         this._stopSmoother()
         this._finalizeStreaming()
-        this._set({ busy: false, speaking: false, pendingAsk: null })
+        this._set({ busy: false, speaking: false, pendingAsks: [] })
         // Nothing is watching and nothing is running — start the idle countdown.
         if (this.refs === 0) this._armIdle()
         break
@@ -632,9 +719,15 @@ export class ConversationSession {
   // Answer the inline ask. Goes back over the socket carrying the ask_id, so
   // the daemon resolves the same durable record an Inbox or overlay answer
   // would — one code path, and every other surface clears in step.
-  answerAsk(text) {
-    this.client?.answerAsk(text, this.state.pendingAsk?.ask_id || null)
-    this._set({ pendingAsk: null })
+  answerAsk(text, askId = null) {
+    // The id is explicit so a queue of questions can be answered in any
+    // order. Falls back to the head, which is what a single-card caller
+    // means. Answering without an id while several were pending used to
+    // resolve whichever had survived the overwrite — and leave the others
+    // blocking their agents forever.
+    const id = askId || this.state.pendingAsk?.ask_id || null
+    this.client?.answerAsk(text, id)
+    this._resolveAsk(id)
   }
 
   interrupt() {
@@ -746,7 +839,7 @@ export class ConversationSession {
     this.lastSeq = null
     this.streamingId = null
     this._set({
-      messages: [], busy: false, pendingAsk: null, hello: null,
+      messages: [], busy: false, pendingAsks: [], hello: null,
       listening: false, speaking: false, playingId: null, paused: false,
     })
     this._connect()
