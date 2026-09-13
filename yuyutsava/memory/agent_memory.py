@@ -35,10 +35,16 @@ MAX_BODY_CHARS = 4_000
 MAX_SUMMARY_CHARS = 200
 MAX_INDEX_BLOCK_CHARS = 2_000
 
-_HEADER = (
+#: Header of the injectable index block. Public because the context meter finds
+#: this block inside the assembled system prompt to attribute its bytes to a
+#: "memory" segment — it is baked into the prompt at build time, not appended
+#: per turn like the retrieval blocks.
+INDEX_BLOCK_HEADER = (
     "## AGENT MEMORY — learned behaviors of this user "
     "(read one in full with um_read(name))\n"
 )
+
+_HEADER = INDEX_BLOCK_HEADER
 
 
 def _slugify(name: str) -> str:

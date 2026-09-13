@@ -7,19 +7,22 @@
       ],
       "after_model": [
         "TranscriptRecorderPolicy",
+        "ContextMeterPolicy",
         "BudgetPolicy",
         "UsagePolicy"
       ],
       "before_model": [
         "YuyutsavaCompactionMiddleware",
         "TranscriptRecorderPolicy",
-        "PromptInspectorPolicy"
+        "PromptInspectorPolicy",
+        "ContextMeterPolicy"
       ],
       "model_call": [
         "ToolFilterPolicy",
         "FilesystemPromptPolicy",
         "VoiceStylePolicy",
         "SubagentGatePolicy",
+        "ContextMeterPolicy",
         "RetrievalInjectionPolicy"
       ],
       "tool_after": [
@@ -37,7 +40,7 @@
     "has_checkpointer": true,
     "middleware": [
       "YuyutsavaCompactionMiddleware",
-      "LangChainPolicyAdapter[ToolFilterPolicy,FilesystemPromptPolicy,VoiceStylePolicy,SubagentGatePolicy,ToolResultOffloadPolicy,TranscriptRecorderPolicy,PromptInspectorPolicy,BudgetPolicy,UsagePolicy,PermissionPolicy,RetrievalInjectionPolicy[MemoryInjector,SkillInjector(cli),ConversationInjector,PrefsInjector],BackgroundTaskCapPolicy,AsyncTaskInterruptPatchPolicy,CheckAsyncTaskGuardPolicy]"
+      "LangChainPolicyAdapter[ToolFilterPolicy,FilesystemPromptPolicy,VoiceStylePolicy,SubagentGatePolicy,ToolResultOffloadPolicy,TranscriptRecorderPolicy,PromptInspectorPolicy,ContextMeterPolicy,BudgetPolicy,UsagePolicy,PermissionPolicy,RetrievalInjectionPolicy[MemoryInjector,SkillInjector(cli),ConversationInjector,PrefsInjector],BackgroundTaskCapPolicy,AsyncTaskInterruptPatchPolicy,CheckAsyncTaskGuardPolicy]"
     ],
     "order": [
       "YuyutsavaCompactionMiddleware",
@@ -48,6 +51,7 @@
       "ToolResultOffloadPolicy",
       "TranscriptRecorderPolicy",
       "PromptInspectorPolicy",
+      "ContextMeterPolicy",
       "BudgetPolicy",
       "UsagePolicy",
       "PermissionPolicy",
@@ -61,6 +65,7 @@
       "BackgroundTaskCapPolicy",
       "BudgetPolicy",
       "CheckAsyncTaskGuardPolicy",
+      "ContextMeterPolicy",
       "FilesystemPromptPolicy",
       "PermissionPolicy",
       "PromptInspectorPolicy",
@@ -86,7 +91,7 @@
         "kind": "sync",
         "middleware": [
           "YuyutsavaCompactionMiddleware",
-          "LangChainPolicyAdapter[ToolFilterPolicy,ToolResultOffloadPolicy,PromptInspectorPolicy]"
+          "LangChainPolicyAdapter[ToolFilterPolicy,ToolResultOffloadPolicy,PromptInspectorPolicy,ContextMeterPolicy]"
         ],
         "name": "general-purpose",
         "tools": [
@@ -304,19 +309,22 @@
       ],
       "after_model": [
         "TranscriptRecorderPolicy",
+        "ContextMeterPolicy",
         "BudgetPolicy",
         "UsagePolicy"
       ],
       "before_model": [
         "YuyutsavaCompactionMiddleware",
         "TranscriptRecorderPolicy",
-        "PromptInspectorPolicy"
+        "PromptInspectorPolicy",
+        "ContextMeterPolicy"
       ],
       "model_call": [
         "ToolFilterPolicy",
         "FilesystemPromptPolicy",
         "VoiceStylePolicy",
         "SubagentGatePolicy",
+        "ContextMeterPolicy",
         "RetrievalInjectionPolicy"
       ],
       "tool_after": [
@@ -330,7 +338,7 @@
     "has_checkpointer": true,
     "middleware": [
       "YuyutsavaCompactionMiddleware",
-      "LangChainPolicyAdapter[ToolFilterPolicy,FilesystemPromptPolicy,VoiceStylePolicy,SubagentGatePolicy,ToolResultOffloadPolicy,TranscriptRecorderPolicy,PromptInspectorPolicy,BudgetPolicy,UsagePolicy,PermissionPolicy,RetrievalInjectionPolicy[MemoryInjector,SkillInjector(cli),ConversationInjector,PrefsInjector]]"
+      "LangChainPolicyAdapter[ToolFilterPolicy,FilesystemPromptPolicy,VoiceStylePolicy,SubagentGatePolicy,ToolResultOffloadPolicy,TranscriptRecorderPolicy,PromptInspectorPolicy,ContextMeterPolicy,BudgetPolicy,UsagePolicy,PermissionPolicy,RetrievalInjectionPolicy[MemoryInjector,SkillInjector(cli),ConversationInjector,PrefsInjector]]"
     ],
     "order": [
       "YuyutsavaCompactionMiddleware",
@@ -341,6 +349,7 @@
       "ToolResultOffloadPolicy",
       "TranscriptRecorderPolicy",
       "PromptInspectorPolicy",
+      "ContextMeterPolicy",
       "BudgetPolicy",
       "UsagePolicy",
       "PermissionPolicy",
@@ -348,6 +357,7 @@
     ],
     "policies": [
       "BudgetPolicy",
+      "ContextMeterPolicy",
       "FilesystemPromptPolicy",
       "PermissionPolicy",
       "PromptInspectorPolicy",
@@ -367,7 +377,7 @@
         "kind": "sync",
         "middleware": [
           "YuyutsavaCompactionMiddleware",
-          "LangChainPolicyAdapter[ToolFilterPolicy,ToolResultOffloadPolicy,PromptInspectorPolicy]"
+          "LangChainPolicyAdapter[ToolFilterPolicy,ToolResultOffloadPolicy,PromptInspectorPolicy,ContextMeterPolicy]"
         ],
         "name": "general-purpose",
         "tools": [
@@ -460,19 +470,22 @@
       ],
       "after_model": [
         "TranscriptRecorderPolicy",
+        "ContextMeterPolicy",
         "BudgetPolicy",
         "UsagePolicy"
       ],
       "before_model": [
         "YuyutsavaCompactionMiddleware",
         "TranscriptRecorderPolicy",
-        "PromptInspectorPolicy"
+        "PromptInspectorPolicy",
+        "ContextMeterPolicy"
       ],
       "model_call": [
         "ToolFilterPolicy",
         "FilesystemPromptPolicy",
         "VoiceStylePolicy",
         "SubagentGatePolicy",
+        "ContextMeterPolicy",
         "RetrievalInjectionPolicy"
       ],
       "tool_after": [
@@ -489,7 +502,7 @@
     "has_checkpointer": true,
     "middleware": [
       "YuyutsavaCompactionMiddleware",
-      "LangChainPolicyAdapter[ToolFilterPolicy,FilesystemPromptPolicy,VoiceStylePolicy,SubagentGatePolicy,ToolResultOffloadPolicy,TranscriptRecorderPolicy,PromptInspectorPolicy,BudgetPolicy,UsagePolicy,RetrievalInjectionPolicy[MemoryInjector,SkillInjector(orchestrator),ConversationInjector],BackgroundTaskCapPolicy,AsyncTaskInterruptPatchPolicy,CheckAsyncTaskGuardPolicy]"
+      "LangChainPolicyAdapter[ToolFilterPolicy,FilesystemPromptPolicy,VoiceStylePolicy,SubagentGatePolicy,ToolResultOffloadPolicy,TranscriptRecorderPolicy,PromptInspectorPolicy,ContextMeterPolicy,BudgetPolicy,UsagePolicy,RetrievalInjectionPolicy[MemoryInjector,SkillInjector(orchestrator),ConversationInjector],BackgroundTaskCapPolicy,AsyncTaskInterruptPatchPolicy,CheckAsyncTaskGuardPolicy]"
     ],
     "order": [
       "YuyutsavaCompactionMiddleware",
@@ -500,6 +513,7 @@
       "ToolResultOffloadPolicy",
       "TranscriptRecorderPolicy",
       "PromptInspectorPolicy",
+      "ContextMeterPolicy",
       "BudgetPolicy",
       "UsagePolicy",
       "RetrievalInjectionPolicy",
@@ -512,6 +526,7 @@
       "BackgroundTaskCapPolicy",
       "BudgetPolicy",
       "CheckAsyncTaskGuardPolicy",
+      "ContextMeterPolicy",
       "FilesystemPromptPolicy",
       "PromptInspectorPolicy",
       "RetrievalInjectionPolicy",
@@ -638,19 +653,22 @@
       ],
       "after_model": [
         "TranscriptRecorderPolicy",
+        "ContextMeterPolicy",
         "BudgetPolicy",
         "UsagePolicy"
       ],
       "before_model": [
         "YuyutsavaCompactionMiddleware",
         "TranscriptRecorderPolicy",
-        "PromptInspectorPolicy"
+        "PromptInspectorPolicy",
+        "ContextMeterPolicy"
       ],
       "model_call": [
         "ToolFilterPolicy",
         "FilesystemPromptPolicy",
         "VoiceStylePolicy",
         "SubagentGatePolicy",
+        "ContextMeterPolicy",
         "RetrievalInjectionPolicy"
       ],
       "tool_after": [
@@ -663,7 +681,7 @@
     "has_checkpointer": true,
     "middleware": [
       "YuyutsavaCompactionMiddleware",
-      "LangChainPolicyAdapter[ToolFilterPolicy,FilesystemPromptPolicy,VoiceStylePolicy,SubagentGatePolicy,ToolResultOffloadPolicy,TranscriptRecorderPolicy,PromptInspectorPolicy,BudgetPolicy,UsagePolicy,RetrievalInjectionPolicy[MemoryInjector,SkillInjector(orchestrator),ConversationInjector]]"
+      "LangChainPolicyAdapter[ToolFilterPolicy,FilesystemPromptPolicy,VoiceStylePolicy,SubagentGatePolicy,ToolResultOffloadPolicy,TranscriptRecorderPolicy,PromptInspectorPolicy,ContextMeterPolicy,BudgetPolicy,UsagePolicy,RetrievalInjectionPolicy[MemoryInjector,SkillInjector(orchestrator),ConversationInjector]]"
     ],
     "order": [
       "YuyutsavaCompactionMiddleware",
@@ -674,12 +692,14 @@
       "ToolResultOffloadPolicy",
       "TranscriptRecorderPolicy",
       "PromptInspectorPolicy",
+      "ContextMeterPolicy",
       "BudgetPolicy",
       "UsagePolicy",
       "RetrievalInjectionPolicy"
     ],
     "policies": [
       "BudgetPolicy",
+      "ContextMeterPolicy",
       "FilesystemPromptPolicy",
       "PromptInspectorPolicy",
       "RetrievalInjectionPolicy",
@@ -730,19 +750,22 @@
       ],
       "after_model": [
         "TranscriptRecorderPolicy",
+        "ContextMeterPolicy",
         "BudgetPolicy",
         "UsagePolicy"
       ],
       "before_model": [
         "YuyutsavaCompactionMiddleware",
         "TranscriptRecorderPolicy",
-        "PromptInspectorPolicy"
+        "PromptInspectorPolicy",
+        "ContextMeterPolicy"
       ],
       "model_call": [
         "ToolFilterPolicy",
         "FilesystemPromptPolicy",
         "VoiceStylePolicy",
         "SubagentGatePolicy",
+        "ContextMeterPolicy",
         "RetrievalInjectionPolicy"
       ],
       "tool_after": [
@@ -760,7 +783,7 @@
     "has_checkpointer": true,
     "middleware": [
       "YuyutsavaCompactionMiddleware",
-      "LangChainPolicyAdapter[ToolFilterPolicy,FilesystemPromptPolicy,VoiceStylePolicy,SubagentGatePolicy,ToolResultOffloadPolicy,TranscriptRecorderPolicy,PromptInspectorPolicy,BudgetPolicy,UsagePolicy,PermissionPolicy,RetrievalInjectionPolicy[MemoryInjector,SkillInjector(tinker),ConversationInjector,TodoNoteInjector,PrefsInjector],BackgroundTaskCapPolicy,AsyncTaskInterruptPatchPolicy,CheckAsyncTaskGuardPolicy]"
+      "LangChainPolicyAdapter[ToolFilterPolicy,FilesystemPromptPolicy,VoiceStylePolicy,SubagentGatePolicy,ToolResultOffloadPolicy,TranscriptRecorderPolicy,PromptInspectorPolicy,ContextMeterPolicy,BudgetPolicy,UsagePolicy,PermissionPolicy,RetrievalInjectionPolicy[MemoryInjector,SkillInjector(tinker),ConversationInjector,TodoNoteInjector,PrefsInjector],BackgroundTaskCapPolicy,AsyncTaskInterruptPatchPolicy,CheckAsyncTaskGuardPolicy]"
     ],
     "order": [
       "YuyutsavaCompactionMiddleware",
@@ -771,6 +794,7 @@
       "ToolResultOffloadPolicy",
       "TranscriptRecorderPolicy",
       "PromptInspectorPolicy",
+      "ContextMeterPolicy",
       "BudgetPolicy",
       "UsagePolicy",
       "PermissionPolicy",
@@ -784,6 +808,7 @@
       "BackgroundTaskCapPolicy",
       "BudgetPolicy",
       "CheckAsyncTaskGuardPolicy",
+      "ContextMeterPolicy",
       "FilesystemPromptPolicy",
       "PermissionPolicy",
       "PromptInspectorPolicy",
@@ -972,19 +997,22 @@
       ],
       "after_model": [
         "TranscriptRecorderPolicy",
+        "ContextMeterPolicy",
         "BudgetPolicy",
         "UsagePolicy"
       ],
       "before_model": [
         "YuyutsavaCompactionMiddleware",
         "TranscriptRecorderPolicy",
-        "PromptInspectorPolicy"
+        "PromptInspectorPolicy",
+        "ContextMeterPolicy"
       ],
       "model_call": [
         "ToolFilterPolicy",
         "FilesystemPromptPolicy",
         "VoiceStylePolicy",
         "SubagentGatePolicy",
+        "ContextMeterPolicy",
         "RetrievalInjectionPolicy"
       ],
       "tool_after": [
@@ -998,7 +1026,7 @@
     "has_checkpointer": true,
     "middleware": [
       "YuyutsavaCompactionMiddleware",
-      "LangChainPolicyAdapter[ToolFilterPolicy,FilesystemPromptPolicy,VoiceStylePolicy,SubagentGatePolicy,ToolResultOffloadPolicy,TranscriptRecorderPolicy,PromptInspectorPolicy,BudgetPolicy,UsagePolicy,PermissionPolicy,RetrievalInjectionPolicy[MemoryInjector,SkillInjector(tinker),ConversationInjector,TodoNoteInjector,PrefsInjector]]"
+      "LangChainPolicyAdapter[ToolFilterPolicy,FilesystemPromptPolicy,VoiceStylePolicy,SubagentGatePolicy,ToolResultOffloadPolicy,TranscriptRecorderPolicy,PromptInspectorPolicy,ContextMeterPolicy,BudgetPolicy,UsagePolicy,PermissionPolicy,RetrievalInjectionPolicy[MemoryInjector,SkillInjector(tinker),ConversationInjector,TodoNoteInjector,PrefsInjector]]"
     ],
     "order": [
       "YuyutsavaCompactionMiddleware",
@@ -1009,6 +1037,7 @@
       "ToolResultOffloadPolicy",
       "TranscriptRecorderPolicy",
       "PromptInspectorPolicy",
+      "ContextMeterPolicy",
       "BudgetPolicy",
       "UsagePolicy",
       "PermissionPolicy",
@@ -1016,6 +1045,7 @@
     ],
     "policies": [
       "BudgetPolicy",
+      "ContextMeterPolicy",
       "FilesystemPromptPolicy",
       "PermissionPolicy",
       "PromptInspectorPolicy",

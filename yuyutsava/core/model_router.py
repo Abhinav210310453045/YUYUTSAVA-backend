@@ -116,16 +116,38 @@ def estimate_cost_usd(
     the configured model was ``gemini-3.5-flash``, which prefix-matches nothing.
     Every call was being costed at $0.00 with no indication anywhere.
     """
+    best = _best_price(model, prices)
+    if best is None:
+        _warn_unpriced_once(model)
+        return 0.0
+    return (input_tokens * best[0] + output_tokens * best[1]) / 1_000_000
+
+
+def _best_price(
+    model: str, prices: dict[str, tuple[float, float]] | None = None
+) -> tuple[float, float] | None:
+    """Longest matching prefix's ``($/1M in, $/1M out)``, or ``None``."""
     table = prices if prices is not None else PRICES
     best: tuple[float, float] | None = None
     best_len = -1
     for prefix, pair in table.items():
         if model.startswith(prefix) and len(prefix) > best_len:
             best, best_len = pair, len(prefix)
-    if best is None:
-        _warn_unpriced_once(model)
-        return 0.0
-    return (input_tokens * best[0] + output_tokens * best[1]) / 1_000_000
+    return best
+
+
+def is_priced(
+    model: str, prices: dict[str, tuple[float, float]] | None = None
+) -> bool:
+    """Whether a cost figure for *model* means anything.
+
+    A caller that only has ``est_cost_usd`` cannot tell "this call was free"
+    from "we have no price for this model", and the difference matters as soon
+    as the number is put in front of someone. Ask this first and label the
+    figure ``unpriced`` when it is False; unlike :func:`estimate_cost_usd` this
+    never warns, so a display can call it per render.
+    """
+    return _best_price(model, prices) is not None
 
 
 #: Models already reported as unpriced. Per-call warning would be one line per

@@ -905,6 +905,9 @@ async def build_async_subagents(
                     # transcripts serve interactive resume — skip them here.
                     compaction_model=host_compaction_model,
                     role=f"{sa.name}-bg",
+                    # Background runs have host-minted thread ids and their own
+                    # message list — they report spend, never the panel's window.
+                    meter_window=False,
                 ),
                 extra_tools_factory=(
                     (lambda: make_context_tools(artifact_store))

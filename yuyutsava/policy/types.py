@@ -232,6 +232,17 @@ class Usage:
     input_tokens: int = 0
     output_tokens: int = 0
 
+    #: Input tokens the provider served from its own prompt cache, and tokens it
+    #: charged to *write* that cache — both subsets of :attr:`input_tokens`, from
+    #: ``usage_metadata["input_token_details"]``. Cache reads are the dominant
+    #: cost lever on a long conversation (one real session ran ~93 % cache-read
+    #: on its last call) and nothing recorded them, so a session that was cheap
+    #: and one that was expensive looked identical in the ledger. ``0`` on
+    #: providers that report no detail — indistinguishable from a genuine miss,
+    #: which is why no surface infers "caching is off" from a zero.
+    cache_read_tokens: int = 0
+    cache_creation_tokens: int = 0
+
     #: What the provider called the model on this response
     #: (``response_metadata["model_name"]``), or ``""``. The usage recorder falls
     #: back to this when it was built without a model name.
