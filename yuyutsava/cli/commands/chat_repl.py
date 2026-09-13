@@ -163,6 +163,33 @@ def _print_banner(
     print(file=sys.stderr)
 
 
+# prompt_toolkit's FileHistory appends forever. It is only the up-arrow
+# buffer — the agent never reads it and it never enters a prompt — but it
+# accumulates every line the user has ever typed, so it is worth a ceiling.
+_HISTORY_MAX_BYTES = 10 * 1024 * 1024
+
+
+def _rotate_history(path: Path) -> None:
+    """Keep ``chat_history`` under the size ceiling. Never raises.
+
+    Rotates rather than truncates so the previous file is still there if the
+    user wants it, and keeps the newest half in place so recent up-arrow
+    history survives the rotation.
+    """
+    try:
+        if not path.is_file() or path.stat().st_size <= _HISTORY_MAX_BYTES:
+            return
+        text = path.read_text(encoding="utf-8", errors="replace")
+        path.replace(path.with_suffix(".1"))
+        # FileHistory entries are "# <ts>" followed by "+<line>" blocks; cut on
+        # an entry boundary so the kept tail parses.
+        tail = text[len(text) // 2 :]
+        marker = tail.find("\n# ")
+        path.write_text(tail[marker + 1 :] if marker >= 0 else "", encoding="utf-8")
+    except OSError:
+        pass
+
+
 def _startup_status_line(sessions_settings: SessionsSettings) -> str:
     """One dim line summarizing what the silenced startup logs used to say.
 
@@ -785,6 +812,7 @@ async def run_chat_repl(
     # History file lives under the standard YUYUTSAVA state dir so it
     # follows the same lifecycle as the SQLite session store.
     history_path = state_dir() / "chat_history"
+    _rotate_history(history_path)
 
     # Rich transcript on real TTYs; the plain ANSI renderer for pipes and
     # dumb terminals stays byte-identical to the historical behavior.

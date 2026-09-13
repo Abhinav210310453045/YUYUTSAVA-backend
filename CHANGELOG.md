@@ -9,6 +9,25 @@ While the version stays `0.x`, minor bumps may contain breaking changes.
 ## [Unreleased]
 
 ### Added
+- `ctx_history`, `ctx_history_message` and `ctx_history_grep`: page, read and
+  search this conversation's verbatim messages. Compaction is the only step
+  that removes messages from the live context, and until now the summary it
+  left behind was the only trace — the originals were in the transcript store
+  with no way to ask for them. The summary and its prompt now name the
+  read-back path.
+- Line-addressed artifact reads: `ctx_fetch_artifact(id, start_line=…,
+  line_count=…)` beside the character form, so a `ctx_grep_artifact` hit can
+  be widened directly.
+- Token accounting for standalone CLI runs (previously daemon-only): each turn
+  prints its calls, tokens and estimated cost, and `/usage` reports session
+  totals by model. `/skills` shows which skills were recalled this turn and
+  what else is available.
+- Artifacts render inline in the terminal, inside a bounded box — markdown,
+  text, code, csv and json drawn in place, html/jsx/audio announced with their
+  path. Display-only: the body is read from disk, never added to the
+  conversation.
+- A macOS host-control skill pack (`macos-open-app-or-url`,
+  `chrome-profile-by-email`, `whatsapp-mac-chat-db`, `macos-app-local-data`).
 - Per-workspace state directory `<workspace>/.yuyutsava/` — the only place
   yuyutsava writes inside a workspace: `sandbox/`, `scripts/`, `outputs/`,
   `tmp/`, workspace `skills/`, the append-only `ChangeLog.md`,
@@ -26,6 +45,29 @@ While the version stays `0.x`, minor bumps may contain breaking changes.
   container; before, the container was started but every tool ran on the host.
 
 ### Changed
+- Vertex/Gemini declares its real 1,000,000-token input window, so compaction
+  triggers at 700k instead of the 89.6k the 128k fallback produced.
+- `sk_search_skill` is always visible instead of sitting behind `tool_search`,
+  and the prompt says to search for a saved procedure before deriving how to
+  drive an app, device, site or local data source.
+- The chat bundle no longer carries a `BudgetPolicy`. It accumulated per-call
+  input tokens for the bundle's lifetime against a cap documented as per-call
+  and was never reset, so a normal session crossed 120k within a few calls and
+  the agent was told to stop calling tools mid-task.
+  `YUYUTSAVA_CHAT_BUDGET_TOKENS` is gone; compaction is the control.
+- One retry ladder for a 429/503 before the first streamed chunk, not two
+  nested ones: the provider's own `max_retries` is pinned low and the quirk
+  owns the policy, bounded by `VERTEX_RETRY_BUDGET_SEC` (default 90) as well
+  as `VERTEX_MAX_RETRIES`. Retries show on the spinner, and giving up prints
+  one line with the session still open.
+- The CLI prompt is front-aware: in a terminal, tables belong in the reply as
+  Markdown, and there is no Artifacts tab to point at. The desktop-app prompt
+  is unchanged.
+- The chat banner reports the effective storage backend instead of
+  `YUYUTSAVA_SESSIONS_BACKEND`, which only selects the checkpointer default.
+- `GRPC_VERBOSITY=ERROR` at both entry points, so gRPC's fork handlers stop
+  printing over the renderer on every subprocess.
+- `chat_history` rotates at 10 MB.
 - Scratch, deliverables and deepagents temp moved from `<ws>/_sandbox`,
   `<ws>/_output`, `<ws>/large_tool_results` and `<ws>/conversation_history`
   into `<ws>/.yuyutsava/{sandbox,outputs,tmp}`. Existing directories are left
@@ -47,6 +89,24 @@ While the version stays `0.x`, minor bumps may contain breaking changes.
   memory, MCP and all twelve providers.
 
 ### Fixed
+- An oversized `task` or `tool_search` result was exempt from offload at every
+  size, so it met the 100,000-character result guard with nothing stored
+  behind it and the body became unrecoverable. Both now offload on size; the
+  `ctx_*` readers stay exempt and are bounded at 40,000 characters per read
+  instead, which is what makes that exemption safe.
+- The last-resort size guard returned an empty recovery list and advice to
+  "write large outputs to a file" for a tool that had already run. It now
+  names the artifact readers and how to narrow the call.
+- `UsagePolicy` recorded no `thread_id` unless one was pinned at build time,
+  which the shared chat bundle cannot do — so chat usage rows could not be
+  attributed to a session.
+- Ctrl+C during a turn printed a traceback and ended the process: the
+  interrupt arrives as `CancelledError` (asyncio cancels the main task), which
+  the handlers could not catch. The turn is cancelled and the session stays
+  open.
+- `vis_*` images written from the standalone CLI landed in SQLite while the
+  daemon and the app read Postgres, so the two disagreed about what existed.
+- The plain renderer dropped `artifact` events entirely.
 - Every subagent's `tr_*` tools were bound to the default sandbox even when its
   `TaskRunnerAgent` had been built with another one — the background tinker's
   sandbox, deliberately placed outside the TODO-board root, was never used.

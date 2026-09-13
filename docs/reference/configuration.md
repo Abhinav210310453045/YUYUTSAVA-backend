@@ -16,7 +16,11 @@ sections and states its own defaults.
 
 Everything yuyutsava writes *inside* a workspace lives in one hidden
 directory, `<workspace>/.yuyutsava/` — see
-[Per-workspace state](#per-workspace-state-workspaceyuyutsava).
+[Per-workspace state](#per-workspace-state-workspaceyuyutsava). For what the
+state directory itself holds, see
+[What lives in `~/.yuyutsava/`](#what-lives-in-yuyutsava-global-state);
+for how a long conversation stays inside the model's budget without losing
+anything, see [Context management](#context-management-what-the-agent-can-still-reach).
 
 ---
 
@@ -124,6 +128,61 @@ read-write at `/yuyutsava` and the workspace read-only at `/workspace`.
 same files, so a deliverable written to `/yuyutsava/outputs` is already in
 `<workspace>/.yuyutsava/outputs`. Keep any sandbox override under
 `.yuyutsava`, or it will not be visible inside the container.
+
+---
+
+## What lives in `~/.yuyutsava/` (global state)
+
+The per-user state directory (`YUYUTSAVA_HOME` overrides it). What is *live*
+depends on the storage backend, so the same directory can hold files nothing
+reads any more.
+
+| Entry | When it is live |
+|---|---|
+| `mcp_config.json`, `permissions.json`, `events_config.json` | Always — the three config files above. |
+| `.env` | Always. App-managed overrides the daemon loads *after* the project `.env`. |
+| `skills/<name>/SKILL.md` | Always. Personal-scope skills (`sk_write_skill` writes here). |
+| `agents/<agent>/memory/` | Always. Per-agent learned behaviour (`um_*`), with `MEMORY.md` as the injected index. |
+| `blobs/` | Always. `artifacts/` (rich artifacts), `todoboard/`, `voice/`, `webcam/`. |
+| `model_prices.json`, `.model_prices_cache.json` | Always. Price table for the cost ledger; add an entry for your model or costs record as 0. |
+| `api_token` | Always. Local daemon API token. |
+| `chat_history` | Always. The REPL's up-arrow history. Never read by the agent, never in a prompt; rotated at 10 MB to `chat_history.1`. |
+| `state.db` | Always. On Postgres it is the spillover write buffer plus the standalone-CLI fallback for a few stores. |
+| `sessions.db`, `checkpoints.db`, `interrupts.db` | **SQLite backend only.** On Postgres (`YUYUTSAVA_STORAGE_BACKEND=postgres`) sessions, checkpoints and interrupts live in Postgres and these files are stale leftovers — safe to archive. |
+| `migrations.lock` | SQLite backend only. |
+
+The chat banner prints the effective backend (`storage: postgres`), which is
+resolved from `StorageSettings`, not from `YUYUTSAVA_SESSIONS_BACKEND` —
+that variable only picks the checkpointer default.
+
+---
+
+## Context management (what the agent can still reach)
+
+Two mechanisms keep a long conversation inside the model's input budget.
+Neither discards anything: both leave an addressable way back, and every
+reader pages, so no single read can be truncated into a dead end.
+
+| Mechanism | What leaves the prompt | How the agent gets it back |
+|---|---|---|
+| **Tool-result offload** — results over `YUYUTSAVA_CONTEXT_OFFLOAD_THRESHOLD_CHARS` (20k), and anything from a `ws_*` search | The body; a digest with `artifact_id`, head and tail stays | `ctx_fetch_artifact(id, offset=…)` or `(id, start_line=…)`, `ctx_grep_artifact(id, pattern)`, `ctx_recall(query)` (Postgres) |
+| **Compaction** — fires past `compact_fraction` × the input budget | Older turns, replaced by a structured summary | `ctx_history(after_seq=…)`, `ctx_history_grep(pattern)`, `ctx_history_message(seq)` — the verbatim messages, from the transcript store |
+
+The input budget defaults to the provider's real window (1,000,000 for
+Vertex/Gemini, 200,000 Anthropic, 128,000 Groq/OpenRouter, 8,192 Ollama);
+`YUYUTSAVA_CONTEXT_MAX_INPUT_TOKENS` overrides it, per role with a prefix
+(`CLI_…`, `ORCHESTRATOR_…`). Setting it low is not the safe direction — it
+makes compaction fire sooner, and compaction is the only step that removes
+messages from the live context.
+
+A single `ctx_*` read returns at most 40,000 characters and ends in a
+`[more: …]` line naming the next offset or line. That ceiling is what keeps
+the readers exempt from offload safely: an unbounded read would cross the
+100,000-character result limit and be replaced by a notice.
+
+`/usage` in the chat REPL reports the session's calls, tokens and estimated
+cost, and each turn prints its own totals. Rows land in the same `llm_usage`
+table the daemon writes.
 
 ---
 

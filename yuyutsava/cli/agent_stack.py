@@ -244,6 +244,13 @@ async def build_agent_stack(
         from yuyutsava.todoboard.store import set_default_todo_store
         from yuyutsava.todoboard.store_unified import pg_todo_store
         set_default_todo_store(pg_todo_store(pg_pool))
+        # Same split, same fix, for vis_* images: without this the lazy getter
+        # falls back to the SQLite twin, so a chart made in the CLI lands in
+        # state.db while the daemon and the app read visual_artifacts in
+        # Postgres — and vis_list_artifacts shows two different worlds.
+        from yuyutsava.visuals.store import set_default_visual_store
+        from yuyutsava.visuals.store_unified import pg_visual_store
+        set_default_visual_store(pg_visual_store(pg_pool))
         # Board-note recall: embed-on-write for notes authored through this
         # stack + todo_recall searches. Boot backfill is the daemon's job —
         # a CLI start stays light.
