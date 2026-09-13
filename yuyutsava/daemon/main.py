@@ -508,6 +508,15 @@ async def _async_main(argv: list[str] | None = None) -> int:
                 release_host_lock(subs.async_host_attachment)
             except Exception:
                 logger.exception("release_host_lock failed")
+        # The log bridge goes early: it holds a handler on the `yuyutsava`
+        # logger, and everything below here logs while shutting down. Leaving
+        # it attached would have those records queued for a hub that is about
+        # to disappear.
+        if getattr(subs, "log_bridge", None) is not None:
+            try:
+                await subs.log_bridge.aclose()
+            except Exception:
+                logger.exception("log_bridge.aclose failed")
         # Channel plugins first: their inbound pollers post through the
         # router, so they must stop before the channels they fan out to.
         try:

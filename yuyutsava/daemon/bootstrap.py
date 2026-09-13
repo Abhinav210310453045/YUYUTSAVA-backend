@@ -160,6 +160,9 @@ class DaemonSubsystems:
     # channels + web
     channels: ChannelRouter
     web_hub: WebHub | None
+    #: Forwards the daemon's own log records to the UI's Logs panel. None in
+    #: headless mode, where there is no web hub to broadcast on.
+    log_bridge: Any | None
     web_server: uvicorn.Server | None
     web_url: str
 
@@ -1199,9 +1202,18 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     web_hub: WebHub | None = None
     web_server: uvicorn.Server | None = None
 
+    log_bridge: Any | None = None
     if not opts.headless:
         web_hub = WebHub(store)
         channels.channels.append(WebChannel(web_hub))
+        # Everything the daemon logs about itself now reaches the Logs panel.
+        # Attached to the `yuyutsava` logger with no level of its own, so
+        # PUT /logs/level (the titlebar dropdown) controls the panel — which
+        # until now changed stderr only and looked like it did nothing.
+        from yuyutsava.daemon.log_bridge import LogBridge
+
+        log_bridge = LogBridge(web_hub)
+        log_bridge.install()
 
     # Always include terminal as a fallback (and only channel in headless mode).
     channels.channels.append(TerminalChannel(verbose=opts.verbose))
@@ -1587,6 +1599,7 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         registry=registry,
         channels=channels,
         web_hub=web_hub,
+        log_bridge=log_bridge,
         web_server=web_server,
         web_url=web_url,
         mcp_manager=mcp_manager,

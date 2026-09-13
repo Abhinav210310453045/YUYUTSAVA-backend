@@ -3,7 +3,10 @@ import { SSEClient } from '../api/sse'
 
 const MAX_LINES = 2000
 // Kinds routed to the "Logs" tab. Everything else goes to "Events".
-const LOG_KINDS = new Set(['http_log'])
+// What the "Logs" tab contains. `http_log` alone made it an HTTP access
+// ticker — the UI's own polling traffic — while everything the daemon says
+// about itself went to stderr. `app_log` carries those records now.
+const LOG_KINDS = new Set(['http_log', 'app_log'])
 // Kinds handled by the Background Tasks panel — not routed to event/log lines.
 const BG_TASK_KINDS = new Set([
   'async_task_started',
@@ -228,11 +231,23 @@ export function SSEProvider({ children }) {
         else if (kind === 'timeline') text = d.line || d.text || d.summary || ''
         else if (kind === 'system_metrics') text = fmtMetrics(d)
         else if (kind === 'http_log') text = `${d.method} ${d.path} → ${d.status} (${d.duration_ms}ms)`
+        else if (kind === 'app_log') text = d.message || ''
         else text = d.text || d.message || kind
 
         dispatch({
           type: isLog ? 'LOG_LINE' : 'EVENT_LINE',
-          line: { kind, text, ts, raw: data },
+          line: {
+            kind, text, ts, raw: data,
+            // Structured fields the panel renders as columns and filters on.
+            // Flattening these into the text was what made a log line
+            // unreadable and unfilterable.
+            level: kind === 'app_log' ? (d.level || 'INFO') : null,
+            logger: kind === 'app_log' ? (d.logger || '') : null,
+            // The SSE envelope carries these; dropping them made every line
+            // unattributable to a task or conversation.
+            taskId: data.task_id || null,
+            sessionId: data.session_id || null,
+          },
         })
       },
     })
