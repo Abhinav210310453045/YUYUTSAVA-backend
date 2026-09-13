@@ -231,8 +231,7 @@ class RichChatRenderer(ChatRenderer):
             return
 
         if ev.kind == "artifact":
-            title = ev.data.get("title") or ev.data.get("id") or "artifact"
-            self._console.print(Text(f"  ◨ artifact: {tf.sanitize(title)}", style="chrome"))
+            self._print_artifact(ev.data)
             return
 
         if ev.kind == "final":
@@ -303,6 +302,30 @@ class RichChatRenderer(ChatRenderer):
             self._console.print(
                 Text(f"      …clipped — /expand {idx} for the full response", style="chrome")
             )
+
+    def _print_artifact(self, data: dict) -> None:
+        """Show the artifact inline, in a bounded box.
+
+        Display-side only: the body is read from disk, never from the event,
+        so nothing here re-enters the agent's context (see
+        ``cli/render/artifact_view``). On any failure this degrades to the
+        one-line announcement it replaced.
+        """
+        from yuyutsava.cli.render import artifact_view as av
+
+        info = av.load_artifact(data)
+        if info is not None:
+            try:
+                self._console.print()
+                self._console.print(av.artifact_renderable(info))
+                return
+            except Exception:  # noqa: BLE001 — fall back to the plain line
+                pass
+        title, kind = av.artifact_summary(data)
+        suffix = f" ({kind})" if kind else ""
+        self._console.print(
+            Text(f"  ◨ artifact: {tf.sanitize(title)}{suffix}", style="chrome")
+        )
 
     def _print_todos(self, args: Any, idx: int) -> None:
         todos = args.get("todos") if isinstance(args, dict) else None

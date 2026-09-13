@@ -179,6 +179,29 @@ class ChatRenderer:
             # else: suppress on success in non-verbose
             return
 
+        if ev.kind == "artifact":
+            # Was dropped entirely here, so an artifact the agent built (a
+            # table, a document) left no trace in a piped transcript. Read
+            # from disk, printed only — never fed back into the context.
+            from yuyutsava.cli.render import artifact_view as av
+
+            info = av.load_artifact(ev.data)
+            if info is None:
+                title, kind = av.artifact_summary(ev.data)
+                print(f"  ◨ artifact: {title}{f' ({kind})' if kind else ''}",
+                      file=sys.stderr, flush=True)
+                return
+            head = f"  ◨ {info['title']} [{info['kind'] or info['mime']}]"
+            print(head, file=sys.stderr, flush=True)
+            if info["text"]:
+                print(info["text"], file=sys.stderr, flush=True)
+                if info["clipped"]:
+                    print(f"  … clipped — full file: {info['path']}",
+                          file=sys.stderr, flush=True)
+            elif info["path"]:
+                print(f"  open {info['path']}", file=sys.stderr, flush=True)
+            return
+
         if ev.kind == "log":
             text = ev.data.get("text", "")
             if text:

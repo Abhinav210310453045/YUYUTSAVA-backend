@@ -180,8 +180,22 @@ def _startup_status_line(sessions_settings: SessionsSettings) -> str:
         from langgraph_api import __version__ as _lg_version
     except Exception:
         _lg_version = "?"
+    # The EFFECTIVE backend, not SessionsSettings.backend. That field reads
+    # YUYUTSAVA_SESSIONS_BACKEND, which only selects the checkpointer's own
+    # default and is almost never set — so the banner announced "sqlite" while
+    # every store and the checkpointer were on Postgres, and a whole session's
+    # analysis started from the wrong assumption about where its data was.
+    try:
+        from yuyutsava.storage.backend import StorageSettings
+
+        storage = (
+            "postgres" if StorageSettings.from_env().is_postgres()
+            else sessions_settings.backend
+        )
+    except Exception:
+        storage = sessions_settings.backend
     return (
-        f"storage: {sessions_settings.backend} · "
+        f"storage: {storage} · "
         f"tracing: {'on' if tracing_on else 'off'} · "
         f"langgraph-api {_lg_version}"
     )
@@ -842,6 +856,9 @@ async def run_chat_repl(
             permission_check=permission_check,
             search_config=search_config,
             checkpointer=checkpointer,
+            # This reply is going to a terminal, not the desktop app: no
+            # Artifacts tab, no card to click, HTML unreadable.
+            front="terminal",
         )
         # Always wrap build_cli_agent_stack in fd-level stdio suppression —
         # the LangGraph host writes its startup banner from a daemon thread
@@ -1050,7 +1067,22 @@ async def run_chat_repl(
                         run_name="cli-chat",
                         keep_full_payloads=True,
                     )
-                except KeyboardInterrupt:
+                except (KeyboardInterrupt, asyncio.CancelledError):
+                    # Ctrl+C during a turn does NOT arrive as KeyboardInterrupt
+                    # here: asyncio.Runner installs a SIGINT handler that
+                    # cancels the main task, so the await raises
+                    # CancelledError — which `except Exception` below does not
+                    # catch either (it is a BaseException). It escaped to the
+                    # runner, which re-raised KeyboardInterrupt, and the user
+                    # got a 20-frame traceback instead of their prompt back.
+                    #
+                    # uncancel() clears the request so the REPL can keep
+                    # awaiting; without it the next await re-raises at once and
+                    # the runner still turns the cancelled task into a
+                    # KeyboardInterrupt exit.
+                    task = asyncio.current_task()
+                    if task is not None:
+                        task.uncancel()
                     await renderer.end_of_turn()
                     print(
                         f"{_DIM}(turn cancelled — session still open){_RESET}",

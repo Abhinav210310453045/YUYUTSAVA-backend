@@ -60,6 +60,7 @@ async def run_chat(
             permission_check=permission_check,
             search_config=search_config,
             checkpointer=checkpointer,
+            front="terminal",
         )
 
         # CLI Mode 1 async — if the bundle has a host URL (owned or attached),

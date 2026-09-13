@@ -150,6 +150,7 @@ async def build_agent_stack(
     cap_enforcer: Any | None = None,
     extra_subagents: "list[Any] | None" = None,
     extra_tools: "list[Any] | None" = None,
+    front: str = "app",
 ) -> AgentBundle:
     """Build the conversational deepagent + its subagent stack.
 
@@ -418,6 +419,7 @@ async def build_agent_stack(
         prefs_store=prefs_store,
         runtime_settings=runtime_settings,
         extra_tools=extra_tools,
+        front=front,
     )
     # Hand the CLI-owned pool + embedder (+ MCP manager, when this stack started
     # one) to the bundle so teardown closes them.

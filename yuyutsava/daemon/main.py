@@ -28,6 +28,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+# Before anything can import grpc (the Gemini/Vertex SDKs do, transitively).
+# Its C core logs at INFO and its fork handlers fire on every subprocess the
+# task runner spawns, filling the daemon log with fork_posix.cc /
+# ev_poll_posix.cc noise. setdefault, so it stays overridable.
+os.environ.setdefault("GRPC_VERBOSITY", "ERROR")
+
 import uvicorn
 
 try:

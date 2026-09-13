@@ -16,6 +16,14 @@ import sys
 from pathlib import Path
 from typing import Literal
 
+# Before anything can import grpc (the Gemini/Vertex SDKs do, transitively).
+# gRPC's C core logs at INFO by default, and its fork handlers fire on every
+# subprocess we spawn — so each tr_run_python / tr_execute printed
+# "fork_posix.cc … Other threads are currently calling into gRPC" and
+# "ev_poll_posix.cc … FD from fork parent still in poll list" straight over
+# the renderer. setdefault, so an operator debugging gRPC can still override.
+os.environ.setdefault("GRPC_VERBOSITY", "ERROR")
+
 try:
     from dotenv import load_dotenv
 except ImportError:
@@ -280,9 +288,17 @@ def main(argv: list[str] | None = None) -> int:
     if raw and raw[0] == "attach":
         from yuyutsava.cli.commands.attach import run_attach
         return run_attach(raw[1:])
-    if raw and raw[0] == "chat":
-        return aio_run(_async_main(raw[1:], force_chat=True))
-    return aio_run(_async_main(raw))
+    # Ctrl+C anywhere outside a turn (during the stack build, at a prompt, in
+    # teardown) reaches here as KeyboardInterrupt. Exit 130 quietly — the
+    # traceback tells the user nothing they did not already know, and the
+    # daemon's main has always done this.
+    try:
+        if raw and raw[0] == "chat":
+            return aio_run(_async_main(raw[1:], force_chat=True))
+        return aio_run(_async_main(raw))
+    except KeyboardInterrupt:
+        print(file=sys.stderr)
+        return 130
 
 
 async def _async_main(argv: list[str] | None = None, *, force_chat: bool = False) -> int:

@@ -895,6 +895,7 @@ def build_cli_deepagent(
     prefs_store: Any | None = None,
     runtime_settings: Any | None = None,
     extra_tools: "list[Any] | None" = None,
+    front: str = "app",
 ) -> AgentBundle:
     """Build the CLI deepagent.
 
@@ -1076,7 +1077,7 @@ def build_cli_deepagent(
             cap_enforcer=cap_enforcer,
         )
         _prompt = docker_system_prompt(
-            layout, docker_cfg.export_dir, _registry.catalog_block()
+            layout, docker_cfg.export_dir, _registry.catalog_block(), front=front
         )
         if agent_memory_block:
             _prompt = f"{_prompt}\n\n{agent_memory_block}"
@@ -1112,7 +1113,7 @@ def build_cli_deepagent(
         extra_tools=context_tools, skill_store=skill_store, agent_name="cli",
         cap_enforcer=cap_enforcer,
     )
-    _prompt = local_system_prompt(layout, _registry.catalog_block())
+    _prompt = local_system_prompt(layout, _registry.catalog_block(), front=front)
     if agent_memory_block:
         _prompt = f"{_prompt}\n\n{agent_memory_block}"
     graph = create_deep_agent(

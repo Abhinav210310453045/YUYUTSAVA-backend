@@ -238,7 +238,37 @@ Read files before editing — understand existing content before changing it.
 Mimic existing style, naming conventions, and patterns."""
 
 
-def local_system_prompt(layout: WorkspaceLayout, tool_catalog: str = "") -> str:
+TERMINAL_FRONT_BLOCK = """\
+## THIS CONVERSATION IS A TERMINAL
+The user is in a text terminal, not the desktop app. There is no Artifacts
+tab, no card to click, no big view — never tell them to look at one.
+- Tables, lists and comparisons belong in your REPLY as Markdown. Do this even
+  if a remembered preference says the user likes HTML tables: that preference
+  is about the app, and an HTML artifact is unreadable here.
+- artifact_create still works and prints inline as text, so use it only for
+  something genuinely file-shaped (a document to keep, a script, a dataset) —
+  not to format an answer.
+- Images and diagrams cannot be displayed. Say where the file is instead."""
+
+
+def front_block(front: str) -> str:
+    """Front-specific prompt block. ``""`` for the app (its own rules apply)."""
+    return TERMINAL_FRONT_BLOCK if front == "terminal" else ""
+
+
+def local_system_prompt(
+    layout: WorkspaceLayout, tool_catalog: str = "", *, front: str = "app"
+) -> str:
+    """Local-execution system prompt.
+
+    ``front`` is where the reply will be displayed — ``"terminal"`` for the
+    CLI REPL, ``"app"`` (default) for the desktop app and voice. The same
+    bundle serves both, and the difference is not cosmetic: an agent that
+    builds an HTML artifact for a table produces something the app renders and
+    the terminal cannot, which is exactly what happened when a remembered
+    preference met a terminal session.
+    """
+    extra = front_block(front)
     return f"""\
 {_tool_discovery_section(tool_catalog)}
 {_rules_section(layout)}
@@ -249,7 +279,7 @@ All tr_* tools (including tr_ls / tr_glob) take REAL absolute paths.
 WORKSPACE and SANDBOX zones auto-allow reads/lists; EXTERNAL prompts once.
 
 {host_profile().prompt_block()}
-
+{f"{chr(10)}{extra}{chr(10)}" if extra else ""}
 Complete the user's task; be concise."""
 
 
@@ -282,13 +312,19 @@ def async_subagent_guidance() -> str:
 
 
 def docker_system_prompt(
-    layout: WorkspaceLayout, export_host: Path | None, tool_catalog: str = ""
+    layout: WorkspaceLayout,
+    export_host: Path | None,
+    tool_catalog: str = "",
+    *,
+    front: str = "app",
 ) -> str:
     """Docker mode: host-side file tools, container-side sandbox execution.
 
     The container mounts the workspace's ``.yuyutsava`` read-write at
     ``/yuyutsava`` and the workspace read-only at ``/workspace``; both are the
     same files the host-side tr_* tools touch, so nothing needs copying.
+
+    ``front`` is the display surface — see :func:`local_system_prompt`.
     """
     st, ws = CONTAINER_STATE_MOUNT, CONTAINER_WORKSPACE_MOUNT
     if layout.sandbox.is_relative_to(layout.state):
@@ -301,6 +337,7 @@ def docker_system_prompt(
     extra = ""
     if export_host is not None:
         extra = f"\nLegacy export mount: host {export_host.resolve()} → /output in the container."
+    fb = front_block(front)
     return f"""\
 {_tool_discovery_section(tool_catalog)}
 {_rules_section(layout)}
@@ -313,5 +350,5 @@ Inside a command or script use CONTAINER paths: {layout.scripts}/x.py is {st}/sc
 Deliverables → {layout.outputs} on the host (= {st}/outputs in the container).{extra}
 
 {host_profile().prompt_block()}
-
+{f"{chr(10)}{fb}{chr(10)}" if fb else ""}
 Complete the user's task; be concise."""
