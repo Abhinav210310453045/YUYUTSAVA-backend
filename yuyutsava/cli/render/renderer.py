@@ -284,6 +284,19 @@ class RichChatRenderer(ChatRenderer):
                 self._console.print(Text(text, style="warn"))
             return
 
+        if ev.kind == "notice":
+            # Never silently dropped: a notice is what says "the model
+            # returned nothing", and that must not look like a hang.
+            text = ev.data.get("text", "")
+            if text:
+                level = ev.data.get("level", "info")
+                style = {"error": "err", "warning": "warn"}.get(level, "chrome")
+                mark = {"error": "✗", "warning": "⚠"}.get(level, "·")
+                self._md.flush()
+                self._console.print()
+                self._console.print(Text(f"  {mark} {text}", style=style))
+            return
+
         if ev.kind == "image":
             title = ev.data.get("title") or ev.data.get("path") or "image"
             self._console.print(Text(f"  ◨ visual: {tf.sanitize(title)}", style="chrome"))

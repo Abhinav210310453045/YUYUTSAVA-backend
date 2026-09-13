@@ -225,6 +225,15 @@ class ChatRenderer:
                 print(f"{_YELLOW}{text}{_RESET}", file=sys.stderr, flush=True)
             return
 
+        if ev.kind == "notice":
+            text = ev.data.get("text", "")
+            if text:
+                level = ev.data.get("level", "info")
+                colour = {"error": _RED, "warning": _YELLOW}.get(level, _DIM)
+                mark = {"error": "✗", "warning": "⚠"}.get(level, "·")
+                print(f"  {colour}{mark} {text}{_RESET}", file=sys.stderr, flush=True)
+            return
+
         if ev.kind == "final":
             # The token stream above already covered the prose. Just newline.
             print(flush=True)

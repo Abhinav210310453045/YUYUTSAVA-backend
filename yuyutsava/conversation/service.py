@@ -30,7 +30,7 @@ import dataclasses
 import logging
 import time
 from pathlib import Path
-from typing import Awaitable, Callable  # noqa: F401 — Callable used in type strings
+from typing import Any, Awaitable, Callable  # noqa: F401 — Callable used in type strings
 
 from yuyutsava.conversation.titles import derive_session_title
 from yuyutsava.core.engine import AgentBundle
@@ -209,27 +209,39 @@ class ConversationService:
         """
         bundle = await self._ensure_bundle()
         self._turns_ran += 1
-        final = ""
-        steps = 0
-        async for ev in astream_agent_iter(
-            bundle.agent,
-            text,
-            thread_id=self.thread_id,
-            recursion_limit=recursion_limit or self.recursion_limit,
-            ask_handler=ask_handler,
-            run_name=run_name,
-            agent_path=self.agent_path,
-            keep_full_payloads=keep_full_payloads,
-            modality=modality,
-            resume_value=resume_value,
-        ):
-            if ev.kind == "final":
-                final = ev.data.get("text", "") or final
-            else:
-                steps += 1
-            result = on_event(ev)
-            if result is not None:
-                await result
+
+        async def _drive(user_text: str | None, resume: object | None) -> tuple[str, int]:
+            """One pass of the graph. Returns ``(final_text, steps)``."""
+            final_text = ""
+            step_count = 0
+            async for ev in astream_agent_iter(
+                bundle.agent,
+                user_text,
+                thread_id=self.thread_id,
+                recursion_limit=recursion_limit or self.recursion_limit,
+                ask_handler=ask_handler,
+                run_name=run_name,
+                agent_path=self.agent_path,
+                keep_full_payloads=keep_full_payloads,
+                modality=modality,
+                resume_value=resume,
+            ):
+                if ev.kind == "final":
+                    final_text = ev.data.get("text", "") or final_text
+                else:
+                    step_count += 1
+                result = on_event(ev)
+                if result is not None:
+                    await result
+            return final_text, step_count
+
+        final, steps = await _drive(text, resume_value)
+
+        if not final:
+            final, extra = await self._recover_empty_turn(
+                bundle, on_event=on_event, drive=_drive,
+            )
+            steps += extra
 
         if self._ticker is not None and resume_value is None:
             preview = (text or "").strip().replace("\n", " ")
@@ -281,6 +293,92 @@ class ConversationService:
         except Exception:  # noqa: BLE001 — cleanup is best-effort
             logger.debug("discard_if_unused: delete failed", exc_info=True)
             return False
+
+    async def _recover_empty_turn(
+        self, bundle: AgentBundle, *, on_event: "EventSink", drive: Any,
+    ) -> tuple[str, int]:
+        """A turn produced nothing. Try to fix it, and never stay silent.
+
+        Measured failure this exists for: a user sent a message while a tool
+        call was running, LangGraph fabricated a "cancelled" success result,
+        and from then on every call returned ``finish_reason: STOP`` with zero
+        output tokens. Four messages, ~70,000 input tokens each, no reply and
+        no error — the thread was dead and said nothing about it.
+
+        Two steps, in order:
+
+        1. If the history carries an interrupted tool call, repair it (see
+           :mod:`yuyutsava.conversation.repair`) and drive the graph once more
+           with no new user message, so the agent answers the message already
+           in its history.
+        2. Whatever happens, emit a ``notice`` the user can see. Silence is
+           indistinguishable from a hang, and it is the one outcome a
+           conversational agent must never produce.
+        """
+        from yuyutsava.conversation.repair import (
+            Cause,
+            needs_repair,
+            repair_orphan_tool_calls,
+        )
+
+        steps = 0
+        repaired = 0
+        try:
+            state = await bundle.agent.aget_state(
+                {"configurable": {"thread_id": self.thread_id}}
+            )
+            messages = state.values.get("messages", []) if state and state.values else []
+            if needs_repair(messages):
+                repaired = await repair_orphan_tool_calls(
+                    bundle.agent, self.thread_id,
+                    cause=Cause.INTERRUPTED_BY_USER,
+                )
+        except Exception:  # noqa: BLE001 — recovery must not raise over a reply
+            logger.debug("empty-turn inspection failed", exc_info=True)
+
+        if repaired:
+            await self._emit(on_event, StreamEvent("notice", {
+                "level": "warning",
+                "text": (
+                    f"The previous turn left {repaired} interrupted tool call"
+                    f"{'s' if repaired != 1 else ''} in the history, which the "
+                    f"model would not continue from. Repaired — retrying."
+                ),
+            }))
+            # No new user message: theirs is already in the history, and
+            # sending it twice would make the model answer itself.
+            try:
+                final, steps = await drive(None, None)
+            except Exception:  # noqa: BLE001
+                logger.exception("retry after repair failed")
+                final = ""
+            if final:
+                return final, steps
+
+        await self._emit(on_event, StreamEvent("notice", {
+            "level": "error",
+            "text": (
+                "The model returned an empty response — no text and no tool "
+                "call. This usually means the conversation's history is in a "
+                "state it will not continue from. Try /new for a fresh "
+                "session, or ask again; the last message is still in history."
+            ),
+        }))
+        logger.warning(
+            "empty turn on thread=%s (repaired=%d) — surfaced to the user",
+            self.thread_id, repaired,
+        )
+        return "", steps
+
+    @staticmethod
+    async def _emit(on_event: "EventSink", ev: StreamEvent) -> None:
+        """Forward one synthesised event, tolerating a sink that raises."""
+        try:
+            result = on_event(ev)
+            if result is not None:
+                await result
+        except Exception:  # noqa: BLE001
+            logger.debug("event sink raised on a synthesised notice", exc_info=True)
 
     async def finish(self, status: str = "done") -> None:
         """Flush final bookkeeping and mark the session ``done``/``crashed``."""

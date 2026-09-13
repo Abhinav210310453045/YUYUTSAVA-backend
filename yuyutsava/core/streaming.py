@@ -288,8 +288,17 @@ class StreamEvent:
       - ``tool_call``   data={"name": str, "args": dict}
       - ``tool_result`` data={"name": str, "preview": str}
       - ``image``       data={"visual_id","url","kind","title","mime"}
+      - ``artifact``    data={"artifact_id","attachment_id","url","kind","mime","title"}
       - ``log``         data={"text": str}
+      - ``notice``      data={"text": str, "level": "info"|"warning"|"error"}
       - ``final``       data={"text": str}   (last assistant message)
+
+    ``log`` versus ``notice``: a renderer may drop a ``log`` when it has
+    nowhere to put it (the app attaches them to the streaming bubble, and a
+    turn that streamed nothing has no bubble). A ``notice`` may never be
+    dropped — it is how "the model returned an empty response" reaches the
+    user, and that must not look like a hang. A turn that produced no prose
+    swallowed four of these before the distinction existed.
     """
 
     kind: str
@@ -661,16 +670,21 @@ async def astream_agent_iter(
             yield StreamEvent("log", {"text": f"ask_handler raised: {item}; rejecting"})
 
     final_text = last_assistant_text(final_messages)
+    # These are notices, not logs. As logs the app dropped them — it attaches a
+    # log to the streaming bubble, and a turn that streamed nothing has no
+    # bubble — so four consecutive dead turns reached the user as silence.
     if not final_text and steps_last_pass == 0:
-        yield StreamEvent("log", {
+        yield StreamEvent("notice", {
+            "level": "error",
             "text": (
-                f"⚠️  Agent produced no output — possible recursion limit hit "
+                f"Agent produced no output — possible recursion limit hit "
                 f"(limit={recursion_limit}) or graph exited unexpectedly."
-            )
+            ),
         })
     elif not final_text:
-        yield StreamEvent("log", {
-            "text": "⚠️  Task ended with no assistant text. Agent may have stopped mid-task."
+        yield StreamEvent("notice", {
+            "level": "warning",
+            "text": "Task ended with no assistant text. The agent may have stopped mid-task.",
         })
     yield StreamEvent("final", {"text": final_text})
 
