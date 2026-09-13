@@ -9,6 +9,38 @@ While the version stays `0.x`, minor bumps may contain breaking changes.
 ## [Unreleased]
 
 ### Added
+- Context and cost telemetry, in both fronts. A context meter measures every
+  model call — how full the input window is and what it is made of (system
+  prompt, tool schemas, memory, skills, messages), plus the call's reported
+  tokens and the conversation's running spend — and publishes it to whoever is
+  displaying it. Previously a session filling its window looked exactly like
+  one that was fine, and the numbers could only be reconstructed from the
+  database afterwards.
+  - **CLI:** `yuyutsava chat` opens a split view on a TTY 90+ columns wide —
+    transcript left, a context column right that never scrolls away. It takes
+    the alternate screen, so `--classic` (or `YUYUTSAVA_REPL_DASHBOARD=0`)
+    keeps the single-pane transcript and a narrower terminal falls back
+    automatically. PgUp/PgDn or the wheel scrolls, `End` follows, `Ctrl+G`
+    hides the panel, `Ctrl+L` clears. `/context` prints the full breakdown.
+  - **App:** a collapsible context column on the chat and voice screens (a
+    one-line meter in the header, resizable panel behind it), and a new
+    **Settings → Usage** section with totals, per-model bars, a per-day series
+    and a per-session table across every session.
+  - Segment sizes are estimates and are marked `≈` — a provider reports one
+    total per prompt, not a figure per region — calibrated against each
+    conversation's reported input tokens. Last-call figures are the provider's
+    own numbers.
+- `llm_usage` records `cache_read_tokens` and `cache_creation_tokens`. Cache
+  reads are the dominant cost lever on a long conversation and nothing stored
+  them, so a cheap session and an expensive one were indistinguishable in the
+  ledger. Both are subsets of `input_tokens`, not additions to it.
+- `GET /usage/summary` (totals, per-model and a per-day series for one range,
+  in one call) and `GET /usage/sessions` (per-conversation spend, joined to
+  session titles). `GET /usage` rows gained the cache columns, and
+  `WS /ws/converse` carries `usage` frames while a turn runs.
+- A model with no entry in `model_prices.json` now reads *unpriced* everywhere
+  instead of `$0.00`; `/usage/summary` names which models those are, so a
+  total that is an undercount says so.
 - `ctx_history`, `ctx_history_message` and `ctx_history_grep`: page, read and
   search this conversation's verbatim messages. Compaction is the only step
   that removes messages from the live context, and until now the summary it
@@ -45,6 +77,15 @@ While the version stays `0.x`, minor bumps may contain breaking changes.
   container; before, the container was started but every tool ran on the host.
 
 ### Changed
+- One approximate token counter (`context/tokens.py`), shared by the context
+  meter, `/context` and the prompt inspector, deferring to the same langchain
+  function and per-model tuning the compactor uses. There were three
+  estimators and no two agreed — and the compactor's is the one that decides
+  when history is summarised away, so a panel disagreeing with it could have
+  shown "7 % used" while turns were being dropped.
+- `UsageStore.list` takes a `thread_id` filter. The CLI was fetching 2,000 rows
+  by time and filtering in Python, which silently under-reported a session's
+  own cost on a busy machine.
 - Vertex/Gemini declares its real 1,000,000-token input window, so compaction
   triggers at 700k instead of the 89.6k the 128k fallback produced.
 - `sk_search_skill` is always visible instead of sitting behind `tool_search`,
