@@ -682,6 +682,14 @@ async def run_chat_repl(
     ask_handler = make_ask_handler(renderer, console)
     exit_code = 0
 
+    # Provider retries (429/503) speak through the renderer, not the log. The
+    # SDK's own retry logger emits several structlog lines per attempt, which
+    # printed straight through the Live region and still left the user unable
+    # to tell whether the turn was alive. Cleared in the finally block below.
+    from yuyutsava.llm.quirks.first_chunk_retry import set_retry_listener
+
+    set_retry_listener(renderer.note_retry)
+
     # The renderer is the only voice the user should hear in chat mode.
     # Without this, the TaskRunner / tool_registry / task_runner.tools
     # INFO lines interleave with renderer output and look like duplicate
@@ -702,6 +710,17 @@ async def run_chat_repl(
             "yuyutsava.core.tracing",
         ):
             _logging.getLogger(_name).setLevel(_logging.WARNING)
+
+        # Retry chatter is rendered on the spinner instead (note_retry above).
+        # These two emit at WARNING, so the level filter above cannot reach
+        # them — and between them a single 429 storm produced a dozen lines
+        # through the Live region. --verbose keeps them.
+        if not verbose:
+            for _name in (
+                "langchain_google_vertexai._retry",
+                "yuyutsava.llm.retry",
+            ):
+                _logging.getLogger(_name).setLevel(_logging.ERROR)
 
     async with build_checkpointer(sessions_settings) as checkpointer:
         # Build the agent stack ONCE. Swallow the LangGraph host's startup
@@ -921,19 +940,25 @@ async def run_chat_repl(
                     continue
                 except Exception as exc:  # noqa: BLE001
                     await renderer.end_of_turn()
-                    # Name the exception type and keep the traceback: a bare
-                    # str(exc) turns a library-internal failure ("list index out
-                    # of range") into an unattributable one-liner, and the frame
-                    # it came from is the only thing that makes it fixable. The
-                    # turn still fails soft — the session stays open either way.
-                    if type(exc).__name__ == "ResourceExhausted":
+                    # Provider capacity is not a bug in this program, and its
+                    # traceback is 30 frames of SDK internals that say nothing
+                    # the user can act on. One line, and the session stays
+                    # open so the message can simply be resent.
+                    if type(exc).__name__ in ("ResourceExhausted", "ServiceUnavailable"):
+                        code = "429" if type(exc).__name__ == "ResourceExhausted" else "503"
                         print(
-                            f"{_DIM}hint: the model provider returned 429 (quota / "
-                            "capacity) and retries were exhausted — wait a minute "
-                            "and resend; VERTEX_MAX_RETRIES raises the retry "
-                            f"count.{_RESET}",
+                            f"{_RED}provider busy ({code}){_RESET} — retries gave up. "
+                            f"{_DIM}Resend to try again; VERTEX_RETRY_BUDGET_SEC (default 90) "
+                            f"and VERTEX_MAX_RETRIES control how long it keeps trying. "
+                            f"Session still open.{_RESET}",
                             file=sys.stderr,
                         )
+                        continue
+                    # Otherwise name the exception type and keep the traceback:
+                    # a bare str(exc) turns a library-internal failure ("list
+                    # index out of range") into an unattributable one-liner, and
+                    # the frame it came from is the only thing that makes it
+                    # fixable. The turn still fails soft either way.
                     print(
                         f"{_RED}error:{_RESET} {type(exc).__name__}: {exc}",
                         file=sys.stderr,
@@ -953,6 +978,10 @@ async def run_chat_repl(
                 pass
 
         finally:
+            # The listener is process-global; a renderer that outlives this
+            # REPL would keep drawing on a dead Live region.
+            with contextlib.suppress(Exception):
+                set_retry_listener(None)
             with contextlib.suppress(Exception):
                 if renderer._smoother is not None:
                     await renderer._smoother.aclose()

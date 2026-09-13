@@ -56,16 +56,34 @@ class RichChatRenderer(ChatRenderer):
         self._in_flight: deque[str] = deque()
         self._opened_prose = False
         self._sub_activity = ""  # last line of nested subagent prose
+        self._retry_note = ""  # provider-busy banner while a 429 is retried
 
     # ------------------------------------------------------------------
     # Turn / Live lifecycle
     # ------------------------------------------------------------------
+
+    def note_retry(
+        self, model: str, attempt: int, retries: int, delay: float, exc: BaseException
+    ) -> None:
+        """Show a provider retry on the spinner rather than as log noise.
+
+        A 429 storm used to reach the user as a dozen structlog lines printed
+        straight through the Live region, none of which said the turn was
+        still alive. This keeps it to one line of spinner text that names the
+        wait, and it clears itself as soon as real output arrives.
+        """
+        code = "429" if "ResourceExhausted" in type(exc).__name__ else "503"
+        self._retry_note = (
+            f"provider busy ({code}) · retry {attempt}/{retries} · {delay:.0f}s"
+        )
+        self._refresh()
 
     def begin_turn(self) -> None:
         """Start the spinner. Called by the REPL right before run_turn."""
         self._stop_live()
         self._opened_prose = False
         self._sub_activity = ""
+        self._retry_note = ""
         self._in_flight.clear()
         self._live = Live(
             self._status_renderable(),
@@ -80,6 +98,7 @@ class RichChatRenderer(ChatRenderer):
         self._stop_live()
         self._in_flight.clear()
         self._sub_activity = ""
+        self._retry_note = ""
 
     @contextlib.contextmanager
     def pause(self):
@@ -109,6 +128,11 @@ class RichChatRenderer(ChatRenderer):
             self._live.update(self._status_renderable())
 
     def _status_renderable(self) -> RenderableType:
+        if self._retry_note:
+            parts: list[RenderableType] = [
+                Spinner("dots", text=Text(self._retry_note, style="warn"), style="warn")
+            ]
+            return Group(*parts)
         if self._in_flight:
             name = self._in_flight[-1]
             if name in _SUBAGENT_TOOLS:
@@ -138,6 +162,9 @@ class RichChatRenderer(ChatRenderer):
     # ------------------------------------------------------------------
 
     async def render(self, ev: StreamEvent) -> None:  # noqa: PLR0912
+        # Any real output means the retried call got through; drop the banner.
+        if self._retry_note:
+            self._retry_note = ""
         if ev.kind == "token":
             text = ev.data.get("text", "")
             if not text:
