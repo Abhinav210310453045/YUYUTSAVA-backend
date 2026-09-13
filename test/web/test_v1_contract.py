@@ -84,8 +84,12 @@ class _Monitor:
 
 class _UsageStore:
     async def aggregate(self, since=None, group_by=None):
+        # Mirrors every field of UsageAggregate, cache counts included — the
+        # router reads them directly, and a stub missing a field only proves
+        # the stub is stale.
         return [SimpleNamespace(key="all", calls=2, input_tokens=100,
-                                output_tokens=20, est_cost_usd=0.003)]
+                                output_tokens=20, est_cost_usd=0.003,
+                                cache_read_tokens=60, cache_creation_tokens=4)]
 
 
 class _ChannelPlugins:

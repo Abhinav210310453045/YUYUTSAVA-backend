@@ -64,6 +64,13 @@ class UsageRow:
     input_tokens: int
     output_tokens: int
     est_cost_usd: float
+    #: Subsets of ``input_tokens``: what the provider served from its prompt
+    #: cache, and what it charged to write that cache. Default 0 so every
+    #: existing construction site (and every pre-v2 row) stays valid — a
+    #: provider that reports no detail is indistinguishable from a real miss,
+    #: so nothing may infer "caching is off" from a zero.
+    cache_read_tokens: int = 0
+    cache_creation_tokens: int = 0
 
     def as_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
@@ -78,6 +85,8 @@ class UsageAggregate:
     input_tokens: int
     output_tokens: int
     est_cost_usd: float
+    cache_read_tokens: int = 0
+    cache_creation_tokens: int = 0
 
 
 def mint_usage_id() -> str:
@@ -92,10 +101,15 @@ class UsageStore(ABC):
 
     @abstractmethod
     async def list(
-        self, *, task_id: str | None = None, since: float | None = None,
-        limit: int = 200,
+        self, *, task_id: str | None = None, thread_id: str | None = None,
+        since: float | None = None, limit: int = 200,
     ) -> list[UsageRow]:
-        """Raw rows newest-first (audit / tests)."""
+        """Raw rows newest-first (audit / tests).
+
+        ``thread_id`` filters by conversation. Without it the CLI had to fetch
+        2,000 rows by time and filter in Python to answer "what did this
+        session cost", which silently truncated on a busy machine.
+        """
 
     @abstractmethod
     async def aggregate(
@@ -108,7 +122,8 @@ class UsageStore(ABC):
 #: SQLite read list — ``ts`` is already a REAL epoch.
 _SELECT_COLS = (
     "id, ts, thread_id, task_id, role, model, "
-    "input_tokens, output_tokens, est_cost_usd"
+    "input_tokens, output_tokens, est_cost_usd, "
+    "cache_read_tokens, cache_creation_tokens"
 )
 
 #: Postgres read list. ``ts`` became TIMESTAMPTZ in migration v20, so it is
@@ -117,7 +132,8 @@ _SELECT_COLS = (
 #: alone yields ``numeric``, which psycopg returns as ``Decimal``.
 _PG_SELECT_COLS = (
     "id, extract(epoch FROM ts)::float8 AS ts, thread_id, task_id, role, model, "
-    "input_tokens, output_tokens, est_cost_usd"
+    "input_tokens, output_tokens, est_cost_usd, "
+    "cache_read_tokens, cache_creation_tokens"
 )
 
 
@@ -130,6 +146,7 @@ def _row_to_record(row: Any) -> UsageRow:
         id=vals[0], ts=vals[1], thread_id=vals[2] or "", task_id=vals[3] or "",
         role=vals[4], model=vals[5], input_tokens=vals[6],
         output_tokens=vals[7], est_cost_usd=vals[8],
+        cache_read_tokens=vals[9] or 0, cache_creation_tokens=vals[10] or 0,
     )
 
 
@@ -143,6 +160,7 @@ def _agg_rows(rows: list[Any]) -> list[UsageAggregate]:
         UsageAggregate(
             key=str(r[0]), calls=int(r[1]), input_tokens=int(r[2] or 0),
             output_tokens=int(r[3] or 0), est_cost_usd=float(r[4] or 0.0),
+            cache_read_tokens=int(r[5] or 0), cache_creation_tokens=int(r[6] or 0),
         )
         for r in rows
     ]
@@ -151,7 +169,7 @@ def _agg_rows(rows: list[Any]) -> list[UsageAggregate]:
 class SqliteUsageStore(BaseSqliteStore, UsageStore):
     """``llm_usage`` table inside ``state.db`` (zero-config fallback)."""
 
-    _SCHEMA_VERSION = 1
+    _SCHEMA_VERSION = 2
     _META_TABLE = "llm_usage_meta"
     _SCHEMA_SQL = """
         CREATE TABLE IF NOT EXISTS llm_usage_meta (
@@ -159,19 +177,46 @@ class SqliteUsageStore(BaseSqliteStore, UsageStore):
             value TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS llm_usage (
-            id            TEXT PRIMARY KEY,
-            ts            REAL NOT NULL,
-            thread_id     TEXT NOT NULL DEFAULT '',
-            task_id       TEXT NOT NULL DEFAULT '',
-            role          TEXT NOT NULL,
-            model         TEXT NOT NULL,
-            input_tokens  INTEGER NOT NULL DEFAULT 0,
-            output_tokens INTEGER NOT NULL DEFAULT 0,
-            est_cost_usd  REAL NOT NULL DEFAULT 0
+            id                    TEXT PRIMARY KEY,
+            ts                    REAL NOT NULL,
+            thread_id             TEXT NOT NULL DEFAULT '',
+            task_id               TEXT NOT NULL DEFAULT '',
+            role                  TEXT NOT NULL,
+            model                 TEXT NOT NULL,
+            input_tokens          INTEGER NOT NULL DEFAULT 0,
+            output_tokens         INTEGER NOT NULL DEFAULT 0,
+            est_cost_usd          REAL NOT NULL DEFAULT 0,
+            cache_read_tokens     INTEGER NOT NULL DEFAULT 0,
+            cache_creation_tokens INTEGER NOT NULL DEFAULT 0
         );
         CREATE INDEX IF NOT EXISTS llm_usage_ts_idx ON llm_usage (ts);
         CREATE INDEX IF NOT EXISTS llm_usage_task_idx ON llm_usage (task_id);
+        CREATE INDEX IF NOT EXISTS llm_usage_thread_ts_idx
+            ON llm_usage (thread_id, ts DESC);
     """
+
+    async def _migrate(self, conn) -> None:
+        """v1 -> v2: the two cache-token columns and the per-thread index.
+
+        Additive, so an existing table is upgraded in place rather than
+        rebuilt: pre-v2 rows keep 0, which reads as "the provider reported no
+        cache detail" — the same thing a genuine miss reads as.
+        """
+        cur = await conn.execute("PRAGMA table_info(llm_usage)")
+        cols = {r[1] for r in await cur.fetchall()}
+        await cur.close()
+        for col in ("cache_read_tokens", "cache_creation_tokens"):
+            if col not in cols:
+                await conn.execute(
+                    f"ALTER TABLE llm_usage ADD COLUMN {col} "
+                    "INTEGER NOT NULL DEFAULT 0"
+                )
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS llm_usage_thread_ts_idx "
+            "ON llm_usage (thread_id, ts DESC)"
+        )
+        await conn.commit()
+        await super()._migrate(conn)
 
     # SQLite stores ts as epoch-seconds REAL; 'unixepoch' converts in place.
     _DAY_EXPR = "strftime('%Y-%m-%d', ts, 'unixepoch')"
@@ -180,21 +225,23 @@ class SqliteUsageStore(BaseSqliteStore, UsageStore):
         async def _do(conn):
             await conn.execute(
                 "INSERT INTO llm_usage (id, ts, thread_id, task_id, role, "
-                "model, input_tokens, output_tokens, est_cost_usd) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "model, input_tokens, output_tokens, est_cost_usd, "
+                "cache_read_tokens, cache_creation_tokens) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (row.id, row.ts, row.thread_id, row.task_id, row.role,
                  row.model, row.input_tokens, row.output_tokens,
-                 row.est_cost_usd),
+                 row.est_cost_usd, row.cache_read_tokens,
+                 row.cache_creation_tokens),
             )
 
         await self._run_write(_do)
 
     async def list(
-        self, *, task_id: str | None = None, since: float | None = None,
-        limit: int = 200,
+        self, *, task_id: str | None = None, thread_id: str | None = None,
+        since: float | None = None, limit: int = 200,
     ) -> list[UsageRow]:
         await self._ensure_schema()
-        where, args = _list_filters(task_id, since, "?")
+        where, args = _list_filters(task_id, thread_id, since, "?")
         async with self._conn() as conn:
             cur = await conn.execute(
                 f"SELECT {_SELECT_COLS} FROM llm_usage {where} "
@@ -243,21 +290,24 @@ class PgUsageStore(UsageStore):
             await ensure_thread(conn, thread_id)  # parent must exist for the FK
             await conn.execute(
                 "INSERT INTO llm_usage (id, ts, thread_id, task_id, role, "
-                "model, input_tokens, output_tokens, est_cost_usd) "
+                "model, input_tokens, output_tokens, est_cost_usd, "
+                "cache_read_tokens, cache_creation_tokens) "
                 # ts is TIMESTAMPTZ since migration v20.
                 "VALUES (%s, to_timestamp(%s), %s, "
                 "(SELECT task_id FROM tasks WHERE task_id = %s), "
-                "%s, %s, %s, %s, %s)",
+                "%s, %s, %s, %s, %s, %s, %s)",
                 (row.id, row.ts, thread_id, task_id, row.role,
                  row.model, row.input_tokens, row.output_tokens,
-                 row.est_cost_usd),
+                 row.est_cost_usd, row.cache_read_tokens,
+                 row.cache_creation_tokens),
             )
 
     async def list(
-        self, *, task_id: str | None = None, since: float | None = None,
-        limit: int = 200,
+        self, *, task_id: str | None = None, thread_id: str | None = None,
+        since: float | None = None, limit: int = 200,
     ) -> list[UsageRow]:
-        where, args = _list_filters(task_id, since, "%s", "to_timestamp(%s)")
+        where, args = _list_filters(
+            task_id, thread_id, since, "%s", "to_timestamp(%s)")
         async with self._pool.connection() as conn:
             cur = await conn.execute(
                 f"SELECT {_PG_SELECT_COLS} FROM llm_usage {where} "
@@ -279,7 +329,8 @@ class PgUsageStore(UsageStore):
 
 
 def _list_filters(
-    task_id: str | None, since: float | None, ph: str, ts_ph: str | None = None,
+    task_id: str | None, thread_id: str | None, since: float | None, ph: str,
+    ts_ph: str | None = None,
 ) -> tuple[str, list[Any]]:
     """``ts_ph`` is the placeholder for comparing against ``ts``.
 
@@ -293,6 +344,9 @@ def _list_filters(
     if task_id:
         where.append(f"task_id = {ph}")
         args.append(task_id)
+    if thread_id:
+        where.append(f"thread_id = {ph}")
+        args.append(thread_id)
     if since is not None:
         where.append(f"ts >= {ts_ph}")
         args.append(since)
@@ -331,7 +385,8 @@ def _aggregate_sql(
     args: tuple[Any, ...] = (since,) if since is not None else ()
     return (
         f"SELECT {key_expr} AS grp, COUNT(*), SUM(input_tokens), "
-        f"SUM(output_tokens), SUM(est_cost_usd) "
+        f"SUM(output_tokens), SUM(est_cost_usd), "
+        f"SUM(cache_read_tokens), SUM(cache_creation_tokens) "
         f"FROM llm_usage {where} GROUP BY grp "
         f"ORDER BY SUM(est_cost_usd) DESC, grp",
         args,
@@ -399,9 +454,14 @@ class UsagePolicy(Policy):
             model=model,
             input_tokens=usage.input_tokens,
             output_tokens=usage.output_tokens,
+            # Cost still prices every input token the same. Cached input is
+            # cheaper in reality, but inventing a discount would be worse than
+            # recording the counts and pricing them once the table is right.
             est_cost_usd=estimate_cost_usd(
                 model, usage.input_tokens, usage.output_tokens, self._prices
             ),
+            cache_read_tokens=usage.cache_read_tokens,
+            cache_creation_tokens=usage.cache_creation_tokens,
         )
         try:
             await self._store.add(row)

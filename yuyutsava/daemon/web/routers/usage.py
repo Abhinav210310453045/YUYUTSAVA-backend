@@ -51,6 +51,8 @@ async def get_usage(
             UsageRowOut(
                 key=a.key, calls=a.calls, input_tokens=a.input_tokens,
                 output_tokens=a.output_tokens, est_cost_usd=a.est_cost_usd,
+                cache_read_tokens=a.cache_read_tokens,
+                cache_creation_tokens=a.cache_creation_tokens,
             )
             for a in aggregates
         ],

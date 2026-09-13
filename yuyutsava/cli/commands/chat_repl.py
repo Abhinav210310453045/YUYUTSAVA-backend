@@ -553,16 +553,14 @@ def _on_off(word: str) -> bool | None:
 async def _usage_rows(store: Any, thread_id: str, since: float) -> list[Any]:
     """This thread's ``llm_usage`` rows since *since*. Never raises.
 
-    ``UsageStore.list`` filters by task, not thread — the daemon groups by
-    task because a task is its unit of work, while a chat's unit is the
-    thread. Rather than widen the store interface (two backends and a parity
-    suite), the window is narrowed by time and filtered here; a turn or a
-    session is a small number of rows either way.
+    ``UsageStore.list`` takes a ``thread_id`` filter now, so this no longer
+    fetches 2,000 rows by time and drops the ones that belong to other
+    conversations — a workaround that silently truncated on a busy machine.
     """
     if store is None or not thread_id:
         return []
     try:
-        rows = await store.list(since=since, limit=2_000)
+        return await store.list(thread_id=thread_id, since=since, limit=2_000)
     except Exception:  # noqa: BLE001 — reporting must never break the REPL
         import logging as _logging
 
@@ -570,18 +568,27 @@ async def _usage_rows(store: Any, thread_id: str, since: float) -> list[Any]:
             "usage read failed", exc_info=True
         )
         return []
-    return [r for r in rows if getattr(r, "thread_id", "") == thread_id]
 
 
 def _fmt_usage(rows: list[Any]) -> str:
-    """``3 calls · in 41,087 · out 64 · ~$0.0032`` (empty when nothing to say)."""
+    """``3 calls · in 41,087 (↺93%) · out 64 · ~$0.0032``.
+
+    Empty when there is nothing to say. The cache share is shown only when the
+    provider actually reported one: a 0 there means "no cache detail
+    reported", which is not the same as a 0 % hit rate.
+    """
     if not rows:
         return ""
     calls = len(rows)
     tin = sum(r.input_tokens for r in rows)
     tout = sum(r.output_tokens for r in rows)
     cost = sum(r.est_cost_usd for r in rows)
-    out = f"{calls} call{'s' if calls != 1 else ''} · in {tin:,} · out {tout:,}"
+    cached = sum(getattr(r, "cache_read_tokens", 0) for r in rows)
+    cache_note = f" (↺{cached / tin:.0%})" if cached and tin else ""
+    out = (
+        f"{calls} call{'s' if calls != 1 else ''} · in {tin:,}{cache_note} "
+        f"· out {tout:,}"
+    )
     # A zero estimate means the model is missing from the price table, which
     # is not the same as free — say nothing rather than "$0.00".
     return f"{out} · ~${cost:,.4f}" if cost > 0 else out

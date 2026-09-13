@@ -250,14 +250,30 @@ Returns a **bare array**, newest first:
 ```
 
 #### `GET /v1/usage?since=&group_by=` — LLM spend aggregates
-`since` epoch-seconds lower bound; `group_by` ∈ `task` | `model` | `day`
-(omit ⇒ one `key:"all"` totals row). `422` bad group_by, `503` store unwired.
+`since` epoch-seconds lower bound; `group_by` ∈ `task` | `model` | `day` |
+`thread` (omit ⇒ one `key:"all"` totals row). `422` bad group_by, `503` store
+unwired.
 ```json
 {"since": null, "group_by": "model",
  "rows": [{"key": "claude-haiku-4-5", "calls": 12, "input_tokens": 84000,
-           "output_tokens": 9100, "est_cost_usd": 0.1034}]}
+           "output_tokens": 9100, "est_cost_usd": 0.1034,
+           "cache_read_tokens": 61000, "cache_creation_tokens": 1200}]}
 ```
 Rows are ordered most-expensive first.
+
+`cache_read_tokens` / `cache_creation_tokens` are **subsets of
+`input_tokens`**, not additions to it: what the provider served from its prompt
+cache, and what it charged to write that cache. `0` means the provider reported
+no cache detail, which is not the same claim as a 0 % hit rate. `est_cost_usd`
+still prices every input token identically — cached input is cheaper in
+reality, so treat the figure as an upper bound on a well-cached conversation.
+A model with no entry in `~/.yuyutsava/model_prices.json` contributes `0.0`;
+that is "unpriced", not "free".
+
+Use `group_by=thread` for per-conversation cost. It is the only grouping that
+works for chat and tinker spend: `task_id` is FK-constrained to `tasks` on
+Postgres, so a tag naming something that is not an orchestrator task is nulled
+on insert, while `thread_id` carries the same identity on both backends.
 
 ### Channels (Settings screen)
 

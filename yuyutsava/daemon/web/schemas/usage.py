@@ -16,6 +16,14 @@ class UsageRowOut(BaseModel):
     input_tokens: int
     output_tokens: int
     est_cost_usd: float
+    cache_read_tokens: int = Field(
+        0, description="Input tokens served from the provider's prompt cache "
+                       "(a subset of input_tokens, not an addition to it)",
+    )
+    cache_creation_tokens: int = Field(
+        0, description="Input tokens charged for writing the prompt cache "
+                       "(also a subset of input_tokens)",
+    )
 
 
 class UsageOut(BaseModel):
