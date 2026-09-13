@@ -243,9 +243,16 @@ def _print_help() -> None:
     print(f"  {_DIM}/voice{_RESET}        voice mode: /voice on|off, /voice wake off, /voice tts off", file=sys.stderr)
     print(f"  {_DIM}/subagents{_RESET}    dedicated subagents: /subagents off face-watcher", file=sys.stderr)
     print(f"  {_DIM}/usage{_RESET}        tokens and estimated cost for this session", file=sys.stderr)
+    print(f"  {_DIM}/context{_RESET}      what is in the context window right now, by segment", file=sys.stderr)
     print(f"  {_DIM}/skills{_RESET}       skills recalled this turn, and all available ones", file=sys.stderr)
     print(file=sys.stderr)
     print(f"{_DIM}Ctrl+C cancels the current turn but keeps the session open.{_RESET}", file=sys.stderr)
+    print(
+        f"{_DIM}In the split view: PgUp/PgDn or the wheel scrolls, End follows "
+        f"the output again, Ctrl+G hides the context panel, Ctrl+L clears the "
+        f"transcript. Start with --classic for the single-pane view.{_RESET}",
+        file=sys.stderr,
+    )
     print(file=sys.stderr)
 
 
@@ -313,6 +320,7 @@ _SLASH_COMMANDS: dict[str, str] = {
     "/voice": "show or set voice mode (/voice on|off|wake on|tts off)",
     "/subagents": "list dedicated subagents (/subagents on|off <name>)",
     "/usage": "tokens and estimated cost for this session",
+    "/context": "what is in the context window right now, by segment",
     "/skills": "skills recalled this turn, and all available ones",
 }
 
@@ -659,6 +667,53 @@ def _print_skills(layout: Any) -> None:
     )
 
 
+def _print_context(thread_id: str, console: Any = None) -> None:
+    """``/context``: what is in the window, and what it has cost.
+
+    Reads the latest snapshot the context meter published for this thread. The
+    dashboard shows a condensed version of the same numbers continuously; this
+    is the view with room to say which of them are estimates and why.
+    """
+    from yuyutsava.cli.render.context_panel import context_report
+    from yuyutsava.context.meter import bus
+
+    snap = bus().latest(thread_id)
+    if console is not None:
+        try:
+            console.print(context_report(snap))
+            return
+        except Exception:  # noqa: BLE001 — fall through to the plain summary
+            pass
+    if snap is None:
+        print(
+            f"  {_DIM}no model call has completed yet — context figures appear "
+            f"after the first one{_RESET}",
+            file=sys.stderr,
+        )
+        return
+    from yuyutsava.cli.render.context_panel import fmt_cost, fmt_pct, fmt_tokens
+
+    print(
+        f"  {_DIM}window:{_RESET} {snap.used_tokens:,} / "
+        f"{snap.max_input_tokens:,} ({fmt_pct(snap.used_fraction)})",
+        file=sys.stderr,
+    )
+    for _key, label, tokens in snap.segments():
+        print(f"    {_DIM}{label:<16}{_RESET} ≈{tokens:,}", file=sys.stderr)
+    print(
+        f"  {_DIM}last call:{_RESET} in {snap.input_tokens:,} · "
+        f"out {snap.output_tokens:,} · "
+        f"{fmt_cost(snap.est_cost_usd, snap.priced)}",
+        file=sys.stderr,
+    )
+    print(
+        f"  {_DIM}session:{_RESET} {snap.calls} calls · "
+        f"in {fmt_tokens(snap.session_input_tokens)} · "
+        f"{snap.compactions} compactions · {snap.offloads} offloaded",
+        file=sys.stderr,
+    )
+
+
 async def _handle_settings_command(cmd: str, runtime_settings: Any) -> bool:
     """Handle ``/voice`` and ``/subagents`` (async — they hit ``state.db``).
 
@@ -806,6 +861,7 @@ async def run_chat_repl(
     continue_latest: bool,
     verbose: bool,
     debug_plumbing: bool = False,
+    classic: bool = False,
 ) -> int:
     """Drive the interactive chat loop. Returns process exit code."""
     if not debug_plumbing:
@@ -821,20 +877,64 @@ async def run_chat_repl(
     history_path = state_dir() / "chat_history"
     _rotate_history(history_path)
 
-    # Rich transcript on real TTYs; the plain ANSI renderer for pipes and
-    # dumb terminals stays byte-identical to the historical behavior.
+    # Three display modes, most capable first:
+    #
+    #   dashboard — split screen, transcript left and a live context column
+    #               right (needs a TTY and a terminal wide enough to split);
+    #   rich      — the scrolling transcript, unchanged;
+    #   plain     — ANSI lines for pipes and dumb terminals, byte-identical to
+    #               the historical behavior.
+    #
+    # Rich renders the transcript in all three; the dashboard only changes
+    # where it lands and who draws the status line.
     from yuyutsava.cli.render.console import make_console, rich_capable
+    from yuyutsava.cli.render.dashboard import (
+        ChatDashboard,
+        dashboard_enabled,
+        display_mode,
+        terminal_cols,
+        wide_enough,
+    )
 
     console = None
-    if rich_capable():
+    dashboard: ChatDashboard | None = None
+    mode = display_mode(
+        classic=classic,
+        is_tty=sys.stdin.isatty(),
+        rich=rich_capable(),
+        enabled=dashboard_enabled(),
+        wide=wide_enough(),
+    )
+    if mode == "dashboard":
+        from yuyutsava.cli.render.renderer import RichChatRenderer
+
+        dashboard = ChatDashboard(
+            history_path=history_path, completer=_SlashCompleter()
+        )
+        console = dashboard.console
+        renderer: ChatRenderer = RichChatRenderer(
+            verbose=verbose, workspace=workspace, console=console, live=False
+        )
+        dashboard.attach_renderer(renderer)
+    elif mode == "rich":
         from yuyutsava.cli.render.renderer import RichChatRenderer
 
         console = make_console()
-        renderer: ChatRenderer = RichChatRenderer(
+        renderer = RichChatRenderer(
             verbose=verbose, workspace=workspace, console=console
         )
     else:
         renderer = ChatRenderer(verbose=verbose, workspace=workspace)
+    # Only the width can surprise someone: --classic and the env flag are
+    # choices, a narrow terminal is not. Said once, before the banner, because
+    # silently dropping to the single-pane view looks like a bug.
+    if mode == "rich" and not classic and dashboard_enabled() and not wide_enough():
+        print(
+            f"{_DIM}terminal is {terminal_cols()} columns — too narrow to split; "
+            f"using the classic transcript (resize and restart for the "
+            f"context panel){_RESET}",
+            file=sys.stderr,
+        )
     ask_handler = make_ask_handler(renderer, console)
     exit_code = 0
 
@@ -987,6 +1087,10 @@ async def run_chat_repl(
             # wrap_lines=True + full-width input area: the input editor spans
             # the whole terminal column count and wraps long lines instead of
             # scrolling horizontally inside a narrow gutter.
+            #
+            # The dashboard owns its own input line inside the application
+            # layout (same history file and completer), so it needs no session
+            # here — a PromptSession would fight it for the terminal.
             prompt_session: PromptSession[str] | None = (
                 PromptSession(
                     history=FileHistory(str(history_path)),
@@ -995,11 +1099,18 @@ async def run_chat_repl(
                     completer=_SlashCompleter(),
                     complete_while_typing=True,
                 )
-                if is_tty
+                if is_tty and dashboard is None
                 else None
             )
+            if dashboard is not None:
+                await dashboard.start()
 
             async def _read_input() -> str:
+                if dashboard is not None:
+                    line = await dashboard.read_input()
+                    if line is None:
+                        raise EOFError  # Ctrl+D: the existing clean-exit path
+                    return line
                 if prompt_session is not None:
                     # ANSI(...) wrapper: prompt_toolkit otherwise renders the
                     # raw escape bytes as visible characters (^[[36m…).
@@ -1066,6 +1177,9 @@ async def run_chat_repl(
                         bundle.usage_store, session.thread_id, session.created_at
                     )
                     continue
+                if user_input.strip().split()[0] == "/context":
+                    _print_context(session.thread_id, console)
+                    continue
 
                 if user_input.strip().split()[0] == "/skills":
                     _print_skills(bundle.layout)
@@ -1095,6 +1209,11 @@ async def run_chat_repl(
                 turn_started = time.time()
                 try:
                     renderer.begin_turn()
+                    if dashboard is not None:
+                        # In raw mode Ctrl+C is a key event, not SIGINT, so the
+                        # dashboard cancels this task by hand and the handler
+                        # below (task.uncancel) does the rest.
+                        dashboard.set_turn_task(asyncio.current_task())
                     await convo.run_turn(
                         user_input,
                         on_event=renderer.render,
@@ -1156,6 +1275,9 @@ async def run_chat_repl(
                     continue
 
                 await renderer.end_of_turn()
+                if dashboard is not None:
+                    # Turn over: Ctrl+C goes back to meaning "clear the line".
+                    dashboard.set_turn_task(None)
 
                 # What the turn cost, from the rows the graph just wrote. The
                 # input count climbs with the conversation (the whole history
@@ -1180,6 +1302,14 @@ async def run_chat_repl(
             # REPL would keep drawing on a dead Live region.
             with contextlib.suppress(Exception):
                 set_retry_listener(None)
+            if dashboard is not None:
+                # Leave the alternate screen first, then hand the transcript
+                # back: the app takes the session's output with it when it
+                # exits, and a user who just spent an hour in here should not
+                # find an empty terminal.
+                with contextlib.suppress(Exception):
+                    await dashboard.stop()
+                dashboard.replay_to(sys.stderr)
             with contextlib.suppress(Exception):
                 if renderer._smoother is not None:
                     await renderer._smoother.aclose()

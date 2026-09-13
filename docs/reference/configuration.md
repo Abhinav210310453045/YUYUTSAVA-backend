@@ -180,9 +180,38 @@ A single `ctx_*` read returns at most 40,000 characters and ends in a
 the readers exempt from offload safely: an unbounded read would cross the
 100,000-character result limit and be replaced by a notice.
 
-`/usage` in the chat REPL reports the session's calls, tokens and estimated
-cost, and each turn prints its own totals. Rows land in the same `llm_usage`
-table the daemon writes.
+### Seeing it while it happens
+
+`yuyutsava chat` opens a split view on a TTY at least 90 columns wide: the
+transcript on the left, a live context column on the right showing how full the
+window is, what it is made of, what the last call cost and what the session has
+spent. It takes the alternate screen, so the terminal's own scrollback and
+mouse selection are not available inside it — scroll with PgUp/PgDn or the
+wheel, `End` to follow the output again, `Ctrl+G` to hide the panel, `Ctrl+L` to
+clear. `--classic` or `YUYUTSAVA_REPL_DASHBOARD=0` keeps the single-pane
+transcript; a narrower terminal falls back to it automatically and says so.
+
+| Command | Reports |
+|---|---|
+| `/context` | The window right now: tokens by segment (system prompt, tool schemas, memory, skills, messages), free space, the last call, and the session's compactions and offloads |
+| `/usage` | This session's calls, tokens and estimated cost, by model |
+
+Segment sizes are **estimates** and are marked `≈`. A provider reports one
+total for a prompt, not a figure per region, so the meter divides the reported
+`input_tokens` by its own estimate of that same prompt and scales later
+estimates by the ratio (clamped, so one strange response cannot make the panel
+swing). Last-call figures are the provider's own numbers and carry no mark.
+
+Cost needs a price entry. A model missing from `~/.yuyutsava/model_prices.json`
+reads `unpriced` rather than `$0.00`, because "we have no price for this" is
+not "this was free". Add one as `{"<model-prefix>": [<$/1M in>, <$/1M out>]}`;
+prefixes match, so `"gemini-3.5"` covers its variants. Cached input is charged
+at the full input rate in these figures — treat a well-cached conversation's
+cost as an upper bound.
+
+Every model call also writes an `llm_usage` row (the same table the daemon
+writes), including `cache_read_tokens`, so the app's **Settings → Usage**
+section can aggregate across sessions.
 
 ---
 

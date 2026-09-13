@@ -79,6 +79,23 @@ class ChatRenderer:
     def begin_turn(self) -> None:
         """Turn-start hook. The rich subclass starts its spinner here."""
 
+    #: Repaint hook for a host that draws its own status bar. Nothing calls it
+    #: on this renderer; it exists so the attribute is part of the base
+    #: contract rather than something only the rich subclass happens to have.
+    on_change: Any = None
+
+    def status_text(self) -> str:
+        """What the agent is doing, as plain text. Empty on this renderer.
+
+        The plain renderer has no status line to keep — it prints a running
+        log. Defined here so a host that asks for a status (the dashboard)
+        degrades to "nothing to say" instead of raising.
+        """
+        return ""
+
+    def tool_in_flight(self) -> str:
+        return ""
+
     def note_retry(
         self, model: str, attempt: int, retries: int, delay: float, exc: BaseException
     ) -> None:

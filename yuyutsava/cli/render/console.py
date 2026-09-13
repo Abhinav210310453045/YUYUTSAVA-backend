@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import sys
+from typing import Any
 
 from rich.console import Console
 from rich.theme import Theme
@@ -46,5 +47,24 @@ def rich_capable() -> bool:
         return False
 
 
-def make_console() -> Console:
-    return Console(file=sys.stdout, theme=_THEME, highlight=False)
+def make_console(
+    *,
+    file: Any | None = None,
+    width: int | None = None,
+    force_terminal: bool | None = None,
+) -> Console:
+    """The shared themed console.
+
+    All three arguments exist for the chat dashboard, which points Rich at a
+    :class:`~yuyutsava.cli.render.dashboard.TranscriptBuffer` sized to the left
+    pane. ``force_terminal`` is required there: Rich drops colour when the
+    destination is not a tty, and the destination genuinely is one — one pane
+    over. Defaults reproduce the previous behaviour exactly.
+    """
+    return Console(
+        file=file if file is not None else sys.stdout,
+        theme=_THEME,
+        highlight=False,
+        width=width,
+        force_terminal=force_terminal,
+    )
