@@ -9,6 +9,44 @@ While the version stays `0.x`, minor bumps may contain breaking changes.
 ## [Unreleased]
 
 ### Fixed
+- **The context meter's total did not add up, and could fall while the
+  conversation grew.** One chat read `26.9k / 1.0M` on its first call and
+  `23.5k / 1.0M` seven calls later, with the provider reporting 13.4k and then
+  27.6k for those same two prompts — and the panel printed `in 27.6k` four rows
+  under `23.5k`. Two causes. The total was a pure sum of character estimates
+  that never consulted `usage_metadata`, and one global correction factor
+  multiplied *every* row on *every* publish, so when the factor moved the whole
+  conversation changed size. The estimate was also ~2x high for a structural
+  reason (≈20k characters of JSON tool schema reach Gemini as
+  `FunctionDeclaration` protos) and the old `[0.5, 2.0]` clamp pinned the real
+  0.499 at its floor, hiding the error. Now the headline is **anchored on the
+  provider's reported input tokens** and only growth since is estimated — right
+  after a call it is `input + output`, both measured, and it can only fall when
+  content actually leaves the window. The static prefix and the messages get
+  **separate** correction factors, fitted from a conversation's first call
+  (which carries almost no message tokens and so measures the prefix exactly)
+  and thereafter by subtraction; factors are remembered per model, so a second
+  chat starts calibrated. Rows are reconciled to sum to the total exactly, and
+  both fronts now drop the `≈` from a measured total.
+- **The graceful interrupt left the assistant's turn hanging open.** `Ctrl+S`
+  cancelled the run and appended the user's message straight after a tool
+  result, so history read `ai(tool_calls) → tool(success) → human` with the
+  model's turn never closed — and in Gemini's content model a
+  `functionResponse` is itself a user-role part, making that two consecutive
+  user turns. Two replies came back empty at 60,813 and 60,978 input tokens,
+  logged `repaired=0` because neither previously-known shape was present. The
+  repair now diagnoses four things rather than matching one string: the
+  fabricated cancellation, a tool call with **no result at all** (which the
+  function was named for but could not see), an empty assistant message (no
+  text, no calls — removed via `RemoveMessage`, since it is self-perpetuating),
+  and an unfinished turn, closed with a short assistant message that also tells
+  the model where it left off. A resume does not close the turn it is resuming.
+- **An empty turn was not retried unless something was repairable.** The
+  recovery fired only when the marker check had found something, so a turn that
+  came back empty for any other reason got no retry at all — the log read
+  `(repaired=0) — surfaced to the user` twice in a row, and the next message
+  the user sent went through untouched. The retry is now unconditional and
+  still capped at exactly one.
 - **A conversation could go permanently silent.** Sending a message while a
   tool call was running made LangGraph cancel the call and fabricate a
   `status="success"` result saying "cancelled"; from then on every model call

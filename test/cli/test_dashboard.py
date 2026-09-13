@@ -240,7 +240,22 @@ class ContextReport(unittest.TestCase):
     def test_it_explains_which_numbers_are_estimates(self):
         out = self._render(snap())
         self.assertIn("≈ marks an estimate", out)
-        self.assertIn("calibrated", out)
+        # The rows are a breakdown of the total, not five loose guesses.
+        self.assertIn("sum to the total", out)
+
+    def test_it_names_the_basis_of_the_total(self):
+        # "23.5k / 1.0M" printed above "in 27.6k" for one prompt was the bug;
+        # the report has to say which of the two the total is.
+        estimated = self._render(snap())
+        self.assertIn("character estimate", estimated)
+        measured = self._render(snap(anchored=True, window_measured=True))
+        self.assertIn("provider's own count", measured)
+        self.assertNotIn("character estimate", measured)
+
+    def test_a_measured_total_carries_no_approximation_mark(self):
+        out = self._render(snap(anchored=True, window_measured=True))
+        self.assertIn("64,600 used", out)
+        self.assertNotIn("≈64,600", out)
 
     def test_it_explains_an_unpriced_model(self):
         out = self._render(snap(priced=False))

@@ -13,11 +13,15 @@ cannot become a second, disagreeing source of numbers.
 
 ## Estimated versus measured
 
-Segment sizes are estimates (see the meter's module docstring). Every estimated
-figure is prefixed ``≈`` and the panel says so in its footer until the meter has
-calibrated against a real call. Last-call figures are the provider's own
-numbers and carry no mark. An unpriced model reads ``unpriced``, never
-``$0.00`` — "we have no price for this" is not "this was free".
+Segment sizes are estimates (see the meter's module docstring) and every
+estimated figure is prefixed ``≈``. The **total** is not an estimate once a call
+has completed: it is anchored on the provider's reported input tokens, so it
+carries the mark only while growth since that call is being estimated
+(``window_measured``). That distinction is the whole point of the row — a panel
+that printed ``23.5k / 1.0M`` four rows above ``in 27.6k``, for the same prompt,
+is one number too many. Last-call figures are the provider's own and carry no
+mark. An unpriced model reads ``unpriced``, never ``$0.00`` — "we have no price
+for this" is not "this was free".
 """
 
 from __future__ import annotations
@@ -178,8 +182,13 @@ def panel_fragments(
         ("class:ctx.bar.empty", "░" * empty),
         ("class:ctx.value", tail),
     ])
+    # No mark when the total is the provider's own arithmetic: input tokens
+    # for the prompt plus output tokens for the reply it produced.
+    measured = bool(getattr(snap, "window_measured", False))
+    mark = "" if measured else _APPROX
     row(_P_ESSENTIAL, " " + _row(
-        f"{fmt_tokens(snap.used_tokens)} / {fmt_tokens(snap.max_input_tokens)}",
+        f"{mark}{fmt_tokens(snap.used_tokens)} / "
+        f"{fmt_tokens(snap.max_input_tokens)}",
         "", inner,
     ), "class:ctx.dim")
     if snap.compact_trigger_tokens and snap.used_tokens >= snap.compact_trigger_tokens:
@@ -188,7 +197,8 @@ def panel_fragments(
     row(_P_SEGMENTS)
     for _key, label, tokens in snap.segments():
         row(_P_SEGMENTS, " " + _row(label, fmt_tokens(tokens), inner, approx=True))
-    row(_P_SEGMENTS, " " + _row("free", fmt_tokens(snap.free_tokens), inner, approx=True))
+    row(_P_SEGMENTS, " " + _row(
+        "free", fmt_tokens(snap.free_tokens), inner, approx=not measured))
 
     row(_P_LAST_CALL)
     row(_P_LAST_CALL, f" LAST CALL  #{snap.call_no}", "class:ctx.title")
@@ -226,9 +236,14 @@ def panel_fragments(
             row(_P_NOTICE, line, "class:ctx.warn")
 
     row(_P_FOOTER)
-    row(_P_FOOTER,
-        f" {_APPROX} estimated" + ("" if snap.calibrated else ", uncalibrated"),
-        "class:ctx.dim")
+    if getattr(snap, "anchored", False):
+        foot = f"{_APPROX} rows estimated, total measured"
+    elif snap.calibrated:
+        foot = f"{_APPROX} estimated"
+    else:
+        foot = f"{_APPROX} estimated, uncalibrated"
+    for line in _wrap_plain(f" {foot}", w):
+        row(_P_FOOTER, line, "class:ctx.dim")
     return _fit(rows, height)
 
 
@@ -300,14 +315,24 @@ def context_report(snap: Any | None, *, width: int = 72) -> RenderableType:
            if snap.compact_trigger_tokens else ""),
     )
     filled, empty = bar(snap.used_fraction, 40)
+    measured = bool(getattr(snap, "window_measured", False))
     meter = Text()
     meter.append("▓" * filled, style="accent")
     meter.append("░" * empty, style="chrome")
     meter.append(
         f"  {fmt_pct(snap.used_fraction)}  "
-        f"({snap.used_tokens:,} used · {snap.free_tokens:,} free)"
+        f"({'' if measured else _APPROX}{snap.used_tokens:,} used · "
+        f"{snap.free_tokens:,} free)"
     )
     head.add_row("used", meter)
+    head.add_row(
+        "basis",
+        "the provider's own count for the last prompt, plus the reply"
+        if measured else
+        ("the last measured prompt, plus an estimate of what has been "
+         "appended since" if getattr(snap, "anchored", False) else
+         "a character estimate — no call has measured this window yet"),
+    )
 
     seg = Table.grid(padding=(0, 2))
     seg.add_column(style="chrome", justify="right", width=16)
@@ -362,12 +387,22 @@ def context_report(snap: Any | None, *, width: int = 72) -> RenderableType:
 
     notes = [
         f"{_APPROX} marks an estimate. Segment sizes cannot be measured — a "
-        "provider reports one total for the prompt, not a figure per region.",
+        "provider reports one total for the prompt, not a figure per region — "
+        "so the rows are a breakdown, scaled to sum to the total exactly.",
     ]
+    if getattr(snap, "anchored", False):
+        notes.append(
+            "The total is not an estimate: it is anchored on the input tokens "
+            "the provider reported for the last call, and only what has been "
+            "appended since is estimated. It therefore cannot fall unless "
+            "content actually left the window."
+        )
     if snap.calibrated:
         notes.append(
-            "The estimate is calibrated against this conversation's reported "
-            "input tokens, so the total tracks the real one closely."
+            "Two corrections are fitted from this model's own reported "
+            "tokens — one for the static prefix (prompt and tool schemas), one "
+            "for the conversation. One combined factor averaged a JSON schema "
+            "against prose and got both wrong."
         )
     else:
         notes.append(

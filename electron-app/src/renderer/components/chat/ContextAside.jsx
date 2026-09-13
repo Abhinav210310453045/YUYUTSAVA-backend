@@ -10,11 +10,14 @@ import React from 'react'
 // file never derives a figure the CLI panel does not also show; the two fronts
 // read the same wire shape in the same order.
 //
-// Estimated vs measured stays visible: segment sizes are estimates (a provider
-// reports one total for a prompt, not a figure per region) and carry "≈", the
-// last call's figures are the provider's own and carry nothing. An unpriced
-// model reads "unpriced", never "$0.00" — "we have no price for this" is not
-// "this was free".
+// Estimated vs measured stays visible. Segment sizes are estimates — a provider
+// reports one total for a prompt, not a figure per region — and carry "≈". The
+// TOTAL is not an estimate once a call has completed: it is anchored on the
+// provider's reported input tokens, so it wears the mark only while growth
+// since that call is still being estimated (`window_measured`). Showing
+// "23.5k / 1.0M" a few rows above "in 27.6k", for the same prompt, is one
+// number too many. An unpriced model reads "unpriced", never "$0.00" — "we have
+// no price for this" is not "this was free".
 
 const APPROX = '≈'
 
@@ -162,6 +165,7 @@ export default function ContextAside({ usage }) {
           <div style={{
             fontSize: 10, color: 'var(--text-dim)', fontFamily: 'var(--font-mono)',
           }}>
+            {usage.window_measured ? '' : APPROX}
             {fmtTokens(usage.used_tokens)} / {fmtTokens(usage.max_input_tokens)}
           </div>
           {usage.compact_trigger_tokens > 0
@@ -175,7 +179,12 @@ export default function ContextAside({ usage }) {
           {(usage.segments || []).map((s) => (
             <Row key={s.key} label={s.label} value={fmtTokens(s.tokens)} approx />
           ))}
-          <Row label="free" value={fmtTokens(usage.free_tokens)} approx dim />
+          <Row
+            label="free"
+            value={fmtTokens(usage.free_tokens)}
+            approx={!usage.window_measured}
+            dim
+          />
 
           <SectionLabel>last call #{usage.call?.n ?? 0}</SectionLabel>
           <Row label="in" value={fmtTokens(usage.call?.input_tokens)} />
@@ -213,8 +222,12 @@ export default function ContextAside({ usage }) {
           <div style={{
             marginTop: 10, fontSize: 10, color: 'var(--text-dim)', lineHeight: 1.6,
           }}>
-            {APPROX} estimated{usage.calibrated ? '' : ', uncalibrated'}.
-            Last-call figures are the provider's own.
+            {usage.anchored
+              ? `${APPROX} rows are estimated and scaled to sum to the total. `
+                + 'The total itself is measured: the provider\'s input tokens '
+                + 'for the last prompt, plus what has been appended since.'
+              : `${APPROX} estimated${usage.calibrated ? '' : ', uncalibrated'}.`
+                + " Last-call figures are the provider's own."}
             {!usage.call?.priced && ' No price entry for this model, so cost is unknown rather than zero.'}
           </div>
         </>

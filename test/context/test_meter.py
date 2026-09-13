@@ -590,5 +590,222 @@ class InjectedBlocksAreCounted(unittest.TestCase):
         ri._last_blocks.clear()
 
 
+# ----------------------------------------------------------------------
+# 14 Sep: "same chat first shows 26k token and after next call shows 23.3k"
+# ----------------------------------------------------------------------
+
+
+class TheHeadlineFollowsTheProvider(unittest.TestCase):
+    """The window total may not move for reasons unrelated to the window.
+
+    Measured from two screenshots of one conversation. On call #1 the segments
+    summed to 26.87k (6.3k + 19.9k + 668 + 0 + 5) while the provider reported
+    **13.4k** for that very prompt — a 0.499 ratio, pinned at the old 0.5
+    calibration floor. By call #8 every row had been multiplied by that factor
+    and the total had *fallen* to 23.57k, while the provider was now reporting
+    **27.6k**. The panel printed both, four rows apart, and the headline had
+    moved the wrong way for a reason that had nothing to do with the
+    conversation.
+
+    So the headline is anchored on the provider's number and only the growth
+    since is estimated, which makes these invariants testable.
+    """
+
+    def setUp(self):
+        reset_sizing_caches()
+        reset_thread_state()
+        bus().clear()
+        self.settings = ContextSettings(max_input_tokens=1_000_000)
+        self.policy = ContextMeterPolicy(
+            settings=self.settings, role="cli", model_name="gemini-3.5-flash"
+        )
+        # A fat schema block, because the tool schemas row is what the
+        # character estimate overcounts: ~20k chars of JSON reach Gemini as
+        # FunctionDeclaration protos.
+        self.registry = _FakeRegistry([_FakeTool("tool_search", 20_000)], "cat")
+        note_tool_registry("cli", self.registry)
+        self.seen: list[ContextSnapshot] = []
+        bus().subscribe("", self.seen.append)
+
+    def tearDown(self):
+        bus().clear()
+        reset_thread_state()
+        reset_sizing_caches()
+
+    def _turn(self, n_messages: int, *, usage=None) -> Turn:
+        msgs: list = [HumanMessage(content="ask " + "q" * 300)]
+        for i in range(n_messages):
+            msgs.append(AIMessage(content="reply " + "r" * 300))
+            msgs.append(HumanMessage(content=f"follow {i} " + "f" * 300))
+        return Turn(messages=tuple(msgs), thread_id="t1", usage=usage)
+
+    def _call(self, n_messages: int, reported_in: int, reported_out: int = 40):
+        """One full model call. Returns ``(pre_call, post_call)`` snapshots."""
+        run(self.policy.before_model(self._turn(n_messages)))
+        run(self.policy.revise_model_call(model_call(tool_names=("tool_search",))))
+        pre = self.seen[-1]
+        run(self.policy.after_model(Turn(
+            thread_id="t1",
+            usage=Usage(input_tokens=reported_in, output_tokens=reported_out),
+        )))
+        return pre, self.seen[-1]
+
+    #: The eight calls of the real session, with the provider's numbers.
+    REPORTED = (13_400, 16_000, 18_500, 21_000, 23_000, 25_000, 26_500, 27_600)
+
+    def _sequence(self):
+        """Drive the real session's shape. Returns pre/post totals per call."""
+        pre_totals: list[int] = []
+        post_totals: list[int] = []
+        for i, reported in enumerate(self.REPORTED):
+            pre, post = self._call(1 + i * 3, reported)
+            pre_totals.append(pre.used_tokens)
+            post_totals.append(post.used_tokens)
+        return pre_totals, post_totals
+
+    def test_the_measured_total_only_ever_grows_with_the_conversation(self):
+        """The regression, as an invariant.
+
+        Every post-call total is the provider's own arithmetic, so this is the
+        sequence that may not wobble at all. The old code produced 26.9k then
+        23.5k here while the truth went 13.4k -> 27.6k.
+        """
+        _pre, post = self._sequence()
+        for earlier, later in zip(post, post[1:]):
+            self.assertLessEqual(
+                earlier, later,
+                f"a measured window shrank from {earlier} to {later} with "
+                f"nothing removed — sequence {post}",
+            )
+
+    def test_an_estimate_is_never_below_the_last_measurement(self):
+        # Nothing was removed, so the window cannot be smaller than what the
+        # provider just counted.
+        pre, post = self._sequence()
+        for measured, next_estimate in zip(post, pre[1:]):
+            self.assertGreaterEqual(next_estimate, measured)
+
+    def test_a_measurement_may_correct_an_estimate_but_only_slightly(self):
+        """The honest limit, bounded.
+
+        Growth between calls is still estimated, so a measurement can revise
+        the headline down when the estimate ran high — that is a measurement
+        doing its job. What may not happen is the *scale* being rewritten
+        underneath the conversation: the old single factor moved the total by
+        -12.6% while the real prompt was doubling. Anything beyond a few
+        percent per call means the anchor has stopped holding.
+        """
+        pre, post = self._sequence()
+        for estimate, measured in zip(pre, post):
+            if measured >= estimate:
+                continue
+            drift = (estimate - measured) / max(1, estimate)
+            self.assertLess(
+                drift, 0.05,
+                f"a measurement cut the headline by {drift:.1%} "
+                f"({estimate} -> {measured}); the growth estimate is no "
+                f"longer tracking the anchor",
+            )
+
+    def test_the_headline_is_the_providers_arithmetic_right_after_a_call(self):
+        _pre, post = self._call(4, 13_400, reported_out=201)
+        # Both terms are provider numbers, so nothing here is estimated.
+        self.assertEqual(post.used_tokens, 13_400 + 201)
+        self.assertTrue(post.window_measured)
+        self.assertTrue(post.anchored)
+
+    def test_the_rows_sum_to_the_headline_exactly(self):
+        _pre, post = self._call(6, 27_600, reported_out=201)
+        self.assertEqual(
+            sum(tokens for _k, _l, tokens in post.segments()),
+            post.used_tokens,
+            "a panel whose parts do not add up to its total is the complaint",
+        )
+
+    def test_the_headline_no_longer_contradicts_the_last_call_row(self):
+        # 23.5k printed four rows above "in 27.6k" was the visible symptom.
+        _pre, post = self._call(6, 27_600, reported_out=0)
+        self.assertEqual(post.used_tokens, post.input_tokens)
+
+    def test_growth_between_calls_is_flagged_as_an_estimate(self):
+        self._call(2, 13_400)
+        run(self.policy.before_model(self._turn(9)))
+        run(self.policy.revise_model_call(model_call(tool_names=("tool_search",))))
+        pre = self.seen[-1]
+        self.assertTrue(pre.anchored)
+        self.assertFalse(
+            pre.window_measured,
+            "messages were appended since the measurement, so the total is "
+            "part estimate and must say so",
+        )
+        self.assertGreater(pre.used_tokens, 13_400)
+
+    def test_a_prefix_only_call_measures_the_prefix(self):
+        # Call #1 carries ~no message tokens, so the provider's number IS the
+        # prefix — a free exact reading, and the reason two factors are
+        # separable at all.
+        pre, _post = self._call(0, 13_400)
+        uncorrected = pre.used_tokens
+        run(self.policy.before_model(self._turn(0)))
+        run(self.policy.revise_model_call(model_call(tool_names=("tool_search",))))
+        corrected = self.seen[-1]
+        self.assertNotEqual(uncorrected, corrected.used_tokens)
+        self.assertAlmostEqual(corrected.used_tokens, 13_400, delta=200)
+        self.assertTrue(corrected.calibrated)
+
+    def test_a_second_conversation_on_the_same_model_starts_calibrated(self):
+        self._call(0, 13_400)
+        other = ContextMeterPolicy(
+            settings=self.settings, role="cli", model_name="gemini-3.5-flash"
+        )
+        run(other.before_model(Turn(
+            messages=(HumanMessage(content="hi"),), thread_id="t2")))
+        run(other.revise_model_call(model_call(tool_names=("tool_search",))))
+        fresh = bus().latest("t2")
+        self.assertTrue(
+            fresh.calibrated,
+            "the factors describe the model, not the thread — a new chat "
+            "should not read 2x high for one call",
+        )
+        self.assertAlmostEqual(fresh.used_tokens, 13_400, delta=1_500)
+
+    def test_a_different_model_does_not_inherit_the_correction(self):
+        self._call(0, 13_400)
+        other = ContextMeterPolicy(
+            settings=self.settings, role="cli", model_name="claude-sonnet-4-5"
+        )
+        run(other.before_model(Turn(
+            messages=(HumanMessage(content="hi"),), thread_id="t3")))
+        run(other.revise_model_call(model_call(tool_names=("tool_search",))))
+        self.assertFalse(bus().latest("t3").calibrated)
+
+    def test_an_implausible_reading_is_not_anchored_on(self):
+        # A provider reporting cumulative tokens, or a mid-call compaction:
+        # the two numbers are not describing the same prompt, so the spend is
+        # kept and the window scale is not touched.
+        pre, _post = self._call(3, 10_000_000)
+        run(self.policy.before_model(self._turn(3)))
+        run(self.policy.revise_model_call(model_call(tool_names=("tool_search",))))
+        after = self.seen[-1]
+        self.assertFalse(after.anchored)
+        self.assertLess(after.used_tokens, pre.used_tokens * 2 + 1)
+        # The money still counts.
+        self.assertEqual(after.session_input_tokens, 10_000_000)
+
+    def test_compaction_lets_the_total_fall_again(self):
+        # The one legitimate reason to shrink: content actually left the
+        # window. A stale high-water mark would hide it.
+        self._call(12, 40_000)
+        run(self.policy.before_model(self._turn(1)))
+        run(self.policy.revise_model_call(model_call(tool_names=("tool_search",))))
+        self.assertLess(self.seen[-1].used_tokens, 40_000)
+
+    def test_the_wire_shape_carries_the_two_new_flags(self):
+        _pre, post = self._call(2, 13_400)
+        d = post.as_dict()
+        self.assertIn("anchored", d)
+        self.assertIn("window_measured", d)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

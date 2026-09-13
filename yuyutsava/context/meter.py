@@ -16,16 +16,37 @@ UI about a frame none of them can act on.
 
 ## Estimated versus measured
 
-Segment sizes are estimates — there is no way to attribute a provider's token
-count to regions of a prompt, and asking a provider to count costs money and a
-round trip per turn. But an uncalibrated character estimate drifts from the real
-number by a lot on some models, so after every completed call the meter divides
-the provider's reported ``input_tokens`` by its own estimate for that same call
-and keeps the ratio (:attr:`ContextSnapshot.calibrated`). Subsequent estimates
-are scaled by it. The headline occupancy is therefore a *calibrated estimate of
-the current window*, and last-call figures are always raw provider numbers.
-Renderers must keep that distinction visible; ``/context`` marks estimates with
-``≈``.
+A provider reports one number for a whole prompt and never a figure per region,
+so segment *sizes* have to be estimated from characters. The *total* does not:
+``usage_metadata["input_tokens"]`` is an exact measurement of the very prompt we
+just described. So the headline is anchored on it, and only the growth since is
+estimated::
+
+    used = last measured input_tokens + estimate of what was appended since
+
+On the publish right after a call that second term is the provider's own
+``output_tokens``, so the headline is measured end to end
+(:attr:`ContextSnapshot.window_measured`). The segment rows are then reconciled
+to sum to that total: a breakdown of a measured number rather than a sum of
+guesses, which is also why "used" and "last call in" can no longer disagree.
+
+**Two correction factors, not one**, because the halves of a prompt mis-estimate
+in opposite directions. Roughly 20k *characters* of JSON tool schema reach
+Gemini as ``FunctionDeclaration`` protos, where ``chars/4`` overcounts about
+twofold, while ``chars/4`` estimates prose reasonably. Averaging the two got
+both wrong, and worse, a single factor multiplied *every* row on *every*
+publish — so when the factor moved, the conversation changed size. On 14 Sep a
+session read 26.9k against a measured 13.4k, then **fell** to 23.5k as the
+correction landed, while the real prompt had grown to 27.6k: a headline moving
+for a reason that had nothing to do with the conversation. The static prefix and
+the messages are therefore fitted separately. A conversation's first call
+carries almost no message tokens and is thus a free exact reading of the prefix;
+after that ``measured - prefix`` measures the messages by subtraction. Factors
+are remembered per model, so a second conversation starts calibrated instead of
+reading 2x high for one call.
+
+Last-call and session figures are always raw provider numbers. Renderers must
+keep the distinction visible; ``/context`` marks estimates with ``≈``.
 """
 
 from __future__ import annotations
@@ -48,12 +69,23 @@ logger = logging.getLogger("yuyutsava.context.meter")
 #: indefinitely; unbounded per-thread dicts are a slow leak.
 _MAX_THREADS = 64
 
-#: Guard rails on the estimate→reported correction. A ratio outside this range
-#: means the two are measuring different things (a mid-call compaction, a
-#: provider reporting cumulative tokens), and trusting it would make the panel
-#: swing wildly. Clamping keeps a wrong calibration merely imprecise.
-_CALIBRATION_MIN = 0.5
-_CALIBRATION_MAX = 2.0
+#: Guard rails on a fitted correction factor. Outside this range the estimate
+#: and the provider are not describing the same prompt (a provider reporting
+#: cumulative tokens, a mid-call compaction) — such a call is recorded as spend
+#: but never fitted from, and never anchored on. Wide enough to actually *hold*
+#: a real correction: the old [0.5, 2.0] pinned a genuine 0.499 at the floor and
+#: left the panel ~2x wrong with nothing to say the clamp was the problem.
+_FACTOR_MIN = 0.2
+_FACTOR_MAX = 5.0
+
+#: At or below this share of message tokens a call is a near-pure prefix, so its
+#: reported input tokens measure the static prefix on their own. A conversation's
+#: first call is the archetype: 5 message tokens against 26.9k of prefix.
+_PREFIX_ONLY_SHARE = 0.15
+
+#: The segments that make up the static prefix — everything that is not the
+#: conversation itself, and so the part a prefix-only call measures.
+_STATIC_KEYS = ("system", "tools", "memory", "skills")
 
 #: Order the segments are reported in — largest structural pieces first, so a
 #: reader scans "what is this window made of" top to bottom.
@@ -107,6 +139,13 @@ class ContextSnapshot:
 
     #: Whether the segment estimates have been corrected against a real call.
     calibrated: bool = False
+    #: Whether the headline total rests on a provider measurement rather than
+    #: being a free-floating character estimate.
+    anchored: bool = False
+    #: Whether the headline is the provider's own arithmetic end to end — true
+    #: on the publish right after a call, when nothing has been appended since
+    #: and so nothing is estimated. Renderers drop the ``≈`` from the total.
+    window_measured: bool = False
 
     # The last completed call — provider-reported, never estimated.
     call_no: int = 0
@@ -182,6 +221,8 @@ class ContextSnapshot:
             "free_tokens": self.free_tokens,
             "used_fraction": round(self.used_fraction, 6),
             "calibrated": self.calibrated,
+            "anchored": self.anchored,
+            "window_measured": self.window_measured,
             "segments": [
                 {"key": k, "label": lbl, "tokens": n} for k, lbl, n in self.segments()
             ],
@@ -532,18 +573,34 @@ def _is_offloaded_digest(content: Any) -> bool:
 
 @dataclass
 class _ThreadState:
-    """Running totals for one conversation, and its calibration."""
+    """Running totals for one conversation, and its two correction factors."""
 
     calls: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
     cache_read_tokens: int = 0
     cost_usd: float = 0.0
-    calibration: float = 1.0
+
+    #: Corrections for the two halves of a prompt, fitted separately — see the
+    #: module docstring for why one factor cannot serve both.
+    static_factor: float = 1.0
+    messages_factor: float = 1.0
+    static_fitted: bool = False
+    messages_fitted: bool = False
     calibrated: bool = False
-    #: Raw (uncalibrated) estimate for the call now in flight, kept so the
-    #: provider's answer can be divided by the estimate of the *same* prompt.
-    pending_estimate: int = 0
+
+    #: Raw (uncalibrated) per-segment estimate of the call now in flight, kept
+    #: so the provider's answer can be divided by an estimate of the *same*
+    #: prompt. Never the corrected figures the panel shows.
+    pending_raw: dict[str, int] = field(default_factory=dict)
+
+    #: The provider's measurement of the last call's prompt, and the raw
+    #: estimate of that same prompt. Growth is measured against the second and
+    #: added to the first, which is what stops a new correction factor from
+    #: retroactively resizing the conversation.
+    anchor_tokens: int = 0
+    anchor_raw: int = 0
+
     started_at: float = field(default_factory=time.time)
 
 
@@ -556,17 +613,100 @@ class _ThreadState:
 _thread_states: _Bounded = _Bounded()
 
 
-def _state_for(thread_id: str) -> _ThreadState:
+#: Fitted factors by model name. They describe a tokenizer and a tool-schema
+#: encoding — properties of the model, not of one thread — so a new conversation
+#: on a model this process has already calibrated starts right instead of
+#: reading ~2x high until its first call comes back.
+_model_factors: _Bounded = _Bounded()
+
+
+def _state_for(thread_id: str, model: str = "") -> _ThreadState:
     state = _thread_states.get(thread_id)
     if state is None:
         state = _ThreadState()
+        seed = _model_factors.get(model) if model else None
+        if seed is not None:
+            state.static_factor, state.messages_factor = seed
+            state.static_fitted = True
+            state.messages_fitted = True
+            state.calibrated = True
         _thread_states[thread_id] = state
     return state
 
 
 def reset_thread_state() -> None:
-    """Drop all per-conversation totals. Tests only."""
+    """Drop all per-conversation totals and learned factors. Tests only."""
     _thread_states.clear()
+    _model_factors.clear()
+
+
+def _clamp_factor(value: float) -> float:
+    return max(_FACTOR_MIN, min(_FACTOR_MAX, value))
+
+
+def _reconcile(rows: dict[str, int], target: int) -> dict[str, int]:
+    """Scale *rows* so they sum to exactly *target*.
+
+    The rows are a breakdown of a measured number, so they have to add up to
+    it; a panel whose parts do not sum to its total is the whole complaint.
+    Rounding drift lands on the largest row, where it is proportionally
+    smallest.
+    """
+    total = sum(rows.values())
+    if total <= 0 or target <= 0:
+        return dict(rows)
+    factor = target / total
+    out = {key: max(0, int(round(value * factor))) for key, value in rows.items()}
+    drift = target - sum(out.values())
+    if drift and out:
+        biggest = max(out, key=lambda k: out[k])
+        out[biggest] = max(0, out[biggest] + drift)
+    return out
+
+
+def _allocate(state: _ThreadState, raw: dict[str, int], target: int) -> dict[str, int]:
+    """Per-segment tokens that sum to *target*.
+
+    The prefix rows carry the fitted estimate and ``messages`` takes the
+    remainder, which makes the messages row a *measured residual* — total minus
+    prefix — rather than a second independent guess. Should the prefix alone
+    exceed the target (a badly fitted factor, or a target from a tiny call),
+    everything is scaled proportionally instead so no row can go negative.
+    """
+    out = {
+        key: max(0, int(round(raw.get(key, 0) * state.static_factor)))
+        for key in _STATIC_KEYS
+    }
+    if target > 0 and sum(out.values()) < target:
+        out["messages"] = target - sum(out.values())
+        return out
+    out["messages"] = max(
+        0, int(round(raw.get("messages", 0) * state.messages_factor))
+    )
+    return _reconcile(out, target) if target > 0 else out
+
+
+def _target_tokens(state: _ThreadState, raw: dict[str, int]) -> int:
+    """What the window holds now: the last measurement plus what grew since.
+
+    ``anchor_tokens`` is the provider's own count for the last call's prompt,
+    so only the delta since is estimated — and it is scaled by the message
+    factor, because everything appended between calls is conversation. The
+    delta is signed: compaction shrinks the raw estimate and the headline has
+    to fall with it rather than sit at a stale high-water mark, then re-anchor
+    on the next real call.
+    """
+    prefix = int(round(
+        sum(raw.get(key, 0) for key in _STATIC_KEYS) * state.static_factor
+    ))
+    if state.anchor_tokens <= 0:
+        # Nothing measured on this thread yet; the seeded model factors are the
+        # best correction available.
+        return max(0, prefix + int(round(
+            raw.get("messages", 0) * state.messages_factor
+        )))
+    grown = int(round((sum(raw.values()) - state.anchor_raw) * state.messages_factor))
+    return max(prefix, state.anchor_tokens + grown)
 
 
 class ContextMeterPolicy(Policy):
@@ -631,7 +771,6 @@ class ContextMeterPolicy(Policy):
             return
         try:
             state = self._state(snap.thread_id)
-            cal = state.calibration
 
             tools_chars = catalog_chars(self._role) + tool_schema_chars(
                 self._role, call.tool_names
@@ -655,23 +794,37 @@ class ContextMeterPolicy(Policy):
                 key = self._segment_for_prefix(prefix)
                 system_chars[key] = system_chars.get(key, 0) + chars
 
-            snap = replace(
+            # Raw, uncalibrated estimates, per segment. The provider's answer
+            # has to be divided by an estimate of the same prompt, so these are
+            # what gets kept — and the whole prompt is only accounted for here,
+            # tool schemas included.
+            raw = {
+                "system": approx_tokens_chars(
+                    system_chars["system"], model=self._model),
+                "tools": approx_tokens_chars(tools_chars, model=self._model),
+                "memory": approx_tokens_chars(
+                    system_chars["memory"], model=self._model),
+                "skills": approx_tokens_chars(
+                    system_chars["skills"], model=self._model),
+                # ``before_model`` leaves its raw message estimate here.
+                "messages": snap.messages_tokens,
+            }
+            rows = _allocate(state, raw, _target_tokens(state, raw))
+            state.pending_raw = raw
+            bus().publish(replace(
                 snap,
-                tools_tokens=self._scaled(
-                    approx_tokens_chars(tools_chars, model=self._model), cal),
-                system_tokens=self._scaled(
-                    approx_tokens_chars(system_chars["system"], model=self._model), cal),
-                memory_tokens=self._scaled(
-                    approx_tokens_chars(system_chars["memory"], model=self._model), cal),
-                skills_tokens=self._scaled(
-                    approx_tokens_chars(system_chars["skills"], model=self._model), cal),
+                system_tokens=rows["system"],
+                tools_tokens=rows["tools"],
+                memory_tokens=rows["memory"],
+                skills_tokens=rows["skills"],
+                messages_tokens=rows["messages"],
                 tool_count=len(call.tool_names),
-            )
-            # The calibration divisor must describe the prompt that produced
-            # the provider's number, so record it once the whole prompt is
-            # accounted for — tool schemas included.
-            state.pending_estimate = self._raw_estimate(snap, state.calibration)
-            bus().publish(snap)
+                calibrated=state.calibrated,
+                anchored=state.anchor_tokens > 0,
+                # Something has been appended since the last measurement, so
+                # the growth term is an estimate.
+                window_measured=False,
+            ))
         except Exception:  # noqa: BLE001
             logger.debug("context meter: pre-call publish failed", exc_info=True)
 
@@ -688,7 +841,7 @@ class ContextMeterPolicy(Policy):
     # -- internals ----------------------------------------------------------
 
     def _state(self, thread_id: str) -> _ThreadState:
-        return _state_for(thread_id)
+        return _state_for(thread_id, self._model_name)
 
     def _price_table(self) -> dict[str, tuple[float, float]]:
         if self._prices is None:
@@ -697,15 +850,61 @@ class ContextMeterPolicy(Policy):
             self._prices = load_price_table()
         return self._prices
 
-    @staticmethod
-    def _scaled(tokens: int, calibration: float) -> int:
-        return int(round(tokens * calibration))
+    def _fit(self, state: _ThreadState, usage: Any) -> None:
+        """Learn the two corrections from a completed call, then re-anchor.
 
-    def _raw_estimate(self, snap: ContextSnapshot, calibration: float) -> int:
-        """Undo the calibration, recovering the estimate as first computed."""
-        if calibration <= 0:
-            return snap.used_tokens
-        return int(round(snap.used_tokens / calibration))
+        A near-pure-prefix call measures the prefix directly. Once that factor
+        is known, ``measured - prefix`` measures the messages, so the second
+        factor comes from a subtraction rather than from a second guess. Later
+        fits are averaged with the standing factor, because the residual
+        carries the prefix factor's error too and one odd call should nudge the
+        scale rather than redefine it.
+        """
+        measured = int(getattr(usage, "input_tokens", 0) or 0)
+        raw = state.pending_raw
+        raw_total = sum(raw.values())
+        if measured <= 0 or raw_total <= 0:
+            return
+        if not _FACTOR_MIN <= measured / raw_total <= _FACTOR_MAX:
+            # The estimate and the provider are not describing the same prompt.
+            # The spend is real and has already been recorded, but anchoring the
+            # window on this number — or fitting a factor from it — would put
+            # the panel on a scale nothing else shares.
+            logger.debug(
+                "context meter: ignoring an implausible reading (%d reported "
+                "against a %d-token estimate)", measured, raw_total,
+            )
+            return
+        raw_prefix = sum(raw.get(key, 0) for key in _STATIC_KEYS)
+        raw_messages = raw.get("messages", 0)
+        if raw_messages / raw_total <= _PREFIX_ONLY_SHARE and raw_prefix > 0:
+            state.static_factor = _clamp_factor(measured / raw_total)
+            state.static_fitted = True
+            state.calibrated = True
+        elif state.static_fitted and raw_messages > 0:
+            residual = measured - state.static_factor * raw_prefix
+            if residual > 0:
+                ratio = _clamp_factor(residual / raw_messages)
+                state.messages_factor = (
+                    (state.messages_factor + ratio) / 2
+                    if state.messages_fitted else ratio
+                )
+                state.messages_fitted = True
+                state.calibrated = True
+        elif not state.static_fitted:
+            # A resumed thread never sees a prefix-only call, so there is
+            # nothing to separate the halves with. One factor for both is what
+            # the anchor exists to make survivable.
+            both = _clamp_factor(measured / raw_total)
+            state.static_factor = both
+            state.messages_factor = both
+            state.calibrated = True
+        state.anchor_tokens = measured
+        state.anchor_raw = raw_total
+        if state.calibrated and self._model_name:
+            _model_factors[self._model_name] = (
+                state.static_factor, state.messages_factor,
+            )
 
     def _measure(self, turn: Turn) -> ContextSnapshot:
         """Segment the conversation.
@@ -718,7 +917,6 @@ class ContextMeterPolicy(Policy):
         attributed twice.
         """
         state = self._state(turn.thread_id)
-        cal = state.calibration
 
         convo: list[Any] = []
         offloaded = 0
@@ -738,11 +936,14 @@ class ContextMeterPolicy(Policy):
             compact_trigger_tokens=int(
                 getattr(self._settings, "compact_trigger_tokens", 0) or 0
             ),
-            messages_tokens=self._scaled(
-                approx_tokens(convo, model=self._model), cal),
+            # Raw and uncorrected: ``revise_model_call`` is the hook that can
+            # see the whole prompt, so it does the correcting and the
+            # reconciling once, in one place.
+            messages_tokens=approx_tokens(convo, model=self._model),
             message_count=len(turn.messages),
             offloaded_digests=offloaded,
             calibrated=state.calibrated,
+            anchored=state.anchor_tokens > 0,
             **self._carry(turn.thread_id),
         )
 
@@ -792,19 +993,15 @@ class ContextMeterPolicy(Policy):
         state.cache_read_tokens += getattr(usage, "cache_read_tokens", 0)
         state.cost_usd += cost
 
-        # Calibrate: the provider just told us what our own estimate of this
-        # exact prompt was worth.
+        # Fit the corrections and re-anchor: the provider just told us what
+        # our own estimate of this exact prompt was worth.
         #
-        # Only the window owner may do this. The pending estimate describes the
-        # master's prompt, and the thread state is shared, so a subagent
+        # Only the window owner may. The pending estimate describes the
+        # master's prompt and the thread state is shared, so a subagent
         # reaching it would divide the master's estimate by its own, much
         # smaller, token count and permanently skew the panel's scale.
         if self._window:
-            if state.pending_estimate > 0 and usage.input_tokens > 0:
-                ratio = usage.input_tokens / state.pending_estimate
-                state.calibration = max(_CALIBRATION_MIN, min(_CALIBRATION_MAX, ratio))
-                state.calibrated = True
-            state.pending_estimate = 0
+            self._fit(state, usage)
 
         # Keep the window rows from the last measurement: this call changed what
         # was spent, not what is in the prompt. For a subagent (window=False)
@@ -816,6 +1013,25 @@ class ContextMeterPolicy(Policy):
             role=self._role, thread_id=thread_id, model=model
         )
         compactions, offloads = counters(thread_id)
+        # The prompt has just been measured and the reply it produced is now
+        # part of the window — and that is a provider number too. So for this
+        # one publish the headline is the provider's own arithmetic, with
+        # nothing estimated, and the rows are reconciled onto it.
+        window: dict[str, Any] = {}
+        if self._window and state.anchor_tokens > 0 and state.pending_raw:
+            rows = _allocate(
+                state, state.pending_raw,
+                usage.input_tokens + usage.output_tokens,
+            )
+            window = {
+                "system_tokens": rows["system"],
+                "tools_tokens": rows["tools"],
+                "memory_tokens": rows["memory"],
+                "skills_tokens": rows["skills"],
+                "messages_tokens": rows["messages"],
+                "anchored": True,
+                "window_measured": True,
+            }
         bus().publish(replace(
             base,
             role=self._role if self._window else base.role,
@@ -838,6 +1054,7 @@ class ContextMeterPolicy(Policy):
             offloads=offloads,
             started_at=state.started_at,
             ts=time.time(),
+            **window,
         ))
 
 
