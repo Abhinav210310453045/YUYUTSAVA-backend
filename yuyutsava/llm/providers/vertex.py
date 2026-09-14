@@ -10,6 +10,7 @@ from yuyutsava.llm.handle import Capability
 from yuyutsava.llm.quirks.first_chunk_retry import first_chunk_retry
 from yuyutsava.llm.quirks.gemini_parts import parts_safe
 from yuyutsava.llm.quirks.loop_affinity import loop_pinned
+from yuyutsava.llm.quirks.vertex_tool_schema import tool_schema_safe
 
 
 class VertexProvider(Provider):
@@ -30,7 +31,12 @@ class VertexProvider(Provider):
         # quirks/first_chunk_retry.
         # The grpc.aio client binds to the first event loop that uses it; see
         # quirks/loop_affinity for the one-instance-per-loop rule it enforces.
-        cls = loop_pinned(first_chunk_retry(parts_safe(mod.ChatVertexAI)))
+        # The SDK's schema converter rejects a JSON Schema type list, which MCP
+        # servers publish, and one such tool failed every turn. The quirk rewrites
+        # type lists, and uses the SDK's own converter to leave out any tool Vertex
+        # still cannot express. See quirks/vertex_tool_schema.
+        check = mod.functions_utils._format_to_gapic_tool
+        cls = loop_pinned(first_chunk_retry(parts_safe(tool_schema_safe(mod.ChatVertexAI, check))))
         return cls(
             model=settings.model,
             project=settings.project,

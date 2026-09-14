@@ -9,6 +9,17 @@ While the version stays `0.x`, minor bumps may contain breaking changes.
 ## [Unreleased]
 
 ### Fixed
+- **On Vertex, every chat turn failed, even "hi", because of one MCP tool's
+  schema.** Version 2.9.0 of the Google Drive MCP server declares
+  `manage_accounts.account_id` as `"type": ["string", "null"]`, which is valid
+  JSON Schema. The Vertex SDK's converter upper-cases the whole list into
+  `"['STRING', 'NULL']"`, and protobuf rejected it with a `ParseError` on every
+  request that bound the tool. The Vertex provider now rewrites type lists into
+  the equivalent `anyOf` (plus `nullable`) before binding. It also checks each
+  tool with the SDK's own converter and leaves out, with one warning, any tool
+  Vertex still cannot express, so one bad schema costs that tool rather than the
+  conversation (`llm/quirks/vertex_tool_schema.py`). The Gemini API provider
+  converts such schemas correctly and is unchanged.
 - **A permission prompt in the split terminal view could not be answered at
   all.** The card rendered, `approve/reject>` appeared in the pane, and typing
   did nothing: the prompt was a blocking `input()` while the full-screen
