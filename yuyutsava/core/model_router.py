@@ -37,7 +37,8 @@ from typing import Callable, Literal
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
 
-from yuyutsava.core.config import _env, llm_settings_from_env
+from yuyutsava.config.env import env
+from yuyutsava.core.config import llm_settings_from_env
 from yuyutsava.llm import chat_model
 from yuyutsava.storage.paths import state_dir
 
@@ -207,8 +208,8 @@ class RoutingSettings:
 
     @classmethod
     def from_env(cls) -> RoutingSettings:
-        enabled = _env("YUYUTSAVA_MODEL_ROUTING").lower() in ("1", "true", "yes")
-        raw = _env("YUYUTSAVA_ROUTING_THRESHOLDS")
+        enabled = env("YUYUTSAVA_MODEL_ROUTING").lower() in ("1", "true", "yes")
+        raw = env("YUYUTSAVA_ROUTING_THRESHOLDS")
         light_max, standard_max = _parse_thresholds(raw) if raw else _DEFAULT_THRESHOLDS
         return cls(enabled=enabled, light_max=light_max, standard_max=standard_max)
 

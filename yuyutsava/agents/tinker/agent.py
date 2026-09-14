@@ -27,7 +27,8 @@ from yuyutsava.agents.general_purpose.agent import GeneralPurposeAgent
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
 from yuyutsava.cli.agent_stack import _build_retrieval_stores
 from yuyutsava.context.config import ContextSettings
-from yuyutsava.core.config import LlmSettings, SearchConfig, _env, llm_settings_from_env
+from yuyutsava.config.env import env
+from yuyutsava.core.config import LlmSettings, SearchConfig, llm_settings_from_env
 from yuyutsava.core.engine import AgentBundle, build_tinker_agent
 from yuyutsava.llm import chat_model
 from yuyutsava.skills.registry import SkillRegistry
@@ -66,7 +67,7 @@ async def build_tinker_stack(
     """
     context_settings = ContextSettings.from_env(
         "tinker",
-        provider=_env("LLM_PROVIDER", None, "groq"),
+        provider=env("LLM_PROVIDER", None, "groq"),
     )
     compaction_model = chat_model(llm_settings_from_env("compaction"), temperature=0.0)
 

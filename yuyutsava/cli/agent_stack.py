@@ -27,7 +27,8 @@ from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
 from yuyutsava.agents.task_runner.tools import set_default_consent
 from yuyutsava.consent import ConsentRegistry
 from yuyutsava.context.config import ContextSettings
-from yuyutsava.core.config import DockerSettings, LlmSettings, LocalSettings, SearchConfig, _env
+from yuyutsava.config.env import env
+from yuyutsava.core.config import DockerSettings, LlmSettings, LocalSettings, SearchConfig
 from yuyutsava.core.engine import AgentBundle, build_cli_deepagent
 from yuyutsava.llm import chat_model
 from yuyutsava.core.config import llm_settings_from_env
@@ -191,7 +192,7 @@ async def build_agent_stack(
     # system, so offload + compaction are always on.
     context_settings = ContextSettings.from_env(
         "cli",
-        provider=_env("LLM_PROVIDER", None, "groq"),
+        provider=env("LLM_PROVIDER", None, "groq"),
     )
     compaction_model = chat_model(llm_settings_from_env("compaction"), temperature=0.0)
 

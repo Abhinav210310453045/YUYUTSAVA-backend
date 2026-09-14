@@ -16,7 +16,8 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-from yuyutsava.core.config import OLLAMA_BASE_URL, _env
+from yuyutsava.config.env import env
+from yuyutsava.core.config import OLLAMA_BASE_URL
 
 # Must match the vector(768) column in storage/pg/migrations.py.
 EMBEDDING_DIM = 768
@@ -56,12 +57,12 @@ class MemorySettings:
         cloud_url = os.environ.get("YUYUTSAVA_EMBED_CLOUD_URL", "").strip()
         if cloud_url:
             base = cloud_url.rstrip("/")
-            key = os.environ.get("YUYUTSAVA_EMBED_CLOUD_KEY", "").strip() or _env(
+            key = os.environ.get("YUYUTSAVA_EMBED_CLOUD_KEY", "").strip() or env(
                 "EMBED_API_KEY", None, "ollama"
             )
         else:
-            base = _env("EMBED_BASE_URL", None, OLLAMA_BASE_URL).rstrip("/")
-            key = _env("EMBED_API_KEY", None, "ollama")
+            base = env("EMBED_BASE_URL", None, OLLAMA_BASE_URL).rstrip("/")
+            key = env("EMBED_API_KEY", None, "ollama")
         if not base.endswith("/v1"):
             base = base + "/v1"
         model = os.environ.get("YUYUTSAVA_EMBED_MODEL", "").strip() or "nomic-embed-text"

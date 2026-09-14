@@ -1,7 +1,7 @@
 """Tunable knobs for the context controller.
 
 Role-aware via the same ``<ROLE>_<NAME>`` env prefix mechanism the LLM
-settings use (:func:`yuyutsava.core.config._env`), so e.g. the orchestrator
+settings use (:func:`yuyutsava.config.env.env`), so e.g. the orchestrator
 can compact earlier than the CLI chat agent::
 
     YUYUTSAVA_CONTEXT_COMPACT_FRACTION=0.7
@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from yuyutsava.core.config import _env
+from yuyutsava.config.env import env
 
 # Conservative per-provider input-context defaults. These are *budgets* the
 # compactor steers under, not API hard limits — erring low just compacts a
@@ -76,28 +76,28 @@ class ContextSettings:
     @classmethod
     def from_env(cls, role: str | None = None, *, provider: str = "") -> ContextSettings:
         def _int(name: str, default: int) -> int:
-            raw = _env(name, role)
+            raw = env(name, role)
             try:
                 return int(raw) if raw else default
             except ValueError:
                 return default
 
         def _float(name: str, default: float) -> float:
-            raw = _env(name, role)
+            raw = env(name, role)
             try:
                 return float(raw) if raw else default
             except ValueError:
                 return default
 
         def _csv(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
-            raw = _env(name, role)
+            raw = env(name, role)
             if not raw:
                 return default
             parts = tuple(p.strip() for p in raw.split(",") if p.strip())
             return parts or default
 
         def _bool(name: str, default: bool) -> bool:
-            raw = _env(name, role)
+            raw = env(name, role)
             if raw is None or raw == "":
                 return default
             return raw.strip().lower() in ("1", "true", "yes", "on")

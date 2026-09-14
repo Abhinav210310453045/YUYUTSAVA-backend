@@ -32,7 +32,7 @@ from typing import Any, Awaitable, Callable, Literal
 
 import psutil
 
-from yuyutsava.core.config import _env
+from yuyutsava.config.env import env
 from yuyutsava.daemon.channels import ChannelEvent, SystemMetricsPayload, TimelinePayload
 from yuyutsava.platform.process import run_capture
 
@@ -70,13 +70,13 @@ class ResourceSettings:
     @classmethod
     def from_env(cls) -> "ResourceSettings":
         def _num(name: str, default: float) -> float:
-            raw = _env(name)
+            raw = env(name)
             try:
                 return float(raw) if raw else default
             except ValueError:
                 return default
 
-        hints_raw = _env("YUYUTSAVA_RES_HEAVY_HINTS")
+        hints_raw = env("YUYUTSAVA_RES_HEAVY_HINTS")
         hints = frozenset(h.strip() for h in hints_raw.split(",") if h.strip())
         return cls(
             cpu_high_pct=_num("YUYUTSAVA_RES_CPU_HIGH_PCT", 85.0),
@@ -88,7 +88,7 @@ class ResourceSettings:
             emit_sec=max(1.0, _num("YUYUTSAVA_RES_EMIT_SEC", 10.0)),
             heavy_complexity=int(_num("YUYUTSAVA_RES_HEAVY_COMPLEXITY", 4)),
             heavy_hints=hints,
-            docker_stats=_env("YUYUTSAVA_RES_DOCKER_STATS").lower() in ("1", "true", "yes"),
+            docker_stats=env("YUYUTSAVA_RES_DOCKER_STATS").lower() in ("1", "true", "yes"),
         )
 
 

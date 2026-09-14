@@ -108,23 +108,17 @@ ALLOWED_UPWARD: frozenset[tuple[str, str]] = frozenset(
 ALLOWED_PRIVATE: frozenset[tuple[str, str, str]] = frozenset(
     {
         ("yuyutsava.agents.tinker.agent", "yuyutsava.cli.agent_stack", "_build_retrieval_stores"),
-        ("yuyutsava.agents.tinker.agent", "yuyutsava.core.config", "_env"),
         ("yuyutsava.agents.tinker.prompts", "yuyutsava.core.prompts", "_rules_section"),
         ("yuyutsava.agents.tinker.prompts", "yuyutsava.core.prompts", "_tool_discovery_section"),
-        ("yuyutsava.cli.agent_stack", "yuyutsava.core.config", "_env"),
-        ("yuyutsava.context.config", "yuyutsava.core.config", "_env"),
         ("yuyutsava.conversation.service", "yuyutsava.sessions.runner", "_CoalescedTicker"),
         ("yuyutsava.conversation.service", "yuyutsava.sessions.runner", "_count_memory_files"),
         ("yuyutsava.conversation.service", "yuyutsava.sessions.runner", "_resolve_session"),
         ("yuyutsava.core.engine", "yuyutsava.agents.orchestrator.agent", "_make_ask_user_tool"),
-        ("yuyutsava.daemon.bootstrap", "yuyutsava.core.config", "_env"),
-        ("yuyutsava.daemon.resources", "yuyutsava.core.config", "_env"),
         (
             "yuyutsava.daemon.web.routers.sessions",
             "yuyutsava.core.streaming",
             "_artifact_event_from_result",
         ),
-        ("yuyutsava.memory.config", "yuyutsava.core.config", "_env"),
     }
 )
 

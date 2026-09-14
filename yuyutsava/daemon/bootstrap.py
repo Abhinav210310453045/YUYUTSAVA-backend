@@ -30,6 +30,7 @@ from yuyutsava.agents.orchestrator.agent import OrchestratorDeps
 from yuyutsava.agents.orchestrator.capabilities import render_capabilities_block
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
 from yuyutsava.agents.task_runner.tools import set_default_consent, set_default_policy
+from yuyutsava.config.env import env
 from yuyutsava.consent import ConsentRegistry
 from yuyutsava.agents.triage.agent import TriageAgent
 from yuyutsava.async_subagents.launch_index import LaunchIndex
@@ -44,7 +45,6 @@ from yuyutsava.core.config import (
     LlmSettings,
     SearchConfig,
     SourceConfig,
-    _env,
     llm_settings_from_env,
 )
 from yuyutsava.llm import chat_model
@@ -1325,7 +1325,7 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     compaction_model = chat_model(llm_settings_from_env("compaction"), temperature=0.0)
     context_settings = ContextSettings.from_env(
         "orchestrator",
-        provider=_env("LLM_PROVIDER", "orchestrator", "groq"),
+        provider=env("LLM_PROVIDER", "orchestrator", "groq"),
     )
     logger.info(
         "  context   : compact >%d tokens, keep %d msgs, offload >%d chars",

@@ -43,6 +43,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, Protocol
 
+from yuyutsava.config.env import env
 from yuyutsava.storage.paths import events_config_path
 
 
@@ -59,25 +60,6 @@ OPENAI_BASE_URL = "https://api.openai.com/v1"
 #   Together    https://api.together.xyz/v1
 #   Fireworks   https://api.fireworks.ai/inference/v1
 #   Perplexity  https://api.perplexity.ai
-
-
-# ---------------------------------------------------------------------------
-# Env helper
-# ---------------------------------------------------------------------------
-
-
-def _env(name: str, role: str | None = None, default: str = "") -> str:
-    """Read ``<ROLE>_<NAME>`` first, then ``<NAME>``, then ``default``.
-
-    ``role=None`` means no prefix (current behaviour), preserving compatibility
-    with all existing callsites.
-    """
-    if role:
-        prefixed = f"{role.upper()}_{name}"
-        v = os.environ.get(prefixed, "").strip()
-        if v:
-            return v
-    return os.environ.get(name, "").strip() or default
 
 
 # ---------------------------------------------------------------------------
@@ -104,14 +86,14 @@ class GroqSettings:
 
     @classmethod
     def from_env(cls, role: str | None = None) -> GroqSettings:
-        key = _env("GROQ_API_KEY", role)
+        key = env("GROQ_API_KEY", role)
         if not key:
             raise RuntimeError(
                 "Set GROQ_API_KEY in the environment (or .env loaded by the CLI). "
                 "See https://console.groq.com/docs/overview"
             )
-        base = _env("GROQ_BASE_URL", role, GROQ_OPENAI_BASE_URL)
-        model = _env("GROQ_MODEL", role, "llama-3.3-70b-versatile")
+        base = env("GROQ_BASE_URL", role, GROQ_OPENAI_BASE_URL)
+        model = env("GROQ_MODEL", role, "llama-3.3-70b-versatile")
         return cls(api_key=key, base_url=base, model=model)
 
 
@@ -126,17 +108,17 @@ class OpenRouterSettings:
 
     @classmethod
     def from_env(cls, role: str | None = None) -> OpenRouterSettings:
-        key = _env("OPENROUTER_API_KEY", role)
+        key = env("OPENROUTER_API_KEY", role)
         if not key:
             raise RuntimeError(
                 "Set OPENROUTER_API_KEY in the environment (or .env loaded by the CLI). "
                 "See https://openrouter.ai/docs/quickstart"
             )
-        base = _env("OPENROUTER_BASE_URL", role, OPENROUTER_BASE_URL)
-        model = _env("OPENROUTER_MODEL", role, "openai/gpt-4o-mini")
+        base = env("OPENROUTER_BASE_URL", role, OPENROUTER_BASE_URL)
+        model = env("OPENROUTER_MODEL", role, "openai/gpt-4o-mini")
         headers: dict[str, str] = {}
-        referer = _env("OPENROUTER_HTTP_REFERER", role)
-        title = _env("OPENROUTER_APP_TITLE", role)
+        referer = env("OPENROUTER_HTTP_REFERER", role)
+        title = env("OPENROUTER_APP_TITLE", role)
         if referer:
             headers["HTTP-Referer"] = referer
         if title:
@@ -220,12 +202,12 @@ class AnthropicSettings:
 
     @classmethod
     def from_env(cls, role: str | None = None) -> AnthropicSettings:
-        key = _env("ANTHROPIC_API_KEY", role)
+        key = env("ANTHROPIC_API_KEY", role)
         if not key:
             raise RuntimeError(
                 "Set ANTHROPIC_API_KEY in the environment. See https://console.anthropic.com/"
             )
-        model = _env("ANTHROPIC_MODEL", role, "claude-haiku-4-5-20251001")
+        model = env("ANTHROPIC_MODEL", role, "claude-haiku-4-5-20251001")
         return cls(api_key=key, model=model)
 
 
@@ -246,11 +228,11 @@ class OllamaSettings:
 
     @classmethod
     def from_env(cls, role: str | None = None) -> OllamaSettings:
-        base = _env("OLLAMA_HOST", role, OLLAMA_BASE_URL)
+        base = env("OLLAMA_HOST", role, OLLAMA_BASE_URL)
         base = base.rstrip("/")
         if not base.endswith("/v1"):
             base = base + "/v1"
-        model = _env("OLLAMA_MODEL", role, "gemma4:e2b")
+        model = env("OLLAMA_MODEL", role, "gemma4:e2b")
         return cls(base_url=base, model=model)
 
 
@@ -268,14 +250,14 @@ class OpenAISettings:
 
     @classmethod
     def from_env(cls, role: str | None = None) -> OpenAISettings:
-        key = _env("OPENAI_API_KEY", role)
+        key = env("OPENAI_API_KEY", role)
         if not key:
             raise RuntimeError(
                 "Set OPENAI_API_KEY in the environment (or .env loaded by the CLI). "
                 "See https://platform.openai.com/api-keys"
             )
-        base = _env("OPENAI_BASE_URL", role, OPENAI_BASE_URL)
-        model = _env("OPENAI_MODEL", role, "gpt-4o-mini")
+        base = env("OPENAI_BASE_URL", role, OPENAI_BASE_URL)
+        model = env("OPENAI_MODEL", role, "gpt-4o-mini")
         return cls(api_key=key, base_url=base, model=model)
 
 
@@ -295,17 +277,17 @@ class OpenAICompatibleSettings:
 
     @classmethod
     def from_env(cls, role: str | None = None) -> OpenAICompatibleSettings:
-        base = _env("OPENAI_COMPATIBLE_BASE_URL", role)
+        base = env("OPENAI_COMPATIBLE_BASE_URL", role)
         if not base:
             raise RuntimeError(
                 "Set OPENAI_COMPATIBLE_BASE_URL for LLM_PROVIDER=openai_compatible "
                 "(e.g. https://api.x.ai/v1, https://api.deepseek.com/v1, "
                 "https://api.together.xyz/v1)."
             )
-        key = _env("OPENAI_COMPATIBLE_API_KEY", role)
+        key = env("OPENAI_COMPATIBLE_API_KEY", role)
         if not key:
             raise RuntimeError("Set OPENAI_COMPATIBLE_API_KEY for LLM_PROVIDER=openai_compatible.")
-        model = _env("OPENAI_COMPATIBLE_MODEL", role)
+        model = env("OPENAI_COMPATIBLE_MODEL", role)
         if not model:
             raise RuntimeError("Set OPENAI_COMPATIBLE_MODEL for LLM_PROVIDER=openai_compatible.")
         return cls(api_key=key, base_url=base.rstrip("/"), model=model)
@@ -328,13 +310,13 @@ class GoogleSettings:
 
     @classmethod
     def from_env(cls, role: str | None = None) -> GoogleSettings:
-        key = _env("GOOGLE_API_KEY", role) or _env("GEMINI_API_KEY", role)
+        key = env("GOOGLE_API_KEY", role) or env("GEMINI_API_KEY", role)
         if not key:
             raise RuntimeError(
                 "Set GOOGLE_API_KEY (or GEMINI_API_KEY) in the environment. "
                 "See https://ai.google.dev/gemini-api/docs/api-key"
             )
-        model = _env("GOOGLE_MODEL", role, "gemini-2.5-flash")
+        model = env("GOOGLE_MODEL", role, "gemini-2.5-flash")
         return cls(api_key=key, model=model)
 
 
@@ -365,15 +347,15 @@ class VertexSettings:
 
     @classmethod
     def from_env(cls, role: str | None = None) -> VertexSettings:
-        project = _env("VERTEX_PROJECT", role) or _env("GOOGLE_CLOUD_PROJECT", role)
+        project = env("VERTEX_PROJECT", role) or env("GOOGLE_CLOUD_PROJECT", role)
         if not project:
             raise RuntimeError(
                 "Set VERTEX_PROJECT (or GOOGLE_CLOUD_PROJECT) for LLM_PROVIDER=vertex, "
                 "and run `gcloud auth application-default login`."
             )
-        location = _env("VERTEX_LOCATION", role, "us-central1")
-        model = _env("VERTEX_MODEL", role, "gemini-2.5-flash")
-        raw_retries = _env("VERTEX_MAX_RETRIES", role, "6")
+        location = env("VERTEX_LOCATION", role, "us-central1")
+        model = env("VERTEX_MODEL", role, "gemini-2.5-flash")
+        raw_retries = env("VERTEX_MAX_RETRIES", role, "6")
         try:
             max_retries = max(0, int(raw_retries))
         except (TypeError, ValueError):
@@ -403,8 +385,8 @@ class BedrockSettings:
 
     @classmethod
     def from_env(cls, role: str | None = None) -> BedrockSettings:
-        region = _env("BEDROCK_REGION", role) or _env("AWS_REGION", role, "us-east-1")
-        model = _env("BEDROCK_MODEL", role, "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
+        region = env("BEDROCK_REGION", role) or env("AWS_REGION", role, "us-east-1")
+        model = env("BEDROCK_MODEL", role, "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
         return cls(region=region, model=model)
 
 
@@ -428,25 +410,25 @@ class AzureOpenAISettings:
 
     @classmethod
     def from_env(cls, role: str | None = None) -> AzureOpenAISettings:
-        key = _env("AZURE_OPENAI_API_KEY", role)
+        key = env("AZURE_OPENAI_API_KEY", role)
         if not key:
             raise RuntimeError(
                 "Set AZURE_OPENAI_API_KEY for LLM_PROVIDER=azure. "
                 "See https://learn.microsoft.com/azure/ai-services/openai/"
             )
-        endpoint = _env("AZURE_OPENAI_ENDPOINT", role)
+        endpoint = env("AZURE_OPENAI_ENDPOINT", role)
         if not endpoint:
             raise RuntimeError(
                 "Set AZURE_OPENAI_ENDPOINT (e.g. https://<resource>.openai.azure.com) "
                 "for LLM_PROVIDER=azure."
             )
-        deployment = _env("AZURE_OPENAI_DEPLOYMENT", role)
+        deployment = env("AZURE_OPENAI_DEPLOYMENT", role)
         if not deployment:
             raise RuntimeError(
                 "Set AZURE_OPENAI_DEPLOYMENT (your model deployment name) for LLM_PROVIDER=azure."
             )
-        api_version = _env("AZURE_OPENAI_API_VERSION", role, "2024-10-21")
-        model = _env("AZURE_OPENAI_MODEL", role, deployment)
+        api_version = env("AZURE_OPENAI_API_VERSION", role, "2024-10-21")
+        model = env("AZURE_OPENAI_MODEL", role, deployment)
         return cls(
             api_key=key,
             azure_endpoint=endpoint,
@@ -473,12 +455,12 @@ class MistralSettings:
 
     @classmethod
     def from_env(cls, role: str | None = None) -> MistralSettings:
-        key = _env("MISTRAL_API_KEY", role)
+        key = env("MISTRAL_API_KEY", role)
         if not key:
             raise RuntimeError(
                 "Set MISTRAL_API_KEY in the environment. See https://console.mistral.ai/api-keys/"
             )
-        model = _env("MISTRAL_MODEL", role, "mistral-large-latest")
+        model = env("MISTRAL_MODEL", role, "mistral-large-latest")
         return cls(api_key=key, model=model)
 
 
@@ -499,12 +481,12 @@ class CohereSettings:
 
     @classmethod
     def from_env(cls, role: str | None = None) -> CohereSettings:
-        key = _env("COHERE_API_KEY", role)
+        key = env("COHERE_API_KEY", role)
         if not key:
             raise RuntimeError(
                 "Set COHERE_API_KEY in the environment. See https://dashboard.cohere.com/api-keys"
             )
-        model = _env("COHERE_MODEL", role, "command-r-plus")
+        model = env("COHERE_MODEL", role, "command-r-plus")
         return cls(api_key=key, model=model)
 
 
@@ -517,7 +499,7 @@ def llm_settings_from_env(role: str | None = None) -> LlmSettings:
     cheap model for triage and a stronger one for the orchestrator.
     """
     effective_role = None if role in (None, "main") else role
-    provider = _env("LLM_PROVIDER", effective_role, "groq").lower()
+    provider = env("LLM_PROVIDER", effective_role, "groq").lower()
     # OpenAI-compatible providers (default ChatOpenAI path)
     if provider == "groq":
         return GroqSettings.from_env(effective_role)
@@ -807,8 +789,8 @@ class SearchConfig:
     def from_env(cls) -> SearchConfig:
         """Build from env; missing keys leave the provider unavailable."""
         return cls(
-            tavily_api_key=_env("TAVILY_API_KEY"),
-            exa_api_key=_env("EXA_API_KEY"),
+            tavily_api_key=env("TAVILY_API_KEY"),
+            exa_api_key=env("EXA_API_KEY"),
         )
 
     def is_available(self) -> dict[str, bool]:
