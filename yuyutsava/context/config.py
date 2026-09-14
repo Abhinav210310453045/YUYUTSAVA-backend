@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from yuyutsava.config.env import env, env_float, env_int
+from yuyutsava.config.env import env, env_flag, env_float, env_int
 
 # Conservative per-provider input-context defaults. These are *budgets* the
 # compactor steers under, not API hard limits — erring low just compacts a
@@ -82,12 +82,6 @@ class ContextSettings:
             parts = tuple(p.strip() for p in raw.split(",") if p.strip())
             return parts or default
 
-        def _bool(name: str, default: bool) -> bool:
-            raw = env(name, role)
-            if raw is None or raw == "":
-                return default
-            return raw.strip().lower() in ("1", "true", "yes", "on")
-
         return cls(
             max_input_tokens=env_int(
                 "YUYUTSAVA_CONTEXT_MAX_INPUT_TOKENS", role, default_max_input_tokens(provider)
@@ -98,7 +92,9 @@ class ContextSettings:
                 "YUYUTSAVA_CONTEXT_OFFLOAD_THRESHOLD_CHARS", role, 20_000
             ),
             always_offload_prefixes=_csv("YUYUTSAVA_CONTEXT_ALWAYS_OFFLOAD_PREFIXES", ("ws_",)),
-            semantic_recall=_bool("YUYUTSAVA_CONTEXT_SEMANTIC_RECALL", True),
+            semantic_recall=env_flag(
+                "YUYUTSAVA_CONTEXT_SEMANTIC_RECALL", role, True, true=("1", "true", "yes", "on")
+            ),
             pin_first_messages=env_int("YUYUTSAVA_CONTEXT_PIN_FIRST_MESSAGES", role, 2),
             summarizer_input_tokens=env_int(
                 "YUYUTSAVA_CONTEXT_SUMMARIZER_INPUT_TOKENS", role, 12_000

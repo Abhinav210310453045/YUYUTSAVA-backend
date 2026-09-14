@@ -24,7 +24,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-from yuyutsava.config.env import env_int
+from yuyutsava.config.env import env_flag, env_int
 
 DEFAULT_PG_DSN = "postgresql://yuyutsava:yuyutsava@127.0.0.1:5435/yuyutsava"
 
@@ -48,13 +48,12 @@ class StorageSettings:
             )
         dsn = os.environ.get("YUYUTSAVA_PG_DSN", "").strip() or DEFAULT_PG_DSN
 
-        require_raw = os.environ.get("YUYUTSAVA_STORAGE_REQUIRE", "").strip().lower()
         return cls(
             backend=backend,
             pg_dsn=dsn,
             pool_min=env_int("YUYUTSAVA_PG_POOL_MIN", default=1),
             pool_max=env_int("YUYUTSAVA_PG_POOL_MAX", default=10),
-            require=require_raw in ("1", "true", "yes"),
+            require=env_flag("YUYUTSAVA_STORAGE_REQUIRE", true=("1", "true", "yes")),
         )
 
     def is_postgres(self) -> bool:

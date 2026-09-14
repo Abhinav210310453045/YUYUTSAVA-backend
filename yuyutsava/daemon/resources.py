@@ -32,7 +32,7 @@ from typing import Any, Awaitable, Callable, Literal
 
 import psutil
 
-from yuyutsava.config.env import env, env_float
+from yuyutsava.config.env import env, env_flag, env_float
 from yuyutsava.daemon.channels import ChannelEvent, SystemMetricsPayload, TimelinePayload
 from yuyutsava.platform.process import run_capture
 
@@ -81,7 +81,7 @@ class ResourceSettings:
             emit_sec=max(1.0, env_float("YUYUTSAVA_RES_EMIT_SEC", default=10.0)),
             heavy_complexity=int(env_float("YUYUTSAVA_RES_HEAVY_COMPLEXITY", default=4)),
             heavy_hints=hints,
-            docker_stats=env("YUYUTSAVA_RES_DOCKER_STATS").lower() in ("1", "true", "yes"),
+            docker_stats=env_flag("YUYUTSAVA_RES_DOCKER_STATS", true=("1", "true", "yes")),
         )
 
 

@@ -43,7 +43,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, Protocol
 
-from yuyutsava.config.env import env, env_int
+from yuyutsava.config.env import env, env_flag, env_int
 from yuyutsava.storage.paths import events_config_path
 
 
@@ -716,8 +716,7 @@ class DaemonConfig:
 
         host = os.environ.get("YUYUTSAVA_DAEMON_HOST", "127.0.0.1").strip() or "127.0.0.1"
 
-        open_browser_raw = os.environ.get("YUYUTSAVA_DAEMON_OPEN_BROWSER", "").strip().lower()
-        open_browser = open_browser_raw in ("1", "true", "yes")
+        open_browser = env_flag("YUYUTSAVA_DAEMON_OPEN_BROWSER", true=("1", "true", "yes"))
 
         expiry = env_int("YUYUTSAVA_PROPOSAL_EXPIRY_SEC", default=300)
 

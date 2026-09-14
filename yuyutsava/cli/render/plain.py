@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from yuyutsava.cli.stream_smoother import TokenSmoother
-from yuyutsava.config.env import env_float, env_int
+from yuyutsava.config.env import env_flag, env_float, env_int
 from yuyutsava.core.streaming import StreamEvent
 
 _CYAN = "\033[36m"
@@ -123,8 +123,7 @@ class ChatRenderer:
         ``YUYUTSAVA_REPL_SMOOTH=0``, return None so the render path is
         byte-for-byte identical to printing chunks as they arrive.
         """
-        flag = os.environ.get("YUYUTSAVA_REPL_SMOOTH", "1").strip().lower()
-        if flag in ("0", "false", "no", "off"):
+        if not env_flag("YUYUTSAVA_REPL_SMOOTH", default=True, false=("0", "false", "no", "off")):
             return None
         try:
             if not sys.stdout.isatty():

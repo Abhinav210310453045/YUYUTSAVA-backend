@@ -75,7 +75,6 @@ import base64
 import contextlib
 import json
 import logging
-import os
 import time
 import uuid
 
@@ -83,7 +82,7 @@ from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
 
 from yuyutsava.audio_io.blobs import write_voice_wav
 from yuyutsava.audio_io.sentence import SentenceChunker
-from yuyutsava.config.env import env_float
+from yuyutsava.config.env import env_flag, env_float
 from yuyutsava.core.streaming import StreamEvent
 from yuyutsava.daemon.channels import AskPrompt
 from yuyutsava.daemon.interrupt_format import (
@@ -158,12 +157,7 @@ _STT_MIN_CONFIDENCE = _stt_min_confidence()
 # triggers on a real, transcribed utterance (never a bare onset), and echo/noise
 # that transcribes to nothing is ignored.
 def _barge_in_enabled() -> bool:
-    return os.environ.get("YUYUTSAVA_VOICE_BARGE_IN", "0").strip().lower() in (
-        "1",
-        "true",
-        "yes",
-        "on",
-    )
+    return env_flag("YUYUTSAVA_VOICE_BARGE_IN", true=("1", "true", "yes", "on"))
 
 
 _BARGE_IN_ENABLED = _barge_in_enabled()

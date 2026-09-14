@@ -16,7 +16,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-from yuyutsava.config.env import env, env_float, env_int
+from yuyutsava.config.env import env, env_flag, env_float, env_int
 from yuyutsava.core.config import OLLAMA_BASE_URL
 
 # Must match the vector(768) column in storage/pg/migrations.py.
@@ -46,8 +46,9 @@ class MemorySettings:
 
     @classmethod
     def from_env(cls, *, default_enabled: bool = False) -> MemorySettings:
-        raw = os.environ.get("YUYUTSAVA_MEMORY_ENABLED", "").strip().lower()
-        enabled = raw in ("1", "true", "yes") if raw else default_enabled
+        enabled = env_flag(
+            "YUYUTSAVA_MEMORY_ENABLED", default=default_enabled, true=("1", "true", "yes")
+        )
 
         # Local Ollama is the default. A separate cloud override lets you point
         # at a hosted OpenAI-compatible /embeddings endpoint without disturbing
@@ -69,8 +70,9 @@ class MemorySettings:
 
         top_k = env_int("YUYUTSAVA_MEMORY_TOP_K", default=5)
 
-        raw_pfx = os.environ.get("YUYUTSAVA_EMBED_PREFIXES", "").strip().lower()
-        use_prefixes = raw_pfx in ("1", "true", "yes") if raw_pfx else "nomic" in model.lower()
+        use_prefixes = env_flag(
+            "YUYUTSAVA_EMBED_PREFIXES", default="nomic" in model.lower(), true=("1", "true", "yes")
+        )
 
         min_score = env_float("YUYUTSAVA_MEMORY_MIN_SCORE", default=0.3)
         dedup_threshold = env_float("YUYUTSAVA_MEMORY_DEDUP", default=0.97)

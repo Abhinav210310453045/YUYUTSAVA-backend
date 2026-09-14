@@ -15,6 +15,8 @@ from typing import Any
 from rich.console import Console
 from rich.theme import Theme
 
+from yuyutsava.config.env import env_flag
+
 # Mirrors the ANSI palette in chat_repl.py so both renderers look related.
 _THEME = Theme(
     {
@@ -36,8 +38,7 @@ def rich_capable() -> bool:
     ``YUYUTSAVA_REPL_RICH=0`` opts out (same flag style as
     ``YUYUTSAVA_REPL_SMOOTH``).
     """
-    flag = os.environ.get("YUYUTSAVA_REPL_RICH", "1").strip().lower()
-    if flag in ("0", "false", "no", "off"):
+    if not env_flag("YUYUTSAVA_REPL_RICH", default=True, false=("0", "false", "no", "off")):
         return False
     if os.environ.get("TERM", "").strip().lower() == "dumb":
         return False

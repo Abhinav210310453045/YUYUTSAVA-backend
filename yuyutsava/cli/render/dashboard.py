@@ -76,6 +76,7 @@ from yuyutsava.cli.render.context_panel import (
     panel_fragments,
     panel_width_for,
 )
+from yuyutsava.config.env import env_flag
 
 logger = logging.getLogger("yuyutsava.cli.dashboard")
 
@@ -113,8 +114,7 @@ def dashboard_enabled() -> bool:
     ``YUYUTSAVA_REPL_RICH``. A terminal too narrow to split is checked
     separately, at start, because it can change.
     """
-    flag = os.environ.get("YUYUTSAVA_REPL_DASHBOARD", "1").strip().lower()
-    return flag not in ("0", "false", "no", "off")
+    return env_flag("YUYUTSAVA_REPL_DASHBOARD", default=True, false=("0", "false", "no", "off"))
 
 
 def terminal_cols() -> int:

@@ -34,6 +34,7 @@ import os
 import time
 from typing import Any
 
+from yuyutsava.config.env import env_flag
 from yuyutsava.policy.base import Policy
 from yuyutsava.policy.types import Directive, Turn
 
@@ -41,12 +42,7 @@ logger = logging.getLogger("yuyutsava.context.prompt_inspector")
 
 
 def _enabled() -> bool:
-    return os.environ.get("YUYUTSAVA_DEBUG_PROMPT", "").strip().lower() in (
-        "1",
-        "true",
-        "yes",
-        "on",
-    )
+    return env_flag("YUYUTSAVA_DEBUG_PROMPT", true=("1", "true", "yes", "on"))
 
 
 def _msg_size(content: Any) -> int:
