@@ -1,32 +1,13 @@
-"""Reusable semantic-retrieval base shared by memory, skills, and future RAG.
+"""Semantic retrieval shared by memory and skills recall.
 
-The pieces:
-  - ``Hit``               — generic search result
-  - ``VectorStore``       — the ``search`` contract retrieval consumers depend on
-  - ``PgVectorTable`` / ``PgVectorSearch`` — one pgvector engine, parametrized
-    over table/column names (cosine, keyword fallback, dedup, backfill)
-  - ``RetrievalInjector`` — hard-capped, never-raises prompt block from hits
-  - ``vector_literal`` / ``keyword_tokens`` — shared helpers
+- :mod:`~yuyutsava.retrieval.hit` — ``Hit``, a search result
+- :mod:`~yuyutsava.retrieval.store` — ``VectorStore``, the search contract consumers depend on
+- :mod:`~yuyutsava.retrieval.pg` — ``PgVectorTable`` and ``PgVectorSearch``, one pgvector
+  engine parametrised by table and column names
+- :mod:`~yuyutsava.retrieval.injector` — ``RetrievalInjector``, a capped prompt block built
+  from hits, which never raises
+- :mod:`~yuyutsava.retrieval.vector` and :mod:`~yuyutsava.retrieval.keyword` — shared helpers
 
-The embedder lives in :mod:`yuyutsava.memory.embedder` (already generic) and is
-shared per-process; it is re-exported here for discoverability.
+Embeddings come from :class:`~yuyutsava.memory.embedder.Embedder`. This package
+re-exports nothing: import a name from the module that owns it.
 """
-
-from __future__ import annotations
-
-from yuyutsava.retrieval.hit import Hit
-from yuyutsava.retrieval.injector import RetrievalInjector
-from yuyutsava.retrieval.keyword import keyword_tokens
-from yuyutsava.retrieval.pg import PgVectorSearch, PgVectorTable
-from yuyutsava.retrieval.store import VectorStore
-from yuyutsava.retrieval.vector import vector_literal
-
-__all__ = [
-    "Hit",
-    "RetrievalInjector",
-    "VectorStore",
-    "PgVectorSearch",
-    "PgVectorTable",
-    "keyword_tokens",
-    "vector_literal",
-]

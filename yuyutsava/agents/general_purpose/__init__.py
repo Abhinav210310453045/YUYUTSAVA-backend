@@ -1,5 +1,4 @@
-"""General-purpose subagent. See ``agent.GeneralPurposeAgent``."""
+"""The general-purpose sub-agent, :class:`~yuyutsava.agents.general_purpose.agent.GeneralPurposeAgent`.
 
-from yuyutsava.agents.general_purpose.agent import GeneralPurposeAgent
-
-__all__ = ["GeneralPurposeAgent"]
+This package re-exports nothing: import a name from the module that owns it.
+"""

@@ -1,10 +1,7 @@
-"""Postgres backend plumbing: connection pool + forward-only migrations.
+"""Postgres plumbing: the connection pool (:mod:`~yuyutsava.storage.pg.pool`) and
+forward-only schema migrations (:mod:`~yuyutsava.storage.pg.migrations`).
 
-Only active when ``YUYUTSAVA_STORAGE_BACKEND=postgres`` (see
-:mod:`yuyutsava.storage.backend`). SQLite remains the zero-config default;
-nothing in this package is imported on the SQLite path.
+Used only when ``YUYUTSAVA_STORAGE_BACKEND=postgres`` (see
+:mod:`yuyutsava.storage.backend`); SQLite is the zero-config default. This package
+re-exports nothing: import a name from the module that owns it.
 """
-
-from yuyutsava.storage.pg.pool import PgPool
-
-__all__ = ["PgPool"]

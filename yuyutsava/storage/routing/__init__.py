@@ -1,18 +1,11 @@
-"""Spillover routing: Postgres is the sole writer when healthy; SQLite is a
-transparent write *buffer* when Postgres is down.
+"""Spillover routing: Postgres is the sole writer while healthy; SQLite buffers writes while it is down.
 
-On a Postgres runtime error a write is redirected to the SQLite twin and the
-process is marked *degraded* (:mod:`health`). A background ``SELECT 1`` probe
-clears the flag on recovery and :mod:`reconcile` drains the buffered SQLite
-rows back into Postgres (idempotent ``INSERT ... ON CONFLICT DO NOTHING``) and
-then **deletes** them from SQLite, so a row never lives in both places.
+On a Postgres runtime error a write is redirected to SQLite and the process is
+marked degraded (:mod:`~yuyutsava.storage.routing.health`). A background probe clears
+the flag on recovery, and :mod:`~yuyutsava.storage.routing.reconcile` drains the
+buffered rows back into Postgres (``INSERT ... ON CONFLICT DO NOTHING``) and deletes
+them from SQLite, so a row never lives in both places. With no Postgres configured,
+nothing routes through here: SQLite is the only store.
 
-Pure-SQLite mode (no Postgres configured) never routes through here — SQLite is
-the permanent primary.
+This package re-exports nothing: import a name from the module that owns it.
 """
-
-from yuyutsava.storage.routing.errors import PG_RUNTIME_ERRORS
-from yuyutsava.storage.routing.facade import RoutedStore
-from yuyutsava.storage.routing.health import StorageHealth
-
-__all__ = ["PG_RUNTIME_ERRORS", "RoutedStore", "StorageHealth"]

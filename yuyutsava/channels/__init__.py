@@ -1,22 +1,12 @@
-"""Channel Invoke Plugin framework (Phase 3).
+"""Channel plugins: chat surfaces the daemon can enable and disable at runtime.
 
-Channels become runtime-managed plugins: outbound (the existing
-:class:`~yuyutsava.daemon.channels.UserChannel` contract) plus inbound
-(submit tasks, answer proposals/asks), enabled/disabled at runtime through
-:class:`~yuyutsava.channels.registry.ChannelPluginRegistry` with no daemon
-restart.
+A plugin sends outbound messages through the
+:class:`~yuyutsava.daemon.channels.UserChannel` contract and handles inbound ones —
+submitting tasks, answering proposals and asks — through
+:class:`~yuyutsava.channels.plugin.InboundSink`, the only daemon surface it sees.
+:class:`~yuyutsava.channels.registry.ChannelPluginRegistry` enables, disables and
+reloads plugins without a restart, configured by ``~/.yuyutsava/channels_config.json``
+(:mod:`yuyutsava.channels.config`). ``telegram/`` is the reference plugin.
 
-Layout:
-    plugin.py    — ``ChannelPlugin`` ABC + ``InboundSink`` (the only daemon
-                   surface a plugin sees)
-    config.py    — ``ChannelsConfig`` (~/.yuyutsava/channels_config.json)
-    registry.py  — lifecycle: enable/disable/reload, ChannelRouter wiring
-    telegram/    — reference plugin (Bot API long-polling)
-
-``yuyutsava/daemon/channels.py`` keeps the ChannelRouter and the message
-dataclasses — this package only adds the plugin machinery on top.
+This package re-exports nothing: import a name from the module that owns it.
 """
-
-from yuyutsava.channels.plugin import ChannelPlugin, InboundSink
-
-__all__ = ["ChannelPlugin", "InboundSink"]

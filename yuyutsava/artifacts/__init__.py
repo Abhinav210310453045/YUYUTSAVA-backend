@@ -1,32 +1,10 @@
-"""General (non-card) artifact store for inline chat & voice artifacts.
+"""Artifacts produced inline in chat and voice replies, outside any TODO card.
 
-The TODO board can pin rich pluggable artifacts (JSX sandbox, audio, HTML,
-diagram, text) to a card. This package lets the master/tinker produce the SAME
-block types for an inline chat/voice reply — not bound to any card — reusing the
-one artifact-block registry in :mod:`yuyutsava.todoboard.artifacts`. Each
-artifact is a directory under ``blobs/artifacts/<id>/`` holding the produced
-file plus a ``meta.json`` sidecar (the record — no SQLite table). Served at
-``/artifacts/{id}`` and rendered by the frontend's shared block registry.
+They use the same block types the TODO board pins to cards (JSX sandbox, audio,
+HTML, diagram, text), through the one block registry in
+:mod:`yuyutsava.todoboard.artifacts`. Each artifact is a directory under
+``blobs/artifacts/<id>/`` holding the produced file and a ``meta.json`` record; the
+daemon serves it at ``/artifacts/{id}``.
+
+This package re-exports nothing: import a name from the module that owns it.
 """
-
-from yuyutsava.artifacts.store import (
-    ArtifactError,
-    ArtifactRecordV1,
-    CONTENT_KINDS,
-    artifacts_root,
-    create_from_content,
-    generate,
-    attach_file,
-    load_record,
-)
-
-__all__ = [
-    "ArtifactError",
-    "ArtifactRecordV1",
-    "CONTENT_KINDS",
-    "artifacts_root",
-    "create_from_content",
-    "generate",
-    "attach_file",
-    "load_record",
-]

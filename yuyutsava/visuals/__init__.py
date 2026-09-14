@@ -1,18 +1,10 @@
-"""YUYUTSAVA visuals — a delivery-agnostic rendering library.
+"""Rendering library for charts, diagrams, styled tables, code images, math and timelines.
 
-Give the agent "visual wings": charts, diagrams, styled tables, code images,
-math and timelines. The core (:func:`render`) has no dependency on LangChain,
-FastAPI, or the agent runtime, so the same renderers are reused by:
+:func:`~yuyutsava.visuals.render.render` has no dependency on LangChain, FastAPI or the
+agent runtime, so the same renderers serve the agent tools
+(:mod:`yuyutsava.visuals.tools`) and the daemon's routes
+(:mod:`yuyutsava.daemon.web.routers.visuals`). Results persist through
+:class:`~yuyutsava.visuals.store.VisualStore`.
 
-  - LLM tools   → ``yuyutsava.visuals.tools.make_visual_tools``
-  - REST / SSE  → ``yuyutsava.daemon.web.routers.visuals``
-
-Persist results with :class:`~yuyutsava.visuals.store.VisualStore`.
+This package re-exports nothing: import a name from the module that owns it.
 """
-
-from __future__ import annotations
-
-from .render import render
-from .types import KINDS, RenderResult, VisualError
-
-__all__ = ["render", "RenderResult", "VisualError", "KINDS"]
