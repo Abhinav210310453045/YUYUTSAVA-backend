@@ -52,15 +52,17 @@ logger = logging.getLogger("yuyutsava.context.offload")
 # ``LIMITS.max_tool_result_chars`` (100k) where ``guard_tool_result`` would
 # otherwise replace the body with a notice. Adding a reader here without that
 # bound would reintroduce unrecoverable truncation.
-DEFAULT_EXCLUDE_TOOLS: frozenset[str] = frozenset({
-    "ctx_fetch_artifact",
-    "ctx_grep_artifact",
-    "ctx_recall",
-    "ctx_history",
-    "ctx_history_message",
-    "ctx_history_grep",
-    "write_todos",
-})
+DEFAULT_EXCLUDE_TOOLS: frozenset[str] = frozenset(
+    {
+        "ctx_fetch_artifact",
+        "ctx_grep_artifact",
+        "ctx_recall",
+        "ctx_history",
+        "ctx_history_message",
+        "ctx_history_grep",
+        "write_todos",
+    }
+)
 
 # Tools exempt from the *always-offload prefix* rule but still subject to the
 # size threshold. ``task`` and ``tool_search`` results are normally small and
@@ -69,10 +71,12 @@ DEFAULT_EXCLUDE_TOOLS: frozenset[str] = frozenset({
 # oversized one reached ``guard_tool_result`` and came back as a "too large"
 # notice with the body nowhere. Size-offloading them instead stores the whole
 # thing and hands the agent an artifact id.
-SIZE_ONLY_TOOLS: frozenset[str] = frozenset({
-    "tool_search",
-    "task",
-})
+SIZE_ONLY_TOOLS: frozenset[str] = frozenset(
+    {
+        "tool_search",
+        "task",
+    }
+)
 
 
 class ToolResultOffloadPolicy(Policy):
@@ -132,14 +136,16 @@ class ToolResultOffloadPolicy(Policy):
         except Exception:
             # Storage failure must not fail the agent turn; the display-side
             # guard_tool_result backstop still caps truly pathological sizes.
-            logger.exception(
-                "offload: artifact put failed for %s — passing through", tool_name)
+            logger.exception("offload: artifact put failed for %s — passing through", tool_name)
             return result
 
         digest = json.dumps(build_digest(tool_name, artifact_id, content))
         logger.debug(
             "offload: %s result %d chars → %s (%d-char digest)",
-            tool_name, len(content), artifact_id, len(digest),
+            tool_name,
+            len(content),
+            artifact_id,
+            len(digest),
         )
         # How much this conversation kept OUT of the window is the counterpart
         # to how full the window is; one without the other reads as if the

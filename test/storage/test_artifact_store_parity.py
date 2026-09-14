@@ -78,7 +78,8 @@ class _ArtifactContract:
         self.assertEqual(got.content, body[10:15])
         self.assertEqual(got.offset, 10)
         self.assertEqual(
-            got.total_chars, 100,
+            got.total_chars,
+            100,
             "total_chars must be the FULL size, not the slice — the agent uses "
             "it to decide whether to page further",
         )
@@ -110,8 +111,7 @@ class _ArtifactContract:
         self.assertEqual((await self.store.get(aid)).content, body)
 
     async def test_grep_finds_matching_lines(self) -> None:
-        aid = await self.store.put(
-            self.tid("grep"), "t", "alpha\nbeta\ngamma beta\ndelta")
+        aid = await self.store.put(self.tid("grep"), "t", "alpha\nbeta\ngamma beta\ndelta")
         hits = await self.store.grep(aid, r"beta")
         self.assertEqual(hits, ["2: beta", "3: gamma beta"])
 
@@ -176,7 +176,8 @@ class SqliteUnifiedArtifacts(_ArtifactContract, unittest.IsolatedAsyncioTestCase
     async def created_ts_of(self, artifact_id: str) -> float:
         async with self.store._d.reading() as conn:
             cur = await conn.execute(
-                "SELECT created_ts FROM artifacts WHERE artifact_id = ?", (artifact_id,))
+                "SELECT created_ts FROM artifacts WHERE artifact_id = ?", (artifact_id,)
+            )
             return float((await cur.fetchone())[0])
 
     async def test_recall_is_unavailable(self) -> None:
@@ -210,14 +211,14 @@ class PostgresUnifiedArtifacts(_ArtifactContract, unittest.IsolatedAsyncioTestCa
     async def asyncTearDown(self) -> None:
         async with self.pool.connection() as conn:
             await conn.execute(
-                "DELETE FROM artifact_chunks WHERE thread_id LIKE %s",
-                (f"thread-%{self._suffix}",))
+                "DELETE FROM artifact_chunks WHERE thread_id LIKE %s", (f"thread-%{self._suffix}",)
+            )
             await conn.execute(
-                "DELETE FROM artifacts WHERE thread_id LIKE %s",
-                (f"thread-%{self._suffix}",))
+                "DELETE FROM artifacts WHERE thread_id LIKE %s", (f"thread-%{self._suffix}",)
+            )
             await conn.execute(
-                "DELETE FROM threads WHERE thread_id LIKE %s",
-                (f"thread-%{self._suffix}",))
+                "DELETE FROM threads WHERE thread_id LIKE %s", (f"thread-%{self._suffix}",)
+            )
         await self.pool.close()
 
     def tid(self, name: str) -> str:
@@ -226,8 +227,9 @@ class PostgresUnifiedArtifacts(_ArtifactContract, unittest.IsolatedAsyncioTestCa
     async def created_ts_of(self, artifact_id: str) -> float:
         async with self.pool.connection() as conn:
             cur = await conn.execute(
-                "SELECT extract(epoch FROM created_ts) AS ts FROM artifacts "
-                "WHERE artifact_id = %s", (artifact_id,))
+                "SELECT extract(epoch FROM created_ts) AS ts FROM artifacts WHERE artifact_id = %s",
+                (artifact_id,),
+            )
             return float((await cur.fetchone())[0])
 
     async def test_parent_thread_row_is_created(self) -> None:
@@ -235,8 +237,7 @@ class PostgresUnifiedArtifacts(_ArtifactContract, unittest.IsolatedAsyncioTestCa
         tid = self.tid("fk")
         await self.store.put(tid, "t", "body")
         async with self.pool.connection() as conn:
-            cur = await conn.execute(
-                "SELECT count(*) FROM threads WHERE thread_id = %s", (tid,))
+            cur = await conn.execute("SELECT count(*) FROM threads WHERE thread_id = %s", (tid,))
             self.assertEqual((await cur.fetchone())[0], 1)
 
     async def test_recall_is_off_without_semantic_recall(self) -> None:
@@ -251,7 +252,8 @@ class RecallCapabilityIsDeclared(unittest.TestCase):
         from yuyutsava.context.artifacts_unified import UnifiedArtifactStore
 
         self.assertIsInstance(
-            UnifiedArtifactStore.supports_recall, property,
+            UnifiedArtifactStore.supports_recall,
+            property,
             "supports_recall stopped being a declared property — bootstrap.py "
             "branches on it, and a getattr probe is what ADR-002 removed "
             "everywhere else",
@@ -263,19 +265,21 @@ class RecallCapabilityIsDeclared(unittest.TestCase):
         from yuyutsava.storage.dialect import PostgresDialect
 
         class _Embedder:
-            async def embed(self, *a, **k): return []
+            async def embed(self, *a, **k):
+                return []
 
         pool = object()
         d = PostgresDialect(pool)
         self.assertFalse(UnifiedArtifactStore(d, pool=pool).supports_recall)
+        self.assertFalse(UnifiedArtifactStore(d, pool=pool, embedder=_Embedder()).supports_recall)
         self.assertFalse(
-            UnifiedArtifactStore(d, pool=pool, embedder=_Embedder()).supports_recall)
-        self.assertFalse(
-            UnifiedArtifactStore(d, embedder=_Embedder(), semantic_recall=True).supports_recall)
+            UnifiedArtifactStore(d, embedder=_Embedder(), semantic_recall=True).supports_recall
+        )
         self.assertTrue(
             UnifiedArtifactStore(
                 d, pool=pool, embedder=_Embedder(), semantic_recall=True
-            ).supports_recall)
+            ).supports_recall
+        )
 
     def test_sqlite_never_reports_recall(self) -> None:
         """Even handed an embedder and the flag — there is no vector column."""
@@ -285,12 +289,15 @@ class RecallCapabilityIsDeclared(unittest.TestCase):
         from yuyutsava.storage.dialect import SqliteDialect
 
         class _Embedder:
-            async def embed(self, *a, **k): return []
+            async def embed(self, *a, **k):
+                return []
 
         with _tf.TemporaryDirectory() as tmp:
             store = UnifiedArtifactStore(
                 SqliteDialect(ArtifactSchema(Path(tmp) / "state.db")),
-                pool=object(), embedder=_Embedder(), semantic_recall=True,
+                pool=object(),
+                embedder=_Embedder(),
+                semantic_recall=True,
             )
             self.assertFalse(
                 store.supports_recall,

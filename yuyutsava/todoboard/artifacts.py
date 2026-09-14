@@ -44,35 +44,33 @@ Generator = Callable[[dict[str, Any], Path], "tuple[Path, str]"]
 class ArtifactBlock:
     """One attachment family the board knows how to validate/serve/render."""
 
-    name: str                          # unique block id (registry key)
-    kind: str                          # storage kind its rows carry
+    name: str  # unique block id (registry key)
+    kind: str  # storage kind its rows carry
     validate: Validator
-    mimes: tuple[str, ...] = ()        # mimes this block claims; "image/*" =
-                                       # prefix wildcard; () = any mime of its kind
-    upload_mimes: tuple[str, ...] = () # subset accepted by the multipart upload
-                                       # endpoint; () = not user-uploadable
+    mimes: tuple[str, ...] = ()  # mimes this block claims; "image/*" =
+    # prefix wildcard; () = any mime of its kind
+    upload_mimes: tuple[str, ...] = ()  # subset accepted by the multipart upload
+    # endpoint; () = not user-uploadable
     generate: Generator | None = None
-    needs_context: bool = False        # generate() wants the hydrated card +
-                                       # timeline injected into its spec (the
-                                       # dispatcher collects them ON the event
-                                       # loop — generators run in a thread and
-                                       # must never touch the loop-bound store)
-    singleton: bool = False            # at most one generated attachment of
-                                       # this block per card — regeneration
-                                       # updates the existing row in place
-                                       # instead of attaching a duplicate
+    needs_context: bool = False  # generate() wants the hydrated card +
+    # timeline injected into its spec (the
+    # dispatcher collects them ON the event
+    # loop — generators run in a thread and
+    # must never touch the loop-bound store)
+    singleton: bool = False  # at most one generated attachment of
+    # this block per card — regeneration
+    # updates the existing row in place
+    # instead of attaching a duplicate
 
 
 def _mime_matches(mime: str | None, patterns: tuple[str, ...]) -> bool:
     if not mime:
         return False
-    return any(
-        mime == p or (p.endswith("/*") and mime.startswith(p[:-1]))
-        for p in patterns
-    )
+    return any(mime == p or (p.endswith("/*") and mime.startswith(p[:-1])) for p in patterns)
 
 
 # ── validators ──────────────────────────────────────────────────────────
+
 
 def _existing_file(path: str | None, kind: str) -> Path:
     if not path:
@@ -87,8 +85,9 @@ def _file_validator(kind: str, family: str | None = None) -> Validator:
     """Path must be an existing file; mime is inferred from the suffix when
     the caller didn't send one; ``family`` pins the mime's major type."""
 
-    def validate(*, path: str | None = None, url: str | None = None,
-                 mime: str | None = None) -> str | None:
+    def validate(
+        *, path: str | None = None, url: str | None = None, mime: str | None = None
+    ) -> str | None:
         p = _existing_file(path, kind)
         mime = mime or mimetypes.guess_type(str(p))[0]
         if family and not (mime or "").startswith(family + "/"):
@@ -100,8 +99,9 @@ def _file_validator(kind: str, family: str | None = None) -> Validator:
     return validate
 
 
-def _link_validator(*, path: str | None = None, url: str | None = None,
-                    mime: str | None = None) -> str | None:
+def _link_validator(
+    *, path: str | None = None, url: str | None = None, mime: str | None = None
+) -> str | None:
     if not url:
         raise TodoValidationError("link attachments require a url")
     if not str(url).startswith(("http://", "https://")):
@@ -110,6 +110,7 @@ def _link_validator(*, path: str | None = None, url: str | None = None,
 
 
 # ── generators ──────────────────────────────────────────────────────────
+
 
 def _generate_visual(spec: dict[str, Any], out_dir: Path) -> tuple[Path, str]:
     """Render a visual spec (``{"kind": "diagram"|"chart"|..., ...}``) into
@@ -177,46 +178,71 @@ def kind_for_upload(mime: str | None) -> str | None:
 # first claimant.
 
 _TEXT_MIMES = (
-    "text/plain", "text/markdown", "text/html", "text/csv", "application/json",
+    "text/plain",
+    "text/markdown",
+    "text/html",
+    "text/csv",
+    "application/json",
 )
 
-register_block(ArtifactBlock(
-    name="text", kind="file",
-    validate=_file_validator("file"),
-    mimes=_TEXT_MIMES, upload_mimes=_TEXT_MIMES,
-))
-register_block(ArtifactBlock(
-    name="image", kind="image",
-    validate=_file_validator("image", family="image"),
-    mimes=("image/*",),
-    upload_mimes=("image/png", "image/jpeg", "image/gif", "image/webp",
-                  "image/svg+xml"),
-))
-register_block(ArtifactBlock(
-    name="video", kind="video",
-    validate=_file_validator("video", family="video"),
-    mimes=("video/*",),
-    upload_mimes=("video/mp4", "video/webm", "video/quicktime"),
-))
-register_block(ArtifactBlock(
-    name="link", kind="link",
-    validate=_link_validator,
-))
-register_block(ArtifactBlock(
-    name="diagram", kind="diagram",
-    validate=_file_validator("diagram", family="image"),
-    mimes=("image/*",),
-    generate=_generate_visual,
-))
-register_block(ArtifactBlock(
-    name="artifact", kind="artifact",
-    validate=_file_validator("artifact"),
-))
-register_block(ArtifactBlock(
-    name="file", kind="file",  # non-text files: the generic download-tile kind
-    validate=_file_validator("file"),
-    upload_mimes=("application/pdf", "application/zip"),
-))
+register_block(
+    ArtifactBlock(
+        name="text",
+        kind="file",
+        validate=_file_validator("file"),
+        mimes=_TEXT_MIMES,
+        upload_mimes=_TEXT_MIMES,
+    )
+)
+register_block(
+    ArtifactBlock(
+        name="image",
+        kind="image",
+        validate=_file_validator("image", family="image"),
+        mimes=("image/*",),
+        upload_mimes=("image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml"),
+    )
+)
+register_block(
+    ArtifactBlock(
+        name="video",
+        kind="video",
+        validate=_file_validator("video", family="video"),
+        mimes=("video/*",),
+        upload_mimes=("video/mp4", "video/webm", "video/quicktime"),
+    )
+)
+register_block(
+    ArtifactBlock(
+        name="link",
+        kind="link",
+        validate=_link_validator,
+    )
+)
+register_block(
+    ArtifactBlock(
+        name="diagram",
+        kind="diagram",
+        validate=_file_validator("diagram", family="image"),
+        mimes=("image/*",),
+        generate=_generate_visual,
+    )
+)
+register_block(
+    ArtifactBlock(
+        name="artifact",
+        kind="artifact",
+        validate=_file_validator("artifact"),
+    )
+)
+register_block(
+    ArtifactBlock(
+        name="file",
+        kind="file",  # non-text files: the generic download-tile kind
+        validate=_file_validator("file"),
+        upload_mimes=("application/pdf", "application/zip"),
+    )
+)
 
 # ── Phase-7 blocks ──────────────────────────────────────────────────────
 # Each lives in its own module; these lines are its entire registration —

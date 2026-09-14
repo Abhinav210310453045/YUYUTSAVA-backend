@@ -57,8 +57,7 @@ def _render_summary(c: TodoCardSummaryV1) -> str:
     pin = "📌 " if c.pinned else ""
     tags = f" #{' #'.join(c.tags)}" if c.tags else ""
     objectives = (
-        f", {c.objective_done_count}/{c.objective_count} objectives"
-        if c.objective_count else ""
+        f", {c.objective_done_count}/{c.objective_count} objectives" if c.objective_count else ""
     )
     return (
         f"- {pin}{c.card_id} [{c.status}] {c.title}{tags} "
@@ -73,7 +72,7 @@ def _humanize_event(e) -> str:
         "card_status": f"card {p.get('from')} → {p.get('to')}",
         "objective_created": f"objective added: {title} [{p.get('phase')}]",
         "objective_phase": f"{title}: {p.get('from')} → {p.get('to')}"
-                           + (f" ({p['reason']})" if p.get("reason") else ""),
+        + (f" ({p['reason']})" if p.get("reason") else ""),
         "objective_updated": f"{title}: {', '.join(p.get('fields', []))} changed",
         "objective_deleted": f"objective removed: {title}",
         "note_assigned": f"note {p.get('note_id')} → objective",
@@ -102,8 +101,7 @@ def _render_card(c: TodoCardV1, events: list | None = None) -> str:
     if c.notes:
         lines.append("notes:")
         lines.extend(
-            f"  [{n.author}{'→' + n.objective_id if n.objective_id else ''}] "
-            f"({n.note_id}) {n.body}"
+            f"  [{n.author}{'→' + n.objective_id if n.objective_id else ''}] ({n.note_id}) {n.body}"
             for n in c.notes
         )
     if c.attachments:
@@ -148,9 +146,7 @@ def make_todo_tools(
         renamable headline; put any detail/context into ``note``. ``status``
         is one of: inbox, active, done, archived (default inbox).
         """
-        card = await ex.add_card(
-            title, status=status, tags=tags, note=note, note_author=author
-        )
+        card = await ex.add_card(title, status=status, tags=tags, note=note, note_author=author)
         return f"created TODO card {card.card_id}: {card.title!r} [{card.status}]"
 
     @tool
@@ -219,7 +215,11 @@ def make_todo_tools(
         """Update a TODO card's title, status, pinned flag, or tags. Only the
         fields you pass change; the rest stay as they are."""
         card = await ex.update_card(
-            card_id, title=title, status=status, pinned=pinned, tags=tags,
+            card_id,
+            title=title,
+            status=status,
+            pinned=pinned,
+            tags=tags,
             actor=author,
         )
         return f"updated {card.card_id}: {card.title!r} [{card.status}]"
@@ -281,8 +281,13 @@ def make_todo_tools(
         (what it produced) — the journey document weaves these in. ``order``
         repositions the objective in the card's list."""
         obj = await ex.update_objective(
-            objective_id, title=title, phase=phase, order_idx=order,
-            reason=reason, outcome=outcome, actor=author,
+            objective_id,
+            title=title,
+            phase=phase,
+            order_idx=order,
+            reason=reason,
+            outcome=outcome,
+            actor=author,
         )
         return f"objective {obj.objective_id} is now [{obj.phase}]: {obj.title!r}"
 
@@ -296,9 +301,7 @@ def make_todo_tools(
         """Attach an existing note to an objective on the same card (or clear
         the assignment by passing no objective_id). Use this to convert older
         prose notes into the structured think flow."""
-        note = await ex.assign_note(
-            note_id, objective_id=objective_id, phase=phase, actor=author
-        )
+        note = await ex.assign_note(note_id, objective_id=objective_id, phase=phase, actor=author)
         target = f"objective {note.objective_id}" if note.objective_id else "card level (general)"
         return f"note {note.note_id} assigned to {target}"
 
@@ -321,7 +324,12 @@ def make_todo_tools(
         if kind not in ATTACHMENT_KINDS:
             return f"todo-board error [TodoValidationError]: kind must be one of {ATTACHMENT_KINDS}"
         att = await ex.attach(
-            card_id, kind, path=path, url=url, title=title, mime=mime,
+            card_id,
+            kind,
+            path=path,
+            url=url,
+            title=title,
+            mime=mime,
             actor=author,
         )
         return f"attached {att.kind} {att.attachment_id} to {card_id}"
@@ -359,9 +367,7 @@ def make_todo_tools(
                 "todo-board error [TodoValidationError]: spec must be a "
                 "JSON object, not a list/scalar"
             )
-        att = await ex.generate_artifact(
-            card_id, block, spec, title=title, actor=author
-        )
+        att = await ex.generate_artifact(card_id, block, spec, title=title, actor=author)
         return (
             f"generated {block} artifact {att.attachment_id} ({att.mime}) "
             f"on {card_id}: {Path(att.path).name if att.path else ''}"

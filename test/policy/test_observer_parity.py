@@ -34,8 +34,14 @@ from yuyutsava.policy.adapter import LangChainPolicyAdapter
 THREAD = "thr-observer"
 
 
-def _ai(text: str, *, msg_id: str = "a1", input_tokens: int | None = None,
-        output_tokens: int = 0, model: str = "") -> AIMessage:
+def _ai(
+    text: str,
+    *,
+    msg_id: str = "a1",
+    input_tokens: int | None = None,
+    output_tokens: int = 0,
+    model: str = "",
+) -> AIMessage:
     msg = AIMessage(content=text, id=msg_id)
     if input_tokens is not None:
         msg.usage_metadata = {  # type: ignore[attr-defined]
@@ -48,8 +54,9 @@ def _ai(text: str, *, msg_id: str = "a1", input_tokens: int | None = None,
     return msg
 
 
-async def _observe(policy: Any, phase: str, messages: list[Any],
-                   thread_id: str = THREAD) -> dict | None:
+async def _observe(
+    policy: Any, phase: str, messages: list[Any], thread_id: str = THREAD
+) -> dict | None:
     """Drive one phase through the adapter, the way the graph does."""
     adapter = LangChainPolicyAdapter([policy])
     with patch("yuyutsava.policy.adapter._current_thread_id", lambda: thread_id):
@@ -89,7 +96,8 @@ class Transcript(unittest.IsolatedAsyncioTestCase):
         await _observe(policy, "before_model", messages)
         await _observe(policy, "after_model", messages)
         self.assertEqual(
-            len(store.written), 1,
+            len(store.written),
+            1,
             "the same message was persisted twice; the seen-set is not working",
         )
 
@@ -97,8 +105,9 @@ class Transcript(unittest.IsolatedAsyncioTestCase):
         store = _Store()
         policy = self._policy(store)
         await _observe(policy, "before_model", [HumanMessage("hi", id="h1")])
-        await _observe(policy, "after_model",
-                       [HumanMessage("hi", id="h1"), _ai("there", msg_id="a1")])
+        await _observe(
+            policy, "after_model", [HumanMessage("hi", id="h1"), _ai("there", msg_id="a1")]
+        )
         self.assertEqual([m.id for m in store.written[1][1]], ["a1"])
 
     async def test_messages_without_an_id_are_skipped(self) -> None:
@@ -108,15 +117,16 @@ class Transcript(unittest.IsolatedAsyncioTestCase):
 
     async def test_nothing_is_written_without_a_thread(self) -> None:
         store = _Store()
-        await _observe(self._policy(store), "before_model",
-                       [HumanMessage("hi", id="h1")], thread_id="")
+        await _observe(
+            self._policy(store), "before_model", [HumanMessage("hi", id="h1")], thread_id=""
+        )
         self.assertEqual(store.written, [])
 
     async def test_a_store_failure_never_fails_the_turn(self) -> None:
         with self.assertLogs("yuyutsava.context.transcript", level="ERROR"):
             result = await _observe(
-                self._policy(_FailingStore()), "before_model",
-                [HumanMessage("hi", id="h1")])
+                self._policy(_FailingStore()), "before_model", [HumanMessage("hi", id="h1")]
+            )
         self.assertIsNone(result)
 
     async def test_a_failed_write_is_retried_next_phase(self) -> None:
@@ -135,8 +145,8 @@ class Transcript(unittest.IsolatedAsyncioTestCase):
 
         store = _Store()
         result = await _observe(
-            self._policy(store, index=_BadIndex()), "before_model",
-            [HumanMessage("hi", id="h1")])
+            self._policy(store, index=_BadIndex()), "before_model", [HumanMessage("hi", id="h1")]
+        )
         self.assertIsNone(result)
         self.assertEqual(len(store.written), 1, "the store write was rolled back")
 
@@ -154,9 +164,11 @@ class Budget(unittest.IsolatedAsyncioTestCase):
     async def test_the_cap_boundary_is_inclusive(self) -> None:
         """``>=`` — one token below is silent, exactly at the cap fires."""
         self.assertIsNone(
-            await _observe(self._policy(), "after_model", [_ai("x", input_tokens=99)]))
+            await _observe(self._policy(), "after_model", [_ai("x", input_tokens=99)])
+        )
         self.assertIsNotNone(
-            await _observe(self._policy(), "after_model", [_ai("x", input_tokens=100)]))
+            await _observe(self._policy(), "after_model", [_ai("x", input_tokens=100)])
+        )
 
     async def test_the_total_accumulates_across_calls(self) -> None:
         policy = self._policy()
@@ -184,15 +196,13 @@ class Budget(unittest.IsolatedAsyncioTestCase):
         first = await _observe(policy, "after_model", [_ai("x", input_tokens=250)])
         second = await _observe(policy, "after_model", [_ai("x", input_tokens=250)])
         self.assertIsNotNone(first)
-        self.assertIsNone(
-            second, "the wrap-up directive repeats every turn once the cap is hit")
+        self.assertIsNone(second, "the wrap-up directive repeats every turn once the cap is hit")
 
     async def test_reset_re_arms_it(self) -> None:
         policy = self._policy()
         await _observe(policy, "after_model", [_ai("x", input_tokens=250)])
         policy.reset()
-        self.assertIsNone(
-            await _observe(policy, "after_model", [_ai("x", input_tokens=10)]))
+        self.assertIsNone(await _observe(policy, "after_model", [_ai("x", input_tokens=10)]))
 
     async def test_a_call_with_no_usage_counts_nothing(self) -> None:
         policy = self._policy()
@@ -222,19 +232,20 @@ class Usage(unittest.IsolatedAsyncioTestCase):
     async def test_one_row_per_model_call(self) -> None:
         store = self._Store()
         policy = self._policy(store, model_name="m1", task_id="t1", thread_id="th1")
-        await _observe(policy, "after_model",
-                       [_ai("x", input_tokens=1000, output_tokens=500)])
+        await _observe(policy, "after_model", [_ai("x", input_tokens=1000, output_tokens=500)])
         (row,) = store.rows
         self.assertEqual(
-            (row.role, row.model, row.input_tokens, row.output_tokens,
-             row.task_id, row.thread_id),
+            (row.role, row.model, row.input_tokens, row.output_tokens, row.task_id, row.thread_id),
             ("cli", "m1", 1000, 500, "t1", "th1"),
         )
 
     async def test_cost_is_computed_from_the_price_table(self) -> None:
         store = self._Store()
-        await _observe(self._policy(store, model_name="m1"), "after_model",
-                       [_ai("x", input_tokens=1_000_000, output_tokens=1_000_000)])
+        await _observe(
+            self._policy(store, model_name="m1"),
+            "after_model",
+            [_ai("x", input_tokens=1_000_000, output_tokens=1_000_000)],
+        )
         self.assertAlmostEqual(store.rows[0].est_cost_usd, 3.0, places=6)
 
     async def test_no_usage_metadata_writes_no_row(self) -> None:
@@ -245,20 +256,29 @@ class Usage(unittest.IsolatedAsyncioTestCase):
 
     async def test_zero_tokens_writes_no_row(self) -> None:
         store = self._Store()
-        await _observe(self._policy(store, model_name="m1"), "after_model",
-                       [_ai("x", input_tokens=0, output_tokens=0)])
+        await _observe(
+            self._policy(store, model_name="m1"),
+            "after_model",
+            [_ai("x", input_tokens=0, output_tokens=0)],
+        )
         self.assertEqual(store.rows, [])
 
     async def test_the_response_model_name_is_the_fallback(self) -> None:
         store = self._Store()
-        await _observe(self._policy(store), "after_model",
-                       [_ai("x", input_tokens=10, model="claude-from-response")])
+        await _observe(
+            self._policy(store),
+            "after_model",
+            [_ai("x", input_tokens=10, model="claude-from-response")],
+        )
         self.assertEqual(store.rows[0].model, "claude-from-response")
 
     async def test_the_build_time_name_wins(self) -> None:
         store = self._Store()
-        await _observe(self._policy(store, model_name="m1"), "after_model",
-                       [_ai("x", input_tokens=10, model="claude-from-response")])
+        await _observe(
+            self._policy(store, model_name="m1"),
+            "after_model",
+            [_ai("x", input_tokens=10, model="claude-from-response")],
+        )
         self.assertEqual(store.rows[0].model, "m1")
 
     async def test_a_store_failure_never_fails_the_turn(self) -> None:
@@ -267,8 +287,9 @@ class Usage(unittest.IsolatedAsyncioTestCase):
                 raise RuntimeError("db down")
 
         with self.assertLogs("yuyutsava.daemon.usage", level="ERROR"):
-            result = await _observe(self._policy(_Broken(), model_name="m1"),
-                                    "after_model", [_ai("x", input_tokens=10)])
+            result = await _observe(
+                self._policy(_Broken(), model_name="m1"), "after_model", [_ai("x", input_tokens=10)]
+            )
         self.assertIsNone(result)
 
 
@@ -291,10 +312,8 @@ class PromptInspector(unittest.IsolatedAsyncioTestCase):
         import os
 
         with patch.dict(os.environ, {"YUYUTSAVA_DEBUG_PROMPT": "1"}, clear=False):
-            with self.assertLogs(
-                    "yuyutsava.context.prompt_inspector", level="INFO") as cm:
-                await _observe(self._policy(), "before_model",
-                               [HumanMessage("hi"), _ai("there")])
+            with self.assertLogs("yuyutsava.context.prompt_inspector", level="INFO") as cm:
+                await _observe(self._policy(), "before_model", [HumanMessage("hi"), _ai("there")])
         self.assertIn("PROMPT INSPECT [cli]", cm.output[0])
         self.assertIn("2 msgs", cm.output[0])
 
@@ -302,8 +321,7 @@ class PromptInspector(unittest.IsolatedAsyncioTestCase):
         import os
 
         with patch.dict(os.environ, {"YUYUTSAVA_DEBUG_PROMPT": "1"}, clear=False):
-            self.assertIsNone(
-                await _observe(self._policy(), "before_model", [HumanMessage("hi")]))
+            self.assertIsNone(await _observe(self._policy(), "before_model", [HumanMessage("hi")]))
 
 
 class UsageIsResolvedOnce(unittest.IsolatedAsyncioTestCase):
@@ -328,11 +346,13 @@ class UsageIsResolvedOnce(unittest.IsolatedAsyncioTestCase):
     async def test_the_latest_ai_message_wins(self) -> None:
         from yuyutsava.policy.adapter import _latest_usage
 
-        usage = _latest_usage([
-            _ai("old", msg_id="a1", input_tokens=1),
-            HumanMessage("mid", id="h1"),
-            _ai("new", msg_id="a2", input_tokens=99),
-        ])
+        usage = _latest_usage(
+            [
+                _ai("old", msg_id="a1", input_tokens=1),
+                HumanMessage("mid", id="h1"),
+                _ai("new", msg_id="a2", input_tokens=99),
+            ]
+        )
         self.assertEqual(usage.input_tokens, 99)
 
     async def test_no_ai_message_yields_none(self) -> None:

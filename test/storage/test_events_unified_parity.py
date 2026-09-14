@@ -55,8 +55,12 @@ PG_UP = _pg_reachable()
 
 def _rule(rid: str, glob: str = "fs.*", decision: str = "auto_approve") -> ConsentRule:
     return ConsentRule(
-        rule_id=rid, topic_glob=glob, match_json=json.dumps({"topic": glob, "ext": "pdf"}),
-        decision=decision, created_ts=time.time(), expires_ts=None,
+        rule_id=rid,
+        topic_glob=glob,
+        match_json=json.dumps({"topic": glob, "ext": "pdf"}),
+        decision=decision,
+        created_ts=time.time(),
+        expires_ts=None,
     )
 
 
@@ -94,7 +98,8 @@ class _CounterContract:
         self.assertEqual(errors, [], f"concurrent incr raised: {errors}")
         self.assertEqual(await self.counters.get(self.tool, self.day), 5, "an increment was lost")
         self.assertEqual(
-            sorted(results), [1, 2, 3, 4, 5],
+            sorted(results),
+            [1, 2, 3, 4, 5],
             f"two callers saw the same count: {sorted(results)}",
         )
 
@@ -112,7 +117,8 @@ class _ConsentRuleContract:
         await self.rules.put(_rule(self.rid("b")))
         rule = next(r for r in await self.rules.list() if r.rule_id == self.rid("b"))
         self.assertIsInstance(
-            rule.match_json, str,
+            rule.match_json,
+            str,
             "match_json came back as a non-string; ConsentEvaluator does "
             "json.loads() on it and would fail on a dict",
         )
@@ -146,8 +152,6 @@ class _ConsentRuleContract:
         self.assertEqual(mine, [second, first])
 
 
-
-
 # ---------------------------------------------------------------------------
 # proposals / decisions / consent_grants  (playbook order 3, 4, 7)
 # ---------------------------------------------------------------------------
@@ -165,10 +169,18 @@ class _ProposalContract:
         from yuyutsava.storage.models import Proposal
 
         return Proposal(
-            proposal_id=pid, event_id=f"ev-{pid}", topic="fs.changed",
-            summary="a file changed", proposed="run the tests",
-            subagent="coder", urgency=2, created_ts=1000.0, expires_ts=2000.0,
-            status=status, session_id="sess-1", agent_path="orchestrator",
+            proposal_id=pid,
+            event_id=f"ev-{pid}",
+            topic="fs.changed",
+            summary="a file changed",
+            proposed="run the tests",
+            subagent="coder",
+            urgency=2,
+            created_ts=1000.0,
+            expires_ts=2000.0,
+            status=status,
+            session_id="sess-1",
+            agent_path="orchestrator",
         )
 
     async def _put_proposal(self, pid: str, status: str = "pending") -> None:
@@ -188,12 +200,24 @@ class _ProposalContract:
         await self._put_proposal(pid)
         got = await self.proposals.get(pid)
         self.assertIsNotNone(got)
-        for field in ("proposal_id", "event_id", "topic", "summary", "proposed",
-                      "subagent", "urgency", "created_ts", "expires_ts",
-                      "status", "session_id", "agent_path"):
+        for field in (
+            "proposal_id",
+            "event_id",
+            "topic",
+            "summary",
+            "proposed",
+            "subagent",
+            "urgency",
+            "created_ts",
+            "expires_ts",
+            "status",
+            "session_id",
+            "agent_path",
+        ):
             with self.subTest(field=field):
                 self.assertEqual(
-                    getattr(got, field), getattr(self._proposal(pid), field),
+                    getattr(got, field),
+                    getattr(self._proposal(pid), field),
                     f"{field} did not survive the round trip",
                 )
 
@@ -213,7 +237,8 @@ class _ProposalContract:
         await self._put_proposal(pid, status="approved")
         got = await self.proposals.get(pid)
         self.assertEqual(
-            got.status, "pending",
+            got.status,
+            "pending",
             "a re-put overwrote the row. ON CONFLICT DO NOTHING means the "
             "FIRST write wins; a redelivered event must not resurrect a "
             "proposal the user already decided on.",
@@ -224,9 +249,11 @@ class _ProposalContract:
         pid = self.rid("p-cas")
         await self._put_proposal(pid)
         first = await self.proposals.try_set_status(
-            pid, from_status="pending", to_status="approved")
+            pid, from_status="pending", to_status="approved"
+        )
         second = await self.proposals.try_set_status(
-            pid, from_status="pending", to_status="approved")
+            pid, from_status="pending", to_status="approved"
+        )
         self.assertTrue(first)
         self.assertFalse(
             second,
@@ -236,8 +263,11 @@ class _ProposalContract:
         self.assertEqual((await self.proposals.get(pid)).status, "approved")
 
     async def test_try_set_status_on_a_missing_row_is_false(self) -> None:
-        self.assertFalse(await self.proposals.try_set_status(
-            self.rid("p-ghost"), from_status="pending", to_status="approved"))
+        self.assertFalse(
+            await self.proposals.try_set_status(
+                self.rid("p-ghost"), from_status="pending", to_status="approved"
+            )
+        )
 
 
 class _DecisionContract:
@@ -265,12 +295,17 @@ class _DecisionContract:
             self._t0 = _t.time()
         return self._t0
 
-    async def _put(self, *, outcome: str = "approved", ts: float,
-                   event_id: str | None = None) -> None:
+    async def _put(
+        self, *, outcome: str = "approved", ts: float, event_id: str | None = None
+    ) -> None:
         await self.decisions.put(
-            proposal_id=None, event_id=event_id or self.rid("d-ev"),
-            outcome=outcome, action_summary="did the thing", ts=ts,
-            session_id="sess-1", agent_path="orchestrator",
+            proposal_id=None,
+            event_id=event_id or self.rid("d-ev"),
+            outcome=outcome,
+            action_summary="did the thing",
+            ts=ts,
+            session_id="sess-1",
+            agent_path="orchestrator",
         )
 
     async def _my_decisions(self, limit: int = 50, cursor: float | None = None):
@@ -287,8 +322,7 @@ class _DecisionContract:
         # information is lost — time.time() itself resolves to about a
         # microsecond — but bit-exact equality no longer holds, and a test that
         # demanded it would be asserting float representation, not ordering.
-        self._assert_ts(
-            [d.ts for d in got], [self.t0 + 3, self.t0 + 2, self.t0 + 1])
+        self._assert_ts([d.ts for d in got], [self.t0 + 3, self.t0 + 2, self.t0 + 1])
 
     async def test_cursor_pages_strictly_older(self) -> None:
         """Keyset pagination: ``ts < cursor``, so no row is served twice."""
@@ -296,7 +330,8 @@ class _DecisionContract:
             await self._put(ts=ts)
         page = await self._my_decisions(cursor=self.t0 + 2)
         self._assert_ts(
-            [d.ts for d in page], [self.t0 + 1],
+            [d.ts for d in page],
+            [self.t0 + 1],
             "the cursor is inclusive on one backend — the boundary row would "
             "be rendered twice while paging",
         )
@@ -309,13 +344,17 @@ class _DecisionContract:
     async def test_optional_fields_round_trip(self) -> None:
         ev = self.rid("d-ev")
         await self.decisions.put(
-            proposal_id=None, event_id=ev, outcome="skipped",
-            action_summary=None, ts=self.t0 + 9, session_id=None, agent_path=None,
+            proposal_id=None,
+            event_id=ev,
+            outcome="skipped",
+            action_summary=None,
+            ts=self.t0 + 9,
+            session_id=None,
+            agent_path=None,
         )
         # Tolerance, not equality: TIMESTAMPTZ resolves to 1 us since
         # migration v20, so an epoch float round-trips rounded.
-        row = next(d for d in await self._my_decisions()
-                   if abs(d.ts - (self.t0 + 9)) < 1e-6)
+        row = next(d for d in await self._my_decisions() if abs(d.ts - (self.t0 + 9)) < 1e-6)
         self.assertIsNone(row.proposal_id)
         self.assertIsNone(row.action_summary)
         self.assertIsNone(row.session_id)
@@ -340,12 +379,14 @@ class _DecisionContract:
         topics = {h["topic"] for h in hits}
         self.assertIn("fs.changed", topics)
         self.assertNotIn(
-            "git.pushed", topics,
+            "git.pushed",
+            topics,
             "the topic glob did not filter — recall would feed unrelated "
             "history into the orchestrator's prompt",
         )
         self.assertEqual(
-            set(hits[0]), {"outcome", "action_summary", "ts", "topic"},
+            set(hits[0]),
+            {"outcome", "action_summary", "ts", "topic"},
             "recall's dict shape differs between backends",
         )
 
@@ -366,9 +407,14 @@ class _ConsentGrantContract:
         from yuyutsava.consent.models import Grant
 
         return Grant(
-            grant_id=gid, domain="fs", subject_key="write:/tmp",
-            decision=decision, scope=scope, scope_ref="sess-1",
-            created_ts=1000.0, expires_ts=2000.0,
+            grant_id=gid,
+            domain="fs",
+            subject_key="write:/tmp",
+            decision=decision,
+            scope=scope,
+            scope_ref="sess-1",
+            created_ts=1000.0,
+            expires_ts=2000.0,
         )
 
     async def _my_grants(self):
@@ -378,11 +424,17 @@ class _ConsentGrantContract:
         gid = self.rid("g-round")
         await self.grants.put(self._grant(gid))
         got = next(g for g in await self._my_grants() if g.grant_id == gid)
-        for field in ("domain", "subject_key", "decision", "scope",
-                      "scope_ref", "created_ts", "expires_ts"):
+        for field in (
+            "domain",
+            "subject_key",
+            "decision",
+            "scope",
+            "scope_ref",
+            "created_ts",
+            "expires_ts",
+        ):
             with self.subTest(field=field):
-                self.assertEqual(getattr(got, field),
-                                 getattr(self._grant(gid), field))
+                self.assertEqual(getattr(got, field), getattr(self._grant(gid), field))
 
     async def test_put_overwrites(self) -> None:
         """Unlike proposals, a grant re-put REPLACES.
@@ -416,10 +468,18 @@ class _ConsentGrantContract:
         from yuyutsava.consent.models import Grant
 
         gid = self.rid("g-null")
-        await self.grants.put(Grant(
-            grant_id=gid, domain="fs", subject_key="k", decision="allow",
-            scope="project", scope_ref="", created_ts=1000.0, expires_ts=None,
-        ))
+        await self.grants.put(
+            Grant(
+                grant_id=gid,
+                domain="fs",
+                subject_key="k",
+                decision="allow",
+                scope="project",
+                scope_ref="",
+                created_ts=1000.0,
+                expires_ts=None,
+            )
+        )
         got = next(g for g in await self._my_grants() if g.grant_id == gid)
         self.assertIsNone(got.expires_ts)
 
@@ -436,12 +496,15 @@ class _EventPayloadContract:
     async def test_payload_comes_back_as_a_dict_on_both_backends(self) -> None:
         eid = self.rid("e-dict")
         await self.events.put_event_payload(
-            event_id=eid, topic="fs.changed", ts=1000.0,
+            event_id=eid,
+            topic="fs.changed",
+            ts=1000.0,
             payload={"path": "/tmp/x", "n": 3, "nested": {"a": [1, 2]}},
         )
         got = await self.events.get_event_payload(eid)
         self.assertIsInstance(
-            got.payload, dict,
+            got.payload,
+            dict,
             "the payload came back as a string. jsonb parses, TEXT does not — "
             "callers index into this without checking.",
         )
@@ -451,8 +514,11 @@ class _EventPayloadContract:
     async def test_roundtrip_preserves_the_record(self) -> None:
         eid = self.rid("e-round")
         await self.events.put_event_payload(
-            event_id=eid, topic="git.pushed", ts=1234.5,
-            payload={"k": "v"}, blob_path="/tmp/blob.png",
+            event_id=eid,
+            topic="git.pushed",
+            ts=1234.5,
+            payload={"k": "v"},
+            blob_path="/tmp/blob.png",
         )
         got = await self.events.get_event_payload(eid)
         self.assertEqual(got.event_id, eid)
@@ -466,10 +532,8 @@ class _EventPayloadContract:
     async def test_put_replaces(self) -> None:
         """Re-delivering an event updates it — this one is an upsert, not a skip."""
         eid = self.rid("e-replace")
-        await self.events.put_event_payload(
-            event_id=eid, topic="a", ts=1.0, payload={"v": 1})
-        await self.events.put_event_payload(
-            event_id=eid, topic="b", ts=2.0, payload={"v": 2})
+        await self.events.put_event_payload(event_id=eid, topic="a", ts=1.0, payload={"v": 1})
+        await self.events.put_event_payload(event_id=eid, topic="b", ts=2.0, payload={"v": 2})
         got = await self.events.get_event_payload(eid)
         self.assertEqual(got.topic, "b")
         self.assertEqual(got.payload["v"], 2)
@@ -480,7 +544,8 @@ class _EventPayloadContract:
 
         eid = self.rid("e-obj")
         await self.events.put_event_payload(
-            event_id=eid, topic="t", ts=1.0, payload={"p": _P("/tmp/x")})
+            event_id=eid, topic="t", ts=1.0, payload={"p": _P("/tmp/x")}
+        )
         got = await self.events.get_event_payload(eid)
         self.assertEqual(got.payload["p"], "/tmp/x")
 
@@ -491,10 +556,10 @@ class _EventPayloadContract:
         the file. Deleting the row here would orphan the file forever.
         """
         plain, blobbed = self.rid("e-plain"), self.rid("e-blob")
+        await self.events.put_event_payload(event_id=plain, topic="t", ts=100.0, payload={})
         await self.events.put_event_payload(
-            event_id=plain, topic="t", ts=100.0, payload={})
-        await self.events.put_event_payload(
-            event_id=blobbed, topic="t", ts=100.0, payload={}, blob_path="/tmp/b.png")
+            event_id=blobbed, topic="t", ts=100.0, payload={}, blob_path="/tmp/b.png"
+        )
 
         await self.events.delete_event_payloads_older_than(500.0)
         self.assertIsNone(await self.events.get_event_payload(plain))
@@ -507,9 +572,11 @@ class _EventPayloadContract:
     async def test_blob_prefix_sweep_matches_on_prefix(self) -> None:
         keep, drop = self.rid("e-keep"), self.rid("e-drop")
         await self.events.put_event_payload(
-            event_id=drop, topic="t", ts=100.0, payload={}, blob_path="/tmp/voice/a.wav")
+            event_id=drop, topic="t", ts=100.0, payload={}, blob_path="/tmp/voice/a.wav"
+        )
         await self.events.put_event_payload(
-            event_id=keep, topic="t", ts=100.0, payload={}, blob_path="/tmp/visuals/b.png")
+            event_id=keep, topic="t", ts=100.0, payload={}, blob_path="/tmp/visuals/b.png"
+        )
 
         n = await self.events.delete_event_payloads_with_blob_prefix("/tmp/voice/", 500.0)
         self.assertEqual(n, 1)
@@ -518,8 +585,7 @@ class _EventPayloadContract:
 
     async def test_sweeps_respect_the_cutoff(self) -> None:
         eid = self.rid("e-young")
-        await self.events.put_event_payload(
-            event_id=eid, topic="t", ts=9000.0, payload={})
+        await self.events.put_event_payload(event_id=eid, topic="t", ts=9000.0, payload={})
         await self.events.delete_event_payloads_older_than(500.0)
         self.assertIsNotNone(await self.events.get_event_payload(eid))
 
@@ -529,19 +595,25 @@ class _PendingAskContract:
 
     def _record(self, ask_id: str, **over) -> dict:
         rec = {
-            "ask_id": ask_id, "created_ts": 1000.0, "surface": "cli",
-            "session_id": "sess-1", "thread_id": self.rid("t-ask"),
-            "card_id": None, "task_id": None, "interrupt_id": "int-1",
-            "agent_path": "orchestrator", "agent_label": "Orchestrator",
-            "title": "Proceed?", "body": "About to delete 3 files",
+            "ask_id": ask_id,
+            "created_ts": 1000.0,
+            "surface": "cli",
+            "session_id": "sess-1",
+            "thread_id": self.rid("t-ask"),
+            "card_id": None,
+            "task_id": None,
+            "interrupt_id": "int-1",
+            "agent_path": "orchestrator",
+            "agent_label": "Orchestrator",
+            "title": "Proceed?",
+            "body": "About to delete 3 files",
             "options": ["yes", "no"],
         }
         rec.update(over)
         return rec
 
     async def _my_asks(self):
-        return [a for a in await self.asks.list_pending(limit=500)
-                if self.owns(a["ask_id"])]
+        return [a for a in await self.asks.list_pending(limit=500) if self.owns(a["ask_id"])]
 
     async def test_roundtrip_preserves_the_wire_record(self) -> None:
         aid = self.rid("a-round")
@@ -550,7 +622,8 @@ class _PendingAskContract:
         self.assertEqual(got["title"], "Proceed?")
         self.assertEqual(got["body"], "About to delete 3 files")
         self.assertEqual(
-            got["options"], ["yes", "no"],
+            got["options"],
+            ["yes", "no"],
             "options came back unparsed. They are stored as a JSON string and "
             "the UI renders them as a list.",
         )
@@ -567,7 +640,8 @@ class _PendingAskContract:
         await self.asks.put(self._record(aid, title="DIFFERENT"))
         got = await self.asks.get(aid)
         self.assertEqual(
-            got["title"], "Proceed?",
+            got["title"],
+            "Proceed?",
             "a re-put overwrote a resolved ask — the user's answer would be "
             "discarded and the agent would ask again",
         )
@@ -655,17 +729,25 @@ class _SqliteCase(unittest.IsolatedAsyncioTestCase):
 
 
 class SqliteUnified(
-    _CounterContract, _ConsentRuleContract,
-    _ProposalContract, _DecisionContract, _ConsentGrantContract,
-    _EventPayloadContract, _PendingAskContract,
+    _CounterContract,
+    _ConsentRuleContract,
+    _ProposalContract,
+    _DecisionContract,
+    _ConsentGrantContract,
+    _EventPayloadContract,
+    _PendingAskContract,
     _SqliteCase,
 ):
     async def asyncSetUp(self) -> None:
         await super().asyncSetUp()
         from yuyutsava.storage.dialect import EventsSqliteDialect
         from yuyutsava.storage.events.unified import (
-            UnifiedConsentGrantStore, UnifiedConsentRuleStore, UnifiedDecisionStore,
-            UnifiedEventStore, UnifiedPendingAskStore, UnifiedProposalStore,
+            UnifiedConsentGrantStore,
+            UnifiedConsentRuleStore,
+            UnifiedDecisionStore,
+            UnifiedEventStore,
+            UnifiedPendingAskStore,
+            UnifiedProposalStore,
             UnifiedToolCounterStore,
         )
 
@@ -698,7 +780,9 @@ class _PgCase(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self) -> None:
         async with self.pool.connection() as conn:
             await conn.execute("DELETE FROM tool_call_counters WHERE tool_name = %s", (self.tool,))
-            await conn.execute("DELETE FROM consent_rules WHERE rule_id LIKE %s", (f"rule-%{self._suffix}",))
+            await conn.execute(
+                "DELETE FROM consent_rules WHERE rule_id LIKE %s", (f"rule-%{self._suffix}",)
+            )
             # Shared PG instance: every row this case wrote carries the suffix.
             like = f"rule-%{self._suffix}"
             await conn.execute("DELETE FROM decisions WHERE event_id LIKE %s", (like,))
@@ -734,17 +818,25 @@ class _PgCase(unittest.IsolatedAsyncioTestCase):
 
 @unittest.skipUnless(PG_UP, f"no Postgres reachable at {_pg_dsn()}")
 class PostgresUnified(
-    _CounterContract, _ConsentRuleContract,
-    _ProposalContract, _DecisionContract, _ConsentGrantContract,
-    _EventPayloadContract, _PendingAskContract,
+    _CounterContract,
+    _ConsentRuleContract,
+    _ProposalContract,
+    _DecisionContract,
+    _ConsentGrantContract,
+    _EventPayloadContract,
+    _PendingAskContract,
     _PgCase,
 ):
     async def asyncSetUp(self) -> None:
         await super().asyncSetUp()
         from yuyutsava.storage.dialect import PostgresDialect
         from yuyutsava.storage.events.unified import (
-            UnifiedConsentGrantStore, UnifiedConsentRuleStore, UnifiedDecisionStore,
-            UnifiedEventStore, UnifiedPendingAskStore, UnifiedProposalStore,
+            UnifiedConsentGrantStore,
+            UnifiedConsentRuleStore,
+            UnifiedDecisionStore,
+            UnifiedEventStore,
+            UnifiedPendingAskStore,
+            UnifiedProposalStore,
             UnifiedToolCounterStore,
         )
 
@@ -756,7 +848,6 @@ class PostgresUnified(
         self.grants = UnifiedConsentGrantStore(d)
         self.events = UnifiedEventStore(d)
         self.asks = UnifiedPendingAskStore(d)
-
 
 
 class ContractMixinsDoNotCollide(unittest.TestCase):
@@ -781,23 +872,25 @@ class ContractMixinsDoNotCollide(unittest.TestCase):
         owner: dict[str, str] = {}
         collisions: list[str] = []
         for node in tree.body:
-            if not (isinstance(node, ast.ClassDef)
-                    and node.name.startswith("_") and node.name.endswith("Contract")):
+            if not (
+                isinstance(node, ast.ClassDef)
+                and node.name.startswith("_")
+                and node.name.endswith("Contract")
+            ):
                 continue
             for member in node.body:
                 if not isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     continue
                 if member.name in owner:
                     collisions.append(
-                        f"{member.name}: defined by both {owner[member.name]} "
-                        f"and {node.name}"
+                        f"{member.name}: defined by both {owner[member.name]} and {node.name}"
                     )
                 owner[member.name] = node.name
         self.assertEqual(
-            collisions, [],
+            collisions,
+            [],
             "contract mixins share a method name; MRO order decides which one "
-            "runs and the other is silently dropped:\n  "
-            + "\n  ".join(collisions),
+            "runs and the other is silently dropped:\n  " + "\n  ".join(collisions),
         )
 
     def test_every_contract_is_mounted_on_both_backends(self) -> None:
@@ -806,18 +899,25 @@ class ContractMixinsDoNotCollide(unittest.TestCase):
         from pathlib import Path as _P
 
         tree = ast.parse(_P(__file__).read_text(encoding="utf-8"))
-        contracts = {n.name for n in tree.body
-                     if isinstance(n, ast.ClassDef)
-                     and n.name.startswith("_") and n.name.endswith("Contract")}
+        contracts = {
+            n.name
+            for n in tree.body
+            if isinstance(n, ast.ClassDef)
+            and n.name.startswith("_")
+            and n.name.endswith("Contract")
+        }
         mounted = {
             case: {b.id for b in n.bases if isinstance(b, ast.Name)}
-            for n in tree.body if isinstance(n, ast.ClassDef)
-            for case in [n.name] if case in ("SqliteUnified", "PostgresUnified")
+            for n in tree.body
+            if isinstance(n, ast.ClassDef)
+            for case in [n.name]
+            if case in ("SqliteUnified", "PostgresUnified")
         }
         for case, bases in mounted.items():
             with self.subTest(case=case):
                 self.assertEqual(
-                    contracts - bases, set(),
+                    contracts - bases,
+                    set(),
                     f"{case} does not run: {sorted(contracts - bases)}. A domain "
                     f"verified on one backend only is exactly the divergence "
                     f"this suite exists to prevent.",

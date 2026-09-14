@@ -78,9 +78,11 @@ class RetrievalOnSqlite(_Base):
 
         stores = StoreFactory(StorageSettings(backend="sqlite"))
         rtv = await build_retrieval(
-            home=self.home, stores=stores,
+            home=self.home,
+            stores=stores,
             mem_settings=MemorySettings.from_env(default_enabled=False),
-            pg_pool=None, embedder=None,
+            pg_pool=None,
+            embedder=None,
         )
         self.assertIsNotNone(rtv.skill_registry)
         # Was a class-name check; the store is UnifiedSkillStore on both
@@ -103,9 +105,11 @@ class RetrievalOnSqlite(_Base):
         from yuyutsava.storage.factory import StoreFactory
 
         rtv = await build_retrieval(
-            home=self.home, stores=StoreFactory(StorageSettings(backend="sqlite")),
+            home=self.home,
+            stores=StoreFactory(StorageSettings(backend="sqlite")),
             mem_settings=MemorySettings.from_env(default_enabled=False),
-            pg_pool=None, embedder=None,
+            pg_pool=None,
+            embedder=None,
         )
         bundled = [s for s in rtv.skill_registry.scan() if s.scope == "bundled"]
         self.assertGreater(len(bundled), 0, "no bundled skills discovered")
@@ -137,11 +141,16 @@ class RetrievalOnPostgres(_Base):
         from yuyutsava.storage.factory import StoreFactory
 
         stores = StoreFactory(
-            self.settings, pg_pool=self.pool, embedder=self.embedder,
+            self.settings,
+            pg_pool=self.pool,
+            embedder=self.embedder,
         )
         rtv = await build_retrieval(
-            home=self.home, stores=stores, mem_settings=self.mem,
-            pg_pool=self.pool, embedder=self.embedder,
+            home=self.home,
+            stores=stores,
+            mem_settings=self.mem,
+            pg_pool=self.pool,
+            embedder=self.embedder,
         )
         self.assertIsNotNone(
             rtv.note_index,
@@ -163,7 +172,9 @@ class RetrievalOnPostgres(_Base):
         await build_retrieval(
             home=self.home,
             stores=StoreFactory(self.settings, pg_pool=self.pool, embedder=self.embedder),
-            mem_settings=self.mem, pg_pool=self.pool, embedder=self.embedder,
+            mem_settings=self.mem,
+            pg_pool=self.pool,
+            embedder=self.embedder,
         )
         self.assertIsNotNone(
             get_default_note_index(),

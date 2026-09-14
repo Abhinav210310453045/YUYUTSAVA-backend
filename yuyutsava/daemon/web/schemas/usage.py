@@ -9,26 +9,28 @@ from pydantic import BaseModel, Field
 
 class UsageRowOut(BaseModel):
     key: str = Field(
-        description="Group key: task_id, model name, YYYY-MM-DD day, "
-                    "or 'all' when ungrouped",
+        description="Group key: task_id, model name, YYYY-MM-DD day, or 'all' when ungrouped",
     )
     calls: int
     input_tokens: int
     output_tokens: int
     est_cost_usd: float
     cache_read_tokens: int = Field(
-        0, description="Input tokens served from the provider's prompt cache "
-                       "(a subset of input_tokens, not an addition to it)",
+        0,
+        description="Input tokens served from the provider's prompt cache "
+        "(a subset of input_tokens, not an addition to it)",
     )
     cache_creation_tokens: int = Field(
-        0, description="Input tokens charged for writing the prompt cache "
-                       "(also a subset of input_tokens)",
+        0,
+        description="Input tokens charged for writing the prompt cache "
+        "(also a subset of input_tokens)",
     )
 
 
 class UsageOut(BaseModel):
     since: float | None = Field(
-        None, description="Epoch-seconds lower bound that was applied (if any)",
+        None,
+        description="Epoch-seconds lower bound that was applied (if any)",
     )
     group_by: Literal["task", "model", "day", "thread"] | None = None
     rows: list[UsageRowOut] = Field(
@@ -48,7 +50,8 @@ class UsageSummaryOut(BaseModel):
         description="One row for the whole range (key is 'all')",
     )
     by_model: list[UsageRowOut] = Field(
-        default_factory=list, description="Most expensive model first",
+        default_factory=list,
+        description="Most expensive model first",
     )
     by_day: list[UsageRowOut] = Field(
         default_factory=list,
@@ -76,7 +79,8 @@ class UsageSessionOut(BaseModel):
     cache_read_tokens: int
     est_cost_usd: float
     priced: bool = Field(
-        True, description="False when no model in this session has a price entry",
+        True,
+        description="False when no model in this session has a price entry",
     )
     models: list[str] = Field(default_factory=list)
     first_ts: float
@@ -86,5 +90,6 @@ class UsageSessionOut(BaseModel):
 class UsageSessionsOut(BaseModel):
     since: float | None = None
     rows: list[UsageSessionOut] = Field(
-        default_factory=list, description="Most recently active first",
+        default_factory=list,
+        description="Most recently active first",
     )

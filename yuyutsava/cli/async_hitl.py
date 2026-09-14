@@ -55,7 +55,7 @@ class CliRemoteHitl:
     """
 
     def __init__(self, client: Any, *, out=None) -> None:
-        self._client = client            # CliAttachClient (stream + respond_ask)
+        self._client = client  # CliAttachClient (stream + respond_ask)
         self._out = out if out is not None else sys.stdout
         self._asks: dict[str, dict] = {}
         self._proposals: dict[str, dict] = {}
@@ -173,7 +173,7 @@ class CliRemoteHitl:
             return f"no pending approval matches {prefix!r} (try /asks)"
         ok = await self._client.respond_ask(a["ask_id"], response)
         if ok:
-            self._asks.pop(a["ask_id"], None)   # optimistic; ask_resolved confirms
+            self._asks.pop(a["ask_id"], None)  # optimistic; ask_resolved confirms
             return f"sent '{response}' for {a['ask_id'][:8]}"
         return f"failed to send response for {a['ask_id'][:8]}"
 
@@ -201,7 +201,7 @@ class CliHitlBridge:
     def __init__(self) -> None:
         self._queue: Deque[ChannelEvent] = deque()
         self._lock = asyncio.Lock()
-        self._started: dict[str, float] = {}   # task_id -> start ts (for elapsed)
+        self._started: dict[str, float] = {}  # task_id -> start ts (for elapsed)
 
     # ------------------------------------------------------------------
     # Watcher → bridge
@@ -238,7 +238,9 @@ class CliHitlBridge:
         if body:
             print(f"  {body}", file=sys.stderr, flush=True)
         if is_permission:
-            scope = " / [s]ession / [p]roject" if ("session" in options or "project" in options) else ""
+            scope = (
+                " / [s]ession / [p]roject" if ("session" in options or "project" in options) else ""
+            )
             print(f"  \033[2m[y]es / [n]o{scope}\033[0m", file=sys.stderr, flush=True)
         elif options:
             print(f"  options: {' / '.join(options)}", file=sys.stderr, flush=True)

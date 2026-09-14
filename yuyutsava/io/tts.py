@@ -138,9 +138,15 @@ class MacSayTTS(TTS):
 
     async def synthesize(self, text: str, output_path: Path) -> None:
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        cmd = ["say", "-o", str(output_path),
-               "--data-format", f"LEI16@{self._sample_rate}",
-               "--file-format", "WAVE"]
+        cmd = [
+            "say",
+            "-o",
+            str(output_path),
+            "--data-format",
+            f"LEI16@{self._sample_rate}",
+            "--file-format",
+            "WAVE",
+        ]
         if self._voice:
             cmd += ["-v", self._voice]
 
@@ -150,8 +156,7 @@ class MacSayTTS(TTS):
             proc = subprocess.run(cmd, input=text.encode("utf-8"), capture_output=True, timeout=30)
             if proc.returncode != 0:
                 raise RuntimeError(
-                    f"say exited {proc.returncode}: "
-                    f"{proc.stderr.decode('utf-8', 'replace')[:200]}"
+                    f"say exited {proc.returncode}: {proc.stderr.decode('utf-8', 'replace')[:200]}"
                 )
 
         await loop.run_in_executor(None, _run)
@@ -216,8 +221,12 @@ def tts_from_env() -> TTS:
         # 'say' (built-in) if available, else pyttsx3 (SAPI5 on Windows, espeak
         # on Linux) so Windows/Linux still speak without extra setup.
         if _say_available():
-            logger.info("PIPER_MODEL unset — using macOS 'say' for TTS (set PIPER_MODEL or TTS_PROVIDER to override)")
+            logger.info(
+                "PIPER_MODEL unset — using macOS 'say' for TTS (set PIPER_MODEL or TTS_PROVIDER to override)"
+            )
             return MacSayTTS.from_env()
-        logger.info("PIPER_MODEL unset — using pyttsx3 for TTS (set PIPER_MODEL or TTS_PROVIDER to override)")
+        logger.info(
+            "PIPER_MODEL unset — using pyttsx3 for TTS (set PIPER_MODEL or TTS_PROVIDER to override)"
+        )
         return Pyttsx3TTS.from_env()
     return PiperTTS.from_env()

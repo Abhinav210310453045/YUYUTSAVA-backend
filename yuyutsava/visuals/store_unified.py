@@ -152,9 +152,14 @@ class UnifiedVisualStore(VisualStore):
         await asyncio.to_thread(_write_file, path, result.image_bytes)
 
         rec = VisualRecord(
-            visual_id=visual_id, thread_id=thread_id, kind=result.kind,
-            title=result.title, mime=result.mime, path=str(path),
-            source=result.source, created_ts=time.time(),
+            visual_id=visual_id,
+            thread_id=thread_id,
+            kind=result.kind,
+            title=result.title,
+            mime=result.mime,
+            path=str(path),
+            source=result.source,
+            created_ts=time.time(),
         )
         d = self._d
 
@@ -164,8 +169,16 @@ class UnifiedVisualStore(VisualStore):
                 f"INSERT INTO visual_artifacts "
                 f"({', '.join(_COLS)}, created_ts) "
                 f"VALUES ({d.ph(len(_COLS))}, {d.ts_param()})",
-                (rec.visual_id, rec.thread_id, rec.kind, rec.title, rec.mime,
-                 rec.path, rec.source, rec.created_ts),
+                (
+                    rec.visual_id,
+                    rec.thread_id,
+                    rec.kind,
+                    rec.title,
+                    rec.mime,
+                    rec.path,
+                    rec.source,
+                    rec.created_ts,
+                ),
             )
 
         await d.write(_do)
@@ -202,9 +215,7 @@ class UnifiedVisualStore(VisualStore):
         d = self._d
 
         async def _do(conn):
-            cur = await conn.execute(
-                f"SELECT path FROM visual_artifacts WHERE {where}", params
-            )
+            cur = await conn.execute(f"SELECT path FROM visual_artifacts WHERE {where}", params)
             paths = [r["path"] for r in await cur.fetchall()]
             await conn.execute(f"DELETE FROM visual_artifacts WHERE {where}", params)
             return paths
@@ -215,22 +226,18 @@ class UnifiedVisualStore(VisualStore):
         return len(paths)
 
     async def delete(self, visual_id: str) -> bool:
-        return await self._paths_then_delete(
-            f"visual_id = {self._d.ph()}", (visual_id,)
-        ) > 0
+        return await self._paths_then_delete(f"visual_id = {self._d.ph()}", (visual_id,)) > 0
 
     async def delete_for_thread(self, thread_id: str) -> int:
-        return await self._paths_then_delete(
-            f"thread_id = {self._d.ph()}", (thread_id,)
-        )
+        return await self._paths_then_delete(f"thread_id = {self._d.ph()}", (thread_id,))
 
     async def delete_older_than(self, cutoff_ts: float) -> int:
-        return await self._paths_then_delete(
-            f"created_ts < {self._d.ts_param()}", (cutoff_ts,)
-        )
+        return await self._paths_then_delete(f"created_ts < {self._d.ts_param()}", (cutoff_ts,))
 
 
 __all__ = [
-    "UnifiedVisualStore", "VisualSchema",
-    "pg_visual_store", "sqlite_visual_store",
+    "UnifiedVisualStore",
+    "VisualSchema",
+    "pg_visual_store",
+    "sqlite_visual_store",
 ]

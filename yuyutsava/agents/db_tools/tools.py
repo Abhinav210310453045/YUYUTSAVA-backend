@@ -96,9 +96,12 @@ def make_db_tools() -> list[BaseTool]:
             res = await execute_read_query(db, sql, params=params, limit=limit)
             return _ok(res)
         except DbApiError as e:
-            return _err(str(e), hint=(
-                "Only SELECT/WITH/PRAGMA table_info(...) are allowed. "
-                "Use db_schema(db, table) to discover columns first."
-            ))
+            return _err(
+                str(e),
+                hint=(
+                    "Only SELECT/WITH/PRAGMA table_info(...) are allowed. "
+                    "Use db_schema(db, table) to discover columns first."
+                ),
+            )
 
     return [db_list, db_schema, db_query]

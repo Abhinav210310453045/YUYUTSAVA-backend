@@ -56,8 +56,9 @@ class _FakeManager:
         # Turns are daemon-owned now (see daemon/turn_registry.py).
         self.turns = TurnRegistry()
 
-    async def open(self, *, agent="master", card_id=None, origin="cli",
-                   resume_id=None, continue_latest=False):
+    async def open(
+        self, *, agent="master", card_id=None, origin="cli", resume_id=None, continue_latest=False
+    ):
         return _FakeConvo(origin), False
 
     def start_turn(self, thread_id: str, **kw):

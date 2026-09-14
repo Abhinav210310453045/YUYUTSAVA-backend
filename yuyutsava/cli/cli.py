@@ -292,11 +292,13 @@ def main(argv: list[str] | None = None) -> int:
     if raw and raw[0] == "daemon":
         # Hand off to the always-on daemon. The rest of argv is the daemon's own.
         from yuyutsava.daemon.main import main as daemon_main
+
         return daemon_main(raw[1:])
     if raw and raw[0] == "prefs":
         return run_prefs(raw[1:])
     if raw and raw[0] == "attach":
         from yuyutsava.cli.commands.attach import run_attach
+
         return run_attach(raw[1:])
     # Ctrl+C anywhere outside a turn (during the stack build, at a prompt, in
     # teardown) reaches here as KeyboardInterrupt. Exit 130 quietly — the

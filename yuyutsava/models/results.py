@@ -28,23 +28,23 @@ from yuyutsava.models.tool_messages import SuppressedContentNotice
 class ShellResult(BaseModel):
     """Result of a shell command execution (tr_execute_in_sandbox)."""
 
-    kind:      Literal["shell"] = "shell"
-    stdout:    str
-    stderr:    str
+    kind: Literal["shell"] = "shell"
+    stdout: str
+    stderr: str
     exit_code: int
 
 
 class WriteResult(BaseModel):
     """Result of a file write or create operation (tr_write_file)."""
 
-    kind:       Literal["write"] = "write"
+    kind: Literal["write"] = "write"
     written_to: str  # absolute path that was written
 
 
 class DeleteResult(BaseModel):
     """Result of a file/directory delete operation (tr_delete_file)."""
 
-    kind:    Literal["delete"] = "delete"
+    kind: Literal["delete"] = "delete"
     deleted: str  # absolute path that was deleted
 
 
@@ -74,21 +74,21 @@ class ReadResult(BaseModel):
         knows exactly how to read the next chunk.
     """
 
-    kind:               Literal["read"] = "read"
-    content:            str
-    offset:             int = 0
-    limit:              int | None = None
-    returned_lines:     int = 0
-    total_lines:        int = 0
-    has_more:           bool = False
-    truncation_notice:  SuppressedContentNotice | None = None
+    kind: Literal["read"] = "read"
+    content: str
+    offset: int = 0
+    limit: int | None = None
+    returned_lines: int = 0
+    total_lines: int = 0
+    has_more: bool = False
+    truncation_notice: SuppressedContentNotice | None = None
 
 
 class DirEntry(BaseModel):
     """Single entry in a directory listing or glob match."""
 
-    name: str   # base name (e.g. "README.md")
-    path: str   # absolute real path
+    name: str  # base name (e.g. "README.md")
+    path: str  # absolute real path
     type: Literal["file", "dir", "symlink", "other"]
     size: int | None = None  # bytes for files; None for dirs/symlinks
 
@@ -101,10 +101,10 @@ class ListResult(BaseModel):
     LLM payload small — the LLM should narrow the path or pattern.
     """
 
-    kind:     Literal["list"] = "list"
-    root:     str               # absolute real path of the directory searched
-    pattern:  str | None = None # glob pattern (None for plain tr_ls)
-    entries:  list[DirEntry] = []
+    kind: Literal["list"] = "list"
+    root: str  # absolute real path of the directory searched
+    pattern: str | None = None  # glob pattern (None for plain tr_ls)
+    entries: list[DirEntry] = []
     returned: int = 0
-    total:    int = 0
+    total: int = 0
     has_more: bool = False

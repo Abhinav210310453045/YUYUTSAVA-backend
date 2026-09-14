@@ -136,9 +136,7 @@ def _best_price(
     return best
 
 
-def is_priced(
-    model: str, prices: dict[str, tuple[float, float]] | None = None
-) -> bool:
+def is_priced(model: str, prices: dict[str, tuple[float, float]] | None = None) -> bool:
     """Whether a cost figure for *model* means anything.
 
     A caller that only has ``est_cost_usd`` cannot tell "this call was free"
@@ -170,9 +168,11 @@ def _warn_unpriced_once(model: str) -> None:
     logger.debug(
         "no price entry for model %r — its llm_usage rows will record "
         "est_cost_usd=0.00 and the usage totals will under-report. Add it to "
-        "~/.yuyutsava/model_prices.json as {\"%s\": [<$/1M in>, <$/1M out>]} "
-        "(prefixes match, so \"%s\" would cover variants).",
-        model, model, model.rsplit("-", 1)[0] if "-" in model else model,
+        '~/.yuyutsava/model_prices.json as {"%s": [<$/1M in>, <$/1M out>]} '
+        '(prefixes match, so "%s" would cover variants).',
+        model,
+        model,
+        model.rsplit("-", 1)[0] if "-" in model else model,
     )
 
 
@@ -190,8 +190,9 @@ def _parse_thresholds(raw: str) -> tuple[int, int]:
     except ValueError:
         pass
     logger.warning(
-        "YUYUTSAVA_ROUTING_THRESHOLDS=%r invalid (want e.g. \"2,3\") — using %s",
-        raw, _DEFAULT_THRESHOLDS,
+        'YUYUTSAVA_ROUTING_THRESHOLDS=%r invalid (want e.g. "2,3") — using %s',
+        raw,
+        _DEFAULT_THRESHOLDS,
     )
     return _DEFAULT_THRESHOLDS
 
@@ -200,17 +201,15 @@ def _parse_thresholds(raw: str) -> tuple[int, int]:
 class RoutingSettings:
     """Env-derived routing config."""
 
-    enabled: bool = False               # YUYUTSAVA_MODEL_ROUTING
-    light_max: int = 2                  # YUYUTSAVA_ROUTING_THRESHOLDS="<light>,<standard>"
+    enabled: bool = False  # YUYUTSAVA_MODEL_ROUTING
+    light_max: int = 2  # YUYUTSAVA_ROUTING_THRESHOLDS="<light>,<standard>"
     standard_max: int = 3
 
     @classmethod
     def from_env(cls) -> RoutingSettings:
         enabled = _env("YUYUTSAVA_MODEL_ROUTING").lower() in ("1", "true", "yes")
         raw = _env("YUYUTSAVA_ROUTING_THRESHOLDS")
-        light_max, standard_max = (
-            _parse_thresholds(raw) if raw else _DEFAULT_THRESHOLDS
-        )
+        light_max, standard_max = _parse_thresholds(raw) if raw else _DEFAULT_THRESHOLDS
         return cls(enabled=enabled, light_max=light_max, standard_max=standard_max)
 
 
@@ -257,9 +256,7 @@ class ModelRouter:
         self._cache[tier] = model
         return model
 
-    def model_for(
-        self, complexity: int | None, *, fallback: BaseChatModel
-    ) -> BaseChatModel:
+    def model_for(self, complexity: int | None, *, fallback: BaseChatModel) -> BaseChatModel:
         """The model a task of this complexity should run on.
 
         Routing disabled → ``fallback`` (the existing role model), exactly
@@ -272,9 +269,7 @@ class ModelRouter:
         try:
             return self.tier_model(tier)
         except Exception:
-            logger.exception(
-                "tier %r model unavailable — falling back to the role model", tier
-            )
+            logger.exception("tier %r model unavailable — falling back to the role model", tier)
             return fallback
 
 
@@ -324,9 +319,9 @@ class ComplexityScorer:
             m = _DIGIT_RE.search(text)
             if m:
                 return int(m.group(0))
-            logger.warning("complexity scorer: unparseable reply %r — using %d",
-                           text[:80], DEFAULT_COMPLEXITY)
+            logger.warning(
+                "complexity scorer: unparseable reply %r — using %d", text[:80], DEFAULT_COMPLEXITY
+            )
         except Exception as exc:
-            logger.warning("complexity scorer failed (%s) — using %d",
-                           exc, DEFAULT_COMPLEXITY)
+            logger.warning("complexity scorer failed (%s) — using %d", exc, DEFAULT_COMPLEXITY)
         return DEFAULT_COMPLEXITY

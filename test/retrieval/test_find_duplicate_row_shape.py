@@ -75,7 +75,8 @@ class RowShapeHelper(unittest.TestCase):
         from yuyutsava.retrieval.pg import _by_name_or_position
 
         self.assertEqual(
-            _by_name_or_position(("mem_1", 0.99), ("dup_id", "score")), ("mem_1", 0.99))
+            _by_name_or_position(("mem_1", 0.99), ("dup_id", "score")), ("mem_1", 0.99)
+        )
 
     def test_a_mapping_without_those_keys_falls_back(self) -> None:
         """psycopg's dict rows are dicts; a stray shape must not hard-fail."""
@@ -104,10 +105,15 @@ class AgainstBothConnectionShapes(unittest.IsolatedAsyncioTestCase):
     def _search(self):
         from yuyutsava.retrieval.pg import PgVectorSearch, PgVectorTable
 
-        return PgVectorSearch(self.pool, PgVectorTable(
-            table="memories", id_col="memory_id", text_col="text",
-            embedding_col="embedding",
-        ))
+        return PgVectorSearch(
+            self.pool,
+            PgVectorTable(
+                table="memories",
+                id_col="memory_id",
+                text_col="text",
+                embedding_col="embedding",
+            ),
+        )
 
     async def test_pooled_connection_tuple_rows(self) -> None:
         """The shape a plain borrower gets."""
@@ -153,8 +159,9 @@ class TheRealWritePath(unittest.IsolatedAsyncioTestCase):
         settings = MemorySettings.from_env(default_enabled=True)
         self.embedder = Embedder(settings)
         self.store = pg_memory_store(
-            self.pool, embedder=self.embedder,
-            dedup_threshold=settings.dedup_threshold,   # 0.97 — dedup ON
+            self.pool,
+            embedder=self.embedder,
+            dedup_threshold=settings.dedup_threshold,  # 0.97 — dedup ON
         )
         self.tag = f"claude-regression-{id(self)}"
 
@@ -165,7 +172,8 @@ class TheRealWritePath(unittest.IsolatedAsyncioTestCase):
 
     async def test_an_embedded_write_does_not_raise(self) -> None:
         memory_id = await self.store.add(
-            kind="task_outcome", text=f"{self.tag}: a write that carries an embedding")
+            kind="task_outcome", text=f"{self.tag}: a write that carries an embedding"
+        )
         self.assertTrue(memory_id, "the write returned nothing")
 
     async def test_identical_text_is_deduplicated(self) -> None:
@@ -178,7 +186,8 @@ class TheRealWritePath(unittest.IsolatedAsyncioTestCase):
         first = await self.store.add(kind="task_outcome", text=text)
         second = await self.store.add(kind="task_outcome", text=text)
         self.assertEqual(
-            first, second,
+            first,
+            second,
             "the second write created a new row — find_duplicate returned None, "
             "so the dedup probe is not actually running",
         )
@@ -188,7 +197,8 @@ class TheRealWritePath(unittest.IsolatedAsyncioTestCase):
         a = await self.store.add(kind="task_outcome", text=f"{self.tag}: apples and oranges")
         b = await self.store.add(
             kind="task_outcome",
-            text=f"{self.tag}: the quantum mechanics of superconducting niobium")
+            text=f"{self.tag}: the quantum mechanics of superconducting niobium",
+        )
         self.assertNotEqual(a, b, "unrelated texts were deduplicated")
 
 

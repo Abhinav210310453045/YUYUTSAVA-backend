@@ -54,9 +54,15 @@ CARD_THREAD = "todo:card_grouping_test"
 def _tinker_row(rid: str, cost: float) -> UsageRow:
     """One tinker turn: task_id names a CARD, which is not a row in `tasks`."""
     return UsageRow(
-        id=rid, ts=time.time(), thread_id=CARD_THREAD,
-        task_id="tinker:card_grouping_test", role="tinker", model="claude-x",
-        input_tokens=1000, output_tokens=200, est_cost_usd=cost,
+        id=rid,
+        ts=time.time(),
+        thread_id=CARD_THREAD,
+        task_id="tinker:card_grouping_test",
+        role="tinker",
+        model="claude-x",
+        input_tokens=1000,
+        output_tokens=200,
+        est_cost_usd=cost,
     )
 
 
@@ -128,9 +134,7 @@ class PostgresThreadGrouping(_ThreadGroupingContract, unittest.IsolatedAsyncioTe
 
     async def _clean(self) -> None:
         async with self.pool.connection() as conn:
-            await conn.execute(
-                "DELETE FROM llm_usage WHERE thread_id = %s", (CARD_THREAD,)
-            )
+            await conn.execute("DELETE FROM llm_usage WHERE thread_id = %s", (CARD_THREAD,))
 
     async def test_postgres_still_nulls_the_orphan_task_tag(self) -> None:
         """The FK workaround is untouched — Option C routed around it, not through.
@@ -143,7 +147,8 @@ class PostgresThreadGrouping(_ThreadGroupingContract, unittest.IsolatedAsyncioTe
         rows = [r for r in await self.store.list(limit=50) if r.id == "usg_tg_5"]
         self.assertEqual(len(rows), 1)
         self.assertEqual(
-            rows[0].task_id, "",
+            rows[0].task_id,
+            "",
             "Postgres kept an orphan task_id — llm_usage_task_fk may have been "
             "relaxed, which is Option B, not the Option C that was chosen",
         )
@@ -161,7 +166,8 @@ class ApiSurface(unittest.TestCase):
         self.assertIn("thread", typing.get_args(GroupBy))
         schema_arg = typing.get_args(UsageOut.model_fields["group_by"].annotation)[0]
         self.assertIn(
-            "thread", typing.get_args(schema_arg),
+            "thread",
+            typing.get_args(schema_arg),
             "UsageOut still rejects group_by='thread'; the response schema was "
             "not updated alongside the store",
         )

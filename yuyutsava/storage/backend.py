@@ -42,8 +42,7 @@ class StorageSettings:
         backend = os.environ.get("YUYUTSAVA_STORAGE_BACKEND", "sqlite").strip().lower()
         if backend not in ("sqlite", "postgres"):
             raise RuntimeError(
-                f"Unknown YUYUTSAVA_STORAGE_BACKEND={backend!r}; "
-                "use 'sqlite' or 'postgres'."
+                f"Unknown YUYUTSAVA_STORAGE_BACKEND={backend!r}; use 'sqlite' or 'postgres'."
             )
         dsn = os.environ.get("YUYUTSAVA_PG_DSN", "").strip() or DEFAULT_PG_DSN
 

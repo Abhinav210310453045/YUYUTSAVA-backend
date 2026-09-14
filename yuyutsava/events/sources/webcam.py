@@ -85,16 +85,24 @@ class WebcamSource(EventSource):
         heartbeat_timeout = float(ctx.params.get("heartbeat_timeout_sec", 8.0))
 
         cmd = [
-            sys.executable, "-m", "yuyutsava.events.sources._webcam_proc",
-            "--blob-dir", str(blob_dir),
-            "--interval-ms", str(interval_ms),
-            "--motion-threshold", str(motion_threshold),
-            "--camera-index", str(camera_index),
-            "--jpeg-quality", str(jpeg_quality),
+            sys.executable,
+            "-m",
+            "yuyutsava.events.sources._webcam_proc",
+            "--blob-dir",
+            str(blob_dir),
+            "--interval-ms",
+            str(interval_ms),
+            "--motion-threshold",
+            str(motion_threshold),
+            "--camera-index",
+            str(camera_index),
+            "--jpeg-quality",
+            str(jpeg_quality),
         ]
         logger.info(
             "webcam source: spawning subprocess (camera=%d, interval=%dms)",
-            camera_index, interval_ms,
+            camera_index,
+            interval_ms,
         )
 
         self._proc = await asyncio.create_subprocess_exec(
@@ -104,9 +112,7 @@ class WebcamSource(EventSource):
             env={**os.environ},
         )
 
-        stderr_task = asyncio.create_task(
-            self._drain_stderr(self._proc), name="webcam-stderr"
-        )
+        stderr_task = asyncio.create_task(self._drain_stderr(self._proc), name="webcam-stderr")
         try:
             await self._read_loop(ctx, self._proc, heartbeat_timeout)
         finally:

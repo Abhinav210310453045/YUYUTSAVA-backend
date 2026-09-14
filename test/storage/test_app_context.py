@@ -64,12 +64,14 @@ class AppContextResolution(unittest.TestCase):
         try:
             explicit = _Recorder("explicit")
             self.assertIs(
-                AppContext(visual_store=explicit).visuals(), explicit,
+                AppContext(visual_store=explicit).visuals(),
+                explicit,
                 "AppContext consulted the global even though an explicit store "
                 "was supplied — the seam does nothing",
             )
             self.assertIs(
-                GLOBAL_CONTEXT.visuals(), decoy,
+                GLOBAL_CONTEXT.visuals(),
+                decoy,
                 "GLOBAL_CONTEXT should still resolve from the globals; that is "
                 "what keeps the 91 unmigrated call sites working",
             )
@@ -111,7 +113,8 @@ class PurgeSessionAcceptsContext(unittest.TestCase):
 
         params = inspect.signature(purge_session).parameters
         self.assertIn(
-            "ctx", params,
+            "ctx",
+            params,
             "purge_session no longer accepts an AppContext; its dependencies "
             "are hidden behind globals again (finding F-S08)",
         )
@@ -127,11 +130,15 @@ class PurgeSessionAcceptsContext(unittest.TestCase):
         from yuyutsava.storage import purge
 
         src = inspect.getsource(purge.purge_session)
-        for direct in ("get_default_visual_store(", "get_default_feedback_store(",
-                       "get_default_session_store("):
+        for direct in (
+            "get_default_visual_store(",
+            "get_default_feedback_store(",
+            "get_default_session_store(",
+        ):
             with self.subTest(call=direct):
                 self.assertNotIn(
-                    direct, src,
+                    direct,
+                    src,
                     f"purge_session still calls {direct} directly, bypassing the "
                     f"context — passing ctx would then be silently ignored for "
                     f"that store.",
@@ -156,8 +163,7 @@ class PurgeRunsWithoutGlobals(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
         self._prev = {
-            k: os.environ.get(k)
-            for k in ("YUYUTSAVA_STATE_DIR", "YUYUTSAVA_STORAGE_BACKEND")
+            k: os.environ.get(k) for k in ("YUYUTSAVA_STATE_DIR", "YUYUTSAVA_STORAGE_BACKEND")
         }
         os.environ["YUYUTSAVA_STATE_DIR"] = self._tmp.name
         os.environ["YUYUTSAVA_STORAGE_BACKEND"] = "sqlite"

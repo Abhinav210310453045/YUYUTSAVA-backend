@@ -86,25 +86,25 @@ class PostgresUsesTimestamptzEverywhere(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(cols, "found no temporal columns at all — query is wrong")
         offenders = [f"{t}.{c}" for t, c, d in cols if d == "double precision"]
         self.assertEqual(
-            offenders, [],
+            offenders,
+            [],
             "these Postgres timestamp columns are DOUBLE PRECISION, not "
-            "TIMESTAMPTZ:\n  " + "\n  ".join(offenders)
+            "TIMESTAMPTZ:\n  "
+            + "\n  ".join(offenders)
             + "\n\nMigration v20 unified the convention so Dialect.ts_param() "
-              "and Dialect.epoch() are always correct. A column that opts out "
-              "brings back finding AK: the helpers become a per-column choice "
-              "again, and picking wrong fails only on Postgres, only at "
-              "runtime.",
+            "and Dialect.epoch() are always correct. A column that opts out "
+            "brings back finding AK: the helpers become a per-column choice "
+            "again, and picking wrong fails only on Postgres, only at "
+            "runtime.",
         )
 
     async def test_every_temporal_column_is_timestamptz(self) -> None:
         """Stronger than the above: no INTEGER or NUMERIC sneaking in either."""
         cols = await self._columns()
-        wrong = [
-            f"{t}.{c} ({d})" for t, c, d in cols
-            if not d.startswith("timestamp")
-        ]
+        wrong = [f"{t}.{c} ({d})" for t, c, d in cols if not d.startswith("timestamp")]
         self.assertEqual(
-            wrong, [],
+            wrong,
+            [],
             "temporal columns with a non-timestamp type:\n  " + "\n  ".join(wrong),
         )
 
@@ -115,7 +115,8 @@ class PostgresUsesTimestamptzEverywhere(unittest.IsolatedAsyncioTestCase):
         it when you add a table; if it *drops*, a table was lost.
         """
         self.assertEqual(
-            len(await self._columns()), 41,
+            len(await self._columns()),
+            41,
             "the number of Postgres temporal columns changed. Adding a table is "
             "fine — update this number. A decrease means something was dropped.",
         )
@@ -153,12 +154,14 @@ class TimestamptzResolutionIsMicroseconds(unittest.IsolatedAsyncioTestCase):
         original = _t.time()
         async with self.pool.connection() as conn:
             cur = await conn.execute(
-                "SELECT extract(epoch FROM to_timestamp(%s))::float8", (original,))
+                "SELECT extract(epoch FROM to_timestamp(%s))::float8", (original,)
+            )
             back = float((await cur.fetchone())[0])
         self.assertAlmostEqual(
-            back, original, delta=1e-6,
-            msg=f"a timestamp round-trip lost more than 1 us: "
-                f"{original!r} -> {back!r}",
+            back,
+            original,
+            delta=1e-6,
+            msg=f"a timestamp round-trip lost more than 1 us: {original!r} -> {back!r}",
         )
 
     async def test_ordering_survives_the_rounding(self) -> None:
@@ -170,7 +173,9 @@ class TimestamptzResolutionIsMicroseconds(unittest.IsolatedAsyncioTestCase):
         async with self.pool.connection() as conn:
             cur = await conn.execute(
                 "SELECT extract(epoch FROM to_timestamp(v))::float8 "
-                "FROM unnest(%s::float8[]) AS v ORDER BY v", (vals,))
+                "FROM unnest(%s::float8[]) AS v ORDER BY v",
+                (vals,),
+            )
             back = [float(r[0]) for r in await cur.fetchall()]
         self.assertEqual(back, sorted(back))
         self.assertEqual(len(set(back)), 3, "distinct timestamps collapsed")
@@ -194,13 +199,17 @@ class SqliteKeepsEpochReals(unittest.TestCase):
                 if not isinstance(node, ast.ClassDef):
                     continue
                 for stmt in node.body:
-                    if (isinstance(stmt, ast.AnnAssign)
-                            and getattr(stmt.target, "id", "") == "_SCHEMA_SQL"
-                            and isinstance(stmt.value, ast.Constant)):
+                    if (
+                        isinstance(stmt, ast.AnnAssign)
+                        and getattr(stmt.target, "id", "") == "_SCHEMA_SQL"
+                        and isinstance(stmt.value, ast.Constant)
+                    ):
                         yield path.name, node.name, stmt.value.value
-                    elif (isinstance(stmt, ast.Assign)
-                          and any(getattr(t, "id", "") == "_SCHEMA_SQL" for t in stmt.targets)
-                          and isinstance(stmt.value, ast.Constant)):
+                    elif (
+                        isinstance(stmt, ast.Assign)
+                        and any(getattr(t, "id", "") == "_SCHEMA_SQL" for t in stmt.targets)
+                        and isinstance(stmt.value, ast.Constant)
+                    ):
                         yield path.name, node.name, stmt.value.value
 
     def test_no_sqlite_schema_declares_a_timestamp_type(self) -> None:
@@ -211,18 +220,20 @@ class SqliteKeepsEpochReals(unittest.TestCase):
                 if "timestamp" in low or "timestamptz" in low:
                     offenders.append(f"{filename}:{cls}: {line.strip()}")
         self.assertEqual(
-            offenders, [],
+            offenders,
+            [],
             "a SQLite schema declares a timestamp type:\n  "
             + "\n  ".join(offenders)
             + "\n\nSQLite has no such type — it would be stored as TEXT and "
-              "compare lexically against the epoch floats every caller passes.",
+            "compare lexically against the epoch floats every caller passes.",
         )
 
     def test_schema_owners_were_actually_found(self) -> None:
         """Negative control: the test above is vacuous if the scan finds nothing."""
         owners = list(self._schema_owners())
         self.assertGreaterEqual(
-            len(owners), 5,
+            len(owners),
+            5,
             f"only found {len(owners)} SQLite schema owners; the AST scan is "
             f"not reaching them, so the check above proves nothing",
         )
@@ -235,7 +246,8 @@ class DialectHelpersDocumentTheRule(unittest.TestCase):
 
         pg = PostgresDialect.__new__(PostgresDialect)
         self.assertIn(
-            "::float8", pg.epoch("created_ts"),
+            "::float8",
+            pg.epoch("created_ts"),
             "epoch() dropped its float8 cast — extract(epoch ...) returns "
             "numeric, which psycopg hands back as Decimal, so Decimal == float "
             "comparisons silently fail",
@@ -248,8 +260,7 @@ class DialectHelpersDocumentTheRule(unittest.TestCase):
         from yuyutsava.storage.dialect import PostgresDialect
 
         pg = PostgresDialect.__new__(PostgresDialect)
-        self.assertEqual(
-            pg.epoch("d.ts", "ts"), "extract(epoch FROM d.ts)::float8 AS ts")
+        self.assertEqual(pg.epoch("d.ts", "ts"), "extract(epoch FROM d.ts)::float8 AS ts")
 
 
 if __name__ == "__main__":

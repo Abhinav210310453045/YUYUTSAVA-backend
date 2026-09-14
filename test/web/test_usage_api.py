@@ -28,12 +28,27 @@ class _RecordingStore:
     async def put_decision(self, **kw) -> None: ...
 
 
-def _row(*, task_id: str, model: str, tokens: int, cost: float,
-         thread_id: str = "th", ts: float = 1_000.0, cached: int = 0) -> UsageRow:
+def _row(
+    *,
+    task_id: str,
+    model: str,
+    tokens: int,
+    cost: float,
+    thread_id: str = "th",
+    ts: float = 1_000.0,
+    cached: int = 0,
+) -> UsageRow:
     return UsageRow(
-        id=mint_usage_id(), ts=ts, thread_id=thread_id, task_id=task_id,
-        role="orchestrator", model=model, input_tokens=tokens,
-        output_tokens=tokens // 10, est_cost_usd=cost, cache_read_tokens=cached,
+        id=mint_usage_id(),
+        ts=ts,
+        thread_id=thread_id,
+        task_id=task_id,
+        role="orchestrator",
+        model=model,
+        input_tokens=tokens,
+        output_tokens=tokens // 10,
+        est_cost_usd=cost,
+        cache_read_tokens=cached,
     )
 
 
@@ -45,11 +60,13 @@ class _UsageApiBase(unittest.IsolatedAsyncioTestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.usage_store = SqliteUsageStore(Path(self._tmp.name) / "state.db")
         app = create_app(
-            WebHub(store=_RecordingStore()), host="127.0.0.1",
+            WebHub(store=_RecordingStore()),
+            host="127.0.0.1",
             usage_store=self.usage_store,
         )
         self.client = httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test",
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://test",
         )
 
     async def asyncTearDown(self) -> None:
@@ -98,7 +115,8 @@ class UsageApiTests(_UsageApiBase):
     async def test_missing_store_is_503(self) -> None:
         app = create_app(WebHub(store=_RecordingStore()), host="127.0.0.1")
         async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test",
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://test",
         ) as client:
             r = await client.get("/usage")
         self.assertEqual(r.status_code, 503)
@@ -118,10 +136,10 @@ class UsageSummaryTests(_UsageApiBase):
     async def test_the_day_series_is_ordered_for_plotting_not_by_cost(self) -> None:
         # Every store aggregate comes back most-expensive-first, which is the
         # wrong order for a time axis.
-        await self.usage_store.add(_row(task_id="t", model="X", tokens=10,
-                                        cost=0.01, ts=1_000.0))
-        await self.usage_store.add(_row(task_id="t", model="X", tokens=999,
-                                        cost=9.99, ts=1_000.0 + 86_400 * 3))
+        await self.usage_store.add(_row(task_id="t", model="X", tokens=10, cost=0.01, ts=1_000.0))
+        await self.usage_store.add(
+            _row(task_id="t", model="X", tokens=999, cost=9.99, ts=1_000.0 + 86_400 * 3)
+        )
         body = (await self.client.get("/usage/summary")).json()
         keys = [d["key"] for d in body["by_day"]]
         self.assertEqual(keys, sorted(keys))
@@ -131,7 +149,8 @@ class UsageSummaryTests(_UsageApiBase):
         # "$0.00" in a total is indistinguishable from a free call; the client
         # needs to know the figure is an undercount.
         await self.usage_store.add(
-            _row(task_id="t", model="not-a-real-model-xyz", tokens=10, cost=0.0))
+            _row(task_id="t", model="not-a-real-model-xyz", tokens=10, cost=0.0)
+        )
         body = (await self.client.get("/usage/summary")).json()
         self.assertIn("not-a-real-model-xyz", body["unpriced_models"])
 
@@ -144,12 +163,15 @@ class UsageSummaryTests(_UsageApiBase):
 
 class UsageSessionsTests(_UsageApiBase):
     async def test_each_conversation_gets_one_row(self) -> None:
-        await self.usage_store.add(_row(task_id="t", model="X", tokens=100,
-                                        cost=0.1, thread_id="conv-a", cached=60))
-        await self.usage_store.add(_row(task_id="t", model="Y", tokens=200,
-                                        cost=0.2, thread_id="conv-a"))
-        await self.usage_store.add(_row(task_id="t", model="X", tokens=50,
-                                        cost=0.05, thread_id="conv-b"))
+        await self.usage_store.add(
+            _row(task_id="t", model="X", tokens=100, cost=0.1, thread_id="conv-a", cached=60)
+        )
+        await self.usage_store.add(
+            _row(task_id="t", model="Y", tokens=200, cost=0.2, thread_id="conv-a")
+        )
+        await self.usage_store.add(
+            _row(task_id="t", model="X", tokens=50, cost=0.05, thread_id="conv-b")
+        )
         r = await self.client.get("/usage/sessions")
         self.assertEqual(r.status_code, 200)
         rows = {row["thread_id"]: row for row in r.json()["rows"]}
@@ -160,32 +182,32 @@ class UsageSessionsTests(_UsageApiBase):
         self.assertEqual(sorted(rows["conv-a"]["models"]), ["X", "Y"])
 
     async def test_rows_are_ordered_most_recently_active_first(self) -> None:
-        await self.usage_store.add(_row(task_id="t", model="X", tokens=1,
-                                        cost=0.0, thread_id="old", ts=1_000.0))
-        await self.usage_store.add(_row(task_id="t", model="X", tokens=1,
-                                        cost=0.0, thread_id="new", ts=9_000.0))
+        await self.usage_store.add(
+            _row(task_id="t", model="X", tokens=1, cost=0.0, thread_id="old", ts=1_000.0)
+        )
+        await self.usage_store.add(
+            _row(task_id="t", model="X", tokens=1, cost=0.0, thread_id="new", ts=9_000.0)
+        )
         rows = (await self.client.get("/usage/sessions")).json()["rows"]
         self.assertEqual([r["thread_id"] for r in rows], ["new", "old"])
 
     async def test_a_conversation_with_an_unpriced_model_says_so(self) -> None:
-        await self.usage_store.add(_row(task_id="t", model="no-such-model-abc",
-                                        tokens=10, cost=0.0, thread_id="c"))
+        await self.usage_store.add(
+            _row(task_id="t", model="no-such-model-abc", tokens=10, cost=0.0, thread_id="c")
+        )
         row = (await self.client.get("/usage/sessions")).json()["rows"][0]
         self.assertFalse(row["priced"])
 
     async def test_calls_made_outside_any_conversation_are_reported_not_dropped(self) -> None:
-        await self.usage_store.add(_row(task_id="t", model="X", tokens=7,
-                                        cost=0.0, thread_id=""))
+        await self.usage_store.add(_row(task_id="t", model="X", tokens=7, cost=0.0, thread_id=""))
         rows = (await self.client.get("/usage/sessions")).json()["rows"]
         blank = [r for r in rows if r["thread_id"] == ""]
         self.assertEqual(len(blank), 1)
         self.assertEqual(blank[0]["title"], "unattributed")
 
     async def test_the_limit_is_bounded(self) -> None:
-        self.assertEqual(
-            (await self.client.get("/usage/sessions?limit=0")).status_code, 422)
-        self.assertEqual(
-            (await self.client.get("/usage/sessions?limit=501")).status_code, 422)
+        self.assertEqual((await self.client.get("/usage/sessions?limit=0")).status_code, 422)
+        self.assertEqual((await self.client.get("/usage/sessions?limit=501")).status_code, 422)
 
     async def test_an_empty_store_returns_no_rows(self) -> None:
         self.assertEqual((await self.client.get("/usage/sessions")).json()["rows"], [])

@@ -58,8 +58,9 @@ class _FakeManager:
         # registry and hands it turn bodies (see daemon/turn_registry.py).
         self.turns = TurnRegistry()
 
-    async def open(self, *, agent="master", card_id=None, origin="cli",
-                   resume_id=None, continue_latest=False):
+    async def open(
+        self, *, agent="master", card_id=None, origin="cli", resume_id=None, continue_latest=False
+    ):
         convo = _FakeConvo(origin)
         self.opened.append((origin, resume_id, continue_latest))
         return convo, False

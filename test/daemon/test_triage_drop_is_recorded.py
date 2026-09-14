@@ -73,8 +73,12 @@ class _Triage:
 
 def _envelope() -> EventEnvelope:
     return EventEnvelope(
-        event_id="e-drop", topic="user.task.submitted", source="api",
-        ts=time.time(), severity=1, summary="what is 2+2",
+        event_id="e-drop",
+        topic="user.task.submitted",
+        source="api",
+        ts=time.time(),
+        severity=1,
+        summary="what is 2+2",
         payload_ref="sqlite://event_payloads/e-drop",
         hints={"task_id": "tsk_drop", "instruction": "what is 2+2"},
     )
@@ -82,17 +86,24 @@ def _envelope() -> EventEnvelope:
 
 def _loop(store: Any, channels: Any, decision: TriageDecision) -> TriageLoop:
     loop = TriageLoop(
-        bus=object(), store=store, channels=channels,
-        triage=_Triage(decision), capabilities_block="",
-        task_queue=asyncio.Queue(), proposal_expiry_sec=300,
+        bus=object(),
+        store=store,
+        channels=channels,
+        triage=_Triage(decision),
+        capabilities_block="",
+        task_queue=asyncio.Queue(),
+        proposal_expiry_sec=300,
     )
     loop._consent = _NoRule()  # type: ignore[assignment]
     return loop
 
 
 DROP = TriageDecision(
-    action="drop", subagent_hint="", proposed_instruction="",
-    reason="not actionable — a general knowledge question", urgency=1,
+    action="drop",
+    subagent_hint="",
+    proposed_instruction="",
+    reason="not actionable — a general knowledge question",
+    urgency=1,
 )
 
 
@@ -101,7 +112,8 @@ class DropIsRecorded(unittest.IsolatedAsyncioTestCase):
         store, channels = _RecordingStore(), _RecordingChannels()
         await _loop(store, channels, DROP)._handle(_envelope())
         self.assertEqual(
-            len(store.decisions), 1,
+            len(store.decisions),
+            1,
             "a dropped event wrote no decision — from the UI it is "
             "indistinguishable from the daemon never seeing it",
         )
@@ -114,7 +126,8 @@ class DropIsRecorded(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(row["event_id"], "e-drop")
         self.assertIsNone(row["proposal_id"], "a drop never produced a proposal")
         self.assertEqual(
-            row["action_summary"], DROP.reason,
+            row["action_summary"],
+            DROP.reason,
             "the reason is the only thing that tells a user why nothing happened",
         )
 
@@ -141,16 +154,24 @@ class OtherOutcomesStillBehave(unittest.IsolatedAsyncioTestCase):
     async def test_log_still_records_logged(self) -> None:
         store, channels = _RecordingStore(), _RecordingChannels()
         decision = TriageDecision(
-            action="log", subagent_hint="", proposed_instruction="",
-            reason="worth noting", urgency=1)
+            action="log",
+            subagent_hint="",
+            proposed_instruction="",
+            reason="worth noting",
+            urgency=1,
+        )
         await _loop(store, channels, decision)._handle(_envelope())
         self.assertEqual(store.decisions[0]["outcome"], "logged")
 
     async def test_propose_still_reaches_consent(self) -> None:
         store, channels = _RecordingStore(), _RecordingChannels()
         decision = TriageDecision(
-            action="propose", subagent_hint="general-purpose",
-            proposed_instruction="do the thing", reason="actionable", urgency=2)
+            action="propose",
+            subagent_hint="general-purpose",
+            proposed_instruction="do the thing",
+            reason="actionable",
+            urgency=2,
+        )
         # _RecordingChannels.post_proposal raises if reached — which is the
         # assertion: a proposal MUST get there.
         with self.assertRaises(AssertionError):

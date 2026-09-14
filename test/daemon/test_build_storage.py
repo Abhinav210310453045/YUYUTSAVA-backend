@@ -49,9 +49,21 @@ PG_UP = _pg_reachable()
 #: Every field the rest of build_daemon reads off the record. A missing one
 #: means the extraction dropped a local that 600 lines downstream still expect.
 REQUIRED_FIELDS = (
-    "settings", "pg_pool", "storage_health", "stores", "embedder", "mem_settings",
-    "artifact_store", "summary_store", "transcript_store", "voice_store",
-    "memory_store", "usage_store", "task_registry", "events", "model_router",
+    "settings",
+    "pg_pool",
+    "storage_health",
+    "stores",
+    "embedder",
+    "mem_settings",
+    "artifact_store",
+    "summary_store",
+    "transcript_store",
+    "voice_store",
+    "memory_store",
+    "usage_store",
+    "task_registry",
+    "events",
+    "model_router",
     "fallback_reason",
 )
 
@@ -67,7 +79,9 @@ class BuildStorageStandalone(unittest.IsolatedAsyncioTestCase):
 
     async def asyncSetUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
-        self._prev = {k: os.environ.get(k) for k in ("YUYUTSAVA_STATE_DIR", "YUYUTSAVA_STORAGE_BACKEND")}
+        self._prev = {
+            k: os.environ.get(k) for k in ("YUYUTSAVA_STATE_DIR", "YUYUTSAVA_STORAGE_BACKEND")
+        }
         os.environ["YUYUTSAVA_STATE_DIR"] = self._tmp.name
         os.environ["YUYUTSAVA_STORAGE_BACKEND"] = "sqlite"
 
@@ -98,7 +112,8 @@ class BuildStorageStandalone(unittest.IsolatedAsyncioTestCase):
         try:
             missing = [f for f in REQUIRED_FIELDS if not hasattr(st, f)]
             self.assertEqual(
-                missing, [],
+                missing,
+                [],
                 f"StorageSubsystem is missing {missing}. build_daemon unpacks "
                 f"these into locals that later sections read, so a dropped field "
                 f"is a NameError several hundred lines away.",
@@ -123,7 +138,9 @@ class BuildStorageStandalone(unittest.IsolatedAsyncioTestCase):
 class BuildStorageOnPostgres(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
-        self._prev = {k: os.environ.get(k) for k in ("YUYUTSAVA_STATE_DIR", "YUYUTSAVA_STORAGE_BACKEND")}
+        self._prev = {
+            k: os.environ.get(k) for k in ("YUYUTSAVA_STATE_DIR", "YUYUTSAVA_STORAGE_BACKEND")
+        }
         os.environ["YUYUTSAVA_STATE_DIR"] = self._tmp.name
         os.environ["YUYUTSAVA_STORAGE_BACKEND"] = "postgres"
 

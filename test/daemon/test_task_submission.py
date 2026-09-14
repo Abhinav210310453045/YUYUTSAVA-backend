@@ -44,9 +44,7 @@ class _RecordingBus:
 class TaskSubmissionTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
-        self.registry = TaskRegistry(
-            sqlite_task_store(Path(self._tmp.name) / "state.db")
-        )
+        self.registry = TaskRegistry(sqlite_task_store(Path(self._tmp.name) / "state.db"))
         self.queue: asyncio.Queue = asyncio.Queue()
         self.store = _RecordingStore()
         self.bus = _RecordingBus()
@@ -138,9 +136,7 @@ class TaskSubmissionComplexityTests(unittest.IsolatedAsyncioTestCase):
 
     async def asyncSetUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
-        self.registry = TaskRegistry(
-            sqlite_task_store(Path(self._tmp.name) / "state.db")
-        )
+        self.registry = TaskRegistry(sqlite_task_store(Path(self._tmp.name) / "state.db"))
         self.queue: asyncio.Queue = asyncio.Queue()
         self.scorer = _RecordingScorer(value=4)
         self.svc = TaskSubmissionService(
@@ -175,8 +171,10 @@ class TaskSubmissionComplexityTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_no_scorer_leaves_unscored(self) -> None:
         svc = TaskSubmissionService(
-            registry=self.registry, task_queue=self.queue,
-            store=_RecordingStore(), bus=_RecordingBus(),
+            registry=self.registry,
+            task_queue=self.queue,
+            store=_RecordingStore(),
+            bus=_RecordingBus(),
             proposal_expiry_sec=300,
         )
         task_id = await svc.submit_direct("x")

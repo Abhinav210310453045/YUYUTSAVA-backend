@@ -94,10 +94,10 @@ def _inject_error_guard(html: str) -> str:
     """*html* with the error-guard script spliced in ahead of any page script."""
     m = _HEAD_RE.search(html)
     if m:
-        return html[: m.end()] + _ERROR_GUARD + html[m.end():]
+        return html[: m.end()] + _ERROR_GUARD + html[m.end() :]
     m = _HTML_RE.search(html)
     if m:
-        return html[: m.end()] + "<head>" + _ERROR_GUARD + "</head>" + html[m.end():]
+        return html[: m.end()] + "<head>" + _ERROR_GUARD + "</head>" + html[m.end() :]
     return _ERROR_GUARD + html
 
 

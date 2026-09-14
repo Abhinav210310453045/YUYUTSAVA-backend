@@ -127,7 +127,8 @@ class StoreFactory:
         if self._health is None:
             logger.warning(
                 "%s declares spillover failover but no StorageHealth was supplied; "
-                "falling back to raise-on-error", name,
+                "falling back to raise-on-error",
+                name,
             )
             return pg_store
 
@@ -139,7 +140,8 @@ class StoreFactory:
 
     def artifacts(self, *, semantic_recall: bool = True) -> Any:
         from yuyutsava.context.artifacts_unified import (
-            pg_artifact_store, sqlite_artifact_store,
+            pg_artifact_store,
+            sqlite_artifact_store,
         )
 
         if self.is_postgres:
@@ -153,21 +155,21 @@ class StoreFactory:
 
     def summaries(self) -> Any:
         from yuyutsava.context.summary_store_unified import (
-            pg_summary_store, sqlite_summary_store,
+            pg_summary_store,
+            sqlite_summary_store,
         )
 
-        return (
-            pg_summary_store(self._pg) if self.is_postgres
-            else sqlite_summary_store(self._db())
-        )
+        return pg_summary_store(self._pg) if self.is_postgres else sqlite_summary_store(self._db())
 
     def transcripts(self) -> Any:
         from yuyutsava.context.transcript_store_unified import (
-            pg_transcript_store, sqlite_transcript_store,
+            pg_transcript_store,
+            sqlite_transcript_store,
         )
 
         return (
-            pg_transcript_store(self._pg) if self.is_postgres
+            pg_transcript_store(self._pg)
+            if self.is_postgres
             else sqlite_transcript_store(self._db())
         )
 
@@ -211,10 +213,7 @@ class StoreFactory:
     def voice(self) -> Any:
         from yuyutsava.storage.voice_store_unified import pg_voice_store, sqlite_voice_store
 
-        return (
-            pg_voice_store(self._pg) if self.is_postgres
-            else sqlite_voice_store(self._db())
-        )
+        return pg_voice_store(self._pg) if self.is_postgres else sqlite_voice_store(self._db())
 
     # -- daemon bookkeeping -------------------------------------------------
 
@@ -239,7 +238,8 @@ class StoreFactory:
         if self.is_postgres and self._embedder is not None:
             logger.info("  memory    : pgvector (embed=%s)", settings.embed_model)
             return pg_memory_store(
-                self._pg, self._embedder,
+                self._pg,
+                self._embedder,
                 min_score=settings.min_score,
                 dedup_threshold=settings.dedup_threshold,
             )
@@ -267,7 +267,8 @@ class StoreFactory:
 
     def feedback(self) -> Any:
         from yuyutsava.storage.feedback_store_unified import (
-            pg_feedback_store, sqlite_feedback_store,
+            pg_feedback_store,
+            sqlite_feedback_store,
         )
 
         return self._wrap(

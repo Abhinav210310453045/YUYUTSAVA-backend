@@ -58,14 +58,20 @@ def make_sink() -> InboundSink:
 
 
 def make_registry(
-    *, enabled: bool = True, router: ChannelRouter | None = None,
+    *,
+    enabled: bool = True,
+    router: ChannelRouter | None = None,
 ) -> tuple[ChannelPluginRegistry, ChannelRouter]:
     router = router if router is not None else ChannelRouter(channels=[])
-    config = ChannelsConfig(channels={
-        "fake": ChannelConfig(name="fake", enabled=enabled, params={"knob": 1}),
-    })
+    config = ChannelsConfig(
+        channels={
+            "fake": ChannelConfig(name="fake", enabled=enabled, params={"knob": 1}),
+        }
+    )
     registry = ChannelPluginRegistry(
-        router=router, sink=make_sink(), config=config,
+        router=router,
+        sink=make_sink(),
+        config=config,
         plugin_factories={"fake": FakeChannelPlugin.from_config},
     )
     return registry, router
@@ -121,15 +127,23 @@ class RegistryLifecycleTests(unittest.IsolatedAsyncioTestCase):
         await registry.start_all()
         first = FakeChannelPlugin.instances[-1]
 
-        await registry.reload(ChannelsConfig(channels={
-            "fake": ChannelConfig(name="fake", enabled=False),
-        }))
+        await registry.reload(
+            ChannelsConfig(
+                channels={
+                    "fake": ChannelConfig(name="fake", enabled=False),
+                }
+            )
+        )
         self.assertTrue(first.stopped)
         self.assertFalse(registry.is_running("fake"))
 
-        await registry.reload(ChannelsConfig(channels={
-            "fake": ChannelConfig(name="fake", enabled=True, params={"knob": 2}),
-        }))
+        await registry.reload(
+            ChannelsConfig(
+                channels={
+                    "fake": ChannelConfig(name="fake", enabled=True, params={"knob": 2}),
+                }
+            )
+        )
         self.assertTrue(registry.is_running("fake"))
         fresh = FakeChannelPlugin.instances[-1]
         self.assertIsNot(fresh, first)
@@ -157,12 +171,16 @@ class RegistryLifecycleTests(unittest.IsolatedAsyncioTestCase):
             raise ValueError("token missing")
 
         router = ChannelRouter(channels=[])
-        config = ChannelsConfig(channels={
-            "broken": ChannelConfig(name="broken", enabled=True),
-            "fake": ChannelConfig(name="fake", enabled=True),
-        })
+        config = ChannelsConfig(
+            channels={
+                "broken": ChannelConfig(name="broken", enabled=True),
+                "fake": ChannelConfig(name="fake", enabled=True),
+            }
+        )
         registry = ChannelPluginRegistry(
-            router=router, sink=make_sink(), config=config,
+            router=router,
+            sink=make_sink(),
+            config=config,
             plugin_factories={
                 "broken": broken_factory,
                 "fake": FakeChannelPlugin.from_config,

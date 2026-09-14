@@ -66,7 +66,9 @@ class DerivedPaths(unittest.TestCase):
             sb = Path(other) / "sb"
             out = Path(other) / "out"
             layout = WorkspaceLayout.for_workspace(
-                self.ws, sandbox_override=sb, outputs_override=out,
+                self.ws,
+                sandbox_override=sb,
+                outputs_override=out,
             )
         self.assertEqual(layout.sandbox, sb.resolve())
         self.assertEqual(layout.outputs, out.resolve())
@@ -131,7 +133,9 @@ class Ensure(unittest.TestCase):
 
     def test_ensure_is_idempotent_and_never_rewrites(self) -> None:
         self.layout.ensure()
-        self.layout.changelog.write_text("# ChangeLog\n\n## entry\n- x — y (file)\n", encoding="utf-8")
+        self.layout.changelog.write_text(
+            "# ChangeLog\n\n## entry\n- x — y (file)\n", encoding="utf-8"
+        )
         self.layout.gitignore.write_text("custom\n", encoding="utf-8")
         self.layout.ensure()
         self.assertIn("## entry", self.layout.changelog.read_text(encoding="utf-8"))

@@ -33,23 +33,39 @@ class CheckRequestTests(unittest.TestCase):
     settings = AuthSettings(token="sekret", enforce=True)
 
     def test_bearer_header_accepted(self) -> None:
-        self.assertTrue(check_request(
-            self.settings, path="/tasks", authorization="Bearer sekret",
-        ))
+        self.assertTrue(
+            check_request(
+                self.settings,
+                path="/tasks",
+                authorization="Bearer sekret",
+            )
+        )
 
     def test_missing_or_wrong_token_rejected(self) -> None:
         self.assertFalse(check_request(self.settings, path="/tasks"))
-        self.assertFalse(check_request(
-            self.settings, path="/tasks", authorization="Bearer wrong",
-        ))
+        self.assertFalse(
+            check_request(
+                self.settings,
+                path="/tasks",
+                authorization="Bearer wrong",
+            )
+        )
 
     def test_query_token_only_on_stream(self) -> None:
-        self.assertTrue(check_request(
-            self.settings, path="/stream", query_token="sekret",
-        ))
-        self.assertFalse(check_request(
-            self.settings, path="/tasks", query_token="sekret",
-        ))
+        self.assertTrue(
+            check_request(
+                self.settings,
+                path="/stream",
+                query_token="sekret",
+            )
+        )
+        self.assertFalse(
+            check_request(
+                self.settings,
+                path="/tasks",
+                query_token="sekret",
+            )
+        )
 
     def test_health_is_public(self) -> None:
         self.assertTrue(check_request(self.settings, path="/health"))
@@ -62,18 +78,31 @@ class CheckRequestTests(unittest.TestCase):
         # 0.0.0.0 bind enforces auth, but loopback peers (the Electron
         # renderer) are exempt without a token.
         for peer in ("127.0.0.1", "::1", "::ffff:127.0.0.1"):
-            self.assertTrue(check_request(
-                self.settings, path="/tasks", peer_host=peer,
-            ), peer)
+            self.assertTrue(
+                check_request(
+                    self.settings,
+                    path="/tasks",
+                    peer_host=peer,
+                ),
+                peer,
+            )
 
     def test_non_loopback_peer_still_needs_token(self) -> None:
-        self.assertFalse(check_request(
-            self.settings, path="/tasks", peer_host="100.64.0.1",
-        ))
-        self.assertTrue(check_request(
-            self.settings, path="/tasks", peer_host="100.64.0.1",
-            authorization="Bearer sekret",
-        ))
+        self.assertFalse(
+            check_request(
+                self.settings,
+                path="/tasks",
+                peer_host="100.64.0.1",
+            )
+        )
+        self.assertTrue(
+            check_request(
+                self.settings,
+                path="/tasks",
+                peer_host="100.64.0.1",
+                authorization="Bearer sekret",
+            )
+        )
 
 
 class AuthMiddlewareTests(unittest.IsolatedAsyncioTestCase):
@@ -88,7 +117,8 @@ class AuthMiddlewareTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(r.json()["code"], "unauthorized")
 
             r = await client.get(
-                "/openapi.json", headers={"Authorization": "Bearer sekret"},
+                "/openapi.json",
+                headers={"Authorization": "Bearer sekret"},
             )
             self.assertEqual(r.status_code, 200)
 

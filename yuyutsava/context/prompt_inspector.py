@@ -42,7 +42,10 @@ logger = logging.getLogger("yuyutsava.context.prompt_inspector")
 
 def _enabled() -> bool:
     return os.environ.get("YUYUTSAVA_DEBUG_PROMPT", "").strip().lower() in (
-        "1", "true", "yes", "on",
+        "1",
+        "true",
+        "yes",
+        "on",
     )
 
 

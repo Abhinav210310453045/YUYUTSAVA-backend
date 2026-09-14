@@ -33,13 +33,24 @@ CARD_STATUSES: tuple[str, ...] = ("inbox", "active", "done", "archived")
 NOTE_AUTHORS: tuple[str, ...] = ("user", "tinker", "master")
 ATTACHMENT_KINDS: tuple[str, ...] = ("file", "image", "video", "link", "diagram", "artifact")
 OBJECTIVE_PHASES: tuple[str, ...] = (
-    "thinking", "planning", "doing", "completed", "blocked", "abandoned"
+    "thinking",
+    "planning",
+    "doing",
+    "completed",
+    "blocked",
+    "abandoned",
 )
 # Validated at the exchange, deliberately NOT CHECK'd in the DB — the
 # vocabulary grows with the board (journey doc, future automations).
 EVENT_KINDS: tuple[str, ...] = (
-    "card_status", "objective_created", "objective_phase", "objective_updated",
-    "objective_deleted", "note_assigned", "artifact_attached", "journey_generated",
+    "card_status",
+    "objective_created",
+    "objective_phase",
+    "objective_updated",
+    "objective_deleted",
+    "note_assigned",
+    "artifact_attached",
+    "journey_generated",
 )
 EVENT_ACTORS: tuple[str, ...] = ("user", "tinker", "master", "system")
 
@@ -73,9 +84,9 @@ class TodoObjectiveV1(BaseModel):
     card_id: str
     title: str
     phase: ObjectivePhase = "thinking"
-    order_idx: int = 0                # display order ("order" is an SQL keyword)
-    reason: str | None = None         # why blocked/abandoned
-    outcome: str | None = None        # what completing it produced
+    order_idx: int = 0  # display order ("order" is an SQL keyword)
+    reason: str | None = None  # why blocked/abandoned
+    outcome: str | None = None  # what completing it produced
     created_ts: float
     updated_ts: float
 
@@ -99,8 +110,8 @@ class TodoAttachmentV1(BaseModel):
     attachment_id: str
     card_id: str
     kind: AttachmentKind
-    path: str | None = None      # on-disk file (inside the card's workspace)
-    url: str | None = None       # external resource (kind == "link")
+    path: str | None = None  # on-disk file (inside the card's workspace)
+    url: str | None = None  # external resource (kind == "link")
     mime: str | None = None
     title: str | None = None
     meta: dict[str, Any] = Field(default_factory=dict)
@@ -136,7 +147,7 @@ class TodoCardSummaryV1(BaseModel):
     note_count: int = 0
     attachment_count: int = 0
     objective_count: int = 0
-    objective_done_count: int = 0     # phase == "completed"
+    objective_done_count: int = 0  # phase == "completed"
     created_ts: float
     updated_ts: float
 

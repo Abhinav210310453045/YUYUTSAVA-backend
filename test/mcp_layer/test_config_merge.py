@@ -43,7 +43,8 @@ class _Env(unittest.TestCase):
         self.ws = root / "project"
         self.ws.mkdir()
         self._env = mock.patch.dict(
-            os.environ, {"YUYUTSAVA_HOME": str(self.home), "DEMO_TOKEN": "sekrit"},
+            os.environ,
+            {"YUYUTSAVA_HOME": str(self.home), "DEMO_TOKEN": "sekrit"},
         )
         self._env.start()
         self.global_path = global_mcp_config_path()
@@ -61,17 +62,23 @@ class FromFile(_Env):
         self.assertEqual(cfg.trusted_workspaces, ())
 
     def test_expansion_everywhere_and_source(self) -> None:
-        _write(self.global_path, {
-            "mcpServers": {
-                "echo": {
-                    "command": "$DEMO_TOKEN-bin",
-                    "args": ["${YUYUTSAVA_WORKSPACE}/.yuyutsava/scripts/echo.py", "$DEMO_TOKEN"],
-                    "env": {"TOKEN": "${DEMO_TOKEN}", "WS": "$YUYUTSAVA_WORKSPACE"},
+        _write(
+            self.global_path,
+            {
+                "mcpServers": {
+                    "echo": {
+                        "command": "$DEMO_TOKEN-bin",
+                        "args": [
+                            "${YUYUTSAVA_WORKSPACE}/.yuyutsava/scripts/echo.py",
+                            "$DEMO_TOKEN",
+                        ],
+                        "env": {"TOKEN": "${DEMO_TOKEN}", "WS": "$YUYUTSAVA_WORKSPACE"},
+                    },
+                    "remote": {"url": "http://host/${DEMO_TOKEN}/sse"},
                 },
-                "remote": {"url": "http://host/${DEMO_TOKEN}/sse"},
+                "trusted_workspaces": [str(self.ws)],
             },
-            "trusted_workspaces": [str(self.ws)],
-        })
+        )
         cfg = MCPConfig.from_file(workspace=self.ws)
         echo = cfg.servers["echo"]
         self.assertEqual(echo.command, "sekrit-bin")
@@ -82,12 +89,17 @@ class FromFile(_Env):
         self.assertEqual(cfg.trusted_workspaces, (str(self.ws),))
 
     def test_invalid_entries_are_skipped(self) -> None:
-        _write(self.global_path, {"mcpServers": {
-            "both": {"command": "x", "url": "http://y"},
-            "neither": {},
-            "notadict": "x",
-            "ok": {"command": "x"},
-        }})
+        _write(
+            self.global_path,
+            {
+                "mcpServers": {
+                    "both": {"command": "x", "url": "http://y"},
+                    "neither": {},
+                    "notadict": "x",
+                    "ok": {"command": "x"},
+                }
+            },
+        )
         self.assertEqual(list(MCPConfig.from_file().servers), ["ok"])
 
     def test_source_does_not_affect_equality(self) -> None:
@@ -100,13 +112,19 @@ class FromFile(_Env):
 class Merge(unittest.TestCase):
     def test_overlay_wins_scopes_union(self) -> None:
         base = MCPConfig(
-            servers={"a": MCPServerSpec(name="a", command="a1"), "b": MCPServerSpec(name="b", command="b")},
+            servers={
+                "a": MCPServerSpec(name="a", command="a1"),
+                "b": MCPServerSpec(name="b", command="b"),
+            },
             scopes={"cli": ["a"], "orchestrator": ["b"]},
             default_scope=["a"],
             trusted_workspaces=("/x",),
         )
         overlay = MCPConfig(
-            servers={"a": MCPServerSpec(name="a", command="a2"), "c": MCPServerSpec(name="c", url="http://c")},
+            servers={
+                "a": MCPServerSpec(name="a", command="a2"),
+                "c": MCPServerSpec(name="c", url="http://c"),
+            },
             scopes={"cli": ["c", "a"], "tinker": ["c"]},
             default_scope=["c", "a"],
             trusted_workspaces=("/ignored",),
@@ -123,17 +141,23 @@ class Merge(unittest.TestCase):
 
 class Load(_Env):
     def _global(self, **extra) -> None:
-        _write(self.global_path, {
-            "mcpServers": {"g": {"command": "g"}},
-            "scopes": {"cli": ["g"]},
-            **extra,
-        })
+        _write(
+            self.global_path,
+            {
+                "mcpServers": {"g": {"command": "g"}},
+                "scopes": {"cli": ["g"]},
+                **extra,
+            },
+        )
 
     def _workspace(self) -> None:
-        _write(self.ws_path, {
-            "mcpServers": {"w": {"command": "${YUYUTSAVA_WORKSPACE}/run.sh"}},
-            "scopes": {"cli": ["w"]},
-        })
+        _write(
+            self.ws_path,
+            {
+                "mcpServers": {"w": {"command": "${YUYUTSAVA_WORKSPACE}/run.sh"}},
+                "scopes": {"cli": ["w"]},
+            },
+        )
 
     def test_no_workspace_returns_global(self) -> None:
         self._global()

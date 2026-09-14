@@ -56,9 +56,11 @@ class ChannelsConfig:
     @classmethod
     def default(cls) -> "ChannelsConfig":
         """No file yet: every known plugin present but disabled."""
-        return cls(channels={
-            "telegram": ChannelConfig(name="telegram", enabled=False, params={}),
-        })
+        return cls(
+            channels={
+                "telegram": ChannelConfig(name="telegram", enabled=False, params={}),
+            }
+        )
 
     def to_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {"channels": {}}
@@ -80,7 +82,9 @@ class ChannelsConfig:
     def with_enabled(self, name: str, enabled: bool) -> "ChannelsConfig":
         """Copy with one channel's enabled flag flipped (params preserved)."""
         existing = self.channels.get(name, ChannelConfig(name=name))
-        return ChannelsConfig(channels={
-            **self.channels,
-            name: ChannelConfig(name=name, enabled=enabled, params=dict(existing.params)),
-        })
+        return ChannelsConfig(
+            channels={
+                **self.channels,
+                name: ChannelConfig(name=name, enabled=enabled, params=dict(existing.params)),
+            }
+        )

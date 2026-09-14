@@ -164,18 +164,20 @@ def _make_tavily_search(api_key: str) -> BaseTool:
 
         results = response.get("results", [])
         logger.debug("ws_tavily_search(%r) → %d results", query, len(results))
-        return json.dumps({
-            "answer": response.get("answer"),
-            "results": [
-                {
-                    "title": r.get("title"),
-                    "url": r.get("url"),
-                    "content": r.get("content"),
-                    "score": r.get("score"),
-                }
-                for r in results
-            ],
-        })
+        return json.dumps(
+            {
+                "answer": response.get("answer"),
+                "results": [
+                    {
+                        "title": r.get("title"),
+                        "url": r.get("url"),
+                        "content": r.get("content"),
+                        "score": r.get("score"),
+                    }
+                    for r in results
+                ],
+            }
+        )
 
     return ws_tavily_search
 
@@ -229,17 +231,19 @@ def _make_exa_tools(api_key: str) -> list[BaseTool]:
 
         results = getattr(response, "results", [])
         logger.debug("ws_exa_search(%r) → %d results", query, len(results))
-        return json.dumps({
-            "results": [
-                {
-                    "title": getattr(r, "title", None),
-                    "url": getattr(r, "url", None),
-                    "published_date": getattr(r, "published_date", None),
-                    "id": getattr(r, "id", None),
-                }
-                for r in results
-            ]
-        })
+        return json.dumps(
+            {
+                "results": [
+                    {
+                        "title": getattr(r, "title", None),
+                        "url": getattr(r, "url", None),
+                        "published_date": getattr(r, "published_date", None),
+                        "id": getattr(r, "id", None),
+                    }
+                    for r in results
+                ]
+            }
+        )
 
     @tool
     async def ws_exa_get_contents(
@@ -271,16 +275,18 @@ def _make_exa_tools(api_key: str) -> list[BaseTool]:
 
         results = getattr(response, "results", [])
         logger.debug("ws_exa_get_contents(%d urls) → %d results", len(urls), len(results))
-        return json.dumps({
-            "results": [
-                {
-                    "url": getattr(r, "url", None),
-                    "title": getattr(r, "title", None),
-                    "text": getattr(r, "text", None),
-                }
-                for r in results
-            ]
-        })
+        return json.dumps(
+            {
+                "results": [
+                    {
+                        "url": getattr(r, "url", None),
+                        "title": getattr(r, "title", None),
+                        "text": getattr(r, "text", None),
+                    }
+                    for r in results
+                ]
+            }
+        )
 
     return [ws_exa_search, ws_exa_get_contents]
 
@@ -294,16 +300,16 @@ def _get_exa_client(api_key: str) -> Any:
     """Return an Exa client instance (AsyncExa if available, else Exa)."""
     try:
         from exa_py import AsyncExa
+
         return AsyncExa(api_key=api_key)
     except ImportError:
         pass
     try:
         from exa_py import Exa
+
         return Exa(api_key=api_key)
     except ImportError as exc:
-        raise ExaSearchError(
-            "exa-py is not installed. Run: pip install exa-py"
-        ) from exc
+        raise ExaSearchError("exa-py is not installed. Run: pip install exa-py") from exc
 
 
 async def _exa_search(client: Any, query: str, **kwargs: Any) -> Any:

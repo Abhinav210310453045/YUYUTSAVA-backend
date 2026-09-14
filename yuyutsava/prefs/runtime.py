@@ -117,7 +117,8 @@ class SubagentSettings:
     @staticmethod
     def _clean(names) -> frozenset[str]:
         return frozenset(
-            n.strip() for n in names
+            n.strip()
+            for n in names
             if isinstance(n, str) and n.strip() and n.strip() not in UNDISABLEABLE
         )
 
@@ -192,7 +193,10 @@ class RuntimeSettings:
     # ------------------------------------------------------------------ #
 
     async def set_voice(
-        self, *, wake_enabled: bool | None = None, tts_enabled: bool | None = None,
+        self,
+        *,
+        wake_enabled: bool | None = None,
+        tts_enabled: bool | None = None,
     ) -> VoiceSettings:
         """Patch the voice switches (omitted fields keep their value)."""
         await self.refresh()
@@ -206,7 +210,8 @@ class RuntimeSettings:
         self._loaded_at = time.monotonic()
         logger.info(
             "runtime settings: voice wake=%s tts=%s",
-            updated.wake_enabled, updated.tts_enabled,
+            updated.wake_enabled,
+            updated.tts_enabled,
         )
         return updated
 

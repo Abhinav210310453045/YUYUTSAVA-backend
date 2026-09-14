@@ -63,9 +63,7 @@ _SELECT_COLS = (
 class PgSessionStore:
     """``SessionStore`` impl over the Postgres ``sessions`` table (migration v6)."""
 
-    def __init__(
-        self, storage: StorageSettings, *, pool: PgPool | None = None
-    ) -> None:
+    def __init__(self, storage: StorageSettings, *, pool: PgPool | None = None) -> None:
         self._storage = storage
         self._pool = pool
         # An injected pool means the owner (the daemon) already ran migrations.
@@ -83,9 +81,7 @@ class PgSessionStore:
             async with self._pool.connection() as conn:
                 yield conn
             return
-        conn = await psycopg.AsyncConnection.connect(
-            self._storage.pg_dsn, autocommit=True
-        )
+        conn = await psycopg.AsyncConnection.connect(self._storage.pg_dsn, autocommit=True)
         try:
             yield conn
         finally:
@@ -125,21 +121,27 @@ class PgSessionStore:
         ws = str(workspace.resolve())
         async with self._conn() as conn:
             # sessions.thread_id FKs to threads — upsert the parent first.
-            await ensure_thread(
-                conn, tid, origin=origin, workspace=ws, status="running"
-            )
+            await ensure_thread(conn, tid, origin=origin, workspace=ws, status="running")
             await conn.execute(
                 f"INSERT INTO sessions ({_INSERT_COLS}) VALUES "
                 "(%s, %s, %s, %s, to_timestamp(%s), to_timestamp(%s), "
                 "%s, %s, %s, %s, %s, %s, %s)",
-                (tid, tid, ws, "running", now, now, 0, 0, 0, preview,
-                 _SCHEMA_VERSION, origin, ""),
+                (tid, tid, ws, "running", now, now, 0, 0, 0, preview, _SCHEMA_VERSION, origin, ""),
             )
         return Session(
-            id=tid, thread_id=tid, workspace=Path(ws), status="running",
-            created_at=now, updated_at=now, message_count=0,
-            memory_files_count=0, db_row_bytes=0, task_preview=preview,
-            schema_version=_SCHEMA_VERSION, origin=origin, title="",
+            id=tid,
+            thread_id=tid,
+            workspace=Path(ws),
+            status="running",
+            created_at=now,
+            updated_at=now,
+            message_count=0,
+            memory_files_count=0,
+            db_row_bytes=0,
+            task_preview=preview,
+            schema_version=_SCHEMA_VERSION,
+            origin=origin,
+            title="",
         )
 
     async def set_title_if_empty(self, session_id: str, title: str) -> None:
@@ -149,8 +151,7 @@ class PgSessionStore:
         await self._ensure_ready()
         async with self._conn() as conn:
             await conn.execute(
-                "UPDATE sessions SET title = %s WHERE id = %s "
-                "AND (title IS NULL OR title = '')",
+                "UPDATE sessions SET title = %s WHERE id = %s AND (title IS NULL OR title = '')",
                 (t, session_id),
             )
 
@@ -164,9 +165,7 @@ class PgSessionStore:
     ) -> None:
         await self._ensure_ready()
         now = time.time()
-        preview = (
-            None if task_preview is None else task_preview[:_TASK_PREVIEW_MAX]
-        )
+        preview = None if task_preview is None else task_preview[:_TASK_PREVIEW_MAX]
         async with self._conn() as conn:
             bytes_for_thread = await self._checkpoint_bytes(conn, session_id)
             sets = [
@@ -205,9 +204,7 @@ class PgSessionStore:
 
     async def update_status(self, session_id: str, status: str) -> None:
         if status not in SESSION_STATUSES:
-            raise ValueError(
-                f"status must be one of {SESSION_STATUSES}, got {status!r}"
-            )
+            raise ValueError(f"status must be one of {SESSION_STATUSES}, got {status!r}")
         await self._ensure_ready()
         async with self._conn() as conn:
             await conn.execute(
@@ -247,9 +244,7 @@ class PgSessionStore:
     ) -> list[Session]:
         await self._ensure_ready()
         if order_by not in ("updated_at", "created_at"):
-            raise ValueError(
-                f"order_by must be updated_at or created_at, got {order_by!r}"
-            )
+            raise ValueError(f"order_by must be updated_at or created_at, got {order_by!r}")
         sql = f"SELECT {_SELECT_COLS} FROM sessions"
         clauses: list[str] = []
         params: list[Any] = []
@@ -272,9 +267,7 @@ class PgSessionStore:
             rows = await cur.fetchall()
         return [_row_to_session(r) for r in rows]
 
-    async def list_thread_family(
-        self, base: str, *, limit: int = 50
-    ) -> list[Session]:
+    async def list_thread_family(self, base: str, *, limit: int = 50) -> list[Session]:
         """Sessions whose id is ``base`` or ``base:<suffix>``, newest first.
 
         left() comparison rather than LIKE — ids contain ``_`` (a LIKE
@@ -295,13 +288,32 @@ class PgSessionStore:
 
 def _row_to_session(row: Any) -> Session:
     (
-        sid, tid, ws, status, created, updated, msgs, mems, dbbytes, preview,
-        ver, origin, title,
+        sid,
+        tid,
+        ws,
+        status,
+        created,
+        updated,
+        msgs,
+        mems,
+        dbbytes,
+        preview,
+        ver,
+        origin,
+        title,
     ) = tuple(row)
     return Session(
-        id=sid, thread_id=tid, workspace=Path(ws), status=status,
-        created_at=float(created), updated_at=float(updated),
-        message_count=int(msgs), memory_files_count=int(mems),
-        db_row_bytes=int(dbbytes), task_preview=preview,
-        schema_version=int(ver), origin=origin, title=title or "",
+        id=sid,
+        thread_id=tid,
+        workspace=Path(ws),
+        status=status,
+        created_at=float(created),
+        updated_at=float(updated),
+        message_count=int(msgs),
+        memory_files_count=int(mems),
+        db_row_bytes=int(dbbytes),
+        task_preview=preview,
+        schema_version=int(ver),
+        origin=origin,
+        title=title or "",
     )

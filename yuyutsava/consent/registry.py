@@ -111,7 +111,10 @@ class ConsentRegistry:
             expires_ts=expires_ts,
         )
         self._grants.append(g)
-        if scope in (ConsentScope.PROJECT.value, ConsentScope.PERSISTENT.value) and self._store is not None:
+        if (
+            scope in (ConsentScope.PROJECT.value, ConsentScope.PERSISTENT.value)
+            and self._store is not None
+        ):
             try:
                 await self._store.put_consent_grant(g)
             except Exception:
@@ -132,11 +135,13 @@ class ConsentRegistry:
         session_id: str | None,
         workspace: str | None,
     ) -> str:
-        return self.check(ConsentRequest(
-            domain=ToolPermissionDomain.name,
-            scope_refs=_tool_scope_refs(session_id, workspace),
-            descriptor={"operation": operation, "zone": zone, "paths": list(paths or [])},
-        )).verdict
+        return self.check(
+            ConsentRequest(
+                domain=ToolPermissionDomain.name,
+                scope_refs=_tool_scope_refs(session_id, workspace),
+                descriptor={"operation": operation, "zone": zone, "paths": list(paths or [])},
+            )
+        ).verdict
 
     async def grant_tool_permission(
         self,

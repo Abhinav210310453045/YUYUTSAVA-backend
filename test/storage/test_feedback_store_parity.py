@@ -60,8 +60,12 @@ class _FeedbackContract:
 
     async def _add(self, thread: str, ref: str = "m1", **over):
         kw = dict(
-            thread_id=thread, session_id=thread, message_ref=ref, rating="up",
-            user_text="what the user asked", assistant_text="what the agent said",
+            thread_id=thread,
+            session_id=thread,
+            message_ref=ref,
+            rating="up",
+            user_text="what the user asked",
+            assistant_text="what the agent said",
         )
         kw.update(over)
         return await self.store.upsert(**kw)
@@ -70,8 +74,17 @@ class _FeedbackContract:
         tid = self.tid("round")
         rec = await self._add(tid, workspace="/tmp/ws", note="helpful")
         got = (await self.store.list_for_thread(tid))[0]
-        for field in ("feedback_id", "thread_id", "session_id", "workspace",
-                      "message_ref", "rating", "note", "user_text", "assistant_text"):
+        for field in (
+            "feedback_id",
+            "thread_id",
+            "session_id",
+            "workspace",
+            "message_ref",
+            "rating",
+            "note",
+            "user_text",
+            "assistant_text",
+        ):
             with self.subTest(field=field):
                 self.assertEqual(getattr(got, field), getattr(rec, field))
 
@@ -86,9 +99,11 @@ class _FeedbackContract:
         rec = await self._add(tid)
         stored = (await self.store.list_for_thread(tid))[0]
         self.assertAlmostEqual(
-            stored.created_ts, rec.created_ts, places=3,
+            stored.created_ts,
+            rec.created_ts,
+            places=3,
             msg="the stored timestamp is not the one upsert returned — the row "
-                "was written with the database's clock instead of the caller's",
+            "was written with the database's clock instead of the caller's",
         )
 
     async def test_created_ts_is_an_epoch_float(self) -> None:
@@ -113,9 +128,9 @@ class _FeedbackContract:
         await self._add(tid, rating="down", note="changed my mind")
         rows = await self.store.list_for_thread(tid)
         self.assertEqual(
-            len(rows), 1,
-            "re-rating created a second row; the message would show two "
-            "conflicting verdicts",
+            len(rows),
+            1,
+            "re-rating created a second row; the message would show two conflicting verdicts",
         )
         self.assertEqual(rows[0].rating, "down")
         self.assertEqual(rows[0].note, "changed my mind")
@@ -163,8 +178,9 @@ class _FeedbackContract:
             await self._add(tid, ref=ref)
             await asyncio_sleep()
         rows = await self.store.list_for_thread(tid)
-        self.assertEqual([r.created_ts for r in rows],
-                         sorted((r.created_ts for r in rows), reverse=True))
+        self.assertEqual(
+            [r.created_ts for r in rows], sorted((r.created_ts for r in rows), reverse=True)
+        )
 
     async def test_limit_is_honoured(self) -> None:
         tid = self.tid("limit")

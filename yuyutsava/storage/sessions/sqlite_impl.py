@@ -99,9 +99,7 @@ class SqliteSessionStore(BaseSqliteStore):
                     raise
         if current < 3:
             try:
-                await conn.execute(
-                    "ALTER TABLE sessions ADD COLUMN title TEXT NOT NULL DEFAULT ''"
-                )
+                await conn.execute("ALTER TABLE sessions ADD COLUMN title TEXT NOT NULL DEFAULT ''")
             except sqlite3.OperationalError as exc:
                 if "duplicate column" not in str(exc).lower():
                     raise
@@ -133,8 +131,18 @@ class SqliteSessionStore(BaseSqliteStore):
         preview = (task or "").strip().replace("\n", " ")[:_TASK_PREVIEW_MAX]
         ws = str(workspace.resolve())
         row = (
-            tid, tid, ws, "running", now, now, 0, 0, 0, preview,
-            self._SCHEMA_VERSION, origin,
+            tid,
+            tid,
+            ws,
+            "running",
+            now,
+            now,
+            0,
+            0,
+            0,
+            preview,
+            self._SCHEMA_VERSION,
+            origin,
         )
 
         async def _do(conn: aiosqlite.Connection) -> None:
@@ -149,10 +157,19 @@ class SqliteSessionStore(BaseSqliteStore):
 
         await self._run_write(_do)
         return Session(
-            id=tid, thread_id=tid, workspace=Path(ws), status="running",
-            created_at=now, updated_at=now, message_count=0,
-            memory_files_count=0, db_row_bytes=0, task_preview=preview,
-            schema_version=self._SCHEMA_VERSION, origin=origin, title="",
+            id=tid,
+            thread_id=tid,
+            workspace=Path(ws),
+            status="running",
+            created_at=now,
+            updated_at=now,
+            message_count=0,
+            memory_files_count=0,
+            db_row_bytes=0,
+            task_preview=preview,
+            schema_version=self._SCHEMA_VERSION,
+            origin=origin,
+            title="",
         )
 
     async def set_title_if_empty(self, session_id: str, title: str) -> None:
@@ -162,8 +179,7 @@ class SqliteSessionStore(BaseSqliteStore):
 
         async def _do(conn: aiosqlite.Connection) -> None:
             await conn.execute(
-                "UPDATE sessions SET title=? WHERE id=? "
-                "AND (title IS NULL OR title='')",
+                "UPDATE sessions SET title=? WHERE id=? AND (title IS NULL OR title='')",
                 (t, session_id),
             )
 
@@ -178,10 +194,7 @@ class SqliteSessionStore(BaseSqliteStore):
         task_preview: str | None = None,
     ) -> None:
         now = time.time()
-        preview = (
-            None if task_preview is None
-            else task_preview[:_TASK_PREVIEW_MAX]
-        )
+        preview = None if task_preview is None else task_preview[:_TASK_PREVIEW_MAX]
 
         async def _do(conn: aiosqlite.Connection) -> None:
             # Recompute checkpoint bytes for this thread. Both tables live in
@@ -219,9 +232,7 @@ class SqliteSessionStore(BaseSqliteStore):
 
     async def update_status(self, session_id: str, status: str) -> None:
         if status not in SESSION_STATUSES:
-            raise ValueError(
-                f"status must be one of {SESSION_STATUSES}, got {status!r}"
-            )
+            raise ValueError(f"status must be one of {SESSION_STATUSES}, got {status!r}")
         now = time.time()
 
         async def _do(conn: aiosqlite.Connection) -> None:
@@ -268,9 +279,7 @@ class SqliteSessionStore(BaseSqliteStore):
     ) -> list[Session]:
         await self._ensure_schema()
         if order_by not in ("updated_at", "created_at"):
-            raise ValueError(
-                f"order_by must be updated_at or created_at, got {order_by!r}"
-            )
+            raise ValueError(f"order_by must be updated_at or created_at, got {order_by!r}")
         sql = (
             "SELECT id, thread_id, workspace, status, created_at, updated_at, "
             "message_count, memory_files_count, db_row_bytes, task_preview, "
@@ -297,9 +306,7 @@ class SqliteSessionStore(BaseSqliteStore):
             await cur.close()
         return [_row_to_session(r) for r in rows]
 
-    async def list_thread_family(
-        self, base: str, *, limit: int = 50
-    ) -> list[Session]:
+    async def list_thread_family(self, base: str, *, limit: int = 50) -> list[Session]:
         """Sessions whose id is ``base`` or ``base:<suffix>``, newest first.
 
         substr() comparison rather than LIKE — ids contain ``_`` (a LIKE
@@ -328,14 +335,34 @@ def _row_to_session(row: Any) -> Session:
     reads return rows that support both tuple-unpacking and key lookup.
     """
     (
-        sid, tid, ws, status, created, updated, msgs, mems, dbbytes, preview,
-        ver, origin, title,
+        sid,
+        tid,
+        ws,
+        status,
+        created,
+        updated,
+        msgs,
+        mems,
+        dbbytes,
+        preview,
+        ver,
+        origin,
+        title,
     ) = row
     return Session(
-        id=sid, thread_id=tid, workspace=Path(ws), status=status,
-        created_at=created, updated_at=updated, message_count=msgs,
-        memory_files_count=mems, db_row_bytes=dbbytes, task_preview=preview,
-        schema_version=ver, origin=origin, title=title,
+        id=sid,
+        thread_id=tid,
+        workspace=Path(ws),
+        status=status,
+        created_at=created,
+        updated_at=updated,
+        message_count=msgs,
+        memory_files_count=mems,
+        db_row_bytes=dbbytes,
+        task_preview=preview,
+        schema_version=ver,
+        origin=origin,
+        title=title,
     )
 
 
@@ -372,9 +399,8 @@ def get_default_session_store() -> SessionStore:
         storage = StorageSettings.from_env()
         if storage.is_postgres() or s.backend == "postgres":
             from yuyutsava.storage.sessions.pg_impl import PgSessionStore
+
             _DEFAULT_STORE = PgSessionStore(storage)
         else:
-            _DEFAULT_STORE = SqliteSessionStore(
-                s.db_path, busy_timeout_ms=s.busy_timeout_ms
-            )
+            _DEFAULT_STORE = SqliteSessionStore(s.db_path, busy_timeout_ms=s.busy_timeout_ms)
     return _DEFAULT_STORE

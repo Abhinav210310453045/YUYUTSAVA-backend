@@ -47,16 +47,32 @@ from yuyutsava.context.meter import ContextSnapshot
 
 def snap(**kw) -> ContextSnapshot:
     base = dict(
-        role="cli", thread_id="t1", model="gemini-3.5-flash",
-        max_input_tokens=1_000_000, compact_trigger_tokens=700_000,
-        system_tokens=4_000, tools_tokens=23_600, memory_tokens=5_100,
-        skills_tokens=2_700, messages_tokens=29_200,
-        message_count=62, offloaded_digests=27, calibrated=True,
-        call_no=12, input_tokens=41_087, output_tokens=64,
-        cache_read_tokens=38_000, est_cost_usd=0.0032, priced=True,
-        calls=12, session_input_tokens=412_000, session_output_tokens=1_200,
-        session_cache_read_tokens=380_000, session_cost_usd=0.0412,
-        compactions=0, offloads=27,
+        role="cli",
+        thread_id="t1",
+        model="gemini-3.5-flash",
+        max_input_tokens=1_000_000,
+        compact_trigger_tokens=700_000,
+        system_tokens=4_000,
+        tools_tokens=23_600,
+        memory_tokens=5_100,
+        skills_tokens=2_700,
+        messages_tokens=29_200,
+        message_count=62,
+        offloaded_digests=27,
+        calibrated=True,
+        call_no=12,
+        input_tokens=41_087,
+        output_tokens=64,
+        cache_read_tokens=38_000,
+        est_cost_usd=0.0032,
+        priced=True,
+        calls=12,
+        session_input_tokens=412_000,
+        session_output_tokens=1_200,
+        session_cache_read_tokens=380_000,
+        session_cost_usd=0.0412,
+        compactions=0,
+        offloads=27,
     )
     base.update(kw)
     return ContextSnapshot(**base)
@@ -118,14 +134,24 @@ class PanelGeometry(unittest.TestCase):
     def test_every_line_is_exactly_the_panel_width(self):
         # Anything else and the transcript column beside it shows through.
         for width in (MIN_PANEL_WIDTH, 28, 34, MAX_PANEL_WIDTH):
-            for s in (snap(), snap(compactions=3), snap(cache_read_tokens=0),
-                      snap(priced=False), ContextSnapshot(), None):
-                for kw in ({}, {"tool": "tr_run_python"},
-                           {"status": "Running a_very_long_tool_name_here…"}):
+            for s in (
+                snap(),
+                snap(compactions=3),
+                snap(cache_read_tokens=0),
+                snap(priced=False),
+                ContextSnapshot(),
+                None,
+            ):
+                for kw in (
+                    {},
+                    {"tool": "tr_run_python"},
+                    {"status": "Running a_very_long_tool_name_here…"},
+                ):
                     lines = panel_lines(s, width, **kw)
                     widths = {len(ln) for ln in lines}
                     self.assertEqual(
-                        widths, {width},
+                        widths,
+                        {width},
                         f"width={width} snap={s and s.call_no} kw={kw}: {widths}",
                     )
 
@@ -136,8 +162,7 @@ class PanelGeometry(unittest.TestCase):
 
     def test_a_long_label_trims_the_label_not_the_number(self):
         # The number is the content; a truncated "23.6k" is worse than useless.
-        line = next(ln for ln in panel_lines(snap(), MIN_PANEL_WIDTH)
-                    if "23.6k" in ln)
+        line = next(ln for ln in panel_lines(snap(), MIN_PANEL_WIDTH) if "23.6k" in ln)
         self.assertIn("23.6k", line)
         self.assertEqual(len(line), MIN_PANEL_WIDTH)
 
@@ -180,8 +205,7 @@ class DisplayModeLadder(unittest.TestCase):
 class PanelHonesty(unittest.TestCase):
     def test_segment_rows_are_marked_as_estimates(self):
         text = panel_text(snap(), 34)
-        for label in ("system prompt", "tool schemas", "memory", "skills",
-                      "messages", "free"):
+        for label in ("system prompt", "tool schemas", "memory", "skills", "messages", "free"):
             row = next(ln for ln in text.split("\n") if ln.strip().startswith(label))
             self.assertIn("≈", row, label)
 
@@ -202,8 +226,9 @@ class PanelHonesty(unittest.TestCase):
     def test_the_cache_share_is_hidden_when_none_was_reported(self):
         # 0 means "no cache detail", not a 0 % hit rate.
         self.assertIn("↺", panel_text(snap(cache_read_tokens=38_000), 34))
-        self.assertNotIn("↺", panel_text(snap(cache_read_tokens=0,
-                                              session_cache_read_tokens=0), 34))
+        self.assertNotIn(
+            "↺", panel_text(snap(cache_read_tokens=0, session_cache_read_tokens=0), 34)
+        )
 
     def test_an_imminent_compaction_is_called_out(self):
         hot = snap(messages_tokens=900_000)
@@ -230,10 +255,9 @@ class ContextReport(unittest.TestCase):
         out = self._render(snap())
         self.assertIn("gemini-3.5-flash", out)
         self.assertIn("1,000,000", out)
-        for label in ("system prompt", "tool schemas", "memory", "skills",
-                      "messages", "free"):
+        for label in ("system prompt", "tool schemas", "memory", "skills", "messages", "free"):
             self.assertIn(label, out)
-        self.assertIn("41,087", out)   # last call, verbatim
+        self.assertIn("41,087", out)  # last call, verbatim
         self.assertIn("412,000", out)  # session
         self.assertIn("27 tool results offloaded", out)
 
@@ -380,8 +404,9 @@ class RenderingNeverFeedsBackIntoContext(unittest.TestCase):
 
         policy = ContextMeterPolicy(settings=ContextSettings(), role="cli")
         self.assertIsNone(asyncio.run(policy.before_model(Turn(thread_id="t"))))
-        self.assertIsNone(asyncio.run(policy.after_model(
-            Turn(thread_id="t", usage=Usage(input_tokens=10)))))
+        self.assertIsNone(
+            asyncio.run(policy.after_model(Turn(thread_id="t", usage=Usage(input_tokens=10))))
+        )
 
 
 if __name__ == "__main__":

@@ -26,8 +26,7 @@ logger = logging.getLogger("yuyutsava.skills.injector")
 #: prompt bytes to a "skills" segment by matching it, and a second spelling of
 #: this string somewhere else would silently mis-attribute them.
 SKILLS_BLOCK_PREFIX = (
-    "RELEVANT SKILLS (matched to this task; read the full body with "
-    "sk_read_skill before using):"
+    "RELEVANT SKILLS (matched to this task; read the full body with sk_read_skill before using):"
 )
 
 _PREFIX = SKILLS_BLOCK_PREFIX
@@ -58,9 +57,7 @@ def last_recalled() -> tuple[str, ...]:
 class SkillInjector:
     """Renders top-k task-relevant skills into a prompt block."""
 
-    def __init__(
-        self, store: SkillStore, *, agent: str | None = None, top_k: int = 5
-    ) -> None:
+    def __init__(self, store: SkillStore, *, agent: str | None = None, top_k: int = 5) -> None:
         self._inner = RetrievalInjector(
             store,  # SkillStore.search duck-types VectorStore.search(query, k, agent)
             top_k=top_k,

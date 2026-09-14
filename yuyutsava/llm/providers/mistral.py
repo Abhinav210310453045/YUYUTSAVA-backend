@@ -16,9 +16,7 @@ class MistralProvider(Provider):
     def build(
         self, settings: MistralSettings, *, temperature: float, disable_reasoning: bool
     ) -> BaseChatModel:
-        mod = require(
-            "langchain_mistralai", provider="mistral", install="'yuyutsava[mistral]'"
-        )
+        mod = require("langchain_mistralai", provider="mistral", install="'yuyutsava[mistral]'")
         return mod.ChatMistralAI(
             api_key=SecretStr(settings.api_key),
             model_name=settings.model,

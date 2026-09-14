@@ -82,8 +82,12 @@ class ResolveBroadcastTests(unittest.IsolatedAsyncioTestCase):
 
     async def _assert_ask_flow(self, channel) -> None:
         a = AskPrompt(
-            ask_id="ask_x", title="t", body="b",
-            options=["yes", "no"], interrupt_value={}, session_id="s1",
+            ask_id="ask_x",
+            title="t",
+            body="b",
+            options=["yes", "no"],
+            interrupt_value={},
+            session_id="s1",
         )
         post = asyncio.create_task(channel.post_ask(a))
         await self._wait_pending_ask("ask_x")
@@ -104,9 +108,7 @@ class ResolveBroadcastTests(unittest.IsolatedAsyncioTestCase):
         p = _FakeProposal("prop_x", session_id="s2")
         post = asyncio.create_task(channel.post_proposal(p))
         await self._wait_pending_proposal("prop_x")
-        self.hub.pending_proposals["prop_x"].set_result(
-            ProposalDecision(decision="approve")
-        )
+        self.hub.pending_proposals["prop_x"].set_result(ProposalDecision(decision="approve"))
         out = await post
         self.assertEqual(out.decision, "approve")
         await asyncio.sleep(0.01)

@@ -39,7 +39,7 @@ class ChannelPluginRegistry:
     def __init__(
         self,
         *,
-        router: object,                 # yuyutsava.daemon.channels.ChannelRouter
+        router: object,  # yuyutsava.daemon.channels.ChannelRouter
         sink: InboundSink,
         config: ChannelsConfig,
         plugin_factories: dict[str, PluginFactory] | None = None,
@@ -48,8 +48,7 @@ class ChannelPluginRegistry:
         self._sink = sink
         self._config = config
         self._factories = (
-            dict(plugin_factories) if plugin_factories is not None
-            else _builtin_factories()
+            dict(plugin_factories) if plugin_factories is not None else _builtin_factories()
         )
         self._plugins: dict[str, ChannelPlugin] = {}
         self._lock = asyncio.Lock()
@@ -92,12 +91,13 @@ class ChannelPluginRegistry:
                 # Name collision with a non-plugin channel — refuse rather
                 # than run an orphan poller the router never fans out to.
                 await plugin.stop()
-                raise RuntimeError(
-                    f"channel name {plugin.name!r} already registered on the router"
-                )
+                raise RuntimeError(f"channel name {plugin.name!r} already registered on the router")
             self._plugins[name] = plugin
-            logger.info("channel %s enabled (capabilities: %s)",
-                        name, ", ".join(sorted(plugin.capabilities)) or "-")
+            logger.info(
+                "channel %s enabled (capabilities: %s)",
+                name,
+                ", ".join(sorted(plugin.capabilities)) or "-",
+            )
             return True
 
     async def disable(self, name: str) -> bool:
@@ -148,11 +148,13 @@ class ChannelPluginRegistry:
             cfg = self._config.channels.get(name, ChannelConfig(name=name))
             plugin = self._plugins.get(name)
             caps: list[str] = sorted(plugin.capabilities) if plugin else []
-            rows.append({
-                "name": name,
-                "available": name in self._factories,
-                "enabled": cfg.enabled,
-                "running": plugin is not None,
-                "capabilities": caps,
-            })
+            rows.append(
+                {
+                    "name": name,
+                    "available": name in self._factories,
+                    "enabled": cfg.enabled,
+                    "running": plugin is not None,
+                    "capabilities": caps,
+                }
+            )
         return rows

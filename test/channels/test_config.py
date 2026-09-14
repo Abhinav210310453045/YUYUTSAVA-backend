@@ -22,16 +22,19 @@ class ChannelsConfigTests(unittest.TestCase):
     def test_roundtrip(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "channels_config.json"
-            cfg = ChannelsConfig(channels={
-                "telegram": ChannelConfig(
-                    name="telegram", enabled=True, params={"poll_timeout_sec": 30},
-                ),
-            })
+            cfg = ChannelsConfig(
+                channels={
+                    "telegram": ChannelConfig(
+                        name="telegram",
+                        enabled=True,
+                        params={"poll_timeout_sec": 30},
+                    ),
+                }
+            )
             cfg.to_file(path)
             loaded = ChannelsConfig.from_file(path)
             self.assertTrue(loaded.channels["telegram"].enabled)
-            self.assertEqual(loaded.channels["telegram"].params,
-                             {"poll_timeout_sec": 30})
+            self.assertEqual(loaded.channels["telegram"].params, {"poll_timeout_sec": 30})
             # enabled lives next to params in the json body, EventsConfig-style.
             raw = json.loads(path.read_text())
             self.assertEqual(
@@ -40,11 +43,15 @@ class ChannelsConfigTests(unittest.TestCase):
             )
 
     def test_with_enabled_preserves_params(self) -> None:
-        cfg = ChannelsConfig(channels={
-            "telegram": ChannelConfig(
-                name="telegram", enabled=False, params={"debounce_sec": 5},
-            ),
-        })
+        cfg = ChannelsConfig(
+            channels={
+                "telegram": ChannelConfig(
+                    name="telegram",
+                    enabled=False,
+                    params={"debounce_sec": 5},
+                ),
+            }
+        )
         flipped = cfg.with_enabled("telegram", True)
         self.assertTrue(flipped.channels["telegram"].enabled)
         self.assertEqual(flipped.channels["telegram"].params, {"debounce_sec": 5})

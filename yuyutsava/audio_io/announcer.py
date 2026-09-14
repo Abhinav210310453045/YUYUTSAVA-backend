@@ -96,6 +96,7 @@ class Announcer:
                 pass
         try:
             import shutil
+
             shutil.rmtree(self._tmp, ignore_errors=True)
         except Exception:  # noqa: BLE001
             pass

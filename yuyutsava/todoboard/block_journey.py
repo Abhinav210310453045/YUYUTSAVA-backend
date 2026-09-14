@@ -32,8 +32,12 @@ REFLECTION_MARKER = "## Reflection"
 _PHASE_ORDER = ("thinking", "planning", "doing", "blocked", "completed", "abandoned")
 
 _PHASE_COLOR = {
-    "thinking": "#b48cff", "planning": "#6fa8ff", "doing": "#ffc36f",
-    "completed": "#5fe0a0", "blocked": "#ff7a7a", "abandoned": "#8a8f98",
+    "thinking": "#b48cff",
+    "planning": "#6fa8ff",
+    "doing": "#ffc36f",
+    "completed": "#5fe0a0",
+    "blocked": "#ff7a7a",
+    "abandoned": "#8a8f98",
 }
 
 _CSS = """
@@ -153,14 +157,15 @@ def _generate_journey(spec: dict[str, Any], out_dir: Path) -> tuple[Path, str]:
 
     # ── tinker's reflection (the hybrid's narrative half) ──
     reflections = [
-        n for n in notes
+        n
+        for n in notes
         if n.get("author") == "tinker"
         and str(n.get("body", "")).lstrip().startswith(REFLECTION_MARKER)
     ]
     if reflections:
         out.append("<h2>Reflection</h2>")
         for n in reflections:
-            body = str(n.get("body", "")).lstrip()[len(REFLECTION_MARKER):].strip()
+            body = str(n.get("body", "")).lstrip()[len(REFLECTION_MARKER) :].strip()
             out.append(
                 f"<div class='reflection'><span class='a' style='color:#7a828c;"
                 f"font-size:11px'>tinker · {_when(n.get('updated_ts'))}</span>\n"
@@ -235,7 +240,8 @@ def _generate_journey(spec: dict[str, Any], out_dir: Path) -> tuple[Path, str]:
 
 
 JOURNEY_BLOCK = ArtifactBlock(
-    name="journey", kind="artifact",  # closed V1 vocabulary: rides "artifact" by mime
+    name="journey",
+    kind="artifact",  # closed V1 vocabulary: rides "artifact" by mime
     validate=_file_validator("artifact"),
     mimes=("text/html",),
     generate=_generate_journey,

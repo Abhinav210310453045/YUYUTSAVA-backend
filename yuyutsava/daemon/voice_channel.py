@@ -33,7 +33,11 @@ from pathlib import Path
 
 from yuyutsava.audio_io import Announcer
 from yuyutsava.daemon.channels import (
-    AskPrompt, ChannelEvent, LogPayload, ProposalDecision, UserChannel,
+    AskPrompt,
+    ChannelEvent,
+    LogPayload,
+    ProposalDecision,
+    UserChannel,
 )
 from yuyutsava.storage.events import Proposal
 from yuyutsava.io.audio import AudioUnavailableError, capture_wav
@@ -43,7 +47,7 @@ logger = logging.getLogger("yuyutsava.daemon.voice_channel")
 
 # Coarse yes/no keyword lists — intentionally broad.
 _YES_WORDS = frozenset({"yes", "yeah", "yep", "approve", "ok", "okay", "sure", "go"})
-_NO_WORDS  = frozenset({"no", "nope", "skip", "cancel", "stop", "deny", "reject"})
+_NO_WORDS = frozenset({"no", "nope", "skip", "cancel", "stop", "deny", "reject"})
 
 # Duration of the capture window for short yes/no answers.
 _DECISION_LISTEN_SEC = 5.0
@@ -111,10 +115,7 @@ class VoiceChannel(UserChannel):
 
     async def post_proposal(self, p: Proposal) -> ProposalDecision:
         """Read proposal aloud; listen for yes/no. Fall through on ambiguity."""
-        prompt = (
-            f"Proposal: {p.proposed}. "
-            "Say yes to approve, or no to skip."
-        )
+        prompt = f"Proposal: {p.proposed}. Say yes to approve, or no to skip."
         await self._speak(prompt)
 
         transcript = await self._listen(_DECISION_LISTEN_SEC)
@@ -132,7 +133,8 @@ class VoiceChannel(UserChannel):
         # Ambiguous — fall through to web channel.
         logger.info(
             "voice: could not parse response '%s' for proposal %s; deferring",
-            transcript, p.proposal_id,
+            transcript,
+            p.proposal_id,
         )
         raise NotImplementedError(f"voice: ambiguous response {transcript!r}")
 

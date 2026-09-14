@@ -54,11 +54,11 @@ class Measuring(unittest.TestCase):
 class Wrapping(unittest.TestCase):
     def test_no_row_exceeds_the_width(self):
         for width in (1, 2, 7, 34, 80):
-            for line in ("x" * 500, f"{CYAN}{'y' * 500}{RESET}", "日" * 200,
-                         "a b c " * 90):
+            for line in ("x" * 500, f"{CYAN}{'y' * 500}{RESET}", "日" * 200, "a b c " * 90):
                 for row in wrap_ansi(line, width):
                     self.assertLessEqual(
-                        visible_width(row), width, f"width={width} line={line[:20]}")
+                        visible_width(row), width, f"width={width} line={line[:20]}"
+                    )
 
     def test_a_line_that_fits_is_untouched(self):
         line = f"{CYAN}already wrapped by rich{RESET}"

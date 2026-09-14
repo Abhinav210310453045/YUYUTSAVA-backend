@@ -28,7 +28,14 @@ from pathlib import Path
 from typing import Awaitable, Callable, TypeVar
 
 from fastapi import (
-    APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile,
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
 )
 from fastapi.responses import FileResponse
 
@@ -138,7 +145,8 @@ async def board_snapshot(
 
 # Also before /todos/{card_id} so "attachments" never parses as a card id.
 @router.get(
-    "/todos/attachments", response_model=list[TodoAttachmentV1],
+    "/todos/attachments",
+    response_model=list[TodoAttachmentV1],
     summary="List every card's attachments (newest first) for the gallery",
 )
 @_mapped
@@ -151,18 +159,23 @@ async def list_all_attachments(
 
 @router.post("/todos", response_model=TodoCardV1, status_code=201, summary="Create a TODO card")
 @_mapped
-async def create_todo(body: TodoCreateIn,
+async def create_todo(
+    body: TodoCreateIn,
     ex: TodoExchange = Depends(board),
 ) -> TodoCardV1:
     return await ex.add_card(
-        body.title, status=body.status, tags=body.tags,
-        pinned=body.pinned, note=body.note,
+        body.title,
+        status=body.status,
+        tags=body.tags,
+        pinned=body.pinned,
+        note=body.note,
     )
 
 
 @router.get("/todos/{card_id}", response_model=TodoCardV1, summary="Read one card in full")
 @_mapped
-async def get_todo(card_id: str,
+async def get_todo(
+    card_id: str,
     ex: TodoExchange = Depends(board),
 ) -> TodoCardV1:
     return await ex.get_card(card_id)
@@ -170,43 +183,60 @@ async def get_todo(card_id: str,
 
 @router.patch("/todos/{card_id}", response_model=TodoCardV1, summary="Update card fields")
 @_mapped
-async def patch_todo(card_id: str, body: TodoPatchIn,
+async def patch_todo(
+    card_id: str,
+    body: TodoPatchIn,
     ex: TodoExchange = Depends(board),
 ) -> TodoCardV1:
     return await ex.update_card(
-        card_id, title=body.title, status=body.status,
-        pinned=body.pinned, tags=body.tags,
+        card_id,
+        title=body.title,
+        status=body.status,
+        pinned=body.pinned,
+        tags=body.tags,
     )
 
 
 @router.delete("/todos/{card_id}", status_code=204, summary="Delete a card")
 @_mapped
-async def delete_todo(card_id: str,
+async def delete_todo(
+    card_id: str,
     ex: TodoExchange = Depends(board),
 ) -> None:
     await ex.delete_card(card_id)
 
 
 @router.post(
-    "/todos/{card_id}/notes", response_model=TodoNoteV1, status_code=201,
+    "/todos/{card_id}/notes",
+    response_model=TodoNoteV1,
+    status_code=201,
     summary="Add a note to a card",
 )
 @_mapped
-async def add_note(card_id: str, body: NoteIn,
+async def add_note(
+    card_id: str,
+    body: NoteIn,
     ex: TodoExchange = Depends(board),
 ) -> TodoNoteV1:
     return await ex.add_note(
-        card_id, body.body, author=body.author,
-        objective_id=body.objective_id, phase=body.phase,
+        card_id,
+        body.body,
+        author=body.author,
+        objective_id=body.objective_id,
+        phase=body.phase,
     )
 
 
 @router.patch(
-    "/todos/{card_id}/notes/{note_id}", response_model=TodoNoteV1,
+    "/todos/{card_id}/notes/{note_id}",
+    response_model=TodoNoteV1,
     summary="Edit a note's body",
 )
 @_mapped
-async def patch_note(card_id: str, note_id: str, body: NotePatchIn,
+async def patch_note(
+    card_id: str,
+    note_id: str,
+    body: NotePatchIn,
     ex: TodoExchange = Depends(board),
 ) -> TodoNoteV1:
     await _require_note_on_card(card_id, note_id, ex)
@@ -214,10 +244,14 @@ async def patch_note(card_id: str, note_id: str, body: NotePatchIn,
 
 
 @router.delete(
-    "/todos/{card_id}/notes/{note_id}", status_code=204, summary="Delete a note",
+    "/todos/{card_id}/notes/{note_id}",
+    status_code=204,
+    summary="Delete a note",
 )
 @_mapped
-async def delete_note(card_id: str, note_id: str,
+async def delete_note(
+    card_id: str,
+    note_id: str,
     ex: TodoExchange = Depends(board),
 ) -> None:
     await _require_note_on_card(card_id, note_id, ex)
@@ -225,16 +259,22 @@ async def delete_note(card_id: str, note_id: str,
 
 
 @router.patch(
-    "/todos/{card_id}/notes/{note_id}/assign", response_model=TodoNoteV1,
+    "/todos/{card_id}/notes/{note_id}/assign",
+    response_model=TodoNoteV1,
     summary="Assign a note to an objective (or clear with objective_id=null)",
 )
 @_mapped
-async def assign_note(card_id: str, note_id: str, body: NoteAssignIn,
+async def assign_note(
+    card_id: str,
+    note_id: str,
+    body: NoteAssignIn,
     ex: TodoExchange = Depends(board),
 ) -> TodoNoteV1:
     await _require_note_on_card(card_id, note_id, ex)
     return await ex.assign_note(
-        note_id, objective_id=body.objective_id, phase=body.phase,
+        note_id,
+        objective_id=body.objective_id,
+        phase=body.phase,
     )
 
 
@@ -242,48 +282,63 @@ async def _require_note_on_card(card_id: str, note_id: str, ex: TodoExchange) ->
     """404 (before any write) unless the note exists on this card."""
     card = await ex.get_card(card_id)
     if not any(n.note_id == note_id for n in card.notes):
-        raise HTTPException(
-            status_code=404, detail=f"note {note_id!r} is not on card {card_id!r}"
-        )
+        raise HTTPException(status_code=404, detail=f"note {note_id!r} is not on card {card_id!r}")
 
 
 # ── objectives (think flow) ────────────────────────────────────────────
 
+
 @router.post(
-    "/todos/{card_id}/objectives", response_model=TodoObjectiveV1, status_code=201,
+    "/todos/{card_id}/objectives",
+    response_model=TodoObjectiveV1,
+    status_code=201,
     summary="Add an objective to a card's think flow",
 )
 @_mapped
-async def add_objective(card_id: str, body: ObjectiveIn,
+async def add_objective(
+    card_id: str,
+    body: ObjectiveIn,
     ex: TodoExchange = Depends(board),
 ) -> TodoObjectiveV1:
     return await ex.add_objective(
-        card_id, body.title, phase=body.phase,
+        card_id,
+        body.title,
+        phase=body.phase,
     )
 
 
 @router.patch(
-    "/todos/{card_id}/objectives/{objective_id}", response_model=TodoObjectiveV1,
+    "/todos/{card_id}/objectives/{objective_id}",
+    response_model=TodoObjectiveV1,
     summary="Update an objective (title/phase/order/reason/outcome)",
 )
 @_mapped
 async def patch_objective(
-    card_id: str, objective_id: str, body: ObjectivePatchIn,
+    card_id: str,
+    objective_id: str,
+    body: ObjectivePatchIn,
     ex: TodoExchange = Depends(board),
 ) -> TodoObjectiveV1:
     await _require_objective_on_card(card_id, objective_id, ex)
     return await ex.update_objective(
-        objective_id, title=body.title, phase=body.phase,
-        order_idx=body.order_idx, reason=body.reason, outcome=body.outcome,
+        objective_id,
+        title=body.title,
+        phase=body.phase,
+        order_idx=body.order_idx,
+        reason=body.reason,
+        outcome=body.outcome,
     )
 
 
 @router.delete(
-    "/todos/{card_id}/objectives/{objective_id}", status_code=204,
+    "/todos/{card_id}/objectives/{objective_id}",
+    status_code=204,
     summary="Delete an objective (its notes demote to general)",
 )
 @_mapped
-async def delete_objective(card_id: str, objective_id: str,
+async def delete_objective(
+    card_id: str,
+    objective_id: str,
     ex: TodoExchange = Depends(board),
 ) -> None:
     await _require_objective_on_card(card_id, objective_id, ex)
@@ -291,7 +346,8 @@ async def delete_objective(card_id: str, objective_id: str,
 
 
 @router.get(
-    "/todos/{card_id}/events", response_model=list[TodoEventV1],
+    "/todos/{card_id}/events",
+    response_model=list[TodoEventV1],
     summary="A card's activity timeline (oldest first)",
 )
 @_mapped
@@ -305,7 +361,8 @@ async def list_events(
 
 
 @router.get(
-    "/todos/{card_id}/chats", response_model=list[SessionOut],
+    "/todos/{card_id}/chats",
+    response_model=list[SessionOut],
     summary="The card's tinker chat sessions, newest first",
 )
 @_mapped
@@ -316,22 +373,27 @@ async def list_card_chats(
 ) -> list[SessionOut]:
     await ex.get_card(card_id)  # 404 for unknown cards
     store = get_default_session_store()
-    rows = await store.list_thread_family(
-        tinker_thread_base(card_id), limit=limit
-    )
+    rows = await store.list_thread_family(tinker_thread_base(card_id), limit=limit)
     return [SessionOut.from_session(s) for s in rows]
 
 
 @router.post(
-    "/todos/{card_id}/generate", response_model=TodoAttachmentV1, status_code=201,
+    "/todos/{card_id}/generate",
+    response_model=TodoAttachmentV1,
+    status_code=201,
     summary="Generate an artifact on the card via a generative block",
 )
 @_mapped
-async def generate_artifact(card_id: str, body: GenerateIn,
+async def generate_artifact(
+    card_id: str,
+    body: GenerateIn,
     ex: TodoExchange = Depends(board),
 ) -> TodoAttachmentV1:
     return await ex.generate_artifact(
-        card_id, body.block, body.spec, title=body.title,
+        card_id,
+        body.block,
+        body.spec,
+        title=body.title,
     )
 
 
@@ -387,7 +449,9 @@ async def _stream_upload(dest: Path, file: UploadFile) -> int:
     return total
 
 
-async def _require_attachment_on_card(card_id: str, attachment_id: str, ex: TodoExchange) -> TodoAttachmentV1:
+async def _require_attachment_on_card(
+    card_id: str, attachment_id: str, ex: TodoExchange
+) -> TodoAttachmentV1:
     """The attachment, or 404 when it isn't on this card."""
     card = await ex.get_card(card_id)
     for att in card.attachments:
@@ -400,7 +464,9 @@ async def _require_attachment_on_card(card_id: str, attachment_id: str, ex: Todo
 
 
 @router.post(
-    "/todos/{card_id}/attachments", response_model=TodoAttachmentV1, status_code=201,
+    "/todos/{card_id}/attachments",
+    response_model=TodoAttachmentV1,
+    status_code=201,
     summary="Upload a file attachment (multipart)",
 )
 @_mapped
@@ -445,7 +511,9 @@ async def upload_attachment(
 
     from yuyutsava.storage.paths import blobs_dir
 
-    workspace = Path(card.workspace_path) if card.workspace_path else blobs_dir() / "todoboard" / card_id
+    workspace = (
+        Path(card.workspace_path) if card.workspace_path else blobs_dir() / "todoboard" / card_id
+    )
     await asyncio.to_thread(workspace.mkdir, parents=True, exist_ok=True)
     dest = _unique_path(workspace, _safe_filename(file.filename))
 
@@ -453,7 +521,10 @@ async def upload_attachment(
     try:
         size = await _stream_upload(dest, file)
         return await ex.attach(
-            card_id, kind, path=str(dest), mime=mime,
+            card_id,
+            kind,
+            path=str(dest),
+            mime=mime,
             title=title or file.filename or dest.name,
             meta={"size": size, "filename": file.filename, "source": "upload", **assoc},
         )
@@ -492,7 +563,9 @@ async def get_attachment(
 )
 @_mapped
 async def get_attachment_bundle_asset(
-    card_id: str, attachment_id: str, rel_path: str,
+    card_id: str,
+    attachment_id: str,
+    rel_path: str,
     ex: TodoExchange = Depends(board),
 ) -> FileResponse:
     """Bytes for one file of a multi-file artifact, relative to the attachment.
@@ -507,11 +580,14 @@ async def get_attachment_bundle_asset(
 
 
 @router.delete(
-    "/todos/{card_id}/attachments/{attachment_id}", status_code=204,
+    "/todos/{card_id}/attachments/{attachment_id}",
+    status_code=204,
     summary="Delete an attachment (row + workspace file)",
 )
 @_mapped
-async def delete_attachment(card_id: str, attachment_id: str,
+async def delete_attachment(
+    card_id: str,
+    attachment_id: str,
     ex: TodoExchange = Depends(board),
 ) -> None:
     await _require_attachment_on_card(card_id, attachment_id, ex)

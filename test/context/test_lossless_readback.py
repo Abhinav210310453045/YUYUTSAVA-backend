@@ -122,9 +122,7 @@ def run(coro):
 
 def with_thread(fn):
     """Run *fn* with ``thread_id_from_runtime`` resolving to THREAD."""
-    with mock.patch(
-        "yuyutsava.context.tools.thread_id_from_runtime", return_value=THREAD
-    ):
+    with mock.patch("yuyutsava.context.tools.thread_id_from_runtime", return_value=THREAD):
         return fn()
 
 
@@ -168,9 +166,7 @@ class ClampedReads(unittest.TestCase):
         while True:
             guard += 1
             self.assertLess(guard, 50, "paging did not terminate")
-            out = run(
-                fetch.ainvoke({"artifact_id": "art_big", "offset": offset, "length": 50_000})
-            )
+            out = run(fetch.ainvoke({"artifact_id": "art_big", "offset": offset, "length": 50_000}))
             chunk = out.split("\n", 1)[1]
             more = "[more: call ctx_fetch_artifact" in chunk
             if more:
@@ -398,9 +394,7 @@ class HistoryReadback(unittest.TestCase):
         self.assertNotIn("Opened YouTube", out)
 
     def test_no_live_thread_is_reported_not_crashed(self):
-        with mock.patch(
-            "yuyutsava.context.tools.thread_id_from_runtime", return_value="unknown"
-        ):
+        with mock.patch("yuyutsava.context.tools.thread_id_from_runtime", return_value="unknown"):
             out = run(self.tools["ctx_history"].ainvoke({}))
         self.assertIn("no active thread", out)
 
@@ -423,9 +417,7 @@ class ArgStubbing(unittest.TestCase):
     def _mw(self, *, history_readback=True):
         from yuyutsava.context.compaction import YuyutsavaCompactionMiddleware
 
-        with mock.patch.object(
-            YuyutsavaCompactionMiddleware, "__init__", lambda self, **kw: None
-        ):
+        with mock.patch.object(YuyutsavaCompactionMiddleware, "__init__", lambda self, **kw: None):
             mw = YuyutsavaCompactionMiddleware()
         mw._role = "cli"
         mw._history_readback = history_readback
@@ -484,7 +476,8 @@ class ArgStubbing(unittest.TestCase):
 
     def test_write_without_a_path_is_left_alone(self):
         msg = AIMessage(
-            content="", id="ai-4",
+            content="",
+            id="ai-4",
             tool_calls=[self._call("tr_write_file", {"content": "z" * 4_000})],
         )
         out = self._mw()._stub_bulky_args(self._tail(msg))
@@ -492,11 +485,13 @@ class ArgStubbing(unittest.TestCase):
 
     def test_recent_messages_and_small_args_are_untouched(self):
         big = AIMessage(
-            content="", id="recent",
+            content="",
+            id="recent",
             tool_calls=[self._call("tr_write_file", {"path": "/a", "content": "q" * 5_000})],
         )
         small = AIMessage(
-            content="", id="small",
+            content="",
+            id="small",
             tool_calls=[self._call("tr_write_file", {"path": "/b", "content": "short"})],
         )
         # `big` sits inside the keep-recent window here.
@@ -506,7 +501,8 @@ class ArgStubbing(unittest.TestCase):
 
     def test_other_tools_are_never_stubbed(self):
         msg = AIMessage(
-            content="", id="ai-5",
+            content="",
+            id="ai-5",
             tool_calls=[self._call("tr_execute_in_sandbox", {"command": "c" * 4_000})],
         )
         out = self._mw()._stub_bulky_args(self._tail(msg))

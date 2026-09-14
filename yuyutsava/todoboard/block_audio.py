@@ -26,9 +26,15 @@ from yuyutsava.todoboard.exchange import TodoValidationError
 # What the multipart endpoint accepts. Rendering is broader — the frontend
 # block claims any audio/* mime and plays it through Web Audio decoding.
 _UPLOAD_MIMES = (
-    "audio/wav", "audio/x-wav", "audio/wave",
-    "audio/mpeg", "audio/mp4", "audio/aac",
-    "audio/ogg", "audio/webm", "audio/flac",
+    "audio/wav",
+    "audio/x-wav",
+    "audio/wave",
+    "audio/mpeg",
+    "audio/mp4",
+    "audio/aac",
+    "audio/ogg",
+    "audio/webm",
+    "audio/flac",
 )
 
 
@@ -62,7 +68,8 @@ def _generate_audio(spec: dict[str, Any], out_dir: Path) -> tuple[Path, str]:
 
 
 AUDIO_BLOCK = ArtifactBlock(
-    name="audio", kind="file",  # closed V1 vocabulary: audio rides "file" by mime
+    name="audio",
+    kind="file",  # closed V1 vocabulary: audio rides "file" by mime
     validate=_file_validator("file", family="audio"),
     mimes=("audio/*",),
     upload_mimes=_UPLOAD_MIMES,

@@ -47,7 +47,9 @@ from yuyutsava.storage.events.sqlite_backend import (
     SqliteEventsBackend,
 )
 from yuyutsava.storage.events.unified import (
-    UnifiedConsentRuleStore, UnifiedDecisionStore, UnifiedProposalStore,
+    UnifiedConsentRuleStore,
+    UnifiedDecisionStore,
+    UnifiedProposalStore,
 )
 from yuyutsava.storage.models import ConsentRule, Proposal
 
@@ -55,16 +57,29 @@ from yuyutsava.storage.models import ConsentRule, Proposal
 def _proposal(pid: str = "p1") -> Proposal:
     now = time.time()
     return Proposal(
-        proposal_id=pid, event_id="e1", topic="fs.write", summary="s",
-        proposed="do", subagent="a", urgency=1, created_ts=now, expires_ts=now + 60,
-        status="pending", session_id=None, agent_path=None,
+        proposal_id=pid,
+        event_id="e1",
+        topic="fs.write",
+        summary="s",
+        proposed="do",
+        subagent="a",
+        urgency=1,
+        created_ts=now,
+        expires_ts=now + 60,
+        status="pending",
+        session_id=None,
+        agent_path=None,
     )
 
 
 def _rule(rid: str = "r1") -> ConsentRule:
     return ConsentRule(
-        rule_id=rid, topic_glob="fs.*", match_json='{"a": 1}',
-        decision="auto_approve", created_ts=time.time(), expires_ts=None,
+        rule_id=rid,
+        topic_glob="fs.*",
+        match_json='{"a": 1}',
+        decision="auto_approve",
+        created_ts=time.time(),
+        expires_ts=None,
     )
 
 
@@ -90,14 +105,19 @@ class SqlitePutIsIdempotent(unittest.IsolatedAsyncioTestCase):
         store = UnifiedConsentRuleStore(EventsSqliteDialect(self.backend))
         await store.put(_rule())
         second = ConsentRule(
-            rule_id="r1", topic_glob="CHANGED", match_json="{}",
-            decision="auto_skip", created_ts=time.time(), expires_ts=None,
+            rule_id="r1",
+            topic_glob="CHANGED",
+            match_json="{}",
+            decision="auto_skip",
+            created_ts=time.time(),
+            expires_ts=None,
         )
         await store.put(second)
         rules = await store.list()
         self.assertEqual(len(rules), 1)
         self.assertEqual(
-            rules[0].topic_glob, "fs.*",
+            rules[0].topic_glob,
+            "fs.*",
             "a repeated put overwrote the existing rule; Postgres does NOT "
             "overwrite (DO NOTHING), so this would be a new divergence",
         )
@@ -108,8 +128,8 @@ class SqlitePutIsIdempotent(unittest.IsolatedAsyncioTestCase):
         # exist — which is the order every producer already uses
         # (events/source.py persists the payload before publishing).
         await self.backend.execute(
-            "INSERT INTO event_payloads(event_id, topic, ts, payload_json) "
-            "VALUES(?,?,?,?)", ("e1", "fs.write", 1.0, "{}"),
+            "INSERT INTO event_payloads(event_id, topic, ts, payload_json) VALUES(?,?,?,?)",
+            ("e1", "fs.write", 1.0, "{}"),
         )
         await store.put(_proposal())
         await store.put(_proposal())
@@ -121,7 +141,8 @@ class SqlitePutIsIdempotent(unittest.IsolatedAsyncioTestCase):
         await store.put(proposal_id=None, event_id="e1", outcome="ok")
         await store.put(proposal_id=None, event_id="e1", outcome="ok")
         self.assertEqual(
-            len(await store.list(limit=10)), 2,
+            len(await store.list(limit=10)),
+            2,
             "ON CONFLICT(decision_id) swallowed a distinct decision — each put "
             "mints its own ULID, so both rows must land",
         )
@@ -164,11 +185,12 @@ class BackendParity(unittest.TestCase):
                     offenders.append(f"{label}.{name}")
 
         self.assertEqual(
-            offenders, [],
+            offenders,
+            [],
             "Postgres ignores a duplicate here but SQLite raises IntegrityError:\n  "
             + "\n  ".join(offenders)
             + "\n\nSQLite supports ON CONFLICT DO NOTHING (3.24+); use it, or "
-              "INSERT OR IGNORE.",
+            "INSERT OR IGNORE.",
         )
 
 

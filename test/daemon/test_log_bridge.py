@@ -91,8 +91,7 @@ class Delivery(_Case):
         self.bridge.install()
         self.log.info("offloaded %d chars to %s", 1234, "art_9")
         await self._settle()
-        self.assertIn("offloaded 1234 chars to art_9",
-                      self.hub.items[0].payload.message)
+        self.assertIn("offloaded 1234 chars to art_9", self.hub.items[0].payload.message)
 
     async def test_an_exception_is_summarised_on_one_line(self):
         # The panel is a list, not a traceback viewer; the full trace stays on
@@ -127,8 +126,7 @@ class LevelGating(_Case):
         self.bridge.install()
         self.log.debug("cache prefix reused")
         await self._settle()
-        self.assertIn("cache prefix reused",
-                      [i.payload.message for i in self.hub.items])
+        self.assertIn("cache prefix reused", [i.payload.message for i in self.hub.items])
 
 
 class Safety(_Case):

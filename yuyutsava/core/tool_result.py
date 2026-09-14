@@ -60,7 +60,9 @@ def guard_tool_result(content: str, tool_name: str) -> str:
             new_result: dict[str, Any] = {
                 "kind": result.get("kind", "shell") if isinstance(result, dict) else "shell",
                 "exit_code": result.get("exit_code") if isinstance(result, dict) else None,
-                "stderr": (result.get("stderr", "") or "")[:2_000] if isinstance(result, dict) else "",
+                "stderr": (result.get("stderr", "") or "")[:2_000]
+                if isinstance(result, dict)
+                else "",
                 "stdout_notice": notice.model_dump(),
             }
             data["result"] = new_result

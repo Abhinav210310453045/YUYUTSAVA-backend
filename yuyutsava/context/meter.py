@@ -175,8 +175,11 @@ class ContextSnapshot:
     @property
     def used_tokens(self) -> int:
         return (
-            self.system_tokens + self.tools_tokens + self.memory_tokens
-            + self.skills_tokens + self.messages_tokens
+            self.system_tokens
+            + self.tools_tokens
+            + self.memory_tokens
+            + self.skills_tokens
+            + self.messages_tokens
         )
 
     @property
@@ -203,8 +206,7 @@ class ContextSnapshot:
         skills went unused, and a row that vanishes cannot say that.
         """
         return [
-            (key, label, int(getattr(self, f"{key}_tokens", 0)))
-            for key, label in SEGMENT_LABELS
+            (key, label, int(getattr(self, f"{key}_tokens", 0))) for key, label in SEGMENT_LABELS
         ]
 
     def as_dict(self) -> dict[str, Any]:
@@ -223,9 +225,7 @@ class ContextSnapshot:
             "calibrated": self.calibrated,
             "anchored": self.anchored,
             "window_measured": self.window_measured,
-            "segments": [
-                {"key": k, "label": lbl, "tokens": n} for k, lbl, n in self.segments()
-            ],
+            "segments": [{"key": k, "label": lbl, "tokens": n} for k, lbl, n in self.segments()],
             "message_count": self.message_count,
             "tool_count": self.tool_count,
             "offloaded_digests": self.offloaded_digests,
@@ -441,9 +441,7 @@ def tool_schema_chars(role: str, names: tuple[str, ...]) -> int:
             cached = 0
             if registry is not None:
                 try:
-                    tool = next(
-                        (t for t in registry.all_tools() if t.name == name), None
-                    )
+                    tool = next((t for t in registry.all_tools() if t.name == name), None)
                     if tool is not None:
                         cached = len(registry.schema_block([tool]))
                 except Exception:  # noqa: BLE001 — sizing is best-effort
@@ -673,16 +671,11 @@ def _allocate(state: _ThreadState, raw: dict[str, int], target: int) -> dict[str
     exceed the target (a badly fitted factor, or a target from a tiny call),
     everything is scaled proportionally instead so no row can go negative.
     """
-    out = {
-        key: max(0, int(round(raw.get(key, 0) * state.static_factor)))
-        for key in _STATIC_KEYS
-    }
+    out = {key: max(0, int(round(raw.get(key, 0) * state.static_factor))) for key in _STATIC_KEYS}
     if target > 0 and sum(out.values()) < target:
         out["messages"] = target - sum(out.values())
         return out
-    out["messages"] = max(
-        0, int(round(raw.get("messages", 0) * state.messages_factor))
-    )
+    out["messages"] = max(0, int(round(raw.get("messages", 0) * state.messages_factor)))
     return _reconcile(out, target) if target > 0 else out
 
 
@@ -696,15 +689,11 @@ def _target_tokens(state: _ThreadState, raw: dict[str, int]) -> int:
     to fall with it rather than sit at a stale high-water mark, then re-anchor
     on the next real call.
     """
-    prefix = int(round(
-        sum(raw.get(key, 0) for key in _STATIC_KEYS) * state.static_factor
-    ))
+    prefix = int(round(sum(raw.get(key, 0) for key in _STATIC_KEYS) * state.static_factor))
     if state.anchor_tokens <= 0:
         # Nothing measured on this thread yet; the seeded model factors are the
         # best correction available.
-        return max(0, prefix + int(round(
-            raw.get("messages", 0) * state.messages_factor
-        )))
+        return max(0, prefix + int(round(raw.get("messages", 0) * state.messages_factor)))
     grown = int(round((sum(raw.values()) - state.anchor_raw) * state.messages_factor))
     return max(prefix, state.anchor_tokens + grown)
 
@@ -772,9 +761,7 @@ class ContextMeterPolicy(Policy):
         try:
             state = self._state(snap.thread_id)
 
-            tools_chars = catalog_chars(self._role) + tool_schema_chars(
-                self._role, call.tool_names
-            )
+            tools_chars = catalog_chars(self._role) + tool_schema_chars(self._role, call.tool_names)
             # The system prompt is segmented HERE, not from turn.messages.
             # ``ModelRequest.messages`` is documented "excluding system
             # message" — the prompt travels as ``request.system_message``, so
@@ -799,32 +786,31 @@ class ContextMeterPolicy(Policy):
             # what gets kept — and the whole prompt is only accounted for here,
             # tool schemas included.
             raw = {
-                "system": approx_tokens_chars(
-                    system_chars["system"], model=self._model),
+                "system": approx_tokens_chars(system_chars["system"], model=self._model),
                 "tools": approx_tokens_chars(tools_chars, model=self._model),
-                "memory": approx_tokens_chars(
-                    system_chars["memory"], model=self._model),
-                "skills": approx_tokens_chars(
-                    system_chars["skills"], model=self._model),
+                "memory": approx_tokens_chars(system_chars["memory"], model=self._model),
+                "skills": approx_tokens_chars(system_chars["skills"], model=self._model),
                 # ``before_model`` leaves its raw message estimate here.
                 "messages": snap.messages_tokens,
             }
             rows = _allocate(state, raw, _target_tokens(state, raw))
             state.pending_raw = raw
-            bus().publish(replace(
-                snap,
-                system_tokens=rows["system"],
-                tools_tokens=rows["tools"],
-                memory_tokens=rows["memory"],
-                skills_tokens=rows["skills"],
-                messages_tokens=rows["messages"],
-                tool_count=len(call.tool_names),
-                calibrated=state.calibrated,
-                anchored=state.anchor_tokens > 0,
-                # Something has been appended since the last measurement, so
-                # the growth term is an estimate.
-                window_measured=False,
-            ))
+            bus().publish(
+                replace(
+                    snap,
+                    system_tokens=rows["system"],
+                    tools_tokens=rows["tools"],
+                    memory_tokens=rows["memory"],
+                    skills_tokens=rows["skills"],
+                    messages_tokens=rows["messages"],
+                    tool_count=len(call.tool_names),
+                    calibrated=state.calibrated,
+                    anchored=state.anchor_tokens > 0,
+                    # Something has been appended since the last measurement, so
+                    # the growth term is an estimate.
+                    window_measured=False,
+                )
+            )
         except Exception:  # noqa: BLE001
             logger.debug("context meter: pre-call publish failed", exc_info=True)
 
@@ -872,7 +858,9 @@ class ContextMeterPolicy(Policy):
             # the panel on a scale nothing else shares.
             logger.debug(
                 "context meter: ignoring an implausible reading (%d reported "
-                "against a %d-token estimate)", measured, raw_total,
+                "against a %d-token estimate)",
+                measured,
+                raw_total,
             )
             return
         raw_prefix = sum(raw.get(key, 0) for key in _STATIC_KEYS)
@@ -886,8 +874,7 @@ class ContextMeterPolicy(Policy):
             if residual > 0:
                 ratio = _clamp_factor(residual / raw_messages)
                 state.messages_factor = (
-                    (state.messages_factor + ratio) / 2
-                    if state.messages_fitted else ratio
+                    (state.messages_factor + ratio) / 2 if state.messages_fitted else ratio
                 )
                 state.messages_fitted = True
                 state.calibrated = True
@@ -903,7 +890,8 @@ class ContextMeterPolicy(Policy):
         state.anchor_raw = raw_total
         if state.calibrated and self._model_name:
             _model_factors[self._model_name] = (
-                state.static_factor, state.messages_factor,
+                state.static_factor,
+                state.messages_factor,
             )
 
     def _measure(self, turn: Turn) -> ContextSnapshot:
@@ -933,9 +921,7 @@ class ContextMeterPolicy(Policy):
             thread_id=turn.thread_id,
             model=self._model_name,
             max_input_tokens=int(getattr(self._settings, "max_input_tokens", 0) or 0),
-            compact_trigger_tokens=int(
-                getattr(self._settings, "compact_trigger_tokens", 0) or 0
-            ),
+            compact_trigger_tokens=int(getattr(self._settings, "compact_trigger_tokens", 0) or 0),
             # Raw and uncorrected: ``revise_model_call`` is the hook that can
             # see the whole prompt, so it does the correcting and the
             # reconciling once, in one place.
@@ -983,9 +969,7 @@ class ContextMeterPolicy(Policy):
         state = self._state(thread_id)
         model = self._model_name or getattr(usage, "model", "") or ""
         prices = self._price_table()
-        cost = estimate_cost_usd(
-            model, usage.input_tokens, usage.output_tokens, prices
-        )
+        cost = estimate_cost_usd(model, usage.input_tokens, usage.output_tokens, prices)
 
         state.calls += 1
         state.input_tokens += usage.input_tokens
@@ -1009,9 +993,7 @@ class ContextMeterPolicy(Policy):
         # relabelling the panel mid-delegation would describe a conversation
         # the segment rows are not about.
         previous = bus().latest(thread_id)
-        base = previous or ContextSnapshot(
-            role=self._role, thread_id=thread_id, model=model
-        )
+        base = previous or ContextSnapshot(role=self._role, thread_id=thread_id, model=model)
         compactions, offloads = counters(thread_id)
         # The prompt has just been measured and the reply it produced is now
         # part of the window — and that is a provider number too. So for this
@@ -1020,7 +1002,8 @@ class ContextMeterPolicy(Policy):
         window: dict[str, Any] = {}
         if self._window and state.anchor_tokens > 0 and state.pending_raw:
             rows = _allocate(
-                state, state.pending_raw,
+                state,
+                state.pending_raw,
                 usage.input_tokens + usage.output_tokens,
             )
             window = {
@@ -1032,30 +1015,32 @@ class ContextMeterPolicy(Policy):
                 "anchored": True,
                 "window_measured": True,
             }
-        bus().publish(replace(
-            base,
-            role=self._role if self._window else base.role,
-            thread_id=thread_id,
-            model=model if self._window else (base.model or model),
-            calibrated=state.calibrated,
-            call_no=state.calls,
-            input_tokens=usage.input_tokens,
-            output_tokens=usage.output_tokens,
-            cache_read_tokens=getattr(usage, "cache_read_tokens", 0),
-            cache_creation_tokens=getattr(usage, "cache_creation_tokens", 0),
-            est_cost_usd=cost,
-            priced=is_priced(model, prices),
-            calls=state.calls,
-            session_input_tokens=state.input_tokens,
-            session_output_tokens=state.output_tokens,
-            session_cache_read_tokens=state.cache_read_tokens,
-            session_cost_usd=state.cost_usd,
-            compactions=compactions,
-            offloads=offloads,
-            started_at=state.started_at,
-            ts=time.time(),
-            **window,
-        ))
+        bus().publish(
+            replace(
+                base,
+                role=self._role if self._window else base.role,
+                thread_id=thread_id,
+                model=model if self._window else (base.model or model),
+                calibrated=state.calibrated,
+                call_no=state.calls,
+                input_tokens=usage.input_tokens,
+                output_tokens=usage.output_tokens,
+                cache_read_tokens=getattr(usage, "cache_read_tokens", 0),
+                cache_creation_tokens=getattr(usage, "cache_creation_tokens", 0),
+                est_cost_usd=cost,
+                priced=is_priced(model, prices),
+                calls=state.calls,
+                session_input_tokens=state.input_tokens,
+                session_output_tokens=state.output_tokens,
+                session_cache_read_tokens=state.cache_read_tokens,
+                session_cost_usd=state.cost_usd,
+                compactions=compactions,
+                offloads=offloads,
+                started_at=state.started_at,
+                ts=time.time(),
+                **window,
+            )
+        )
 
 
 __all__ = [

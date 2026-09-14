@@ -125,9 +125,14 @@ class TodoExchange:
         workspace = _workspace_root() / card_id
         now = time.time()
         card = TodoCardV1(
-            card_id=card_id, title=title, status=status, pinned=bool(pinned),
-            tags=tags, workspace_path=str(workspace),
-            created_ts=now, updated_ts=now,
+            card_id=card_id,
+            title=title,
+            status=status,
+            pinned=bool(pinned),
+            tags=tags,
+            workspace_path=str(workspace),
+            created_ts=now,
+            updated_ts=now,
         )
         # Workspace dir first, row second: a row without a workspace would break
         # tr_*/artifact writes later, while an orphan dir is swept harmlessly.
@@ -181,15 +186,15 @@ class TodoExchange:
             fields["tags"] = self._check_tags(tags)
         if fields:
             fields["updated_ts"] = time.time()
-            found = await self._guard(
-                self._store.update_card(card_id, fields), "update card"
-            )
+            found = await self._guard(self._store.update_card(card_id, fields), "update card")
             if not found:
                 raise TodoNotFoundError(f"no TODO card with id {card_id!r}")
             if status is not None and old_status is not None and status != old_status:
                 await self._emit(
-                    card_id, "card_status",
-                    payload={"from": old_status, "to": status}, actor=actor,
+                    card_id,
+                    "card_status",
+                    payload={"from": old_status, "to": status},
+                    actor=actor,
                 )
         return await self.get_card(card_id)
 
@@ -213,9 +218,7 @@ class TodoExchange:
         if status is not None:
             self._check_status(status)
         _require(1 <= limit <= 5_000, "limit must be between 1 and 5000")
-        cards = await self._guard(
-            self._store.list_cards(status=status, limit=limit), "list cards"
-        )
+        cards = await self._guard(self._store.list_cards(status=status, limit=limit), "list cards")
         if tag:
             # Boards are small (hundreds of cards); tag filtering in Python keeps
             # the twin stores' SQL identical instead of forking on JSON operators.
@@ -254,15 +257,23 @@ class TodoExchange:
         order_idx = max((o.order_idx for o in card.objectives), default=-1) + 1
         now = time.time()
         obj = TodoObjectiveV1(
-            objective_id=f"tob_{ULID()}", card_id=card_id, title=title,
-            phase=phase, order_idx=order_idx, reason=reason,
-            created_ts=now, updated_ts=now,
+            objective_id=f"tob_{ULID()}",
+            card_id=card_id,
+            title=title,
+            phase=phase,
+            order_idx=order_idx,
+            reason=reason,
+            created_ts=now,
+            updated_ts=now,
         )
         if not await self._guard(self._store.add_objective(obj), "add objective"):
             raise TodoNotFoundError(f"no TODO card with id {card_id!r}")
         await self._emit(
-            card_id, "objective_created", objective_id=obj.objective_id,
-            payload={"title": title, "phase": phase}, actor=actor,
+            card_id,
+            "objective_created",
+            objective_id=obj.objective_id,
+            payload={"title": title, "phase": phase},
+            actor=actor,
         )
         return obj
 
@@ -312,8 +323,11 @@ class TodoExchange:
             if reason:
                 payload["reason"] = reason
             await self._emit(
-                obj.card_id, "objective_phase", objective_id=objective_id,
-                payload=payload, actor=actor,
+                obj.card_id,
+                "objective_phase",
+                objective_id=objective_id,
+                payload=payload,
+                actor=actor,
             )
         # reason riding along with a phase move is part of the transition
         # (already in the phase payload), not a separate update.
@@ -321,8 +335,11 @@ class TodoExchange:
         other = [k for k in fields if k not in skip]
         if other:
             await self._emit(
-                obj.card_id, "objective_updated", objective_id=objective_id,
-                payload={"fields": other, "title": obj.title}, actor=actor,
+                obj.card_id,
+                "objective_updated",
+                objective_id=objective_id,
+                payload={"fields": other, "title": obj.title},
+                actor=actor,
             )
         return obj
 
@@ -330,14 +347,15 @@ class TodoExchange:
         """Drop one objective; its notes demote to card-level general notes
         (objective_id NULLed), never deleted — notes are the user's thinking,
         the objective was scaffolding."""
-        obj = await self._guard(
-            self._store.delete_objective(objective_id), "delete objective"
-        )
+        obj = await self._guard(self._store.delete_objective(objective_id), "delete objective")
         if obj is None:
             raise TodoNotFoundError(f"no TODO objective with id {objective_id!r}")
         await self._emit(
-            obj.card_id, "objective_deleted", objective_id=objective_id,
-            payload={"title": obj.title, "phase": obj.phase}, actor=actor,
+            obj.card_id,
+            "objective_deleted",
+            objective_id=objective_id,
+            payload={"title": obj.title, "phase": obj.phase},
+            actor=actor,
         )
 
     async def assign_note(
@@ -353,9 +371,7 @@ class TodoExchange:
         if phase is not None:
             self._check_phase(phase)
         if objective_id is not None:
-            obj = await self._guard(
-                self._store.get_objective(objective_id), "load objective"
-            )
+            obj = await self._guard(self._store.get_objective(objective_id), "load objective")
             if obj is None:
                 raise TodoNotFoundError(f"no TODO objective with id {objective_id!r}")
             # Cross-card guard BEFORE the write: the objective's hydrated card
@@ -374,8 +390,11 @@ class TodoExchange:
             raise TodoNotFoundError(f"no TODO note with id {note_id!r}")
         if objective_id is not None:
             await self._emit(
-                note.card_id, "note_assigned", objective_id=objective_id,
-                payload={"note_id": note_id, "phase": phase}, actor=actor,
+                note.card_id,
+                "note_assigned",
+                objective_id=objective_id,
+                payload={"note_id": note_id, "phase": phase},
+                actor=actor,
             )
         return note
 
@@ -383,9 +402,7 @@ class TodoExchange:
         """A card's activity timeline, oldest first — feeds the journey doc
         and the card view's activity strip."""
         _require(1 <= limit <= 5_000, "limit must be between 1 and 5000")
-        return await self._guard(
-            self._store.list_events(card_id, limit=limit), "list events"
-        )
+        return await self._guard(self._store.list_events(card_id, limit=limit), "list events")
 
     # ── notes ──────────────────────────────────────────────────────────
 
@@ -405,9 +422,7 @@ class TodoExchange:
         if phase is not None:
             self._check_phase(phase)
         if objective_id is not None:
-            obj = await self._guard(
-                self._store.get_objective(objective_id), "load objective"
-            )
+            obj = await self._guard(self._store.get_objective(objective_id), "load objective")
             if obj is None:
                 raise TodoNotFoundError(f"no TODO objective with id {objective_id!r}")
             _require(
@@ -416,17 +431,25 @@ class TodoExchange:
             )
         now = time.time()
         note = TodoNoteV1(
-            note_id=f"tdn_{ULID()}", card_id=card_id, body=body,
-            author=author, objective_id=objective_id, phase=phase,
-            created_ts=now, updated_ts=now,
+            note_id=f"tdn_{ULID()}",
+            card_id=card_id,
+            body=body,
+            author=author,
+            objective_id=objective_id,
+            phase=phase,
+            created_ts=now,
+            updated_ts=now,
         )
         if not await self._guard(self._store.add_note(note), "add note"):
             raise TodoNotFoundError(f"no TODO card with id {card_id!r}")
         self._schedule_note_index(note)
         if objective_id is not None:
             await self._emit(
-                card_id, "note_assigned", objective_id=objective_id,
-                payload={"note_id": note.note_id, "phase": phase}, actor=author,
+                card_id,
+                "note_assigned",
+                objective_id=objective_id,
+                payload={"note_id": note.note_id, "phase": phase},
+                actor=author,
             )
         return note
 
@@ -434,17 +457,13 @@ class TodoExchange:
         body = (body or "").strip()
         _require(bool(body), "note body must be non-empty")
         _require(len(body) <= MAX_NOTE_LEN, f"note body exceeds {MAX_NOTE_LEN} chars")
-        note = await self._guard(
-            self._store.update_note(note_id, body, time.time()), "update note"
-        )
+        note = await self._guard(self._store.update_note(note_id, body, time.time()), "update note")
         if note is None:
             raise TodoNotFoundError(f"no TODO note with id {note_id!r}")
         self._schedule_note_index(note, replace=True)
         return note
 
-    async def search_notes(
-        self, query: str, *, k: int = 8, card_id: str | None = None
-    ) -> list:
+    async def search_notes(self, query: str, *, k: int = 8, card_id: str | None = None) -> list:
         """Semantic recall over note bodies (``todo_note_chunks``), optionally
         scoped to one card. Returns retrieval ``Hit``s whose payload carries
         ``card_id``/``note_id``. Empty when no index is wired (SQLite-only
@@ -491,8 +510,14 @@ class TodoExchange:
         # Validators touch the filesystem — off the event loop.
         mime = await asyncio.to_thread(block.validate, path=path, url=url, mime=mime)
         att = TodoAttachmentV1(
-            attachment_id=f"tda_{ULID()}", card_id=card_id, kind=kind,
-            path=path, url=url, mime=mime, title=title, meta=meta or {},
+            attachment_id=f"tda_{ULID()}",
+            card_id=card_id,
+            kind=kind,
+            path=path,
+            url=url,
+            mime=mime,
+            title=title,
+            meta=meta or {},
             created_ts=time.time(),
         )
         if not await self._guard(self._store.add_attachment(att), "add attachment"):
@@ -502,8 +527,10 @@ class TodoExchange:
             card_id,
             "journey_generated" if block_name == "journey" else "artifact_attached",
             payload={
-                "attachment_id": att.attachment_id, "kind": kind,
-                "title": title, **({"block": block_name} if block_name else {}),
+                "attachment_id": att.attachment_id,
+                "kind": kind,
+                "title": title,
+                **({"block": block_name} if block_name else {}),
             },
             actor=actor,
         )
@@ -534,10 +561,7 @@ class TodoExchange:
                 f"no generative artifact block named {block!r} (available: {names})"
             )
         card = await self.get_card(card_id)
-        out_dir = (
-            Path(card.workspace_path) if card.workspace_path
-            else _workspace_root() / card_id
-        )
+        out_dir = Path(card.workspace_path) if card.workspace_path else _workspace_root() / card_id
         spec = dict(spec or {})
         if gen.needs_context:
             events = await self.list_events(card_id)
@@ -553,19 +577,24 @@ class TodoExchange:
             raise TodoAttachmentError(f"{block} generation failed: {exc}") from exc
         if gen.singleton:
             existing = next(
-                (
-                    a for a in card.attachments
-                    if (a.meta or {}).get("block") == block
-                ),
+                (a for a in card.attachments if (a.meta or {}).get("block") == block),
                 None,
             )
             if existing is not None:
                 return await self._update_generated(
-                    existing, path=str(path), mime=mime, title=title,
-                    block=block, actor=actor,
+                    existing,
+                    path=str(path),
+                    mime=mime,
+                    title=title,
+                    block=block,
+                    actor=actor,
                 )
         return await self.attach(
-            card_id, gen.kind, path=str(path), mime=mime, title=title,
+            card_id,
+            gen.kind,
+            path=str(path),
+            mime=mime,
+            title=title,
             meta={"source": "generate", "block": block, "author": actor},
             actor=actor,
         )
@@ -585,36 +614,31 @@ class TodoExchange:
         first, row swap second, old-file unlink last — a crash mid-way always
         leaves a working attachment, never a dangling row."""
         old_path = existing.path
-        updated = existing.model_copy(update={
-            "path": path,
-            "mime": mime,
-            "title": title if title is not None else existing.title,
-            "meta": {**(existing.meta or {}), "author": actor},
-            "created_ts": time.time(),
-        })
-        if not await self._guard(
-            self._store.update_attachment(updated), "update attachment"
-        ):
-            raise TodoNotFoundError(
-                f"no TODO attachment with id {existing.attachment_id!r}"
-            )
-        if (
-            old_path
-            and old_path != path
-            and Path(old_path).is_relative_to(_workspace_root())
-        ):
+        updated = existing.model_copy(
+            update={
+                "path": path,
+                "mime": mime,
+                "title": title if title is not None else existing.title,
+                "meta": {**(existing.meta or {}), "author": actor},
+                "created_ts": time.time(),
+            }
+        )
+        if not await self._guard(self._store.update_attachment(updated), "update attachment"):
+            raise TodoNotFoundError(f"no TODO attachment with id {existing.attachment_id!r}")
+        if old_path and old_path != path and Path(old_path).is_relative_to(_workspace_root()):
             try:
                 await asyncio.to_thread(Path(old_path).unlink, missing_ok=True)
             except OSError:
-                logger.warning(
-                    "todo: could not unlink superseded artifact %s", old_path
-                )
+                logger.warning("todo: could not unlink superseded artifact %s", old_path)
         await self._emit(
             updated.card_id,
             "journey_generated" if block == "journey" else "artifact_attached",
             payload={
-                "attachment_id": updated.attachment_id, "kind": updated.kind,
-                "title": updated.title, "block": block, "updated": True,
+                "attachment_id": updated.attachment_id,
+                "kind": updated.kind,
+                "title": updated.title,
+                "block": block,
+                "updated": True,
             },
             actor=actor,
         )
@@ -623,9 +647,7 @@ class TodoExchange:
     async def delete_attachment(self, attachment_id: str) -> None:
         """Drop the row and, when the file lives inside the card workspace,
         the file itself (files elsewhere aren't ours to delete)."""
-        att = await self._guard(
-            self._store.delete_attachment(attachment_id), "delete attachment"
-        )
+        att = await self._guard(self._store.delete_attachment(attachment_id), "delete attachment")
         if att is None:
             raise TodoNotFoundError(f"no TODO attachment with id {attachment_id!r}")
         if att.path and Path(att.path).is_relative_to(_workspace_root()):
@@ -637,9 +659,7 @@ class TodoExchange:
     async def list_all_attachments(self, *, limit: int = 200) -> list[TodoAttachmentV1]:
         """Every card's attachments, newest first — feeds the global gallery
         (the Artifacts view) so board files show up next to chat artifacts."""
-        return await self._guard(
-            self._store.list_all_attachments(limit=limit), "list attachments"
-        )
+        return await self._guard(self._store.list_all_attachments(limit=limit), "list attachments")
 
     # ── internals ──────────────────────────────────────────────────────
 
@@ -655,13 +675,17 @@ class TodoExchange:
         """Append one timeline event, best-effort — like the note index, an
         event write must never fail the mutation it describes."""
         try:
-            await self._store.add_event(TodoEventV1(
-                event_id=f"tde_{ULID()}", card_id=card_id,
-                objective_id=objective_id, kind=kind,
-                payload={k: v for k, v in (payload or {}).items() if v is not None},
-                actor=actor if actor in EVENT_ACTORS else "system",
-                created_ts=time.time(),
-            ))
+            await self._store.add_event(
+                TodoEventV1(
+                    event_id=f"tde_{ULID()}",
+                    card_id=card_id,
+                    objective_id=objective_id,
+                    kind=kind,
+                    payload={k: v for k, v in (payload or {}).items() if v is not None},
+                    actor=actor if actor in EVENT_ACTORS else "system",
+                    created_ts=time.time(),
+                )
+            )
         except Exception:  # noqa: BLE001 — history is an enhancement, never a gate
             logger.debug("todo: event emit failed (%s on %s)", kind, card_id, exc_info=True)
 

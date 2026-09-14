@@ -63,7 +63,10 @@ class MapPath(unittest.TestCase):
 
     def test_custom_mount_points(self) -> None:
         backend = DockerExecBackend(
-            _FakeContainer(), self.layout, state_mount="/st", workspace_mount="/ws",
+            _FakeContainer(),
+            self.layout,
+            state_mount="/st",
+            workspace_mount="/ws",
         )
         self.assertEqual(backend.map_path(self.layout.outputs), "/st/outputs")
         self.assertEqual(backend.map_path(self.ws / "f"), "/ws/f")
@@ -92,7 +95,8 @@ class RunArgv(unittest.TestCase):
         res = asyncio.run(self.backend.run("echo hi", self.layout.sandbox, 30))
         argv, kw = self.calls[0]
         self.assertEqual(
-            argv, ["docker", "exec", "-w", "/yuyutsava/sandbox", "cid123", "sh", "-c", "echo hi"],
+            argv,
+            ["docker", "exec", "-w", "/yuyutsava/sandbox", "cid123", "sh", "-c", "echo hi"],
         )
         self.assertEqual(kw["timeout"], 30)
         self.assertTrue(self.layout.sandbox.is_dir())  # host-side mkdir, like execute_run
@@ -104,8 +108,15 @@ class RunArgv(unittest.TestCase):
         argv, _ = self.calls[0]
         self.assertEqual(
             argv,
-            ["docker", "exec", "-w", "/yuyutsava/sandbox", "cid123",
-             "python3", "/yuyutsava/scripts/job.py"],
+            [
+                "docker",
+                "exec",
+                "-w",
+                "/yuyutsava/sandbox",
+                "cid123",
+                "python3",
+                "/yuyutsava/scripts/job.py",
+            ],
         )
 
     def test_unmapped_script_never_reaches_docker(self) -> None:

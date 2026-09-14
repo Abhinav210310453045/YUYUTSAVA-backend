@@ -55,9 +55,7 @@ class _RecordingStore:
 class ResumeOnStartupTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
-        self.registry = TaskRegistry(
-            sqlite_task_store(Path(self._tmp.name) / "state.db")
-        )
+        self.registry = TaskRegistry(sqlite_task_store(Path(self._tmp.name) / "state.db"))
 
     async def asyncTearDown(self) -> None:
         self._tmp.cleanup()
@@ -92,7 +90,8 @@ class ResumeOnStartupTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(by_id[running_id].resume_thread_id, "orch-abc")
         self.assertEqual(by_id[running_id].instruction, "resume me")
         self.assertNotIn(
-            queued_id, by_id,
+            queued_id,
+            by_id,
             "a never-authorised queued task was re-enqueued — a restart is "
             "bypassing Tier-1 consent",
         )
@@ -116,9 +115,7 @@ class ResumeOnStartupTests(unittest.IsolatedAsyncioTestCase):
 class OrchestratorLoopResumeTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
-        self.registry = TaskRegistry(
-            sqlite_task_store(Path(self._tmp.name) / "state.db")
-        )
+        self.registry = TaskRegistry(sqlite_task_store(Path(self._tmp.name) / "state.db"))
         self.channel = _RecordingChannel()
         self.store = _RecordingStore()
         self.loop = OrchestratorLoop(
@@ -127,7 +124,9 @@ class OrchestratorLoopResumeTests(unittest.IsolatedAsyncioTestCase):
             store=self.store,
             orchestrator_model=object(),
             deps=SimpleNamespace(
-                skill_registry=None, async_task_mirror=None, memory_store=None,
+                skill_registry=None,
+                async_task_mirror=None,
+                memory_store=None,
             ),
             orchestrator_token_budget=1000,
             task_registry=self.registry,
@@ -163,11 +162,19 @@ class OrchestratorLoopResumeTests(unittest.IsolatedAsyncioTestCase):
             yield StreamEvent(kind="final", data={"text": "resumed done"})
 
         self._patch_stream(fake_stream)
-        await self.loop._run_task(OrchestratorTask(
-            proposal_id="", event_id="", topic="resume", summary="s",
-            instruction="x", subagent_hint="general-purpose", urgency=2,
-            task_id=task_id, resume_thread_id="orch-prev",
-        ))
+        await self.loop._run_task(
+            OrchestratorTask(
+                proposal_id="",
+                event_id="",
+                topic="resume",
+                summary="s",
+                instruction="x",
+                subagent_hint="general-purpose",
+                urgency=2,
+                task_id=task_id,
+                resume_thread_id="orch-prev",
+            )
+        )
 
         self.assertIs(captured["resume"], True)
         self.assertEqual(captured["thread_id"], "orch-prev")
@@ -187,11 +194,18 @@ class OrchestratorLoopResumeTests(unittest.IsolatedAsyncioTestCase):
             yield StreamEvent(kind="final", data={"text": "done"})
 
         self._patch_stream(fake_stream)
-        await self.loop._run_task(OrchestratorTask(
-            proposal_id="p", event_id="e", topic="t", summary="s",
-            instruction="x", subagent_hint="general-purpose", urgency=2,
-            task_id=task_id,
-        ))
+        await self.loop._run_task(
+            OrchestratorTask(
+                proposal_id="p",
+                event_id="e",
+                topic="t",
+                summary="s",
+                instruction="x",
+                subagent_hint="general-purpose",
+                urgency=2,
+                task_id=task_id,
+            )
+        )
 
         self.assertIs(captured["resume"], False)
         self.assertTrue(captured["thread_id"].startswith("orch-"))
@@ -225,8 +239,12 @@ class StreamingResumeTests(unittest.IsolatedAsyncioTestCase):
     async def test_resume_continues_from_checkpoint(self) -> None:
         agent = _FakeAgent({"messages": [object()]})
         events = [
-            ev async for ev in astream_agent_iter(
-                agent, "the task", thread_id="t1", resume=True,
+            ev
+            async for ev in astream_agent_iter(
+                agent,
+                "the task",
+                thread_id="t1",
+                resume=True,
             )
         ]
         # Resumed runs continue from the checkpoint → no fresh HumanMessage.
@@ -236,8 +254,12 @@ class StreamingResumeTests(unittest.IsolatedAsyncioTestCase):
     async def test_resume_without_state_falls_back_to_fresh(self) -> None:
         agent = _FakeAgent({})  # no messages → nothing to resume
         events = [
-            ev async for ev in astream_agent_iter(
-                agent, "the task", thread_id="t1", resume=True,
+            ev
+            async for ev in astream_agent_iter(
+                agent,
+                "the task",
+                thread_id="t1",
+                resume=True,
             )
         ]
         self.assertEqual(len(agent.astream_inputs), 1)

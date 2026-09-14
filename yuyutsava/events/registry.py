@@ -92,9 +92,7 @@ class SourceRegistry:
             name=f"source-{name}",
         )
 
-    async def _run_with_backoff(
-        self, name: str, source: EventSource, ctx: SourceContext
-    ) -> None:
+    async def _run_with_backoff(self, name: str, source: EventSource, ctx: SourceContext) -> None:
         delay = 1.0
         failures = 0
         while not ctx.cancelled.is_set():
@@ -113,8 +111,9 @@ class SourceRegistry:
                 logger.exception("source %s crashed (attempt %d)", name, failures)
                 if failures >= 5:
                     logger.error(
-                        "source %s quarantined after %d failures; "
-                        "fix config or restart daemon", name, failures,
+                        "source %s quarantined after %d failures; fix config or restart daemon",
+                        name,
+                        failures,
                     )
                     return
                 await asyncio.sleep(min(delay, 60.0))

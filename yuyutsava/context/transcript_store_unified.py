@@ -182,9 +182,7 @@ def sqlite_transcript_store(db_path: Path | None = None) -> UnifiedTranscriptSto
     from yuyutsava.storage.dialect import SqliteDialect
     from yuyutsava.storage.paths import state_db_path
 
-    return UnifiedTranscriptStore(
-        SqliteDialect(TranscriptSchema(db_path or state_db_path()))
-    )
+    return UnifiedTranscriptStore(SqliteDialect(TranscriptSchema(db_path or state_db_path())))
 
 
 def pg_transcript_store(pool) -> UnifiedTranscriptStore:

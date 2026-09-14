@@ -61,7 +61,7 @@ def _tokens(line: str) -> list[tuple[bool, str]]:
     pos = 0
     for m in _ANSI_RE.finditer(line):
         if m.start() > pos:
-            out.append((False, line[pos:m.start()]))
+            out.append((False, line[pos : m.start()]))
         out.append((True, m.group()))
         pos = m.end()
     if pos < len(line):
@@ -87,8 +87,8 @@ def wrap_ansi(line: str, width: int) -> list[str]:
         return [line]
 
     lines: list[str] = []
-    active: list[str] = []      # SGR sequences still in effect
-    current: list[str] = []     # pieces of the row being built
+    active: list[str] = []  # SGR sequences still in effect
+    current: list[str] = []  # pieces of the row being built
     col = 0
 
     def flush() -> None:

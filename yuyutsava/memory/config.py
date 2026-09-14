@@ -56,9 +56,8 @@ class MemorySettings:
         cloud_url = os.environ.get("YUYUTSAVA_EMBED_CLOUD_URL", "").strip()
         if cloud_url:
             base = cloud_url.rstrip("/")
-            key = (
-                os.environ.get("YUYUTSAVA_EMBED_CLOUD_KEY", "").strip()
-                or _env("EMBED_API_KEY", None, "ollama")
+            key = os.environ.get("YUYUTSAVA_EMBED_CLOUD_KEY", "").strip() or _env(
+                "EMBED_API_KEY", None, "ollama"
             )
         else:
             base = _env("EMBED_BASE_URL", None, OLLAMA_BASE_URL).rstrip("/")
@@ -74,9 +73,7 @@ class MemorySettings:
             top_k = 5
 
         raw_pfx = os.environ.get("YUYUTSAVA_EMBED_PREFIXES", "").strip().lower()
-        use_prefixes = (
-            raw_pfx in ("1", "true", "yes") if raw_pfx else "nomic" in model.lower()
-        )
+        use_prefixes = raw_pfx in ("1", "true", "yes") if raw_pfx else "nomic" in model.lower()
 
         raw_min = os.environ.get("YUYUTSAVA_MEMORY_MIN_SCORE", "").strip()
         try:

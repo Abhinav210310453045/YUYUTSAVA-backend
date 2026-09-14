@@ -44,7 +44,7 @@ class VectorStoreProvider:
     async def search(self, query: str, max_results: int) -> SearchResult:
         q = query.strip()
         if q.lower().startswith(SELECT_PREFIX):
-            return self._select(q[len(SELECT_PREFIX):])
+            return self._select(q[len(SELECT_PREFIX) :])
         try:
             hits = await self._store.search(q, k=max_results, **self._search_kwargs)
         except Exception:

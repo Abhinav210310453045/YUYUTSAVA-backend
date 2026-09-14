@@ -105,16 +105,24 @@ class ConversationManager:
         self._store = store
         self.voice_store = voice_store  # storage.voice_store.VoiceMessageStore | None
         self._usage_store = usage_store  # daemon.usage.UsageStore | None (chat + tinker accounting)
-        self._mcp_manager = mcp_manager  # mcp.loader.MCPClientManager | None (chat + tinker MCP tools)
-        self._prefs_store = prefs_store  # storage.prefs.PrefsStore | None (per-turn prefs injection)
+        self._mcp_manager = (
+            mcp_manager  # mcp.loader.MCPClientManager | None (chat + tinker MCP tools)
+        )
+        self._prefs_store = (
+            prefs_store  # storage.prefs.PrefsStore | None (per-turn prefs injection)
+        )
         # prefs.runtime.RuntimeSettings | None — the dedicated-subagent switches.
         # The master bundle below is built once and reused by every conversation,
         # so the toggle can't be baked into its roster; it rides along and is
         # enforced per model/tool call by SubagentGatePolicy.
         self._runtime_settings = runtime_settings
         self._cap_enforcer = cap_enforcer  # tools.search._CapEnforcer | None (ws_* rate cap)
-        self._task_submission = task_submission  # daemon.task_submission.TaskSubmissionService | None
-        self._extra_subagents = list(extra_subagents or [])  # extra sync task roster (file-organizer, …)
+        self._task_submission = (
+            task_submission  # daemon.task_submission.TaskSubmissionService | None
+        )
+        self._extra_subagents = list(
+            extra_subagents or []
+        )  # extra sync task roster (file-organizer, …)
         # async_subagents.launch_index.LaunchIndex | None — links bg tasks a
         # conversation launches back to its thread, so the watcher's completion
         # bridge can wake the master on THIS conversation (the orchestrator loop
@@ -176,7 +184,8 @@ class ConversationManager:
             if bundle.async_host_url:
                 logger.info(
                     "conversation[%s]: bundle attached to async host @ %s",
-                    key, bundle.async_host_url,
+                    key,
+                    bundle.async_host_url,
                 )
         return bundle
 
@@ -187,6 +196,7 @@ class ConversationManager:
         if self._task_submission is None:
             return []
         from yuyutsava.daemon.submit_tool import make_orch_submit_tool
+
         return [make_orch_submit_tool(self._task_submission, origin=origin)]
 
     async def _build_master_bundle(self) -> AgentBundle:
@@ -244,9 +254,7 @@ class ConversationManager:
     # Background-task launch correlation                                   #
     # ------------------------------------------------------------------ #
 
-    def record_async_launch(
-        self, ev: Any, *, thread_id: str, origin: str | None = None
-    ) -> None:
+    def record_async_launch(self, ev: Any, *, thread_id: str, origin: str | None = None) -> None:
         """Link a bg task launched during a conversation turn to its thread.
 
         Mirror of ``OrchestratorLoop._record_async_launch``: sniff the
@@ -297,8 +305,11 @@ class ConversationManager:
             if not card_id:
                 raise ValueError("tinker conversations require a card id (?card=)")
             return await self._open_tinker(
-                store, card_id, origin=origin,
-                resume_id=resume_id, continue_latest=continue_latest,
+                store,
+                card_id,
+                origin=origin,
+                resume_id=resume_id,
+                continue_latest=continue_latest,
             )
 
         # Master path: defer the heavy bundle build to the first turn (inside
@@ -306,7 +317,7 @@ class ConversationManager:
         master = self._bundles.get("master")
         return await ConversationService.resolve(
             store=store,
-            bundle=master,                  # reuse if already built
+            bundle=master,  # reuse if already built
             bundle_factory=None if master else self._ensure_bundle,
             workspace=self._workspace,
             origin=origin,
@@ -339,14 +350,10 @@ class ConversationManager:
         session = None
         if resume_id:
             if not is_tinker_thread_of(card_id, resume_id):
-                raise ValueError(
-                    f"resume id {resume_id!r} does not belong to card {card_id!r}"
-                )
+                raise ValueError(f"resume id {resume_id!r} does not belong to card {card_id!r}")
             session = await store.get(resume_id)  # SessionNotFound propagates
         elif continue_latest:
-            rows = await store.list_thread_family(
-                tinker_thread_base(card_id), limit=1
-            )
+            rows = await store.list_thread_family(tinker_thread_base(card_id), limit=1)
             session = rows[0] if rows else None
 
         if session is not None:
@@ -367,10 +374,9 @@ class ConversationManager:
             store=store,
             session=session,
             workspace=self._workspace,
-            bundle=bundle,                  # reuse if already built
+            bundle=bundle,  # reuse if already built
             bundle_factory=(
-                None if bundle
-                else functools.partial(self._ensure_bundle, "tinker", card_id)
+                None if bundle else functools.partial(self._ensure_bundle, "tinker", card_id)
             ),
             agent_path=origin,
             recursion_limit=self._recursion_limit,

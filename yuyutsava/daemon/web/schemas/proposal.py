@@ -7,7 +7,11 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 ProposalDecisionStr = Literal[
-    "approve", "approve_remember", "modify", "skip", "skip_remember",
+    "approve",
+    "approve_remember",
+    "modify",
+    "skip",
+    "skip_remember",
 ]
 
 

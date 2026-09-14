@@ -20,9 +20,9 @@ from yuyutsava.storage.sessions import (
 
 _STATUS_COLOR_CODES = {
     "running": "\033[32m",
-    "done":    "\033[2m",
+    "done": "\033[2m",
     "crashed": "\033[31m",
-    "idle":    "\033[33m",
+    "idle": "\033[33m",
 }
 
 
@@ -71,10 +71,10 @@ async def print_sessions_table(workspace_filter: Path | None = None) -> int:
         print("(no sessions yet — start one with `uv run yuyutsava <task>`)")
         return 0
 
-    reset  = _ansi("\033[0m")
-    dim    = _ansi("\033[2m")
-    bold   = _ansi("\033[1m")
-    cyan   = _ansi("\033[36m")
+    reset = _ansi("\033[0m")
+    dim = _ansi("\033[2m")
+    bold = _ansi("\033[1m")
+    cyan = _ansi("\033[36m")
     yellow = _ansi("\033[33m")
 
     now = time.time()
@@ -89,22 +89,26 @@ async def print_sessions_table(workspace_filter: Path | None = None) -> int:
         ws_quoted = shlex.quote(str(s.workspace))
         resume_cmd = (
             f"uv run yuyutsava --verbose --workspace {ws_quoted} "
-            f"--resume {s.id} \"<your next message>\""
+            f'--resume {s.id} "<your next message>"'
         )
 
         print(f"{bold}{cyan}{s.id}{reset}")
-        print(f"  {dim}status   {reset}{status_str}"
-              f"   {dim}updated  {reset}{_human_age(now, s.updated_at)}"
-              f"   {dim}msgs  {reset}{s.message_count}"
-              f"   {dim}mem  {reset}{s.memory_files_count}"
-              f"   {dim}size  {reset}{_human_bytes(s.db_row_bytes)}")
+        print(
+            f"  {dim}status   {reset}{status_str}"
+            f"   {dim}updated  {reset}{_human_age(now, s.updated_at)}"
+            f"   {dim}msgs  {reset}{s.message_count}"
+            f"   {dim}mem  {reset}{s.memory_files_count}"
+            f"   {dim}size  {reset}{_human_bytes(s.db_row_bytes)}"
+        )
         print(f"  {dim}workspace{reset}  {s.workspace}")
         print(f"  {dim}task     {reset} {s.task_preview}")
         print(f"  {dim}resume   {reset} {yellow}{resume_cmd}{reset}")
         print(dim + sep + reset)
 
-    print(f"{dim}tip:{reset} replace {yellow}\"<your next message>\"{reset} "
-          f"with what you want the agent to do next, then paste into a terminal.")
+    print(
+        f'{dim}tip:{reset} replace {yellow}"<your next message>"{reset} '
+        f"with what you want the agent to do next, then paste into a terminal."
+    )
     return 0
 
 

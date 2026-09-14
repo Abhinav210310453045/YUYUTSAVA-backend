@@ -32,9 +32,18 @@ from yuyutsava.storage.routing.reconcile import Reconciler
 def _proposal(pid: str, event_id: str = "e1") -> Proposal:
     now = time.time()
     return Proposal(
-        proposal_id=pid, event_id=event_id, topic="fs.write", summary="s",
-        proposed="do", subagent="a", urgency=1, created_ts=now, expires_ts=now + 60,
-        status="pending", session_id=None, agent_path=None,
+        proposal_id=pid,
+        event_id=event_id,
+        topic="fs.write",
+        summary="s",
+        proposed="do",
+        subagent="a",
+        urgency=1,
+        created_ts=now,
+        expires_ts=now + 60,
+        status="pending",
+        session_id=None,
+        agent_path=None,
     )
 
 
@@ -132,12 +141,8 @@ class ReconcileDrainAndDeleteTests(unittest.IsolatedAsyncioTestCase):
         first_table = pool.inserts[0][0]
         self.assertIn("event_payloads", first_table)
         # Drain-and-delete: the SQLite buffer is now EMPTY — no duplication.
-        self.assertEqual(
-            await self.backend.fetchall("SELECT event_id FROM event_payloads"), []
-        )
-        self.assertEqual(
-            await self.backend.fetchall("SELECT proposal_id FROM proposals"), []
-        )
+        self.assertEqual(await self.backend.fetchall("SELECT event_id FROM event_payloads"), [])
+        self.assertEqual(await self.backend.fetchall("SELECT proposal_id FROM proposals"), [])
 
     async def test_empty_buffer_drains_nothing(self) -> None:
         moved = await Reconciler(self.backend, _CapturePool()).reconcile()

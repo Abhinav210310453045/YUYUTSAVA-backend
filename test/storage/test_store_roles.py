@@ -50,7 +50,8 @@ class StoreSatisfiesEveryRole(unittest.TestCase):
             missing = sorted(m for m in required if not hasattr(Store, m))
             with self.subTest(role=name):
                 self.assertEqual(
-                    missing, [],
+                    missing,
+                    [],
                     f"Store no longer satisfies {name}: missing {missing}. Either "
                     f"the facade lost a method or the role drifted from it.",
                 )
@@ -63,7 +64,8 @@ class StoreSatisfiesEveryRole(unittest.TestCase):
             width = len({m for m in dir(proto) if not m.startswith("_")})
             with self.subTest(role=name):
                 self.assertLessEqual(
-                    width, surface // 2,
+                    width,
+                    surface // 2,
                     f"{name} declares {width} of {surface} Store methods — that is "
                     f"not a narrowing. Split it, or have the consumer take Store "
                     f"and say why.",
@@ -81,17 +83,18 @@ class StoreSatisfiesEveryRole(unittest.TestCase):
         # dataclass field, so narrowing them is a Phase 3 job (it needs the
         # ports/ extraction to break the import cycles first).
         awaiting = {
-            "ConsentRuleWriter",   # folded into TriageStore for now
-            "DecisionReader",      # web/routers/decisions.py — untyped hub access
+            "ConsentRuleWriter",  # folded into TriageStore for now
+            "DecisionReader",  # web/routers/decisions.py — untyped hub access
             "EventPayloadWriter",  # events/source.py — untyped
             "PendingAskRegistry",  # daemon/ask_registry.py — untyped
-            "ProposalWriter",      # web/services/decision_service.py — untyped
-            "RecallReader",        # events/tools.py, context/tools.py — closures
-            "ToolCallCounter",     # core/policy.py — untyped, avoids a cycle
+            "ProposalWriter",  # web/services/decision_service.py — untyped
+            "RecallReader",  # events/tools.py, context/tools.py — closures
+            "ToolCallCounter",  # core/policy.py — untyped, avoids a cycle
         }
         orphans = sorted(set(roles.__all__) - declared - awaiting)
         self.assertEqual(
-            orphans, [],
+            orphans,
+            [],
             f"these roles have no consumer and no recorded reason: {orphans}",
         )
 
@@ -105,7 +108,8 @@ class ConsumersDeclareNarrowRoles(unittest.TestCase):
             src = inspect.getsource(mod)
             with self.subTest(module=module_name):
                 self.assertIn(
-                    f": {role}", src,
+                    f": {role}",
+                    src,
                     f"{module_name} no longer declares {role}; it may have "
                     f"reverted to `store: Store`, which re-widens its blast "
                     f"radius from {role}'s methods to all ~30.",
@@ -122,10 +126,10 @@ class ConsumersDeclareNarrowRoles(unittest.TestCase):
             hits = re.findall(r"store:\s*\"?Store\"?\b", src)
             with self.subTest(module=module_name):
                 self.assertEqual(
-                    hits, [],
+                    hits,
+                    [],
                     f"{module_name} still annotates a parameter as `Store`: {hits}",
                 )
-
 
 
 class EveryRoleHasAConsumer(unittest.TestCase):
@@ -170,13 +174,15 @@ class EveryRoleHasAConsumer(unittest.TestCase):
 
     def test_every_role_is_used_somewhere(self) -> None:
         orphans = [
-            r for r in self._roles()
+            r
+            for r in self._roles()
             if r not in self._COMPOSED
             and r not in self._ATTRIBUTE_CONSUMED
             and not self._consumers(r)
         ]
         self.assertEqual(
-            orphans, [],
+            orphans,
+            [],
             f"these Protocols narrow nothing — no module annotates with them:\n"
             f"  {orphans}\n"
             f"Either wire them to their consumer or delete them; an unused "
@@ -191,7 +197,8 @@ class EveryRoleHasAConsumer(unittest.TestCase):
         for role in self._COMPOSED:
             with self.subTest(role=role):
                 self.assertIn(
-                    role, bases,
+                    role,
+                    bases,
                     f"{role} is exempted as 'composed into TriageStore' but is "
                     f"not in its MRO — the exemption is stale",
                 )

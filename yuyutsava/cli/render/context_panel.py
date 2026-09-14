@@ -176,37 +176,46 @@ def panel_fragments(
     bar_w = max(1, w - 7)
     filled, empty = bar(snap.used_fraction, bar_w)
     tail = f" {fmt_pct(snap.used_fraction):>4}"
-    raw(_P_ESSENTIAL, [
-        ("", " "),
-        ("class:ctx.bar.fill", "▓" * filled),
-        ("class:ctx.bar.empty", "░" * empty),
-        ("class:ctx.value", tail),
-    ])
+    raw(
+        _P_ESSENTIAL,
+        [
+            ("", " "),
+            ("class:ctx.bar.fill", "▓" * filled),
+            ("class:ctx.bar.empty", "░" * empty),
+            ("class:ctx.value", tail),
+        ],
+    )
     # No mark when the total is the provider's own arithmetic: input tokens
     # for the prompt plus output tokens for the reply it produced.
     measured = bool(getattr(snap, "window_measured", False))
     mark = "" if measured else _APPROX
-    row(_P_ESSENTIAL, " " + _row(
-        f"{mark}{fmt_tokens(snap.used_tokens)} / "
-        f"{fmt_tokens(snap.max_input_tokens)}",
-        "", inner,
-    ), "class:ctx.dim")
+    row(
+        _P_ESSENTIAL,
+        " "
+        + _row(
+            f"{mark}{fmt_tokens(snap.used_tokens)} / {fmt_tokens(snap.max_input_tokens)}",
+            "",
+            inner,
+        ),
+        "class:ctx.dim",
+    )
     if snap.compact_trigger_tokens and snap.used_tokens >= snap.compact_trigger_tokens:
         row(_P_ESSENTIAL, " compaction imminent", "class:ctx.warn")
 
     row(_P_SEGMENTS)
     for _key, label, tokens in snap.segments():
         row(_P_SEGMENTS, " " + _row(label, fmt_tokens(tokens), inner, approx=True))
-    row(_P_SEGMENTS, " " + _row(
-        "free", fmt_tokens(snap.free_tokens), inner, approx=not measured))
+    row(_P_SEGMENTS, " " + _row("free", fmt_tokens(snap.free_tokens), inner, approx=not measured))
 
     row(_P_LAST_CALL)
     row(_P_LAST_CALL, f" LAST CALL  #{snap.call_no}", "class:ctx.title")
     cache = f"  ↺{fmt_pct(snap.cache_hit_fraction)}" if snap.cache_read_tokens else ""
-    row(_P_LAST_CALL, " " + _row("in", fmt_tokens(snap.input_tokens) + cache, inner),
-        "class:ctx.value")
-    row(_P_LAST_CALL, " " + _row("out", fmt_tokens(snap.output_tokens), inner),
-        "class:ctx.value")
+    row(
+        _P_LAST_CALL,
+        " " + _row("in", fmt_tokens(snap.input_tokens) + cache, inner),
+        "class:ctx.value",
+    )
+    row(_P_LAST_CALL, " " + _row("out", fmt_tokens(snap.output_tokens), inner), "class:ctx.value")
     row(_P_LAST_CALL, " " + _row("cost", fmt_cost(snap.est_cost_usd, snap.priced), inner))
 
     row(_P_SESSION)
@@ -215,8 +224,7 @@ def panel_fragments(
     row(_P_SESSION, " " + _row("in", fmt_tokens(snap.session_input_tokens), inner))
     row(_P_SESSION, " " + _row("out", fmt_tokens(snap.session_output_tokens), inner))
     if snap.session_cache_read_tokens:
-        row(_P_DETAIL, " " + _row("cached",
-                                  fmt_tokens(snap.session_cache_read_tokens), inner))
+        row(_P_DETAIL, " " + _row("cached", fmt_tokens(snap.session_cache_read_tokens), inner))
     row(_P_SESSION, " " + _row("cost", fmt_cost(snap.session_cost_usd, snap.priced), inner))
     row(_P_DETAIL, " " + _row("compacted", str(snap.compactions), inner))
     row(_P_DETAIL, " " + _row("offloaded", str(snap.offloads), inner))
@@ -259,7 +267,10 @@ def _wrap_plain(text: str, width: int) -> list[str]:
     if not text:
         return [""]
     rows = textwrap.wrap(
-        text, width=width, break_long_words=True, break_on_hyphens=False,
+        text,
+        width=width,
+        break_long_words=True,
+        break_on_hyphens=False,
     ) or [""]
     return [r.ljust(width)[:width] for r in rows]
 
@@ -299,8 +310,7 @@ def context_report(snap: Any | None, *, width: int = 72) -> RenderableType:
 
     if snap is None:
         return Text(
-            "no model call has completed yet — context figures appear "
-            "after the first one",
+            "no model call has completed yet — context figures appear after the first one",
             style="chrome",
         )
 
@@ -311,8 +321,11 @@ def context_report(snap: Any | None, *, width: int = 72) -> RenderableType:
     head.add_row(
         "window",
         f"{snap.max_input_tokens:,} tokens"
-        + (f"  ·  compacts at {snap.compact_trigger_tokens:,}"
-           if snap.compact_trigger_tokens else ""),
+        + (
+            f"  ·  compacts at {snap.compact_trigger_tokens:,}"
+            if snap.compact_trigger_tokens
+            else ""
+        ),
     )
     filled, empty = bar(snap.used_fraction, 40)
     measured = bool(getattr(snap, "window_measured", False))
@@ -328,10 +341,12 @@ def context_report(snap: Any | None, *, width: int = 72) -> RenderableType:
     head.add_row(
         "basis",
         "the provider's own count for the last prompt, plus the reply"
-        if measured else
-        ("the last measured prompt, plus an estimate of what has been "
-         "appended since" if getattr(snap, "anchored", False) else
-         "a character estimate — no call has measured this window yet"),
+        if measured
+        else (
+            "the last measured prompt, plus an estimate of what has been appended since"
+            if getattr(snap, "anchored", False)
+            else "a character estimate — no call has measured this window yet"
+        ),
     )
 
     seg = Table.grid(padding=(0, 2))
@@ -349,18 +364,19 @@ def context_report(snap: Any | None, *, width: int = 72) -> RenderableType:
             Text("▪" * f2, style="accent") + Text("·" * e2, style="chrome"),
         )
     seg.add_row(
-        "free", f"{_APPROX}{snap.free_tokens:,}",
-        fmt_pct(snap.free_tokens / snap.max_input_tokens
-                if snap.max_input_tokens else 0.0), "",
+        "free",
+        f"{_APPROX}{snap.free_tokens:,}",
+        fmt_pct(snap.free_tokens / snap.max_input_tokens if snap.max_input_tokens else 0.0),
+        "",
     )
 
     calls = Table.grid(padding=(0, 2))
     calls.add_column(style="chrome", justify="right", width=16)
     calls.add_column()
     cache_note = (
-        f"   cached {snap.cache_read_tokens:,} "
-        f"({fmt_pct(snap.cache_hit_fraction)} of input)"
-        if snap.cache_read_tokens else ""
+        f"   cached {snap.cache_read_tokens:,} ({fmt_pct(snap.cache_hit_fraction)} of input)"
+        if snap.cache_read_tokens
+        else ""
     )
     calls.add_row(
         f"last call #{snap.call_no}",
@@ -380,9 +396,12 @@ def context_report(snap: Any | None, *, width: int = 72) -> RenderableType:
         f"{snap.compactions} compaction{'s' if snap.compactions != 1 else ''} · "
         f"{snap.offloads} tool result{'s' if snap.offloads != 1 else ''} offloaded · "
         f"{snap.message_count} message{'s' if snap.message_count != 1 else ''} in state"
-        + (f" ({snap.offloaded_digests} offloaded digest"
-           f"{'s' if snap.offloaded_digests != 1 else ''})"
-           if snap.offloaded_digests else ""),
+        + (
+            f" ({snap.offloaded_digests} offloaded digest"
+            f"{'s' if snap.offloaded_digests != 1 else ''})"
+            if snap.offloaded_digests
+            else ""
+        ),
     )
 
     notes = [
@@ -422,8 +441,7 @@ def context_report(snap: Any | None, *, width: int = 72) -> RenderableType:
         )
 
     return Panel(
-        Group(head, Text(), seg, Text(), calls, Text(),
-              Text("\n".join(notes), style="chrome")),
+        Group(head, Text(), seg, Text(), calls, Text(), Text("\n".join(notes), style="chrome")),
         title="◨ context",
         title_align="left",
         border_style="accent",

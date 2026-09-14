@@ -191,7 +191,7 @@ class SqliteDialect:
     def json_value(self, raw: Any) -> Any:
         """SQLite hands JSON back as TEXT — parse it."""
         if isinstance(raw, (dict, list)):
-            return raw          # already parsed (a caller passed a live object)
+            return raw  # already parsed (a caller passed a live object)
         if raw is None:
             return None
         try:

@@ -22,9 +22,18 @@ from yuyutsava.storage.models import ConsentRule, Proposal
 def _proposal(pid: str, *, event_id: str = "e1", status: str = "pending") -> Proposal:
     now = time.time()
     return Proposal(
-        proposal_id=pid, event_id=event_id, topic="fs.write", summary="s",
-        proposed="do", subagent="a", urgency=1, created_ts=now, expires_ts=now + 60,
-        status=status, session_id=None, agent_path=None,
+        proposal_id=pid,
+        event_id=event_id,
+        topic="fs.write",
+        summary="s",
+        proposed="do",
+        subagent="a",
+        urgency=1,
+        created_ts=now,
+        expires_ts=now + 60,
+        status=status,
+        session_id=None,
+        agent_path=None,
     )
 
 
@@ -51,7 +60,8 @@ class EventsTwinsTests(unittest.IsolatedAsyncioTestCase):
         # Parent first: schema v5 enforces proposals.event_id -> event_payloads,
         # mirroring the order every producer already uses.
         await self.store.put_event_payload(
-            event_id="e1", topic="fs.write", ts=time.time(), payload={})
+            event_id="e1", topic="fs.write", ts=time.time(), payload={}
+        )
         await self.store.put_proposal(_proposal("p1"))
         self.assertEqual((await self.store.get_proposal("p1")).status, "pending")
         first = await self.store.try_set_proposal_status(
@@ -93,10 +103,16 @@ class EventsTwinsTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(await self.store.get_pref("interaction.style"))
 
     async def test_consent_rules(self) -> None:
-        await self.store.put_consent_rule(ConsentRule(
-            rule_id="r1", topic_glob="fs.*", match_json="{}",
-            decision="auto_approve", created_ts=time.time(), expires_ts=None,
-        ))
+        await self.store.put_consent_rule(
+            ConsentRule(
+                rule_id="r1",
+                topic_glob="fs.*",
+                match_json="{}",
+                decision="auto_approve",
+                created_ts=time.time(),
+                expires_ts=None,
+            )
+        )
         rules = await self.store.list_consent_rules()
         self.assertEqual(len(rules), 1)
         self.assertEqual(rules[0].decision, "auto_approve")
@@ -105,8 +121,14 @@ class EventsTwinsTests(unittest.IsolatedAsyncioTestCase):
         # The facade must remain a structural ConsentStore (sync list).
         self.assertIsInstance(self.store, ConsentStore)
         g = Grant(
-            grant_id="g1", domain="tool", subject_key="k", decision="allow",
-            scope="project", scope_ref="*", created_ts=time.time(), expires_ts=None,
+            grant_id="g1",
+            domain="tool",
+            subject_key="k",
+            decision="allow",
+            scope="project",
+            scope_ref="*",
+            created_ts=time.time(),
+            expires_ts=None,
         )
         await self.store.put_consent_grant(g)
         self.assertTrue(any(x.grant_id == "g1" for x in self.store.list_consent_grants()))

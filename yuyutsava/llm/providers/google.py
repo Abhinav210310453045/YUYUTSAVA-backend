@@ -21,9 +21,7 @@ class GoogleProvider(Provider):
     def build(
         self, settings: GoogleSettings, *, temperature: float, disable_reasoning: bool
     ) -> BaseChatModel:
-        mod = require(
-            "langchain_google_genai", provider="google", install="'yuyutsava[google]'"
-        )
+        mod = require("langchain_google_genai", provider="google", install="'yuyutsava[google]'")
         # Same Gemini wire format as Vertex, same zero-parts hazard — one quirk
         # module, applied by both providers. Same loop-bound async client too —
         # see quirks/loop_affinity.

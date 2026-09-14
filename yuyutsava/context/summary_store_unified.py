@@ -114,7 +114,8 @@ class UnifiedThreadSummaryStore(ThreadSummaryStore):
                 last = exc
                 logger.debug(
                     "summary version race on thread=%s (attempt %d), retrying",
-                    thread_id, attempt + 1,
+                    thread_id,
+                    attempt + 1,
                 )
         raise RuntimeError(
             f"could not allocate a summary version for thread {thread_id!r} after "
@@ -145,9 +146,7 @@ def sqlite_summary_store(db_path: Path | None = None) -> UnifiedThreadSummarySto
     from yuyutsava.storage.dialect import SqliteDialect
     from yuyutsava.storage.paths import state_db_path
 
-    return UnifiedThreadSummaryStore(
-        SqliteDialect(SummarySchema(db_path or state_db_path()))
-    )
+    return UnifiedThreadSummaryStore(SqliteDialect(SummarySchema(db_path or state_db_path())))
 
 
 def pg_summary_store(pool) -> UnifiedThreadSummaryStore:
@@ -157,6 +156,8 @@ def pg_summary_store(pool) -> UnifiedThreadSummaryStore:
 
 
 __all__ = [
-    "SummarySchema", "UnifiedThreadSummaryStore",
-    "pg_summary_store", "sqlite_summary_store",
+    "SummarySchema",
+    "UnifiedThreadSummaryStore",
+    "pg_summary_store",
+    "sqlite_summary_store",
 ]

@@ -94,8 +94,12 @@ def _resolve(db: str) -> Path:
 
 
 _FORBIDDEN_NODES: tuple[type, ...] = (
-    exp.Insert, exp.Update, exp.Delete, exp.Drop,
-    exp.Create, exp.Alter,
+    exp.Insert,
+    exp.Update,
+    exp.Delete,
+    exp.Drop,
+    exp.Create,
+    exp.Alter,
     exp.Command,
 )
 # Some sqlglot versions don't expose AttachDatabase as a top-level class;
@@ -122,8 +126,14 @@ def _validate_select(sql: str) -> exp.Expression:
     root = statements[0]
 
     # Top-level must be Select / With / Pragma.
-    if not isinstance(root, (exp.Select, exp.Subquery, exp.Union)) and not _is_with(root) and not _is_safe_pragma(root):
-        raise DbApiError(f"only SELECT / WITH / PRAGMA table_info are allowed (got {type(root).__name__})")
+    if (
+        not isinstance(root, (exp.Select, exp.Subquery, exp.Union))
+        and not _is_with(root)
+        and not _is_safe_pragma(root)
+    ):
+        raise DbApiError(
+            f"only SELECT / WITH / PRAGMA table_info are allowed (got {type(root).__name__})"
+        )
 
     for node in root.walk():
         # `walk` yields tuples in some versions; normalise.
@@ -149,9 +159,15 @@ def _is_with(node: exp.Expression) -> bool:
     return isinstance(node, exp.Select) and node.args.get("with") is not None
 
 
-_SAFE_PRAGMAS: frozenset[str] = frozenset({
-    "table_info", "index_list", "index_info", "foreign_key_list", "schema_version",
-})
+_SAFE_PRAGMAS: frozenset[str] = frozenset(
+    {
+        "table_info",
+        "index_list",
+        "index_info",
+        "foreign_key_list",
+        "schema_version",
+    }
+)
 
 
 def _is_safe_pragma(node: exp.Expression) -> bool:
@@ -212,9 +228,14 @@ async def list_databases() -> list[DatabaseInfo]:
                 size_bytes = path.stat().st_size
             except OSError:
                 size_bytes = None
-        out.append(DatabaseInfo(
-            name=name, path=str(path), exists=path.exists(), size_bytes=size_bytes,
-        ))
+        out.append(
+            DatabaseInfo(
+                name=name,
+                path=str(path),
+                exists=path.exists(),
+                size_bytes=size_bytes,
+            )
+        )
     return out
 
 
@@ -243,8 +264,11 @@ async def table_schema(db: str, table: str) -> list[dict[str, Any]]:
         rows = await cur.fetchall()
         return [
             {
-                "cid": r["cid"], "name": r["name"], "type": r["type"],
-                "notnull": bool(r["notnull"]), "default_value": r["dflt_value"],
+                "cid": r["cid"],
+                "name": r["name"],
+                "type": r["type"],
+                "notnull": bool(r["notnull"]),
+                "default_value": r["dflt_value"],
                 "pk": int(r["pk"]),
             }
             for r in rows

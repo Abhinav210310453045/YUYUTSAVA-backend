@@ -22,9 +22,7 @@ class VertexProvider(Provider):
     def build(
         self, settings: VertexSettings, *, temperature: float, disable_reasoning: bool
     ) -> BaseChatModel:
-        mod = require(
-            "langchain_google_vertexai", provider="vertex", install="'yuyutsava[vertex]'"
-        )
+        mod = require("langchain_google_vertexai", provider="vertex", install="'yuyutsava[vertex]'")
         # Gemini 400s the whole request if any message renders to zero parts,
         # which permanently wedges a checkpointed thread. See quirks/gemini_parts.
         # The SDK's retry decorator covers only the stream *open*; a 429/503 that

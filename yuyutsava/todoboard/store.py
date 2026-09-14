@@ -116,7 +116,9 @@ class TodoStore(ABC):
         """Insert a note; returns False when its card doesn't exist."""
 
     @abstractmethod
-    async def update_note(self, note_id: str, body: str, updated_ts: float) -> TodoNoteV1 | None: ...
+    async def update_note(
+        self, note_id: str, body: str, updated_ts: float
+    ) -> TodoNoteV1 | None: ...
 
     @abstractmethod
     async def delete_note(self, note_id: str) -> bool: ...
@@ -157,7 +159,6 @@ def _load_json(raw: Any, fallback: Any) -> Any:
         return fallback
 
 
-
 # NOTE: SqliteTodoStore was replaced on 2026-08-09 by UnifiedTodoStore in
 # todoboard/store_unified.py (ADR-002 step 2.5b) — the last twin pair. Child
 # deletion is now explicit on both backends rather than cascade-on-PG /
@@ -165,36 +166,11 @@ def _load_json(raw: Any, fallback: Any) -> Any:
 # unified store, on both live backends, in test/storage/test_todo_store_parity.py.
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # NOTE: PgTodoStore was replaced on 2026-08-09 by UnifiedTodoStore in
 # todoboard/store_unified.py (ADR-002 step 2.5b) — the last twin pair. Child
 # deletion is now explicit on both backends rather than cascade-on-PG /
 # by-hand-on-SQLite. Parity verified against BOTH retired twins and then the
 # unified store, on both live backends, in test/storage/test_todo_store_parity.py.
-
-
-
-
-
-
-
-
-
-
-
 
 
 # Process-singleton, mirroring get/set_default_feedback_store(). Postgres is

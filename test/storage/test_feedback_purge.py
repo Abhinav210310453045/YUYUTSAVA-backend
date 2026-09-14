@@ -64,11 +64,13 @@ class FeedbackDeleteForThread(unittest.IsolatedAsyncioTestCase):
 
         remaining = await self.store.list_all()
         leaked = [
-            r for r in remaining
+            r
+            for r in remaining
             if "SECRET" in (r.user_text or "") or "SECRET" in (r.assistant_text or "")
         ]
         self.assertEqual(
-            leaked, [],
+            leaked,
+            [],
             "conversation text survived session deletion — the retention bug is back",
         )
 
@@ -89,8 +91,7 @@ class PurgeWiring(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
         self._prev = {
-            k: os.environ.get(k)
-            for k in ("YUYUTSAVA_STATE_DIR", "YUYUTSAVA_STORAGE_BACKEND")
+            k: os.environ.get(k) for k in ("YUYUTSAVA_STATE_DIR", "YUYUTSAVA_STORAGE_BACKEND")
         }
         os.environ["YUYUTSAVA_STATE_DIR"] = self._tmp.name
         os.environ["YUYUTSAVA_STORAGE_BACKEND"] = "sqlite"
@@ -132,7 +133,8 @@ class PurgeWiring(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(
-            seen, [session.thread_id],
+            seen,
+            [session.thread_id],
             "purge_session did not ask the feedback store to delete this "
             "thread. Session deletion would again leave verbatim "
             "user/assistant text on disk.",

@@ -40,19 +40,23 @@ class TriageDecision(BaseModel):
     proposed_instruction: str | None = Field(
         default=None,
         description="Required when action='propose'. One-line user-readable "
-                    "instruction the user will approve or modify.",
+        "instruction the user will approve or modify.",
     )
     reason: str = Field(
         description="One short sentence explaining the decision.",
     )
     urgency: int = Field(
-        default=1, ge=0, le=3,
+        default=1,
+        ge=0,
+        le=3,
         description="0=trace, 1=info, 2=notable, 3=urgent.",
     )
     complexity: int = Field(
-        default=3, ge=1, le=5,
+        default=3,
+        ge=1,
+        le=5,
         description="How complex the proposed work is for an agent, 1-5. "
-                    "See the anchored examples in the system prompt.",
+        "See the anchored examples in the system prompt.",
     )
 
 
@@ -101,18 +105,23 @@ class TriageAgent:
         for attempt in range(2):
             try:
                 decision: TriageDecision = await self._runnable.ainvoke(
-                    messages, config=_invoke_cfg,
+                    messages,
+                    config=_invoke_cfg,
                 )  # type: ignore[assignment]
                 break
             except Exception as exc:
                 last_exc = exc
                 logger.warning(
-                    "triage LLM call failed (attempt %d/2): %s", attempt + 1, exc,
+                    "triage LLM call failed (attempt %d/2): %s",
+                    attempt + 1,
+                    exc,
                 )
         else:
             logger.warning("triage LLM call failed after retry; defaulting to drop")
             return TriageDecision(
-                action="drop", reason=f"triage error: {last_exc}", urgency=0,
+                action="drop",
+                reason=f"triage error: {last_exc}",
+                urgency=0,
             )
 
         # Defensive: validate that 'propose' carries the required fields.

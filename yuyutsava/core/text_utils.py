@@ -14,14 +14,16 @@ from typing import Any, Iterable
 # every streamed chunk. LangChain's chunk merge concatenates equal string
 # values, so these accrete ("stop" -> "stopstop" -> ...). Tunable: callers may
 # pass their own ``keys`` set.
-DEFAULT_METADATA_SCALAR_KEYS: frozenset[str] = frozenset({
-    "finish_reason",
-    "model_name",
-    "system_fingerprint",
-    "service_tier",
-    "id",
-    "model_provider",
-})
+DEFAULT_METADATA_SCALAR_KEYS: frozenset[str] = frozenset(
+    {
+        "finish_reason",
+        "model_name",
+        "system_fingerprint",
+        "service_tier",
+        "id",
+        "model_provider",
+    }
+)
 
 
 def collapse_periodic_repeat(s: str) -> str:

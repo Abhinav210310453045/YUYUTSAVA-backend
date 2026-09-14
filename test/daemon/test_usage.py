@@ -20,14 +20,25 @@ from yuyutsava.daemon.usage import (
 
 
 def _row(
-    *, task_id: str = "tsk_a", model: str = "m", ts: float = 1_000.0,
-    input_tokens: int = 100, output_tokens: int = 10, cost: float = 0.5,
+    *,
+    task_id: str = "tsk_a",
+    model: str = "m",
+    ts: float = 1_000.0,
+    input_tokens: int = 100,
+    output_tokens: int = 10,
+    cost: float = 0.5,
     role: str = "orchestrator",
 ) -> UsageRow:
     return UsageRow(
-        id=mint_usage_id(), ts=ts, thread_id="th", task_id=task_id,
-        role=role, model=model, input_tokens=input_tokens,
-        output_tokens=output_tokens, est_cost_usd=cost,
+        id=mint_usage_id(),
+        ts=ts,
+        thread_id="th",
+        task_id=task_id,
+        role=role,
+        model=model,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        est_cost_usd=cost,
     )
 
 
@@ -54,12 +65,15 @@ class SqliteUsageStoreTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_aggregate_totals_and_groups(self) -> None:
         # Known counts: 2 calls on model X for task a, 1 call on Y for b.
-        await self.store.add(_row(task_id="tsk_a", model="X",
-                                  input_tokens=100, output_tokens=10, cost=0.10))
-        await self.store.add(_row(task_id="tsk_a", model="X",
-                                  input_tokens=200, output_tokens=20, cost=0.20))
-        await self.store.add(_row(task_id="tsk_b", model="Y",
-                                  input_tokens=50, output_tokens=5, cost=0.05))
+        await self.store.add(
+            _row(task_id="tsk_a", model="X", input_tokens=100, output_tokens=10, cost=0.10)
+        )
+        await self.store.add(
+            _row(task_id="tsk_a", model="X", input_tokens=200, output_tokens=20, cost=0.20)
+        )
+        await self.store.add(
+            _row(task_id="tsk_b", model="Y", input_tokens=50, output_tokens=5, cost=0.05)
+        )
 
         total = await self.store.aggregate()
         self.assertEqual(len(total), 1)
@@ -82,8 +96,8 @@ class SqliteUsageStoreTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(by_model["X"].input_tokens, 300)
 
     async def test_aggregate_by_day_and_since(self) -> None:
-        await self.store.add(_row(ts=0.0))                  # 1970-01-01
-        await self.store.add(_row(ts=86_400.0 + 60))        # 1970-01-02
+        await self.store.add(_row(ts=0.0))  # 1970-01-01
+        await self.store.add(_row(ts=86_400.0 + 60))  # 1970-01-02
         by_day = {a.key: a for a in await self.store.aggregate(group_by="day")}
         self.assertEqual(set(by_day), {"1970-01-01", "1970-01-02"})
         since = await self.store.aggregate(since=86_400.0, group_by="day")
@@ -117,18 +131,26 @@ class UsagePolicyTests(unittest.IsolatedAsyncioTestCase):
         """
         from yuyutsava.policy.adapter import LangChainPolicyAdapter
 
-        return LangChainPolicyAdapter([UsagePolicy(
-            store if store is not None else self.store,
-            role="orchestrator", model_name="test-model",
-            task_id="tsk_1", thread_id="orch-1",
-            prices={"test-model": (1.00, 5.00)},
-        )])
+        return LangChainPolicyAdapter(
+            [
+                UsagePolicy(
+                    store if store is not None else self.store,
+                    role="orchestrator",
+                    model_name="test-model",
+                    task_id="tsk_1",
+                    thread_id="orch-1",
+                    prices={"test-model": (1.00, 5.00)},
+                )
+            ]
+        )
 
     @staticmethod
     def _state(usage: dict | None) -> dict:
         if usage is not None:
-            usage = {"total_tokens": usage.get("input_tokens", 0)
-                     + usage.get("output_tokens", 0), **usage}
+            usage = {
+                "total_tokens": usage.get("input_tokens", 0) + usage.get("output_tokens", 0),
+                **usage,
+            }
         ai = AIMessage(content="hi", usage_metadata=usage)
         return {"messages": [HumanMessage(content="q"), ai]}
 
@@ -169,9 +191,7 @@ class UsagePolicyTests(unittest.IsolatedAsyncioTestCase):
     async def test_store_failure_is_swallowed(self) -> None:
         rec = self._recorder(store=_FailingStore())
         # Must not raise — accounting never breaks a run.
-        await rec.aafter_model(
-            self._state({"input_tokens": 1, "output_tokens": 1}), None
-        )
+        await rec.aafter_model(self._state({"input_tokens": 1, "output_tokens": 1}), None)
 
 
 if __name__ == "__main__":

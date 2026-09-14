@@ -52,7 +52,11 @@ PNG = b"\x89PNG\r\n\x1a\n" + b"fake-image-bytes"
 
 def _result(kind: str = "chart", title: str = "T") -> RenderResult:
     return RenderResult(
-        kind=kind, title=title, mime="image/png", image_bytes=PNG, source="src",
+        kind=kind,
+        title=title,
+        mime="image/png",
+        image_bytes=PNG,
+        source="src",
     )
 
 

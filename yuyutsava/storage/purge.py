@@ -176,9 +176,7 @@ async def purge_session(
         if _owned:
             await _events.start()
         try:
-            report.rows["pending_asks"] = await _events.delete_pending_asks_for_thread(
-                thread_id
-            )
+            report.rows["pending_asks"] = await _events.delete_pending_asks_for_thread(thread_id)
         finally:
             if _owned:
                 await _events.stop()
@@ -198,7 +196,10 @@ async def purge_session(
 
     logger.info(
         "purge: session=%s thread=%s rows=%d voice_blobs=%d",
-        session_id, thread_id, report.total_rows, report.voice_blobs_deleted,
+        session_id,
+        thread_id,
+        report.total_rows,
+        report.voice_blobs_deleted,
     )
     return report
 
@@ -233,9 +234,7 @@ async def _purge_sqlite(thread_id: str, session_id: str, report: PurgeReport) ->
             for table, key in _STATE_TABLES:
                 if table not in existing:
                     continue
-                cur = await conn.execute(
-                    f"DELETE FROM {table} WHERE {key} = ?", (ident[key],)
-                )
+                cur = await conn.execute(f"DELETE FROM {table} WHERE {key} = ?", (ident[key],))
                 report.rows[table] = cur.rowcount or 0
             if "memories" in existing:
                 placeholders = ",".join("?" for _ in KEEP_MEMORY_KINDS)
@@ -258,9 +257,7 @@ async def _purge_sqlite(thread_id: str, session_id: str, report: PurgeReport) ->
         await conn.execute("PRAGMA busy_timeout=5000")
         if "interrupts" not in await _sqlite_tables(conn):
             return
-        cur = await conn.execute(
-            "DELETE FROM interrupts WHERE thread_id = ?", (thread_id,)
-        )
+        cur = await conn.execute("DELETE FROM interrupts WHERE thread_id = ?", (thread_id,))
         report.rows["interrupts"] = cur.rowcount or 0
         await conn.commit()
 
@@ -276,33 +273,26 @@ async def _pg_table_exists(conn, table: str) -> bool:
     return bool(row) and row[0] is not None
 
 
-async def _purge_pg_children(
-    pg_pool, thread_id: str, session_id: str, report: PurgeReport
-) -> None:
+async def _purge_pg_children(pg_pool, thread_id: str, session_id: str, report: PurgeReport) -> None:
     """Delete every child row for the thread in one transaction (hub dropped
     later, after the sessions row, in :func:`_drop_pg_thread`)."""
     ident = {"thread_id": thread_id, "session_id": session_id}
     async with pg_pool.transaction() as conn:
         if await _pg_table_exists(conn, "memories"):
             cur = await conn.execute(
-                "DELETE FROM memories WHERE source_thread_id = %s "
-                "AND kind <> ALL(%s)",
+                "DELETE FROM memories WHERE source_thread_id = %s AND kind <> ALL(%s)",
                 (thread_id, list(KEEP_MEMORY_KINDS)),
             )
             report.rows["memories"] = cur.rowcount or 0
         for table, key in _PG_CHILD_TABLES:
             if not await _pg_table_exists(conn, table):
                 continue
-            cur = await conn.execute(
-                f"DELETE FROM {table} WHERE {key} = %s", (ident[key],)
-            )
+            cur = await conn.execute(f"DELETE FROM {table} WHERE {key} = %s", (ident[key],))
             report.rows[table] = cur.rowcount or 0
 
 
 async def _drop_pg_thread(pg_pool, thread_id: str, report: PurgeReport) -> None:
     """Drop the childless ``threads`` hub row (SET NULLs the kept memories)."""
     async with pg_pool.transaction() as conn:
-        cur = await conn.execute(
-            "DELETE FROM threads WHERE thread_id = %s", (thread_id,)
-        )
+        cur = await conn.execute("DELETE FROM threads WHERE thread_id = %s", (thread_id,))
         report.rows["threads"] = cur.rowcount or 0

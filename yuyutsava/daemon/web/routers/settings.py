@@ -25,11 +25,17 @@ from fastapi import APIRouter, Depends, Request
 
 from yuyutsava.core.config import EventsConfig, SourceConfig
 from yuyutsava.daemon.web.deps import (
-    get_config_reload, get_hub, get_runtime_settings, get_subagent_roster,
+    get_config_reload,
+    get_hub,
+    get_runtime_settings,
+    get_subagent_roster,
 )
 from yuyutsava.daemon.web.exceptions import ValidationError
 from yuyutsava.daemon.web.schemas.settings import (
-    RuntimeSettingsOut, RuntimeSettingsPatchIn, SubagentDTO, SubagentRosterOut,
+    RuntimeSettingsOut,
+    RuntimeSettingsPatchIn,
+    SubagentDTO,
+    SubagentRosterOut,
 )
 from yuyutsava.daemon.web.services.config_service import ConfigService
 from yuyutsava.daemon.web.services.stream_service import StreamSettingsItem
@@ -56,14 +62,17 @@ async def _apply_wake_to_events_config(request: Request, wake_enabled: bool) -> 
         params = dict(current.params) if current is not None else {}
         sources = dict(cfg.sources)
         sources["voice"] = SourceConfig(
-            name="voice", enabled=wake_enabled, params=params,
+            name="voice",
+            enabled=wake_enabled,
+            params=params,
         )
         await svc.save_events(EventsConfig(sources=sources))
         logger.info("settings: voice events source → enabled=%s", wake_enabled)
     except Exception:  # noqa: BLE001
         logger.warning(
             "settings: could not apply wake_enabled=%s to the events config",
-            wake_enabled, exc_info=True,
+            wake_enabled,
+            exc_info=True,
         )
 
 
@@ -74,9 +83,12 @@ async def _broadcast(request: Request, settings) -> None:
     except Exception:  # noqa: BLE001 — headless app, no hub
         return
     try:
-        await hub.broadcast(StreamSettingsItem(
-            settings=settings.snapshot(), ts=time.time(),
-        ))
+        await hub.broadcast(
+            StreamSettingsItem(
+                settings=settings.snapshot(),
+                ts=time.time(),
+            )
+        )
     except Exception:  # noqa: BLE001
         logger.debug("settings: broadcast failed", exc_info=True)
 
@@ -85,16 +97,18 @@ def _to_dto(settings) -> RuntimeSettingsOut:
     return RuntimeSettingsOut(**settings.snapshot())
 
 
-@router.get("/runtime", response_model=RuntimeSettingsOut,
-            summary="Read the hot runtime toggles")
+@router.get("/runtime", response_model=RuntimeSettingsOut, summary="Read the hot runtime toggles")
 async def get_runtime(settings=Depends(get_runtime_settings)) -> RuntimeSettingsOut:
     # force=True: a CLI slash command may have written the row behind our back.
     await settings.refresh(force=True)
     return _to_dto(settings)
 
 
-@router.patch("/runtime", response_model=RuntimeSettingsOut,
-              summary="Flip runtime toggles (applies immediately)")
+@router.patch(
+    "/runtime",
+    response_model=RuntimeSettingsOut,
+    summary="Flip runtime toggles (applies immediately)",
+)
 async def patch_runtime(
     body: RuntimeSettingsPatchIn,
     request: Request,
@@ -123,8 +137,7 @@ async def patch_runtime(
                 raise ValidationError("subagents.name requires subagents.enabled")
             if patch.name in UNDISABLEABLE and not patch.enabled:
                 raise ValidationError(
-                    f"{patch.name} cannot be disabled — it backs the master's "
-                    "delegation fallback"
+                    f"{patch.name} cannot be disabled — it backs the master's delegation fallback"
                 )
             await settings.set_subagent_enabled(patch.name, patch.enabled)
 
@@ -132,8 +145,11 @@ async def patch_runtime(
     return _to_dto(settings)
 
 
-@router.get("/subagents", response_model=SubagentRosterOut,
-            summary="Dedicated subagent roster with enabled state")
+@router.get(
+    "/subagents",
+    response_model=SubagentRosterOut,
+    summary="Dedicated subagent roster with enabled state",
+)
 async def get_subagents(
     settings=Depends(get_runtime_settings),
     roster=Depends(get_subagent_roster),
@@ -148,11 +164,13 @@ async def get_subagents(
     subs = settings.subagents()
     out: list[SubagentDTO] = []
     for name, agent in sorted((roster or {}).items()):
-        out.append(SubagentDTO(
-            name=name,
-            description=(getattr(agent, "description", "") or "").strip(),
-            enabled=subs.is_enabled(name),
-            togglable=name not in UNDISABLEABLE,
-            kind="both" if getattr(agent, "supports_async", False) else "sync",
-        ))
+        out.append(
+            SubagentDTO(
+                name=name,
+                description=(getattr(agent, "description", "") or "").strip(),
+                enabled=subs.is_enabled(name),
+                togglable=name not in UNDISABLEABLE,
+                kind="both" if getattr(agent, "supports_async", False) else "sync",
+            )
+        )
     return SubagentRosterOut(subagents=out)

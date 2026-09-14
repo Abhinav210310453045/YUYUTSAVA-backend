@@ -77,10 +77,18 @@ class RecallIsObservable(unittest.TestCase):
         class FakeStore:
             async def search(self, q, k=5, agent=None):
                 return [
-                    Hit(id="a", text="read the chat db", score=0.9,
-                        payload={"name": "whatsapp-mac-chat-db"}),
-                    Hit(id="b", text="open an app", score=0.8,
-                        payload={"name": "macos-open-app-or-url"}),
+                    Hit(
+                        id="a",
+                        text="read the chat db",
+                        score=0.9,
+                        payload={"name": "whatsapp-mac-chat-db"},
+                    ),
+                    Hit(
+                        id="b",
+                        text="open an app",
+                        score=0.8,
+                        payload={"name": "macos-open-app-or-url"},
+                    ),
                 ]
 
         inj = skill_injector.SkillInjector(FakeStore())
@@ -162,7 +170,7 @@ class MacosPack(unittest.TestCase):
             "ZLASTMESSAGE",
             "ZPARTNERNAME",
             "ZUNREADCOUNT",
-            "978307200",          # Core Data epoch offset
+            "978307200",  # Core Data epoch offset
             "@s.whatsapp.net",
             "@g.us",
         ):

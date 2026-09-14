@@ -41,9 +41,9 @@ from pydantic import BaseModel
 class RecoveryHint(BaseModel):
     """A single concrete recovery action for the LLM to act on."""
 
-    action:      str             # short imperative label: "paginate", "grep", "redirect_to_file"
-    description: str             # plain-English instruction
-    example:     str | None = None  # optional tool-call snippet or shell command
+    action: str  # short imperative label: "paginate", "grep", "redirect_to_file"
+    description: str  # plain-English instruction
+    example: str | None = None  # optional tool-call snippet or shell command
 
 
 # ---------------------------------------------------------------------------
@@ -52,10 +52,10 @@ class RecoveryHint(BaseModel):
 
 
 class SuppressedReason(str, Enum):
-    FILE_TOO_LARGE   = "file_too_large"    # tr_read_file: file exceeds per-read char limit
+    FILE_TOO_LARGE = "file_too_large"  # tr_read_file: file exceeds per-read char limit
     STDOUT_TOO_LARGE = "stdout_too_large"  # tr_execute_in_sandbox: stdout overflow
-    BINARY_CONTENT   = "binary_content"   # non-text / non-UTF-8 file
-    UNKNOWN          = "unknown"           # catch-all for unexpected cases
+    BINARY_CONTENT = "binary_content"  # non-text / non-UTF-8 file
+    UNKNOWN = "unknown"  # catch-all for unexpected cases
 
 
 class SuppressedContentNotice(BaseModel):
@@ -66,13 +66,13 @@ class SuppressedContentNotice(BaseModel):
     other notice types without inspecting every field.
     """
 
-    notice_type:         Literal["suppressed_content"] = "suppressed_content"
-    suppressed:          Literal[True] = True   # fast boolean check for middleware
-    reason:              SuppressedReason
+    notice_type: Literal["suppressed_content"] = "suppressed_content"
+    suppressed: Literal[True] = True  # fast boolean check for middleware
+    reason: SuppressedReason
     original_size_chars: int
-    tool:                str
-    recovery:            list[RecoveryHint]
-    human_message:       str
+    tool: str
+    recovery: list[RecoveryHint]
+    human_message: str
 
     # ── Factories ──────────────────────────────────────────────────────────
 

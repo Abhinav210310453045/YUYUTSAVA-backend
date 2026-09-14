@@ -75,7 +75,7 @@ class BaseSubAgent(ABC):
         # `object | None` + comment workaround the import cycle forced.
         cap_enforcer: CapEnforcer | None = None,
         memory_store: MemoryStore | None = None,
-        skill_store: object | None = None,   # skills.store.SkillStore; for dual-write indexing
+        skill_store: object | None = None,  # skills.store.SkillStore; for dual-write indexing
     ) -> None:
         self._task_runner = task_runner
         self._skill_registry = skill_registry
@@ -153,9 +153,7 @@ class BaseSubAgent(ABC):
         from yuyutsava.platform import host_profile
 
         base = self.system_prompt.rstrip()
-        return (
-            f"{base}\n\n{self.workspace_context_block()}\n\n{host_profile().prompt_block()}"
-        )
+        return f"{base}\n\n{self.workspace_context_block()}\n\n{host_profile().prompt_block()}"
 
     def task_runner_tools(self) -> list[BaseTool]:
         """Return the four tr_* tools bound to this agent's TaskRunnerAgent.
@@ -183,13 +181,12 @@ class BaseSubAgent(ABC):
             return []
         if self._can_write_skills:
             from yuyutsava.skills.tools import make_skill_tools
+
             # Pass the store so sk_write_skill dual-writes (disk + semantic
             # index), making a skill learned this run recallable immediately.
             # agent_name lets scope="own" writes tag the skill with this
             # subagent's identity.
-            return make_skill_tools(
-                self._skill_registry, self._skill_store, agent_name=self.name
-            )
+            return make_skill_tools(self._skill_registry, self._skill_store, agent_name=self.name)
         return [make_read_skill_tool(self._skill_registry)]
 
     def memory_tools(self) -> list[BaseTool]:
@@ -201,6 +198,7 @@ class BaseSubAgent(ABC):
         if self._memory_store is None:
             return []
         from yuyutsava.memory.tools import make_memory_tools
+
         return make_memory_tools(self._memory_store)
 
     def search_tools(self) -> list[BaseTool]:
@@ -221,6 +219,7 @@ class BaseSubAgent(ABC):
         if not wanted:
             return []
         from yuyutsava.tools.search import make_search_tools
+
         all_tools = make_search_tools(self._search_config, cap_enforcer=self._cap_enforcer)
         return [t for t in all_tools if any(fnmatch.fnmatchcase(t.name, p) for p in wanted)]
 
@@ -242,6 +241,7 @@ class BaseSubAgent(ABC):
         up in the UI Artifacts panel exactly like one made by the master.
         """
         from yuyutsava.visuals.tools import make_visual_tools
+
         layout = WorkspaceLayout.for_workspace(
             self._task_runner.workspace_root,
             sandbox_override=self._task_runner.sandbox_root,

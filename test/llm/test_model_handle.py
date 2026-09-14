@@ -57,24 +57,26 @@ BASELINE_NAMES = {
 }
 
 SETTINGS = {
-    "groq": C.GroqSettings(
-        api_key="k", base_url="https://x", model="llama-3.3-70b-versatile"),
+    "groq": C.GroqSettings(api_key="k", base_url="https://x", model="llama-3.3-70b-versatile"),
     "openrouter": C.OpenRouterSettings(
-        api_key="k", base_url="https://x", model="openai/gpt-4o-mini"),
-    "ollama": C.OllamaSettings(
-        base_url="http://localhost:11434/v1", model="gemma4:e2b"),
+        api_key="k", base_url="https://x", model="openai/gpt-4o-mini"
+    ),
+    "ollama": C.OllamaSettings(base_url="http://localhost:11434/v1", model="gemma4:e2b"),
     "openai": C.OpenAISettings(
-        api_key="k", base_url="https://api.openai.com/v1", model="gpt-4o-mini"),
-    "anthropic": C.AnthropicSettings(
-        api_key="k", model="claude-haiku-4-5-20251001"),
+        api_key="k", base_url="https://api.openai.com/v1", model="gpt-4o-mini"
+    ),
+    "anthropic": C.AnthropicSettings(api_key="k", model="claude-haiku-4-5-20251001"),
     "google": C.GoogleSettings(api_key="k", model="gemini-2.5-flash"),
-    "vertex": C.VertexSettings(
-        project="p", location="us-central1", model="gemini-2.5-flash"),
+    "vertex": C.VertexSettings(project="p", location="us-central1", model="gemini-2.5-flash"),
     "mistral": C.MistralSettings(api_key="k", model="mistral-large-latest"),
     "cohere": C.CohereSettings(api_key="k", model="command-r-plus"),
     "azure": C.AzureOpenAISettings(
-        api_key="k", azure_endpoint="https://x", azure_deployment="dep",
-        api_version="2024-10-21", model="gpt-4o"),
+        api_key="k",
+        azure_endpoint="https://x",
+        azure_deployment="dep",
+        api_version="2024-10-21",
+        model="gpt-4o",
+    ),
 }
 
 
@@ -85,7 +87,8 @@ class NameIsUnchanged(unittest.TestCase):
         for key, expected in BASELINE_NAMES.items():
             with self.subTest(provider=key):
                 self.assertEqual(
-                    model_name_of(chat_model(SETTINGS[key])), expected,
+                    model_name_of(chat_model(SETTINGS[key])),
+                    expected,
                     f"{key} reports a different model name than before this "
                     f"change; usage rows and the task registry would shift",
                 )
@@ -94,9 +97,9 @@ class NameIsUnchanged(unittest.TestCase):
         """Negative control — the check above proves nothing about a provider it skips."""
         covered = set(BASELINE_NAMES) | {"azure"}
         self.assertEqual(
-            covered, set(SETTINGS),
-            "a provider is in SETTINGS but pinned by neither the baseline nor "
-            "the Azure case",
+            covered,
+            set(SETTINGS),
+            "a provider is in SETTINGS but pinned by neither the baseline nor the Azure case",
         )
 
 
@@ -115,7 +118,8 @@ class AzureIdentityWasBroken(unittest.TestCase):
                 probed = v
                 break
         self.assertEqual(
-            probed, "",
+            probed,
+            "",
             "AzureChatOpenAI now exposes a usable name attribute, so the bug "
             "this fixes no longer exists — re-check whether the override in "
             "AzureOpenAIProvider.model_name is still the right answer",
@@ -127,8 +131,12 @@ class AzureIdentityWasBroken(unittest.TestCase):
     def test_falls_back_to_the_deployment(self) -> None:
         """``model`` is informational on Azure and may be empty."""
         settings = C.AzureOpenAISettings(
-            api_key="k", azure_endpoint="https://x", azure_deployment="my-deploy",
-            api_version="2024-10-21", model="")
+            api_key="k",
+            azure_endpoint="https://x",
+            azure_deployment="my-deploy",
+            api_version="2024-10-21",
+            model="",
+        )
         self.assertEqual(model_name_of(chat_model(settings)), "my-deploy")
 
 
@@ -140,8 +148,7 @@ class HandleCarriesTheProvider(unittest.TestCase):
                 self.assertEqual(model_handle(SETTINGS[key]).provider, key)
 
     def test_generic_escape_hatch_reports_the_provider_key(self) -> None:
-        settings = C.OpenAICompatibleSettings(
-            api_key="k", base_url="https://x", model="some/model")
+        settings = C.OpenAICompatibleSettings(api_key="k", base_url="https://x", model="some/model")
         self.assertEqual(model_handle(settings).provider, "openai_compatible")
 
     def test_native_providers_report_their_own_key(self) -> None:
@@ -177,12 +184,10 @@ class Capabilities(unittest.TestCase):
     def test_others_are_not(self) -> None:
         for key in ("groq", "anthropic", "mistral", "cohere", "azure"):
             with self.subTest(provider=key):
-                self.assertFalse(
-                    supports(chat_model(SETTINGS[key]), Capability.LOOP_AFFINE))
+                self.assertFalse(supports(chat_model(SETTINGS[key]), Capability.LOOP_AFFINE))
 
     def test_only_openai_compatible_toggles_reasoning(self) -> None:
-        self.assertTrue(
-            supports(chat_model(SETTINGS["groq"]), Capability.REASONING_TOGGLE))
+        self.assertTrue(supports(chat_model(SETTINGS["groq"]), Capability.REASONING_TOGGLE))
         for key in ("anthropic", "google", "vertex", "mistral", "cohere", "azure"):
             with self.subTest(provider=key):
                 self.assertFalse(
@@ -193,8 +198,7 @@ class Capabilities(unittest.TestCase):
 
     def test_bedrock_declares_nothing_special(self) -> None:
         """Structural: Bedrock cannot be built without live AWS credentials."""
-        provider = provider_for(
-            C.BedrockSettings(region="us-east-1", model="m"))
+        provider = provider_for(C.BedrockSettings(region="us-east-1", model="m"))
         self.assertEqual(type(provider).__name__, "BedrockProvider")
         self.assertEqual(provider.key, "bedrock")
         self.assertEqual(provider.capabilities, frozenset())
@@ -235,14 +239,15 @@ class TheRegistryDoesNotLeak(unittest.TestCase):
         before = _registered_count()
         models = [chat_model(SETTINGS["groq"]) for _ in range(25)]
         self.assertEqual(
-            _registered_count(), before + 25,
-            "models were built but not registered — model_name_of would fall "
-            "back to probing",
+            _registered_count(),
+            before + 25,
+            "models were built but not registered — model_name_of would fall back to probing",
         )
         del models
         gc.collect()
         self.assertEqual(
-            _registered_count(), before,
+            _registered_count(),
+            before,
             "handles outlived their models; a long-running daemon would grow "
             "this dict without bound",
         )
@@ -274,17 +279,16 @@ class HandleShape(unittest.TestCase):
             handle.name = "something-else"  # type: ignore[misc]
 
     def test_str_is_readable(self) -> None:
-        self.assertEqual(str(model_handle(SETTINGS["vertex"])),
-                         "vertex:gemini-2.5-flash")
+        self.assertEqual(str(model_handle(SETTINGS["vertex"])), "vertex:gemini-2.5-flash")
 
     def test_the_module_imports_no_framework(self) -> None:
         """Domain code must be able to hold a handle without pulling LangChain in."""
         import ast
         import pathlib
 
-        src = (
-            pathlib.Path(__file__).resolve().parents[2] / "yuyutsava/llm/handle.py"
-        ).read_text(encoding="utf-8")
+        src = (pathlib.Path(__file__).resolve().parents[2] / "yuyutsava/llm/handle.py").read_text(
+            encoding="utf-8"
+        )
         tree = ast.parse(src)
 
         # Everything under `if TYPE_CHECKING:` is erased at runtime. Collect
@@ -293,8 +297,7 @@ class HandleShape(unittest.TestCase):
         deferred = {
             id(child)
             for node in ast.walk(tree)
-            if isinstance(node, ast.If)
-            and "TYPE_CHECKING" in ast.dump(node.test)
+            if isinstance(node, ast.If) and "TYPE_CHECKING" in ast.dump(node.test)
             for stmt in node.body
             for child in ast.walk(stmt)
         }
@@ -305,11 +308,11 @@ class HandleShape(unittest.TestCase):
                 continue
             module = getattr(node, "module", None) or ""
             for candidate in (module, *(a.name for a in node.names)):
-                if any(candidate == fw or candidate.startswith(fw + ".")
-                       for fw in frameworks):
+                if any(candidate == fw or candidate.startswith(fw + ".") for fw in frameworks):
                     runtime_imports.append(candidate)
         self.assertEqual(
-            runtime_imports, [],
+            runtime_imports,
+            [],
             f"handle.py imports a framework at runtime: {runtime_imports}. The "
             f"annotation belongs under `if TYPE_CHECKING:`",
         )

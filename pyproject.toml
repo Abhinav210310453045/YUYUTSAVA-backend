@@ -173,6 +173,9 @@ packages = ["yuyutsava"]
 # Pinned so a local run, the ratchet script and CI see the same findings.
 required-version = "==0.16.5"
 target-version = "py311"
+# 100 is where the existing code already sits: only 0.22% of lines are longer,
+# and it reformats the fewest files of 88, 100 and 120.
+line-length = 100
 
 [tool.ruff.lint]
 # The gate — CI fails on any of these. They find real defects (names that do not

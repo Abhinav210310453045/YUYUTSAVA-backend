@@ -24,11 +24,11 @@ from dataclasses import dataclass
 class RemoteAsyncSubagentSpec:
     """A background subagent hosted on a remote Agent Protocol server."""
 
-    name: str                          # e.g. "research-bg" — name the master calls
+    name: str  # e.g. "research-bg" — name the master calls
     description: str
-    graph_id: str                      # assistant_id / graph name on the remote
-    url: str                           # "https://research.example.com/" — Agent Protocol root
-    headers: dict[str, str] | None = None   # auth, e.g. {"Authorization": "Bearer ..."}
+    graph_id: str  # assistant_id / graph name on the remote
+    url: str  # "https://research.example.com/" — Agent Protocol root
+    headers: dict[str, str] | None = None  # auth, e.g. {"Authorization": "Bearer ..."}
 
     def as_async_subagent_spec(self) -> dict:
         """Return the ``AsyncSubAgent`` TypedDict to hand to ``create_deep_agent``."""

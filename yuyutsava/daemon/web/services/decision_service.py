@@ -64,13 +64,9 @@ class DecisionService:
     plugins via the InboundSink).
     """
 
-    def __init__(
-        self, store: ProposalWriter, *, ask_resume: object | None = None
-    ) -> None:
+    def __init__(self, store: ProposalWriter, *, ask_resume: object | None = None) -> None:
         self._store = store
-        self._proposal_maps: list[
-            MutableMapping[str, "asyncio.Future[ProposalDecision]"]
-        ] = []
+        self._proposal_maps: list[MutableMapping[str, "asyncio.Future[ProposalDecision]"]] = []
         self._ask_maps: list[MutableMapping[str, "asyncio.Future[str]"]] = []
         # ``daemon.ask_resume.AskResumeService`` — consulted when an ask has no
         # live waiter, which is what an answer given after a daemon restart
@@ -120,7 +116,9 @@ class DecisionService:
         if decision not in RESPONDABLE_DECISIONS:
             raise ValueError(f"invalid decision {decision!r}")
         flipped = await self._store.try_set_proposal_status(
-            proposal_id, from_status="pending", to_status=_target_status(decision),
+            proposal_id,
+            from_status="pending",
+            to_status=_target_status(decision),
         )
         if not flipped:
             raise DecisionConflictError("proposal expired or already resolved")
@@ -129,9 +127,7 @@ class DecisionService:
         if fut is None or fut.done():
             return RespondOutcome(ok=True, note="no listener (already resolved)")
         edited = edited_instruction if decision == "modify" else None
-        fut.set_result(
-            ProposalDecision(decision=decision, edited_instruction=edited)
-        )
+        fut.set_result(ProposalDecision(decision=decision, edited_instruction=edited))
         return RespondOutcome(ok=True)
 
     async def respond_ask(self, ask_id: str, response: str) -> RespondOutcome:
@@ -158,12 +154,6 @@ class DecisionService:
 
     def pending_ids(self) -> tuple[list[str], list[str]]:
         """(proposal_ids, ask_ids) currently awaiting a decision, any surface."""
-        proposals = [
-            pid for m in self._proposal_maps
-            for pid, fut in m.items() if not fut.done()
-        ]
-        asks = [
-            aid for m in self._ask_maps
-            for aid, fut in m.items() if not fut.done()
-        ]
+        proposals = [pid for m in self._proposal_maps for pid, fut in m.items() if not fut.done()]
+        asks = [aid for m in self._ask_maps for aid, fut in m.items() if not fut.done()]
         return proposals, asks

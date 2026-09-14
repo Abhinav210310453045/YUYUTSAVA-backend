@@ -64,7 +64,6 @@ def _agent_filter(agent: str | None) -> tuple[str, list]:
     return "", []
 
 
-
 # NOTE: PgSkillStore was replaced on 2026-08-08 by UnifiedSkillStore in
 # skills/store_unified.py (ADR-002 step 2.5b). The pgvector asymmetry is now a
 # DECLARED capability (supports_semantic_search) rather than a getattr probe.
@@ -75,6 +74,7 @@ def _agent_filter(agent: str | None) -> tuple[str, list]:
 # skills/store_unified.py (ADR-002 step 2.5b). The pgvector asymmetry is now a
 # DECLARED capability (supports_semantic_search) rather than a getattr probe.
 # Parity verified on both live backends in test/storage/test_skill_store_parity.py.
+
 
 class SkillIndexer:
     """Indexes on-disk skills into a :class:`SkillStore` at boot.

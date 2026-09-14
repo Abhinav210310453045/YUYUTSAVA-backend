@@ -32,10 +32,15 @@ def _build(**over):
 
     kw = dict(
         workspace=Path(tempfile.gettempdir()),
-        policy=None, consent=None, store=None,
-        skill_registry=None, search_config=SearchConfig(),
-        mcp_manager=None, cap_enforcer=None,
-        memory_store=None, skill_store=None,
+        policy=None,
+        consent=None,
+        store=None,
+        skill_registry=None,
+        search_config=SearchConfig(),
+        mcp_manager=None,
+        cap_enforcer=None,
+        memory_store=None,
+        skill_store=None,
     )
     kw.update(over)
     return build_subagents(**kw)
@@ -51,8 +56,7 @@ class RosterShape(unittest.TestCase):
 
     def test_sync_dict_and_list_agree(self) -> None:
         """The dict is a view of the list — a divergence means one is stale."""
-        self.assertEqual(
-            [sa.name for sa in self.subs.sync_list], list(self.subs.sync))
+        self.assertEqual([sa.name for sa in self.subs.sync_list], list(self.subs.sync))
 
     def test_background_is_sync_plus_tinker(self) -> None:
         self.assertEqual(len(self.subs.background), len(self.subs.sync_list) + 1)
@@ -63,7 +67,8 @@ class RosterShape(unittest.TestCase):
         """The load-bearing one: inline tinkering would block the conversation."""
         names = set(self.subs.sync)
         self.assertNotIn(
-            "tinker", names,
+            "tinker",
+            names,
             "the TinkerAgent reached the SYNC roster. The orchestrator would "
             "then run long tinkering jobs inline instead of delegating them to "
             "the background host, blocking the chat that asked.",
@@ -107,7 +112,8 @@ class SharedDependencies(unittest.TestCase):
                 got = getattr(sa, "_search_config", None) or getattr(sa, "search_config", None)
                 if got is not None:
                     self.assertIs(
-                        got, cfg,
+                        got,
+                        cfg,
                         f"{sa.name} got a different SearchConfig than its "
                         f"siblings — the shared **common dict was bypassed",
                     )
@@ -140,7 +146,8 @@ class FreshPeersForOtherGraphs(unittest.TestCase):
         for a, b in zip(first, second):
             with self.subTest(agent=a.name):
                 self.assertIsNot(
-                    a, b,
+                    a,
+                    b,
                     "make_peers returned the SAME instance twice — two graphs "
                     "would share tool/middleware objects",
                 )
@@ -174,11 +181,16 @@ class ExtractionIsComplete(unittest.TestCase):
         src = inspect.getsource(bootstrap.build_daemon)
         # Includes the SECOND copy that lived at the ConversationManager call
         # site — five hand-maintained copies of one argument list before this.
-        for cls in ("FileOrganizerAgent(", "FaceWatcherAgent(",
-                    "GeneralPurposeAgent(", "make_tinker_subagent("):
+        for cls in (
+            "FileOrganizerAgent(",
+            "FaceWatcherAgent(",
+            "GeneralPurposeAgent(",
+            "make_tinker_subagent(",
+        ):
             with self.subTest(construct=cls):
                 self.assertNotIn(
-                    cls, src,
+                    cls,
+                    src,
                     f"build_daemon still constructs {cls} inline; the roster "
                     f"should come from build_subagents so it stays testable",
                 )

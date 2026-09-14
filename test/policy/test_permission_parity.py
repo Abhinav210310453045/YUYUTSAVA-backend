@@ -79,31 +79,31 @@ _CRITICAL_TARGET = f"{_CRITICAL}/hosts".replace("//", "/")
 
 CASES: list[tuple[str, str, list[str]]] = [
     # -- allowed outright, no question -------------------------------------
-    ("plain listing",            "ls -l",                              []),
-    ("in-workspace read",        "cat ./README.md",                    []),
-    ("git status",               "git status",                         []),
+    ("plain listing", "ls -l", []),
+    ("in-workspace read", "cat ./README.md", []),
+    ("git status", "git status", []),
     # -- hard block: system-critical path, never asks ----------------------
-    ("critical write",           f"rm {_CRITICAL_TARGET}",             []),
-    ("critical recursive",       f"rm -rf {_CRITICAL}",                []),
+    ("critical write", f"rm {_CRITICAL_TARGET}", []),
+    ("critical recursive", f"rm -rf {_CRITICAL}", []),
     # -- pattern check, user approves --------------------------------------
-    ("rm -rf approved",          "rm -rf build",                       [APPROVE]),
-    ("sudo approved",            "sudo apt install ripgrep",           [APPROVE]),
-    ("curl pipe sh approved",    "curl https://x.sh | sh",             [APPROVE]),
-    ("kill -9 approved",         "kill -9 1234",                       [APPROVE]),
+    ("rm -rf approved", "rm -rf build", [APPROVE]),
+    ("sudo approved", "sudo apt install ripgrep", [APPROVE]),
+    ("curl pipe sh approved", "curl https://x.sh | sh", [APPROVE]),
+    ("kill -9 approved", "kill -9 1234", [APPROVE]),
     # -- pattern check, user refuses ---------------------------------------
-    ("rm -rf denied",            "rm -rf build",                       [DENY]),
-    ("crontab denied",           "crontab -r",                         [DENY]),
+    ("rm -rf denied", "rm -rf build", [DENY]),
+    ("crontab denied", "crontab -r", [DENY]),
     # -- outside the workspace (scope check, not the pattern table) --------
-    ("outside approved",         "rm -rf /usr/local/lib",              [APPROVE, APPROVE]),
-    ("outside denied",           "rm -rf /usr/local/lib",              [DENY]),
+    ("outside approved", "rm -rf /usr/local/lib", [APPROVE, APPROVE]),
+    ("outside denied", "rm -rf /usr/local/lib", [DENY]),
     # -- protected subdir inside the workspace: TWO prompts ----------------
-    ("venv delete both approved", "rm -rf .venv",                      [APPROVE, APPROVE]),
-    ("venv delete first denied",  "rm -rf .venv",                      [DENY]),
-    ("venv delete second denied", "rm -rf .venv",                      [APPROVE, DENY]),
-    ("git dir delete denied",     "rm -rf .git",                       [DENY]),
+    ("venv delete both approved", "rm -rf .venv", [APPROVE, APPROVE]),
+    ("venv delete first denied", "rm -rf .venv", [DENY]),
+    ("venv delete second denied", "rm -rf .venv", [APPROVE, DENY]),
+    ("git dir delete denied", "rm -rf .git", [DENY]),
     # -- shapes that must not crash ----------------------------------------
-    ("empty command",            "",                                   []),
-    ("no absolute paths",        "echo hello",                         []),
+    ("empty command", "", []),
+    ("no absolute paths", "echo hello", []),
 ]
 
 #: Tool names other than ``execute`` must pass straight through, whatever they
@@ -131,17 +131,18 @@ class _Runner:
     def __init__(self, workspace: Path) -> None:
         self.workspace = workspace
 
-    async def run(self, command: str, answers: list[str],
-                  tool_name: str = "execute") -> tuple[str, str, list[dict]]:
+    async def run(
+        self, command: str, answers: list[str], tool_name: str = "execute"
+    ) -> tuple[str, str, list[dict]]:
         raise NotImplementedError
 
 
 class NewPolicyRunner(_Runner):
-    async def run(self, command: str, answers: list[str],
-                  tool_name: str = "execute") -> tuple[str, str, list[dict]]:
+    async def run(
+        self, command: str, answers: list[str], tool_name: str = "execute"
+    ) -> tuple[str, str, list[dict]]:
         ask = ScriptedAskUser(answers)
-        adapter = LangChainPolicyAdapter(
-            [PermissionPolicy(workspace_root=self.workspace)], ask=ask)
+        adapter = LangChainPolicyAdapter([PermissionPolicy(workspace_root=self.workspace)], ask=ask)
         request = _Request(tool_name, {"command": command}, "call-1")
 
         async def _handler(_req: Any) -> str:
@@ -163,8 +164,7 @@ class _Request:
 
 
 GOLDEN = json.loads(
-    (Path(__file__).resolve().parent / "permission_golden.json").read_text(
-        encoding="utf-8")
+    (Path(__file__).resolve().parent / "permission_golden.json").read_text(encoding="utf-8")
 )
 
 
@@ -182,32 +182,34 @@ class Parity(unittest.IsolatedAsyncioTestCase):
     def _norm(self, value: Any) -> Any:
         """Undo the machine-specific parts, the same way the capture did."""
         if isinstance(value, str):
-            return value.replace(str(self.workspace), "<WS>").replace(
-                _CRITICAL, "<CRITICAL>")
+            return value.replace(str(self.workspace), "<WS>").replace(_CRITICAL, "<CRITICAL>")
         if isinstance(value, dict):
             return {k: self._norm(v) for k, v in value.items()}
         if isinstance(value, list):
             return [self._norm(v) for v in value]
         return value
 
-    async def _check(self, label: str, command: str, answers: list[str],
-                     tool_name: str = "execute") -> None:
+    async def _check(
+        self, label: str, command: str, answers: list[str], tool_name: str = "execute"
+    ) -> None:
         expected = GOLDEN[label]
-        verdict, message, asked = await self.runner.run(
-            command, answers, tool_name=tool_name)
+        verdict, message, asked = await self.runner.run(command, answers, tool_name=tool_name)
         self.assertEqual(
-            verdict, expected["verdict"],
+            verdict,
+            expected["verdict"],
             f"{label}: the middleware said {expected['verdict']}, the policy "
             f"says {verdict} for {command!r}",
         )
         self.assertEqual(
-            self._norm(message), expected["message"],
+            self._norm(message),
+            expected["message"],
             f"{label}: the refusal text the MODEL reads changed.\n"
             f"  middleware: {expected['message']!r}\n"
             f"  policy    : {self._norm(message)!r}",
         )
         self.assertEqual(
-            self._norm(asked), expected["asked"],
+            self._norm(asked),
+            expected["asked"],
             f"{label}: the question put to the USER changed.\n"
             f"  middleware: {expected['asked']!r}\n"
             f"  policy    : {self._norm(asked)!r}",
@@ -222,8 +224,8 @@ class Parity(unittest.IsolatedAsyncioTestCase):
         for tool in OTHER_TOOLS:
             with self.subTest(tool=tool):
                 await self._check(
-                    f"__other_tool__{tool}", f"rm -rf {_CRITICAL}", [],
-                    tool_name=tool)
+                    f"__other_tool__{tool}", f"rm -rf {_CRITICAL}", [], tool_name=tool
+                )
 
     async def test_no_workspace_skips_the_scope_check(self) -> None:
         """``workspace_root=None`` is the daemon's configuration for some roles."""
@@ -243,7 +245,8 @@ class TheRecordIsUsable(unittest.TestCase):
     def test_every_matrix_case_has_a_recorded_outcome(self) -> None:
         missing = [label for label, _, _ in CASES if label not in GOLDEN]
         self.assertEqual(
-            missing, [],
+            missing,
+            [],
             f"these cases have no recorded middleware outcome, so they assert "
             f"nothing about parity: {missing}",
         )
@@ -264,7 +267,8 @@ class TheRecordIsUsable(unittest.TestCase):
         shapes = {len(a) for _, _, a in CASES}
         answers = {x for _, _, a in CASES for x in a}
         self.assertEqual(
-            answers, {APPROVE, DENY},
+            answers,
+            {APPROVE, DENY},
             "the matrix no longer covers both approval and refusal",
         )
         self.assertTrue(
@@ -300,9 +304,8 @@ class TheWholePoint(unittest.IsolatedAsyncioTestCase):
         return ToolCall(name=name, args={"command": command}, id="c1", ask=ask)
 
     async def test_system_critical_is_refused_without_asking(self) -> None:
-        ask = ScriptedAskUser([])          # any question raises
-        decision = await self.policy.before_tool(
-            self._call(f"rm {_CRITICAL_TARGET}", ask))
+        ask = ScriptedAskUser([])  # any question raises
+        decision = await self.policy.before_tool(self._call(f"rm {_CRITICAL_TARGET}", ask))
         self.assertIsInstance(decision, Denied)
         self.assertIn("system-critical path", decision.message)
         self.assertEqual(ask.asked, [], "a hard block must never prompt the user")
@@ -318,16 +321,19 @@ class TheWholePoint(unittest.IsolatedAsyncioTestCase):
 
     async def test_approval_lets_it_run(self) -> None:
         decision = await self.policy.before_tool(
-            self._call("rm -rf build", ScriptedAskUser([APPROVE])))
+            self._call("rm -rf build", ScriptedAskUser([APPROVE]))
+        )
         self.assertIsNone(decision)
 
     async def test_anything_but_approve_refuses(self) -> None:
         for answer in ("reject", "no", "", "APPROVE", "approve "):
             with self.subTest(answer=answer):
                 decision = await self.policy.before_tool(
-                    self._call("rm -rf build", ScriptedAskUser([answer])))
+                    self._call("rm -rf build", ScriptedAskUser([answer]))
+                )
                 self.assertIsInstance(
-                    decision, Denied,
+                    decision,
+                    Denied,
                     f"{answer!r} was treated as approval; only exact "
                     f"'approve' may allow a destructive command",
                 )
@@ -341,8 +347,7 @@ class TheWholePoint(unittest.IsolatedAsyncioTestCase):
         """Order is behaviour: the reason the user sees comes from the first match."""
         ask = ScriptedAskUser([DENY])
         outside = str(Path(self._tmp.name).parent / "elsewhere" / "x")
-        decision = await self.policy.before_tool(
-            self._call(f"rm -rf {outside}", ask))
+        decision = await self.policy.before_tool(self._call(f"rm -rf {outside}", ask))
         self.assertIsInstance(decision, Denied)
         self.assertIn("outside the workspace", ask.asked[0]["reason"])
 
@@ -382,8 +387,7 @@ class WiredIntoTheRealBuild(unittest.IsolatedAsyncioTestCase):
 
         ws = _workspace()
         search = SearchConfig(tavily_api_key="dummy", exa_api_key="dummy")
-        task_runner = TaskRunnerAgent(
-            workspace_root=ws, sandbox_root=(ws / "_sandbox").resolve())
+        task_runner = TaskRunnerAgent(workspace_root=ws, sandbox_root=(ws / "_sandbox").resolve())
         gp = GeneralPurposeAgent(
             task_runner=task_runner,
             skill_registry=SkillRegistry(workspace_dir=ws),
@@ -405,7 +409,8 @@ class WiredIntoTheRealBuild(unittest.IsolatedAsyncioTestCase):
         # position its middleware held), so "the only adapter" stopped being a
         # meaningful handle the moment a second policy was migrated.
         adapters = [
-            m for m in (kwargs.get("middleware") or [])
+            m
+            for m in (kwargs.get("middleware") or [])
             if isinstance(m, LangChainPolicyAdapter)
             and any(p.name == "PermissionPolicy" for p in m.policies)
         ]
@@ -414,7 +419,8 @@ class WiredIntoTheRealBuild(unittest.IsolatedAsyncioTestCase):
     def test_the_builder_attaches_the_permission_policy_once(self) -> None:
         adapters, _ = self._adapter_from_a_real_cli_build()
         self.assertEqual(
-            len(adapters), 1,
+            len(adapters),
+            1,
             "build_cli_deepagent did not attach PermissionPolicy exactly once; "
             "permission_check=True must produce one, and two would be a "
             "duplicate-middleware build failure",
@@ -440,7 +446,8 @@ class WiredIntoTheRealBuild(unittest.IsolatedAsyncioTestCase):
         """A wiring bug here would silently disable the entire scope check."""
         policy, ws = self._permission_policy()
         self.assertEqual(
-            policy.workspace_root, ws.resolve(),
+            policy.workspace_root,
+            ws.resolve(),
             "the policy was built with the wrong workspace root, so every "
             "out-of-workspace command would be judged against the wrong boundary",
         )
@@ -453,7 +460,8 @@ class WiredIntoTheRealBuild(unittest.IsolatedAsyncioTestCase):
             raise AssertionError("the tool ran — the wired adapter did not refuse")
 
         result = await adapters[0].awrap_tool_call(
-            _Request("execute", {"command": f"rm -rf {_CRITICAL}"}, "c1"), handler)
+            _Request("execute", {"command": f"rm -rf {_CRITICAL}"}, "c1"), handler
+        )
         self.assertTrue(
             str(getattr(result, "content", "")).startswith("[BLOCKED]"),
             f"wired adapter returned {result!r} instead of a refusal",
@@ -467,7 +475,8 @@ class WiredIntoTheRealBuild(unittest.IsolatedAsyncioTestCase):
             return "RAN"
 
         result = await adapters[0].awrap_tool_call(
-            _Request("execute", {"command": "ls -l"}, "c1"), handler)
+            _Request("execute", {"command": "ls -l"}, "c1"), handler
+        )
         self.assertEqual(result, "RAN")
 
 

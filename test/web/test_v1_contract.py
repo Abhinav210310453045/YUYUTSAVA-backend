@@ -32,14 +32,27 @@ from yuyutsava.storage.sessions.sqlite_impl import SqliteSessionStore
 
 
 _DECISIONS = [
-    Decision(decision_id=f"dec_{i}", proposal_id=None, event_id=f"evt_{i}",
-             outcome="orchestrator_done", action_summary=f"did thing {i}",
-             ts=float(100 + i))
+    Decision(
+        decision_id=f"dec_{i}",
+        proposal_id=None,
+        event_id=f"evt_{i}",
+        outcome="orchestrator_done",
+        action_summary=f"did thing {i}",
+        ts=float(100 + i),
+    )
     for i in (3, 2, 1)  # newest first, ts 103/102/101
 ]
 
-_RULES = [ConsentRule(rule_id="rul_1", topic_glob="fs.*", match_json="{}",
-                      decision="auto_approve", created_ts=50.0, expires_ts=None)]
+_RULES = [
+    ConsentRule(
+        rule_id="rul_1",
+        topic_glob="fs.*",
+        match_json="{}",
+        decision="auto_approve",
+        created_ts=50.0,
+        expires_ts=None,
+    )
+]
 
 
 class _EventsStore:
@@ -64,8 +77,7 @@ class _Bus:
     async def publish(self, ev) -> None: ...
 
 
-_SNAP = ResourceSnapshot(cpu_pct=12.5, mem_available_mb=4096.0,
-                         disk_free_gb=200.0, ts=1000.0)
+_SNAP = ResourceSnapshot(cpu_pct=12.5, mem_available_mb=4096.0, disk_free_gb=200.0, ts=1000.0)
 
 
 class _Monitor:
@@ -91,16 +103,32 @@ class _UsageStore:
     """
 
     async def aggregate(self, since=None, group_by=None):
-        return [SimpleNamespace(key="all", calls=2, input_tokens=100,
-                                output_tokens=20, est_cost_usd=0.003,
-                                cache_read_tokens=60, cache_creation_tokens=4)]
+        return [
+            SimpleNamespace(
+                key="all",
+                calls=2,
+                input_tokens=100,
+                output_tokens=20,
+                est_cost_usd=0.003,
+                cache_read_tokens=60,
+                cache_creation_tokens=4,
+            )
+        ]
 
     async def thread_totals(self, since=None, limit=50):
-        return [SimpleNamespace(
-            thread_id="th", calls=2, input_tokens=100, output_tokens=20,
-            cache_read_tokens=60, est_cost_usd=0.003,
-            first_ts=1000.0, last_ts=1100.0, models=("claude-haiku-4-5",),
-        )]
+        return [
+            SimpleNamespace(
+                thread_id="th",
+                calls=2,
+                input_tokens=100,
+                output_tokens=20,
+                cache_read_tokens=60,
+                est_cost_usd=0.003,
+                first_ts=1000.0,
+                last_ts=1100.0,
+                models=("claude-haiku-4-5",),
+            )
+        ]
 
 
 class _ChannelPlugins:
@@ -116,13 +144,15 @@ class _ChannelPlugins:
     def set_config(self, cfg) -> None: ...
 
     def snapshot(self):
-        return [{
-            "name": "telegram",
-            "available": True,
-            "enabled": "telegram" in self._running,
-            "running": "telegram" in self._running,
-            "capabilities": ["notify", "proposal", "ask", "invoke"],
-        }]
+        return [
+            {
+                "name": "telegram",
+                "available": True,
+                "enabled": "telegram" in self._running,
+                "running": "telegram" in self._running,
+                "capabilities": ["notify", "proposal", "ask", "invoke"],
+            }
+        ]
 
     async def enable(self, name: str) -> bool:
         if name != "telegram":
@@ -149,8 +179,11 @@ class V1ContractTests(unittest.IsolatedAsyncioTestCase):
         self.store = _EventsStore()
         self.hub = WebHub(store=self.store)
         submission = TaskSubmissionService(
-            registry=self.registry, task_queue=self.queue,
-            store=self.store, bus=_Bus(), proposal_expiry_sec=300,
+            registry=self.registry,
+            task_queue=self.queue,
+            store=self.store,
+            bus=_Bus(),
+            proposal_expiry_sec=300,
         )
         self.sessions = SqliteSessionStore(tmp / "sessions.db")
         self._sessions_patch = mock.patch(
@@ -160,13 +193,17 @@ class V1ContractTests(unittest.IsolatedAsyncioTestCase):
         self._sessions_patch.start()
 
         app = create_app(
-            self.hub, host="127.0.0.1",
-            task_registry=self.registry, task_submission=submission,
+            self.hub,
+            host="127.0.0.1",
+            task_registry=self.registry,
+            task_submission=submission,
             channel_plugins=_ChannelPlugins(),
             usage_store=_UsageStore(),
             resource_monitor=_Monitor(),
             admission_controller=SimpleNamespace(
-                max_heavy_tasks=1, heavy_slots_in_use=0, active=lambda: [],
+                max_heavy_tasks=1,
+                heavy_slots_in_use=0,
+                active=lambda: [],
             ),
             model_router=SimpleNamespace(enabled=True),
             memory_store=object(),
@@ -174,7 +211,8 @@ class V1ContractTests(unittest.IsolatedAsyncioTestCase):
         )
         self.app = app
         self.client = httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test",
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://test",
         )
 
     async def asyncTearDown(self) -> None:
@@ -198,27 +236,39 @@ class V1ContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(body["name"], "yuyutsava")
         self.assertEqual(body["api_version"], "v1")
         self.assertTrue(body["version"])
-        self.assertEqual(body["capabilities"], {
-            "model_routing": True, "memory": True,
-            "resource_governor": True, "async_subagents": True,
-        })
+        self.assertEqual(
+            body["capabilities"],
+            {
+                "model_routing": True,
+                "memory": True,
+                "resource_governor": True,
+                "async_subagents": True,
+            },
+        )
         self.assertEqual(body["channels"][0]["name"], "telegram")
 
     async def test_server_info_degrades_when_nothing_wired(self) -> None:
         bare = create_app(WebHub(store=_EventsStore()), host="127.0.0.1")
         async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=bare), base_url="http://test",
+            transport=httpx.ASGITransport(app=bare),
+            base_url="http://test",
         ) as client:
             body = (await client.get("/v1/server-info")).json()
-        self.assertEqual(body["capabilities"], {
-            "model_routing": False, "memory": False,
-            "resource_governor": False, "async_subagents": False,
-        })
+        self.assertEqual(
+            body["capabilities"],
+            {
+                "model_routing": False,
+                "memory": False,
+                "resource_governor": False,
+                "async_subagents": False,
+            },
+        )
         self.assertEqual(body["channels"], [])
 
     async def test_tasks_lifecycle(self) -> None:
         r = await self.client.post(
-            "/v1/tasks", json={"instruction": "do it", "mode": "direct"},
+            "/v1/tasks",
+            json={"instruction": "do it", "mode": "direct"},
         )
         self.assertEqual(r.status_code, 200)
         task_id = r.json()["task_id"]
@@ -245,7 +295,8 @@ class V1ContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([d["ts"] for d in page1], [103.0, 102.0])
 
         r = await self.client.get(
-            "/v1/decisions", params={"limit": 2, "cursor": page1[-1]["ts"]},
+            "/v1/decisions",
+            params={"limit": 2, "cursor": page1[-1]["ts"]},
         )
         page2 = r.json()
         self.assertEqual([d["ts"] for d in page2], [101.0])
@@ -253,8 +304,7 @@ class V1ContractTests(unittest.IsolatedAsyncioTestCase):
     async def test_sessions_pagination(self) -> None:
         ws = Path(self._tmp.name)
         for i in range(3):
-            await self.sessions.create(workspace=ws, task=f"task {i}",
-                                       thread_id=f"thr_{i}")
+            await self.sessions.create(workspace=ws, task=f"task {i}", thread_id=f"thr_{i}")
             await asyncio.sleep(0.01)  # distinct updated_at for keyset paging
 
         r = await self.client.get("/v1/sessions", params={"limit": 2})
@@ -277,7 +327,8 @@ class V1ContractTests(unittest.IsolatedAsyncioTestCase):
         fut_p = loop.create_future()
         self.hub.pending_proposals["pp_1"] = fut_p
         r = await self.client.post(
-            "/v1/proposal/pp_1/respond", json={"decision": "approve"},
+            "/v1/proposal/pp_1/respond",
+            json={"decision": "approve"},
         )
         self.assertEqual(r.status_code, 200)
         self.assertTrue(r.json()["ok"])
@@ -286,14 +337,16 @@ class V1ContractTests(unittest.IsolatedAsyncioTestCase):
         fut_a = loop.create_future()
         self.hub.pending_asks["aa_1"] = fut_a
         r = await self.client.post(
-            "/v1/ask/aa_1/respond", json={"response": "yes"},
+            "/v1/ask/aa_1/respond",
+            json={"response": "yes"},
         )
         self.assertEqual(r.status_code, 200)
         self.assertEqual(fut_a.result(), "yes")
 
         # Unknown ask → 409 conflict (the wire contract for "gone").
         r = await self.client.post(
-            "/v1/ask/aa_missing/respond", json={"response": "yes"},
+            "/v1/ask/aa_missing/respond",
+            json={"response": "yes"},
         )
         self.assertEqual(r.status_code, 409)
 
@@ -347,9 +400,17 @@ class V1ContractTests(unittest.IsolatedAsyncioTestCase):
     async def test_legacy_aliases_answer_identically(self) -> None:
         await self.client.post("/v1/tasks", json={"instruction": "x"})
         for path in (
-            "/server-info", "/decisions", "/rules", "/skills", "/tasks",
-            "/usage", "/usage/summary", "/usage/sessions",
-            "/system/metrics", "/channels", "/sessions",
+            "/server-info",
+            "/decisions",
+            "/rules",
+            "/skills",
+            "/tasks",
+            "/usage",
+            "/usage/summary",
+            "/usage/sessions",
+            "/system/metrics",
+            "/channels",
+            "/sessions",
         ):
             with self.subTest(path=path):
                 legacy = await self.client.get(path)
@@ -396,20 +457,36 @@ class V1AuthTests(unittest.TestCase):
 
     def test_v1_paths_require_bearer(self) -> None:
         self.assertFalse(check_request(self.settings, path="/v1/tasks"))
-        self.assertTrue(check_request(
-            self.settings, path="/v1/tasks", authorization="Bearer sekret",
-        ))
+        self.assertTrue(
+            check_request(
+                self.settings,
+                path="/v1/tasks",
+                authorization="Bearer sekret",
+            )
+        )
 
     def test_query_token_on_both_stream_paths_only(self) -> None:
-        self.assertTrue(check_request(
-            self.settings, path="/v1/stream", query_token="sekret",
-        ))
-        self.assertTrue(check_request(
-            self.settings, path="/stream", query_token="sekret",
-        ))
-        self.assertFalse(check_request(
-            self.settings, path="/v1/tasks", query_token="sekret",
-        ))
+        self.assertTrue(
+            check_request(
+                self.settings,
+                path="/v1/stream",
+                query_token="sekret",
+            )
+        )
+        self.assertTrue(
+            check_request(
+                self.settings,
+                path="/stream",
+                query_token="sekret",
+            )
+        )
+        self.assertFalse(
+            check_request(
+                self.settings,
+                path="/v1/tasks",
+                query_token="sekret",
+            )
+        )
 
 
 if __name__ == "__main__":

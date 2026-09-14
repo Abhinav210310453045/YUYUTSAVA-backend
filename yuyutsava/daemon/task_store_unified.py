@@ -50,9 +50,19 @@ logger = logging.getLogger("yuyutsava.daemon.task_store_unified")
 #: Fixed read order. Named access below means this is the source of truth for
 #: *which* columns are fetched, not for their positions.
 _COLS: tuple[str, ...] = (
-    "task_id", "origin", "instruction", "status", "created_ts", "thread_id",
-    "complexity", "started_ts", "finished_ts", "deferred_ms", "result_summary",
-    "error", "model",
+    "task_id",
+    "origin",
+    "instruction",
+    "status",
+    "created_ts",
+    "thread_id",
+    "complexity",
+    "started_ts",
+    "finished_ts",
+    "deferred_ms",
+    "result_summary",
+    "error",
+    "model",
 )
 
 #: Columns that are ``TIMESTAMPTZ`` on Postgres (migration v20) and REAL epoch
@@ -61,9 +71,7 @@ _TS_COLS: frozenset[str] = frozenset({"created_ts", "started_ts", "finished_ts"}
 
 
 def _insert_placeholders(d) -> str:
-    return ", ".join(
-        d.ts_param() if c in _TS_COLS else d.ph() for c in _COLS
-    )
+    return ", ".join(d.ts_param() if c in _TS_COLS else d.ph() for c in _COLS)
 
 
 def _select_list(d) -> str:
@@ -121,11 +129,19 @@ def _to_record(row: Any) -> TaskRecord:
     means adding a column to ``_COLS`` cannot silently shift every later field.
     """
     return TaskRecord(
-        task_id=row["task_id"], origin=row["origin"], instruction=row["instruction"],
-        status=row["status"], created_ts=row["created_ts"], thread_id=row["thread_id"],
-        complexity=row["complexity"], started_ts=row["started_ts"],
-        finished_ts=row["finished_ts"], deferred_ms=row["deferred_ms"],
-        result_summary=row["result_summary"], error=row["error"], model=row["model"],
+        task_id=row["task_id"],
+        origin=row["origin"],
+        instruction=row["instruction"],
+        status=row["status"],
+        created_ts=row["created_ts"],
+        thread_id=row["thread_id"],
+        complexity=row["complexity"],
+        started_ts=row["started_ts"],
+        finished_ts=row["finished_ts"],
+        deferred_ms=row["deferred_ms"],
+        result_summary=row["result_summary"],
+        error=row["error"],
+        model=row["model"],
     )
 
 
@@ -156,9 +172,7 @@ class UnifiedTaskStore(TaskStore):
         # this whitelist check is the injection boundary for this module.
         _check_fields(fields)
         d = self._d
-        cols = ", ".join(
-            f"{k} = {d.ts_param() if k in _TS_COLS else d.ph()}" for k in fields
-        )
+        cols = ", ".join(f"{k} = {d.ts_param() if k in _TS_COLS else d.ph()}" for k in fields)
 
         async def _do(conn):
             # mark_running patches thread_id onto an existing row — upsert the

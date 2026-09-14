@@ -96,7 +96,8 @@ class _MemoryContract:
         kinds = {h.kind for h in hits}
         self.assertIn("fact", kinds)
         self.assertNotIn(
-            "summary", kinds,
+            "summary",
+            kinds,
             "the kind filter did not bind. Postgres used `kind = ANY(%s)` and "
             "SQLite `kind IN (?,...)`; only one portable form can be right.",
         )
@@ -118,9 +119,11 @@ class _MemoryContract:
             (await self.store.add(kind="fact", text=self.txt("no metadata"))).startswith("mem_")
         )
         self.assertTrue(
-            (await self.store.add(
-                kind="fact", text=self.txt("with metadata"),
-                metadata={"src": "cli", "n": 2})).startswith("mem_")
+            (
+                await self.store.add(
+                    kind="fact", text=self.txt("with metadata"), metadata={"src": "cli", "n": 2}
+                )
+            ).startswith("mem_")
         )
 
     async def test_keyword_ranks_more_matches_higher(self) -> None:
@@ -147,7 +150,8 @@ class _MemoryContract:
     async def test_no_match_returns_empty(self) -> None:
         await self.store.add(kind="fact", text=self.txt("compress video"))
         self.assertEqual(
-            await self.store._keyword_search("quantum chromodynamics zzz", 5, None), [])
+            await self.store._keyword_search("quantum chromodynamics zzz", 5, None), []
+        )
 
     async def test_backfill_is_always_callable(self) -> None:
         """The whole reason this domain unblocks the ``getattr`` probe removal."""
@@ -191,8 +195,7 @@ class SqliteUnifiedMemory(_MemoryContract, unittest.IsolatedAsyncioTestCase):
 
     async def created_ts_of(self, text: str) -> float:
         async with self.store._d.reading() as conn:
-            cur = await conn.execute(
-                "SELECT created_ts FROM memories WHERE text = ?", (text,))
+            cur = await conn.execute("SELECT created_ts FROM memories WHERE text = ?", (text,))
             return float((await cur.fetchone())[0])
 
     async def test_semantic_search_is_off(self) -> None:
@@ -200,8 +203,7 @@ class SqliteUnifiedMemory(_MemoryContract, unittest.IsolatedAsyncioTestCase):
 
     async def test_search_falls_through_to_keyword(self) -> None:
         await self.store.add(kind="fact", text="compress video")
-        self.assertIn("compress video",
-                      [h.text for h in await self.store.search("compress", k=5)])
+        self.assertIn("compress video", [h.text for h in await self.store.search("compress", k=5)])
 
     async def test_duplicates_are_kept_without_vectors(self) -> None:
         """Declared difference: dedup needs cosine similarity, so SQLite has none."""
@@ -209,7 +211,8 @@ class SqliteUnifiedMemory(_MemoryContract, unittest.IsolatedAsyncioTestCase):
             await self.store.add(kind="summary", text="the same summary twice over")
         hits = await self.store._keyword_search("same summary", 10, None)
         self.assertEqual(
-            len(hits), 3,
+            len(hits),
+            3,
             "SQLite silently deduplicated; it has no way to measure similarity, "
             "so this could only be a text-equality shortcut that Postgres does "
             "not share",
@@ -239,8 +242,7 @@ class PostgresUnifiedMemory(_MemoryContract, unittest.IsolatedAsyncioTestCase):
 
     async def asyncTearDown(self) -> None:
         async with self.pool.connection() as conn:
-            await conn.execute(
-                "DELETE FROM memories WHERE text LIKE %s", (f"%[{self._suffix}]",))
+            await conn.execute("DELETE FROM memories WHERE text LIKE %s", (f"%[{self._suffix}]",))
         await self.pool.close()
 
     def txt(self, s: str) -> str:
@@ -249,8 +251,8 @@ class PostgresUnifiedMemory(_MemoryContract, unittest.IsolatedAsyncioTestCase):
     async def created_ts_of(self, text: str) -> float:
         async with self.pool.connection() as conn:
             cur = await conn.execute(
-                "SELECT extract(epoch FROM created_ts) AS ts FROM memories "
-                "WHERE text = %s", (text,))
+                "SELECT extract(epoch FROM created_ts) AS ts FROM memories WHERE text = %s", (text,)
+            )
             return float((await cur.fetchone())[0])
 
     async def test_semantic_search_is_on(self) -> None:
@@ -263,11 +265,9 @@ class PostgresUnifiedMemory(_MemoryContract, unittest.IsolatedAsyncioTestCase):
     async def test_source_thread_parent_row_is_created(self) -> None:
         """``memories.source_thread_id`` FKs to threads (ON DELETE SET NULL)."""
         thread = f"thr-mem-{self._suffix}"
-        await self.store.add(
-            kind="fact", text=self.txt("has a thread"), source_thread_id=thread)
+        await self.store.add(kind="fact", text=self.txt("has a thread"), source_thread_id=thread)
         async with self.pool.connection() as conn:
-            cur = await conn.execute(
-                "SELECT count(*) FROM threads WHERE thread_id = %s", (thread,))
+            cur = await conn.execute("SELECT count(*) FROM threads WHERE thread_id = %s", (thread,))
             self.assertEqual((await cur.fetchone())[0], 1)
         async with self.pool.connection() as conn:
             await conn.execute("DELETE FROM threads WHERE thread_id = %s", (thread,))
@@ -280,8 +280,7 @@ class SemanticCapabilityIsDeclared(unittest.TestCase):
         from yuyutsava.memory.store_unified import UnifiedMemoryStore
 
         self.assertTrue(hasattr(UnifiedMemoryStore, "backfill_embeddings"))
-        self.assertIsInstance(
-            UnifiedMemoryStore.supports_semantic_search, property)
+        self.assertIsInstance(UnifiedMemoryStore.supports_semantic_search, property)
 
     def test_no_getattr_probes_remain_in_production(self) -> None:
         """The payoff: memory was the last store missing the method.
@@ -303,20 +302,25 @@ class SemanticCapabilityIsDeclared(unittest.TestCase):
             except SyntaxError:  # pragma: no cover
                 continue
             for node in ast.walk(tree):
-                if not (isinstance(node, ast.Call)
-                        and isinstance(node.func, ast.Name)
-                        and node.func.id == "getattr"):
+                if not (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name)
+                    and node.func.id == "getattr"
+                ):
                     continue
-                if any(isinstance(a, ast.Constant) and a.value == "backfill_embeddings"
-                       for a in node.args):
+                if any(
+                    isinstance(a, ast.Constant) and a.value == "backfill_embeddings"
+                    for a in node.args
+                ):
                     offenders.append(f"{path.relative_to(root.parent)}:{node.lineno}")
         self.assertEqual(
-            offenders, [],
+            offenders,
+            [],
             "backfill_embeddings is still discovered by getattr:\n  "
             + "\n  ".join(offenders)
             + "\nEvery store that can have it now declares it, so a probe here "
-              "means a call site was missed — and a future one that forgets the "
-              "guard will AttributeError on SQLite only, in production only.",
+            "means a call site was missed — and a future one that forgets the "
+            "guard will AttributeError on SQLite only, in production only.",
         )
 
 

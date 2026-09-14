@@ -132,9 +132,11 @@ class CheckAsyncTaskGuardPolicy(Policy):
             "Do not call check_async_task again for this task_id; report the "
             "outcome to the user or relaunch with start_async_task."
         )
-        return Command(update={
-            "messages": [ToolMessage(json.dumps(payload), tool_call_id=call.id)],
-        })
+        return Command(
+            update={
+                "messages": [ToolMessage(json.dumps(payload), tool_call_id=call.id)],
+            }
+        )
 
 
 __all__ = ["CheckAsyncTaskGuardPolicy"]

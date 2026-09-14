@@ -100,8 +100,7 @@ async def main() -> int:
 
     # The benchmark prompt has no deepagents filesystem block, so the policy's
     # warn-once fires. That is correct behaviour, and noise here.
-    logging.getLogger("yuyutsava.core.filesystem_prompt_policy").setLevel(
-        logging.ERROR)
+    logging.getLogger("yuyutsava.core.filesystem_prompt_policy").setLevel(logging.ERROR)
 
     policies = _real_policies()
     collapsed = LangChainPolicyAdapter(policies)
@@ -135,20 +134,28 @@ async def main() -> int:
         return await call(_model_request())
 
     rows = [
-        ("tool call", await _time(bare_tool), await _time(collapsed_tool),
-         await _time(nested_tool)),
-        ("model call", await _time(bare_model), await _time(collapsed_model),
-         await _time(nested_model)),
+        (
+            "tool call",
+            await _time(bare_tool),
+            await _time(collapsed_tool),
+            await _time(nested_tool),
+        ),
+        (
+            "model call",
+            await _time(bare_model),
+            await _time(collapsed_model),
+            await _time(nested_model),
+        ),
     ]
 
-    print(f"{len(policies)} real policies, median of {ITERATIONS} calls, "
-          f"microseconds per call\n")
-    print(f"{'':<12}{'bare':>10}{'collapsed':>12}{'per-policy':>12}"
-          f"{'collapsed cost':>16}")
+    print(f"{len(policies)} real policies, median of {ITERATIONS} calls, microseconds per call\n")
+    print(f"{'':<12}{'bare':>10}{'collapsed':>12}{'per-policy':>12}{'collapsed cost':>16}")
     print("-" * 62)
     for label, bare, coll, nested in rows:
-        print(f"{label:<12}{bare / 1000:>10.2f}{coll / 1000:>12.2f}"
-              f"{nested / 1000:>12.2f}{(coll - bare) / 1000:>15.2f}µs")
+        print(
+            f"{label:<12}{bare / 1000:>10.2f}{coll / 1000:>12.2f}"
+            f"{nested / 1000:>12.2f}{(coll - bare) / 1000:>15.2f}µs"
+        )
 
     print(
         "\nA model turn is hundreds of milliseconds of network. The layer above "

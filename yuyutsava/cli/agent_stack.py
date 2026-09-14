@@ -84,7 +84,8 @@ async def _build_retrieval_stores(skill_registry: SkillRegistry):
             skill_store = pg_skill_store(pg_pool, embedder, min_score=mem_settings.min_score)
             if mem_settings.enabled:
                 memory_store = pg_memory_store(
-                    pg_pool, embedder,
+                    pg_pool,
+                    embedder,
                     min_score=mem_settings.min_score,
                     dedup_threshold=mem_settings.dedup_threshold,
                 )
@@ -101,9 +102,11 @@ async def _build_retrieval_stores(skill_registry: SkillRegistry):
 
     if skill_store is None:
         from yuyutsava.skills.store_unified import sqlite_skill_store
+
         skill_store = sqlite_skill_store(state_db_path())
     if memory_store is None and mem_settings.enabled:
         from yuyutsava.memory.store_unified import sqlite_memory_store
+
         memory_store = sqlite_memory_store(state_db_path())
 
     # Catch the store up to on-disk skills (previous sessions, bundled,
@@ -187,7 +190,8 @@ async def build_agent_stack(
     # Context controller: CLI chat threads are the longest-lived in the
     # system, so offload + compaction are always on.
     context_settings = ContextSettings.from_env(
-        "cli", provider=_env("LLM_PROVIDER", None, "groq"),
+        "cli",
+        provider=_env("LLM_PROVIDER", None, "groq"),
     )
     compaction_model = chat_model(llm_settings_from_env("compaction"), temperature=0.0)
 
@@ -207,9 +211,7 @@ async def build_agent_stack(
     # SQLite keyword twins. Memory defaults ON in the CLI — these are the
     # longest-lived threads in the system — but an explicit
     # YUYUTSAVA_MEMORY_ENABLED=0 still disables it.
-    memory_store, skill_store, pg_pool, embedder = await _build_retrieval_stores(
-        skill_registry
-    )
+    memory_store, skill_store, pg_pool, embedder = await _build_retrieval_stores(skill_registry)
 
     # Context-controller stores, selected ONCE by StoreFactory (Phase 3 step
     # 3.5). The CLI, the tinker bundle and the daemon each used to write this
@@ -220,9 +222,7 @@ async def build_agent_stack(
     from yuyutsava.storage.factory import StoreFactory as _SF
 
     _factory = _SF(_SS.from_env(), pg_pool=pg_pool, embedder=embedder)
-    _ctx = _factory.context_stores(
-        semantic_recall=context_settings.semantic_recall
-    )
+    _ctx = _factory.context_stores(semantic_recall=context_settings.semantic_recall)
     artifact_store = _ctx.artifacts
     summary_store = _ctx.summaries
     transcript_store = _ctx.transcripts
@@ -243,6 +243,7 @@ async def build_agent_stack(
     if pg_pool is not None:
         from yuyutsava.todoboard.store import set_default_todo_store
         from yuyutsava.todoboard.store_unified import pg_todo_store
+
         set_default_todo_store(pg_todo_store(pg_pool))
         # Same split, same fix, for vis_* images: without this the lazy getter
         # falls back to the SQLite twin, so a chart made in the CLI lands in
@@ -250,12 +251,14 @@ async def build_agent_stack(
         # Postgres — and vis_list_artifacts shows two different worlds.
         from yuyutsava.visuals.store import set_default_visual_store
         from yuyutsava.visuals.store_unified import pg_visual_store
+
         set_default_visual_store(pg_visual_store(pg_pool))
         # Board-note recall: embed-on-write for notes authored through this
         # stack + todo_recall searches. Boot backfill is the daemon's job —
         # a CLI start stays light.
         if embedder is not None:
             from yuyutsava.todoboard.recall import TodoNoteIndex, set_default_note_index
+
             set_default_note_index(TodoNoteIndex(pg_pool, embedder=embedder))
 
     # Best-effort: fetch the active model's live price from its provider and cache
@@ -264,6 +267,7 @@ async def build_agent_stack(
     # never fatal.
     try:
         from yuyutsava.core.pricing import refresh_price_cache
+
         await asyncio.to_thread(refresh_price_cache, settings)
     except Exception:  # noqa: BLE001 — pricing must never block a stack build
         logger.debug("price cache refresh failed", exc_info=True)
@@ -326,6 +330,7 @@ async def build_agent_stack(
         # its graph runs on the host's loop, and mcp/tool_adapter marshals
         # calls back to the manager's loop.
         from yuyutsava.agents.tinker.subagent import make_tinker_subagent
+
         tinker_sub = make_tinker_subagent(
             skill_registry=skill_registry,
             search_config=search_config,
@@ -354,9 +359,7 @@ async def build_agent_stack(
             # and the master bundle's compaction model belongs to this loop —
             # Gemini SDK clients bind to their first loop (see
             # llm/quirks/loop_affinity). ``model`` above is already host-only.
-            host_compaction_model = chat_model(
-                llm_settings_from_env("compaction"), temperature=0.0
-            )
+            host_compaction_model = chat_model(llm_settings_from_env("compaction"), temperature=0.0)
 
             return AsyncSubagentHost.from_subagents(
                 async_subagents,
@@ -376,13 +379,12 @@ async def build_agent_stack(
                 ),
                 extra_tools_factory=(
                     (lambda: make_context_tools(artifact_store))
-                    if artifact_store is not None else None
+                    if artifact_store is not None
+                    else None
                 ),
             )
 
-        attachment = await asyncio.to_thread(
-            acquire_or_attach_host, factory=_build_host
-        )
+        attachment = await asyncio.to_thread(acquire_or_attach_host, factory=_build_host)
         async_host_attachment = attachment
         async_host_url = attachment.url
         async_host = attachment.host  # None when attached to another owner
@@ -390,7 +392,8 @@ async def build_agent_stack(
         if attachment.host is not None:
             logger.info(
                 "CLI async host: owner @ %s graphs=%s",
-                async_host_url, attachment.host.graph_ids,
+                async_host_url,
+                attachment.host.graph_ids,
             )
         else:
             logger.info("CLI async host: attached to running owner @ %s", async_host_url)

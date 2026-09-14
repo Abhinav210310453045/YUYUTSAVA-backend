@@ -123,13 +123,15 @@ def structured_list_digest(tool_name: str, artifact_id: str, content: str) -> di
     items: list[dict] = []
     for i, rec in enumerate(records[:MAX_ITEMS]):
         snippet = _first(rec, _SNIPPET_KEYS)
-        items.append({
-            "i": i,
-            "title": _first(rec, _TITLE_KEYS),
-            "url": _first(rec, _URL_KEYS),
-            "snippet": (str(snippet)[:SNIPPET_CHARS] if snippet else None),
-            "score": _first(rec, _SCORE_KEYS),
-        })
+        items.append(
+            {
+                "i": i,
+                "title": _first(rec, _TITLE_KEYS),
+                "url": _first(rec, _URL_KEYS),
+                "snippet": (str(snippet)[:SNIPPET_CHARS] if snippet else None),
+                "score": _first(rec, _SCORE_KEYS),
+            }
+        )
     digest["results"] = items
     if len(records) > MAX_ITEMS:
         digest["results_truncated"] = True

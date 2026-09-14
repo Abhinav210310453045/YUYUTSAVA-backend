@@ -17,8 +17,8 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class CatalogEntry:
-    id: str                       # unique resource name (tool name / skill name)
-    group: str                    # namespace bucket for the catalog (e.g. "tr", "ws", "skill")
-    blurb: str                    # ≤1-line description for the always-visible catalog
-    match_text: str               # text ranked against for keyword search (id + blurb + …)
+    id: str  # unique resource name (tool name / skill name)
+    group: str  # namespace bucket for the catalog (e.g. "tr", "ws", "skill")
+    blurb: str  # ≤1-line description for the always-visible catalog
+    match_text: str  # text ranked against for keyword search (id + blurb + …)
     load_detail: Callable[[], str]  # lazily returns the full schema/body on expand

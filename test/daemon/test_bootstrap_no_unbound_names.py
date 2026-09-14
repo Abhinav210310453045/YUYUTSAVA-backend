@@ -71,8 +71,7 @@ def _bound_within(fn: ast.AST) -> set[str]:
         elif isinstance(node, (ast.Import, ast.ImportFrom)):
             for alias in node.names:
                 bound.add((alias.asname or alias.name).split(".")[0])
-        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef,
-                               ast.Lambda)):
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
             # Lambda has params but no name. Omitting it here made the guard
             # report `middleware_factory=lambda sa: ...`'s parameter as unbound
             # the moment that lambda moved into a function that did not happen
@@ -118,12 +117,14 @@ class BootstrapNamesResolve(unittest.TestCase):
                         problems.append(f"{fn.name}:{node.lineno} reads unbound `{node.id}`")
 
         self.assertEqual(
-            problems, [],
-            "bootstrap.py reads names nothing binds:\n  " + "\n  ".join(problems)
+            problems,
+            [],
+            "bootstrap.py reads names nothing binds:\n  "
+            + "\n  ".join(problems)
             + "\n\nUsually an extraction moved an import into a subsystem builder "
-              "while a use stayed behind. These raise NameError only when the "
-              "enclosing branch runs — often only on one storage backend, which "
-              "is why the test suites can stay green.",
+            "while a use stayed behind. These raise NameError only when the "
+            "enclosing branch runs — often only on one storage backend, which "
+            "is why the test suites can stay green.",
         )
 
 
@@ -178,7 +179,8 @@ class NoLocalImportShadowsAModuleLevelOne(unittest.TestCase):
         for path in SHADOW_MODULES:
             problems.extend(self._offenders(path))
         self.assertEqual(
-            problems, [],
+            problems,
+            [],
             "a local import shadows an earlier read — UnboundLocalError at "
             "runtime:\n  " + "\n  ".join(problems),
         )

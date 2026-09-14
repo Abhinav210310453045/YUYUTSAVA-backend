@@ -58,9 +58,9 @@ logger = logging.getLogger("yuyutsava.task_runner")
 
 _EC_PATH_TRAVERSAL = "TR001"
 _EC_SYSTEM_CRITICAL = "TR002"
-_EC_USER_DENIED     = "TR003"
-_EC_RULE_DENIED     = "TR004"
-_EC_EXEC_ERROR      = "TR005"
+_EC_USER_DENIED = "TR003"
+_EC_RULE_DENIED = "TR004"
+_EC_EXEC_ERROR = "TR005"
 
 
 class TaskRunnerAgent:
@@ -82,7 +82,8 @@ class TaskRunnerAgent:
         self.workspace_root: Path = workspace_root.resolve()
         # Default sandbox = <ws>/.yuyutsava/sandbox — from the one layout helper.
         self.sandbox_root: Path = (
-            sandbox_root.resolve() if sandbox_root is not None
+            sandbox_root.resolve()
+            if sandbox_root is not None
             else WorkspaceLayout.for_workspace(self.workspace_root).sandbox
         )
         self._policy = policy
@@ -101,14 +102,14 @@ class TaskRunnerAgent:
         — keep them in sync.
         """
         return {
-            OperationType.READ:    "tr_read_file",
-            OperationType.WRITE:   "tr_write_file",
-            OperationType.CREATE:  "tr_write_file",
-            OperationType.DELETE:  "tr_delete_file",
+            OperationType.READ: "tr_read_file",
+            OperationType.WRITE: "tr_write_file",
+            OperationType.CREATE: "tr_write_file",
+            OperationType.DELETE: "tr_delete_file",
             OperationType.EXECUTE: "tr_execute",
-            OperationType.CHMOD:   "tr_chmod",
-            OperationType.LIST:    "tr_ls",
-            OperationType.GLOB:    "tr_glob",
+            OperationType.CHMOD: "tr_chmod",
+            OperationType.LIST: "tr_ls",
+            OperationType.GLOB: "tr_glob",
         }.get(op, "tr_unknown")
 
     # ------------------------------------------------------------------
@@ -122,8 +123,10 @@ class TaskRunnerAgent:
         session_id = current_context().get("session_id")
         try:
             return self._consent.check_tool_permission(  # type: ignore[attr-defined]
-                operation=request.operation.value, zone=zone.value,
-                paths=request.paths, session_id=session_id,
+                operation=request.operation.value,
+                zone=zone.value,
+                paths=request.paths,
+                session_id=session_id,
                 workspace=str(self.workspace_root),
             )
         except Exception:
@@ -146,9 +149,13 @@ class TaskRunnerAgent:
         directory = str(self.workspace_root) if zone == FilesystemZone.WORKSPACE else None
         try:
             await self._consent.grant_tool_permission(  # type: ignore[attr-defined]
-                operation=request.operation.value, zone=zone.value,
-                paths=request.paths, scope=scope, session_id=session_id,
-                workspace=str(self.workspace_root), directory=directory,
+                operation=request.operation.value,
+                zone=zone.value,
+                paths=request.paths,
+                scope=scope,
+                session_id=session_id,
+                workspace=str(self.workspace_root),
+                directory=directory,
             )
         except Exception:
             logger.exception("consent grant failed (continuing)")
@@ -170,7 +177,8 @@ class TaskRunnerAgent:
         # Multi-path requests use the first path for zone; each path is canonicalized.
         if not request.paths:
             return self._denied(
-                request, operation_id,
+                request,
+                operation_id,
                 error="No paths specified in request.",
                 error_code=_EC_RULE_DENIED,
                 zone=None,
@@ -186,7 +194,10 @@ class TaskRunnerAgent:
 
         logger.debug(
             "TaskRunner | %s | zone=%s | action=%s | path=%s",
-            request.operation.value.upper(), zone.value, action.value, primary_path,
+            request.operation.value.upper(),
+            zone.value,
+            action.value,
+            primary_path,
         )
 
         # 3. DENY — system-critical or rule-denied, no user prompt
@@ -206,7 +217,8 @@ class TaskRunnerAgent:
 
             self._log_denied(request, zone, action, error_msg)
             return self._denied(
-                request, operation_id,
+                request,
+                operation_id,
                 error=error_msg,
                 error_code=code,
                 zone=zone,
@@ -226,7 +238,8 @@ class TaskRunnerAgent:
                 if self._policy.policy_for(tool_name) == "auto_approve":  # type: ignore[attr-defined]
                     logger.info(
                         "TaskRunner | POLICY auto_approve | %s | %s",
-                        request.operation.value.upper(), primary_path,
+                        request.operation.value.upper(),
+                        primary_path,
                     )
                     action = PermissionAction.ALLOW  # fall through to execute
             # Allowlist (consent) check: a prior "allow for session/project" grant
@@ -237,7 +250,8 @@ class TaskRunnerAgent:
                 if verdict == "allow":
                     logger.info(
                         "TaskRunner | CONSENT allow (grant) | %s | %s",
-                        request.operation.value.upper(), primary_path,
+                        request.operation.value.upper(),
+                        primary_path,
                     )
                     action = PermissionAction.ALLOW
                 elif verdict == "deny":
@@ -247,8 +261,11 @@ class TaskRunnerAgent:
                     )
                     self._log_denied(request, zone, action, error_msg, user_decision="reject")
                     return self._denied(
-                        request, operation_id, error=error_msg,
-                        error_code=_EC_USER_DENIED, zone=zone,
+                        request,
+                        operation_id,
+                        error=error_msg,
+                        error_code=_EC_USER_DENIED,
+                        zone=zone,
                         alternatives=get_alternatives(zone, request.operation),
                     )
             if action == PermissionAction.PROMPT:
@@ -265,7 +282,8 @@ class TaskRunnerAgent:
                     )
                     self._log_denied(request, zone, action, error_msg, user_decision="reject")
                     return self._denied(
-                        request, operation_id,
+                        request,
+                        operation_id,
                         error=error_msg,
                         error_code=_EC_USER_DENIED,
                         zone=zone,
@@ -276,7 +294,9 @@ class TaskRunnerAgent:
 
                 logger.info(
                     "TaskRunner | APPROVED by user (%s) | %s | %s",
-                    scope or "once", request.operation.value.upper(), primary_path,
+                    scope or "once",
+                    request.operation.value.upper(),
+                    primary_path,
                 )
 
         # 5. ALLOW (or user-approved) — execute
@@ -297,7 +317,9 @@ class TaskRunnerAgent:
 
         logger.info(
             "TaskRunner | SUCCESS | %s | zone=%s | path=%s",
-            request.operation.value.upper(), zone.value if zone else "?", primary_path,
+            request.operation.value.upper(),
+            zone.value if zone else "?",
+            primary_path,
         )
         return OperationResponse(
             request_id=request.request_id,
@@ -322,9 +344,9 @@ class TaskRunnerAgent:
         match request.operation:
             case OperationType.READ:
                 offset = int(ctx.get("offset", 0))
-                limit  = ctx.get("limit")
-                limit  = int(limit) if limit is not None else None
-                data   = await _exec.execute_read(path, offset=offset, limit=limit)
+                limit = ctx.get("limit")
+                limit = int(limit) if limit is not None else None
+                data = await _exec.execute_read(path, offset=offset, limit=limit)
 
                 notice = None
                 if data["has_more"]:
@@ -348,9 +370,7 @@ class TaskRunnerAgent:
 
             case OperationType.WRITE | OperationType.CREATE:
                 content = str(ctx.get("content", ""))
-                await _exec.execute_write(
-                    path, content, append=bool(ctx.get("append", False))
-                )
+                await _exec.execute_write(path, content, append=bool(ctx.get("append", False)))
                 return WriteResult(written_to=str(path))
 
             case OperationType.DELETE:
@@ -371,7 +391,9 @@ class TaskRunnerAgent:
                         max_matches=int(sc.get("max_matches", 100)),
                     )
                     return ShellResult(
-                        stdout=raw["stdout"], stderr=raw["stderr"], exit_code=raw["exit_code"],
+                        stdout=raw["stdout"],
+                        stderr=raw["stderr"],
+                        exit_code=raw["exit_code"],
                     )
                 if "fetch" in ctx:
                     fc = ctx["fetch"]
@@ -382,7 +404,9 @@ class TaskRunnerAgent:
                         timeout=int(fc.get("timeout", 120)),
                     )
                     return ShellResult(
-                        stdout=raw["stdout"], stderr=raw["stderr"], exit_code=raw["exit_code"],
+                        stdout=raw["stdout"],
+                        stderr=raw["stderr"],
+                        exit_code=raw["exit_code"],
                     )
                 if "python" in ctx:
                     pc = ctx["python"]
@@ -394,7 +418,9 @@ class TaskRunnerAgent:
                         int(pc.get("timeout", 120)),
                     )
                     return ShellResult(
-                        stdout=raw["stdout"], stderr=raw["stderr"], exit_code=raw["exit_code"],
+                        stdout=raw["stdout"],
+                        stderr=raw["stderr"],
+                        exit_code=raw["exit_code"],
                     )
                 command = str(ctx.get("command", ""))
                 _timeout = ctx.get("timeout", 120)

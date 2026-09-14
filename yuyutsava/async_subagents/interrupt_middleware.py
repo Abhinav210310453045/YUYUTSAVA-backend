@@ -90,6 +90,7 @@ class RemoteThreadPatcher:
     def _get_sync_client(self, agent_name: str):
         if agent_name not in self._sync_clients:
             from langgraph_sdk import get_sync_client
+
             self._sync_clients[agent_name] = get_sync_client(
                 url=self._url_by_name.get(agent_name),
                 headers=self._resolve_headers(agent_name),
@@ -99,6 +100,7 @@ class RemoteThreadPatcher:
     def _get_async_client(self, agent_name: str):
         if agent_name not in self._async_clients:
             from langgraph_sdk import get_client
+
             self._async_clients[agent_name] = get_client(
                 url=self._url_by_name.get(agent_name),
                 headers=self._resolve_headers(agent_name),
@@ -141,6 +143,7 @@ class RemoteThreadPatcher:
 
     async def _settle_active_run_async(self, client: Any, thread_id: str) -> None:
         import asyncio
+
         try:
             runs = await client.runs.list(thread_id=thread_id, limit=1)
         except Exception:  # noqa: BLE001
@@ -187,7 +190,8 @@ class RemoteThreadPatcher:
             return 0
         logger.info(
             "interrupt-patch: injected %d synthetic ToolMessage(s) on thread %s",
-            len(pending), thread_id,
+            len(pending),
+            thread_id,
         )
         return len(pending)
 
@@ -213,7 +217,8 @@ class RemoteThreadPatcher:
             return 0
         logger.info(
             "interrupt-patch: injected %d synthetic ToolMessage(s) on thread %s",
-            len(pending), thread_id,
+            len(pending),
+            thread_id,
         )
         return len(pending)
 
@@ -242,9 +247,7 @@ def find_pending_tool_calls(messages: list[Any]) -> list[tuple[str, str]]:
         if mtype == "ai":
             for tc in _ai_tool_calls(m):
                 tc_id = tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", None)
-                tc_name = (
-                    tc.get("name", "") if isinstance(tc, dict) else getattr(tc, "name", "")
-                )
+                tc_name = tc.get("name", "") if isinstance(tc, dict) else getattr(tc, "name", "")
                 if tc_id:
                     pending[tc_id] = tc_name or ""
         elif mtype == "tool":

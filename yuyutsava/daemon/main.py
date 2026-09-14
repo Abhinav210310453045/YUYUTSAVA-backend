@@ -92,7 +92,11 @@ def _setup_logging(
     to see them.
     """
     if not debug_plumbing:
-        debug_plumbing = os.environ.get("YUYUTSAVA_DEBUG_PLUMBING", "").lower() in ("1", "true", "yes")
+        debug_plumbing = os.environ.get("YUYUTSAVA_DEBUG_PLUMBING", "").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
 
     if verbose:
         level = logging.DEBUG
@@ -101,8 +105,9 @@ def _setup_logging(
 
     handler = logging.StreamHandler(sys.stderr)
     handler.setLevel(level)
-    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname).1s %(name)s: %(message)s",
-                                           datefmt="%H:%M:%S"))
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname).1s %(name)s: %(message)s", datefmt="%H:%M:%S")
+    )
 
     root = logging.getLogger()
     if root.level == logging.NOTSET or root.level < logging.WARNING:
@@ -123,22 +128,41 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="yuyutsava daemon",
         description="Run the always-on YUYUTSAVA daemon.",
     )
-    p.add_argument("--workspace", "-w", type=Path, default=Path.cwd(),
-                   help="Workspace root for the TaskRunner gateway (default: cwd).")
-    p.add_argument("--no-ui", action="store_true",
-                   help="Headless mode: don't auto-open the Electron app; terminal-only fallback.")
-    p.add_argument("--verbose", "-v", action="store_true",
-                   help="DEBUG-level logging to stderr.")
-    p.add_argument("--debug-plumbing", action="store_true",
-                   help=("Show uvicorn / langgraph runtime / httpx logs (debugging only). "
-                         "Off by default. Also honoured via YUYUTSAVA_DEBUG_PLUMBING=1."))
-    p.add_argument("--voice", action="store_true",
-                   help="Enable voice channel (TTS + STT). Requires yuyutsava[voice] extras "
-                        "and PIPER_MODEL / STT_PROVIDER env vars.")
-    p.add_argument("--status", action="store_true",
-                   help="Show the running daemon's PID, URLs, uptime; exit.")
-    p.add_argument("--stop", action="store_true",
-                   help="Send SIGTERM to the running daemon and wait for it to exit; exit.")
+    p.add_argument(
+        "--workspace",
+        "-w",
+        type=Path,
+        default=Path.cwd(),
+        help="Workspace root for the TaskRunner gateway (default: cwd).",
+    )
+    p.add_argument(
+        "--no-ui",
+        action="store_true",
+        help="Headless mode: don't auto-open the Electron app; terminal-only fallback.",
+    )
+    p.add_argument("--verbose", "-v", action="store_true", help="DEBUG-level logging to stderr.")
+    p.add_argument(
+        "--debug-plumbing",
+        action="store_true",
+        help=(
+            "Show uvicorn / langgraph runtime / httpx logs (debugging only). "
+            "Off by default. Also honoured via YUYUTSAVA_DEBUG_PLUMBING=1."
+        ),
+    )
+    p.add_argument(
+        "--voice",
+        action="store_true",
+        help="Enable voice channel (TTS + STT). Requires yuyutsava[voice] extras "
+        "and PIPER_MODEL / STT_PROVIDER env vars.",
+    )
+    p.add_argument(
+        "--status", action="store_true", help="Show the running daemon's PID, URLs, uptime; exit."
+    )
+    p.add_argument(
+        "--stop",
+        action="store_true",
+        help="Send SIGTERM to the running daemon and wait for it to exit; exit.",
+    )
     return p
 
 
@@ -155,6 +179,7 @@ def _cmd_status() -> int:
     uptime_str = "(unknown)"
     if isinstance(started_at, (int, float)):
         import time as _time
+
         secs = max(0, int(_time.time() - started_at))
         h, rem = divmod(secs, 3600)
         m, s = divmod(rem, 60)
@@ -188,8 +213,7 @@ def _cmd_stop() -> int:
         return 1
 
     if not yplatform.pid_alive(pid):
-        print(f"yuyutsava daemon: pid {pid} not alive; cleaning up stale files",
-              file=sys.stderr)
+        print(f"yuyutsava daemon: pid {pid} not alive; cleaning up stale files", file=sys.stderr)
         _cleanup_files()
         return 0
 
@@ -199,9 +223,12 @@ def _cmd_stop() -> int:
     # unlinks the lock/discovery files; we sweep them best-effort regardless.
     ok = yplatform.terminate_pid(pid, timeout=5.0)
     _cleanup_files()
-    print("yuyutsava daemon: stopped" if ok else
-          "yuyutsava daemon: could not confirm stop (check for a stuck process)",
-          file=sys.stderr)
+    print(
+        "yuyutsava daemon: stopped"
+        if ok
+        else "yuyutsava daemon: could not confirm stop (check for a stuck process)",
+        file=sys.stderr,
+    )
     return 0 if ok else 1
 
 
@@ -223,7 +250,8 @@ async def _run_uvicorn(server: uvicorn.Server, stop_event: asyncio.Event) -> Non
 
 
 async def _open_electron_when_ready(
-    url: str, holder: dict[str, subprocess.Popen] | None = None,
+    url: str,
+    holder: dict[str, subprocess.Popen] | None = None,
 ) -> None:
     await asyncio.sleep(0.4)
     electron_app_dir = Path(__file__).resolve().parent.parent.parent / "electron-app"
@@ -296,7 +324,9 @@ async def _run_memory_backfill(subs: DaemonSubsystems) -> None:
 
 
 async def _reload_loop(
-    subs: DaemonSubsystems, stop_event: asyncio.Event, reload_event: asyncio.Event,
+    subs: DaemonSubsystems,
+    stop_event: asyncio.Event,
+    reload_event: asyncio.Event,
 ) -> None:
     """On SIGHUP: re-read MCP + events configs and hot-reload."""
     while not stop_event.is_set():
@@ -310,8 +340,10 @@ async def _reload_loop(
         try:
             new_mcp = MCPConfig.load(subs.workspace)
             await subs.mcp_manager.hot_reload(new_mcp)
-            logger.info("config reload: mcp servers now %s",
-                        ", ".join(subs.mcp_manager.known_servers()) or "(none)")
+            logger.info(
+                "config reload: mcp servers now %s",
+                ", ".join(subs.mcp_manager.known_servers()) or "(none)",
+            )
         except Exception:
             logger.exception("mcp config reload failed")
         try:
@@ -324,12 +356,18 @@ def _log_ready_banner(subs: DaemonSubsystems) -> None:
     logger.info("YUYUTSAVA daemon ready")
     logger.info("  workspace : %s", subs.workspace)
     logger.info("  home      : %s", subs.home)
-    logger.info("  heartbeat : %ss",
-                subs.daemon_cfg.heartbeat_sec if subs.daemon_cfg.heartbeat_sec > 0 else "disabled")
-    logger.info("  triage    : %s / %s",
-                subs.triage_settings.__class__.__name__, subs.triage_settings.model)
-    logger.info("  orch      : %s / %s",
-                subs.orchestrator_settings.__class__.__name__, subs.orchestrator_settings.model)
+    logger.info(
+        "  heartbeat : %ss",
+        subs.daemon_cfg.heartbeat_sec if subs.daemon_cfg.heartbeat_sec > 0 else "disabled",
+    )
+    logger.info(
+        "  triage    : %s / %s", subs.triage_settings.__class__.__name__, subs.triage_settings.model
+    )
+    logger.info(
+        "  orch      : %s / %s",
+        subs.orchestrator_settings.__class__.__name__,
+        subs.orchestrator_settings.model,
+    )
     logger.info("  subagents : %s", ", ".join(subs.subagent_names))
     if subs.web_hub is not None:
         logger.info("  web window: %s", subs.web_url)
@@ -424,7 +462,8 @@ async def _async_main(argv: list[str] | None = None) -> int:
     # quickly and must not trip the FIRST_COMPLETED shutdown. The reference is
     # held for the lifetime of this function so the task isn't GC'd mid-run.
     _backfill_task = asyncio.create_task(  # noqa: F841 — anchor against GC
-        _run_memory_backfill(subs), name="memory-backfill",
+        _run_memory_backfill(subs),
+        name="memory-backfill",
     )
 
     # ── concurrent loops --------------------------------------------------
@@ -436,19 +475,27 @@ async def _async_main(argv: list[str] | None = None) -> int:
         asyncio.create_task(_reload_loop(subs, stop_event, reload_event), name="reload-loop"),
     ]
     if subs.web_server is not None:
-        tasks.append(asyncio.create_task(
-            _run_uvicorn(subs.web_server, stop_event), name="web-server",
-        ))
+        tasks.append(
+            asyncio.create_task(
+                _run_uvicorn(subs.web_server, stop_event),
+                name="web-server",
+            )
+        )
     if subs.web_hub is not None:
         # Relay wake-word detections to the UI so it can open the voice overlay.
         from yuyutsava.daemon.wake_bridge import run_wake_bridge
-        tasks.append(asyncio.create_task(
-            run_wake_bridge(
-                subs.bus, subs.web_hub, stop_event,
-                runtime_settings=subs.runtime_settings,
-            ),
-            name="wake-bridge",
-        ))
+
+        tasks.append(
+            asyncio.create_task(
+                run_wake_bridge(
+                    subs.bus,
+                    subs.web_hub,
+                    stop_event,
+                    runtime_settings=subs.runtime_settings,
+                ),
+                name="wake-bridge",
+            )
+        )
 
     # Durable resume: re-enqueue tasks a previous instance left unfinished
     # (e.g. after a config hot-reload restart). The orchestrator loop above is
@@ -505,6 +552,7 @@ async def _async_main(argv: list[str] | None = None) -> int:
         if subs.async_host_attachment is not None:
             try:
                 from yuyutsava.async_subagents.host_lock import release_host_lock
+
                 release_host_lock(subs.async_host_attachment)
             except Exception:
                 logger.exception("release_host_lock failed")

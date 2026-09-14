@@ -39,9 +39,7 @@ async def main() -> None:
         return
 
     settings = SessionsSettings.from_env()
-    src = SqliteSessionStore(
-        settings.db_path, busy_timeout_ms=settings.busy_timeout_ms
-    )
+    src = SqliteSessionStore(settings.db_path, busy_timeout_ms=settings.busy_timeout_ms)
     rows = await src.list(limit=1_000_000)
     if not rows:
         print(f"No sessions found in {settings.db_path}.")
@@ -56,14 +54,22 @@ async def main() -> None:
             for s in rows:
                 ws = str(s.workspace)
                 # sessions.thread_id FKs to threads — upsert the parent first.
-                await ensure_thread(
-                    conn, s.thread_id, origin="cli", workspace=ws, status=s.status
-                )
+                await ensure_thread(conn, s.thread_id, origin="cli", workspace=ws, status=s.status)
                 cur = await conn.execute(
                     _INSERT_SQL,
-                    (s.id, s.thread_id, ws, s.status, s.created_at, s.updated_at,
-                     s.message_count, s.memory_files_count, s.db_row_bytes,
-                     s.task_preview, s.schema_version),
+                    (
+                        s.id,
+                        s.thread_id,
+                        ws,
+                        s.status,
+                        s.created_at,
+                        s.updated_at,
+                        s.message_count,
+                        s.memory_files_count,
+                        s.db_row_bytes,
+                        s.task_preview,
+                        s.schema_version,
+                    ),
                 )
                 migrated += cur.rowcount or 0
         print(

@@ -32,9 +32,17 @@ from yuyutsava.policy.base import Policy
 from yuyutsava.policy.types import ModelCall
 
 # Exact-name suppression: deepagents built-in tools replaced by tr_* equivalents.
-_SUPPRESS_NAMES: frozenset[str] = frozenset({
-    "read_file", "write_file", "edit_file", "execute", "grep", "ls", "glob",
-})
+_SUPPRESS_NAMES: frozenset[str] = frozenset(
+    {
+        "read_file",
+        "write_file",
+        "edit_file",
+        "execute",
+        "grep",
+        "ls",
+        "glob",
+    }
+)
 
 # Prefix suppression: all our custom-prefixed tools are hidden from the model
 # upfront. Their names stay visible in the system-prompt catalog; the agent
@@ -46,7 +54,16 @@ _SUPPRESS_NAMES: frozenset[str] = frozenset({
 # tool_search itself). ``_ALWAYS_VISIBLE`` below carves out the one sk_* tool
 # that needs the same reachability.
 _SUPPRESS_PREFIXES: tuple[str, ...] = (
-    "tr_", "ws_", "sk_", "fo_", "ev_", "db_", "mem_", "todo_", "um_", "orch_",
+    "tr_",
+    "ws_",
+    "sk_",
+    "fo_",
+    "ev_",
+    "db_",
+    "mem_",
+    "todo_",
+    "um_",
+    "orch_",
 )
 
 # Always-visible exceptions to the prefix rule. Lazy discovery costs one extra

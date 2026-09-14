@@ -62,16 +62,49 @@ logger = logging.getLogger("yuyutsava.todoboard.store_unified")
 # Column order per table, plus which of them are timestamps (TIMESTAMPTZ on
 # Postgres, REAL epoch on SQLite) and which are JSON (jsonb vs TEXT). Reads and
 # writes are both generated from these, so a new column is added in one place.
-_CARD_COLS = ("card_id", "title", "status", "pinned", "tags",
-              "workspace_path", "created_ts", "updated_ts")
-_NOTE_COLS = ("note_id", "card_id", "body", "author", "objective_id",
-              "phase", "created_ts", "updated_ts")
-_OBJ_COLS = ("objective_id", "card_id", "title", "phase", "order_idx",
-             "reason", "outcome", "created_ts", "updated_ts")
-_ATT_COLS = ("attachment_id", "card_id", "kind", "path", "url", "mime",
-             "title", "meta", "created_ts")
-_EVENT_COLS = ("event_id", "card_id", "objective_id", "kind", "payload",
-               "actor", "created_ts")
+_CARD_COLS = (
+    "card_id",
+    "title",
+    "status",
+    "pinned",
+    "tags",
+    "workspace_path",
+    "created_ts",
+    "updated_ts",
+)
+_NOTE_COLS = (
+    "note_id",
+    "card_id",
+    "body",
+    "author",
+    "objective_id",
+    "phase",
+    "created_ts",
+    "updated_ts",
+)
+_OBJ_COLS = (
+    "objective_id",
+    "card_id",
+    "title",
+    "phase",
+    "order_idx",
+    "reason",
+    "outcome",
+    "created_ts",
+    "updated_ts",
+)
+_ATT_COLS = (
+    "attachment_id",
+    "card_id",
+    "kind",
+    "path",
+    "url",
+    "mime",
+    "title",
+    "meta",
+    "created_ts",
+)
+_EVENT_COLS = ("event_id", "card_id", "objective_id", "kind", "payload", "actor", "created_ts")
 
 _TS = frozenset({"created_ts", "updated_ts"})
 _JSON = frozenset({"tags", "meta", "payload"})
@@ -91,8 +124,7 @@ def _select(d: Dialect, cols: tuple[str, ...], prefix: str = "") -> str:
 def _values(d: Dialect, cols: tuple[str, ...]) -> str:
     """Placeholder list matching *cols*, with the right cast per column kind."""
     return ", ".join(
-        d.ts_param() if c in _TS else d.json_param() if c in _JSON else d.ph()
-        for c in cols
+        d.ts_param() if c in _TS else d.json_param() if c in _JSON else d.ph() for c in cols
     )
 
 
@@ -195,35 +227,54 @@ class TodoSchema(BaseSqliteStore):
 
 def _note(r: Any, d: Dialect) -> TodoNoteV1:
     return TodoNoteV1(
-        note_id=r["note_id"], card_id=r["card_id"], body=r["body"],
-        author=r["author"], objective_id=r["objective_id"], phase=r["phase"],
-        created_ts=float(r["created_ts"]), updated_ts=float(r["updated_ts"]),
+        note_id=r["note_id"],
+        card_id=r["card_id"],
+        body=r["body"],
+        author=r["author"],
+        objective_id=r["objective_id"],
+        phase=r["phase"],
+        created_ts=float(r["created_ts"]),
+        updated_ts=float(r["updated_ts"]),
     )
 
 
 def _objective(r: Any, d: Dialect) -> TodoObjectiveV1:
     return TodoObjectiveV1(
-        objective_id=r["objective_id"], card_id=r["card_id"], title=r["title"],
-        phase=r["phase"], order_idx=r["order_idx"], reason=r["reason"],
+        objective_id=r["objective_id"],
+        card_id=r["card_id"],
+        title=r["title"],
+        phase=r["phase"],
+        order_idx=r["order_idx"],
+        reason=r["reason"],
         outcome=r["outcome"],
-        created_ts=float(r["created_ts"]), updated_ts=float(r["updated_ts"]),
+        created_ts=float(r["created_ts"]),
+        updated_ts=float(r["updated_ts"]),
     )
 
 
 def _event(r: Any, d: Dialect) -> TodoEventV1:
     return TodoEventV1(
-        event_id=r["event_id"], card_id=r["card_id"],
-        objective_id=r["objective_id"], kind=r["kind"],
-        payload=_json_dict(d, r["payload"]), actor=r["actor"],
+        event_id=r["event_id"],
+        card_id=r["card_id"],
+        objective_id=r["objective_id"],
+        kind=r["kind"],
+        payload=_json_dict(d, r["payload"]),
+        actor=r["actor"],
         created_ts=float(r["created_ts"]),
     )
 
 
 def _attachment(r: Any, d: Dialect) -> TodoAttachmentV1:
     return TodoAttachmentV1(
-        attachment_id=r["attachment_id"], card_id=r["card_id"], kind=r["kind"],
-        path=r["path"], url=r["url"], mime=r["mime"], title=r["title"],
-        meta=_json_dict(d, r["meta"]), created_ts=float(r["created_ts"]),
+        attachment_id=r["attachment_id"],
+        card_id=r["card_id"],
+        kind=r["kind"],
+        path=r["path"],
+        url=r["url"],
+        mime=r["mime"],
+        title=r["title"],
+        meta=_json_dict(d, r["meta"]),
+        created_ts=float(r["created_ts"]),
     )
 
 
@@ -253,9 +304,16 @@ class UnifiedTodoStore(TodoStore):
             await conn.execute(
                 f"INSERT INTO todo_cards ({', '.join(_CARD_COLS)}) "
                 f"VALUES ({_values(d, _CARD_COLS)})",
-                (card.card_id, card.title, card.status, int(card.pinned),
-                 _tags_json(card.tags), card.workspace_path,
-                 card.created_ts, card.updated_ts),
+                (
+                    card.card_id,
+                    card.title,
+                    card.status,
+                    int(card.pinned),
+                    _tags_json(card.tags),
+                    card.workspace_path,
+                    card.created_ts,
+                    card.updated_ts,
+                ),
             )
 
         await d.write(_do)
@@ -264,30 +322,40 @@ class UnifiedTodoStore(TodoStore):
         d = self._d
         async with d.reading() as conn:
             cur = await conn.execute(
-                f"SELECT {_select(d, _CARD_COLS)} FROM todo_cards "
-                f"WHERE card_id = {d.ph()}", (card_id,))
+                f"SELECT {_select(d, _CARD_COLS)} FROM todo_cards WHERE card_id = {d.ph()}",
+                (card_id,),
+            )
             row = await cur.fetchone()
             if row is None:
                 return None
             cur = await conn.execute(
                 f"SELECT {_select(d, _OBJ_COLS)} FROM todo_objectives "
                 f"WHERE card_id = {d.ph()} ORDER BY order_idx, created_ts",
-                (card_id,))
+                (card_id,),
+            )
             objs = await cur.fetchall()
             cur = await conn.execute(
                 f"SELECT {_select(d, _NOTE_COLS)} FROM todo_notes "
-                f"WHERE card_id = {d.ph()} ORDER BY created_ts", (card_id,))
+                f"WHERE card_id = {d.ph()} ORDER BY created_ts",
+                (card_id,),
+            )
             notes = await cur.fetchall()
             cur = await conn.execute(
                 f"SELECT {_select(d, _ATT_COLS)} FROM todo_attachments "
-                f"WHERE card_id = {d.ph()} ORDER BY created_ts", (card_id,))
+                f"WHERE card_id = {d.ph()} ORDER BY created_ts",
+                (card_id,),
+            )
             atts = await cur.fetchall()
         return TodoCardV1(
-            card_id=row["card_id"], title=row["title"], status=row["status"],
+            card_id=row["card_id"],
+            title=row["title"],
+            status=row["status"],
             # INTEGER on both backends; callers get a bool.
-            pinned=bool(row["pinned"]), tags=_json_list(d, row["tags"]),
+            pinned=bool(row["pinned"]),
+            tags=_json_list(d, row["tags"]),
             workspace_path=row["workspace_path"],
-            created_ts=float(row["created_ts"]), updated_ts=float(row["updated_ts"]),
+            created_ts=float(row["created_ts"]),
+            updated_ts=float(row["updated_ts"]),
             objectives=[_objective(o, d) for o in objs],
             notes=[_note(n, d) for n in notes],
             attachments=[_attachment(a, d) for a in atts],
@@ -306,8 +374,7 @@ class UnifiedTodoStore(TodoStore):
             cols["tags"] = _tags_json(cols["tags"])
         d = self._d
         sets = ", ".join(
-            f"{k} = "
-            f"{d.ts_param() if k in _TS else d.json_param() if k in _JSON else d.ph()}"
+            f"{k} = {d.ts_param() if k in _TS else d.json_param() if k in _JSON else d.ph()}"
             for k in cols
         )
 
@@ -335,12 +402,9 @@ class UnifiedTodoStore(TodoStore):
         d = self._d
 
         async def _do(conn):
-            for table in ("todo_notes", "todo_attachments",
-                          "todo_objectives", "todo_events"):
-                await conn.execute(
-                    f"DELETE FROM {table} WHERE card_id = {d.ph()}", (card_id,))  # noqa: S608
-            cur = await conn.execute(
-                f"DELETE FROM todo_cards WHERE card_id = {d.ph()}", (card_id,))
+            for table in ("todo_notes", "todo_attachments", "todo_objectives", "todo_events"):
+                await conn.execute(f"DELETE FROM {table} WHERE card_id = {d.ph()}", (card_id,))  # noqa: S608
+            cur = await conn.execute(f"DELETE FROM todo_cards WHERE card_id = {d.ph()}", (card_id,))
             return (cur.rowcount or 0) > 0
 
         return await d.write(_do)
@@ -370,12 +434,17 @@ class UnifiedTodoStore(TodoStore):
             rows = await cur.fetchall()
         return [
             TodoCardSummaryV1(
-                card_id=r["card_id"], title=r["title"], status=r["status"],
-                pinned=bool(r["pinned"]), tags=_json_list(d, r["tags"]),
-                note_count=r["note_count"], attachment_count=r["attachment_count"],
+                card_id=r["card_id"],
+                title=r["title"],
+                status=r["status"],
+                pinned=bool(r["pinned"]),
+                tags=_json_list(d, r["tags"]),
+                note_count=r["note_count"],
+                attachment_count=r["attachment_count"],
                 objective_count=r["objective_count"],
                 objective_done_count=r["objective_done_count"],
-                created_ts=float(r["created_ts"]), updated_ts=float(r["updated_ts"]),
+                created_ts=float(r["created_ts"]),
+                updated_ts=float(r["updated_ts"]),
             )
             for r in rows
         ]
@@ -395,19 +464,24 @@ class UnifiedTodoStore(TodoStore):
         an orphan. Checking here is what makes the two agree.
         """
         cur = await conn.execute(
-            f"SELECT 1 FROM todo_cards WHERE card_id = {self._d.ph()}", (card_id,))
+            f"SELECT 1 FROM todo_cards WHERE card_id = {self._d.ph()}", (card_id,)
+        )
         return await cur.fetchone() is not None
 
     async def _bump(self, conn, card_id: str, ts: float) -> None:
         """Touch the card's ``updated_ts`` — it is what orders the board."""
         await conn.execute(
             f"UPDATE todo_cards SET updated_ts = {self._d.ts_param()} "
-            f"WHERE card_id = {self._d.ph()}", (ts, card_id))
+            f"WHERE card_id = {self._d.ph()}",
+            (ts, card_id),
+        )
 
     async def _fetch_one(self, conn, table: str, id_col: str, cols, ident: str):
         cur = await conn.execute(
             f"SELECT {_select(self._d, cols)} FROM {table} "  # noqa: S608
-            f"WHERE {id_col} = {self._d.ph()}", (ident,))
+            f"WHERE {id_col} = {self._d.ph()}",
+            (ident,),
+        )
         return await cur.fetchone()
 
     # -- notes --------------------------------------------------------------
@@ -421,28 +495,34 @@ class UnifiedTodoStore(TodoStore):
             await conn.execute(
                 f"INSERT INTO todo_notes ({', '.join(_NOTE_COLS)}) "
                 f"VALUES ({_values(d, _NOTE_COLS)})",
-                (note.note_id, note.card_id, note.body, note.author,
-                 note.objective_id, note.phase, note.created_ts, note.updated_ts),
+                (
+                    note.note_id,
+                    note.card_id,
+                    note.body,
+                    note.author,
+                    note.objective_id,
+                    note.phase,
+                    note.created_ts,
+                    note.updated_ts,
+                ),
             )
             await self._bump(conn, note.card_id, note.updated_ts)
             return True
 
         return await d.write(_do)
 
-    async def update_note(
-        self, note_id: str, body: str, updated_ts: float
-    ) -> TodoNoteV1 | None:
+    async def update_note(self, note_id: str, body: str, updated_ts: float) -> TodoNoteV1 | None:
         d = self._d
 
         async def _do(conn):
             cur = await conn.execute(
                 f"UPDATE todo_notes SET body = {d.ph()}, "
                 f"updated_ts = {d.ts_param()} WHERE note_id = {d.ph()}",
-                (body, updated_ts, note_id))
+                (body, updated_ts, note_id),
+            )
             if (cur.rowcount or 0) == 0:
                 return None
-            row = await self._fetch_one(conn, "todo_notes", "note_id",
-                                        _NOTE_COLS, note_id)
+            row = await self._fetch_one(conn, "todo_notes", "note_id", _NOTE_COLS, note_id)
             if row is None:
                 return None
             await self._bump(conn, row["card_id"], updated_ts)
@@ -454,14 +534,16 @@ class UnifiedTodoStore(TodoStore):
         d = self._d
 
         async def _do(conn):
-            cur = await conn.execute(
-                f"DELETE FROM todo_notes WHERE note_id = {d.ph()}", (note_id,))
+            cur = await conn.execute(f"DELETE FROM todo_notes WHERE note_id = {d.ph()}", (note_id,))
             return (cur.rowcount or 0) > 0
 
         return await d.write(_do)
 
     async def assign_note(
-        self, note_id: str, objective_id: str | None, phase: str | None,
+        self,
+        note_id: str,
+        objective_id: str | None,
+        phase: str | None,
         updated_ts: float,
     ) -> TodoNoteV1 | None:
         d = self._d
@@ -470,11 +552,11 @@ class UnifiedTodoStore(TodoStore):
             cur = await conn.execute(
                 f"UPDATE todo_notes SET objective_id = {d.ph()}, phase = {d.ph()}, "
                 f"updated_ts = {d.ts_param()} WHERE note_id = {d.ph()}",
-                (objective_id, phase, updated_ts, note_id))
+                (objective_id, phase, updated_ts, note_id),
+            )
             if (cur.rowcount or 0) == 0:
                 return None
-            row = await self._fetch_one(conn, "todo_notes", "note_id",
-                                        _NOTE_COLS, note_id)
+            row = await self._fetch_one(conn, "todo_notes", "note_id", _NOTE_COLS, note_id)
             if row is None:
                 return None
             await self._bump(conn, row["card_id"], updated_ts)
@@ -493,9 +575,17 @@ class UnifiedTodoStore(TodoStore):
             await conn.execute(
                 f"INSERT INTO todo_objectives ({', '.join(_OBJ_COLS)}) "
                 f"VALUES ({_values(d, _OBJ_COLS)})",
-                (obj.objective_id, obj.card_id, obj.title, obj.phase,
-                 obj.order_idx, obj.reason, obj.outcome,
-                 obj.created_ts, obj.updated_ts),
+                (
+                    obj.objective_id,
+                    obj.card_id,
+                    obj.title,
+                    obj.phase,
+                    obj.order_idx,
+                    obj.reason,
+                    obj.outcome,
+                    obj.created_ts,
+                    obj.updated_ts,
+                ),
             )
             await self._bump(conn, obj.card_id, obj.updated_ts)
             return True
@@ -505,8 +595,9 @@ class UnifiedTodoStore(TodoStore):
     async def get_objective(self, objective_id: str) -> TodoObjectiveV1 | None:
         d = self._d
         async with d.reading() as conn:
-            row = await self._fetch_one(conn, "todo_objectives", "objective_id",
-                                        _OBJ_COLS, objective_id)
+            row = await self._fetch_one(
+                conn, "todo_objectives", "objective_id", _OBJ_COLS, objective_id
+            )
         return _objective(row, d) if row else None
 
     async def update_objective(
@@ -516,19 +607,19 @@ class UnifiedTodoStore(TodoStore):
         if not cols:
             return await self.get_objective(objective_id)
         d = self._d
-        sets = ", ".join(
-            f"{k} = {d.ts_param() if k in _TS else d.ph()}" for k in cols
-        )
+        sets = ", ".join(f"{k} = {d.ts_param() if k in _TS else d.ph()}" for k in cols)
 
         async def _do(conn):
             cur = await conn.execute(
                 f"UPDATE todo_objectives SET {sets} "  # noqa: S608
                 f"WHERE objective_id = {d.ph()}",
-                (*cols.values(), objective_id))
+                (*cols.values(), objective_id),
+            )
             if (cur.rowcount or 0) == 0:
                 return None
-            row = await self._fetch_one(conn, "todo_objectives", "objective_id",
-                                        _OBJ_COLS, objective_id)
+            row = await self._fetch_one(
+                conn, "todo_objectives", "objective_id", _OBJ_COLS, objective_id
+            )
             if row is None:
                 return None
             if "updated_ts" in cols:
@@ -549,16 +640,18 @@ class UnifiedTodoStore(TodoStore):
         d = self._d
 
         async def _do(conn):
-            row = await self._fetch_one(conn, "todo_objectives", "objective_id",
-                                        _OBJ_COLS, objective_id)
+            row = await self._fetch_one(
+                conn, "todo_objectives", "objective_id", _OBJ_COLS, objective_id
+            )
             if row is None:
                 return None
             await conn.execute(
-                f"UPDATE todo_notes SET objective_id = NULL "
-                f"WHERE objective_id = {d.ph()}", (objective_id,))
+                f"UPDATE todo_notes SET objective_id = NULL WHERE objective_id = {d.ph()}",
+                (objective_id,),
+            )
             await conn.execute(
-                f"DELETE FROM todo_objectives WHERE objective_id = {d.ph()}",
-                (objective_id,))
+                f"DELETE FROM todo_objectives WHERE objective_id = {d.ph()}", (objective_id,)
+            )
             return _objective(row, d)
 
         return await d.write(_do)
@@ -574,8 +667,17 @@ class UnifiedTodoStore(TodoStore):
             await conn.execute(
                 f"INSERT INTO todo_attachments ({', '.join(_ATT_COLS)}) "
                 f"VALUES ({_values(d, _ATT_COLS)})",
-                (att.attachment_id, att.card_id, att.kind, att.path, att.url,
-                 att.mime, att.title, json.dumps(att.meta or {}), att.created_ts),
+                (
+                    att.attachment_id,
+                    att.card_id,
+                    att.kind,
+                    att.path,
+                    att.url,
+                    att.mime,
+                    att.title,
+                    json.dumps(att.meta or {}),
+                    att.created_ts,
+                ),
             )
             await self._bump(conn, att.card_id, att.created_ts)
             return True
@@ -591,8 +693,16 @@ class UnifiedTodoStore(TodoStore):
                 f"url = {d.ph()}, mime = {d.ph()}, title = {d.ph()}, "
                 f"meta = {d.json_param()}, created_ts = {d.ts_param()} "
                 f"WHERE attachment_id = {d.ph()}",
-                (att.kind, att.path, att.url, att.mime, att.title,
-                 json.dumps(att.meta or {}), att.created_ts, att.attachment_id),
+                (
+                    att.kind,
+                    att.path,
+                    att.url,
+                    att.mime,
+                    att.title,
+                    json.dumps(att.meta or {}),
+                    att.created_ts,
+                    att.attachment_id,
+                ),
             )
             if (cur.rowcount or 0) == 0:
                 return False
@@ -605,13 +715,14 @@ class UnifiedTodoStore(TodoStore):
         d = self._d
 
         async def _do(conn):
-            row = await self._fetch_one(conn, "todo_attachments", "attachment_id",
-                                        _ATT_COLS, attachment_id)
+            row = await self._fetch_one(
+                conn, "todo_attachments", "attachment_id", _ATT_COLS, attachment_id
+            )
             if row is None:
                 return None
             await conn.execute(
-                f"DELETE FROM todo_attachments WHERE attachment_id = {d.ph()}",
-                (attachment_id,))
+                f"DELETE FROM todo_attachments WHERE attachment_id = {d.ph()}", (attachment_id,)
+            )
             return _attachment(row, d)
 
         return await d.write(_do)
@@ -623,7 +734,9 @@ class UnifiedTodoStore(TodoStore):
         async with d.reading() as conn:
             cur = await conn.execute(
                 f"SELECT {_select(d, _ATT_COLS)} FROM todo_attachments "
-                f"ORDER BY created_ts DESC LIMIT {d.ph()}", (limit,))
+                f"ORDER BY created_ts DESC LIMIT {d.ph()}",
+                (limit,),
+            )
             rows = await cur.fetchall()
         return [_attachment(r, d) for r in rows]
 
@@ -642,21 +755,27 @@ class UnifiedTodoStore(TodoStore):
             await conn.execute(
                 f"INSERT INTO todo_events ({', '.join(_EVENT_COLS)}) "
                 f"VALUES ({_values(d, _EVENT_COLS)})",
-                (ev.event_id, ev.card_id, ev.objective_id, ev.kind,
-                 json.dumps(ev.payload or {}), ev.actor, ev.created_ts),
+                (
+                    ev.event_id,
+                    ev.card_id,
+                    ev.objective_id,
+                    ev.kind,
+                    json.dumps(ev.payload or {}),
+                    ev.actor,
+                    ev.created_ts,
+                ),
             )
 
         await d.write(_do)
 
-    async def list_events(
-        self, card_id: str, *, limit: int = 500
-    ) -> list[TodoEventV1]:
+    async def list_events(self, card_id: str, *, limit: int = 500) -> list[TodoEventV1]:
         d = self._d
         async with d.reading() as conn:
             cur = await conn.execute(
                 f"SELECT {_select(d, _EVENT_COLS)} FROM todo_events "
                 f"WHERE card_id = {d.ph()} ORDER BY created_ts LIMIT {d.ph()}",
-                (card_id, limit))
+                (card_id, limit),
+            )
             rows = await cur.fetchall()
         return [_event(r, d) for r in rows]
 

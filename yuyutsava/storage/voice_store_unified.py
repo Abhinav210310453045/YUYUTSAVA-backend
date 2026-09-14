@@ -161,9 +161,7 @@ def sqlite_voice_store(db_path: Path | None = None) -> UnifiedVoiceMessageStore:
     from yuyutsava.storage.dialect import SqliteDialect
     from yuyutsava.storage.paths import state_db_path
 
-    return UnifiedVoiceMessageStore(
-        SqliteDialect(VoiceSchema(db_path or state_db_path()))
-    )
+    return UnifiedVoiceMessageStore(SqliteDialect(VoiceSchema(db_path or state_db_path())))
 
 
 def pg_voice_store(pool) -> UnifiedVoiceMessageStore:
@@ -173,6 +171,8 @@ def pg_voice_store(pool) -> UnifiedVoiceMessageStore:
 
 
 __all__ = [
-    "UnifiedVoiceMessageStore", "VoiceSchema",
-    "pg_voice_store", "sqlite_voice_store",
+    "UnifiedVoiceMessageStore",
+    "VoiceSchema",
+    "pg_voice_store",
+    "sqlite_voice_store",
 ]

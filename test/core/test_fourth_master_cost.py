@@ -38,17 +38,32 @@ from yuyutsava.core.agent_profiles import (
 
 RESEARCH_PROFILE = AgentProfile(
     role="research",
-    policies=frozenset({
-        Policy.TOOL_FILTER, Policy.FILESYSTEM_PROMPT, Policy.VOICE_STYLE,
-        Policy.BUDGET, Policy.USAGE,
-    }),
-    injectors=frozenset({
-        Injector.MEMORY, Injector.SKILLS, Injector.CONVERSATION,
-    }),
-    tools=frozenset({
-        ToolFamily.CONTEXT, ToolFamily.MEMORY, ToolFamily.ARTIFACTS,
-        ToolFamily.AGENT_MEMORY, ToolFamily.SEARCH, ToolFamily.SKILLS,
-    }),
+    policies=frozenset(
+        {
+            Policy.TOOL_FILTER,
+            Policy.FILESYSTEM_PROMPT,
+            Policy.VOICE_STYLE,
+            Policy.BUDGET,
+            Policy.USAGE,
+        }
+    ),
+    injectors=frozenset(
+        {
+            Injector.MEMORY,
+            Injector.SKILLS,
+            Injector.CONVERSATION,
+        }
+    ),
+    tools=frozenset(
+        {
+            ToolFamily.CONTEXT,
+            ToolFamily.MEMORY,
+            ToolFamily.ARTIFACTS,
+            ToolFamily.AGENT_MEMORY,
+            ToolFamily.SEARCH,
+            ToolFamily.SKILLS,
+        }
+    ),
     todo_scope="capture",
     agent_memory_namespace="research",
     skill_injector_scope="research",
@@ -119,9 +134,7 @@ class FourthMasterCost(unittest.TestCase):
         # the adapter carries — one hop further in, but the same list.
         (policy,) = mw[0].policies
         chain = [type(i).__name__ for i in policy._injectors]
-        self.assertEqual(
-            chain, ["MemoryInjector", "SkillInjector", "ConversationInjector"]
-        )
+        self.assertEqual(chain, ["MemoryInjector", "SkillInjector", "ConversationInjector"])
 
     def test_async_wiring_needs_no_per_role_code(self) -> None:
         specs, mw = engine._async_subagent_wiring(
@@ -156,7 +169,8 @@ class FourthMasterCost(unittest.TestCase):
         test's siblings above start failing.
         """
         self.assertLess(
-            _PROFILE_LINES, 30,
+            _PROFILE_LINES,
+            30,
             "Declaring a master agent should cost under 30 lines of data.",
         )
 
@@ -172,12 +186,12 @@ class FourthMasterCost(unittest.TestCase):
                     # Comments and docstrings may mention roles; code must not
                     # branch on them.
                     code = "\n".join(
-                        ln for ln in src.splitlines()
-                        if not ln.strip().startswith("#")
+                        ln for ln in src.splitlines() if not ln.strip().startswith("#")
                     )
                     body = code.split('"""')[-1] if code.count('"""') >= 2 else code
                     self.assertNotIn(
-                        f"== {role}", body,
+                        f"== {role}",
+                        body,
                         f"{fn.__name__} branches on the role name {role}. Shared "
                         f"assembly must be driven by the profile, not by identity.",
                     )

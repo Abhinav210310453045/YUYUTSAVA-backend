@@ -59,21 +59,21 @@ _FETCH_UA = (
 # Leading magic bytes per file type. Empty list = no strict signature (accept any
 # non-empty, non-HTML body). mp4 is special-cased (ftyp box at offset 4).
 _MAGIC: dict[str, list[bytes]] = {
-    "zip":  [b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"],
-    "pdf":  [b"%PDF-"],
-    "jpg":  [b"\xff\xd8\xff"],
+    "zip": [b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"],
+    "pdf": [b"%PDF-"],
+    "jpg": [b"\xff\xd8\xff"],
     "jpeg": [b"\xff\xd8\xff"],
-    "png":  [b"\x89PNG\r\n\x1a\n"],
-    "gif":  [b"GIF87a", b"GIF89a"],
-    "mp3":  [b"ID3", b"\xff\xfb", b"\xff\xf3", b"\xff\xf2", b"\xff\xfa"],
-    "gz":   [b"\x1f\x8b"],
-    "wav":  [b"RIFF"],
-    "ogg":  [b"OggS"],
+    "png": [b"\x89PNG\r\n\x1a\n"],
+    "gif": [b"GIF87a", b"GIF89a"],
+    "mp3": [b"ID3", b"\xff\xfb", b"\xff\xf3", b"\xff\xf2", b"\xff\xfa"],
+    "gz": [b"\x1f\x8b"],
+    "wav": [b"RIFF"],
+    "ogg": [b"OggS"],
     "flac": [b"fLaC"],
-    "7z":   [b"7z\xbc\xaf\x27\x1c"],
-    "rar":  [b"Rar!\x1a\x07"],
-    "doc":  [b"\xd0\xcf\x11\xe0"],  # legacy OLE (.doc/.xls/.ppt)
-    "mp4":  [],
+    "7z": [b"7z\xbc\xaf\x27\x1c"],
+    "rar": [b"Rar!\x1a\x07"],
+    "doc": [b"\xd0\xcf\x11\xe0"],  # legacy OLE (.doc/.xls/.ppt)
+    "mp4": [],
 }
 
 
@@ -115,10 +115,14 @@ def _verify_download(path: str, expected_type: str) -> tuple[bool, str, str | No
 
     if ext in _MAGIC:
         if is_html:
-            return False, (
-                f"expected a {ext} file but received an HTML page "
-                f"(likely a Cloudflare/login interstitial)"
-            ), "html"
+            return (
+                False,
+                (
+                    f"expected a {ext} file but received an HTML page "
+                    f"(likely a Cloudflare/login interstitial)"
+                ),
+                "html",
+            )
         if ext == "mp4":
             ok = head[4:8] == b"ftyp"
         elif not _MAGIC[ext]:
@@ -126,15 +130,21 @@ def _verify_download(path: str, expected_type: str) -> tuple[bool, str, str | No
         else:
             ok = any(head.startswith(sig) for sig in _MAGIC[ext])
         if not ok:
-            return False, f"content does not look like a valid {ext} (magic-byte check failed)", "unknown"
+            return (
+                False,
+                f"content does not look like a valid {ext} (magic-byte check failed)",
+                "unknown",
+            )
         return True, "", ext
 
     # Text / unknown types: reject only an obvious HTML interstitial when HTML
     # was not what we asked for.
     if ext not in ("html", "htm") and is_html:
-        return False, (
-            f"expected {ext or 'a data file'} but received an HTML page (likely an interstitial)"
-        ), "html"
+        return (
+            False,
+            (f"expected {ext or 'a data file'} but received an HTML page (likely an interstitial)"),
+            "html",
+        )
     return True, "", ext or "binary"
 
 
@@ -155,15 +165,17 @@ def _validation_error_json(exc: Exception) -> str:
     OperationResponse-shaped result the model can react to.
     """
     msg = str(exc).replace("\n", " ")
-    return json.dumps({
-        "status": "error",
-        "error_code": "TR000_VALIDATION",
-        "error": f"Tool arguments invalid: {msg}",
-        "hint": (
-            "All tr_* tools require a non-empty `reason` string describing why the "
-            "operation is needed. Re-call the tool with every required argument."
-        ),
-    })
+    return json.dumps(
+        {
+            "status": "error",
+            "error_code": "TR000_VALIDATION",
+            "error": f"Tool arguments invalid: {msg}",
+            "hint": (
+                "All tr_* tools require a non-empty `reason` string describing why the "
+                "operation is needed. Re-call the tool with every required argument."
+            ),
+        }
+    )
 
 
 def set_default_policy(policy: object | None) -> None:
@@ -197,14 +209,17 @@ def _get_or_create_agent(workspace_root: Path, sandbox_root: Path | None = None)
     # one that passes the layout default must land on the SAME cached agent
     # (master, subagents and spawn.py used to mint three per workspace).
     sb = (
-        sandbox_root.resolve() if sandbox_root is not None
+        sandbox_root.resolve()
+        if sandbox_root is not None
         else WorkspaceLayout.for_workspace(ws).sandbox
     )
     key = f"{ws}|{sb}"
     if key not in _registry:
         _registry[key] = TaskRunnerAgent(
-            ws, sandbox_root=sb,
-            policy=_default_policy, consent=_default_consent,
+            ws,
+            sandbox_root=sb,
+            policy=_default_policy,
+            consent=_default_consent,
         )
     return _registry[key]
 
@@ -291,7 +306,10 @@ def bind_tools(
 
     @tool
     async def tr_write_file(
-        path: str, content: str, reason: str, append: bool = False,
+        path: str,
+        content: str,
+        reason: str,
+        append: bool = False,
     ) -> str:
         """Write/create a file (zone-checked, creates parent dirs). Returns JSON {status, result: {written_to}, error}.
 
@@ -310,7 +328,9 @@ def bind_tools(
         real_path = _resolve_path(path, workspace_root)
         _log.debug(
             "[tr_write_file] path=%s bytes=%d append=%s",
-            real_path, len(content.encode()), append,
+            real_path,
+            len(content.encode()),
+            append,
         )
         request = OperationRequest(
             request_id=str(uuid.uuid4()),
@@ -724,40 +744,46 @@ def bind_tools(
             with contextlib.suppress(OSError):
                 if os.path.exists(dest):
                     os.remove(dest)
-            return json.dumps({
-                "status": "error",
-                "error_code": "TR_FETCH_HTTP",
-                "error": f"Download failed (exit {exit_code}). {stderr}".strip(),
-                "url": url,
-                "hint": "URL may be dead, blocked, or need auth. Try a direct/raw host "
-                        "(e.g. raw.githubusercontent.com, archive.org).",
-            })
+            return json.dumps(
+                {
+                    "status": "error",
+                    "error_code": "TR_FETCH_HTTP",
+                    "error": f"Download failed (exit {exit_code}). {stderr}".strip(),
+                    "url": url,
+                    "hint": "URL may be dead, blocked, or need auth. Try a direct/raw host "
+                    "(e.g. raw.githubusercontent.com, archive.org).",
+                }
+            )
 
         ok, why, detected = _verify_download(dest, expected_type)
         if not ok:
             with contextlib.suppress(OSError):
                 os.remove(dest)
-            return json.dumps({
-                "status": "error",
-                "error_code": "TR_FETCH_INVALID",
-                "error": f"Downloaded file failed verification: {why}",
-                "url": url,
-                "detected": detected,
-                "hint": "Server returned an interstitial or wrong content. Pick a "
-                        "direct-download source and retry.",
-            })
+            return json.dumps(
+                {
+                    "status": "error",
+                    "error_code": "TR_FETCH_INVALID",
+                    "error": f"Downloaded file failed verification: {why}",
+                    "url": url,
+                    "detected": detected,
+                    "hint": "Server returned an interstitial or wrong content. Pick a "
+                    "direct-download source and retry.",
+                }
+            )
 
         size = None
         with contextlib.suppress(OSError):
             size = os.path.getsize(dest)
         _log.debug("[tr_fetch_url] ok url=%s dest=%s bytes=%s", url[:120], dest, size)
-        return json.dumps({
-            "status": "success",
-            "path": dest,
-            "bytes": size,
-            "verified_as": detected,
-            "url": url,
-        })
+        return json.dumps(
+            {
+                "status": "success",
+                "path": dest,
+                "bytes": size,
+                "verified_as": detected,
+                "url": url,
+            }
+        )
 
     # ------------------------------------------------------------------ #
     # tr_sysinfo                                                           #
@@ -777,25 +803,36 @@ def bind_tools(
         from yuyutsava.platform import host_profile
 
         hp = host_profile()
-        return json.dumps({
-            "status": "success",
-            "result": {
-                "os_family": hp.os_family,
-                "os_version": hp.os_version,
-                "arch": hp.arch,
-                "shell": hp.shell_kind,
-                "package_managers": list(hp.package_managers),
-                "service_manager": hp.service_manager,
-                "elevation": hp.elevation_mechanism,
-                "home": hp.home_dir,
-                "temp": hp.temp_dir,
-            },
-        })
+        return json.dumps(
+            {
+                "status": "success",
+                "result": {
+                    "os_family": hp.os_family,
+                    "os_version": hp.os_version,
+                    "arch": hp.arch,
+                    "shell": hp.shell_kind,
+                    "package_managers": list(hp.package_managers),
+                    "service_manager": hp.service_manager,
+                    "elevation": hp.elevation_mechanism,
+                    "home": hp.home_dir,
+                    "temp": hp.temp_dir,
+                },
+            }
+        )
 
     all_tools: list[BaseTool] = [
-        tr_read_file, tr_write_file, tr_delete_file,
-        tr_execute_in_sandbox, tr_run_python, tr_grep, tr_ls, tr_glob,
-        tr_ask_user, tr_execute, tr_fetch_url, tr_sysinfo,
+        tr_read_file,
+        tr_write_file,
+        tr_delete_file,
+        tr_execute_in_sandbox,
+        tr_run_python,
+        tr_grep,
+        tr_ls,
+        tr_glob,
+        tr_ask_user,
+        tr_execute,
+        tr_fetch_url,
+        tr_sysinfo,
     ]
     # Convert pydantic arg-validation failures (missing reason=, wrong type, etc.)
     # into a structured JSON ToolMessage instead of langchain's opaque

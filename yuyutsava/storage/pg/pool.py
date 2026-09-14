@@ -72,8 +72,9 @@ class PgPool:
 
         await self._pools.aget(_open_primary)
         self._opened = True
-        logger.info("pg pool: open (min=%d max=%d)",
-                    self._settings.pool_min, self._settings.pool_max)
+        logger.info(
+            "pg pool: open (min=%d max=%d)", self._settings.pool_min, self._settings.pool_max
+        )
 
     async def _pool(self) -> AsyncConnectionPool:
         """The current loop's pool, opening a secondary one on first use.
@@ -95,7 +96,8 @@ class PgPool:
             await pool.open(wait=False)
             logger.info(
                 "pg pool: secondary pool for loop on thread %r (max=%d)",
-                threading.current_thread().name, self._settings.pool_max,
+                threading.current_thread().name,
+                self._settings.pool_max,
             )
             return pool
 

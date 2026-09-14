@@ -138,7 +138,10 @@ class AgentProfileConformance(unittest.TestCase):
     #: ``_build_tool_registry_and_tools``. These remain statically checkable
     #: because the builder decides them independently of the profile.
     _REGISTRY_DRIVEN = {
-        ToolFamily.SKILLS, ToolFamily.SEARCH, ToolFamily.TASK_RUNNER, ToolFamily.DB,
+        ToolFamily.SKILLS,
+        ToolFamily.SEARCH,
+        ToolFamily.TASK_RUNNER,
+        ToolFamily.DB,
     }
 
     def test_registry_driven_tool_families_match_builders(self) -> None:
@@ -229,7 +232,6 @@ class AgentProfileConformance(unittest.TestCase):
         )
 
 
-
 class PoliciesAreProfileDriven(unittest.TestCase):
     """Phase 1 step 1.3: the builders READ ``profile.policies``, not a literal list.
 
@@ -247,7 +249,8 @@ class PoliciesAreProfileDriven(unittest.TestCase):
             src = inspect.getsource(getattr(engine, fn))
             with self.subTest(builder=fn):
                 self.assertIn(
-                    "_policy_middleware(", src,
+                    "_policy_middleware(",
+                    src,
                     f"{fn} does not build its policies from its profile",
                 )
                 # The literal opener of the old hand-written list. Kept as the
@@ -270,12 +273,14 @@ class PoliciesAreProfileDriven(unittest.TestCase):
         from yuyutsava.core.engine import _POLICY_ORDER_POST, _POLICY_ORDER_PRE
 
         self.assertEqual(
-            set(_POLICY_ORDER_PRE) & set(_POLICY_ORDER_POST), set(),
+            set(_POLICY_ORDER_PRE) & set(_POLICY_ORDER_POST),
+            set(),
             "a policy appears in both phases; it would be built twice",
         )
         covered = set(_POLICY_ORDER_PRE) | set(_POLICY_ORDER_POST)
         self.assertEqual(
-            covered, set(Policy),
+            covered,
+            set(Policy),
             f"policies declared but never placed in the pipeline: "
             f"{sorted(p.value for p in set(Policy) - covered)} — a profile could "
             f"declare one and it would silently never be built",

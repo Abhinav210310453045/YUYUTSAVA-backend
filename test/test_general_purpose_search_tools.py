@@ -47,7 +47,9 @@ def _tool_names(agent: GeneralPurposeAgent) -> set[str]:
 def test_both_providers_present() -> None:
     agent = _agent(SearchConfig(tavily_api_key="dummy", exa_api_key="dummy"))
     names = _tool_names(agent)
-    assert WS_ALL <= names, f"expected all ws_* tools, got {sorted(n for n in names if n.startswith('ws_'))}"
+    assert WS_ALL <= names, (
+        f"expected all ws_* tools, got {sorted(n for n in names if n.startswith('ws_'))}"
+    )
 
 
 def test_no_keys_means_no_web_search() -> None:

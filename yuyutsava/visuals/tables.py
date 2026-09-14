@@ -30,9 +30,7 @@ def render_table(spec: dict[str, Any]) -> RenderResult:
         raise VisualError("table requires 'columns' and 'rows'")
     for r in rows:
         if len(r) != len(columns):
-            raise VisualError(
-                f"row {r!r} has {len(r)} cells but there are {len(columns)} columns"
-            )
+            raise VisualError(f"row {r!r} has {len(r)} cells but there are {len(columns)} columns")
 
     n_rows = len(rows) + 1
     fig, ax = plt.subplots(figsize=(min(2 + 1.6 * len(columns), 16), 0.5 + 0.42 * n_rows))

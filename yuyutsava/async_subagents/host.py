@@ -67,7 +67,9 @@ def resolve_allow_blocking(*, default: bool) -> bool:
         return False
     logger.warning(
         "%s=%r not understood (use 1/0/true/false); falling back to default=%s",
-        _ALLOW_BLOCKING_ENV, raw, default,
+        _ALLOW_BLOCKING_ENV,
+        raw,
+        default,
     )
     return default
 
@@ -212,6 +214,7 @@ class AsyncSubagentHost:
         def _serve() -> None:
             try:
                 from langgraph_api.cli import run_server  # local import: heavy
+
                 run_server(
                     host=self._host,
                     port=self._port,

@@ -39,7 +39,7 @@ def render_timeline(spec: dict[str, Any]) -> RenderResult:
     if not items:
         raise VisualError("timeline requires a non-empty 'items' list")
 
-    labels = [str(it.get("label", f"item {i+1}")) for i, it in enumerate(items)]
+    labels = [str(it.get("label", f"item {i + 1}")) for i, it in enumerate(items)]
     try:
         starts = [_coerce(it["start"]) for it in items]
         ends = [_coerce(it["end"]) for it in items]
@@ -58,7 +58,9 @@ def render_timeline(spec: dict[str, Any]) -> RenderResult:
         width = e - s
         if is_dates:
             width = (e - s).days or 1
-        color = _STATUS_COLORS.get(str(it.get("status", "")).lower(), theme.ACCENTS[i % len(theme.ACCENTS)])
+        color = _STATUS_COLORS.get(
+            str(it.get("status", "")).lower(), theme.ACCENTS[i % len(theme.ACCENTS)]
+        )
         ax.barh(y, width, left=s, height=0.5, color=color, alpha=0.9)
 
     ax.set_yticks(range(len(items)))

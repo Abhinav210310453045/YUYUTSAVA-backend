@@ -153,10 +153,10 @@ class BlobSweepTarget:
     its own directory and never becomes a target; blobs are scratch.
     """
 
-    name: str           # human label, e.g. "webcam"
-    directory: Path     # absolute path; files older than ttl_sec get deleted
-    ttl_sec: int        # delete files whose mtime is older than (now - ttl_sec)
-    glob: str = "*"     # restrict to a glob within ``directory`` (e.g. "*.jpg")
+    name: str  # human label, e.g. "webcam"
+    directory: Path  # absolute path; files older than ttl_sec get deleted
+    ttl_sec: int  # delete files whose mtime is older than (now - ttl_sec)
+    glob: str = "*"  # restrict to a glob within ``directory`` (e.g. "*.jpg")
 
 
 class UnifiedSweeper:
@@ -200,17 +200,21 @@ class UnifiedSweeper:
         cfg = self._config
         logger.info(
             "sweeper: checkpoint_ttl=%ss, event_ttl=%ss, blob_targets=%d, every %ss",
-            cfg.checkpoint_ttl_sec, cfg.event_ttl_sec, len(self._blob_targets),
+            cfg.checkpoint_ttl_sec,
+            cfg.event_ttl_sec,
+            len(self._blob_targets),
             cfg.sweep_interval_sec,
         )
         for t in self._blob_targets:
-            logger.info("  blob: %s @ %s (ttl=%ss, glob=%s)",
-                        t.name, t.directory, t.ttl_sec, t.glob)
+            logger.info(
+                "  blob: %s @ %s (ttl=%ss, glob=%s)", t.name, t.directory, t.ttl_sec, t.glob
+            )
 
         while not stop_event.is_set():
             try:
                 await asyncio.wait_for(
-                    stop_event.wait(), timeout=cfg.sweep_interval_sec,
+                    stop_event.wait(),
+                    timeout=cfg.sweep_interval_sec,
                 )
                 return  # stop requested
             except asyncio.TimeoutError:
@@ -221,8 +225,10 @@ class UnifiedSweeper:
                 # when there's nothing to delete.
                 logger.info(
                     "sweeper: checkpoints=%d blob_files=%d blob_rows=%d event_rows=%d todo_orphans=%d",
-                    report.checkpoints_deleted, report.blob_files_deleted,
-                    report.blob_rows_deleted, report.event_rows_deleted,
+                    report.checkpoints_deleted,
+                    report.blob_files_deleted,
+                    report.blob_rows_deleted,
+                    report.event_rows_deleted,
                     report.todo_orphan_dirs_deleted,
                 )
             except Exception:
@@ -275,7 +281,8 @@ class UnifiedSweeper:
             logger.exception("sweeper: failed to enumerate stale checkpoints")
             return 0
         stale = [
-            tid for tid, latest_id in threads
+            tid
+            for tid, latest_id in threads
             if (ts := _last_write_ts(tid, latest_id)) is not None and ts < cutoff
         ]
         deleted = 0
@@ -294,10 +301,7 @@ class UnifiedSweeper:
         checkpoint namespace: UUIDv6 sorts lexicographically by time, which is
         exactly why LangGraph uses it for checkpoint ids.
         """
-        query = (
-            "SELECT thread_id, max(checkpoint_id) AS latest "
-            "FROM checkpoints GROUP BY thread_id"
-        )
+        query = "SELECT thread_id, max(checkpoint_id) AS latest FROM checkpoints GROUP BY thread_id"
         if isinstance(self._saver, AsyncSqliteSaver):
             out: list[tuple[str, str]] = []
             async with self._saver.lock, self._saver.conn.execute(query) as cur:
@@ -315,8 +319,7 @@ class UnifiedSweeper:
                 await cur.execute(query)
                 rows = await cur.fetchall()
             return [
-                (r["thread_id"], r["latest"]) if isinstance(r, dict) else (r[0], r[1])
-                for r in rows
+                (r["thread_id"], r["latest"]) if isinstance(r, dict) else (r[0], r[1]) for r in rows
             ]
 
         logger.warning(
@@ -336,7 +339,9 @@ class UnifiedSweeper:
             # File I/O off the event loop — directories with thousands of
             # entries can block for tens of ms otherwise.
             removed_files = await loop.run_in_executor(
-                None, self._sweep_target_files, target,
+                None,
+                self._sweep_target_files,
+                target,
             )
             removed_rows = await self._store.delete_event_payloads_with_blob_prefix(
                 str(target.directory) + "/",

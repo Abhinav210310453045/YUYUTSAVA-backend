@@ -125,7 +125,8 @@ class UnifiedMemoryStore(MemoryStore):
         self._dedup_threshold = dedup_threshold
         self._search = (
             PgVectorSearch(pool, _MEMORIES_TABLE, min_score=min_score)
-            if (self._embedder is not None and pool is not None) else None
+            if (self._embedder is not None and pool is not None)
+            else None
         )
 
     @property
@@ -151,15 +152,14 @@ class UnifiedMemoryStore(MemoryStore):
         embedding: str | None = None
         if self._embedder is not None:
             try:
-                embedding = vector_literal(
-                    await self._embedder.embed_one(text, mode="document")
-                )
+                embedding = vector_literal(await self._embedder.embed_one(text, mode="document"))
             except Exception:
                 # Storing without a vector is degraded, not broken: the row is
                 # still found by keyword and backfill_embeddings repairs it.
                 logger.warning(
                     "memory: embedding failed — storing %s without vector",
-                    memory_id, exc_info=True,
+                    memory_id,
+                    exc_info=True,
                 )
 
         cols = ["memory_id", "kind", "text"]
@@ -178,13 +178,17 @@ class UnifiedMemoryStore(MemoryStore):
             # cannot leave a thread row without its memory or vice versa.
             if self._search is not None and self._dedup_threshold <= 1.0 and embedding:
                 dup = await self._search.find_duplicate(
-                    conn, embedding, self._dedup_threshold,
-                    where=f"AND kind = {d.ph()}", params=[kind],
+                    conn,
+                    embedding,
+                    self._dedup_threshold,
+                    where=f"AND kind = {d.ph()}",
+                    params=[kind],
                 )
                 if dup is not None:
                     logger.debug(
                         "memory: near-duplicate of %s (kind=%s) — skipping insert",
-                        dup, kind,
+                        dup,
+                        kind,
                     )
                     return dup
             # source_thread_id FKs to threads (ON DELETE SET NULL) on Postgres;
@@ -211,17 +215,13 @@ class UnifiedMemoryStore(MemoryStore):
         try:
             qvec = vector_literal(await self._embedder.embed_one(query, mode="query"))
         except Exception:
-            logger.warning(
-                "memory: query embedding failed — keyword fallback", exc_info=True
-            )
+            logger.warning("memory: query embedding failed — keyword fallback", exc_info=True)
             return await self._keyword_search(query, k, kinds)
         where, params = _kind_filter(kinds, self._d)
         # The pool's own connection, not d.reading(): PgVectorSearch reads rows
         # positionally and the dialect's read connection uses dict_row.
         async with self._pool.connection() as conn:
-            hits = await self._search.vector_search(
-                conn, qvec, k, where=where, params=params
-            )
+            hits = await self._search.vector_search(conn, qvec, k, where=where, params=params)
         return [
             MemoryHit(memory_id=h.id, kind=h.payload["kind"], text=h.text, score=h.score)
             for h in hits
@@ -259,7 +259,9 @@ class UnifiedMemoryStore(MemoryStore):
             rows = await cur.fetchall()
         return [
             MemoryHit(
-                memory_id=r["memory_id"], kind=r["kind"], text=r["text"],
+                memory_id=r["memory_id"],
+                kind=r["kind"],
+                text=r["text"],
                 # 0.0, not a normalised hit count: `score` means cosine
                 # similarity, and inventing one would let a caller compare
                 # keyword and vector results on the same scale.
@@ -268,9 +270,7 @@ class UnifiedMemoryStore(MemoryStore):
             for r in rows
         ]
 
-    async def backfill_embeddings(
-        self, *, batch_size: int = 64, max_rows: int = 2000
-    ) -> int:
+    async def backfill_embeddings(self, *, batch_size: int = 64, max_rows: int = 2000) -> int:
         """Embed rows stored without a vector. Returns rows repaired.
 
         **Always present.** On a backend without vectors there is nothing to
@@ -279,9 +279,7 @@ class UnifiedMemoryStore(MemoryStore):
         """
         if self._search is None:
             return 0
-        return await self._search.backfill(
-            self._embedder, batch_size=batch_size, max_rows=max_rows
-        )
+        return await self._search.backfill(self._embedder, batch_size=batch_size, max_rows=max_rows)
 
 
 def sqlite_memory_store(db_path: Path | None = None) -> UnifiedMemoryStore:
@@ -297,8 +295,11 @@ def pg_memory_store(
     from yuyutsava.storage.dialect import PostgresDialect
 
     return UnifiedMemoryStore(
-        PostgresDialect(pool), embedder=embedder, pool=pool,
-        min_score=min_score, dedup_threshold=dedup_threshold,
+        PostgresDialect(pool),
+        embedder=embedder,
+        pool=pool,
+        min_score=min_score,
+        dedup_threshold=dedup_threshold,
     )
 
 

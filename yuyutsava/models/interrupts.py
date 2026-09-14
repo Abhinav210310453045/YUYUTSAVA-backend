@@ -19,9 +19,9 @@ from pydantic import BaseModel, Field
 class UserQuestionInterrupt(BaseModel):
     """Payload produced by tr_ask_user — a free-text question to the user."""
 
-    type:       Literal["user_question"] = "user_question"
-    question:   str
-    options:    list[str] = Field(default_factory=list)
+    type: Literal["user_question"] = "user_question"
+    question: str
+    options: list[str] = Field(default_factory=list)
     session_id: str | None = None
     agent_path: str | None = None
 
@@ -32,18 +32,18 @@ class UserQuestionInterrupt(BaseModel):
 class TaskRunnerPermissionInterrupt(BaseModel):
     """Payload produced by the TaskRunnerAgent gateway when a PROMPT rule fires."""
 
-    type:              Literal["task_runner_permission"] = "task_runner_permission"
-    operation:         str          # OperationType.value, e.g. "delete"
-    paths:             list[str]
-    zone:              str          # FilesystemZone.value, e.g. "workspace"
-    reason:            str
-    requesting_agent:  str
-    parent_agent:      str | None = None
-    task_id:           str
-    task_description:  str
-    risk_level:        str          # "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"
-    session_id:        str | None = None
-    agent_path:        str | None = None
+    type: Literal["task_runner_permission"] = "task_runner_permission"
+    operation: str  # OperationType.value, e.g. "delete"
+    paths: list[str]
+    zone: str  # FilesystemZone.value, e.g. "workspace"
+    reason: str
+    requesting_agent: str
+    parent_agent: str | None = None
+    task_id: str
+    task_description: str
+    risk_level: str  # "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"
+    session_id: str | None = None
+    agent_path: str | None = None
 
     def to_interrupt_dict(self) -> dict:
         return self.model_dump()
@@ -52,9 +52,9 @@ class TaskRunnerPermissionInterrupt(BaseModel):
 class PermissionRequestInterrupt(BaseModel):
     """Payload produced by PermissionMiddleware when a raw execute call triggers a check."""
 
-    type:       Literal["permission_request"] = "permission_request"
-    command:    str
-    reason:     str
+    type: Literal["permission_request"] = "permission_request"
+    command: str
+    reason: str
     session_id: str | None = None
     agent_path: str | None = None
 

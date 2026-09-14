@@ -37,8 +37,14 @@ from yuyutsava.daemon.orchestrator_loop import resume_interrupted_tasks
 
 
 class _Rec:
-    def __init__(self, task_id: str, status: str, *, thread_id: str | None = None,
-                 instruction: str = "do the thing") -> None:
+    def __init__(
+        self,
+        task_id: str,
+        status: str,
+        *,
+        thread_id: str | None = None,
+        instruction: str = "do the thing",
+    ) -> None:
         self.task_id = task_id
         self.status = status
         self.thread_id = thread_id
@@ -60,13 +66,15 @@ class _Registry:
 
 
 def _registry() -> _Registry:
-    return _Registry({
-        "running": [_Rec("tsk_running", "running", thread_id="orch-abc")],
-        "queued": [
-            _Rec("tsk_expired", "queued", instruction="declined by timeout"),
-            _Rec("tsk_pending", "queued", instruction="still awaiting the user"),
-        ],
-    })
+    return _Registry(
+        {
+            "running": [_Rec("tsk_running", "running", thread_id="orch-abc")],
+            "queued": [
+                _Rec("tsk_expired", "queued", instruction="declined by timeout"),
+                _Rec("tsk_pending", "queued", instruction="still awaiting the user"),
+            ],
+        }
+    )
 
 
 async def _drain(q: asyncio.Queue) -> list[Any]:
@@ -82,9 +90,9 @@ class QueuedIsNotResumed(unittest.IsolatedAsyncioTestCase):
         n = await resume_interrupted_tasks(_registry(), q)
         ids = [t.task_id for t in await _drain(q)]
         self.assertNotIn(
-            "tsk_expired", ids,
-            "a task whose Tier-1 proposal expired was re-enqueued — a restart "
-            "is bypassing consent",
+            "tsk_expired",
+            ids,
+            "a task whose Tier-1 proposal expired was re-enqueued — a restart is bypassing consent",
         )
         self.assertNotIn("tsk_pending", ids)
         self.assertEqual(n, 1)
@@ -96,7 +104,8 @@ class QueuedIsNotResumed(unittest.IsolatedAsyncioTestCase):
         (task,) = await _drain(q)
         self.assertEqual(task.task_id, "tsk_running")
         self.assertEqual(
-            task.resume_thread_id, "orch-abc",
+            task.resume_thread_id,
+            "orch-abc",
             "the running task lost its thread_id, so it restarts from scratch "
             "instead of continuing from its checkpoint",
         )
@@ -132,7 +141,8 @@ class TheListingIsScoped(unittest.IsolatedAsyncioTestCase):
         await resume_interrupted_tasks(reg, asyncio.Queue())
         self.assertIn("running", reg.listed)
         self.assertIn(
-            "queued", reg.listed,
+            "queued",
+            reg.listed,
             "queued rows are no longer read at all, so the operator gets no "
             "report of what was left behind",
         )

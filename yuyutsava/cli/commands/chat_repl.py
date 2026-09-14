@@ -69,7 +69,6 @@ _BANNER_LINES = [
 ]
 
 
-
 def _print_version_notice(*, full: bool = False) -> None:
     """Render langgraph-api upgrade/support notices once, above the banner.
 
@@ -216,8 +215,7 @@ def _startup_status_line(sessions_settings: SessionsSettings) -> str:
         from yuyutsava.storage.backend import StorageSettings
 
         storage = (
-            "postgres" if StorageSettings.from_env().is_postgres()
-            else sessions_settings.backend
+            "postgres" if StorageSettings.from_env().is_postgres() else sessions_settings.backend
         )
     except Exception:
         storage = sessions_settings.backend
@@ -236,17 +234,40 @@ def _print_help() -> None:
     print(f"  {_DIM}/clear{_RESET}        redraw the banner", file=sys.stderr)
     print(f"  {_DIM}/new{_RESET}          start a fresh session in this process", file=sys.stderr)
     print(f"  {_DIM}/session{_RESET}      show the current session id", file=sys.stderr)
-    print(f"  {_DIM}/ring{_RESET}         list recent tool calls/results with their [#n] indices", file=sys.stderr)
-    print(f"  {_DIM}/last [k]{_RESET}     print the last k captured payloads in full (default 1)", file=sys.stderr)
+    print(
+        f"  {_DIM}/ring{_RESET}         list recent tool calls/results with their [#n] indices",
+        file=sys.stderr,
+    )
+    print(
+        f"  {_DIM}/last [k]{_RESET}     print the last k captured payloads in full (default 1)",
+        file=sys.stderr,
+    )
     print(f"  {_DIM}/expand <n>{_RESET}   print the full body of the [#n] entry", file=sys.stderr)
     print(file=sys.stderr)
-    print(f"  {_DIM}/voice{_RESET}        voice mode: /voice on|off, /voice wake off, /voice tts off", file=sys.stderr)
-    print(f"  {_DIM}/subagents{_RESET}    dedicated subagents: /subagents off face-watcher", file=sys.stderr)
-    print(f"  {_DIM}/usage{_RESET}        tokens and estimated cost for this session", file=sys.stderr)
-    print(f"  {_DIM}/context{_RESET}      what is in the context window right now, by segment", file=sys.stderr)
-    print(f"  {_DIM}/skills{_RESET}       skills recalled this turn, and all available ones", file=sys.stderr)
+    print(
+        f"  {_DIM}/voice{_RESET}        voice mode: /voice on|off, /voice wake off, /voice tts off",
+        file=sys.stderr,
+    )
+    print(
+        f"  {_DIM}/subagents{_RESET}    dedicated subagents: /subagents off face-watcher",
+        file=sys.stderr,
+    )
+    print(
+        f"  {_DIM}/usage{_RESET}        tokens and estimated cost for this session", file=sys.stderr
+    )
+    print(
+        f"  {_DIM}/context{_RESET}      what is in the context window right now, by segment",
+        file=sys.stderr,
+    )
+    print(
+        f"  {_DIM}/skills{_RESET}       skills recalled this turn, and all available ones",
+        file=sys.stderr,
+    )
     print(file=sys.stderr)
-    print(f"{_DIM}Ctrl+C cancels the current turn but keeps the session open.{_RESET}", file=sys.stderr)
+    print(
+        f"{_DIM}Ctrl+C cancels the current turn but keeps the session open.{_RESET}",
+        file=sys.stderr,
+    )
     print(
         f"{_DIM}In the split view: PgUp/PgDn or the wheel scrolls, End follows "
         f"the output again, Ctrl+G hides the context panel, Ctrl+L clears the "
@@ -337,9 +358,7 @@ class _SlashCompleter(Completer):
         lowered = text.lower()
         for cmd, desc in _SLASH_COMMANDS.items():
             if cmd.startswith(lowered):
-                yield Completion(
-                    cmd, start_position=-len(text), display_meta=desc
-                )
+                yield Completion(cmd, start_position=-len(text), display_meta=desc)
 
 
 # ---------------------------------------------------------------------------
@@ -417,7 +436,9 @@ def make_ask_handler(renderer: "ChatRenderer", console: Any = None):
 
     async def _ask_handler(interrupt_value: Any) -> str:
         """Render a permission/question interrupt and read the user's reply."""
-        payload = interrupt_value if isinstance(interrupt_value, dict) else {"text": str(interrupt_value)}
+        payload = (
+            interrupt_value if isinstance(interrupt_value, dict) else {"text": str(interrupt_value)}
+        )
         itype = payload.get("type", "")
 
         from yuyutsava.cli.render import panels
@@ -463,7 +484,10 @@ def make_ask_handler(renderer: "ChatRenderer", console: Any = None):
                 token = _decision_token(raw)
                 if token is not None:
                     return token
-                print(f"  {_DIM}please answer: [y]es / [n]o / [s]ession / [p]roject{_RESET}", file=sys.stderr)
+                print(
+                    f"  {_DIM}please answer: [y]es / [n]o / [s]ession / [p]roject{_RESET}",
+                    file=sys.stderr,
+                )
             return "reject"
 
     return _ask_handler
@@ -580,9 +604,7 @@ async def _usage_rows(store: Any, thread_id: str, since: float) -> list[Any]:
     except Exception:  # noqa: BLE001 — reporting must never break the REPL
         import logging as _logging
 
-        _logging.getLogger("yuyutsava.cli.usage").debug(
-            "usage read failed", exc_info=True
-        )
+        _logging.getLogger("yuyutsava.cli.usage").debug("usage read failed", exc_info=True)
         return []
 
 
@@ -601,10 +623,7 @@ def _fmt_usage(rows: list[Any]) -> str:
     cost = sum(r.est_cost_usd for r in rows)
     cached = sum(getattr(r, "cache_read_tokens", 0) for r in rows)
     cache_note = f" (↺{cached / tin:.0%})" if cached and tin else ""
-    out = (
-        f"{calls} call{'s' if calls != 1 else ''} · in {tin:,}{cache_note} "
-        f"· out {tout:,}"
-    )
+    out = f"{calls} call{'s' if calls != 1 else ''} · in {tin:,}{cache_note} · out {tout:,}"
     # A zero estimate means the model is missing from the price table, which
     # is not the same as free — say nothing rather than "$0.00".
     return f"{out} · ~${cost:,.4f}" if cost > 0 else out
@@ -656,8 +675,7 @@ def _print_skills(layout: Any) -> None:
         )
     try:
         registry = (
-            SkillRegistry(workspace_dir=layout.skills) if layout is not None
-            else SkillRegistry()
+            SkillRegistry(workspace_dir=layout.skills) if layout is not None else SkillRegistry()
         )
         skills = registry.scan(agent="cli")
     except Exception:  # noqa: BLE001 — a listing must never break the REPL
@@ -669,8 +687,7 @@ def _print_skills(layout: Any) -> None:
         mark = "*" if s.name in recalled else " "
         print(f"   {mark} {_DIM}{s.scope:9}{_RESET} {s.name}", file=sys.stderr)
     print(
-        f"  {_DIM}the agent can also search these itself with "
-        f"sk_search_skill{_RESET}",
+        f"  {_DIM}the agent can also search these itself with sk_search_skill{_RESET}",
         file=sys.stderr,
     )
 
@@ -750,12 +767,16 @@ async def _handle_settings_command(cmd: str, runtime_settings: Any) -> bool:
             pass
         elif len(args) == 1 and (flag := _on_off(args[0])) is not None:
             await runtime_settings.set_voice(wake_enabled=flag, tts_enabled=flag)
-        elif len(args) == 2 and args[0] in ("wake", "tts") and (flag := _on_off(args[1])) is not None:
+        elif (
+            len(args) == 2 and args[0] in ("wake", "tts") and (flag := _on_off(args[1])) is not None
+        ):
             key = "wake_enabled" if args[0] == "wake" else "tts_enabled"
             await runtime_settings.set_voice(**{key: flag})
         else:
-            print(f"  {_DIM}usage: /voice [on|off] | /voice wake on|off | "
-                  f"/voice tts on|off{_RESET}", file=sys.stderr)
+            print(
+                f"  {_DIM}usage: /voice [on|off] | /voice wake on|off | /voice tts on|off{_RESET}",
+                file=sys.stderr,
+            )
             return True
         v = runtime_settings.voice()
         print(f"  {_DIM}wake word:{_RESET}    {'on' if v.wake_enabled else 'off'}", file=sys.stderr)
@@ -772,8 +793,11 @@ async def _handle_settings_command(cmd: str, runtime_settings: Any) -> bool:
             return True
         name = args[1]
         if name in UNDISABLEABLE and not flag:
-            print(f"  {_DIM}{name} can't be switched off — the master delegates "
-                  f"to it as a fallback{_RESET}", file=sys.stderr)
+            print(
+                f"  {_DIM}{name} can't be switched off — the master delegates "
+                f"to it as a fallback{_RESET}",
+                file=sys.stderr,
+            )
             return True
         await runtime_settings.set_subagent_enabled(name, flag)
     disabled = runtime_settings.subagents().disabled
@@ -784,8 +808,10 @@ async def _handle_settings_command(cmd: str, runtime_settings: Any) -> bool:
     # This REPL's own roster is just general-purpose (the domain subagents live
     # in the daemon), so say what the toggle actually affects rather than
     # implying a local change that didn't happen.
-    print(f"  {_DIM}applies to the daemon's orchestrator, chat and voice "
-          f"agents{_RESET}", file=sys.stderr)
+    print(
+        f"  {_DIM}applies to the daemon's orchestrator, chat and voice agents{_RESET}",
+        file=sys.stderr,
+    )
     return True
 
 
@@ -873,7 +899,11 @@ async def run_chat_repl(
 ) -> int:
     """Drive the interactive chat loop. Returns process exit code."""
     if not debug_plumbing:
-        debug_plumbing = os.environ.get("YUYUTSAVA_DEBUG_PLUMBING", "").lower() in ("1", "true", "yes")
+        debug_plumbing = os.environ.get("YUYUTSAVA_DEBUG_PLUMBING", "").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
     if not debug_plumbing:
         silence_plumbing_loggers()
 
@@ -916,9 +946,7 @@ async def run_chat_repl(
     if mode == "dashboard":
         from yuyutsava.cli.render.renderer import RichChatRenderer
 
-        dashboard = ChatDashboard(
-            history_path=history_path, completer=_SlashCompleter()
-        )
+        dashboard = ChatDashboard(history_path=history_path, completer=_SlashCompleter())
         console = dashboard.console
         renderer: ChatRenderer = RichChatRenderer(
             verbose=verbose, workspace=workspace, console=console, live=False
@@ -928,9 +956,7 @@ async def run_chat_repl(
         from yuyutsava.cli.render.renderer import RichChatRenderer
 
         console = make_console()
-        renderer = RichChatRenderer(
-            verbose=verbose, workspace=workspace, console=console
-        )
+        renderer = RichChatRenderer(verbose=verbose, workspace=workspace, console=console)
     else:
         renderer = ChatRenderer(verbose=verbose, workspace=workspace)
     # Only the width can surprise someone: --classic and the env flag are
@@ -1042,6 +1068,7 @@ async def run_chat_repl(
         runtime_toggles = _LazyRuntimeSettings()
         if bundle.async_host_url is not None:
             from yuyutsava.daemon.singleton import read_daemon_discovery
+
             disco = read_daemon_discovery()
             daemon_web = disco.get("web_url") if isinstance(disco, dict) else None
             if daemon_web:
@@ -1049,8 +1076,7 @@ async def run_chat_repl(
                 from yuyutsava.cli.remote_attach import CliAttachClient
 
                 cli_remote = CliRemoteHitl(
-                    CliAttachClient(base_url=_loopback_url(str(daemon_web)),
-                                    label="yuyutsava-chat")
+                    CliAttachClient(base_url=_loopback_url(str(daemon_web)), label="yuyutsava-chat")
                 )
                 await cli_remote.start()
             elif bundle.async_task_mirror is not None:
@@ -1140,14 +1166,10 @@ async def run_chat_repl(
                     # ANSI(...) wrapper: prompt_toolkit otherwise renders the
                     # raw escape bytes as visible characters (^[[36m…).
                     with patch_stdout():
-                        return await prompt_session.prompt_async(
-                            ANSI(f"\n{_CYAN}>{_RESET} ")
-                        )
+                        return await prompt_session.prompt_async(ANSI(f"\n{_CYAN}>{_RESET} "))
                 # Non-TTY: run blocking input() in a worker thread.
                 loop = asyncio.get_running_loop()
-                return await loop.run_in_executor(
-                    None, lambda: input(f"\n{_CYAN}>{_RESET} ")
-                )
+                return await loop.run_in_executor(None, lambda: input(f"\n{_CYAN}>{_RESET} "))
 
             while True:
                 # Flush any background-task events queued during the previous
@@ -1183,8 +1205,10 @@ async def run_chat_repl(
                         print(f"  {await cli_remote.answer('', tok)}", file=sys.stderr)
                         remaining = len(cli_remote.list_pending())
                         if remaining:
-                            print(f"  {_DIM}{remaining} more pending — "
-                                  f"answer with y/n/s/p{_RESET}", file=sys.stderr)
+                            print(
+                                f"  {_DIM}{remaining} more pending — answer with y/n/s/p{_RESET}",
+                                file=sys.stderr,
+                            )
                         continue
 
                 # Runtime toggles (/voice, /subagents) — async because they
@@ -1192,7 +1216,8 @@ async def run_chat_repl(
                 # Guarded so a normal message never opens the prefs store.
                 if user_input.strip().startswith(("/voice", "/subagents")):
                     if await _handle_settings_command(
-                        user_input, await runtime_toggles.get(),
+                        user_input,
+                        await runtime_toggles.get(),
                     ):
                         continue
 
@@ -1211,7 +1236,10 @@ async def run_chat_repl(
                     continue
 
                 slash_result = _handle_slash(
-                    user_input, session_id=session.id, workspace=workspace, renderer=renderer,
+                    user_input,
+                    session_id=session.id,
+                    workspace=workspace,
+                    renderer=renderer,
                 )
                 if slash_result is _SLASH_QUIT:
                     break
@@ -1293,9 +1321,7 @@ async def run_chat_repl(
                         f"{_RED}error:{_RESET} {type(exc).__name__}: {exc}",
                         file=sys.stderr,
                     )
-                    tb = "".join(
-                        traceback.format_exception(type(exc), exc, exc.__traceback__)
-                    )
+                    tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
                     print(f"{_DIM}{tb.rstrip()}{_RESET}", file=sys.stderr)
                     continue
 
@@ -1309,9 +1335,7 @@ async def run_chat_repl(
                 # is re-sent every call), and that was invisible from inside a
                 # session until now.
                 _turn_usage = _fmt_usage(
-                    await _usage_rows(
-                        bundle.usage_store, session.thread_id, turn_started
-                    )
+                    await _usage_rows(bundle.usage_store, session.thread_id, turn_started)
                 )
                 if _turn_usage:
                     print(f"{_DIM}  {_turn_usage}{_RESET}", file=sys.stderr)

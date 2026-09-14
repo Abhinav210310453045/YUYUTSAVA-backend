@@ -13,7 +13,7 @@ class SnapshotOut(BaseModel):
     per_container: dict[str, dict[str, float]] = Field(
         default_factory=dict,
         description="Per-sandbox-container cpu/mem percentages; populated "
-                    "only when YUYUTSAVA_RES_DOCKER_STATS=1",
+        "only when YUYUTSAVA_RES_DOCKER_STATS=1",
     )
 
 
@@ -31,7 +31,8 @@ class HeavySlotsOut(BaseModel):
 
 class SystemMetricsOut(BaseModel):
     current: SnapshotOut | None = Field(
-        None, description="Latest sample; null before the monitor's first tick",
+        None,
+        description="Latest sample; null before the monitor's first tick",
     )
     loaded: bool = Field(description="High CPU or low memory on the latest sample")
     disk_critical: bool = Field(description="Free disk below the heavy-task floor")
@@ -39,7 +40,8 @@ class SystemMetricsOut(BaseModel):
         description="Recent samples, oldest first (~10 minutes at 5s cadence)",
     )
     heavy_slots: HeavySlotsOut | None = Field(
-        None, description="Null when no admission controller is wired",
+        None,
+        description="Null when no admission controller is wired",
     )
     active_tasks: list[ActiveTaskOut] = Field(
         default_factory=list,

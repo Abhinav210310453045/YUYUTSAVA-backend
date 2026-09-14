@@ -22,8 +22,7 @@ MAX_RESULT_LEN = 100
 # Zero-width / bidi-control characters that can visually spoof terminal
 # output (same class of stripping deepagents-cli does), plus C0 controls.
 _DANGEROUS = re.compile(
-    "[\\u200b-\\u200f\\u202a-\\u202e\\u2066-\\u2069\\ufeff"
-    "\\x00-\\x08\\x0b\\x0c\\x0e-\\x1f\\x7f]"
+    "[\\u200b-\\u200f\\u202a-\\u202e\\u2066-\\u2069\\ufeff\\x00-\\x08\\x0b\\x0c\\x0e-\\x1f\\x7f]"
 )
 
 

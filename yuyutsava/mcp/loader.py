@@ -143,7 +143,8 @@ class MCPClientManager:
         ready_wait = asyncio.create_task(ready.wait())
         try:
             done, _ = await asyncio.wait(
-                {ready_wait, runner}, return_when=asyncio.FIRST_COMPLETED,
+                {ready_wait, runner},
+                return_when=asyncio.FIRST_COMPLETED,
             )
         finally:
             ready_wait.cancel()
@@ -185,7 +186,9 @@ class MCPClientManager:
                 if len(mcp_tools) > spec.max_tools:
                     logger.warning(
                         "MCP server %r exposed %d tools; capping at max_tools=%d",
-                        name, len(mcp_tools), spec.max_tools,
+                        name,
+                        len(mcp_tools),
+                        spec.max_tools,
                     )
                     mcp_tools = mcp_tools[: spec.max_tools]
                 adapted = [adapt(session, name, t) for t in mcp_tools]
@@ -204,7 +207,9 @@ class MCPClientManager:
             )
             logger.info(
                 "MCP server %r started — %d tool(s)%s",
-                name, len(adapted), f" (from {spec.source})" if spec.source else "",
+                name,
+                len(adapted),
+                f" (from {spec.source})" if spec.source else "",
             )
             ready.set()
 

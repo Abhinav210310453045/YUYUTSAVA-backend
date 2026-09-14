@@ -55,11 +55,11 @@ class UsageContext:
 class UsageRow:
     """One LLM call, as persisted."""
 
-    id: str                 # "usg_" + ULID
-    ts: float               # epoch seconds
+    id: str  # "usg_" + ULID
+    ts: float  # epoch seconds
     thread_id: str
     task_id: str
-    role: str               # "orchestrator" | subagent name | "cli" …
+    role: str  # "orchestrator" | subagent name | "cli" …
     model: str
     input_tokens: int
     output_tokens: int
@@ -80,7 +80,7 @@ class UsageRow:
 class UsageAggregate:
     """One ``GET /usage`` result row (grouped or the single totals row)."""
 
-    key: str                # task_id | model | YYYY-MM-DD | "all"
+    key: str  # task_id | model | YYYY-MM-DD | "all"
     calls: int
     input_tokens: int
     output_tokens: int
@@ -123,8 +123,12 @@ class UsageStore(ABC):
 
     @abstractmethod
     async def list(
-        self, *, task_id: str | None = None, thread_id: str | None = None,
-        since: float | None = None, limit: int = 200,
+        self,
+        *,
+        task_id: str | None = None,
+        thread_id: str | None = None,
+        since: float | None = None,
+        limit: int = 200,
     ) -> list[UsageRow]:
         """Raw rows newest-first (audit / tests).
 
@@ -135,14 +139,20 @@ class UsageStore(ABC):
 
     @abstractmethod
     async def aggregate(
-        self, *, since: float | None = None, group_by: GroupBy | None = None,
+        self,
+        *,
+        since: float | None = None,
+        group_by: GroupBy | None = None,
     ) -> list[UsageAggregate]:
         """Sums per group (or one ``key="all"`` row when ungrouped),
         most expensive group first."""
 
     @abstractmethod
     async def thread_totals(
-        self, *, since: float | None = None, limit: int = 50,
+        self,
+        *,
+        since: float | None = None,
+        limit: int = 50,
     ) -> list[ThreadTotals]:
         """Per-conversation totals, most recently active first.
 
@@ -176,10 +186,17 @@ def _row_to_record(row: Any) -> UsageRow:
     # (v4 normalized the old '' sentinels). Coerce back to '' so both backends
     # present the same wire contract that callers/tests have always seen.
     return UsageRow(
-        id=vals[0], ts=vals[1], thread_id=vals[2] or "", task_id=vals[3] or "",
-        role=vals[4], model=vals[5], input_tokens=vals[6],
-        output_tokens=vals[7], est_cost_usd=vals[8],
-        cache_read_tokens=vals[9] or 0, cache_creation_tokens=vals[10] or 0,
+        id=vals[0],
+        ts=vals[1],
+        thread_id=vals[2] or "",
+        task_id=vals[3] or "",
+        role=vals[4],
+        model=vals[5],
+        input_tokens=vals[6],
+        output_tokens=vals[7],
+        est_cost_usd=vals[8],
+        cache_read_tokens=vals[9] or 0,
+        cache_creation_tokens=vals[10] or 0,
     )
 
 
@@ -191,9 +208,13 @@ def _check_group_by(group_by: str | None) -> None:
 def _agg_rows(rows: list[Any]) -> list[UsageAggregate]:
     return [
         UsageAggregate(
-            key=str(r[0]), calls=int(r[1]), input_tokens=int(r[2] or 0),
-            output_tokens=int(r[3] or 0), est_cost_usd=float(r[4] or 0.0),
-            cache_read_tokens=int(r[5] or 0), cache_creation_tokens=int(r[6] or 0),
+            key=str(r[0]),
+            calls=int(r[1]),
+            input_tokens=int(r[2] or 0),
+            output_tokens=int(r[3] or 0),
+            est_cost_usd=float(r[4] or 0.0),
+            cache_read_tokens=int(r[5] or 0),
+            cache_creation_tokens=int(r[6] or 0),
         )
         for r in rows
     ]
@@ -241,12 +262,10 @@ class SqliteUsageStore(BaseSqliteStore, UsageStore):
         for col in ("cache_read_tokens", "cache_creation_tokens"):
             if col not in cols:
                 await conn.execute(
-                    f"ALTER TABLE llm_usage ADD COLUMN {col} "
-                    "INTEGER NOT NULL DEFAULT 0"
+                    f"ALTER TABLE llm_usage ADD COLUMN {col} INTEGER NOT NULL DEFAULT 0"
                 )
         await conn.execute(
-            "CREATE INDEX IF NOT EXISTS llm_usage_thread_ts_idx "
-            "ON llm_usage (thread_id, ts DESC)"
+            "CREATE INDEX IF NOT EXISTS llm_usage_thread_ts_idx ON llm_usage (thread_id, ts DESC)"
         )
         await conn.commit()
         await super()._migrate(conn)
@@ -261,24 +280,36 @@ class SqliteUsageStore(BaseSqliteStore, UsageStore):
                 "model, input_tokens, output_tokens, est_cost_usd, "
                 "cache_read_tokens, cache_creation_tokens) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (row.id, row.ts, row.thread_id, row.task_id, row.role,
-                 row.model, row.input_tokens, row.output_tokens,
-                 row.est_cost_usd, row.cache_read_tokens,
-                 row.cache_creation_tokens),
+                (
+                    row.id,
+                    row.ts,
+                    row.thread_id,
+                    row.task_id,
+                    row.role,
+                    row.model,
+                    row.input_tokens,
+                    row.output_tokens,
+                    row.est_cost_usd,
+                    row.cache_read_tokens,
+                    row.cache_creation_tokens,
+                ),
             )
 
         await self._run_write(_do)
 
     async def list(
-        self, *, task_id: str | None = None, thread_id: str | None = None,
-        since: float | None = None, limit: int = 200,
+        self,
+        *,
+        task_id: str | None = None,
+        thread_id: str | None = None,
+        since: float | None = None,
+        limit: int = 200,
     ) -> list[UsageRow]:
         await self._ensure_schema()
         where, args = _list_filters(task_id, thread_id, since, "?")
         async with self._conn() as conn:
             cur = await conn.execute(
-                f"SELECT {_SELECT_COLS} FROM llm_usage {where} "
-                "ORDER BY id DESC LIMIT ?",
+                f"SELECT {_SELECT_COLS} FROM llm_usage {where} ORDER BY id DESC LIMIT ?",
                 (*args, limit),
             )
             rows = await cur.fetchall()
@@ -286,7 +317,10 @@ class SqliteUsageStore(BaseSqliteStore, UsageStore):
         return [_row_to_record(r) for r in rows]
 
     async def aggregate(
-        self, *, since: float | None = None, group_by: GroupBy | None = None,
+        self,
+        *,
+        since: float | None = None,
+        group_by: GroupBy | None = None,
     ) -> list[UsageAggregate]:
         _check_group_by(group_by)
         await self._ensure_schema()
@@ -298,11 +332,17 @@ class SqliteUsageStore(BaseSqliteStore, UsageStore):
         return _agg_rows(rows)
 
     async def thread_totals(
-        self, *, since: float | None = None, limit: int = 50,
+        self,
+        *,
+        since: float | None = None,
+        limit: int = 50,
     ) -> list[ThreadTotals]:
         await self._ensure_schema()
         sql, args = _thread_totals_sql(
-            since, "?", "GROUP_CONCAT(DISTINCT model)", "{agg}(ts)",
+            since,
+            "?",
+            "GROUP_CONCAT(DISTINCT model)",
+            "{agg}(ts)",
         )
         async with self._conn() as conn:
             cur = await conn.execute(sql, (*args, limit))
@@ -342,29 +382,43 @@ class PgUsageStore(UsageStore):
                 "VALUES (%s, to_timestamp(%s), %s, "
                 "(SELECT task_id FROM tasks WHERE task_id = %s), "
                 "%s, %s, %s, %s, %s, %s, %s)",
-                (row.id, row.ts, thread_id, task_id, row.role,
-                 row.model, row.input_tokens, row.output_tokens,
-                 row.est_cost_usd, row.cache_read_tokens,
-                 row.cache_creation_tokens),
+                (
+                    row.id,
+                    row.ts,
+                    thread_id,
+                    task_id,
+                    row.role,
+                    row.model,
+                    row.input_tokens,
+                    row.output_tokens,
+                    row.est_cost_usd,
+                    row.cache_read_tokens,
+                    row.cache_creation_tokens,
+                ),
             )
 
     async def list(
-        self, *, task_id: str | None = None, thread_id: str | None = None,
-        since: float | None = None, limit: int = 200,
+        self,
+        *,
+        task_id: str | None = None,
+        thread_id: str | None = None,
+        since: float | None = None,
+        limit: int = 200,
     ) -> list[UsageRow]:
-        where, args = _list_filters(
-            task_id, thread_id, since, "%s", "to_timestamp(%s)")
+        where, args = _list_filters(task_id, thread_id, since, "%s", "to_timestamp(%s)")
         async with self._pool.connection() as conn:
             cur = await conn.execute(
-                f"SELECT {_PG_SELECT_COLS} FROM llm_usage {where} "
-                "ORDER BY id DESC LIMIT %s",
+                f"SELECT {_PG_SELECT_COLS} FROM llm_usage {where} ORDER BY id DESC LIMIT %s",
                 (*args, limit),
             )
             rows = await cur.fetchall()
         return [_row_to_record(r) for r in rows]
 
     async def aggregate(
-        self, *, since: float | None = None, group_by: GroupBy | None = None,
+        self,
+        *,
+        since: float | None = None,
+        group_by: GroupBy | None = None,
     ) -> list[UsageAggregate]:
         _check_group_by(group_by)
         sql, args = _aggregate_sql(group_by, since, self._DAY_EXPR, "%s", "to_timestamp(%s)")
@@ -374,11 +428,17 @@ class PgUsageStore(UsageStore):
         return _agg_rows(rows)
 
     async def thread_totals(
-        self, *, since: float | None = None, limit: int = 50,
+        self,
+        *,
+        since: float | None = None,
+        limit: int = 50,
     ) -> list[ThreadTotals]:
         sql, args = _thread_totals_sql(
-            since, "%s", "string_agg(DISTINCT model, \',\')",
-            "extract(epoch FROM {agg}(ts))::float8", "to_timestamp(%s)",
+            since,
+            "%s",
+            "string_agg(DISTINCT model, ',')",
+            "extract(epoch FROM {agg}(ts))::float8",
+            "to_timestamp(%s)",
         )
         async with self._pool.connection() as conn:
             cur = await conn.execute(sql, (*args, limit))
@@ -387,7 +447,10 @@ class PgUsageStore(UsageStore):
 
 
 def _list_filters(
-    task_id: str | None, thread_id: str | None, since: float | None, ph: str,
+    task_id: str | None,
+    thread_id: str | None,
+    since: float | None,
+    ph: str,
     ts_ph: str | None = None,
 ) -> tuple[str, list[Any]]:
     """``ts_ph`` is the placeholder for comparing against ``ts``.
@@ -412,7 +475,10 @@ def _list_filters(
 
 
 def _thread_totals_sql(
-    since: float | None, ph: str, model_agg: str, ts_expr: str,
+    since: float | None,
+    ph: str,
+    model_agg: str,
+    ts_expr: str,
     ts_ph: str | None = None,
 ) -> tuple[str, tuple[Any, ...]]:
     """One statement for both backends; only the dialect bits are arguments.
@@ -436,21 +502,28 @@ def _thread_totals_sql(
 def _thread_rows(rows: list[Any]) -> list[ThreadTotals]:
     out: list[ThreadTotals] = []
     for r in rows:
-        models = tuple(
-            sorted({m.strip() for m in str(r[8] or "").split(",") if m.strip()})
+        models = tuple(sorted({m.strip() for m in str(r[8] or "").split(",") if m.strip()}))
+        out.append(
+            ThreadTotals(
+                thread_id=str(r[0] or ""),
+                calls=int(r[1]),
+                input_tokens=int(r[2] or 0),
+                output_tokens=int(r[3] or 0),
+                cache_read_tokens=int(r[4] or 0),
+                est_cost_usd=float(r[5] or 0.0),
+                first_ts=float(r[6] or 0.0),
+                last_ts=float(r[7] or 0.0),
+                models=models,
+            )
         )
-        out.append(ThreadTotals(
-            thread_id=str(r[0] or ""), calls=int(r[1]),
-            input_tokens=int(r[2] or 0), output_tokens=int(r[3] or 0),
-            cache_read_tokens=int(r[4] or 0), est_cost_usd=float(r[5] or 0.0),
-            first_ts=float(r[6] or 0.0), last_ts=float(r[7] or 0.0),
-            models=models,
-        ))
     return out
 
 
 def _aggregate_sql(
-    group_by: GroupBy | None, since: float | None, day_expr: str, ph: str,
+    group_by: GroupBy | None,
+    since: float | None,
+    day_expr: str,
+    ph: str,
     ts_ph: str | None = None,
 ) -> tuple[str, tuple[Any, ...]]:
     """One GROUP BY statement shared by both backends (placeholders differ).
@@ -461,8 +534,10 @@ def _aggregate_sql(
     key_expr = {
         # COALESCE keeps task-less rows (NULL task_id on Postgres) grouping
         # under '' exactly as the SQLite twin (NOT NULL DEFAULT '') always has.
-        "task": "COALESCE(task_id, '')", "model": "model",
-        "day": day_expr, None: "'all'",
+        "task": "COALESCE(task_id, '')",
+        "model": "model",
+        "day": day_expr,
+        None: "'all'",
         # Group by conversation rather than orchestrator task.
         #
         # ``task_id`` is FK-constrained to ``tasks`` on Postgres, so a tag that

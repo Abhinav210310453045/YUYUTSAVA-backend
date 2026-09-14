@@ -31,7 +31,7 @@ STRANGER_CHAT = 999
 
 class FakeTelegramClient:
     def __init__(self) -> None:
-        self.sent: list[dict] = []        # sendMessage calls
+        self.sent: list[dict] = []  # sendMessage calls
         self.edited: list[dict] = []
         self.answered: list[tuple[str, str]] = []
         self.commands: list[dict] | None = None
@@ -51,14 +51,20 @@ class FakeTelegramClient:
 
     async def send_message(self, chat_id, text, *, reply_markup=None, parse_mode="HTML"):
         self._next_message_id += 1
-        self.sent.append({
-            "chat_id": chat_id, "text": text,
-            "reply_markup": reply_markup, "parse_mode": parse_mode,
-            "message_id": self._next_message_id,
-        })
+        self.sent.append(
+            {
+                "chat_id": chat_id,
+                "text": text,
+                "reply_markup": reply_markup,
+                "parse_mode": parse_mode,
+                "message_id": self._next_message_id,
+            }
+        )
         return {"message_id": self._next_message_id}
 
-    async def edit_message_text(self, chat_id, message_id, text, *, reply_markup=None, parse_mode="HTML"):
+    async def edit_message_text(
+        self, chat_id, message_id, text, *, reply_markup=None, parse_mode="HTML"
+    ):
         self.edited.append({"chat_id": chat_id, "message_id": message_id, "text": text})
         return {}
 
@@ -123,15 +129,21 @@ def make_stack(records=()):
         status_provider=lambda: "daemon: ok",
     )
     decisions.add_waiters(
-        proposals=sink.pending_proposals, asks=sink.pending_asks,
+        proposals=sink.pending_proposals,
+        asks=sink.pending_asks,
     )
     plugin = TelegramChannelPlugin(
-        client, (ALLOWED_CHAT,), poll_timeout_sec=1, debounce_sec=0.02,
+        client,
+        (ALLOWED_CHAT,),
+        poll_timeout_sec=1,
+        debounce_sec=0.02,
     )
     return plugin, client, sink, submission, prefs
 
 
-def text_update(chat_id: int, text: str, *, update_id: int = 1, reply_to: int | None = None) -> dict:
+def text_update(
+    chat_id: int, text: str, *, update_id: int = 1, reply_to: int | None = None
+) -> dict:
     msg: dict = {"chat": {"id": chat_id}, "text": text, "message_id": update_id + 500}
     if reply_to is not None:
         msg["reply_to_message"] = {"message_id": reply_to}
@@ -167,9 +179,17 @@ class OutboundTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_tokens_and_http_logs_suppressed(self) -> None:
         await self.plugin.post_event(ChannelEvent(payload=TokenPayload(text="tok")))
-        await self.plugin.post_event(ChannelEvent(payload=HttpLogPayload(
-            method="GET", path="/x", status=200, duration_ms=1, ts=0.0,
-        )))
+        await self.plugin.post_event(
+            ChannelEvent(
+                payload=HttpLogPayload(
+                    method="GET",
+                    path="/x",
+                    status=200,
+                    duration_ms=1,
+                    ts=0.0,
+                )
+            )
+        )
         await asyncio.sleep(0.1)
         self.assertEqual(self.client.sent, [])
 
@@ -183,9 +203,14 @@ class OutboundTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("line two", self.client.sent[0]["text"])
 
     async def test_completion_flushes_immediately(self) -> None:
-        await self.plugin.post_event(ChannelEvent(payload=TimelinePayload(
-            line="orchestrator: all done", cls="event-action",
-        )))
+        await self.plugin.post_event(
+            ChannelEvent(
+                payload=TimelinePayload(
+                    line="orchestrator: all done",
+                    cls="event-action",
+                )
+            )
+        )
         await settle(lambda: len(self.client.sent) >= 1, timeout=0.5)
         self.assertIn("orchestrator: all done", self.client.sent[0]["text"])
 
@@ -200,9 +225,13 @@ class ProposalAskTests(unittest.IsolatedAsyncioTestCase):
 
     def _proposal(self, *, expiry_sec: int = 30) -> Proposal:
         return Proposal.new(
-            event_id="ev1", topic="user.task.submitted", summary="do a thing",
-            proposed="do a thing carefully", subagent="general-purpose",
-            urgency=2, expiry_sec=expiry_sec,
+            event_id="ev1",
+            topic="user.task.submitted",
+            summary="do a thing",
+            proposed="do a thing carefully",
+            subagent="general-purpose",
+            urgency=2,
+            expiry_sec=expiry_sec,
         )
 
     async def test_proposal_approved_via_button(self) -> None:
@@ -229,12 +258,16 @@ class ProposalAskTests(unittest.IsolatedAsyncioTestCase):
         self.client.feed(callback_update(ALLOWED_CHAT, f"p:{p.proposal_id}:m"))
         await settle(lambda: any("modified instruction" in m["text"] for m in self.client.sent))
         prompt_id = next(
-            m["message_id"] for m in self.client.sent
-            if "modified instruction" in m["text"]
+            m["message_id"] for m in self.client.sent if "modified instruction" in m["text"]
         )
-        self.client.feed(text_update(
-            ALLOWED_CHAT, "actually do Z", update_id=2, reply_to=prompt_id,
-        ))
+        self.client.feed(
+            text_update(
+                ALLOWED_CHAT,
+                "actually do Z",
+                update_id=2,
+                reply_to=prompt_id,
+            )
+        )
         decision = await asyncio.wait_for(task, timeout=2.0)
         self.assertEqual(decision.decision, "modify")
         self.assertEqual(decision.edited_instruction, "actually do Z")
@@ -246,8 +279,11 @@ class ProposalAskTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_ask_with_options_keyboard(self) -> None:
         ask = AskPrompt(
-            ask_id="ask1", title="Permission: WRITE", body="write ~/x?",
-            options=["approve", "reject"], interrupt_value={},
+            ask_id="ask1",
+            title="Permission: WRITE",
+            body="write ~/x?",
+            options=["approve", "reject"],
+            interrupt_value={},
         )
         task = asyncio.create_task(self.plugin.post_ask(ask))
         await settle(lambda: len(self.client.sent) >= 1)
@@ -256,16 +292,24 @@ class ProposalAskTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_ask_free_text_via_force_reply(self) -> None:
         ask = AskPrompt(
-            ask_id="ask2", title="Question", body="which dir?",
-            options=[], interrupt_value={},
+            ask_id="ask2",
+            title="Question",
+            body="which dir?",
+            options=[],
+            interrupt_value={},
         )
         task = asyncio.create_task(self.plugin.post_ask(ask))
         await settle(lambda: len(self.client.sent) >= 1)
         sent = self.client.sent[0]
         self.assertEqual(sent["reply_markup"], {"force_reply": True})
-        self.client.feed(text_update(
-            ALLOWED_CHAT, "~/Documents", update_id=3, reply_to=sent["message_id"],
-        ))
+        self.client.feed(
+            text_update(
+                ALLOWED_CHAT,
+                "~/Documents",
+                update_id=3,
+                reply_to=sent["message_id"],
+            )
+        )
         self.assertEqual(await asyncio.wait_for(task, timeout=2.0), "~/Documents")
 
 
@@ -281,7 +325,8 @@ class InboundTests(unittest.IsolatedAsyncioTestCase):
         self.client.feed(text_update(ALLOWED_CHAT, "summarize ~/Downloads", update_id=7))
         await settle(lambda: self.submission.submitted)
         self.assertEqual(
-            self.submission.submitted, [("summarize ~/Downloads", "telegram")],
+            self.submission.submitted,
+            [("summarize ~/Downloads", "telegram")],
         )
         await settle(lambda: any("task submitted" in m["text"] for m in self.client.sent))
 
@@ -298,8 +343,9 @@ class InboundTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_tasks_command_empty(self) -> None:
         self.client.feed(text_update(ALLOWED_CHAT, "/tasks", update_id=10))
-        await settle(lambda: any("No queued or running tasks" in m["text"]
-                                 for m in self.client.sent))
+        await settle(
+            lambda: any("No queued or running tasks" in m["text"] for m in self.client.sent)
+        )
 
     async def test_offset_persisted_and_resumed(self) -> None:
         self.client.feed(text_update(ALLOWED_CHAT, "/status", update_id=41))
@@ -309,7 +355,10 @@ class InboundTests(unittest.IsolatedAsyncioTestCase):
         # A fresh plugin instance resumes from the persisted offset.
         client2 = FakeTelegramClient()
         plugin2 = TelegramChannelPlugin(
-            client2, (ALLOWED_CHAT,), poll_timeout_sec=1, debounce_sec=0.02,
+            client2,
+            (ALLOWED_CHAT,),
+            poll_timeout_sec=1,
+            debounce_sec=0.02,
         )
         await plugin2.start(self.sink)
         self.assertEqual(plugin2._offset, 42)
@@ -320,6 +369,7 @@ class InboundTests(unittest.IsolatedAsyncioTestCase):
 class FromConfigTests(unittest.TestCase):
     def test_missing_token_raises(self) -> None:
         import os
+
         old_tok = os.environ.pop("YUYUTSAVA_TELEGRAM_BOT_TOKEN", None)
         old_ids = os.environ.pop("YUYUTSAVA_TELEGRAM_CHAT_IDS", None)
         try:

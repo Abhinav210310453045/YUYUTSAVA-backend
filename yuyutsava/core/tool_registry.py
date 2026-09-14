@@ -72,11 +72,13 @@ class ToolRegistry:
                 schema = t.args_schema.model_json_schema() if t.args_schema else {}
             except Exception:
                 schema = {}
-            schemas.append({
-                "name": t.name,
-                "description": (t.description or "").strip(),
-                "parameters": schema,
-            })
+            schemas.append(
+                {
+                    "name": t.name,
+                    "description": (t.description or "").strip(),
+                    "parameters": schema,
+                }
+            )
         return json.dumps(schemas, indent=2)
 
     def to_catalog(self) -> KeywordCatalogProvider:

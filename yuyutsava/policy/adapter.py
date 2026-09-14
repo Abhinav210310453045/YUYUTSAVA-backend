@@ -180,7 +180,8 @@ class LangChainPolicyAdapter(AgentMiddleware):  # type: ignore[misc]
 
         if call.suppressed_tools:
             overrides["tools"] = [
-                t for t in (getattr(request, "tools", None) or [])
+                t
+                for t in (getattr(request, "tools", None) or [])
                 if _tool_name(t) not in call.suppressed_tools
             ]
 
@@ -223,8 +224,11 @@ class LangChainPolicyAdapter(AgentMiddleware):  # type: ignore[misc]
 
     def _to_turn(self, state: Any) -> Turn:
         """Translate agent state into a ``Turn``, resolving usage once."""
-        messages = state.get("messages", []) if isinstance(state, dict) else (
-            getattr(state, "messages", None) or [])
+        messages = (
+            state.get("messages", [])
+            if isinstance(state, dict)
+            else (getattr(state, "messages", None) or [])
+        )
         return Turn(
             messages=tuple(messages),
             thread_id=_current_thread_id(),
@@ -238,9 +242,7 @@ class LangChainPolicyAdapter(AgentMiddleware):  # type: ignore[misc]
         if not policies:
             return None
         turn = self._to_turn(state)
-        directives = [d for d in
-                      [await getattr(p, phase)(turn) for p in policies]
-                      if d is not None]
+        directives = [d for d in [await getattr(p, phase)(turn) for p in policies] if d is not None]
         if not directives:
             return None
         from langchain_core.messages import SystemMessage
@@ -299,7 +301,9 @@ class LangChainPolicyAdapter(AgentMiddleware):  # type: ignore[misc]
             if isinstance(decision, Denied):
                 logger.debug(
                     "policy %s refused %s: %s",
-                    policy.name, call.name, decision.message[:120],
+                    policy.name,
+                    call.name,
+                    decision.message[:120],
                 )
                 return self._denial(call, decision)
             raise TypeError(
@@ -393,8 +397,7 @@ def _latest_usage(messages: Any) -> Usage | None:
     """
     from langchain_core.messages import AIMessage
 
-    msg = next((m for m in reversed(list(messages or [])) if isinstance(m, AIMessage)),
-               None)
+    msg = next((m for m in reversed(list(messages or [])) if isinstance(m, AIMessage)), None)
     if msg is None:
         return None
     metadata = getattr(msg, "usage_metadata", None)
@@ -402,8 +405,7 @@ def _latest_usage(messages: Any) -> Usage | None:
         return None
 
     def field(name: str) -> int:
-        v = (metadata.get(name) if isinstance(metadata, dict)
-             else getattr(metadata, name, 0))
+        v = metadata.get(name) if isinstance(metadata, dict) else getattr(metadata, name, 0)
         return int(v or 0)
 
     def detail(group: str, name: str) -> int:
@@ -413,12 +415,12 @@ def _latest_usage(messages: Any) -> Usage | None:
         providers that report no breakdown — so every step is optional and a
         missing group reads as zero rather than raising.
         """
-        outer = (metadata.get(group) if isinstance(metadata, dict)
-                 else getattr(metadata, group, None))
+        outer = (
+            metadata.get(group) if isinstance(metadata, dict) else getattr(metadata, group, None)
+        )
         if not outer:
             return 0
-        v = (outer.get(name) if isinstance(outer, dict)
-             else getattr(outer, name, 0))
+        v = outer.get(name) if isinstance(outer, dict) else getattr(outer, name, 0)
         try:
             return int(v or 0)
         except (TypeError, ValueError):
@@ -450,8 +452,10 @@ def _latest_human_text(messages: Any) -> str:
         return content.strip()
     if isinstance(content, list):
         parts = [
-            b if isinstance(b, str)
-            else b.get("text", "") if isinstance(b, dict) and b.get("type") == "text"
+            b
+            if isinstance(b, str)
+            else b.get("text", "")
+            if isinstance(b, dict) and b.get("type") == "text"
             else ""
             for b in content
         ]

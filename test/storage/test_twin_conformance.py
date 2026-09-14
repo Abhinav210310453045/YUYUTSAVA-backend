@@ -52,8 +52,7 @@ EVENT_TWINS: tuple[tuple[str, str, str], ...] = (
 #: call site. The declared-capability form is better — it is greppable, typed,
 #: and cannot be forgotten at a new call site — and ``supports_recall`` shows the
 #: codebase already knows the pattern.
-KNOWN_ASYMMETRIES: dict[tuple[str, str], str] = {
-}
+KNOWN_ASYMMETRIES: dict[tuple[str, str], str] = {}
 
 
 def mutating_statements(src: str) -> list[str]:
@@ -88,8 +87,11 @@ def mutating_statements(src: str) -> list[str]:
             sql = arg.value
         elif isinstance(arg, ast.JoinedStr):
             head = next(
-                (v.value for v in arg.values
-                 if isinstance(v, ast.Constant) and isinstance(v.value, str)),
+                (
+                    v.value
+                    for v in arg.values
+                    if isinstance(v, ast.Constant) and isinstance(v.value, str)
+                ),
                 "",
             )
             sql = head
@@ -111,14 +113,18 @@ def _all_twins() -> list[tuple[str, type, type, type]]:
     """(label, interface, sqlite_cls, pg_cls) for every domain."""
     out = []
     for mod, iface, sq, pg in TWINS:
-        out.append((f"{mod.split('.')[-1]}:{iface}", _load(mod, iface), _load(mod, sq), _load(mod, pg)))
+        out.append(
+            (f"{mod.split('.')[-1]}:{iface}", _load(mod, iface), _load(mod, sq), _load(mod, pg))
+        )
     for iface, sq, pg in EVENT_TWINS:
-        out.append((
-            f"events:{iface}",
-            _load("yuyutsava.storage.events.abc", iface),
-            _load("yuyutsava.storage.events.sqlite_backend", sq),
-            _load("yuyutsava.storage.events.pg_stores", pg),
-        ))
+        out.append(
+            (
+                f"events:{iface}",
+                _load("yuyutsava.storage.events.abc", iface),
+                _load("yuyutsava.storage.events.sqlite_backend", sq),
+                _load("yuyutsava.storage.events.pg_stores", pg),
+            )
+        )
     return out
 
 
@@ -148,7 +154,8 @@ class TwinStructuralConformance(unittest.TestCase):
                 with self.subTest(domain=label, impl=impl.__name__):
                     missing = set(getattr(impl, "__abstractmethods__", ()) or ())
                     self.assertEqual(
-                        missing, set(),
+                        missing,
+                        set(),
                         f"{impl.__name__} does not implement {sorted(missing)} from "
                         f"{iface.__name__}; instantiating it raises TypeError.",
                     )
@@ -171,7 +178,8 @@ class TwinStructuralConformance(unittest.TestCase):
             )
             with self.subTest(domain=label):
                 self.assertEqual(
-                    (only_sqlite, only_pg), ([], []),
+                    (only_sqlite, only_pg),
+                    ([], []),
                     f"{label}: UNDECLARED twin asymmetry.\n"
                     f"  only on {sq.__name__}: {only_sqlite}\n"
                     f"  only on {pg.__name__}: {only_pg}\n"
@@ -194,7 +202,8 @@ class TwinStructuralConformance(unittest.TestCase):
                 sq, pg = twins[label]
                 on_sq, on_pg = hasattr(sq, method), hasattr(pg, method)
                 self.assertNotEqual(
-                    on_sq, on_pg,
+                    on_sq,
+                    on_pg,
                     f"{label}.{method} is no longer asymmetric (sqlite={on_sq}, "
                     f"pg={on_pg}). Remove it from KNOWN_ASYMMETRIES — a stale entry "
                     f"hides real drift.\nRecorded rationale: {rationale}",
@@ -206,13 +215,20 @@ class TwinStructuralConformance(unittest.TestCase):
             sq_m, pg_m = _public_async_methods(sq), _public_async_methods(pg)
             for name in sorted(set(sq_m) & set(pg_m)):
                 s, p = sq_m[name], pg_m[name]
-                sp = [(n, v.kind, v.default is not inspect.Parameter.empty)
-                      for n, v in s.parameters.items() if n != "self"]
-                pp = [(n, v.kind, v.default is not inspect.Parameter.empty)
-                      for n, v in p.parameters.items() if n != "self"]
+                sp = [
+                    (n, v.kind, v.default is not inspect.Parameter.empty)
+                    for n, v in s.parameters.items()
+                    if n != "self"
+                ]
+                pp = [
+                    (n, v.kind, v.default is not inspect.Parameter.empty)
+                    for n, v in p.parameters.items()
+                    if n != "self"
+                ]
                 with self.subTest(domain=label, method=name):
                     self.assertEqual(
-                        sp, pp,
+                        sp,
+                        pp,
                         f"{label}.{name} has different signatures per backend:\n"
                         f"  {sq.__name__}: {s}\n  {pg.__name__}: {p}",
                     )
@@ -221,14 +237,16 @@ class TwinStructuralConformance(unittest.TestCase):
         """Every abstract method appears on both concrete twins."""
         for label, iface, sq, pg in _all_twins():
             declared = {
-                n for n, m in inspect.getmembers(iface, predicate=inspect.isfunction)
+                n
+                for n, m in inspect.getmembers(iface, predicate=inspect.isfunction)
                 if not n.startswith("_") and getattr(m, "__isabstractmethod__", False)
             }
             for impl in (sq, pg):
                 with self.subTest(domain=label, impl=impl.__name__):
                     missing = sorted(d for d in declared if not hasattr(impl, d))
                     self.assertEqual(
-                        missing, [],
+                        missing,
+                        [],
                         f"{impl.__name__} is missing interface methods {missing}",
                     )
 
@@ -273,13 +291,14 @@ class TransactionSemantics(unittest.TestCase):
                 offenders.append(f"{label}.{name} {stmts}")
 
         self.assertEqual(
-            offenders, [],
+            offenders,
+            [],
             "Postgres methods issuing multiple mutating statements through the "
             "AUTOCOMMIT `connection()` helper — each statement commits "
             "independently, so a mid-method failure leaves a partial write:\n  "
             + "\n  ".join(offenders)
             + "\n\nFix: use `self._pool.transaction()` instead of "
-              "`self._pool.connection()` (storage/pg/pool.py:126).",
+            "`self._pool.connection()` (storage/pg/pool.py:126).",
         )
 
     def test_multi_statement_sqlite_writes_are_transactional(self) -> None:
@@ -305,12 +324,13 @@ class TransactionSemantics(unittest.TestCase):
                     offenders.append(f"{label}.{name} {stmts}")
 
         self.assertEqual(
-            offenders, [],
+            offenders,
+            [],
             "SQLite methods issuing multiple mutating statements outside a "
             "transaction — each commits independently:\n  "
             + "\n  ".join(offenders)
             + "\n\nFix: wrap in `BaseSqliteStore._run_write` or "
-              "`SqliteEventsBackend.transaction()`.",
+            "`SqliteEventsBackend.transaction()`.",
         )
 
 
@@ -337,7 +357,8 @@ class TwinInventory(unittest.TestCase):
               exists to remove.
         """
         self.assertEqual(
-            len(_all_twins()), 1,
+            len(_all_twins()),
+            1,
             "The number of SQLite/Postgres twin pairs changed. If a domain was "
             "collapsed onto the dialect adapter (ADR-002), lower this baseline. "
             "If a new hand-written twin pair was added, reconsider — that is the "

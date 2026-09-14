@@ -111,13 +111,17 @@ def _selected(module: str, only: list[str]) -> bool:
 
 def compare(results: list[Result], baseline_path: Path, only: list[str]) -> int:
     baseline = {
-        r["module"]: r for r in json.loads(baseline_path.read_text()) if _selected(r["module"], only)
+        r["module"]: r
+        for r in json.loads(baseline_path.read_text())
+        if _selected(r["module"], only)
     }
     current = {r.module: r for r in results}
 
     broken = [m for m, r in current.items() if not r.ok and baseline.get(m, {}).get("ok", False)]
     new_failing = [m for m, r in current.items() if not r.ok and m not in baseline]
-    still_failing = [m for m, r in current.items() if not r.ok and m in baseline and not baseline[m]["ok"]]
+    still_failing = [
+        m for m, r in current.items() if not r.ok and m in baseline and not baseline[m]["ok"]
+    ]
     fixed = [m for m, r in current.items() if r.ok and m in baseline and not baseline[m]["ok"]]
     removed = sorted(set(baseline) - set(current))
 
@@ -143,13 +147,26 @@ def compare(results: list[Result], baseline_path: Path, only: list[str]) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--only", action="append", default=[], metavar="PREFIX",
-                        help="restrict to a dotted package prefix (repeatable)")
-    parser.add_argument("--save", type=Path, metavar="PATH", help="write results as a JSON baseline")
-    parser.add_argument("--compare", type=Path, metavar="PATH", help="fail only on regressions against a baseline")
-    parser.add_argument("--timeout", type=float, default=120.0, help="seconds per module (default 120)")
+    parser.add_argument(
+        "--only",
+        action="append",
+        default=[],
+        metavar="PREFIX",
+        help="restrict to a dotted package prefix (repeatable)",
+    )
+    parser.add_argument(
+        "--save", type=Path, metavar="PATH", help="write results as a JSON baseline"
+    )
+    parser.add_argument(
+        "--compare", type=Path, metavar="PATH", help="fail only on regressions against a baseline"
+    )
+    parser.add_argument(
+        "--timeout", type=float, default=120.0, help="seconds per module (default 120)"
+    )
     parser.add_argument("--workers", type=int, default=os.cpu_count() or 4)
-    parser.add_argument("--slowest", type=int, default=0, metavar="N", help="also list the N slowest imports")
+    parser.add_argument(
+        "--slowest", type=int, default=0, metavar="N", help="also list the N slowest imports"
+    )
     args = parser.parse_args()
 
     modules = discover_modules(args.only)
@@ -158,7 +175,9 @@ def main() -> int:
     elapsed = time.perf_counter() - started
 
     failures = [r for r in results if not r.ok]
-    print(f"{len(results)} modules imported individually in {elapsed:.0f}s — {len(failures)} failed.")
+    print(
+        f"{len(results)} modules imported individually in {elapsed:.0f}s — {len(failures)} failed."
+    )
 
     if args.slowest:
         print(f"\nslowest {args.slowest}:")

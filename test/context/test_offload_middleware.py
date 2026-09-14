@@ -25,7 +25,9 @@ from langchain.agents.middleware.types import ToolCallRequest
 from langchain_core.messages import ToolMessage
 
 from yuyutsava.context.artifacts_unified import (
-    ArtifactSchema, UnifiedArtifactStore, sqlite_artifact_store,
+    ArtifactSchema,
+    UnifiedArtifactStore,
+    sqlite_artifact_store,
 )
 from yuyutsava.storage.dialect import SqliteDialect
 from yuyutsava.context.config import ContextSettings
@@ -54,8 +56,7 @@ class OffloadMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.store = sqlite_artifact_store(Path(self._tmp.name) / "state.db")
         self.settings = ContextSettings(offload_threshold_chars=20_000)
-        self.mw = LangChainPolicyAdapter(
-            [ToolResultOffloadPolicy(self.store, self.settings)])
+        self.mw = LangChainPolicyAdapter([ToolResultOffloadPolicy(self.store, self.settings)])
 
     async def asyncTearDown(self) -> None:
         self._tmp.cleanup()
@@ -64,9 +65,7 @@ class OffloadMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         content = "HEAD-" + ("z" * 150_000) + "-TAIL"
         original = ToolMessage(content=content, tool_call_id="tc-1", name="ws_search")
 
-        result = await self.mw.awrap_tool_call(
-            _request("ws_search"), _handler_returning(original)
-        )
+        result = await self.mw.awrap_tool_call(_request("ws_search"), _handler_returning(original))
 
         self.assertIsInstance(result, ToolMessage)
         self.assertLess(len(result.content), 3_000)
@@ -95,9 +94,7 @@ class OffloadMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         path with no coverage at all.
         """
         original = ToolMessage(content="tiny", tool_call_id="tc-1", name="db_query")
-        result = await self.mw.awrap_tool_call(
-            _request("db_query"), _handler_returning(original)
-        )
+        result = await self.mw.awrap_tool_call(_request("db_query"), _handler_returning(original))
         self.assertIs(result, original)
 
     async def test_small_always_offload_prefix_is_offloaded(self) -> None:
@@ -107,9 +104,7 @@ class OffloadMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         above was accidentally contradicting.
         """
         original = ToolMessage(content="tiny", tool_call_id="tc-1", name="ws_search")
-        result = await self.mw.awrap_tool_call(
-            _request("ws_search"), _handler_returning(original)
-        )
+        result = await self.mw.awrap_tool_call(_request("ws_search"), _handler_returning(original))
         self.assertIsNot(result, original)
         digest = json.loads(result.content)
         self.assertTrue(digest["offloaded"])
@@ -125,9 +120,7 @@ class OffloadMiddlewareTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_non_tool_message_passthrough(self) -> None:
         sentinel = object()
-        result = await self.mw.awrap_tool_call(
-            _request("ws_search"), _handler_returning(sentinel)
-        )
+        result = await self.mw.awrap_tool_call(_request("ws_search"), _handler_returning(sentinel))
         self.assertIs(result, sentinel)
 
     async def test_store_failure_passes_original_through(self) -> None:
@@ -138,16 +131,16 @@ class OffloadMiddlewareTests(unittest.IsolatedAsyncioTestCase):
             async def put(self, *a, **k):  # noqa: ANN002, ANN003
                 raise RuntimeError("db down")
 
-        mw = LangChainPolicyAdapter([ToolResultOffloadPolicy(
-            _BrokenStore(
-                SqliteDialect(ArtifactSchema(Path(self._tmp.name) / "x.db"))
-            ),
-            self.settings,
-        )])
-        original = ToolMessage(content="q" * 50_000, tool_call_id="tc-1", name="ws_search")
-        result = await mw.awrap_tool_call(
-            _request("ws_search"), _handler_returning(original)
+        mw = LangChainPolicyAdapter(
+            [
+                ToolResultOffloadPolicy(
+                    _BrokenStore(SqliteDialect(ArtifactSchema(Path(self._tmp.name) / "x.db"))),
+                    self.settings,
+                )
+            ]
         )
+        original = ToolMessage(content="q" * 50_000, tool_call_id="tc-1", name="ws_search")
+        result = await mw.awrap_tool_call(_request("ws_search"), _handler_returning(original))
         self.assertIs(result, original)
 
 

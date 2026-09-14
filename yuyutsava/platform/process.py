@@ -135,9 +135,7 @@ def spawn_detached(
         "stderr": stderr,
     }
     if _IS_WINDOWS:
-        kwargs["creationflags"] = (
-            subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
-        )
+        kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
     else:
         kwargs["start_new_session"] = True
     return subprocess.Popen(cmd, **kwargs)
@@ -167,6 +165,7 @@ async def run_capture(
     cwd_s = str(cwd) if cwd is not None else None
 
     if _IS_WINDOWS:
+
         def _run() -> tuple[bytes, bytes, int]:
             p = subprocess.run(  # noqa: S603 — argv is explicit, no shell
                 list(argv),

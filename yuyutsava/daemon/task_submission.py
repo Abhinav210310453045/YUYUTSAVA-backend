@@ -98,9 +98,15 @@ class TaskSubmissionService:
         now = time.time()
 
         await self._store.put_event_payload(
-            event_id=event_id, topic=SUBMITTED_TOPIC, ts=now,
-            payload={"instruction": instruction, "origin": origin,
-                     "task_id": task_id, "mode": "direct"},
+            event_id=event_id,
+            topic=SUBMITTED_TOPIC,
+            ts=now,
+            payload={
+                "instruction": instruction,
+                "origin": origin,
+                "task_id": task_id,
+                "mode": "direct",
+            },
         )
         proposal = Proposal.new(
             event_id=event_id,
@@ -115,23 +121,33 @@ class TaskSubmissionService:
         approved = dataclasses.replace(proposal, status="approved")
         await self._store.put_proposal(approved)
         await self._store.put_decision(
-            proposal_id=approved.proposal_id, event_id=event_id,
+            proposal_id=approved.proposal_id,
+            event_id=event_id,
             outcome="user_submitted",
             action_summary=f"direct task via {origin}: {instruction[:160]}",
             session_id=session_hint,
         )
 
         await self._registry.create(
-            task_id=task_id, origin=origin, instruction=instruction,
-            session_hint=session_hint, complexity=complexity,
+            task_id=task_id,
+            origin=origin,
+            instruction=instruction,
+            session_hint=session_hint,
+            complexity=complexity,
         )
-        await self._queue.put(OrchestratorTask(
-            proposal_id=approved.proposal_id, event_id=event_id,
-            topic=SUBMITTED_TOPIC, summary=instruction[:120],
-            instruction=instruction, subagent_hint=_DIRECT_SUBAGENT_HINT,
-            urgency=_DIRECT_URGENCY, task_id=task_id,
-            complexity=complexity if complexity is not None else 3,
-        ))
+        await self._queue.put(
+            OrchestratorTask(
+                proposal_id=approved.proposal_id,
+                event_id=event_id,
+                topic=SUBMITTED_TOPIC,
+                summary=instruction[:120],
+                instruction=instruction,
+                subagent_hint=_DIRECT_SUBAGENT_HINT,
+                urgency=_DIRECT_URGENCY,
+                task_id=task_id,
+                complexity=complexity if complexity is not None else 3,
+            )
+        )
         logger.info("task submitted (direct, %s): %s", origin, task_id)
         return task_id
 
@@ -152,24 +168,34 @@ class TaskSubmissionService:
         now = time.time()
 
         await self._store.put_event_payload(
-            event_id=event_id, topic=SUBMITTED_TOPIC, ts=now,
-            payload={"instruction": instruction, "origin": origin,
-                     "task_id": task_id, "mode": "triage"},
-        )
-        await self._registry.create(
-            task_id=task_id, origin=origin, instruction=instruction,
-        )
-        await self._bus.publish(EventEnvelope(
             event_id=event_id,
             topic=SUBMITTED_TOPIC,
-            source=origin,
             ts=now,
-            severity=1,
-            summary=instruction[:120],
-            payload_ref=f"sqlite://event_payloads/{event_id}",
-            # hints stay small (they land in the triage prompt); the full
-            # instruction is in event_payloads.
-            hints={"task_id": task_id, "instruction": instruction[:500]},
-        ))
+            payload={
+                "instruction": instruction,
+                "origin": origin,
+                "task_id": task_id,
+                "mode": "triage",
+            },
+        )
+        await self._registry.create(
+            task_id=task_id,
+            origin=origin,
+            instruction=instruction,
+        )
+        await self._bus.publish(
+            EventEnvelope(
+                event_id=event_id,
+                topic=SUBMITTED_TOPIC,
+                source=origin,
+                ts=now,
+                severity=1,
+                summary=instruction[:120],
+                payload_ref=f"sqlite://event_payloads/{event_id}",
+                # hints stay small (they land in the triage prompt); the full
+                # instruction is in event_payloads.
+                hints={"task_id": task_id, "instruction": instruction[:500]},
+            )
+        )
         logger.info("task submitted (triage, %s): %s", origin, task_id)
         return task_id

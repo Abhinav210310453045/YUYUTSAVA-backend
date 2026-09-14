@@ -63,9 +63,7 @@ class PgVectorTable:
 class PgVectorSearch:
     """Cosine + keyword retrieval over one :class:`PgVectorTable`."""
 
-    def __init__(
-        self, pool: Any, table: PgVectorTable, *, min_score: float = 0.0
-    ) -> None:
+    def __init__(self, pool: Any, table: PgVectorTable, *, min_score: float = 0.0) -> None:
         self._pool = pool
         self._t = table
         self._min_score = min_score
@@ -173,9 +171,7 @@ class PgVectorSearch:
         dup_id, score = _by_name_or_position(row, ("dup_id", "score"))
         return dup_id if float(score) >= threshold else None
 
-    async def backfill(
-        self, embedder, *, batch_size: int = 64, max_rows: int = 2000
-    ) -> int:
+    async def backfill(self, embedder, *, batch_size: int = 64, max_rows: int = 2000) -> int:
         """Re-embed rows stored without a vector; return how many were fixed.
 
         Rows written while the embedder was unreachable land with
@@ -201,7 +197,8 @@ class PgVectorSearch:
             except Exception:
                 logger.warning(
                     "retrieval: backfill aborted — embedder unreachable (%s)",
-                    t.table, exc_info=True,
+                    t.table,
+                    exc_info=True,
                 )
                 break
             async with self._pool.connection() as conn:

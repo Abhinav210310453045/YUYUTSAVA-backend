@@ -37,27 +37,53 @@ from yuyutsava.daemon.web.services.stream_service import WebHub
 
 #: ContextAside.jsx + ContextMeter
 FRAME_PATHS = (
-    "model", "max_input_tokens", "used_tokens", "free_tokens", "used_fraction",
-    "compact_trigger_tokens", "calibrated", "offloaded_digests",
-    "call.n", "call.input_tokens", "call.output_tokens",
-    "call.cache_read_tokens", "call.cache_hit_fraction", "call.est_cost_usd",
+    "model",
+    "max_input_tokens",
+    "used_tokens",
+    "free_tokens",
+    "used_fraction",
+    "compact_trigger_tokens",
+    "calibrated",
+    "offloaded_digests",
+    "call.n",
+    "call.input_tokens",
+    "call.output_tokens",
+    "call.cache_read_tokens",
+    "call.cache_hit_fraction",
+    "call.est_cost_usd",
     "call.priced",
-    "session.calls", "session.input_tokens", "session.output_tokens",
-    "session.cache_read_tokens", "session.est_cost_usd",
-    "session.compactions", "session.offloads",
+    "session.calls",
+    "session.input_tokens",
+    "session.output_tokens",
+    "session.cache_read_tokens",
+    "session.est_cost_usd",
+    "session.compactions",
+    "session.offloads",
 )
 
 #: UsageSettings.jsx — summary
 SUMMARY_PATHS = (
-    "totals.calls", "totals.input_tokens", "totals.output_tokens",
-    "totals.est_cost_usd", "totals.cache_read_tokens", "unpriced_models",
+    "totals.calls",
+    "totals.input_tokens",
+    "totals.output_tokens",
+    "totals.est_cost_usd",
+    "totals.cache_read_tokens",
+    "unpriced_models",
 )
 SUMMARY_ROW_PATHS = ("key", "calls", "input_tokens", "output_tokens")
 
 #: UsageSettings.jsx — sessions
 SESSION_ROW_PATHS = (
-    "thread_id", "title", "origin", "calls", "input_tokens",
-    "cache_read_tokens", "output_tokens", "est_cost_usd", "priced", "models",
+    "thread_id",
+    "title",
+    "origin",
+    "calls",
+    "input_tokens",
+    "cache_read_tokens",
+    "output_tokens",
+    "est_cost_usd",
+    "priced",
+    "models",
 )
 
 
@@ -78,11 +104,20 @@ class _Store:
 
 class LiveFrameContract(unittest.TestCase):
     def test_the_websocket_frame_has_every_field_the_aside_reads(self):
-        frame = {"type": "usage", **ContextSnapshot(
-            thread_id="t1", model="gemini-3.5-flash", max_input_tokens=1_000_000,
-            system_tokens=4_000, messages_tokens=29_200, call_no=12,
-            input_tokens=41_087, cache_read_tokens=38_000, calls=12,
-        ).as_dict()}
+        frame = {
+            "type": "usage",
+            **ContextSnapshot(
+                thread_id="t1",
+                model="gemini-3.5-flash",
+                max_input_tokens=1_000_000,
+                system_tokens=4_000,
+                messages_tokens=29_200,
+                call_no=12,
+                input_tokens=41_087,
+                cache_read_tokens=38_000,
+                calls=12,
+            ).as_dict(),
+        }
         for path in FRAME_PATHS:
             _dig(frame, path)
 
@@ -104,24 +139,37 @@ class EndpointContract(unittest.IsolatedAsyncioTestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.store = SqliteUsageStore(Path(self._tmp.name) / "state.db")
         app = create_app(
-            WebHub(store=_Store()), host="127.0.0.1", usage_store=self.store,
+            WebHub(store=_Store()),
+            host="127.0.0.1",
+            usage_store=self.store,
         )
         self.client = httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test",
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://test",
         )
         # Two conversations, two models, two days — enough that every optional
         # branch in the components has data to render.
-        for i, (thread, model, ts, cached) in enumerate([
-            ("conv-a", "claude-sonnet-4-5", 1_700_000_000.0, 900),
-            ("conv-a", "gemini-3.5-flash", 1_700_000_100.0, 0),
-            ("conv-b", "claude-sonnet-4-5", 1_700_090_000.0, 50),
-        ]):
-            await self.store.add(UsageRow(
-                id=mint_usage_id(), ts=ts, thread_id=thread, task_id="",
-                role="cli", model=model, input_tokens=1_000 * (i + 1),
-                output_tokens=100, est_cost_usd=0.01,
-                cache_read_tokens=cached,
-            ))
+        for i, (thread, model, ts, cached) in enumerate(
+            [
+                ("conv-a", "claude-sonnet-4-5", 1_700_000_000.0, 900),
+                ("conv-a", "gemini-3.5-flash", 1_700_000_100.0, 0),
+                ("conv-b", "claude-sonnet-4-5", 1_700_090_000.0, 50),
+            ]
+        ):
+            await self.store.add(
+                UsageRow(
+                    id=mint_usage_id(),
+                    ts=ts,
+                    thread_id=thread,
+                    task_id="",
+                    role="cli",
+                    model=model,
+                    input_tokens=1_000 * (i + 1),
+                    output_tokens=100,
+                    est_cost_usd=0.01,
+                    cache_read_tokens=cached,
+                )
+            )
 
     async def asyncTearDown(self) -> None:
         await self.client.aclose()

@@ -201,8 +201,7 @@ def _behaviour_order(middleware: list[Any]) -> list[str]:
 #: The hook chains a stack entry can participate in. Order within a chain is
 #: decided by list position; order *between* chains is decided by the agent loop
 #: and is not a property of the list at all.
-CHAINS = ("model_call", "tool_before", "tool_after",
-          "before_model", "after_model", "after_agent")
+CHAINS = ("model_call", "tool_before", "tool_after", "before_model", "after_model", "after_agent")
 
 
 def _chains_of(entry: Any) -> dict[str, list[str]]:
@@ -304,9 +303,7 @@ def fingerprint_from_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
         # having to know whether X is still its own class or lives in an adapter.
         "policies": sorted(_attached_behaviours(middleware)),
         "tools": sorted(_tool_name(t) for t in (kwargs.get("tools") or [])),
-        "subagents": sorted(
-            (_subagent_digest(s) for s in subs), key=lambda d: str(d.get("name"))
-        ),
+        "subagents": sorted((_subagent_digest(s) for s in subs), key=lambda d: str(d.get("name"))),
         "backend": type(kwargs.get("backend")).__name__,
         "prompt_sha": hashlib.sha256(prompt.encode()).hexdigest()[:16],
         "prompt_len": len(prompt),
@@ -374,8 +371,9 @@ def wired_stores(tmp: Path) -> dict[str, Any]:
     stays fast and touches no database.
     """
     from yuyutsava.context.artifacts_unified import (
-    UnifiedArtifactStore, sqlite_artifact_store,
-)
+        UnifiedArtifactStore,
+        sqlite_artifact_store,
+    )
     from yuyutsava.context.config import ContextSettings
     from yuyutsava.context.summary_store_unified import sqlite_summary_store
     from yuyutsava.context.transcript_store_unified import sqlite_transcript_store
@@ -489,7 +487,7 @@ def fingerprint_orchestrator(**overrides: Any) -> dict[str, Any]:
     # CLI/tinker builders which take everything as keywords. Route each part of
     # the shared ``wired_stores()`` dict to where build_orchestrator expects it.
     budget_tokens = overrides.pop("budget_tokens", 120_000)
-    skill_store = overrides.pop("skill_store", None)   # build arg, not a deps field
+    skill_store = overrides.pop("skill_store", None)  # build arg, not a deps field
 
     # The orchestrator has NO prefs_store: it receives user preferences as a
     # build-time ``prefs_block`` string assembled by the daemon loop, rather
@@ -513,8 +511,8 @@ def fingerprint_orchestrator(**overrides: Any) -> dict[str, Any]:
     deps = OrchestratorDeps(
         subagents={},
         subagent_model=model,
-        channels=_Channels(),          # type: ignore[arg-type]
-        store=_Store(),                # type: ignore[arg-type]
+        channels=_Channels(),  # type: ignore[arg-type]
+        store=_Store(),  # type: ignore[arg-type]
         subagent_token_budget=40_000,
         workspace_root=_workspace(),
         search_config=overrides.pop(
@@ -587,7 +585,7 @@ def async_wiring(*, remote: bool = True) -> dict[str, Any]:
     out: dict[str, Any] = {
         "async_subagents": [_StubAsyncSubagent("bg-worker"), _StubNonAsyncSubagent("sync-only")],
         "async_host_url": "http://localhost:2024",
-        "async_task_mirror": object(),   # presence is all the cap middleware needs
+        "async_task_mirror": object(),  # presence is all the cap middleware needs
         "async_max_concurrent": 4,
     }
     if remote:

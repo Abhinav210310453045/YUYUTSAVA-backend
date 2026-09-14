@@ -62,7 +62,10 @@ async def get_schema(db: str, table: str) -> list[ColumnInfo]:
 async def post_query(db: str, body: QueryIn) -> QueryOut:
     try:
         result = await execute_read_query(
-            db, body.sql, params=body.params, limit=body.limit,
+            db,
+            body.sql,
+            params=body.params,
+            limit=body.limit,
         )
     except DbApiError as e:
         raise HTTPException(status_code=400, detail=str(e))

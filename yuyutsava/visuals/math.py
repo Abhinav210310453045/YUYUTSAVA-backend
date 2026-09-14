@@ -30,8 +30,7 @@ def render_math(spec: dict[str, Any]) -> RenderResult:
     fig = plt.figure(figsize=(0.1, 0.1))
     fig.patch.set_facecolor(theme.BG_DEEP)
     try:
-        fig.text(0.5, 0.5, expr, ha="center", va="center",
-                 color=theme.TEXT, fontsize=fontsize)
+        fig.text(0.5, 0.5, expr, ha="center", va="center", color=theme.TEXT, fontsize=fontsize)
         # size the canvas to the text via tight bbox on save (figure_to_png uses it)
         fig.set_size_inches(max(2, len(expr) * 0.12), 1.4)
         data, w, h = figure_to_png(fig)

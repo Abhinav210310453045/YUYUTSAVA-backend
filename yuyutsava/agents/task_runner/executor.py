@@ -120,9 +120,7 @@ async def execute_run(
     # run_capture is loop-agnostic: on Windows the daemon runs on a Selector
     # loop (psycopg) that cannot create_subprocess_exec, so it spawns in a
     # worker thread; on POSIX it uses the native asyncio subprocess path.
-    stdout_bytes, stderr_bytes, exit_code = await run_capture(
-        argv, cwd=str(cwd), timeout=timeout
-    )
+    stdout_bytes, stderr_bytes, exit_code = await run_capture(argv, cwd=str(cwd), timeout=timeout)
 
     return {
         "stdout": stdout_bytes.decode(errors="replace").strip(),
@@ -309,10 +307,7 @@ def _sync_glob(root: Path, pattern: str, max_entries: int) -> dict:
         raise NotADirectoryError(f"Root path is not a directory: {root}")
     iterator = root.rglob(pattern) if "**" in pattern else root.glob(pattern)
     if _skips_state_dir(root):
-        iterator = (
-            p for p in iterator
-            if WORKSPACE_STATE_DIRNAME not in p.relative_to(root).parts
-        )
+        iterator = (p for p in iterator if WORKSPACE_STATE_DIRNAME not in p.relative_to(root).parts)
     collected: list[Path] = []
     total = 0
     for p in iterator:
@@ -331,11 +326,24 @@ def _sync_glob(root: Path, pattern: str, max_entries: int) -> dict:
 # written in C) is what keeps the pure-Python search fast on real trees.
 # The per-workspace state dir is pruned as a CHILD only (see _skips_state_dir):
 # a walk rooted inside it never meets it as a child, so it sees everything.
-_GREP_IGNORE_DIRS: frozenset[str] = frozenset({
-    ".git", "node_modules", "__pycache__", ".venv", "venv", ".mypy_cache",
-    ".pytest_cache", ".tox", ".ruff_cache", "dist", "build", ".idea", ".DS_Store",
-    WORKSPACE_STATE_DIRNAME,
-})
+_GREP_IGNORE_DIRS: frozenset[str] = frozenset(
+    {
+        ".git",
+        "node_modules",
+        "__pycache__",
+        ".venv",
+        "venv",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".tox",
+        ".ruff_cache",
+        "dist",
+        "build",
+        ".idea",
+        ".DS_Store",
+        WORKSPACE_STATE_DIRNAME,
+    }
+)
 _GREP_MAX_FILE_BYTES = 5 * 1024 * 1024
 
 

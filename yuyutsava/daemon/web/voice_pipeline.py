@@ -130,6 +130,7 @@ class VoicePipeline:
     def close(self) -> None:
         try:
             import shutil
+
             shutil.rmtree(self._tmp, ignore_errors=True)
         except Exception:  # noqa: BLE001
             pass

@@ -70,6 +70,7 @@ def clamp_slice_length(length: int) -> int:
         return DEFAULT_SLICE_CHARS
     return min(length, MAX_SLICE_CHARS)
 
+
 # Column map for the semantic index (migration v12). char_offset lets a recall
 # hit map back to ctx_fetch_artifact(offset=…) for the full surrounding body.
 _ARTIFACT_CHUNKS_TABLE = PgVectorTable(
@@ -240,7 +241,6 @@ def _slice(content: str, offset: int, length: int) -> tuple[str, int]:
     if length < 0:  # internal "whole body" read for grep
         return content[offset:], total
     return content[offset : offset + max(0, length)], total
-
 
 
 # NOTE: SqliteArtifactStore was replaced on 2026-08-09 by UnifiedArtifactStore in

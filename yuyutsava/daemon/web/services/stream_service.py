@@ -266,21 +266,25 @@ class WebHub:
         is what makes "answer from anywhere" actually stay consistent.
         """
         self.pending_asks.pop(ask_id, None)
-        await self.broadcast(StreamAskResolvedItem(
-            ask_id=ask_id, session_id=session_id,
-        ))
+        await self.broadcast(
+            StreamAskResolvedItem(
+                ask_id=ask_id,
+                session_id=session_id,
+            )
+        )
 
-    async def resolve_proposal(
-        self, proposal_id: str, session_id: str | None
-    ) -> None:
+    async def resolve_proposal(self, proposal_id: str, session_id: str | None) -> None:
         """Drop the pending proposal future and broadcast its resolution.
 
         Counterpart to :meth:`resolve_ask` for Tier-1 proposals.
         """
         self.pending_proposals.pop(proposal_id, None)
-        await self.broadcast(StreamProposalResolvedItem(
-            proposal_id=proposal_id, session_id=session_id,
-        ))
+        await self.broadcast(
+            StreamProposalResolvedItem(
+                proposal_id=proposal_id,
+                session_id=session_id,
+            )
+        )
 
 
 class WebChannel(UserChannel):
@@ -293,9 +297,13 @@ class WebChannel(UserChannel):
         self._hub = hub
 
     async def post_event(self, ev: ChannelEvent) -> None:
-        await self._hub.broadcast(StreamEventItem(
-            payload=ev.payload, task_id=ev.task_id, session_id=ev.session_id,
-        ))
+        await self._hub.broadcast(
+            StreamEventItem(
+                payload=ev.payload,
+                task_id=ev.task_id,
+                session_id=ev.session_id,
+            )
+        )
 
     async def post_proposal(self, p: Proposal) -> ProposalDecision:
         loop = asyncio.get_running_loop()

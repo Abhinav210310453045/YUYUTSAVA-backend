@@ -57,8 +57,12 @@ def _meta(name: str, description: str, *, agent: str | None = None, scope: str =
     from yuyutsava.skills.registry import SkillMeta
 
     return SkillMeta(
-        name=name, scope=scope, agent=agent, description=description,
-        path=Path(f"/skills/{name}.md"), requires_tools=("tr_read_file",),
+        name=name,
+        scope=scope,
+        agent=agent,
+        description=description,
+        path=Path(f"/skills/{name}.md"),
+        requires_tools=("tr_read_file",),
     )
 
 
@@ -75,7 +79,8 @@ class _SkillContract:
         await self.store.upsert(_meta(name, "second description"), "b2")
         names = [n for n in await self.store.all_names() if n == name]
         self.assertEqual(
-            len(names), 1,
+            len(names),
+            1,
             "re-indexing a skill created a second row; the disk is the source "
             "of truth and a rescan runs on every boot",
         )
@@ -121,9 +126,9 @@ class _KeywordSearchContract:
         hits = await self.store._keyword_search("compress video", 5, None)
         ids = [h.id for h in hits]
         self.assertLess(
-            ids.index(self.sid("r1")), ids.index(self.sid("r2")),
-            "the skill matching both query words ranked below the one matching "
-            "only the first",
+            ids.index(self.sid("r1")),
+            ids.index(self.sid("r2")),
+            "the skill matching both query words ranked below the one matching only the first",
         )
 
     async def test_score_is_zero_not_an_invented_number(self) -> None:
@@ -131,7 +136,8 @@ class _KeywordSearchContract:
         await self.store.upsert(_meta(self.sid("s1"), "compress video"), "b")
         hits = await self.store._keyword_search("compress", 5, None)
         self.assertEqual(
-            [h.score for h in hits], [0.0] * len(hits),
+            [h.score for h in hits],
+            [0.0] * len(hits),
             "a keyword hit reported a non-zero score, so a caller could compare "
             "it against a real cosine score on the same scale",
         )
@@ -149,7 +155,8 @@ class _KeywordSearchContract:
         self.assertIn(shared, ids, "an unscoped skill was hidden from an agent")
         self.assertIn(mine, ids)
         self.assertNotIn(
-            theirs, ids,
+            theirs,
+            ids,
             "an agent was shown another agent's scoped skill. Skill scoping is "
             "the whole reason `agent` is a column.",
         )
@@ -166,8 +173,7 @@ class _KeywordSearchContract:
 
     async def test_no_match_returns_empty(self) -> None:
         await self.store.upsert(_meta(self.sid("z1"), "compress video"), "b")
-        self.assertEqual(
-            await self.store._keyword_search("quantum chromodynamics", 5, None), [])
+        self.assertEqual(await self.store._keyword_search("quantum chromodynamics", 5, None), [])
 
 
 # ---------------------------------------------------------------------------
@@ -175,9 +181,7 @@ class _KeywordSearchContract:
 # ---------------------------------------------------------------------------
 
 
-class SqliteUnifiedSkills(
-    _SkillContract, _KeywordSearchContract, unittest.IsolatedAsyncioTestCase
-):
+class SqliteUnifiedSkills(_SkillContract, _KeywordSearchContract, unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         from yuyutsava.skills.store_unified import sqlite_skill_store
 
@@ -247,8 +251,7 @@ class PostgresUnifiedSkills(
 
     async def asyncTearDown(self) -> None:
         async with self.pool.connection() as conn:
-            await conn.execute(
-                "DELETE FROM skills WHERE name LIKE %s", (f"skill-%{self._suffix}",))
+            await conn.execute("DELETE FROM skills WHERE name LIKE %s", (f"skill-%{self._suffix}",))
         await self.pool.close()
 
     def sid(self, name: str) -> str:
@@ -274,14 +277,17 @@ class SemanticSearchIsDeclared(unittest.TestCase):
             "getattr() probes it replaced would come back",
         )
         self.assertIsInstance(
-            UnifiedSkillStore.supports_semantic_search, property,
+            UnifiedSkillStore.supports_semantic_search,
+            property,
             "supports_semantic_search must be a declared property — the "
             "pattern test_twin_conformance.py names as the good one",
         )
 
     def test_dialects_declare_vector_support(self) -> None:
         from yuyutsava.storage.dialect import (
-            EventsSqliteDialect, PostgresDialect, SqliteDialect,
+            EventsSqliteDialect,
+            PostgresDialect,
+            SqliteDialect,
         )
 
         self.assertFalse(SqliteDialect.supports_vectors)

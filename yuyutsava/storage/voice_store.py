@@ -57,8 +57,8 @@ class VoiceMessage:
 
     thread_id: str
     seq: int
-    role: str          # "user" | "assistant"
-    modality: str      # "text" | "audio"
+    role: str  # "user" | "assistant"
+    modality: str  # "text" | "audio"
     text: str
     audio_blob_path: str | None
     sample_rate: int | None

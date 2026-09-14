@@ -94,8 +94,12 @@ class AvailabilityInvariant(unittest.TestCase):
 
     def test_attached_process_is_available_without_a_host_object(self) -> None:
         attached = AsyncSubagentSubsystem(
-            enabled=True, host=None, host_url="http://127.0.0.1:2024",
-            mirror=object(), watcher=object(), attachment=object(),
+            enabled=True,
+            host=None,
+            host_url="http://127.0.0.1:2024",
+            mirror=object(),
+            watcher=object(),
+            attachment=object(),
         )
         self.assertTrue(
             attached.available,
@@ -106,23 +110,35 @@ class AvailabilityInvariant(unittest.TestCase):
 
     def test_owner_process_is_available(self) -> None:
         owner = AsyncSubagentSubsystem(
-            enabled=True, host=object(), host_url="http://127.0.0.1:2024",
-            mirror=object(), watcher=object(), attachment=object(),
+            enabled=True,
+            host=object(),
+            host_url="http://127.0.0.1:2024",
+            mirror=object(),
+            watcher=object(),
+            attachment=object(),
         )
         self.assertTrue(owner.available)
 
     def test_disabled_is_not_available(self) -> None:
         off = AsyncSubagentSubsystem(
-            enabled=False, host=None, host_url=None,
-            mirror=None, watcher=None, attachment=None,
+            enabled=False,
+            host=None,
+            host_url=None,
+            mirror=None,
+            watcher=None,
+            attachment=None,
         )
         self.assertFalse(off.available)
 
     def test_enabled_but_hostless_is_not_available(self) -> None:
         """Acquisition failed: configured on, but nothing to submit runs to."""
         broken = AsyncSubagentSubsystem(
-            enabled=True, host=None, host_url=None,
-            mirror=None, watcher=None, attachment=None,
+            enabled=True,
+            host=None,
+            host_url=None,
+            mirror=None,
+            watcher=None,
+            attachment=None,
         )
         self.assertFalse(
             broken.available,
@@ -141,7 +157,8 @@ class BuildDaemonUsesTheProperty(unittest.TestCase):
 
         src = inspect.getsource(bootstrap.build_daemon)
         self.assertNotIn(
-            "async_host_url is not None", src,
+            "async_host_url is not None",
+            src,
             "build_daemon still hand-writes the availability check; that is the "
             "form that can drift between its three call sites",
         )

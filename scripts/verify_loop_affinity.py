@@ -41,9 +41,7 @@ class LoopThread:
 
     def __init__(self, name: str) -> None:
         self.loop = asyncio.new_event_loop()
-        self.thread = threading.Thread(
-            target=self.loop.run_forever, name=name, daemon=True
-        )
+        self.thread = threading.Thread(target=self.loop.run_forever, name=name, daemon=True)
         self.thread.start()
 
     def run(self, coro):
@@ -121,8 +119,7 @@ def main() -> int:
     except RuntimeError as exc:
         check(
             "cross-loop use raises the descriptive error",
-            "pinned to another event loop" in str(exc)
-            and "Event-loop ownership" in str(exc),
+            "pinned to another event loop" in str(exc) and "Event-loop ownership" in str(exc),
             str(exc),
         )
 

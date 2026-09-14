@@ -153,7 +153,8 @@ class OrchestratorLoop:
             return task.task_id
         task_id = self._registry.mint_task_id()
         await self._registry.create(
-            task_id=task_id, origin=task.origin or f"event:{task.topic}",
+            task_id=task_id,
+            origin=task.origin or f"event:{task.topic}",
             instruction=task.instruction,
         )
         return task_id
@@ -186,13 +187,15 @@ class OrchestratorLoop:
         # controller wired → null context, pre-Phase-5 behaviour.
         slot = (
             self._admission.slot(task, task_id=task_id)
-            if self._admission is not None else contextlib.nullcontext()
+            if self._admission is not None
+            else contextlib.nullcontext()
         )
         mapped_origin: str | None = None
         try:
             async with slot:
                 if (
-                    self._registry is not None and task_id
+                    self._registry is not None
+                    and task_id
                     and self._registry.cancel_requested(task_id)
                 ):
                     # A long admission deferral is plenty of time for the
@@ -205,7 +208,8 @@ class OrchestratorLoop:
                 model, deps = self._select_models(task)
                 if self._registry is not None and task_id:
                     await self._registry.mark_running(
-                        task_id, thread_id=thread_id,
+                        task_id,
+                        thread_id=thread_id,
                         complexity=task.complexity,
                         model=model_name_of(model) or None,
                     )
@@ -215,8 +219,12 @@ class OrchestratorLoop:
                 # channel so Tier-2 asks prefer the submitting surface.
                 mapped_origin = await self._map_session_origin(task_id, thread_id)
                 await self._execute(
-                    task, task_id=task_id, thread_id=thread_id,
-                    model=model, deps=deps, resume=resume,
+                    task,
+                    task_id=task_id,
+                    thread_id=thread_id,
+                    model=model,
+                    deps=deps,
+                    resume=resume,
                     origin=mapped_origin or task.origin or None,
                 )
         except Exception as exc:
@@ -232,17 +240,17 @@ class OrchestratorLoop:
 
     async def _cancel_before_start(self, task_id: str) -> None:
         await self._registry.mark_cancelled(task_id, note="cancelled before start")
-        await self._channels.post_event(ChannelEvent(
-            payload=TimelinePayload(
-                line=f"task {task_id}: cancelled before start",
-                cls="event-decision-skipped",
-            ),
-            task_id=task_id,
-        ))
+        await self._channels.post_event(
+            ChannelEvent(
+                payload=TimelinePayload(
+                    line=f"task {task_id}: cancelled before start",
+                    cls="event-decision-skipped",
+                ),
+                task_id=task_id,
+            )
+        )
 
-    def _record_async_launch(
-        self, ev: StreamEvent, *, thread_id: str, origin: str | None
-    ) -> None:
+    def _record_async_launch(self, ev: StreamEvent, *, thread_id: str, origin: str | None) -> None:
         """Record ``start_async_task`` launches so the watcher can wake us later.
 
         The orchestrator already streams the tool result (which carries the new
@@ -269,9 +277,7 @@ class OrchestratorLoop:
         if self._model_router is None:
             return self._model, self._deps
         model = self._model_router.model_for(task.complexity, fallback=self._model)
-        sub = self._model_router.model_for(
-            task.complexity, fallback=self._deps.subagent_model
-        )
+        sub = self._model_router.model_for(task.complexity, fallback=self._deps.subagent_model)
         deps = self._deps
         if sub is not self._deps.subagent_model and dataclasses.is_dataclass(self._deps):
             deps = dataclasses.replace(self._deps, subagent_model=sub)
@@ -316,14 +322,13 @@ class OrchestratorLoop:
         # orchestrator has learned about the user (um_note). Unconditional
         # (not similarity-gated) — the whole point is standing awareness.
         from yuyutsava.memory.agent_memory import AgentMemoryStore
-        agent_mem_block = await asyncio.to_thread(
-            AgentMemoryStore("orchestrator").read_index_block
-        )
-        blocks = "\n\n".join(
-            b for b in (prefs_block, agent_mem_block) if b
-        )
+
+        agent_mem_block = await asyncio.to_thread(AgentMemoryStore("orchestrator").read_index_block)
+        blocks = "\n\n".join(b for b in (prefs_block, agent_mem_block) if b)
         graph = build_orchestrator(
-            model=model, deps=deps, budget_tokens=self._budget,
+            model=model,
+            deps=deps,
+            budget_tokens=self._budget,
             skill_registry=deps.skill_registry,
             skill_store=self._skill_store,
             checkpointer=self._checkpointer,
@@ -342,10 +347,13 @@ class OrchestratorLoop:
             if block:
                 message = f"{block}\n\n{message}" if isinstance(message, str) else message
 
-        await self._channels.post_event(ChannelEvent(
-            payload=LogPayload(text=f"[orch] task {task.event_id[:8]}…\n"),
-            task_id=task_id or None, session_id=thread_id,
-        ))
+        await self._channels.post_event(
+            ChannelEvent(
+                payload=LogPayload(text=f"[orch] task {task.event_id[:8]}…\n"),
+                task_id=task_id or None,
+                session_id=thread_id,
+            )
+        )
 
         # Route subagent interrupts (tr_* permission prompts, tr_ask_user, and
         # any background AsyncTaskHealthWatcher asks) through the daemon's
@@ -359,8 +367,13 @@ class OrchestratorLoop:
         final_text = ""
         cancelled = False
         async for ev in astream_agent_iter(
-            graph, message, thread_id=thread_id, recursion_limit=40,
-            ask_handler=ask_handler, run_name="orchestrator", resume=resume,
+            graph,
+            message,
+            thread_id=thread_id,
+            recursion_limit=40,
+            ask_handler=ask_handler,
+            run_name="orchestrator",
+            resume=resume,
         ):
             await _broadcast(self._channels, ev, task_id=task_id or None, session_id=thread_id)
             # Link any background task this turn launched back to THIS thread +
@@ -372,10 +385,7 @@ class OrchestratorLoop:
             # Coarse v1 cancellation: honored between stream events. An
             # in-flight LLM/tool call always finishes; the run stops at the
             # next event boundary.
-            if (
-                self._registry is not None and task_id
-                and self._registry.cancel_requested(task_id)
-            ):
+            if self._registry is not None and task_id and self._registry.cancel_requested(task_id):
                 cancelled = True
                 break
 
@@ -383,17 +393,21 @@ class OrchestratorLoop:
             await self._registry.mark_cancelled(task_id, note="cancelled by user")
             if task.proposal_id:
                 await self._store.put_decision(
-                    proposal_id=task.proposal_id, event_id=task.event_id,
+                    proposal_id=task.proposal_id,
+                    event_id=task.event_id,
                     outcome="orchestrator_cancelled",
                     action_summary="cancelled by user",
                 )
-            await self._channels.post_event(ChannelEvent(
-                payload=TimelinePayload(
-                    line=f"task {task_id}: cancelled by user",
-                    cls="event-decision-skipped",
-                ),
-                task_id=task_id or None, session_id=thread_id,
-            ))
+            await self._channels.post_event(
+                ChannelEvent(
+                    payload=TimelinePayload(
+                        line=f"task {task_id}: cancelled by user",
+                        cls="event-decision-skipped",
+                    ),
+                    task_id=task_id or None,
+                    session_id=thread_id,
+                )
+            )
             return
 
         # Decisions exist only for proposal-born tasks. Wake-ups
@@ -402,7 +416,8 @@ class OrchestratorLoop:
         # Postgres and abort the run AFTER the turn already streamed.
         if task.proposal_id:
             await self._store.put_decision(
-                proposal_id=task.proposal_id, event_id=task.event_id,
+                proposal_id=task.proposal_id,
+                event_id=task.event_id,
                 outcome="orchestrator_done",
                 action_summary=(final_text or "(empty)")[:300],
             )
@@ -419,13 +434,16 @@ class OrchestratorLoop:
                 )
             except Exception:
                 logger.exception("memory: task_outcome write failed")
-        await self._channels.post_event(ChannelEvent(
-            payload=TimelinePayload(
-                line=f"orchestrator: {final_text[:120]}",
-                cls="event-action",
-            ),
-            task_id=task_id or None, session_id=thread_id,
-        ))
+        await self._channels.post_event(
+            ChannelEvent(
+                payload=TimelinePayload(
+                    line=f"orchestrator: {final_text[:120]}",
+                    cls="event-action",
+                ),
+                task_id=task_id or None,
+                session_id=thread_id,
+            )
+        )
 
 
 async def resume_interrupted_tasks(
@@ -492,7 +510,8 @@ async def resume_interrupted_tasks(
             "resume: %d queued task(s) NOT resumed (never authorised — a queued "
             "row has no approved proposal to point at). Re-submit if you want "
             "them: %s",
-            len(stale), ", ".join(r.task_id for r in stale[:5]),
+            len(stale),
+            ", ".join(r.task_id for r in stale[:5]),
         )
 
     count = 0
@@ -503,18 +522,20 @@ async def resume_interrupted_tasks(
                 "resume: task %s was running but has no thread_id; re-running fresh",
                 rec.task_id,
             )
-        await task_queue.put(OrchestratorTask(
-            proposal_id="",
-            event_id="",
-            topic=rec.origin or "resume",
-            summary=(rec.instruction or "")[:120],
-            instruction=rec.instruction or "",
-            subagent_hint="general-purpose",
-            urgency=2,
-            task_id=rec.task_id,
-            complexity=rec.complexity if rec.complexity is not None else 3,
-            resume_thread_id=resume_tid,
-        ))
+        await task_queue.put(
+            OrchestratorTask(
+                proposal_id="",
+                event_id="",
+                topic=rec.origin or "resume",
+                summary=(rec.instruction or "")[:120],
+                instruction=rec.instruction or "",
+                subagent_hint="general-purpose",
+                urgency=2,
+                task_id=rec.task_id,
+                complexity=rec.complexity if rec.complexity is not None else 3,
+                resume_thread_id=resume_tid,
+            )
+        )
         count += 1
     if count:
         logger.info("resume: re-enqueued %d interrupted task(s) from previous run", count)
@@ -544,6 +565,10 @@ async def _broadcast(
     elif ev.kind == "log":
         payload = LogPayload(text=ev.data.get("text", ""))
     if payload is not None:
-        await channels.post_event(ChannelEvent(
-            payload=payload, task_id=task_id, session_id=session_id,
-        ))
+        await channels.post_event(
+            ChannelEvent(
+                payload=payload,
+                task_id=task_id,
+                session_id=session_id,
+            )
+        )

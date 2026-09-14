@@ -54,12 +54,10 @@ class InterruptsStore(ABC):
     ) -> list[InterruptRecord]: ...
 
 
-
 # NOTE: SqliteInterruptsStore was replaced on 2026-08-09 by UnifiedInterruptsStore in
 # storage/interrupts_unified.py (ADR-002 step 2.5b). The best-effort write
 # contract is preserved and tested. Parity verified on both live backends in
 # test/storage/test_interrupts_store_parity.py.
-
 
 
 # ---------------------------------------------------------------------------
@@ -67,10 +65,7 @@ class InterruptsStore(ABC):
 # ---------------------------------------------------------------------------
 
 
-
-
 # NOTE: PgInterruptsStore was replaced on 2026-08-09 by UnifiedInterruptsStore in
 # storage/interrupts_unified.py (ADR-002 step 2.5b). The best-effort write
 # contract is preserved and tested. Parity verified on both live backends in
 # test/storage/test_interrupts_store_parity.py.
-

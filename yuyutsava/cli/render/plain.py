@@ -38,11 +38,12 @@ class RingEntry:
     by ``YUYUTSAVA_REPL_RING_ENTRY_KB`` (default 100 KB) to keep huge tool
     outputs from blowing up REPL memory.
     """
+
     index: int
-    kind: str           # "tool_call" | "tool_result"
-    name: str           # tool name
-    full: str           # pretty-printed full body (already capped)
-    truncated: bool     # True if the body was clipped to the per-entry cap
+    kind: str  # "tool_call" | "tool_result"
+    name: str  # tool name
+    full: str  # pretty-printed full body (already capped)
+    truncated: bool  # True if the body was clipped to the per-entry cap
 
 
 class ChatRenderer:
@@ -69,7 +70,9 @@ class ChatRenderer:
         except ValueError:
             ring_size = 50
         try:
-            self._entry_cap = max(1024, int(os.environ.get("YUYUTSAVA_REPL_RING_ENTRY_KB", "100")) * 1024)
+            self._entry_cap = max(
+                1024, int(os.environ.get("YUYUTSAVA_REPL_RING_ENTRY_KB", "100")) * 1024
+            )
         except ValueError:
             self._entry_cap = 100 * 1024
         self._ring: deque[RingEntry] = deque(maxlen=ring_size)
@@ -108,8 +111,7 @@ class ChatRenderer:
         line that names the wait.
         """
         print(
-            f"  provider busy ({type(exc).__name__}) — retry {attempt}/{retries} "
-            f"in {delay:.0f}s",
+            f"  provider busy ({type(exc).__name__}) — retry {attempt}/{retries} in {delay:.0f}s",
             file=sys.stderr,
             flush=True,
         )
@@ -205,16 +207,18 @@ class ChatRenderer:
             info = av.load_artifact(ev.data)
             if info is None:
                 title, kind = av.artifact_summary(ev.data)
-                print(f"  ◨ artifact: {title}{f' ({kind})' if kind else ''}",
-                      file=sys.stderr, flush=True)
+                print(
+                    f"  ◨ artifact: {title}{f' ({kind})' if kind else ''}",
+                    file=sys.stderr,
+                    flush=True,
+                )
                 return
             head = f"  ◨ {info['title']} [{info['kind'] or info['mime']}]"
             print(head, file=sys.stderr, flush=True)
             if info["text"]:
                 print(info["text"], file=sys.stderr, flush=True)
                 if info["clipped"]:
-                    print(f"  … clipped — full file: {info['path']}",
-                          file=sys.stderr, flush=True)
+                    print(f"  … clipped — full file: {info['path']}", file=sys.stderr, flush=True)
             elif info["path"]:
                 print(f"  open {info['path']}", file=sys.stderr, flush=True)
             return
@@ -257,7 +261,9 @@ class ChatRenderer:
             truncated = True
         idx = self._next_index
         self._next_index += 1
-        self._ring.append(RingEntry(index=idx, kind=kind, name=name, full=full, truncated=truncated))
+        self._ring.append(
+            RingEntry(index=idx, kind=kind, name=name, full=full, truncated=truncated)
+        )
         return idx
 
     def _find(self, idx: int) -> RingEntry | None:
@@ -355,9 +361,7 @@ class ChatRenderer:
                     sval = sval[:200] + "…"
                 print(f"    {_DIM}{k}:{_RESET} {sval}", file=sys.stderr)
 
-    def _render_tool_result_verbose(
-        self, name: str, body: str, idx: int, is_err: bool
-    ) -> None:
+    def _render_tool_result_verbose(self, name: str, body: str, idx: int, is_err: bool) -> None:
         status = f"{_RED}✗ error{_RESET}" if is_err else f"{_GREEN}← ok{_RESET}"
         print(
             f"  {_DIM}↳{_RESET} {_CYAN}{name}{_RESET} {status}  {_DIM}[#{idx}]{_RESET}",
@@ -365,16 +369,11 @@ class ChatRenderer:
         )
         pretty = self._pretty_body(body)
         if len(pretty) > self._entry_cap:
-            pretty = (
-                pretty[: self._entry_cap]
-                + f"\n…[truncated; /expand {idx} for full]"
-            )
+            pretty = pretty[: self._entry_cap] + f"\n…[truncated; /expand {idx} for full]"
         for line in pretty.splitlines():
             print(f"      {line}", file=sys.stderr)
 
-    def _render_tool_result_compact_error(
-        self, name: str, body: str, idx: int
-    ) -> None:
+    def _render_tool_result_compact_error(self, name: str, body: str, idx: int) -> None:
         short = self._error_message(body)
         if short:
             tail = f"{_DIM}  [#{idx}]{_RESET}"

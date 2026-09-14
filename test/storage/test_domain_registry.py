@@ -103,19 +103,32 @@ class PurgeDerivation(unittest.TestCase):
         """Pins the pre-registry lists so the swap stays behaviour-preserving."""
         self.assertEqual(
             set(purge_tables(Backend.SQLITE)),
-            {("transcript_messages", "thread_id"), ("artifacts", "thread_id"),
-             ("thread_summaries", "thread_id"), ("voice_messages", "thread_id"),
-             ("tasks", "thread_id"), ("llm_usage", "thread_id"),
-             ("proposals", "session_id"), ("decisions", "session_id")},
+            {
+                ("transcript_messages", "thread_id"),
+                ("artifacts", "thread_id"),
+                ("thread_summaries", "thread_id"),
+                ("voice_messages", "thread_id"),
+                ("tasks", "thread_id"),
+                ("llm_usage", "thread_id"),
+                ("proposals", "session_id"),
+                ("decisions", "session_id"),
+            },
         )
         self.assertEqual(
             set(purge_tables(Backend.POSTGRES)),
-            {("llm_usage", "thread_id"), ("tasks", "thread_id"),
-             ("transcript_chunks", "thread_id"), ("transcript_messages", "thread_id"),
-             ("artifact_chunks", "thread_id"), ("artifacts", "thread_id"),
-             ("thread_summaries", "thread_id"), ("voice_messages", "thread_id"),
-             ("interrupts", "thread_id"), ("proposals", "session_id"),
-             ("decisions", "session_id")},
+            {
+                ("llm_usage", "thread_id"),
+                ("tasks", "thread_id"),
+                ("transcript_chunks", "thread_id"),
+                ("transcript_messages", "thread_id"),
+                ("artifact_chunks", "thread_id"),
+                ("artifacts", "thread_id"),
+                ("thread_summaries", "thread_id"),
+                ("voice_messages", "thread_id"),
+                ("interrupts", "thread_id"),
+                ("proposals", "session_id"),
+                ("decisions", "session_id"),
+            },
         )
 
     def test_every_store_method_domain_is_called_by_purge(self) -> None:
@@ -133,7 +146,8 @@ class PurgeDerivation(unittest.TestCase):
                 continue
             with self.subTest(table=d.table):
                 self.assertIn(
-                    d.table, src,
+                    d.table,
+                    src,
                     f"{d.table} is declared STORE_METHOD but purge_session never "
                     f"records it. Its rows survive session deletion.\n"
                     f"Registry note: {d.note}",
@@ -161,7 +175,8 @@ class LiveSchemaCoverage(unittest.IsolatedAsyncioTestCase):
     async def test_no_live_table_is_undeclared(self) -> None:
         missing = unaccounted(await self._live_tables())
         self.assertEqual(
-            sorted(missing), [],
+            sorted(missing),
+            [],
             f"Live Postgres has tables the domain registry does not describe: "
             f"{sorted(missing)}\n"
             f"Declare each in yuyutsava/storage/domains.py with how it is cleaned "
@@ -182,12 +197,14 @@ class LiveSchemaCoverage(unittest.IsolatedAsyncioTestCase):
 
         declared_scoped = session_scoped_tables(Backend.POSTGRES)
         gaps = sorted(
-            t for t in scoped
+            t
+            for t in scoped
             if t not in declared_scoped
             and not (t in BY_TABLE and BY_TABLE[t].purge is PurgeMode.KEEP)
         )
         self.assertEqual(
-            gaps, [],
+            gaps,
+            [],
             f"Live tables carry session data but the registry does not treat them "
             f"as session-scoped: {gaps}. Each either needs a scope_key + purge "
             f"mode, or an explicit KEEP with a reason.",

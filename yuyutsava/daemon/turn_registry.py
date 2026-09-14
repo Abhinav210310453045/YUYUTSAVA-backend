@@ -292,13 +292,15 @@ class TurnRegistry:
             start_seq=chan.seq,
         )
         chan.run = run
-        run.emit({
-            "type": "turn_start",
-            "run_id": run.run_id,
-            "kind": kind,
-            "origin": origin,
-            "text": text,
-        })
+        run.emit(
+            {
+                "type": "turn_start",
+                "run_id": run.run_id,
+                "kind": kind,
+                "origin": origin,
+                "text": text,
+            }
+        )
         run.task = asyncio.create_task(
             self._drive(run, body), name=f"turn:{thread_id}:{run.run_id}"
         )
@@ -306,7 +308,11 @@ class TurnRegistry:
             run.task.add_done_callback(lambda t, r=run: on_done(r, t))
         logger.info(
             "turn %s started on %s (origin=%s agent=%s kind=%s)",
-            run.run_id, thread_id, origin, agent, kind,
+            run.run_id,
+            thread_id,
+            origin,
+            agent,
+            kind,
         )
         return run
 
@@ -322,21 +328,26 @@ class TurnRegistry:
         except Exception as exc:  # noqa: BLE001 — surfaced to every viewer
             run.status = "error"
             run.error = str(exc)
-            logger.warning(
-                "turn %s failed on %s", run.run_id, run.thread_id, exc_info=True
-            )
+            logger.warning("turn %s failed on %s", run.run_id, run.thread_id, exc_info=True)
             run.emit({"type": "error", "message": str(exc)})
         finally:
             run.ended_at = time.time()
             fut, run.pending_ask, run.pending_ask_id = run.pending_ask, None, None
             if fut is not None and not fut.done():
                 fut.cancel()
-            run.emit({
-                "type": "turn_end", "run_id": run.run_id, "status": run.status,
-            })
+            run.emit(
+                {
+                    "type": "turn_end",
+                    "run_id": run.run_id,
+                    "status": run.status,
+                }
+            )
             logger.info(
                 "turn %s %s on %s (%.1fs)",
-                run.run_id, run.status, run.thread_id, run.ended_at - run.started_at,
+                run.run_id,
+                run.status,
+                run.thread_id,
+                run.ended_at - run.started_at,
             )
             self._sweep()
 

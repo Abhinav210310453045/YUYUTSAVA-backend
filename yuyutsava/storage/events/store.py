@@ -96,27 +96,50 @@ class Store:
             _pg_dialect = PostgresDialect(pg_pool)
             _sq_dialect = EventsSqliteDialect(b)
             self._events = RoutedStore(
-                UnifiedEventStore(_pg_dialect), UnifiedEventStore(_sq_dialect),
-                health, name="event_payloads")
+                UnifiedEventStore(_pg_dialect),
+                UnifiedEventStore(_sq_dialect),
+                health,
+                name="event_payloads",
+            )
             self._proposals = RoutedStore(
-                UnifiedProposalStore(_pg_dialect), UnifiedProposalStore(_sq_dialect),
-                health, name="proposals")
+                UnifiedProposalStore(_pg_dialect),
+                UnifiedProposalStore(_sq_dialect),
+                health,
+                name="proposals",
+            )
             self._decisions = RoutedStore(
-                UnifiedDecisionStore(_pg_dialect), UnifiedDecisionStore(_sq_dialect),
-                health, name="decisions")
+                UnifiedDecisionStore(_pg_dialect),
+                UnifiedDecisionStore(_sq_dialect),
+                health,
+                name="decisions",
+            )
             self._consent_rules = RoutedStore(
-                UnifiedConsentRuleStore(_pg_dialect), UnifiedConsentRuleStore(_sq_dialect),
-                health, name="consent_rules")
+                UnifiedConsentRuleStore(_pg_dialect),
+                UnifiedConsentRuleStore(_sq_dialect),
+                health,
+                name="consent_rules",
+            )
             self._counters = RoutedStore(
-                UnifiedToolCounterStore(_pg_dialect), UnifiedToolCounterStore(_sq_dialect),
-                health, name="tool_call_counters")
-            self._prefs = RoutedStore(PgPrefsBackend(pg_pool), SqlitePrefsBackend(b), health, name="user_prefs")
+                UnifiedToolCounterStore(_pg_dialect),
+                UnifiedToolCounterStore(_sq_dialect),
+                health,
+                name="tool_call_counters",
+            )
+            self._prefs = RoutedStore(
+                PgPrefsBackend(pg_pool), SqlitePrefsBackend(b), health, name="user_prefs"
+            )
             self._grants = RoutedStore(
-                UnifiedConsentGrantStore(_pg_dialect), UnifiedConsentGrantStore(_sq_dialect),
-                health, name="consent_grants")
+                UnifiedConsentGrantStore(_pg_dialect),
+                UnifiedConsentGrantStore(_sq_dialect),
+                health,
+                name="consent_grants",
+            )
             self._asks = RoutedStore(
-                UnifiedPendingAskStore(_pg_dialect), UnifiedPendingAskStore(_sq_dialect),
-                health, name="pending_asks")
+                UnifiedPendingAskStore(_pg_dialect),
+                UnifiedPendingAskStore(_sq_dialect),
+                health,
+                name="pending_asks",
+            )
         return self
 
     # ------------------------------------------------------------------ #
@@ -147,17 +170,28 @@ class Store:
     # ------------------------------------------------------------------ #
 
     async def put_event_payload(
-        self, *, event_id: str, topic: str, ts: float,
-        payload: dict[str, Any], blob_path: str | None = None,
+        self,
+        *,
+        event_id: str,
+        topic: str,
+        ts: float,
+        payload: dict[str, Any],
+        blob_path: str | None = None,
     ) -> None:
         await self._events.put_event_payload(
-            event_id=event_id, topic=topic, ts=ts, payload=payload, blob_path=blob_path,
+            event_id=event_id,
+            topic=topic,
+            ts=ts,
+            payload=payload,
+            blob_path=blob_path,
         )
 
     async def get_event_payload(self, event_id: str) -> EventRecord | None:
         return await self._events.get_event_payload(event_id)
 
-    async def delete_event_payloads_with_blob_prefix(self, prefix: str, older_than_ts: float) -> int:
+    async def delete_event_payloads_with_blob_prefix(
+        self, prefix: str, older_than_ts: float
+    ) -> int:
         return await self._events.delete_event_payloads_with_blob_prefix(prefix, older_than_ts)
 
     async def delete_event_payloads_older_than(self, older_than_ts: float) -> int:
@@ -209,19 +243,32 @@ class Store:
     # ------------------------------------------------------------------ #
 
     async def put_decision(
-        self, *, proposal_id: str | None, event_id: str, outcome: str,
-        action_summary: str | None = None, ts: float | None = None,
-        session_id: str | None = None, agent_path: str | None = None,
+        self,
+        *,
+        proposal_id: str | None,
+        event_id: str,
+        outcome: str,
+        action_summary: str | None = None,
+        ts: float | None = None,
+        session_id: str | None = None,
+        agent_path: str | None = None,
     ) -> None:
         await self._decisions.put(
-            proposal_id=proposal_id, event_id=event_id, outcome=outcome,
-            action_summary=action_summary, ts=ts, session_id=session_id, agent_path=agent_path,
+            proposal_id=proposal_id,
+            event_id=event_id,
+            outcome=outcome,
+            action_summary=action_summary,
+            ts=ts,
+            session_id=session_id,
+            agent_path=agent_path,
         )
 
     async def list_decisions(self, limit: int = 50, cursor: float | None = None) -> list[Decision]:
         return await self._decisions.list(limit, cursor)
 
-    async def recall(self, topic_glob: str, since_sec: float, limit: int = 20) -> list[dict[str, Any]]:
+    async def recall(
+        self, topic_glob: str, since_sec: float, limit: int = 20
+    ) -> list[dict[str, Any]]:
         return await self._decisions.recall(topic_glob, since_sec, limit)
 
     # ------------------------------------------------------------------ #

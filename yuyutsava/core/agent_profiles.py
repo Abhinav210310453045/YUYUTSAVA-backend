@@ -134,43 +134,81 @@ class AgentProfile:
 
 CLI_PROFILE = AgentProfile(
     role="cli",
-    policies=frozenset({
-        Policy.TOOL_FILTER, Policy.FILESYSTEM_PROMPT, Policy.VOICE_STYLE,
-        Policy.SUBAGENT_GATE, Policy.BUDGET, Policy.USAGE, Policy.PERMISSION,
-    }),
-    injectors=frozenset({
-        Injector.MEMORY, Injector.SKILLS, Injector.CONVERSATION, Injector.PREFS,
-    }),
-    tools=frozenset({
-        ToolFamily.CONTEXT, ToolFamily.MEMORY, ToolFamily.VISUALS,
-        ToolFamily.ARTIFACTS, ToolFamily.AGENT_MEMORY, ToolFamily.TODO,
-        ToolFamily.SKILLS, ToolFamily.SEARCH, ToolFamily.TASK_RUNNER,
-        ToolFamily.DB, ToolFamily.MCP,
-    }),
+    policies=frozenset(
+        {
+            Policy.TOOL_FILTER,
+            Policy.FILESYSTEM_PROMPT,
+            Policy.VOICE_STYLE,
+            Policy.SUBAGENT_GATE,
+            Policy.BUDGET,
+            Policy.USAGE,
+            Policy.PERMISSION,
+        }
+    ),
+    injectors=frozenset(
+        {
+            Injector.MEMORY,
+            Injector.SKILLS,
+            Injector.CONVERSATION,
+            Injector.PREFS,
+        }
+    ),
+    tools=frozenset(
+        {
+            ToolFamily.CONTEXT,
+            ToolFamily.MEMORY,
+            ToolFamily.VISUALS,
+            ToolFamily.ARTIFACTS,
+            ToolFamily.AGENT_MEMORY,
+            ToolFamily.TODO,
+            ToolFamily.SKILLS,
+            ToolFamily.SEARCH,
+            ToolFamily.TASK_RUNNER,
+            ToolFamily.DB,
+            ToolFamily.MCP,
+        }
+    ),
     todo_scope="capture",
     agent_memory_namespace="cli",
     skill_injector_scope="cli",
-    permission=Requirement.CONDITIONAL,   # permission_check=True by default
-    budget=Requirement.CONDITIONAL,       # only when the daemon passes budget_tokens
-    supports_docker=True,                 # the ONLY master with a Docker mode
+    permission=Requirement.CONDITIONAL,  # permission_check=True by default
+    budget=Requirement.CONDITIONAL,  # only when the daemon passes budget_tokens
+    supports_docker=True,  # the ONLY master with a Docker mode
     supports_remote_async=True,
     inherit_env=True,
 )
 
 ORCHESTRATOR_PROFILE = AgentProfile(
     role="orchestrator",
-    policies=frozenset({
-        Policy.TOOL_FILTER, Policy.FILESYSTEM_PROMPT, Policy.VOICE_STYLE,
-        Policy.SUBAGENT_GATE, Policy.BUDGET, Policy.USAGE,
-    }),
-    injectors=frozenset({
-        Injector.MEMORY, Injector.SKILLS, Injector.CONVERSATION,
-    }),
-    tools=frozenset({
-        ToolFamily.CONTEXT, ToolFamily.MEMORY, ToolFamily.ARTIFACTS,
-        ToolFamily.AGENT_MEMORY, ToolFamily.TODO, ToolFamily.SKILLS,
-        ToolFamily.SEARCH, ToolFamily.MCP,
-    }),
+    policies=frozenset(
+        {
+            Policy.TOOL_FILTER,
+            Policy.FILESYSTEM_PROMPT,
+            Policy.VOICE_STYLE,
+            Policy.SUBAGENT_GATE,
+            Policy.BUDGET,
+            Policy.USAGE,
+        }
+    ),
+    injectors=frozenset(
+        {
+            Injector.MEMORY,
+            Injector.SKILLS,
+            Injector.CONVERSATION,
+        }
+    ),
+    tools=frozenset(
+        {
+            ToolFamily.CONTEXT,
+            ToolFamily.MEMORY,
+            ToolFamily.ARTIFACTS,
+            ToolFamily.AGENT_MEMORY,
+            ToolFamily.TODO,
+            ToolFamily.SKILLS,
+            ToolFamily.SEARCH,
+            ToolFamily.MCP,
+        }
+    ),
     todo_scope="capture",
     agent_memory_namespace="orchestrator",
     skill_injector_scope="orchestrator",
@@ -178,7 +216,7 @@ ORCHESTRATOR_PROFILE = AgentProfile(
     budget=Requirement.ALWAYS,
     supports_docker=False,
     supports_remote_async=True,
-    inherit_env=False,                    # unattended: does NOT inherit user env
+    inherit_env=False,  # unattended: does NOT inherit user env
     notes=(
         "No PermissionPolicy: the orchestrator runs unattended, so a HITL "
         "pause has no one to answer it. Consent is enforced at the tr_* tool "
@@ -190,32 +228,55 @@ ORCHESTRATOR_PROFILE = AgentProfile(
 
 TINKER_PROFILE = AgentProfile(
     role="tinker",
-    policies=frozenset({
-        Policy.TOOL_FILTER, Policy.FILESYSTEM_PROMPT, Policy.VOICE_STYLE,
-        Policy.SUBAGENT_GATE, Policy.BUDGET, Policy.USAGE, Policy.PERMISSION,
-    }),
-    injectors=frozenset({
-        Injector.MEMORY, Injector.SKILLS, Injector.CONVERSATION,
-        Injector.PREFS, Injector.TODO_NOTES,
-    }),
-    tools=frozenset({
-        ToolFamily.CONTEXT, ToolFamily.MEMORY, ToolFamily.VISUALS,
-        ToolFamily.ARTIFACTS, ToolFamily.AGENT_MEMORY, ToolFamily.TODO,
-        ToolFamily.SKILLS, ToolFamily.SEARCH, ToolFamily.TASK_RUNNER,
-        ToolFamily.DB, ToolFamily.MCP,
-    }),
-    todo_scope="full",                    # the whole point: it edits the board
+    policies=frozenset(
+        {
+            Policy.TOOL_FILTER,
+            Policy.FILESYSTEM_PROMPT,
+            Policy.VOICE_STYLE,
+            Policy.SUBAGENT_GATE,
+            Policy.BUDGET,
+            Policy.USAGE,
+            Policy.PERMISSION,
+        }
+    ),
+    injectors=frozenset(
+        {
+            Injector.MEMORY,
+            Injector.SKILLS,
+            Injector.CONVERSATION,
+            Injector.PREFS,
+            Injector.TODO_NOTES,
+        }
+    ),
+    tools=frozenset(
+        {
+            ToolFamily.CONTEXT,
+            ToolFamily.MEMORY,
+            ToolFamily.VISUALS,
+            ToolFamily.ARTIFACTS,
+            ToolFamily.AGENT_MEMORY,
+            ToolFamily.TODO,
+            ToolFamily.SKILLS,
+            ToolFamily.SEARCH,
+            ToolFamily.TASK_RUNNER,
+            ToolFamily.DB,
+            ToolFamily.MCP,
+        }
+    ),
+    todo_scope="full",  # the whole point: it edits the board
     agent_memory_namespace="tinker",
     skill_injector_scope="tinker",
     permission=Requirement.CONDITIONAL,
-    budget=Requirement.ALWAYS,            # default 60_000
+    budget=Requirement.ALWAYS,  # default 60_000
     supports_docker=False,
     supports_remote_async=True,
     inherit_env=True,
 )
 
 ALL_PROFILES: tuple[AgentProfile, ...] = (
-    CLI_PROFILE, ORCHESTRATOR_PROFILE, TINKER_PROFILE,
+    CLI_PROFILE,
+    ORCHESTRATOR_PROFILE,
+    TINKER_PROFILE,
 )
 
 PROFILES_BY_ROLE: dict[str, AgentProfile] = {p.role: p for p in ALL_PROFILES}
@@ -304,7 +365,6 @@ REVIEWED_DIVERGENCES: dict[str, DivergenceNote] = {
 #                             reachable from the board.
 
 
-
 def unreviewed_divergences() -> dict[str, dict[str, bool]]:
     """Divergences nobody has confirmed as intentional.
 
@@ -355,10 +415,12 @@ def format_matrix() -> str:
     rows: list[tuple[str, dict[str, str]]] = []
     for enum_cls, attr in ((Policy, "policies"), (Injector, "injectors"), (ToolFamily, "tools")):
         for member in enum_cls:
-            rows.append((
-                member.value,
-                {p.role: ("yes" if member in getattr(p, attr) else "-") for p in ALL_PROFILES},
-            ))
+            rows.append(
+                (
+                    member.value,
+                    {p.role: ("yes" if member in getattr(p, attr) else "-") for p in ALL_PROFILES},
+                )
+            )
     for flag in ("supports_docker", "supports_remote_async", "inherit_env"):
         rows.append((flag, {p.role: ("yes" if getattr(p, flag) else "-") for p in ALL_PROFILES}))
     for flag in ("permission", "budget"):

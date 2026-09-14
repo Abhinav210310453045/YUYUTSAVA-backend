@@ -55,9 +55,7 @@ class LaunchIndex:
         self._map: "OrderedDict[str, LaunchRecord]" = OrderedDict()
         self._max = max_entries
 
-    def record(
-        self, task_id: str, parent_thread_id: str, origin: str | None = None
-    ) -> None:
+    def record(self, task_id: str, parent_thread_id: str, origin: str | None = None) -> None:
         if not task_id or not parent_thread_id:
             return
         with self._lock:

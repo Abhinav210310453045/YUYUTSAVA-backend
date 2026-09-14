@@ -49,8 +49,7 @@ class _Tool:
 
 
 class _Request:
-    def __init__(self, tool_name: str | None, task_id: str = "t1",
-                 call_id: str = "c1") -> None:
+    def __init__(self, tool_name: str | None, task_id: str = "t1", call_id: str = "c1") -> None:
         self.tool = _Tool(tool_name) if tool_name is not None else None
         self.tool_call = {
             "name": tool_name or "unknown",
@@ -61,14 +60,15 @@ class _Request:
         self.runtime = None
 
 
-def _command(status: str, *, error: str | None = None,
-             call_id: str = "c1") -> Command:
+def _command(status: str, *, error: str | None = None, call_id: str = "c1") -> Command:
     payload: dict[str, Any] = {"status": status, "task_id": "t1"}
     if error is not None:
         payload["error"] = error
-    return Command(update={
-        "messages": [ToolMessage(json.dumps(payload), tool_call_id=call_id)],
-    })
+    return Command(
+        update={
+            "messages": [ToolMessage(json.dumps(payload), tool_call_id=call_id)],
+        }
+    )
 
 
 def _shape(result: Any) -> Any:
@@ -111,8 +111,10 @@ class _Driver:
 
 
 GOLDEN = json.loads(
-    (pathlib.Path(__file__).resolve().parent / "tool_policies_golden.json")
-    .read_text(encoding="utf-8"))["check_guard"]
+    (pathlib.Path(__file__).resolve().parent / "tool_policies_golden.json").read_text(
+        encoding="utf-8"
+    )
+)["check_guard"]
 
 
 def _pair() -> tuple[_Driver]:
@@ -135,11 +137,13 @@ class Parity(unittest.IsolatedAsyncioTestCase):
                 await driver.call(_Request(CHECK), _command("success"))
                 replay = await driver.call(_Request(CHECK), _command("success"))
                 self.assertEqual(
-                    _shape(replay), GOLDEN["success"]["second"],
+                    _shape(replay),
+                    GOLDEN["success"]["second"],
                     "the replayed answer differs from the middleware's",
                 )
                 self.assertEqual(
-                    driver.server_hits, 1,
+                    driver.server_hits,
+                    1,
                     "a second check re-hit the server; the poll loop is not capped",
                 )
 
@@ -155,15 +159,16 @@ class Parity(unittest.IsolatedAsyncioTestCase):
         traceback = "T" * 8000
         for driver in _pair():
             with self.subTest(impl=type(driver.impl).__name__):
-                out = await driver.call(
-                    _Request(CHECK), _command("error", error=traceback))
+                out = await driver.call(_Request(CHECK), _command("error", error=traceback))
                 body = _shape(out)["body"]
                 self.assertEqual(
-                    body, GOLDEN["error"]["first"]["body"],
+                    body,
+                    GOLDEN["error"]["first"]["body"],
                     "the compacted error differs from the middleware's",
                 )
                 self.assertLess(
-                    len(body["error"]), len(traceback),
+                    len(body["error"]),
+                    len(traceback),
                     "the traceback was not compacted; it lands in context in full",
                 )
 
@@ -174,7 +179,8 @@ class Parity(unittest.IsolatedAsyncioTestCase):
                     await driver.call(_Request(CHECK), _command(status))
                     await driver.call(_Request(CHECK), _command(status))
                     self.assertEqual(
-                        driver.server_hits, 1,
+                        driver.server_hits,
+                        1,
                         f"{status} was not treated as terminal",
                     )
 
@@ -184,15 +190,15 @@ class Parity(unittest.IsolatedAsyncioTestCase):
                 await driver.call(_Request(CHECK, task_id="t1"), _command("success"))
                 await driver.call(_Request(CHECK, task_id="t2"), _command("running"))
                 self.assertEqual(
-                    driver.server_hits, 2,
+                    driver.server_hits,
+                    2,
                     "another task's check was answered from t1's cache",
                 )
 
     async def test_a_non_check_tool_is_untouched(self) -> None:
         for driver in _pair():
             with self.subTest(impl=type(driver.impl).__name__):
-                out = await driver.call(
-                    _Request("start_async_task"), _command("success"))
+                out = await driver.call(_Request("start_async_task"), _command("success"))
                 await driver.call(_Request("start_async_task"), _command("success"))
                 self.assertEqual(driver.server_hits, 2)
                 self.assertNotIn("note", _shape(out)["body"])
@@ -224,13 +230,13 @@ class Parity(unittest.IsolatedAsyncioTestCase):
     async def test_unparseable_content_passes_through(self) -> None:
         for driver in _pair():
             with self.subTest(impl=type(driver.impl).__name__):
-                broken = Command(update={
-                    "messages": [ToolMessage("not json", tool_call_id="c1")]})
+                broken = Command(update={"messages": [ToolMessage("not json", tool_call_id="c1")]})
                 out = await driver.call(_Request(CHECK), broken)
                 self.assertIs(out, broken)
                 await driver.call(_Request(CHECK), broken)
                 self.assertEqual(
-                    driver.server_hits, 2,
+                    driver.server_hits,
+                    2,
                     "an unparseable result was cached as terminal",
                 )
 
@@ -244,7 +250,8 @@ class MatchesTheRecord(unittest.IsolatedAsyncioTestCase):
                 d = _Driver(CheckAsyncTaskGuardPolicy())
                 first = await d.call(
                     _Request(CHECK),
-                    _command(status, error="T" * 8000 if status == "error" else None))
+                    _command(status, error="T" * 8000 if status == "error" else None),
+                )
                 second = await d.call(_Request(CHECK), _command(status))
                 self.assertEqual(_shape(first), expected["first"], f"{status}: first call")
                 self.assertEqual(_shape(second), expected["second"], f"{status}: replay")
@@ -252,9 +259,7 @@ class MatchesTheRecord(unittest.IsolatedAsyncioTestCase):
 
     def test_the_record_covers_running_and_every_terminal_status(self) -> None:
         """Negative control — a record of only one status proves nothing."""
-        self.assertEqual(
-            set(GOLDEN),
-            {"running", "success", "error", "cancelled", "timeout"})
+        self.assertEqual(set(GOLDEN), {"running", "success", "error", "cancelled", "timeout"})
 
 
 class TheEscapeHatch(unittest.IsolatedAsyncioTestCase):
@@ -264,8 +269,7 @@ class TheEscapeHatch(unittest.IsolatedAsyncioTestCase):
         from yuyutsava.policy.types import Raw, ToolCall
 
         policy = CheckAsyncTaskGuardPolicy()
-        call = ToolCall(name=CHECK, args={"task_id": "t1"}, id="c1",
-                        resolved_tool=CHECK)
+        call = ToolCall(name=CHECK, args={"task_id": "t1"}, id="c1", resolved_tool=CHECK)
         self.assertIsNone(
             await policy.before_tool(call),
             "nothing is cached yet, so the first check must go through",
@@ -273,7 +277,8 @@ class TheEscapeHatch(unittest.IsolatedAsyncioTestCase):
         await policy.after_tool(call, _command("success"))
         decision = await policy.before_tool(call)
         self.assertIsInstance(
-            decision, Raw,
+            decision,
+            Raw,
             "the cached replay is a framework Command, which is exactly what "
             "Raw is for — Denied would claim the call was refused",
         )
@@ -292,12 +297,16 @@ class TheEscapeHatch(unittest.IsolatedAsyncioTestCase):
             if "policy.types import" not in src and "policy import" not in src:
                 continue
             for node in ast.walk(ast.parse(src)):
-                if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) \
-                        and node.func.id == "Raw":
+                if (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name)
+                    and node.func.id == "Raw"
+                ):
                     users.append(str(path.relative_to(root)))
                     break
         self.assertEqual(
-            sorted(set(users)), ["async_subagents/check_guard_policy.py"],
+            sorted(set(users)),
+            ["async_subagents/check_guard_policy.py"],
             f"Raw is now used by {sorted(set(users))}. ADR-004: a second "
             f"unrelated use means the protocol is missing a concept — add the "
             f"concept, do not widen the hatch.",

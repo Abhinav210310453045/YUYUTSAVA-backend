@@ -22,6 +22,7 @@ from abc import abstractmethod
 from typing import Any, Callable
 
 from yuyutsava.daemon.channels import ProposalDecision, UserChannel
+
 # Re-exported so plugins can catch decision conflicts without importing
 # daemon web internals — the sink is their whole world.
 from yuyutsava.daemon.web.services.decision_service import (  # noqa: F401
@@ -31,10 +32,10 @@ from yuyutsava.daemon.web.services.decision_service import (  # noqa: F401
 logger = logging.getLogger("yuyutsava.channels.plugin")
 
 # Capability strings a plugin may advertise.
-CAP_NOTIFY = "notify"        # outbound events
-CAP_PROPOSAL = "proposal"    # can render Tier-1 proposals + collect decisions
-CAP_ASK = "ask"              # can render Tier-2 asks + collect responses
-CAP_INVOKE = "invoke"        # inbound: user can submit tasks through it
+CAP_NOTIFY = "notify"  # outbound events
+CAP_PROPOSAL = "proposal"  # can render Tier-1 proposals + collect decisions
+CAP_ASK = "ask"  # can render Tier-2 asks + collect responses
+CAP_INVOKE = "invoke"  # inbound: user can submit tasks through it
 
 
 class ChannelPlugin(UserChannel):
@@ -101,7 +102,11 @@ class InboundSink:
     # ------------------------------------------------------------------ #
 
     async def submit_task(
-        self, text: str, *, origin: str, session_hint: str | None = None,
+        self,
+        text: str,
+        *,
+        origin: str,
+        session_hint: str | None = None,
     ) -> str:
         """Submit a user task (trusted/direct mode). Returns the task_id.
 
@@ -110,7 +115,9 @@ class InboundSink:
         consent (same trust as POST /tasks). Tier-2 asks still fire.
         """
         return await self._submission.submit_direct(
-            text, origin=origin, session_hint=session_hint,
+            text,
+            origin=origin,
+            session_hint=session_hint,
         )
 
     async def respond_proposal(
@@ -122,7 +129,9 @@ class InboundSink:
     ) -> Any:
         """Forward a Tier-1 decision. Raises DecisionConflictError when gone."""
         return await self._decisions.respond_proposal(
-            proposal_id, decision, edited_instruction=edited_instruction,
+            proposal_id,
+            decision,
+            edited_instruction=edited_instruction,
         )
 
     async def respond_ask(self, ask_id: str, response: str) -> Any:

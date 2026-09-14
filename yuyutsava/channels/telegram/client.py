@@ -67,7 +67,10 @@ class TelegramClient:
         return await self._call("getMe")
 
     async def get_updates(
-        self, offset: int | None = None, *, timeout: int = 50,
+        self,
+        offset: int | None = None,
+        *,
+        timeout: int = 50,
     ) -> list[dict[str, Any]]:
         params: dict[str, Any] = {"timeout": timeout}
         if offset is not None:
@@ -100,7 +103,9 @@ class TelegramClient:
         parse_mode: str | None = "HTML",
     ) -> dict[str, Any]:
         params: dict[str, Any] = {
-            "chat_id": chat_id, "message_id": message_id, "text": text[:4096],
+            "chat_id": chat_id,
+            "message_id": message_id,
+            "text": text[:4096],
         }
         if parse_mode:
             params["parse_mode"] = parse_mode
@@ -109,7 +114,10 @@ class TelegramClient:
         return await self._call("editMessageText", **params)
 
     async def answer_callback_query(
-        self, callback_query_id: str, *, text: str = "",
+        self,
+        callback_query_id: str,
+        *,
+        text: str = "",
     ) -> dict[str, Any]:
         params: dict[str, Any] = {"callback_query_id": callback_query_id}
         if text:
@@ -133,7 +141,10 @@ class TelegramClient:
                     raise
                 logger.warning(
                     "telegram %s: network error (attempt %d/%d), retrying in %.0fs",
-                    method, attempt, _MAX_ATTEMPTS, delay,
+                    method,
+                    attempt,
+                    _MAX_ATTEMPTS,
+                    delay,
                 )
                 await asyncio.sleep(delay)
                 delay = min(delay * 2, _BACKOFF_CAP_SEC)
@@ -144,19 +155,19 @@ class TelegramClient:
             except ValueError as exc:
                 raise TelegramApiError(method, f"non-JSON response ({resp.status_code})") from exc
             if not body.get("ok", False):
-                retry_after = float(
-                    (body.get("parameters") or {}).get("retry_after", 0) or 0
-                )
+                retry_after = float((body.get("parameters") or {}).get("retry_after", 0) or 0)
                 if retry_after and attempt < _MAX_ATTEMPTS:
                     # 429 flood control: honor Telegram's own pacing hint.
                     logger.warning(
                         "telegram %s: rate limited, retrying in %.0fs",
-                        method, retry_after,
+                        method,
+                        retry_after,
                     )
                     await asyncio.sleep(retry_after)
                     continue
                 raise TelegramApiError(
-                    method, str(body.get("description", "unknown error")),
+                    method,
+                    str(body.get("description", "unknown error")),
                     retry_after=retry_after,
                 )
             return body.get("result")

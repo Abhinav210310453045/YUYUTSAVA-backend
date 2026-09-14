@@ -44,8 +44,10 @@ from yuyutsava.policy.adapter import LangChainPolicyAdapter
 THRESHOLD = 20_000
 
 GOLDEN = json.loads(
-    (pathlib.Path(__file__).resolve().parent / "tool_policies_golden.json")
-    .read_text(encoding="utf-8"))["offload"]
+    (pathlib.Path(__file__).resolve().parent / "tool_policies_golden.json").read_text(
+        encoding="utf-8"
+    )
+)["offload"]
 
 
 class _Request:
@@ -65,14 +67,14 @@ def _handler_returning(message: Any):
 
 #: (label, tool name, content, expect_offloaded)
 CASES: list[tuple[str, str, Any, bool]] = [
-    ("oversized",            "ws_search", "HEAD-" + ("z" * 150_000) + "-TAIL", True),
-    ("just under threshold", "tr_grep",   "x" * (THRESHOLD - 1),               False),
-    ("exactly at threshold", "tr_grep",   "x" * THRESHOLD,                     False),
-    ("one over threshold",   "tr_grep",   "x" * (THRESHOLD + 1),               True),
-    ("small ws_ prefix",     "ws_exa",    "tiny",                              True),
-    ("excluded tool, huge",  "ctx_recall", "y" * 150_000,                      False),
-    ("excluded write_todos", "write_todos", "y" * 150_000,                     False),
-    ("empty content",        "tr_grep",   "",                                  False),
+    ("oversized", "ws_search", "HEAD-" + ("z" * 150_000) + "-TAIL", True),
+    ("just under threshold", "tr_grep", "x" * (THRESHOLD - 1), False),
+    ("exactly at threshold", "tr_grep", "x" * THRESHOLD, False),
+    ("one over threshold", "tr_grep", "x" * (THRESHOLD + 1), True),
+    ("small ws_ prefix", "ws_exa", "tiny", True),
+    ("excluded tool, huge", "ctx_recall", "y" * 150_000, False),
+    ("excluded write_todos", "write_todos", "y" * 150_000, False),
+    ("empty content", "tr_grep", "", False),
 ]
 
 
@@ -113,16 +115,17 @@ class Parity(unittest.IsolatedAsyncioTestCase):
 
     async def _new(self, tool: str, content: Any) -> Any:
         adapter = LangChainPolicyAdapter(
-            [ToolResultOffloadPolicy(self._store("new"), self.settings)])
+            [ToolResultOffloadPolicy(self._store("new"), self.settings)]
+        )
         message = ToolMessage(content=content, tool_call_id="tc-1", name=tool)
-        return await adapter.awrap_tool_call(
-            _Request(tool), _handler_returning(message))
+        return await adapter.awrap_tool_call(_Request(tool), _handler_returning(message))
 
     async def test_every_case_matches_the_middleware(self) -> None:
         for label, tool, content, _ in CASES:
             with self.subTest(case=label):
                 self.assertEqual(
-                    _shape(await self._new(tool, content)), GOLDEN[label],
+                    _shape(await self._new(tool, content)),
+                    GOLDEN[label],
                     f"{label}: the message entering graph state differs from "
                     f"what the middleware produced",
                 )
@@ -138,10 +141,13 @@ class Parity(unittest.IsolatedAsyncioTestCase):
         for label, tool, content, should_offload in CASES:
             with self.subTest(case=label):
                 shape = _shape(await self._new(tool, content))
-                offloaded = (isinstance(shape.get("content"), dict)
-                             and shape["content"].get("offloaded") is True)
+                offloaded = (
+                    isinstance(shape.get("content"), dict)
+                    and shape["content"].get("offloaded") is True
+                )
                 self.assertEqual(
-                    offloaded, should_offload,
+                    offloaded,
+                    should_offload,
                     f"{label}: expected offloaded={should_offload}",
                 )
 
@@ -149,17 +155,16 @@ class Parity(unittest.IsolatedAsyncioTestCase):
         """A digest pointing at nothing would look identical in the message."""
         content = "HEAD-" + ("z" * 150_000) + "-TAIL"
         store = self._store("stored")
-        adapter = LangChainPolicyAdapter(
-            [ToolResultOffloadPolicy(store, self.settings)])
+        adapter = LangChainPolicyAdapter([ToolResultOffloadPolicy(store, self.settings)])
         message = ToolMessage(content=content, tool_call_id="tc-1", name="ws_search")
-        result = await adapter.awrap_tool_call(
-            _Request("ws_search"), _handler_returning(message))
+        result = await adapter.awrap_tool_call(_Request("ws_search"), _handler_returning(message))
         digest = json.loads(result.content)
         # length=-1: `get` slices by default, so the default read would compare
         # a truncated prefix and pass for the wrong reason.
         stored = await store.get(digest["artifact_id"], offset=0, length=-1)
         self.assertEqual(
-            stored.content, content,
+            stored.content,
+            content,
             "the artifact the digest points at does not hold the original body",
         )
         self.assertEqual(digest["size_chars"], len(content))
@@ -167,13 +172,14 @@ class Parity(unittest.IsolatedAsyncioTestCase):
     async def test_a_non_tool_message_passes_through_untouched(self) -> None:
         sentinel = object()
         adapter = LangChainPolicyAdapter(
-            [ToolResultOffloadPolicy(self._store("passthru"), self.settings)])
-        result = await adapter.awrap_tool_call(
-            _Request("ws_search"), _handler_returning(sentinel))
+            [ToolResultOffloadPolicy(self._store("passthru"), self.settings)]
+        )
+        result = await adapter.awrap_tool_call(_Request("ws_search"), _handler_returning(sentinel))
         self.assertIs(result, sentinel)
 
     async def test_storage_failure_never_fails_the_turn(self) -> None:
         """A broken artifact store must degrade, not raise."""
+
         class _Broken:
             supports_recall = False
 
@@ -181,14 +187,15 @@ class Parity(unittest.IsolatedAsyncioTestCase):
                 raise RuntimeError("disk on fire")
 
         content = "z" * 150_000
-        adapter = LangChainPolicyAdapter(
-            [ToolResultOffloadPolicy(_Broken(), self.settings)])  # type: ignore[arg-type]
+        adapter = LangChainPolicyAdapter([ToolResultOffloadPolicy(_Broken(), self.settings)])  # type: ignore[arg-type]
         message = ToolMessage(content=content, tool_call_id="tc-1", name="ws_search")
         with self.assertLogs("yuyutsava.context.offload", level="ERROR"):
             result = await adapter.awrap_tool_call(
-                _Request("ws_search"), _handler_returning(message))
+                _Request("ws_search"), _handler_returning(message)
+            )
         self.assertEqual(
-            result.content, content,
+            result.content,
+            content,
             "the original result was lost when the store failed",
         )
 

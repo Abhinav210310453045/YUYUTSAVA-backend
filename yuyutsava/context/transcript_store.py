@@ -109,7 +109,6 @@ class TranscriptStore(ABC):
         """TTL sweep hook (parity with the other stores). Returns rows deleted."""
 
 
-
 # NOTE: SqliteTranscriptStore was replaced on 2026-08-08 by UnifiedTranscriptStore in
 # context/transcript_store_unified.py (ADR-002 step 2.5b) — one implementation
 # over the dialect adapter. Parity verified against both twins on both live

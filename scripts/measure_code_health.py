@@ -30,10 +30,21 @@ PACKAGE = "yuyutsava"
 CONSUMER_DIRS = ("yuyutsava", "test", "scripts")
 STDLIB = frozenset(sys.stdlib_module_names)
 FRAMEWORK_PREFIXES = ("langchain", "langgraph", "deepagents")
-HISTORY_PHRASES = re.compile(r"\b(Phase \d|Step \d(?:\.\d)?|was:|replaces the|no longer|used to be)\b")
+HISTORY_PHRASES = re.compile(
+    r"\b(Phase \d|Step \d(?:\.\d)?|was:|replaces the|no longer|used to be)\b"
+)
 BRANCH_NODES = (
-    ast.If, ast.For, ast.AsyncFor, ast.While, ast.IfExp, ast.ExceptHandler,
-    ast.With, ast.AsyncWith, ast.Assert, ast.comprehension, ast.match_case,
+    ast.If,
+    ast.For,
+    ast.AsyncFor,
+    ast.While,
+    ast.IfExp,
+    ast.ExceptHandler,
+    ast.With,
+    ast.AsyncWith,
+    ast.Assert,
+    ast.comprehension,
+    ast.match_case,
 )
 FUNCTION_NODES = (ast.FunctionDef, ast.AsyncFunctionDef)
 
@@ -66,7 +77,9 @@ def load_modules(directory: str) -> list[Module]:
         is_package = parts[-1] == "__init__"
         if is_package:
             parts = parts[:-1]
-        modules.append(Module(path.relative_to(REPO), ".".join(parts), is_package, source, ast.parse(source)))
+        modules.append(
+            Module(path.relative_to(REPO), ".".join(parts), is_package, source, ast.parse(source))
+        )
     return modules
 
 
@@ -94,7 +107,10 @@ def in_try_within_function(node: ast.AST, parents: dict[ast.AST, ast.AST]) -> bo
 
 
 def under_type_checking(node: ast.AST, parents: dict[ast.AST, ast.AST]) -> bool:
-    return any(isinstance(a, ast.If) and "TYPE_CHECKING" in ast.unparse(a.test) for a in ancestors(node, parents))
+    return any(
+        isinstance(a, ast.If) and "TYPE_CHECKING" in ast.unparse(a.test)
+        for a in ancestors(node, parents)
+    )
 
 
 def import_targets(node: ast.Import | ast.ImportFrom, module: Module) -> list[str]:
@@ -149,8 +165,14 @@ def is_silent_broad_handler(handler: ast.ExceptHandler) -> bool:
             return True
         if isinstance(statement, ast.Return):
             value = statement.value
-            return value is None or (isinstance(value, ast.Constant) and value.value in (None, False, "", 0))
-        return isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Constant) and statement.value.value is Ellipsis
+            return value is None or (
+                isinstance(value, ast.Constant) and value.value in (None, False, "", 0)
+            )
+        return (
+            isinstance(statement, ast.Expr)
+            and isinstance(statement.value, ast.Constant)
+            and statement.value.value is Ellipsis
+        )
 
     return all(trivial(s) for s in handler.body)
 
@@ -175,14 +197,22 @@ def mid_file_imports(module: Module) -> list[str]:
     )
     if first_definition is None:
         return []
-    return [f"{module.path}:{n.lineno}" for n in module_level_imports(module.tree) if n.lineno > first_definition]
+    return [
+        f"{module.path}:{n.lineno}"
+        for n in module_level_imports(module.tree)
+        if n.lineno > first_definition
+    ]
 
 
 def imports_after_code(module: Module) -> list[str]:
     """Module-level imports preceded by executable statements (the E402 shape)."""
     found, seen_code = [], False
     for index, statement in enumerate(module.tree.body):
-        if index == 0 and isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Constant):
+        if (
+            index == 0
+            and isinstance(statement, ast.Expr)
+            and isinstance(statement.value, ast.Constant)
+        ):
             continue
         if isinstance(statement, ast.ImportFrom) and statement.module == "__future__":
             continue
@@ -192,7 +222,9 @@ def imports_after_code(module: Module) -> list[str]:
             continue
         if isinstance(statement, ast.If) and "TYPE_CHECKING" in ast.unparse(statement.test):
             continue
-        if isinstance(statement, ast.Try) and all(isinstance(s, (ast.Import, ast.ImportFrom)) for s in statement.body):
+        if isinstance(statement, ast.Try) and all(
+            isinstance(s, (ast.Import, ast.ImportFrom)) for s in statement.body
+        ):
             if seen_code:
                 found.append(f"{module.path}:{statement.lineno}")
             continue
@@ -269,7 +301,9 @@ def measure() -> dict[str, object]:
                 deferred_here = in_function(node, parents)
                 if deferred_here:
                     top = targets[0].split(".")[0]
-                    kind = "internal" if internal else ("stdlib" if top in STDLIB else "third-party")
+                    kind = (
+                        "internal" if internal else ("stdlib" if top in STDLIB else "third-party")
+                    )
                     if in_try_within_function(node, parents):
                         kind += " in try"
                     deferred[kind] += 1
@@ -283,28 +317,57 @@ def measure() -> dict[str, object]:
                 if isinstance(node, ast.ImportFrom):
                     for alias in node.names:
                         target_sub = subpackage_of(targets[0])
-                        if alias.name.startswith("_") and not alias.name.startswith("__") and target_sub != module.subpackage:
-                            private_imports.append(f"{module.path}:{node.lineno} {targets[0]}.{alias.name}")
-                if not deferred_here and not under_type_checking(node, parents) and module.subpackage != "(root)":
+                        if (
+                            alias.name.startswith("_")
+                            and not alias.name.startswith("__")
+                            and target_sub != module.subpackage
+                        ):
+                            private_imports.append(
+                                f"{module.path}:{node.lineno} {targets[0]}.{alias.name}"
+                            )
+                if (
+                    not deferred_here
+                    and not under_type_checking(node, parents)
+                    and module.subpackage != "(root)"
+                ):
                     for target in targets:
                         target_sub = subpackage_of(target)
                         if target_sub not in (module.subpackage, "(root)"):
                             edges[module.subpackage].add(target_sub)
-                            edge_example.setdefault((module.subpackage, target_sub), f"{module.path}:{node.lineno}")
+                            edge_example.setdefault(
+                                (module.subpackage, target_sub), f"{module.path}:{node.lineno}"
+                            )
             elif isinstance(node, FUNCTION_NODES):
                 length = node.end_lineno - node.lineno + 1
-                functions.append((length, parameter_count(node), complexity(node), f"{module.path}:{node.lineno} {node.name}"))
+                functions.append(
+                    (
+                        length,
+                        parameter_count(node),
+                        complexity(node),
+                        f"{module.path}:{node.lineno} {node.name}",
+                    )
+                )
                 if node.name.startswith("set_default_"):
                     set_default_definitions.append(f"{module.path}:{node.lineno} {node.name}")
             elif isinstance(node, ast.ClassDef):
-                classes.append((node.end_lineno - node.lineno + 1, f"{module.path}:{node.lineno} {node.name}"))
+                classes.append(
+                    (node.end_lineno - node.lineno + 1, f"{module.path}:{node.lineno} {node.name}")
+                )
             elif isinstance(node, ast.ExceptHandler) and is_silent_broad_handler(node):
                 silent_handlers.append(f"{module.path}:{node.lineno}")
             elif isinstance(node, ast.Global):
                 global_statements.append(f"{module.path}:{node.lineno}")
             elif isinstance(node, ast.Call):
-                name = node.func.id if isinstance(node.func, ast.Name) else getattr(node.func, "attr", "")
-                if name == "print" and module.subpackage != "cli" and not module.path.name.endswith("_proc.py"):
+                name = (
+                    node.func.id
+                    if isinstance(node.func, ast.Name)
+                    else getattr(node.func, "attr", "")
+                )
+                if (
+                    name == "print"
+                    and module.subpackage != "cli"
+                    and not module.path.name.endswith("_proc.py")
+                ):
                     prints_outside_cli.append(f"{module.path}:{node.lineno}")
                 if name.startswith(("set_default_", "get_default_")):
                     default_accessor_calls += 1
@@ -322,7 +385,12 @@ def measure() -> dict[str, object]:
     root_imports: dict[str, set[str]] = defaultdict(set)
     for consumer in consumers:
         for node in ast.walk(consumer.tree):
-            if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module and is_internal(node.module):
+            if (
+                isinstance(node, ast.ImportFrom)
+                and node.level == 0
+                and node.module
+                and is_internal(node.module)
+            ):
                 root_imports[node.module].update(alias.name for alias in node.names)
     inits_without_docstring, inits_with_logic, unused_exports = [], [], {}
     for module in (m for m in modules if m.is_package):
@@ -334,8 +402,14 @@ def measure() -> dict[str, object]:
                 inits_with_logic.append(str(module.path))
                 break
         for statement in module.tree.body:
-            if isinstance(statement, ast.Assign) and any(getattr(t, "id", None) == "__all__" for t in statement.targets):
-                exported = [e.value for e in getattr(statement.value, "elts", []) if isinstance(e, ast.Constant)]
+            if isinstance(statement, ast.Assign) and any(
+                getattr(t, "id", None) == "__all__" for t in statement.targets
+            ):
+                exported = [
+                    e.value
+                    for e in getattr(statement.value, "elts", [])
+                    if isinstance(e, ast.Constant)
+                ]
         unused = [name for name in exported if name not in root_imports.get(module.name, set())]
         if unused:
             unused_exports[module.name] = f"{len(unused)} of {len(exported)}"
@@ -344,7 +418,9 @@ def measure() -> dict[str, object]:
     largest_component = max(components, key=len)
     two_cycles = sorted(
         f"{a}<->{b} ({edge_example[(a, b)]} / {edge_example[(b, a)]})"
-        for a in edges for b in edges[a] if a < b and a in edges.get(b, ())
+        for a in edges
+        for b in edges[a]
+        if a < b and a in edges.get(b, ())
     )
 
     def count_over(values, threshold):
@@ -361,7 +437,9 @@ def measure() -> dict[str, object]:
         "functions": len(functions),
         "in_function_imports": sum(deferred.values()),
         "in_function_imports_by_kind": dict(deferred),
-        "deferred_internal_import_ratio": round(internal_deferred / max(1, internal_deferred + internal_top), 3),
+        "deferred_internal_import_ratio": round(
+            internal_deferred / max(1, internal_deferred + internal_top), 3
+        ),
         "imports_after_code": len(after_code),
         "mid_file_imports": len(mid_file),
         "private_cross_package_imports": len(private_imports),
@@ -399,7 +477,9 @@ def measure() -> dict[str, object]:
             "longest_functions": worst(0),
             "most_parameters": worst(1),
             "most_complex": worst(2),
-            "largest_classes": [f"{label} ({size})" for size, label in sorted(classes, reverse=True)],
+            "largest_classes": [
+                f"{label} ({size})" for size, label in sorted(classes, reverse=True)
+            ],
             "silent_broad_excepts": silent_handlers,
             "prints_outside_cli": prints_outside_cli,
             "global_statements": global_statements,
@@ -416,7 +496,13 @@ def measure() -> dict[str, object]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--json", action="store_true", help="print every metric and detail as JSON")
-    parser.add_argument("--details", type=int, default=0, metavar="N", help="also list the N worst offenders per metric")
+    parser.add_argument(
+        "--details",
+        type=int,
+        default=0,
+        metavar="N",
+        help="also list the N worst offenders per metric",
+    )
     args = parser.parse_args()
 
     metrics = measure()

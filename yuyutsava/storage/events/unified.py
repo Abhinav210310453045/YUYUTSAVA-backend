@@ -44,11 +44,18 @@ from ulid import ULID
 
 from yuyutsava.storage.dialect import Dialect
 from yuyutsava.storage.events.ask_wire import (
-    _ASK_COLS, ask_record_to_params, ask_row_to_record,
+    _ASK_COLS,
+    ask_record_to_params,
+    ask_row_to_record,
 )
 from yuyutsava.storage.events.abc import (
-    ConsentGrantStore, ConsentRuleStore, DecisionStore, EventStore, PendingAskStore,
-    ProposalStore, ToolCounterStore,
+    ConsentGrantStore,
+    ConsentRuleStore,
+    DecisionStore,
+    EventStore,
+    PendingAskStore,
+    ProposalStore,
+    ToolCounterStore,
 )
 from yuyutsava.storage.models import ConsentRule, Decision, EventRecord, Proposal
 
@@ -127,8 +134,14 @@ class UnifiedConsentRuleStore(ConsentRuleStore):
                 f"(rule_id, topic_glob, match_json, decision, created_ts, expires_ts) "
                 f"VALUES({d.ph(2)}, {json_ph}, {d.ph()}, {d.ts_param()}, {d.ts_param()}) "
                 f"ON CONFLICT(rule_id) DO NOTHING",
-                (rule.rule_id, rule.topic_glob, rule.match_json, rule.decision,
-                 rule.created_ts, rule.expires_ts),
+                (
+                    rule.rule_id,
+                    rule.topic_glob,
+                    rule.match_json,
+                    rule.decision,
+                    rule.created_ts,
+                    rule.expires_ts,
+                ),
             )
 
         await d.write(_do)
@@ -155,7 +168,6 @@ class UnifiedConsentRuleStore(ConsentRuleStore):
         ]
 
 
-
 class UnifiedProposalStore(ProposalStore):
     """``proposals`` — Tier-1 actions awaiting a decision."""
 
@@ -174,8 +186,20 @@ class UnifiedProposalStore(ProposalStore):
                 f"subagent, urgency, created_ts, expires_ts, status, session_id, agent_path) "
                 f"VALUES({d.ph(7)}, {d.ts_param()}, {d.ts_param()}, {d.ph(3)}) "
                 f"ON CONFLICT (proposal_id) DO NOTHING",
-                (p.proposal_id, p.event_id, p.topic, p.summary, p.proposed, p.subagent,
-                 p.urgency, p.created_ts, p.expires_ts, p.status, p.session_id, p.agent_path),
+                (
+                    p.proposal_id,
+                    p.event_id,
+                    p.topic,
+                    p.summary,
+                    p.proposed,
+                    p.subagent,
+                    p.urgency,
+                    p.created_ts,
+                    p.expires_ts,
+                    p.status,
+                    p.session_id,
+                    p.agent_path,
+                ),
             )
 
         await d.write(_do)
@@ -192,9 +216,7 @@ class UnifiedProposalStore(ProposalStore):
             row = await cur.fetchone()
         return _row_to_proposal(row) if row else None
 
-    async def try_set_status(
-        self, proposal_id: str, *, from_status: str, to_status: str
-    ) -> bool:
+    async def try_set_status(self, proposal_id: str, *, from_status: str, to_status: str) -> bool:
         """Compare-and-set. Returns whether *this* caller made the transition.
 
         Single-shot approval depends on it: the UI and the CLI can both approve
@@ -220,9 +242,15 @@ class UnifiedDecisionStore(DecisionStore):
         self._d = dialect
 
     async def put(
-        self, *, proposal_id: str | None, event_id: str, outcome: str,
-        action_summary: str | None = None, ts: float | None = None,
-        session_id: str | None = None, agent_path: str | None = None,
+        self,
+        *,
+        proposal_id: str | None,
+        event_id: str,
+        outcome: str,
+        action_summary: str | None = None,
+        ts: float | None = None,
+        session_id: str | None = None,
+        agent_path: str | None = None,
     ) -> None:
         d = self._d
 
@@ -235,16 +263,32 @@ class UnifiedDecisionStore(DecisionStore):
                 f"action_summary, ts, session_id, agent_path) "
                 f"VALUES({d.ph(5)}, {d.ts_param()}, {d.ph(2)}) "
                 f"ON CONFLICT (decision_id) DO NOTHING",
-                (str(ULID()), proposal_id, event_id, outcome, action_summary,
-                 ts if ts is not None else time.time(), session_id, agent_path),
+                (
+                    str(ULID()),
+                    proposal_id,
+                    event_id,
+                    outcome,
+                    action_summary,
+                    ts if ts is not None else time.time(),
+                    session_id,
+                    agent_path,
+                ),
             )
 
         await d.write(_do)
 
     async def list(self, limit: int = 50, cursor: float | None = None) -> list[Decision]:
         d = self._d
-        cols = ("decision_id", "proposal_id", "event_id", "outcome", "action_summary",
-                d.epoch("ts"), "session_id", "agent_path")
+        cols = (
+            "decision_id",
+            "proposal_id",
+            "event_id",
+            "outcome",
+            "action_summary",
+            d.epoch("ts"),
+            "session_id",
+            "agent_path",
+        )
         async with d.reading() as conn:
             if cursor is not None:
                 # Strictly less-than: keyset pagination, so the boundary row is
@@ -256,8 +300,7 @@ class UnifiedDecisionStore(DecisionStore):
                 )
             else:
                 cur = await conn.execute(
-                    f"SELECT {', '.join(cols)} FROM decisions ORDER BY ts DESC "
-                    f"LIMIT {d.ph()}",
+                    f"SELECT {', '.join(cols)} FROM decisions ORDER BY ts DESC LIMIT {d.ph()}",
                     (limit,),
                 )
             rows = await cur.fetchall()
@@ -288,8 +331,12 @@ class UnifiedDecisionStore(DecisionStore):
             )
             rows = await cur.fetchall()
         return [
-            {"outcome": r["outcome"], "action_summary": r["action_summary"],
-             "ts": r["ts"], "topic": r["topic"]}
+            {
+                "outcome": r["outcome"],
+                "action_summary": r["action_summary"],
+                "ts": r["ts"],
+                "topic": r["topic"],
+            }
             for r in rows
             if fnmatch.fnmatchcase(r["topic"], topic_glob)
         ]
@@ -316,8 +363,16 @@ class UnifiedConsentGrantStore(ConsentGrantStore):
                 f"decision = EXCLUDED.decision, scope = EXCLUDED.scope, "
                 f"scope_ref = EXCLUDED.scope_ref, created_ts = EXCLUDED.created_ts, "
                 f"expires_ts = EXCLUDED.expires_ts",
-                (grant.grant_id, grant.domain, grant.subject_key, grant.decision,
-                 grant.scope, grant.scope_ref, grant.created_ts, grant.expires_ts),
+                (
+                    grant.grant_id,
+                    grant.domain,
+                    grant.subject_key,
+                    grant.decision,
+                    grant.scope,
+                    grant.scope_ref,
+                    grant.created_ts,
+                    grant.expires_ts,
+                ),
             )
 
         await d.write(_do)
@@ -326,9 +381,7 @@ class UnifiedConsentGrantStore(ConsentGrantStore):
         d = self._d
 
         async def _do(conn):
-            await conn.execute(
-                f"DELETE FROM consent_grants WHERE grant_id = {d.ph()}", (grant_id,)
-            )
+            await conn.execute(f"DELETE FROM consent_grants WHERE grant_id = {d.ph()}", (grant_id,))
 
         await d.write(_do)
 
@@ -344,9 +397,14 @@ class UnifiedConsentGrantStore(ConsentGrantStore):
             rows = await cur.fetchall()
         return [
             Grant(
-                grant_id=r["grant_id"], domain=r["domain"], subject_key=r["subject_key"],
-                decision=r["decision"], scope=r["scope"], scope_ref=r["scope_ref"],
-                created_ts=r["created_ts"], expires_ts=r["expires_ts"],
+                grant_id=r["grant_id"],
+                domain=r["domain"],
+                subject_key=r["subject_key"],
+                decision=r["decision"],
+                scope=r["scope"],
+                scope_ref=r["scope_ref"],
+                created_ts=r["created_ts"],
+                expires_ts=r["expires_ts"],
             )
             for r in rows
         ]
@@ -354,24 +412,34 @@ class UnifiedConsentGrantStore(ConsentGrantStore):
 
 def _row_to_proposal(row: Any) -> Proposal:
     return Proposal(
-        proposal_id=row["proposal_id"], event_id=row["event_id"], topic=row["topic"],
-        summary=row["summary"], proposed=row["proposed"], subagent=row["subagent"],
+        proposal_id=row["proposal_id"],
+        event_id=row["event_id"],
+        topic=row["topic"],
+        summary=row["summary"],
+        proposed=row["proposed"],
+        subagent=row["subagent"],
         # SQLite hands INTEGER back as int; keep the declared type explicit so a
         # column type change on either side cannot silently widen it to float.
-        urgency=int(row["urgency"]), created_ts=row["created_ts"],
-        expires_ts=row["expires_ts"], status=row["status"],
-        session_id=row["session_id"], agent_path=row["agent_path"],
+        urgency=int(row["urgency"]),
+        created_ts=row["created_ts"],
+        expires_ts=row["expires_ts"],
+        status=row["status"],
+        session_id=row["session_id"],
+        agent_path=row["agent_path"],
     )
 
 
 def _row_to_decision(row: Any) -> Decision:
     return Decision(
-        decision_id=row["decision_id"], proposal_id=row["proposal_id"],
-        event_id=row["event_id"], outcome=row["outcome"],
-        action_summary=row["action_summary"], ts=row["ts"],
-        session_id=row["session_id"], agent_path=row["agent_path"],
+        decision_id=row["decision_id"],
+        proposal_id=row["proposal_id"],
+        event_id=row["event_id"],
+        outcome=row["outcome"],
+        action_summary=row["action_summary"],
+        ts=row["ts"],
+        session_id=row["session_id"],
+        agent_path=row["agent_path"],
     )
-
 
 
 class UnifiedEventStore(EventStore):
@@ -381,8 +449,13 @@ class UnifiedEventStore(EventStore):
         self._d = dialect
 
     async def put_event_payload(
-        self, *, event_id: str, topic: str, ts: float,
-        payload: dict[str, Any], blob_path: str | None = None,
+        self,
+        *,
+        event_id: str,
+        topic: str,
+        ts: float,
+        payload: dict[str, Any],
+        blob_path: str | None = None,
     ) -> None:
         d = self._d
 
@@ -420,8 +493,11 @@ class UnifiedEventStore(EventStore):
         if not isinstance(payload, dict):
             payload = {}
         return EventRecord(
-            event_id=event_id, topic=row["topic"], ts=row["ts"],
-            payload=payload, blob_path=row["blob_path"],
+            event_id=event_id,
+            topic=row["topic"],
+            ts=row["ts"],
+            payload=payload,
+            blob_path=row["blob_path"],
         )
 
     async def delete_event_payloads_with_blob_prefix(
@@ -431,8 +507,7 @@ class UnifiedEventStore(EventStore):
 
         async def _do(conn):
             cur = await conn.execute(
-                f"DELETE FROM event_payloads WHERE blob_path LIKE {d.ph()} "
-                f"AND ts < {d.ts_param()}",
+                f"DELETE FROM event_payloads WHERE blob_path LIKE {d.ph()} AND ts < {d.ts_param()}",
                 (prefix + "%", older_than_ts),
             )
             return cur.rowcount or 0
@@ -494,9 +569,7 @@ class UnifiedPendingAskStore(PendingAskStore):
 
         return await d.write(_do)
 
-    async def resolve(
-        self, ask_id: str, response: str, *, status: str = "answered"
-    ) -> bool:
+    async def resolve(self, ask_id: str, response: str, *, status: str = "answered") -> bool:
         d = self._d
 
         async def _do(conn):
@@ -527,8 +600,7 @@ class UnifiedPendingAskStore(PendingAskStore):
         d = self._d
         async with d.reading() as conn:
             cur = await conn.execute(
-                f"SELECT {', '.join(_ASK_COLS)} FROM pending_asks "
-                f"WHERE ask_id = {d.ph()}",
+                f"SELECT {', '.join(_ASK_COLS)} FROM pending_asks WHERE ask_id = {d.ph()}",
                 (ask_id,),
             )
             row = await cur.fetchone()

@@ -84,7 +84,9 @@ logger = logging.getLogger("yuyutsava.agents.orchestrator.spawn")
 # Tools whose execution can call interrupt() — disallowed in spawn v1 because
 # the parent re-runs the tool on resume, which would restart the child.
 _INTERRUPTING_PREFIXES: tuple[str, ...] = (
-    "tr_write_", "tr_delete_", "tr_execute",
+    "tr_write_",
+    "tr_delete_",
+    "tr_execute",
 )
 _INTERRUPTING_EXACT: frozenset[str] = frozenset({"tr_ask_user"})
 
@@ -130,9 +132,7 @@ def _candidate_tools(
     ``_INTERRUPTING_*`` reject pass and for ensuring the model has the right
     permissions to use whatever ends up selected.
     """
-    tools: list[BaseTool] = list(
-        bind_tools(workspace_root, agent_name=f"spawned:{agent_name}")
-    )
+    tools: list[BaseTool] = list(bind_tools(workspace_root, agent_name=f"spawned:{agent_name}"))
     if search_config is not None:
         tools.extend(make_search_tools(search_config, cap_enforcer=cap_enforcer))
     if skill_registry is not None:
@@ -199,18 +199,22 @@ def make_spawn_subagent_tool(
         # Depth cap — count '/' separators in the parent's path.
         depth = parent_path.count("/")
         if depth >= max_depth:
-            return json.dumps({
-                "status": "error",
-                "error": f"spawn depth limit reached (depth={depth}, max={max_depth})",
-                "hint": "Reorganise so the work is delegated by the top-level orchestrator instead of a nested spawn.",
-            })
+            return json.dumps(
+                {
+                    "status": "error",
+                    "error": f"spawn depth limit reached (depth={depth}, max={max_depth})",
+                    "hint": "Reorganise so the work is delegated by the top-level orchestrator instead of a nested spawn.",
+                }
+            )
 
         if not tool_globs:
-            return json.dumps({
-                "status": "error",
-                "error": "tool_globs must be non-empty",
-                "hint": "Pass an explicit list, e.g. ['tr_read_*', 'ws_*'].",
-            })
+            return json.dumps(
+                {
+                    "status": "error",
+                    "error": "tool_globs must be non-empty",
+                    "hint": "Pass an explicit list, e.g. ['tr_read_*', 'ws_*'].",
+                }
+            )
 
         # Resolve candidate tools and filter by globs.
         candidates = _candidate_tools(
@@ -226,24 +230,29 @@ def make_spawn_subagent_tool(
                 selected.append(t)
         if not selected:
             available = ", ".join(sorted({t.name for t in candidates})[:30])
-            return json.dumps({
-                "status": "error",
-                "error": f"no tools matched globs {tool_globs}",
-                "hint": f"Available (sample): {available}",
-            })
+            return json.dumps(
+                {
+                    "status": "error",
+                    "error": f"no tools matched globs {tool_globs}",
+                    "hint": f"Available (sample): {available}",
+                }
+            )
 
         # Reject interrupting tools — see module docstring.
         bad = [
-            t.name for t in selected
+            t.name
+            for t in selected
             if t.name in _INTERRUPTING_EXACT
             or any(t.name.startswith(p) for p in _INTERRUPTING_PREFIXES)
         ]
         if bad:
-            return json.dumps({
-                "status": "error",
-                "error": f"these tools may emit user prompts and are not allowed in spawn_subagent v1: {sorted(set(bad))}",
-                "hint": "Use ask_user yourself before spawning, or narrow tool_globs to read/research-only patterns (e.g. ['tr_read_*', 'tr_grep', 'tr_execute_in_sandbox', 'ws_*', 'sk_read*', 'db_*']).",
-            })
+            return json.dumps(
+                {
+                    "status": "error",
+                    "error": f"these tools may emit user prompts and are not allowed in spawn_subagent v1: {sorted(set(bad))}",
+                    "hint": "Use ask_user yourself before spawning, or narrow tool_globs to read/research-only patterns (e.g. ['tr_read_*', 'tr_grep', 'tr_execute_in_sandbox', 'ws_*', 'sk_read*', 'db_*']).",
+                }
+            )
 
         # Build the child. Each spawned agent gets its own ToolRegistry so the
         # tool_search inside the child sees ONLY what the orchestrator selected.
@@ -266,19 +275,25 @@ def make_spawn_subagent_tool(
 
         logger.info(
             "spawn_subagent name=%s globs=%s selected=%d depth=%d",
-            name, tool_globs, len(selected), depth,
+            name,
+            tool_globs,
+            len(selected),
+            depth,
         )
 
         try:
             result = await child.ainvoke(
-                {"messages": [HumanMessage(content=task)]}, config=cfg,
+                {"messages": [HumanMessage(content=task)]},
+                config=cfg,
             )
         except Exception as exc:  # noqa: BLE001 — surface as structured error
             logger.exception("spawn_subagent failed name=%s", name)
-            return json.dumps({
-                "status": "error",
-                "error": f"child agent crashed: {type(exc).__name__}: {exc}",
-            })
+            return json.dumps(
+                {
+                    "status": "error",
+                    "error": f"child agent crashed: {type(exc).__name__}: {exc}",
+                }
+            )
 
         msgs = result.get("messages", []) if isinstance(result, dict) else []
         final_text = ""
@@ -296,8 +311,7 @@ def make_spawn_subagent_tool(
                 event_id=session_id or "spawn",
                 outcome="spawn_subagent",
                 action_summary=(
-                    f"name={name} tools={[t.name for t in selected]} "
-                    f"final_chars={len(final_text)}"
+                    f"name={name} tools={[t.name for t in selected]} final_chars={len(final_text)}"
                 )[:300],
                 session_id=session_id,
                 agent_path=child_path,
@@ -305,9 +319,11 @@ def make_spawn_subagent_tool(
         except Exception:  # noqa: BLE001 — audit is best-effort
             logger.exception("spawn audit log failed name=%s", name)
 
-        return json.dumps({
-            "status": "success",
-            "result": {"text": final_text[:8000], "agent_path": child_path},
-        })
+        return json.dumps(
+            {
+                "status": "success",
+                "result": {"text": final_text[:8000], "agent_path": child_path},
+            }
+        )
 
     return spawn_subagent

@@ -97,7 +97,7 @@ def _to_mono16_fallback(raw: bytes, channels: int, width: int) -> bytes:
             mono = array.array("h", bytes(2 * frames))
             for i in range(frames):
                 base = i * channels
-                mono[i] = int(sum(samples[base:base + channels]) / channels)
+                mono[i] = int(sum(samples[base : base + channels]) / channels)
             samples = mono
         return samples.tobytes()
 
@@ -113,9 +113,9 @@ def _to_mono16_fallback(raw: bytes, channels: int, width: int) -> bytes:
     if dtype is None:
         raise RuntimeError(f"unsupported sample width: {width} bytes")
     a = np.frombuffer(raw, dtype=dtype).astype(np.int32)
-    if width == 1:      # 8-bit WAV is unsigned, centered at 128
+    if width == 1:  # 8-bit WAV is unsigned, centered at 128
         a = (a - 128) * 256
-    elif width == 4:    # 32-bit → 16-bit
+    elif width == 4:  # 32-bit → 16-bit
         a = a >> 16
     if channels > 1:
         a = a.reshape(-1, channels).mean(axis=1)

@@ -71,8 +71,9 @@ class PrefsInjector:
         if len(block) > LIMITS.max_prefs_chars:
             logger.warning(
                 "prefs block exceeds %d chars (%d); truncating",
-                LIMITS.max_prefs_chars, len(block),
+                LIMITS.max_prefs_chars,
+                len(block),
             )
-            block = block[:LIMITS.max_prefs_chars]
+            block = block[: LIMITS.max_prefs_chars]
 
         return block

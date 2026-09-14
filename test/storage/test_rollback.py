@@ -114,7 +114,8 @@ class SqliteRollback(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(_Boom):
             await self.store.two_writes_then_fail()
         self.assertEqual(
-            await self.store.count(), 0,
+            await self.store.count(),
+            0,
             "SQLite left rows behind after a failed multi-statement write — "
             "_run_write did not roll back",
         )
@@ -129,6 +130,7 @@ class SqliteRollback(unittest.IsolatedAsyncioTestCase):
         ``CancelledError`` derives from ``BaseException``, not ``Exception``, so
         an ``except Exception`` rollback would miss it entirely.
         """
+
         async def _do(conn):
             await conn.execute("INSERT INTO rb(id, v) VALUES(?,?)", ("a", "1"))
             raise asyncio.CancelledError()
@@ -136,7 +138,8 @@ class SqliteRollback(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(asyncio.CancelledError):
             await self.store._run_write(_do)
         self.assertEqual(
-            await self.store.count(), 0,
+            await self.store.count(),
+            0,
             "a cancelled write left rows behind",
         )
 
@@ -171,7 +174,8 @@ class SqliteEventsBackendRollback(unittest.IsolatedAsyncioTestCase):
                 )
                 raise _Boom("mid-transaction failure")
         self.assertEqual(
-            await self._counters(), before,
+            await self._counters(),
+            before,
             "SqliteEventsBackend.transaction() did not roll back",
         )
 
@@ -219,7 +223,8 @@ class PostgresRollback(unittest.IsolatedAsyncioTestCase):
                 await conn.execute("INSERT INTO _rb_probe VALUES (%s,%s)", ("b", "2"))
                 raise _Boom("failure before commit")
         self.assertEqual(
-            await self._count(), 0,
+            await self._count(),
+            0,
             "PgPool.transaction() did not roll back — both rows survived",
         )
 
@@ -242,7 +247,8 @@ class PostgresRollback(unittest.IsolatedAsyncioTestCase):
                 await conn.execute("INSERT INTO _rb_probe VALUES (%s,%s)", ("a", "1"))
                 raise _Boom("failure after an autocommitted statement")
         self.assertEqual(
-            await self._count(), 1,
+            await self._count(),
+            1,
             "connection() appears transactional now; if the pool stopped being "
             "autocommit, PgPool's docs and the conformance rules need revisiting",
         )
@@ -279,14 +285,16 @@ class FeedbackUpsertAtomicity(unittest.IsolatedAsyncioTestCase):
 
         src = inspect.getsource(UnifiedFeedbackStore.upsert)
         self.assertNotIn(
-            "DELETE FROM message_feedback", src,
+            "DELETE FROM message_feedback",
+            src,
             "upsert is back to DELETE-then-INSERT: a failure between the two "
             "destroys the user's prior feedback and never writes the "
             "replacement, and correctness again depends on the caller wrapping "
             "it in a transaction.",
         )
         self.assertEqual(
-            src.count("await conn.execute("), 1,
+            src.count("await conn.execute("),
+            1,
             "upsert issues more than one statement; the ON CONFLICT form exists "
             "precisely so there is no window between them",
         )

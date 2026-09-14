@@ -41,7 +41,10 @@ from yuyutsava.platform import host_profile
 _POSIX_DANGEROUS_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     # find-based deletion (added previously)
     (re.compile(r"\bfind\b.*-delete\b", re.IGNORECASE), "find -delete (bulk file deletion)"),
-    (re.compile(r"\bfind\b.*-exec\s+(rm|unlink)\b", re.IGNORECASE), "find -exec rm/unlink (bulk file deletion)"),
+    (
+        re.compile(r"\bfind\b.*-exec\s+(rm|unlink)\b", re.IGNORECASE),
+        "find -exec rm/unlink (bulk file deletion)",
+    ),
     # Recursive / forced deletion
     (re.compile(r"\brm\s+.*-[^\s]*r", re.IGNORECASE), "Recursive file deletion"),
     (re.compile(r"\brm\s+.*-[^\s]*f", re.IGNORECASE), "Forced file deletion"),
@@ -76,15 +79,31 @@ _WINDOWS_DANGEROUS_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\bformat\b\s+[a-z]:", re.IGNORECASE), "Disk format"),
     (re.compile(r"\bdel\b.*\s/[sq]", re.IGNORECASE), "Recursive/forced delete (del /s /q)"),
     (re.compile(r"\brmdir\b.*\s/s", re.IGNORECASE), "Recursive directory delete (rmdir /s)"),
-    (re.compile(r"Remove-Item\b.*-Recurse\b.*-Force\b", re.IGNORECASE), "PowerShell recursive force delete"),
-    (re.compile(r"\breg\b\s+delete\b.*HK(LM|EY_LOCAL_MACHINE)", re.IGNORECASE), "Registry delete (HKLM)"),
+    (
+        re.compile(r"Remove-Item\b.*-Recurse\b.*-Force\b", re.IGNORECASE),
+        "PowerShell recursive force delete",
+    ),
+    (
+        re.compile(r"\breg\b\s+delete\b.*HK(LM|EY_LOCAL_MACHINE)", re.IGNORECASE),
+        "Registry delete (HKLM)",
+    ),
     (re.compile(r"\bbcdedit\b", re.IGNORECASE), "Boot configuration edit (bcdedit)"),
     (re.compile(r"\bvssadmin\b.*delete\b.*shadows", re.IGNORECASE), "Delete volume shadow copies"),
     (re.compile(r"\bdiskpart\b", re.IGNORECASE), "Disk partitioning (diskpart)"),
-    (re.compile(r"Set-ExecutionPolicy\b.*(Bypass|Unrestricted)", re.IGNORECASE), "Weaken PowerShell execution policy"),
-    (re.compile(r"(iex|Invoke-Expression)\b.*(Invoke-WebRequest|iwr|curl|DownloadString)", re.IGNORECASE),
-     "Remote code execution (IEX from web)"),
-    (re.compile(r"\b(Stop-Computer|Restart-Computer|shutdown)\b", re.IGNORECASE), "System shutdown or restart"),
+    (
+        re.compile(r"Set-ExecutionPolicy\b.*(Bypass|Unrestricted)", re.IGNORECASE),
+        "Weaken PowerShell execution policy",
+    ),
+    (
+        re.compile(
+            r"(iex|Invoke-Expression)\b.*(Invoke-WebRequest|iwr|curl|DownloadString)", re.IGNORECASE
+        ),
+        "Remote code execution (IEX from web)",
+    ),
+    (
+        re.compile(r"\b(Stop-Computer|Restart-Computer|shutdown)\b", re.IGNORECASE),
+        "System shutdown or restart",
+    ),
     (re.compile(r"\btakeown\b|\bicacls\b.*\/grant", re.IGNORECASE), "Ownership / ACL change"),
 ]
 
@@ -93,16 +112,27 @@ def _dangerous_patterns() -> list[tuple[re.Pattern[str], str]]:
     """The dangerous-pattern table for the current host OS."""
     return _WINDOWS_DANGEROUS_PATTERNS if host_profile().is_windows else _POSIX_DANGEROUS_PATTERNS
 
+
 # Protected subdirectories inside the workspace — deletion/modification triggers a prompt
-_PROTECTED_SUBDIRS: frozenset[str] = frozenset({
-    ".venv", ".git", "node_modules", "__pycache__",
-    ".tox", ".mypy_cache", ".pytest_cache",
-})
+_PROTECTED_SUBDIRS: frozenset[str] = frozenset(
+    {
+        ".venv",
+        ".git",
+        "node_modules",
+        "__pycache__",
+        ".tox",
+        ".mypy_cache",
+        ".pytest_cache",
+    }
+)
 
 _PROTECTED_SUBDIR_RE: re.Pattern[str] = re.compile(
-    r"(?:^|[\s/])(" + "|".join(re.escape(d) for d in sorted(_PROTECTED_SUBDIRS)) + r")(?:/|[\s;|]|$)",
+    r"(?:^|[\s/])("
+    + "|".join(re.escape(d) for d in sorted(_PROTECTED_SUBDIRS))
+    + r")(?:/|[\s;|]|$)",
     re.IGNORECASE,
 )
+
 
 def _affected_protected_subdirs(command: str) -> list[str]:
     found: set[str] = set()
@@ -137,15 +167,17 @@ _ABS_PATH_RE: re.Pattern[str] = re.compile(
     re.MULTILINE,
 )
 
+
 # System-critical prefixes — hard block, no user prompt. Per-OS via HostProfile.
 def _system_critical_prefixes() -> tuple[str, ...]:
     return host_profile().system_critical_prefixes
+
 
 # Commands that modify or delete filesystem state
 _DESTRUCTIVE_COMMAND_RE: re.Pattern[str] = re.compile(
     r"\b(rm|rmdir|unlink|shred|truncate|mv|dd|mkfs|chmod|chown)\b"
     r"|\bfind\b.*(-delete|-exec\s+(rm|unlink))"
-    r"|>\s*/",   # redirect overwrite to an absolute path
+    r"|>\s*/",  # redirect overwrite to an absolute path
     re.IGNORECASE,
 )
 

@@ -23,14 +23,23 @@ from yuyutsava.daemon.triage_loop import OrchestratorTask
 
 def _snap(cpu: float = 10.0, mem: float = 8000.0, disk: float = 100.0) -> ResourceSnapshot:
     return ResourceSnapshot(
-        cpu_pct=cpu, mem_available_mb=mem, disk_free_gb=disk, ts=time.time(),
+        cpu_pct=cpu,
+        mem_available_mb=mem,
+        disk_free_gb=disk,
+        ts=time.time(),
     )
 
 
 def _task(complexity: int = 3, hint: str = "general-purpose") -> OrchestratorTask:
     return OrchestratorTask(
-        proposal_id="p", event_id="e", topic="t", summary="s",
-        instruction="i", subagent_hint=hint, urgency=2, complexity=complexity,
+        proposal_id="p",
+        event_id="e",
+        topic="t",
+        summary="s",
+        instruction="i",
+        subagent_hint=hint,
+        urgency=2,
+        complexity=complexity,
     )
 
 
@@ -138,22 +147,22 @@ class ResourceMonitorTests(unittest.IsolatedAsyncioTestCase):
             sampler=_ScriptedSampler(_snap(cpu=10), _snap(cpu=93), _snap(mem=512), _snap(disk=2)),
         )
         self.assertIsNone(monitor.snapshot())
-        self.assertFalse(monitor.loaded())        # no data → never defer
+        self.assertFalse(monitor.loaded())  # no data → never defer
         self.assertFalse(monitor.disk_critical())
 
         await monitor.sample_once()
         self.assertFalse(monitor.loaded())
-        await monitor.sample_once()                # cpu 93 ≥ 85
+        await monitor.sample_once()  # cpu 93 ≥ 85
         self.assertTrue(monitor.loaded())
-        await monitor.sample_once()                # mem 512 < 1024
+        await monitor.sample_once()  # mem 512 < 1024
         self.assertTrue(monitor.loaded())
         self.assertFalse(monitor.disk_critical())
-        await monitor.sample_once()                # disk 2 < 5
+        await monitor.sample_once()  # disk 2 < 5
         self.assertTrue(monitor.disk_critical())
 
         ring = monitor.ring()
         self.assertEqual(len(ring), 4)
-        self.assertEqual(ring[0].cpu_pct, 10)      # oldest first
+        self.assertEqual(ring[0].cpu_pct, 10)  # oldest first
         self.assertEqual(monitor.snapshot(), ring[-1])
 
     async def test_psutil_sampler_returns_sane_values(self) -> None:
@@ -176,14 +185,14 @@ class ResourceMonitorTests(unittest.IsolatedAsyncioTestCase):
 
         snap = await monitor.sample_once()
         await monitor._maybe_emit(snap)
-        await monitor._maybe_emit(snap)            # within emit_sec → debounced
+        await monitor._maybe_emit(snap)  # within emit_sec → debounced
         self.assertEqual(len(sink.events), 1)
         self.assertEqual(sink.events[0].payload.kind, "system_metrics")
         self.assertEqual(sink.events[0].payload.cpu_pct, snap.cpu_pct)
 
         active = False
-        monitor._last_emit = 0.0                   # debounce window cleared
-        await monitor._maybe_emit(snap)            # idle daemon → no emission
+        monitor._last_emit = 0.0  # debounce window cleared
+        await monitor._maybe_emit(snap)  # idle daemon → no emission
         self.assertEqual(len(sink.events), 1)
 
 
@@ -199,8 +208,12 @@ class AdmissionControllerTests(unittest.IsolatedAsyncioTestCase):
         sink = _EventSink()
         clock = _Clock(monitor)
         adm = AdmissionController(
-            monitor, settings, registry=registry, event_sink=sink,
-            sleep=clock.sleep, clock=clock.clock,
+            monitor,
+            settings,
+            registry=registry,
+            event_sink=sink,
+            sleep=clock.sleep,
+            clock=clock.clock,
         )
         return adm, sink, clock, monitor
 
@@ -216,7 +229,8 @@ class AdmissionControllerTests(unittest.IsolatedAsyncioTestCase):
 
     def test_heavy_hint_set(self) -> None:
         adm, *_ = self._admission(
-            _snap(), settings=ResourceSettings(heavy_hints=frozenset({"face-watcher"})),
+            _snap(),
+            settings=ResourceSettings(heavy_hints=frozenset({"face-watcher"})),
         )
         self.assertEqual(adm.weight_for(_task(complexity=2, hint="face-watcher")), "heavy")
         self.assertEqual(adm.weight_for(_task(complexity=2, hint="other")), "light")
@@ -236,10 +250,12 @@ class AdmissionControllerTests(unittest.IsolatedAsyncioTestCase):
     async def test_heavy_defers_under_load_then_runs(self) -> None:
         registry = _FakeRegistry()
         adm, sink, clock, monitor = self._admission(
-            _snap(cpu=93), _snap(cpu=95), _snap(cpu=20),
+            _snap(cpu=93),
+            _snap(cpu=95),
+            _snap(cpu=20),
             registry=registry,
         )
-        await monitor.sample_once()                # ring: loaded
+        await monitor.sample_once()  # ring: loaded
         ran = False
         async with adm.slot(_task(complexity=5), task_id="tsk_h"):
             ran = True
@@ -260,12 +276,12 @@ class AdmissionControllerTests(unittest.IsolatedAsyncioTestCase):
             settings=ResourceSettings(defer_max_sec=5.0),
             registry=registry,
         )
-        await monitor.sample_once()                # permanently loaded
+        await monitor.sample_once()  # permanently loaded
         ran = False
         async with adm.slot(_task(complexity=5), task_id="tsk_c"):
             ran = True
-        self.assertTrue(ran)                       # never starved
-        self.assertEqual(sum(clock.sleeps), 5.0)   # waited exactly the ceiling
+        self.assertTrue(ran)  # never starved
+        self.assertEqual(sum(clock.sleeps), 5.0)  # waited exactly the ceiling
         self.assertEqual(registry.deferred, [("tsk_c", 5000)])
         self.assertTrue(any("running anyway" in ln for ln in sink.lines()))
 
@@ -290,7 +306,7 @@ class AdmissionControllerTests(unittest.IsolatedAsyncioTestCase):
         t1 = asyncio.create_task(hold_first())
         t2 = asyncio.create_task(run_second())
         await first_in.wait()
-        await asyncio.sleep(0.05)                  # give second a chance to (wrongly) enter
+        await asyncio.sleep(0.05)  # give second a chance to (wrongly) enter
         self.assertEqual(order, ["first"])
         self.assertEqual(adm.heavy_slots_in_use, 1)
         release_first.set()
@@ -316,7 +332,7 @@ class AdmissionControllerTests(unittest.IsolatedAsyncioTestCase):
         async with adm.slot(_task(complexity=5), task_id="tsk_ok"):
             pass
         self.assertEqual(clock.sleeps, [])
-        self.assertEqual(registry.deferred, [])    # ~0ms is not worth a row
+        self.assertEqual(registry.deferred, [])  # ~0ms is not worth a row
         self.assertEqual(sink.events, [])
 
 

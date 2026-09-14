@@ -46,11 +46,11 @@ class MessageFeedback:
     thread_id: str
     session_id: str
     workspace: str | None
-    message_ref: str          # client message id / turn ref this rating targets
-    rating: str               # "up" | "down"
+    message_ref: str  # client message id / turn ref this rating targets
+    rating: str  # "up" | "down"
     note: str | None
-    user_text: str            # snapshot of the prompting user turn
-    assistant_text: str       # snapshot of the rated assistant turn
+    user_text: str  # snapshot of the prompting user turn
+    assistant_text: str  # snapshot of the rated assistant turn
     created_ts: float
 
 
@@ -97,17 +97,14 @@ def _validate(rating: str) -> None:
         raise ValueError(f"feedback rating must be one of {RATINGS}, got {rating!r}")
 
 
-
 # NOTE: SqliteFeedbackStore was replaced on 2026-08-09 by UnifiedFeedbackStore in
 # storage/feedback_store_unified.py (ADR-002 step 2.5b). Parity verified on both
 # live backends in test/storage/test_feedback_store_parity.py.
 
 
-
 # NOTE: PgFeedbackStore was replaced on 2026-08-09 by UnifiedFeedbackStore in
 # storage/feedback_store_unified.py (ADR-002 step 2.5b). Parity verified on both
 # live backends in test/storage/test_feedback_store_parity.py.
-
 
 
 # Process-singleton, mirroring get/set_default_session_store(). Postgres is

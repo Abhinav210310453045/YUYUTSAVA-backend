@@ -74,10 +74,7 @@ def _count_memory_files(workspace: Path) -> int:
 
 def _print_start_banner(session: Session, *, resuming: bool) -> None:
     verb = "resuming" if resuming else "starting"
-    cmd = (
-        f"uv run yuyutsava --verbose --workspace {session.workspace} "
-        f"--resume {session.id}"
-    )
+    cmd = f"uv run yuyutsava --verbose --workspace {session.workspace} --resume {session.id}"
     print(f"\n\033[36m{_BANNER}\033[0m", file=sys.stderr)
     print(f"\033[36mYUYUTSAVA — {verb} session\033[0m", file=sys.stderr)
     print(f"  session_id : {session.id}", file=sys.stderr)
@@ -143,8 +140,7 @@ async def _resolve_session(
             existing = await store.get(resume_id)
         except SessionNotFound:
             raise ResumeFailed(
-                f"No session with id {resume_id!r}. "
-                f"Run with --list-sessions to see available ids."
+                f"No session with id {resume_id!r}. Run with --list-sessions to see available ids."
             ) from None
         if str(existing.workspace) != str(workspace.resolve()):
             print(
@@ -185,8 +181,12 @@ async def run_session(
     Re-raises whatever ``astream_agent`` raised after marking the row crashed.
     """
     session, resuming = await _resolve_session(
-        store, workspace=workspace, task=task,
-        resume_id=resume_id, continue_latest=continue_latest, origin=origin,
+        store,
+        workspace=workspace,
+        task=task,
+        resume_id=resume_id,
+        continue_latest=continue_latest,
+        origin=origin,
     )
     _print_start_banner(session, resuming=resuming)
 
@@ -201,8 +201,7 @@ async def run_session(
                     busy_timeout_ms=settings.busy_timeout_ms,
                 )
         except Exception as exc:  # noqa: BLE001
-            print(f"\033[33msessions:\033[0m interrupts store init failed: {exc}",
-                  file=sys.stderr)
+            print(f"\033[33msessions:\033[0m interrupts store init failed: {exc}", file=sys.stderr)
             interrupts_store = None
 
     if resuming:
@@ -224,8 +223,7 @@ async def run_session(
                         file=sys.stderr,
                     )
             except Exception as exc:  # noqa: BLE001
-                print(f"\033[33msessions:\033[0m mark_orphaned failed: {exc}",
-                      file=sys.stderr)
+                print(f"\033[33msessions:\033[0m mark_orphaned failed: {exc}", file=sys.stderr)
         # Refresh task_preview so the sessions list shows the most recent intent
         # rather than the original prompt from the first run.
         new_preview = (task or "").strip().replace("\n", " ")
@@ -240,7 +238,8 @@ async def run_session(
     completed = False
     try:
         final = await astream_agent(
-            agent, task,
+            agent,
+            task,
             thread_id=session.thread_id,
             recursion_limit=recursion_limit,
             on_tick=_on_tick,
@@ -255,9 +254,9 @@ async def run_session(
         try:
             await ticker.flush_final(memory_files_count=_count_memory_files(workspace))
             await store.update_status(
-                session.id, "done" if completed else "crashed",
+                session.id,
+                "done" if completed else "crashed",
             )
         except Exception as exc:  # noqa: BLE001
             # Never let bookkeeping mask the original failure.
-            print(f"\033[33msessions:\033[0m bookkeeping failed: {exc}",
-                  file=sys.stderr)
+            print(f"\033[33msessions:\033[0m bookkeeping failed: {exc}", file=sys.stderr)

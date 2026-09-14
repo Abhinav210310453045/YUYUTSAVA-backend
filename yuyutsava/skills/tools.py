@@ -59,9 +59,7 @@ def make_skill_tools(
         return registry.get_body(name)
 
     @tool
-    async def sk_write_skill(
-        name: str, description: str, body: str, scope: str = "global"
-    ) -> str:
+    async def sk_write_skill(name: str, description: str, body: str, scope: str = "global") -> str:
         """Save a reusable task pattern as a personal skill.
 
         Call this after completing a task whose pattern is NOT already in the
@@ -78,9 +76,7 @@ def make_skill_tools(
         """
         agent = agent_name if scope == "own" and agent_name else None
         try:
-            slug = registry.write_skill(
-                name=name, description=description, body=body, agent=agent
-            )
+            slug = registry.write_skill(name=name, description=description, body=body, agent=agent)
         except Exception as exc:
             return f"error saving skill {name!r}: {exc}"
         # Index into the semantic store so it's retrievable later. Best-effort:
@@ -92,12 +88,12 @@ def make_skill_tools(
                     await store.upsert(meta, registry.get_body(slug))
                 except Exception:
                     logger.warning(
-                        "skills: wrote %r to disk but failed to index it", slug,
+                        "skills: wrote %r to disk but failed to index it",
+                        slug,
                         exc_info=True,
                     )
-        return (
-            f"skill {slug!r} saved to personal scope"
-            + (f" (agent-scoped to {agent!r})" if agent else " (global)")
+        return f"skill {slug!r} saved to personal scope" + (
+            f" (agent-scoped to {agent!r})" if agent else " (global)"
         )
 
     tools: list[BaseTool] = [sk_read_skill, sk_write_skill]

@@ -249,7 +249,9 @@ class ConversationService:
         # run left the assistant's turn hanging open and the next user message
         # landed straight after a tool result.
         await self._repair_before_turn(
-            bundle, on_event, close_turn=resume_value is None,
+            bundle,
+            on_event,
+            close_turn=resume_value is None,
         )
 
         async def _drive(user_text: str | None, resume: object | None) -> tuple[str, int]:
@@ -281,7 +283,9 @@ class ConversationService:
 
         if not final:
             final, extra = await self._recover_empty_turn(
-                bundle, on_event=on_event, drive=_drive,
+                bundle,
+                on_event=on_event,
+                drive=_drive,
             )
             steps += extra
 
@@ -297,9 +301,7 @@ class ConversationService:
                     title = derive_session_title(text)
                     if title:
                         await self.store.set_title_if_empty(self.session.id, title)
-                        self.session = dataclasses.replace(
-                            self.session, title=title
-                        )
+                        self.session = dataclasses.replace(self.session, title=title)
             except Exception:  # noqa: BLE001 — bookkeeping never breaks a turn
                 logger.debug("turn bookkeeping failed", exc_info=True)
         return final
@@ -337,7 +339,11 @@ class ConversationService:
             return False
 
     async def _repair_before_turn(
-        self, bundle: AgentBundle, on_event: "EventSink", *, close_turn: bool = True,
+        self,
+        bundle: AgentBundle,
+        on_event: "EventSink",
+        *,
+        close_turn: bool = True,
     ) -> None:
         """Repair an interrupted tool call before sending anything new.
 
@@ -355,30 +361,43 @@ class ConversationService:
         )
 
         try:
-            state = await bundle.agent.aget_state(
-                {"configurable": {"thread_id": self.thread_id}}
-            )
+            state = await bundle.agent.aget_state({"configurable": {"thread_id": self.thread_id}})
             messages = state.values.get("messages", []) if state and state.values else []
             found = diagnose(messages)
             if not found.any(close_turn=close_turn):
                 return
             repaired = await repair_orphan_tool_calls(
-                bundle.agent, self.thread_id, cause=Cause.INTERRUPTED_BY_USER,
+                bundle.agent,
+                self.thread_id,
+                cause=Cause.INTERRUPTED_BY_USER,
                 close_turn=close_turn,
             )
         except Exception:  # noqa: BLE001 — a failed repair must not block a turn
             logger.debug("pre-turn repair failed", exc_info=True)
             return
         if repaired:
-            await self._emit(on_event, StreamEvent("notice", {
-                "level": "info",
-                "text": "Picking up after an interruption — " + _repair_summary(
-                    found, close_turn=close_turn,
-                ) + ".",
-            }))
+            await self._emit(
+                on_event,
+                StreamEvent(
+                    "notice",
+                    {
+                        "level": "info",
+                        "text": "Picking up after an interruption — "
+                        + _repair_summary(
+                            found,
+                            close_turn=close_turn,
+                        )
+                        + ".",
+                    },
+                ),
+            )
 
     async def _recover_empty_turn(
-        self, bundle: AgentBundle, *, on_event: "EventSink", drive: Any,
+        self,
+        bundle: AgentBundle,
+        *,
+        on_event: "EventSink",
+        drive: Any,
     ) -> tuple[str, int]:
         """A turn produced nothing. Try to fix it, and never stay silent.
 
@@ -415,36 +434,48 @@ class ConversationService:
         repaired = 0
         found = None
         try:
-            state = await bundle.agent.aget_state(
-                {"configurable": {"thread_id": self.thread_id}}
-            )
+            state = await bundle.agent.aget_state({"configurable": {"thread_id": self.thread_id}})
             messages = state.values.get("messages", []) if state and state.values else []
             found = diagnose(messages)
             if found.any():
                 repaired = await repair_orphan_tool_calls(
-                    bundle.agent, self.thread_id,
+                    bundle.agent,
+                    self.thread_id,
                     cause=Cause.INTERRUPTED_BY_USER,
                 )
         except Exception:  # noqa: BLE001 — recovery must not raise over a reply
             logger.debug("empty-turn inspection failed", exc_info=True)
 
         if repaired and found is not None:
-            await self._emit(on_event, StreamEvent("notice", {
-                "level": "warning",
-                "text": (
-                    "The previous turn left the history in a shape the model "
-                    "would not continue from (" + _repair_summary(found)
-                    + "). Repaired — retrying."
+            await self._emit(
+                on_event,
+                StreamEvent(
+                    "notice",
+                    {
+                        "level": "warning",
+                        "text": (
+                            "The previous turn left the history in a shape the model "
+                            "would not continue from ("
+                            + _repair_summary(found)
+                            + "). Repaired — retrying."
+                        ),
+                    },
                 ),
-            }))
+            )
         else:
-            await self._emit(on_event, StreamEvent("notice", {
-                "level": "warning",
-                "text": (
-                    "The model returned nothing. Retrying once — an empty "
-                    "response is often transient."
+            await self._emit(
+                on_event,
+                StreamEvent(
+                    "notice",
+                    {
+                        "level": "warning",
+                        "text": (
+                            "The model returned nothing. Retrying once — an empty "
+                            "response is often transient."
+                        ),
+                    },
                 ),
-            }))
+            )
         # No new user message: theirs is already in the history, and sending it
         # twice would make the model answer itself.
         try:
@@ -455,19 +486,26 @@ class ConversationService:
         if final:
             return final, steps
 
-        await self._emit(on_event, StreamEvent("notice", {
-            "level": "error",
-            "text": (
-                "The model returned an empty response twice — no text and no "
-                "tool call, before and after a repair. The conversation's "
-                "history is in a state it will not continue from. Try /new for "
-                "a fresh session; your last message is still in the history, "
-                "so nothing you wrote is lost."
+        await self._emit(
+            on_event,
+            StreamEvent(
+                "notice",
+                {
+                    "level": "error",
+                    "text": (
+                        "The model returned an empty response twice — no text and no "
+                        "tool call, before and after a repair. The conversation's "
+                        "history is in a state it will not continue from. Try /new for "
+                        "a fresh session; your last message is still in the history, "
+                        "so nothing you wrote is lost."
+                    ),
+                },
             ),
-        }))
+        )
         logger.warning(
-            "empty turn on thread=%s (repaired=%d, retried=1) — surfaced to "
-            "the user", self.thread_id, repaired,
+            "empty turn on thread=%s (repaired=%d, retried=1) — surfaced to the user",
+            self.thread_id,
+            repaired,
         )
         return "", steps
 

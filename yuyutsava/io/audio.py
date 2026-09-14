@@ -27,6 +27,7 @@ class AudioUnavailableError(RuntimeError):
 def _require_sd():
     try:
         import sounddevice as sd  # type: ignore
+
         return sd
     except ImportError as exc:
         raise AudioUnavailableError(
@@ -37,6 +38,7 @@ def _require_sd():
 def _require_np():
     try:
         import numpy as np  # type: ignore
+
         return np
     except ImportError as exc:
         raise AudioUnavailableError("numpy not installed") from exc
@@ -45,6 +47,7 @@ def _require_np():
 def _require_sf():
     try:
         import soundfile as sf  # type: ignore
+
         return sf
     except ImportError as exc:
         raise AudioUnavailableError(

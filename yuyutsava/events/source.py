@@ -63,16 +63,15 @@ class SourceContext:
             topic=topic,
             source=self.name,
             summary=summary,
-            payload_ref=(f"file://{blob_path}" if blob_path
-                         else f"sqlite://event_payloads/<{topic}>"),
+            payload_ref=(
+                f"file://{blob_path}" if blob_path else f"sqlite://event_payloads/<{topic}>"
+            ),
             severity=severity,
             hints=hints,
         )
         # Patch payload_ref now that we have event_id (for the sqlite case).
         if not blob_path:
-            ev = dataclasses.replace(
-                ev, payload_ref=f"sqlite://event_payloads/{ev.event_id}"
-            )
+            ev = dataclasses.replace(ev, payload_ref=f"sqlite://event_payloads/{ev.event_id}")
         await self.store.put_event_payload(
             event_id=ev.event_id,
             topic=topic,
@@ -96,9 +95,7 @@ class EventSource(ABC):
     topics: tuple[str, ...] = ()
 
     @abstractmethod
-    async def start(self, ctx: SourceContext) -> None:
-        ...
+    async def start(self, ctx: SourceContext) -> None: ...
 
     @abstractmethod
-    async def stop(self) -> None:
-        ...
+    async def stop(self) -> None: ...

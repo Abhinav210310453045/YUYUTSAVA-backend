@@ -52,8 +52,8 @@ class MemoryInjectorTests(unittest.IsolatedAsyncioTestCase):
             MemoryHit("m2", "fact", "DROPME" + "b" * 400, 0.8),
         ]
         block = await MemoryInjector(_FakeStore(hits)).build_block("task")
-        self.assertIn("a" * 100, block)       # first memory present, whole
-        self.assertNotIn("DROPME", block)     # second dropped, not fragmented
+        self.assertIn("a" * 100, block)  # first memory present, whole
+        self.assertNotIn("DROPME", block)  # second dropped, not fragmented
         self.assertLessEqual(len(block), _BUDGET)
 
     async def test_oversized_first_memory_truncated(self) -> None:

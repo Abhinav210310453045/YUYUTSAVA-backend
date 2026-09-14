@@ -47,11 +47,7 @@ def is_loopback_host(host: str) -> bool:
     Also matches the IPv4-mapped-IPv6 loopback form (``::ffff:127.0.0.1``)
     that can appear as a peer address on dual-stack sockets.
     """
-    return (
-        host.startswith("127.")
-        or host.startswith("::ffff:127.")
-        or host in ("localhost", "::1")
-    )
+    return host.startswith("127.") or host.startswith("::ffff:127.") or host in ("localhost", "::1")
 
 
 def _load_or_generate_token() -> str:
@@ -67,7 +63,8 @@ def _load_or_generate_token() -> str:
     os.chmod(path, 0o600)
     logger.warning(
         "auth: no YUYUTSAVA_API_TOKEN set for a non-loopback bind — generated "
-        "one at %s. Clients must send 'Authorization: Bearer <token>'.", path,
+        "one at %s. Clients must send 'Authorization: Bearer <token>'.",
+        path,
     )
     return token
 
@@ -77,7 +74,7 @@ class AuthSettings:
     """Resolved auth posture for one app instance."""
 
     token: str = ""
-    enforce: bool = False   # True ⇔ bind host is non-loopback
+    enforce: bool = False  # True ⇔ bind host is non-loopback
 
     @classmethod
     def from_env(cls, *, host: str) -> "AuthSettings":
@@ -112,7 +109,7 @@ def check_request(
         return True
     supplied = ""
     if authorization.lower().startswith("bearer "):
-        supplied = authorization[len("bearer "):].strip()
+        supplied = authorization[len("bearer ") :].strip()
     if not supplied and path in _QUERY_TOKEN_PATHS:
         supplied = query_token
     if not supplied or not settings.token:

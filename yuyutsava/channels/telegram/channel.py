@@ -33,8 +33,13 @@ import time
 from typing import Any
 
 from yuyutsava.channels.plugin import (
-    CAP_ASK, CAP_INVOKE, CAP_NOTIFY, CAP_PROPOSAL,
-    ChannelPlugin, DecisionConflictError, InboundSink,
+    CAP_ASK,
+    CAP_INVOKE,
+    CAP_NOTIFY,
+    CAP_PROPOSAL,
+    ChannelPlugin,
+    DecisionConflictError,
+    InboundSink,
 )
 from yuyutsava.channels.telegram.client import TelegramClient
 from yuyutsava.daemon.channels import (
@@ -75,9 +80,7 @@ def _parse_chat_ids(raw: str) -> tuple[int, ...]:
         try:
             ids.append(int(part))
         except ValueError as exc:
-            raise ValueError(
-                f"YUYUTSAVA_TELEGRAM_CHAT_IDS: {part!r} is not a chat id"
-            ) from exc
+            raise ValueError(f"YUYUTSAVA_TELEGRAM_CHAT_IDS: {part!r} is not a chat id") from exc
     return tuple(ids)
 
 
@@ -127,9 +130,7 @@ class TelegramChannelPlugin(ChannelPlugin):
                 "telegram: YUYUTSAVA_TELEGRAM_BOT_TOKEN is not set "
                 "(the token is env-only, never channels_config.json)"
             )
-        chat_ids = _parse_chat_ids(
-            os.environ.get("YUYUTSAVA_TELEGRAM_CHAT_IDS", "")
-        )
+        chat_ids = _parse_chat_ids(os.environ.get("YUYUTSAVA_TELEGRAM_CHAT_IDS", ""))
         if not chat_ids:
             raise ValueError(
                 "telegram: YUYUTSAVA_TELEGRAM_CHAT_IDS is not set "
@@ -150,11 +151,12 @@ class TelegramChannelPlugin(ChannelPlugin):
         self._sink = inbound
         self._stopped.clear()
         stored = await inbound.get_state(OFFSET_STATE_KEY, None)
-        self._offset = int(stored) if isinstance(stored, (int, float, str)) and str(stored).strip() else None
+        self._offset = (
+            int(stored) if isinstance(stored, (int, float, str)) and str(stored).strip() else None
+        )
         self._poll_task = asyncio.create_task(self._poll_loop(), name="telegram-poll")
         self._flush_task = asyncio.create_task(self._flush_loop(), name="telegram-flush")
-        logger.info("telegram: started (chats: %d, offset: %s)",
-                    len(self._chat_ids), self._offset)
+        logger.info("telegram: started (chats: %d, offset: %s)", len(self._chat_ids), self._offset)
 
     async def stop(self) -> None:
         self._stopped.set()
@@ -232,14 +234,19 @@ class TelegramChannelPlugin(ChannelPlugin):
         await self._send_to_all(_esc(text)[:4000])
 
     async def _send_to_all(
-        self, text: str, *, reply_markup: dict[str, Any] | None = None,
+        self,
+        text: str,
+        *,
+        reply_markup: dict[str, Any] | None = None,
     ) -> dict[int, int]:
         """Send to every allowlisted chat. Returns chat_id → message_id."""
         sent: dict[int, int] = {}
         for chat_id in self._chat_ids:
             try:
                 msg = await self._client.send_message(
-                    chat_id, text, reply_markup=reply_markup,
+                    chat_id,
+                    text,
+                    reply_markup=reply_markup,
                 )
                 if isinstance(msg, dict) and msg.get("message_id"):
                     sent[chat_id] = int(msg["message_id"])
@@ -259,11 +266,15 @@ class TelegramChannelPlugin(ChannelPlugin):
             f"{_esc(p.proposed)}\n"
             f"<i>subagent: {_esc(p.subagent)} · urgency {p.urgency}</i>"
         )
-        keyboard = {"inline_keyboard": [[
-            {"text": "✅ Approve", "callback_data": f"p:{p.proposal_id}:a"},
-            {"text": "⏭ Skip", "callback_data": f"p:{p.proposal_id}:s"},
-            {"text": "✏️ Modify…", "callback_data": f"p:{p.proposal_id}:m"},
-        ]]}
+        keyboard = {
+            "inline_keyboard": [
+                [
+                    {"text": "✅ Approve", "callback_data": f"p:{p.proposal_id}:a"},
+                    {"text": "⏭ Skip", "callback_data": f"p:{p.proposal_id}:s"},
+                    {"text": "✏️ Modify…", "callback_data": f"p:{p.proposal_id}:m"},
+                ]
+            ]
+        }
         loop = asyncio.get_running_loop()
         fut: "asyncio.Future[ProposalDecision]" = loop.create_future()
         self._sink.pending_proposals[p.proposal_id] = fut
@@ -282,7 +293,8 @@ class TelegramChannelPlugin(ChannelPlugin):
         for chat_id, message_id in sent.items():
             try:
                 await self._client.edit_message_text(
-                    chat_id, message_id,
+                    chat_id,
+                    message_id,
                     f"{text}\n→ <b>{_esc(decision.decision)}</b>",
                 )
             except Exception:
@@ -299,10 +311,12 @@ class TelegramChannelPlugin(ChannelPlugin):
         try:
             if a.options:
                 self._ask_options[a.ask_id] = list(a.options)
-                keyboard = {"inline_keyboard": [
-                    [{"text": opt, "callback_data": f"a:{a.ask_id}:{i}"}]
-                    for i, opt in enumerate(a.options)
-                ]}
+                keyboard = {
+                    "inline_keyboard": [
+                        [{"text": opt, "callback_data": f"a:{a.ask_id}:{i}"}]
+                        for i, opt in enumerate(a.options)
+                    ]
+                }
                 sent = await self._send_to_all(text, reply_markup=keyboard)
             else:
                 sent = await self._send_to_all(
@@ -324,11 +338,13 @@ class TelegramChannelPlugin(ChannelPlugin):
 
     async def _poll_loop(self) -> None:
         try:
-            await self._client.set_my_commands([
-                {"command": "tasks", "description": "Pending and running tasks"},
-                {"command": "status", "description": "Daemon health"},
-                {"command": "help", "description": "How to use this bot"},
-            ])
+            await self._client.set_my_commands(
+                [
+                    {"command": "tasks", "description": "Pending and running tasks"},
+                    {"command": "status", "description": "Daemon health"},
+                    {"command": "help", "description": "How to use this bot"},
+                ]
+            )
         except Exception:
             logger.warning("telegram: setMyCommands failed (continuing)", exc_info=True)
 
@@ -336,14 +352,16 @@ class TelegramChannelPlugin(ChannelPlugin):
         while not self._stopped.is_set():
             try:
                 updates = await self._client.get_updates(
-                    offset=self._offset, timeout=self._poll_timeout,
+                    offset=self._offset,
+                    timeout=self._poll_timeout,
                 )
                 error_delay = 1.0
             except asyncio.CancelledError:
                 raise
             except Exception:
                 logger.exception(
-                    "telegram: getUpdates failed; retrying in %.0fs", error_delay,
+                    "telegram: getUpdates failed; retrying in %.0fs",
+                    error_delay,
                 )
                 await asyncio.sleep(error_delay)
                 error_delay = min(error_delay * 2, 60.0)
@@ -376,10 +394,11 @@ class TelegramChannelPlugin(ChannelPlugin):
 
     async def _handle_callback(self, cq: dict[str, Any]) -> None:
         cq_id = str(cq.get("id", ""))
-        chat = ((cq.get("message") or {}).get("chat") or {})
+        chat = (cq.get("message") or {}).get("chat") or {}
         if not self._allowed(chat.get("id")):
-            logger.warning("telegram: callback from non-allowlisted chat %s dropped",
-                           chat.get("id"))
+            logger.warning(
+                "telegram: callback from non-allowlisted chat %s dropped", chat.get("id")
+            )
             return
         data = str(cq.get("data", ""))
         parts = data.split(":", 2)
@@ -424,8 +443,7 @@ class TelegramChannelPlugin(ChannelPlugin):
         chat = message.get("chat") or {}
         chat_id = chat.get("id")
         if not self._allowed(chat_id):
-            logger.warning("telegram: message from non-allowlisted chat %s dropped",
-                           chat_id)
+            logger.warning("telegram: message from non-allowlisted chat %s dropped", chat_id)
             return
         text = (message.get("text") or "").strip()
         if not text:
@@ -440,12 +458,16 @@ class TelegramChannelPlugin(ChannelPlugin):
                     await self._sink.respond_ask(target_id, text)
                 else:
                     await self._sink.respond_proposal(
-                        target_id, "modify", edited_instruction=text,
+                        target_id,
+                        "modify",
+                        edited_instruction=text,
                     )
                 await self._client.send_message(chat_id, "✓ got it", parse_mode=None)
             except DecisionConflictError:
                 await self._client.send_message(
-                    chat_id, "That prompt already expired.", parse_mode=None,
+                    chat_id,
+                    "That prompt already expired.",
+                    parse_mode=None,
                 )
             return
 
@@ -454,16 +476,22 @@ class TelegramChannelPlugin(ChannelPlugin):
             await self._client.send_message(chat_id, _HELP_TEXT, parse_mode=None)
         elif command == "/status":
             await self._client.send_message(
-                chat_id, self._sink.daemon_status(), parse_mode=None,
+                chat_id,
+                self._sink.daemon_status(),
+                parse_mode=None,
             )
         elif command == "/tasks":
             await self._client.send_message(
-                chat_id, await self._format_tasks(), parse_mode=None,
+                chat_id,
+                await self._format_tasks(),
+                parse_mode=None,
             )
         else:
             task_id = await self._sink.submit_task(text, origin="telegram")
             await self._client.send_message(
-                chat_id, f"✓ task submitted: {task_id}", parse_mode=None,
+                chat_id,
+                f"✓ task submitted: {task_id}",
+                parse_mode=None,
             )
 
     async def _format_tasks(self) -> str:

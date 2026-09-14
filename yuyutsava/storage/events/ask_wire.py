@@ -21,10 +21,25 @@ from typing import Any
 
 # Column order shared by the INSERT and the row→dict reader below.
 _ASK_COLS = (
-    "ask_id", "created_ts", "surface", "session_id", "thread_id", "card_id",
-    "task_id", "interrupt_id", "agent_path", "agent_label", "title", "body",
-    "options_json", "payload_json", "status", "answered_ts", "response",
+    "ask_id",
+    "created_ts",
+    "surface",
+    "session_id",
+    "thread_id",
+    "card_id",
+    "task_id",
+    "interrupt_id",
+    "agent_path",
+    "agent_label",
+    "title",
+    "body",
+    "options_json",
+    "payload_json",
+    "status",
+    "answered_ts",
+    "response",
 )
+
 
 def ask_row_to_record(row: Any) -> dict[str, Any]:
     """One ``pending_asks`` row → the wire record clients render.

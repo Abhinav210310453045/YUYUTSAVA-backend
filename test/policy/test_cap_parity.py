@@ -60,8 +60,13 @@ class _Mirror:
 
 
 class _Request:
-    def __init__(self, tool_name: str | None, args: dict | None = None,
-                 call_id: str = "c1", requested: str | None = None) -> None:
+    def __init__(
+        self,
+        tool_name: str | None,
+        args: dict | None = None,
+        call_id: str = "c1",
+        requested: str | None = None,
+    ) -> None:
         self.tool = _Tool(tool_name) if tool_name is not None else None
         self.tool_call = {
             "name": requested if requested is not None else (tool_name or ""),
@@ -101,29 +106,30 @@ def _shape(result: Any, ran: bool) -> tuple[str, str, str, Any]:
 
 CASES: list[tuple[str, int, str | None]] = [
     # label, tasks already running, resolved tool name (None = unresolved)
-    ("under the cap",        MAX - 1, "start_async_task"),
-    ("at the cap",           MAX,     "start_async_task"),
-    ("over the cap",         MAX + 5, "start_async_task"),
-    ("empty mirror",         0,       "start_async_task"),
-    ("other tool at cap",    MAX,     "check_async_task"),
-    ("other tool under cap", 0,       "cancel_async_task"),
+    ("under the cap", MAX - 1, "start_async_task"),
+    ("at the cap", MAX, "start_async_task"),
+    ("over the cap", MAX + 5, "start_async_task"),
+    ("empty mirror", 0, "start_async_task"),
+    ("other tool at cap", MAX, "check_async_task"),
+    ("other tool under cap", 0, "cancel_async_task"),
 ]
 
 
 GOLDEN = json.loads(
-    (pathlib.Path(__file__).resolve().parent / "tool_policies_golden.json")
-    .read_text(encoding="utf-8"))["cap"]
+    (pathlib.Path(__file__).resolve().parent / "tool_policies_golden.json").read_text(
+        encoding="utf-8"
+    )
+)["cap"]
 
 
 class Parity(unittest.IsolatedAsyncioTestCase):
     async def test_every_case_matches_the_middleware(self) -> None:
         for label, running, tool in CASES:
             with self.subTest(case=label):
-                new = await _drive(
-                    BackgroundTaskCapPolicy(_Mirror(running), MAX),
-                    _Request(tool))
+                new = await _drive(BackgroundTaskCapPolicy(_Mirror(running), MAX), _Request(tool))
                 self.assertEqual(
-                    list(_shape(*new)), GOLDEN[label],
+                    list(_shape(*new)),
+                    GOLDEN[label],
                     f"{label}: the policy differs from what the middleware did",
                 )
 
@@ -137,7 +143,8 @@ class Parity(unittest.IsolatedAsyncioTestCase):
         verdicts = set()
         for _, running, tool in CASES:
             result, ran = await _drive(
-                BackgroundTaskCapPolicy(_Mirror(running), MAX), _Request(tool))
+                BackgroundTaskCapPolicy(_Mirror(running), MAX), _Request(tool)
+            )
             verdicts.add(_shape(result, ran)[0])
         self.assertEqual(verdicts, {"allowed", "refused"})
 
@@ -147,14 +154,14 @@ class TheBoundary(unittest.IsolatedAsyncioTestCase):
 
     async def test_one_below_the_cap_is_allowed(self) -> None:
         _, ran = await _drive(
-            BackgroundTaskCapPolicy(_Mirror(MAX - 1), MAX),
-            _Request("start_async_task"))
+            BackgroundTaskCapPolicy(_Mirror(MAX - 1), MAX), _Request("start_async_task")
+        )
         self.assertTrue(ran)
 
     async def test_exactly_at_the_cap_is_refused(self) -> None:
         _, ran = await _drive(
-            BackgroundTaskCapPolicy(_Mirror(MAX), MAX),
-            _Request("start_async_task"))
+            BackgroundTaskCapPolicy(_Mirror(MAX), MAX), _Request("start_async_task")
+        )
         self.assertFalse(ran)
 
 
@@ -169,10 +176,13 @@ class UnresolvedTool(unittest.IsolatedAsyncioTestCase):
     async def test_the_policy_stays_out_of_the_way(self) -> None:
         _, ran = await _drive(
             BackgroundTaskCapPolicy(_Mirror(MAX + 10), MAX),
-            _Request(None, requested="start_async_task"))
+            _Request(None, requested="start_async_task"),
+        )
         self.assertTrue(
-            ran, "an unresolved tool call was refused by the cap; the framework "
-                 "never got to report the unknown tool")
+            ran,
+            "an unresolved tool call was refused by the cap; the framework "
+            "never got to report the unknown tool",
+        )
 
     async def test_the_middleware_did_the_same(self) -> None:
         """From the record: the middleware also let an unresolved call through."""
@@ -182,8 +192,8 @@ class UnresolvedTool(unittest.IsolatedAsyncioTestCase):
 class RefusalShape(unittest.IsolatedAsyncioTestCase):
     async def test_it_reports_as_an_error_and_is_unnamed(self) -> None:
         result, _ = await _drive(
-            BackgroundTaskCapPolicy(_Mirror(MAX), MAX),
-            _Request("start_async_task"))
+            BackgroundTaskCapPolicy(_Mirror(MAX), MAX), _Request("start_async_task")
+        )
         self.assertEqual(result.status, "error")
         self.assertIsNone(
             result.name,
@@ -194,8 +204,8 @@ class RefusalShape(unittest.IsolatedAsyncioTestCase):
 
     async def test_it_names_the_numbers_the_model_needs(self) -> None:
         result, _ = await _drive(
-            BackgroundTaskCapPolicy(_Mirror(MAX), MAX),
-            _Request("start_async_task"))
+            BackgroundTaskCapPolicy(_Mirror(MAX), MAX), _Request("start_async_task")
+        )
         self.assertIn(f"{MAX}/{MAX}", result.content)
         self.assertIn("cancel_async_task", result.content)
 
@@ -208,15 +218,19 @@ class TheWholePoint(unittest.IsolatedAsyncioTestCase):
 
         policy = BackgroundTaskCapPolicy(_Mirror(MAX), MAX)
         decision = await policy.before_tool(
-            ToolCall(name="start_async_task", resolved_tool="start_async_task"))
+            ToolCall(name="start_async_task", resolved_tool="start_async_task")
+        )
         self.assertIsInstance(decision, Denied)
 
     async def test_the_policy_alone_allows_below_it(self) -> None:
         from yuyutsava.policy.types import ToolCall
 
         policy = BackgroundTaskCapPolicy(_Mirror(0), MAX)
-        self.assertIsNone(await policy.before_tool(
-            ToolCall(name="start_async_task", resolved_tool="start_async_task")))
+        self.assertIsNone(
+            await policy.before_tool(
+                ToolCall(name="start_async_task", resolved_tool="start_async_task")
+            )
+        )
 
 
 if __name__ == "__main__":

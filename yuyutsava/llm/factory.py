@@ -121,9 +121,7 @@ def model_handle(
     object. :func:`chat_model` is this function with the metadata discarded.
     """
     provider = provider_for(settings)
-    model = provider.build(
-        settings, temperature=temperature, disable_reasoning=disable_reasoning
-    )
+    model = provider.build(settings, temperature=temperature, disable_reasoning=disable_reasoning)
     identity = _Identity(
         name=provider.model_name(settings),
         provider=provider.provider_name(settings),

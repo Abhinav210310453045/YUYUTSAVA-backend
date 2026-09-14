@@ -24,9 +24,9 @@ router = APIRouter(tags=["channels"])
 
 class ChannelOut(BaseModel):
     name: str
-    available: bool          # a plugin factory exists for this name
-    enabled: bool            # config flag (survives restart)
-    running: bool            # live right now
+    available: bool  # a plugin factory exists for this name
+    enabled: bool  # config flag (survives restart)
+    running: bool  # live right now
     capabilities: list[str]
 
 
@@ -38,7 +38,7 @@ class ChannelToggleOut(BaseModel):
     ok: bool
     name: str
     running: bool
-    changed: bool            # False when the call was a no-op (idempotent)
+    changed: bool  # False when the call was a no-op (idempotent)
 
 
 @router.get(
@@ -66,7 +66,8 @@ def _persist_enabled(registry, name: str, enabled: bool) -> None:
     summary="Enable a channel plugin (hot; persists to channels_config.json)",
 )
 async def enable_channel(
-    name: str, registry=Depends(get_channel_plugins),
+    name: str,
+    registry=Depends(get_channel_plugins),
 ) -> ChannelToggleOut:
     try:
         changed = await registry.enable(name)
@@ -86,7 +87,8 @@ async def enable_channel(
     summary="Disable a channel plugin (hot; persists to channels_config.json)",
 )
 async def disable_channel(
-    name: str, registry=Depends(get_channel_plugins),
+    name: str,
+    registry=Depends(get_channel_plugins),
 ) -> ChannelToggleOut:
     changed = await registry.disable(name)
     await asyncio.to_thread(_persist_enabled, registry, name, False)

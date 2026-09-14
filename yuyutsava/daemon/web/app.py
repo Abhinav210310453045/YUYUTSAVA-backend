@@ -76,27 +76,27 @@ def create_app(
     host: str,
     skill_registry: SkillRegistry | None = None,
     config_reload: ReloadCallback = None,
-    channels: "object | None" = None,           # ChannelRouter; duck-typed
-    session_origin: "object | None" = None,     # SessionOriginMap; duck-typed
+    channels: "object | None" = None,  # ChannelRouter; duck-typed
+    session_origin: "object | None" = None,  # SessionOriginMap; duck-typed
     auth: AuthSettings | None = None,
-    task_registry: "object | None" = None,      # TaskRegistry; duck-typed
-    task_submission: "object | None" = None,    # TaskSubmissionService; duck-typed
-    decision_service: "object | None" = None,   # DecisionService; duck-typed
-    ask_registry: "object | None" = None,       # daemon.ask_registry.AskRegistry; duck-typed
-    ask_resume: "object | None" = None,         # daemon.ask_resume.AskResumeService; duck-typed
-    channel_plugins: "object | None" = None,    # ChannelPluginRegistry; duck-typed
-    usage_store: "object | None" = None,        # daemon.usage.UsageStore; duck-typed
-    resource_monitor: "object | None" = None,   # daemon.resources.ResourceMonitor; duck-typed
+    task_registry: "object | None" = None,  # TaskRegistry; duck-typed
+    task_submission: "object | None" = None,  # TaskSubmissionService; duck-typed
+    decision_service: "object | None" = None,  # DecisionService; duck-typed
+    ask_registry: "object | None" = None,  # daemon.ask_registry.AskRegistry; duck-typed
+    ask_resume: "object | None" = None,  # daemon.ask_resume.AskResumeService; duck-typed
+    channel_plugins: "object | None" = None,  # ChannelPluginRegistry; duck-typed
+    usage_store: "object | None" = None,  # daemon.usage.UsageStore; duck-typed
+    resource_monitor: "object | None" = None,  # daemon.resources.ResourceMonitor; duck-typed
     admission_controller: "object | None" = None,  # daemon.resources.AdmissionController; duck-typed
-    model_router: "object | None" = None,       # core.model_router.ModelRouter; duck-typed
-    memory_store: "object | None" = None,       # memory.store.MemoryStore; duck-typed
+    model_router: "object | None" = None,  # core.model_router.ModelRouter; duck-typed
+    memory_store: "object | None" = None,  # memory.store.MemoryStore; duck-typed
     conversation_manager: "object | None" = None,  # daemon.conversation_manager.ConversationManager
-    voice_store: "object | None" = None,        # storage.voice_store.VoiceMessageStore; duck-typed
-    transcript_store: "object | None" = None,   # context.transcript_store.TranscriptStore; duck-typed
-    async_subagents: bool = False,              # background subagent host enabled
+    voice_store: "object | None" = None,  # storage.voice_store.VoiceMessageStore; duck-typed
+    transcript_store: "object | None" = None,  # context.transcript_store.TranscriptStore; duck-typed
+    async_subagents: bool = False,  # background subagent host enabled
     async_task_watcher: "object | None" = None,  # async_subagents.watcher.AsyncTaskHealthWatcher
-    runtime_settings: "object | None" = None,   # prefs.runtime.RuntimeSettings; duck-typed
-    subagent_roster: "dict | None" = None,      # {name: BaseSubAgent} for /settings/subagents
+    runtime_settings: "object | None" = None,  # prefs.runtime.RuntimeSettings; duck-typed
+    subagent_roster: "dict | None" = None,  # {name: BaseSubAgent} for /settings/subagents
 ) -> FastAPI:
     if auth is None:
         auth = AuthSettings.from_env(host=host)
@@ -128,7 +128,8 @@ def create_app(
     if decision_service is None:
         decision_service = DecisionService(hub.store)
         decision_service.add_waiters(
-            proposals=hub.pending_proposals, asks=hub.pending_asks,
+            proposals=hub.pending_proposals,
+            asks=hub.pending_asks,
         )
 
     # State for Depends(...) accessors.
@@ -184,13 +185,17 @@ def create_app(
             return response
         duration_ms = int((time.perf_counter() - start) * 1000)
         try:
-            await hub.broadcast(StreamEventItem(payload=HttpLogPayload(
-                method=request.method,
-                path=path,
-                status=response.status_code,
-                duration_ms=duration_ms,
-                ts=time.time(),
-            )))
+            await hub.broadcast(
+                StreamEventItem(
+                    payload=HttpLogPayload(
+                        method=request.method,
+                        path=path,
+                        status=response.status_code,
+                        duration_ms=duration_ms,
+                        ts=time.time(),
+                    )
+                )
+            )
         except Exception:
             # Broadcasting must never break a request.
             pass

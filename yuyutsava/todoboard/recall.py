@@ -115,14 +115,13 @@ class TodoNoteIndex:
             if not chunks:
                 return 0
             try:
-                embedded = await self._embedder.embed(
-                    [c.text for c in chunks], mode="document"
-                )
+                embedded = await self._embedder.embed([c.text for c in chunks], mode="document")
                 vectors: list[str | None] = [vector_literal(v) for v in embedded]
             except Exception:
                 logger.warning(
                     "todo recall: embedding failed for %s — storing NULL rows",
-                    note.note_id, exc_info=True,
+                    note.note_id,
+                    exc_info=True,
                 )
                 vectors = [None] * len(chunks)
 
@@ -132,14 +131,14 @@ class TodoNoteIndex:
                         "INSERT INTO todo_note_chunks "
                         "(chunk_id, card_id, note_id, seq, text, embedding) "
                         "VALUES (%s, %s, %s, %s, %s, %s::vector)",
-                        (_mint_chunk_id(), note.card_id, note.note_id,
-                         chunk.seq, chunk.text, vec),
+                        (_mint_chunk_id(), note.card_id, note.note_id, chunk.seq, chunk.text, vec),
                     )
             return len(chunks)
         except Exception:
             logger.warning(
                 "todo recall: indexing note %s failed (skipped)",
-                note.note_id, exc_info=True,
+                note.note_id,
+                exc_info=True,
             )
             return 0
 
@@ -165,7 +164,8 @@ class TodoNoteIndex:
             if total or fixed:
                 logger.info(
                     "todo recall: boot sync indexed %d note(s), re-embedded %d chunk(s)",
-                    total, fixed,
+                    total,
+                    fixed,
                 )
             return total
         except Exception:
@@ -184,9 +184,7 @@ class TodoNoteIndex:
     # Read path                                                           #
     # ------------------------------------------------------------------ #
 
-    async def search(
-        self, query: str, k: int = 8, *, card_id: str | None = None
-    ) -> list[Hit]:
+    async def search(self, query: str, k: int = 8, *, card_id: str | None = None) -> list[Hit]:
         """Top-k relevant note chunks, optionally scoped to one card. Keyword
         fallback when the embedder is down; [] (never raises) on any failure."""
         where = "AND card_id = %s" if card_id else ""
@@ -205,9 +203,7 @@ class TodoNoteIndex:
                 return []
         try:
             async with self._pool.connection() as conn:
-                return await self._search.vector_search(
-                    conn, qvec, k, where=where, params=params
-                )
+                return await self._search.vector_search(conn, qvec, k, where=where, params=params)
         except Exception:
             logger.warning("todo recall: vector search failed", exc_info=True)
             return []

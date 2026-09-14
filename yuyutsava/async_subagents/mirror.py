@@ -41,19 +41,19 @@ TERMINAL_STATUSES: frozenset[str] = frozenset({"success", "error", "cancelled", 
 @dataclass(frozen=True)
 class MirroredTask:
     task_id: str
-    agent_name: str           # e.g. "file-organizer-bg"
-    graph_id: str             # e.g. "file-organizer"
+    agent_name: str  # e.g. "file-organizer-bg"
+    graph_id: str  # e.g. "file-organizer"
     instruction: str
-    status: str               # MirrorStatus value as plain str (SDK gives str)
+    status: str  # MirrorStatus value as plain str (SDK gives str)
     started_at: float
     last_update_at: float
     completed_at: float | None = None
-    parent_thread_id: str | None = None    # master turn that started it
-    sub_thread_id: str | None = None       # bg graph's thread on lg host
+    parent_thread_id: str | None = None  # master turn that started it
+    sub_thread_id: str | None = None  # bg graph's thread on lg host
     pending_ask_id: str | None = None
     summary: str | None = None
     error: str | None = None
-    origin: str | None = None              # originating channel (e.g. "cli","web")
+    origin: str | None = None  # originating channel (e.g. "cli","web")
     # True once the master has been told about this task's completion (via the
     # completion wake-up). Keeps render_block() from re-reporting a finished task
     # that the master already acknowledged.
@@ -149,7 +149,8 @@ class AsyncTaskMirror:
         (e.g. no known parent thread) still reaches the master on its next turn.
         """
         out = [
-            t for t in self._tasks.values()
+            t
+            for t in self._tasks.values()
             if t.is_terminal() and (not unnotified_only or not t.notified)
         ]
         out.sort(key=lambda t: t.completed_at or t.last_update_at)
@@ -197,8 +198,7 @@ class AsyncTaskMirror:
                 verb = "ok" if t.status == "success" else t.status
                 summ = (t.summary or "").replace("\n", " ")[:120]
                 lines.append(
-                    f"  - task={t.task_id[:8]}  agent={t.agent_name}  "
-                    f"result={verb}  {summ}"
+                    f"  - task={t.task_id[:8]}  agent={t.agent_name}  result={verb}  {summ}"
                 )
         return "\n".join(lines)
 

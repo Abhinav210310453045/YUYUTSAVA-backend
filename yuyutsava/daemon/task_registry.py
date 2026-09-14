@@ -41,10 +41,19 @@ TERMINAL_STATUSES = frozenset({"done", "failed", "cancelled"})
 
 # Columns mark_* helpers are allowed to touch. Guards against a typo'd
 # kwarg silently becoming SQL.
-_MUTABLE_COLUMNS = frozenset({
-    "status", "thread_id", "complexity", "model", "started_ts", "finished_ts",
-    "deferred_ms", "result_summary", "error",
-})
+_MUTABLE_COLUMNS = frozenset(
+    {
+        "status",
+        "thread_id",
+        "complexity",
+        "model",
+        "started_ts",
+        "finished_ts",
+        "deferred_ms",
+        "result_summary",
+        "error",
+    }
+)
 
 
 def mint_task_id() -> str:
@@ -58,16 +67,16 @@ class TaskRecord:
     """One row from ``tasks`` — the unit ``GET /tasks`` serves."""
 
     task_id: str
-    origin: str             # "api" | "cli" | "telegram" | "event:<topic>" …
+    origin: str  # "api" | "cli" | "telegram" | "event:<topic>" …
     instruction: str
-    status: str             # one of TASK_STATUSES
+    status: str  # one of TASK_STATUSES
     created_ts: float
     thread_id: str | None = None
-    complexity: int | None = None      # filled by Phase 4 routing
-    model: str | None = None           # chosen model name (Phase 4 routing)
+    complexity: int | None = None  # filled by Phase 4 routing
+    model: str | None = None  # chosen model name (Phase 4 routing)
     started_ts: float | None = None
     finished_ts: float | None = None
-    deferred_ms: int = 0               # filled by Phase 5 admission control
+    deferred_ms: int = 0  # filled by Phase 5 admission control
     result_summary: str | None = None
     error: str | None = None
 
@@ -122,12 +131,20 @@ def _row_to_record(row: Any) -> TaskRecord:
     # SELECT column order above is fixed.
     vals = tuple(row)
     return TaskRecord(
-        task_id=vals[0], origin=vals[1], instruction=vals[2], status=vals[3],
-        created_ts=vals[4], thread_id=vals[5], complexity=vals[6],
-        started_ts=vals[7], finished_ts=vals[8], deferred_ms=vals[9],
-        result_summary=vals[10], error=vals[11], model=vals[12],
+        task_id=vals[0],
+        origin=vals[1],
+        instruction=vals[2],
+        status=vals[3],
+        created_ts=vals[4],
+        thread_id=vals[5],
+        complexity=vals[6],
+        started_ts=vals[7],
+        finished_ts=vals[8],
+        deferred_ms=vals[9],
+        result_summary=vals[10],
+        error=vals[11],
+        model=vals[12],
     )
-
 
 
 # NOTE: SqliteTaskStore was replaced on 2026-08-09 by UnifiedTaskStore in
@@ -199,7 +216,8 @@ class TaskRegistry:
         """``complexity`` and ``model`` (Phase 4 routing) are recorded when
         known — the audit join ``llm_usage × tasks`` depends on them."""
         fields: dict[str, Any] = {
-            "status": "running", "thread_id": thread_id,
+            "status": "running",
+            "thread_id": thread_id,
             "started_ts": time.time(),
         }
         if complexity is not None:
@@ -209,24 +227,36 @@ class TaskRegistry:
         await self._update(task_id, fields)
 
     async def mark_done(self, task_id: str, *, result_summary: str = "") -> None:
-        await self._update(task_id, {
-            "status": "done", "finished_ts": time.time(),
-            "result_summary": result_summary[:300] or None,
-        })
+        await self._update(
+            task_id,
+            {
+                "status": "done",
+                "finished_ts": time.time(),
+                "result_summary": result_summary[:300] or None,
+            },
+        )
         self._cancel_requested.discard(task_id)
 
     async def mark_failed(self, task_id: str, *, error: str) -> None:
-        await self._update(task_id, {
-            "status": "failed", "finished_ts": time.time(),
-            "error": error[:500],
-        })
+        await self._update(
+            task_id,
+            {
+                "status": "failed",
+                "finished_ts": time.time(),
+                "error": error[:500],
+            },
+        )
         self._cancel_requested.discard(task_id)
 
     async def mark_cancelled(self, task_id: str, *, note: str = "") -> None:
-        await self._update(task_id, {
-            "status": "cancelled", "finished_ts": time.time(),
-            "error": note[:500] or None,
-        })
+        await self._update(
+            task_id,
+            {
+                "status": "cancelled",
+                "finished_ts": time.time(),
+                "error": note[:500] or None,
+            },
+        )
         self._cancel_requested.discard(task_id)
 
     async def set_deferred_ms(self, task_id: str, deferred_ms: int) -> None:
@@ -238,8 +268,9 @@ class TaskRegistry:
         if not ok:
             # Never swallow: a transition against a missing row means a
             # wiring bug (task ran without registration).
-            logger.error("task registry: update of unknown task %s (%s)",
-                         task_id, fields.get("status"))
+            logger.error(
+                "task registry: update of unknown task %s (%s)", task_id, fields.get("status")
+            )
 
     # --- cancellation (coarse v1) ------------------------------------------
 

@@ -49,18 +49,21 @@ class _RecordingStore:
 
 def _task(task_id: str = "") -> OrchestratorTask:
     return OrchestratorTask(
-        proposal_id="p1", event_id="e1", topic="user.task.submitted",
-        summary="sum", instruction="do the thing", subagent_hint="general-purpose",
-        urgency=2, task_id=task_id,
+        proposal_id="p1",
+        event_id="e1",
+        topic="user.task.submitted",
+        summary="sum",
+        instruction="do the thing",
+        subagent_hint="general-purpose",
+        urgency=2,
+        task_id=task_id,
     )
 
 
 class OrchestratorLoopRegistryTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
-        self.registry = TaskRegistry(
-            sqlite_task_store(Path(self._tmp.name) / "state.db")
-        )
+        self.registry = TaskRegistry(sqlite_task_store(Path(self._tmp.name) / "state.db"))
         self.channel = _RecordingChannel()
         self.store = _RecordingStore()
         self.loop = OrchestratorLoop(
@@ -69,7 +72,9 @@ class OrchestratorLoopRegistryTests(unittest.IsolatedAsyncioTestCase):
             store=self.store,
             orchestrator_model=object(),
             deps=SimpleNamespace(
-                skill_registry=None, async_task_mirror=None, memory_store=None,
+                skill_registry=None,
+                async_task_mirror=None,
+                memory_store=None,
             ),
             orchestrator_token_budget=1000,
             task_registry=self.registry,
@@ -144,18 +149,26 @@ class OrchestratorLoopRegistryTests(unittest.IsolatedAsyncioTestCase):
 
         self._patch_stream(fake_stream)
         completion_task = OrchestratorTask(
-            proposal_id="", event_id="", topic="subagent_completion",
-            summary="file-organizer ok", instruction="", subagent_hint="",
-            urgency=2, kind="subagent_completed", parent_thread_id="orch-PARENT",
+            proposal_id="",
+            event_id="",
+            topic="subagent_completion",
+            summary="file-organizer ok",
+            instruction="",
+            subagent_hint="",
+            urgency=2,
+            kind="subagent_completed",
+            parent_thread_id="orch-PARENT",
             completion={
-                "task_id": "th-1", "agent_name": "file-organizer",
-                "ok": True, "summary": "moved 8 files",
+                "task_id": "th-1",
+                "agent_name": "file-organizer",
+                "ok": True,
+                "summary": "moved 8 files",
             },
         )
         await self.loop._run_task(completion_task)
 
         self.assertEqual(seen["thread_id"], "orch-PARENT")  # reused, not minted
-        self.assertFalse(seen["resume"])                    # appended as a new turn
+        self.assertFalse(seen["resume"])  # appended as a new turn
         self.assertIn("background-task-update", seen["message"])
         self.assertIn("moved 8 files", seen["message"])
 

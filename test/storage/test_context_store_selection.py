@@ -116,9 +116,7 @@ class PostgresSelection(unittest.IsolatedAsyncioTestCase):
         await self.pool.close()
 
     async def test_selects_the_postgres_stores(self) -> None:
-        cs = StoreFactory(
-            self.settings, pg_pool=self.pool, embedder=self.embedder
-        ).context_stores()
+        cs = StoreFactory(self.settings, pg_pool=self.pool, embedder=self.embedder).context_stores()
         self.assertTrue(
             cs.artifacts.supports_recall,
             "Postgres + embedder gave an artifact store without recall",
@@ -130,9 +128,9 @@ class PostgresSelection(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_semantic_recall_flag_is_honoured(self) -> None:
-        cs = StoreFactory(
-            self.settings, pg_pool=self.pool, embedder=self.embedder
-        ).context_stores(semantic_recall=False)
+        cs = StoreFactory(self.settings, pg_pool=self.pool, embedder=self.embedder).context_stores(
+            semantic_recall=False
+        )
         self.assertFalse(
             cs.artifacts.supports_recall,
             "semantic_recall=False was ignored; every put would spawn an "
@@ -237,8 +235,7 @@ class DialectLeavesPooledConnectionsAlone(unittest.IsolatedAsyncioTestCase):
             await PostgresDialect(self.pool).write(_boom)
         self.assertTrue(
             await self._positional_read_works(),
-            "row_factory leaked out of a FAILED write — the restore is not in "
-            "a finally block",
+            "row_factory leaked out of a FAILED write — the restore is not in a finally block",
         )
 
     async def test_the_real_victim_still_works(self) -> None:
@@ -267,21 +264,27 @@ class NoStackAssemblerHandRollsTheBranch(unittest.TestCase):
         root = pathlib.Path(__file__).resolve().parents[2]
         tree = ast.parse((root / relpath).read_text(encoding="utf-8"))
         for node in ast.walk(tree):
-            if (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-                    and node.name == func):
-                return ast.get_source_segment(
-                    (root / relpath).read_text(encoding="utf-8"), node) or ""
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == func:
+                return (
+                    ast.get_source_segment((root / relpath).read_text(encoding="utf-8"), node) or ""
+                )
         raise AssertionError(f"{func} not found in {relpath}")
 
     def test_none_construct_the_stores_directly(self) -> None:
         for relpath, func in self._ASSEMBLERS:
             src = self._source(relpath, func)
-            for ctor in ("pg_artifact_store(", "sqlite_artifact_store(",
-                         "pg_summary_store(", "sqlite_summary_store(",
-                         "pg_transcript_store(", "sqlite_transcript_store("):
+            for ctor in (
+                "pg_artifact_store(",
+                "sqlite_artifact_store(",
+                "pg_summary_store(",
+                "sqlite_summary_store(",
+                "pg_transcript_store(",
+                "sqlite_transcript_store(",
+            ):
                 with self.subTest(assembler=func, ctor=ctor):
                     self.assertNotIn(
-                        ctor, src,
+                        ctor,
+                        src,
                         f"{func} constructs {ctor} itself. That is the branch "
                         f"StoreFactory.context_stores() exists to own — a "
                         f"fourth copy is how the three drifted in the first "
@@ -293,7 +296,8 @@ class NoStackAssemblerHandRollsTheBranch(unittest.TestCase):
             src = self._source(relpath, func)
             with self.subTest(assembler=func):
                 self.assertNotIn(
-                    "PgTranscriptIndex(", src,
+                    "PgTranscriptIndex(",
+                    src,
                     f"{func} builds PgTranscriptIndex directly; the "
                     f"pool-AND-embedder guard belongs in one place",
                 )

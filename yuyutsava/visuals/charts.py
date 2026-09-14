@@ -101,7 +101,9 @@ def _bar(ax, spec) -> None:
     width = 0.8 / max(n, 1)
     for i, s in enumerate(series):
         color = theme.ACCENTS[i % len(theme.ACCENTS)]
-        ax.bar(idx + i * width, s["data"], width, label=s.get("name", f"series {i+1}"), color=color)
+        ax.bar(
+            idx + i * width, s["data"], width, label=s.get("name", f"series {i + 1}"), color=color
+        )
     ax.set_xticks(idx + width * (n - 1) / 2)
     if labels:
         # Rotate + right-align when labels are many or long so they don't overlap
@@ -126,7 +128,9 @@ def _barh(ax, spec) -> None:
     height = 0.8 / max(n, 1)
     for i, s in enumerate(series):
         color = theme.ACCENTS[i % len(theme.ACCENTS)]
-        ax.barh(idx + i * height, s["data"], height, label=s.get("name", f"series {i+1}"), color=color)
+        ax.barh(
+            idx + i * height, s["data"], height, label=s.get("name", f"series {i + 1}"), color=color
+        )
     ax.set_yticks(idx + height * (n - 1) / 2)
     if labels:
         ax.set_yticklabels(labels, fontsize=9)
@@ -140,7 +144,7 @@ def _line(ax, spec) -> None:
     for i, s in enumerate(_series(spec)):
         color = theme.ACCENTS[i % len(theme.ACCENTS)]
         xs = labels if labels else range(len(s["data"]))
-        ax.plot(xs, s["data"], marker="o", color=color, label=s.get("name", f"series {i+1}"))
+        ax.plot(xs, s["data"], marker="o", color=color, label=s.get("name", f"series {i + 1}"))
     _legend(ax)
 
 
@@ -148,7 +152,7 @@ def _scatter(ax, spec) -> None:
     for i, s in enumerate(_series(spec)):
         color = theme.ACCENTS[i % len(theme.ACCENTS)]
         xs = s.get("x") or range(len(s["data"]))
-        ax.scatter(xs, s["data"], color=color, label=s.get("name", f"series {i+1}"), alpha=0.8)
+        ax.scatter(xs, s["data"], color=color, label=s.get("name", f"series {i + 1}"), alpha=0.8)
     _legend(ax)
 
 
@@ -158,8 +162,13 @@ def _pie(ax, spec) -> None:
     if not values:
         raise VisualError("pie chart requires 'values'")
     colors = [theme.ACCENTS[i % len(theme.ACCENTS)] for i in range(len(values))]
-    ax.pie(values, labels=labels or None, colors=colors, autopct="%1.1f%%",
-           textprops={"color": theme.TEXT})
+    ax.pie(
+        values,
+        labels=labels or None,
+        colors=colors,
+        autopct="%1.1f%%",
+        textprops={"color": theme.TEXT},
+    )
     ax.set_aspect("equal")
     ax.grid(False)
 

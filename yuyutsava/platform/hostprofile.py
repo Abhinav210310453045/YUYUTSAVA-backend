@@ -53,10 +53,10 @@ def _windows_critical_prefixes() -> tuple[str, ...]:
     program_files_x86 = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
     program_data = os.environ.get("ProgramData", r"C:\ProgramData")
     return (
-        system_root,                                   # C:\Windows (System32, drivers, …)
+        system_root,  # C:\Windows (System32, drivers, …)
         program_files,
         program_files_x86,
-        os.path.join(program_data, "Microsoft"),       # service/defender state
+        os.path.join(program_data, "Microsoft"),  # service/defender state
         r"C:\$Recycle.Bin",
         r"C:\System Volume Information",
     )
@@ -66,15 +66,15 @@ def _windows_critical_prefixes() -> tuple[str, ...]:
 class HostProfile:
     """Immutable facts about the host, computed once at startup."""
 
-    os_family: str          # "windows" | "macos" | "linux"
+    os_family: str  # "windows" | "macos" | "linux"
     os_version: str
     arch: str
     python_version: str
     python_path: str
-    shell_kind: str         # "powershell" | "pwsh" | "bash" | "sh"
-    shell_prefix: tuple[str, ...]   # argv prefix; command string is appended
+    shell_kind: str  # "powershell" | "pwsh" | "bash" | "sh"
+    shell_prefix: tuple[str, ...]  # argv prefix; command string is appended
     package_managers: tuple[str, ...]
-    service_manager: str    # "scm" | "launchd" | "systemd" | "unknown"
+    service_manager: str  # "scm" | "launchd" | "systemd" | "unknown"
     elevation_mechanism: str  # "uac" | "osascript-admin" | "pkexec/sudo"
     home_dir: str
     temp_dir: str

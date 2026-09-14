@@ -30,24 +30,37 @@ class _NullChannels:
 
 def _loop(queue: asyncio.Queue) -> TriageLoop:
     return TriageLoop(
-        bus=object(), store=_StubStore(), channels=_NullChannels(),
-        triage=object(), capabilities_block="", task_queue=queue,
+        bus=object(),
+        store=_StubStore(),
+        channels=_NullChannels(),
+        triage=object(),
+        capabilities_block="",
+        task_queue=queue,
         proposal_expiry_sec=300,
     )
 
 
 def _envelope() -> EventEnvelope:
     return EventEnvelope(
-        event_id="e1", topic="fs.changed", source="fs",
-        ts=time.time(), severity=1, summary="new file",
-        payload_ref="sqlite://event_payloads/e1", hints={},
+        event_id="e1",
+        topic="fs.changed",
+        source="fs",
+        ts=time.time(),
+        severity=1,
+        summary="new file",
+        payload_ref="sqlite://event_payloads/e1",
+        hints={},
     )
 
 
 def _proposal() -> Proposal:
     return Proposal.new(
-        event_id="e1", topic="fs.changed", summary="new file",
-        proposed="move it", subagent="file-organizer", urgency=1,
+        event_id="e1",
+        topic="fs.changed",
+        summary="new file",
+        proposed="move it",
+        subagent="file-organizer",
+        urgency=1,
         expiry_sec=300,
     )
 
@@ -64,8 +77,13 @@ class TriageDecisionComplexityTests(unittest.TestCase):
 
     def test_orchestrator_task_default(self) -> None:
         task = OrchestratorTask(
-            proposal_id="p", event_id="e", topic="t", summary="s",
-            instruction="i", subagent_hint="h", urgency=1,
+            proposal_id="p",
+            event_id="e",
+            topic="t",
+            summary="s",
+            instruction="i",
+            subagent_hint="h",
+            urgency=1,
         )
         self.assertEqual(task.complexity, 3)
 
@@ -74,7 +92,9 @@ class TriageLoopComplexityTests(unittest.IsolatedAsyncioTestCase):
     async def test_user_decision_path_carries_complexity(self) -> None:
         queue: asyncio.Queue = asyncio.Queue()
         await _loop(queue)._handle_user_decision(
-            _envelope(), _proposal(), ProposalDecision(decision="approve"),
+            _envelope(),
+            _proposal(),
+            ProposalDecision(decision="approve"),
             complexity=5,
         )
         self.assertEqual(queue.get_nowait().complexity, 5)
@@ -82,7 +102,9 @@ class TriageLoopComplexityTests(unittest.IsolatedAsyncioTestCase):
     async def test_user_decision_path_defaults_complexity(self) -> None:
         queue: asyncio.Queue = asyncio.Queue()
         await _loop(queue)._handle_user_decision(
-            _envelope(), _proposal(), ProposalDecision(decision="approve"),
+            _envelope(),
+            _proposal(),
+            ProposalDecision(decision="approve"),
         )
         self.assertEqual(queue.get_nowait().complexity, 3)
 
@@ -91,9 +113,12 @@ class TriageLoopComplexityTests(unittest.IsolatedAsyncioTestCase):
         # example; no LLM is in the loop to score them.
         queue: asyncio.Queue = asyncio.Queue()
         decision = TriageDecision(
-            action="propose", subagent_hint="file-organizer",
-            proposed_instruction="move it", reason="auto_approve rule",
-            urgency=1, complexity=1,
+            action="propose",
+            subagent_hint="file-organizer",
+            proposed_instruction="move it",
+            reason="auto_approve rule",
+            urgency=1,
+            complexity=1,
         )
         await _loop(queue)._auto_approve_path(_envelope(), decision, rule_id="r1")
         self.assertEqual(queue.get_nowait().complexity, 1)

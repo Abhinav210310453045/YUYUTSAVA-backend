@@ -22,16 +22,25 @@ from yuyutsava.storage.events import Proposal
 
 def _event(task_id=None, session_id=None) -> StreamEventItem:
     return StreamEventItem(
-        payload=LogPayload(text="x"), task_id=task_id, session_id=session_id,
+        payload=LogPayload(text="x"),
+        task_id=task_id,
+        session_id=session_id,
     )
 
 
 def _proposal(session_id=None) -> StreamProposalItem:
-    return StreamProposalItem(proposal=Proposal.new(
-        event_id="e1", topic="t", summary="s", proposed="p",
-        subagent="general-purpose", urgency=1, expiry_sec=60,
-        session_id=session_id,
-    ))
+    return StreamProposalItem(
+        proposal=Proposal.new(
+            event_id="e1",
+            topic="t",
+            summary="s",
+            proposed="p",
+            subagent="general-purpose",
+            urgency=1,
+            expiry_sec=60,
+            session_id=session_id,
+        )
+    )
 
 
 class ItemMatchesTests(unittest.TestCase):
@@ -47,18 +56,21 @@ class ItemMatchesTests(unittest.TestCase):
         self.assertFalse(item_matches(_proposal(), "tsk_1", None))
 
     def test_session_id_filter(self) -> None:
-        self.assertTrue(item_matches(
-            _event(session_id="orch-1"), None, "orch-1"))
-        self.assertFalse(item_matches(
-            _event(session_id="orch-2"), None, "orch-1"))
+        self.assertTrue(item_matches(_event(session_id="orch-1"), None, "orch-1"))
+        self.assertFalse(item_matches(_event(session_id="orch-2"), None, "orch-1"))
         # Proposals match via their nested proposal.session_id.
         self.assertTrue(item_matches(_proposal("orch-1"), None, "orch-1"))
         self.assertFalse(item_matches(_proposal("orch-2"), None, "orch-1"))
         # Asks carry session_id inside the record (exposed as a property).
-        ask = StreamAskItem(ask={
-            "ask_id": "a1", "title": "t", "body": "b", "options": [],
-            "session_id": "orch-1",
-        })
+        ask = StreamAskItem(
+            ask={
+                "ask_id": "a1",
+                "title": "t",
+                "body": "b",
+                "options": [],
+                "session_id": "orch-1",
+            }
+        )
         self.assertTrue(item_matches(ask, None, "orch-1"))
         self.assertFalse(item_matches(ask, None, "orch-2"))
 

@@ -110,7 +110,8 @@ class DockerExecBackend:
         cwd.mkdir(parents=True, exist_ok=True)
         argv = [
             *self._backend.exec_argv(cwd=self.map_path(cwd)),
-            "python3", self.map_path(script),
+            "python3",
+            self.map_path(script),
         ]
         return await _capture(argv, cwd, timeout)
 

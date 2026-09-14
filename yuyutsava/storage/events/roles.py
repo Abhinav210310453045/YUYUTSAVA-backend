@@ -56,9 +56,15 @@ class DecisionWriter(Protocol):
     """
 
     async def put_decision(
-        self, *, proposal_id: str | None, event_id: str, outcome: str,
-        action_summary: str | None = ..., ts: float | None = ...,
-        session_id: str | None = ..., agent_path: str | None = ...,
+        self,
+        *,
+        proposal_id: str | None,
+        event_id: str,
+        outcome: str,
+        action_summary: str | None = ...,
+        ts: float | None = ...,
+        session_id: str | None = ...,
+        agent_path: str | None = ...,
     ) -> None: ...
 
 
@@ -80,8 +86,13 @@ class EventPayloadWriter(Protocol):
     """Used by event sources when publishing."""
 
     async def put_event_payload(
-        self, *, event_id: str, topic: str, ts: float,
-        payload: dict[str, Any], blob_path: str | None = ...,
+        self,
+        *,
+        event_id: str,
+        topic: str,
+        ts: float,
+        payload: dict[str, Any],
+        blob_path: str | None = ...,
     ) -> None: ...
 
 
@@ -168,8 +179,16 @@ class TriageStore(DecisionWriter, ConsentRuleWriter, Protocol):
 
 
 __all__ = [
-    "ConsentRuleReader", "ConsentRuleWriter", "DecisionReader", "DecisionWriter",
-    "EventPayloadSweeper", "EventPayloadWriter", "PendingAskRegistry",
-    "PrefsBackend", "ProposalWriter", "RecallReader", "ToolCallCounter",
+    "ConsentRuleReader",
+    "ConsentRuleWriter",
+    "DecisionReader",
+    "DecisionWriter",
+    "EventPayloadSweeper",
+    "EventPayloadWriter",
+    "PendingAskRegistry",
+    "PrefsBackend",
+    "ProposalWriter",
+    "RecallReader",
+    "ToolCallCounter",
     "TriageStore",
 ]

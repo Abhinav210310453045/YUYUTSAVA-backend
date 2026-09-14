@@ -26,10 +26,13 @@ import aiosqlite
 from ulid import ULID
 
 from yuyutsava.storage.base import amigration_lock
+
 # The pending_asks wire helpers moved to events/ask_wire.py (ADR-002 step
 # 2.5b) — they are backend-independent and the unified store needed them.
 from yuyutsava.storage.events.ask_wire import (  # noqa: F401
-    _ASK_COLS, ask_record_to_params, ask_row_to_record,
+    _ASK_COLS,
+    ask_record_to_params,
+    ask_row_to_record,
 )
 from yuyutsava.storage.events.abc import (
     ConsentGrantStore,
@@ -61,9 +64,7 @@ class SqliteEventsBackend:
         """Connect and create all schema eagerly. Idempotent."""
         if self._conn is not None:
             return
-        await asyncio.to_thread(
-            self._db_path.parent.mkdir, parents=True, exist_ok=True
-        )
+        await asyncio.to_thread(self._db_path.parent.mkdir, parents=True, exist_ok=True)
         conn = await aiosqlite.connect(str(self._db_path))
         conn.row_factory = aiosqlite.Row
         await conn.execute(f"PRAGMA busy_timeout={int(self._busy_timeout_ms)}")
@@ -183,7 +184,6 @@ class SqliteEventsBackend:
 # ---------------------------------------------------------------------------
 
 
-
 # NOTE: SqliteEventStore was replaced on 2026-08-08 by the Unified* store in
 # events/unified.py (ADR-002 step 2.5b). Parity verified against both twins on
 # both live backends in test/storage/test_events_unified_parity.py.
@@ -193,7 +193,6 @@ class SqliteEventsBackend:
 # (ADR-002 step 2.5b) — one implementation over the dialect adapter. Parity
 # verified against both twins on both live backends in
 # test/storage/test_events_unified_parity.py.
-
 
 
 # NOTE: SqliteDecisionStore was replaced on 2026-08-08 by the Unified* stores in events/unified.py
@@ -243,18 +242,10 @@ class SqlitePrefsBackend(PrefsBackend):
         return out
 
 
-
 # NOTE: SqliteConsentGrantStore was replaced on 2026-08-08 by the Unified* stores in events/unified.py
 # (ADR-002 step 2.5b) — one implementation over the dialect adapter. Parity
 # verified against both twins on both live backends in
 # test/storage/test_events_unified_parity.py.
-
-
-
-
-
-
-
 
 
 # NOTE: SqlitePendingAskStore was replaced on 2026-08-08 by the Unified* store in
@@ -269,23 +260,40 @@ class SqlitePrefsBackend(PrefsBackend):
 
 def _row_to_proposal(row: aiosqlite.Row) -> Proposal:
     return Proposal(
-        proposal_id=row["proposal_id"], event_id=row["event_id"], topic=row["topic"],
-        summary=row["summary"], proposed=row["proposed"], subagent=row["subagent"],
-        urgency=row["urgency"], created_ts=row["created_ts"], expires_ts=row["expires_ts"],
-        status=row["status"], session_id=row["session_id"], agent_path=row["agent_path"],
+        proposal_id=row["proposal_id"],
+        event_id=row["event_id"],
+        topic=row["topic"],
+        summary=row["summary"],
+        proposed=row["proposed"],
+        subagent=row["subagent"],
+        urgency=row["urgency"],
+        created_ts=row["created_ts"],
+        expires_ts=row["expires_ts"],
+        status=row["status"],
+        session_id=row["session_id"],
+        agent_path=row["agent_path"],
     )
 
 
 def _row_to_consent_rule(row: aiosqlite.Row) -> ConsentRule:
     return ConsentRule(
-        rule_id=row["rule_id"], topic_glob=row["topic_glob"], match_json=row["match_json"],
-        decision=row["decision"], created_ts=row["created_ts"], expires_ts=row["expires_ts"],
+        rule_id=row["rule_id"],
+        topic_glob=row["topic_glob"],
+        match_json=row["match_json"],
+        decision=row["decision"],
+        created_ts=row["created_ts"],
+        expires_ts=row["expires_ts"],
     )
 
 
 def _row_to_decision(row: aiosqlite.Row) -> Decision:
     return Decision(
-        decision_id=row["decision_id"], proposal_id=row["proposal_id"], event_id=row["event_id"],
-        outcome=row["outcome"], action_summary=row["action_summary"], ts=row["ts"],
-        session_id=row["session_id"], agent_path=row["agent_path"],
+        decision_id=row["decision_id"],
+        proposal_id=row["proposal_id"],
+        event_id=row["event_id"],
+        outcome=row["outcome"],
+        action_summary=row["action_summary"],
+        ts=row["ts"],
+        session_id=row["session_id"],
+        agent_path=row["agent_path"],
     )

@@ -181,7 +181,9 @@ def refresh_price_cache(
         _write_json_atomic(meta_path, meta)
         logger.info(
             "pricing: cached %s = $%.4f in / $%.4f out per 1M tokens",
-            model, price[0], price[1],
+            model,
+            price[0],
+            price[1],
         )
         return price
     except Exception:

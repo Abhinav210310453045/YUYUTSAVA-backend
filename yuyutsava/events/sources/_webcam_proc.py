@@ -58,8 +58,7 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--jpeg-quality", type=int, default=80)
     args = p.parse_args(argv)
 
-    logging.basicConfig(level=logging.INFO, stream=sys.stderr,
-                        format="webcam: %(message)s")
+    logging.basicConfig(level=logging.INFO, stream=sys.stderr, format="webcam: %(message)s")
 
     try:
         import cv2  # type: ignore
@@ -80,6 +79,7 @@ def main(argv: list[str] | None = None) -> None:
     # Cross-platform: registers SIGINT + (SIGTERM on POSIX / SIGBREAK on Windows).
     # Bare signal.signal(SIGTERM, …) raises ValueError on Windows.
     from yuyutsava.platform import install_terminate_handler
+
     install_terminate_handler(_stop)
 
     cap = cv2.VideoCapture(args.camera_index)
@@ -165,17 +165,19 @@ def main(argv: list[str] | None = None) -> None:
                 continue
 
             h, w = frame.shape[:2]
-            _emit({
-                "kind": "frame",
-                "ts": now,
-                "blob_path": str(blob_path),
-                "faces": [
-                    {"x": int(x), "y": int(y), "w": int(fw), "h": int(fh)}
-                    for (x, y, fw, fh) in faces
-                ],
-                "width": int(w),
-                "height": int(h),
-            })
+            _emit(
+                {
+                    "kind": "frame",
+                    "ts": now,
+                    "blob_path": str(blob_path),
+                    "faces": [
+                        {"x": int(x), "y": int(y), "w": int(fw), "h": int(fh)}
+                        for (x, y, fw, fh) in faces
+                    ],
+                    "width": int(w),
+                    "height": int(h),
+                }
+            )
             last_emit_ts = now
     finally:
         try:

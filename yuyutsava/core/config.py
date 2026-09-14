@@ -167,7 +167,9 @@ class DockerSettings:
         image = os.environ.get("YUYUTSAVA_DOCKER_IMAGE", "").strip() or "deepagent-sandbox:local"
 
         network_raw = os.environ.get("YUYUTSAVA_DOCKER_NETWORK", "bridge").strip().lower()
-        network: Literal["bridge", "none"] = network_raw if network_raw in ("bridge", "none") else "bridge"  # type: ignore[assignment]
+        network: Literal["bridge", "none"] = (
+            network_raw if network_raw in ("bridge", "none") else "bridge"
+        )  # type: ignore[assignment]
 
         memory = os.environ.get("YUYUTSAVA_DOCKER_MEMORY", "").strip() or "512m"
         cpus = os.environ.get("YUYUTSAVA_DOCKER_CPUS", "").strip() or "1.0"
@@ -201,10 +203,10 @@ class LocalSettings:
     @classmethod
     def from_env(cls) -> LocalSettings:
         raw_sandbox = os.environ.get("YUYUTSAVA_SANDBOX_DIR", "").strip()
-        raw_output  = os.environ.get("YUYUTSAVA_OUTPUT_DIR",  "").strip()
+        raw_output = os.environ.get("YUYUTSAVA_OUTPUT_DIR", "").strip()
         return cls(
             sandbox_dir=Path(raw_sandbox) if raw_sandbox else None,
-            output_dir=Path(raw_output)   if raw_output  else None,
+            output_dir=Path(raw_output) if raw_output else None,
         )
 
 
@@ -221,8 +223,7 @@ class AnthropicSettings:
         key = _env("ANTHROPIC_API_KEY", role)
         if not key:
             raise RuntimeError(
-                "Set ANTHROPIC_API_KEY in the environment. "
-                "See https://console.anthropic.com/"
+                "Set ANTHROPIC_API_KEY in the environment. See https://console.anthropic.com/"
             )
         model = _env("ANTHROPIC_MODEL", role, "claude-haiku-4-5-20251001")
         return cls(api_key=key, model=model)
@@ -303,14 +304,10 @@ class OpenAICompatibleSettings:
             )
         key = _env("OPENAI_COMPATIBLE_API_KEY", role)
         if not key:
-            raise RuntimeError(
-                "Set OPENAI_COMPATIBLE_API_KEY for LLM_PROVIDER=openai_compatible."
-            )
+            raise RuntimeError("Set OPENAI_COMPATIBLE_API_KEY for LLM_PROVIDER=openai_compatible.")
         model = _env("OPENAI_COMPATIBLE_MODEL", role)
         if not model:
-            raise RuntimeError(
-                "Set OPENAI_COMPATIBLE_MODEL for LLM_PROVIDER=openai_compatible."
-            )
+            raise RuntimeError("Set OPENAI_COMPATIBLE_MODEL for LLM_PROVIDER=openai_compatible.")
         return cls(api_key=key, base_url=base.rstrip("/"), model=model)
 
 
@@ -407,9 +404,7 @@ class BedrockSettings:
     @classmethod
     def from_env(cls, role: str | None = None) -> BedrockSettings:
         region = _env("BEDROCK_REGION", role) or _env("AWS_REGION", role, "us-east-1")
-        model = _env(
-            "BEDROCK_MODEL", role, "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
-        )
+        model = _env("BEDROCK_MODEL", role, "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
         return cls(region=region, model=model)
 
 
@@ -448,8 +443,7 @@ class AzureOpenAISettings:
         deployment = _env("AZURE_OPENAI_DEPLOYMENT", role)
         if not deployment:
             raise RuntimeError(
-                "Set AZURE_OPENAI_DEPLOYMENT (your model deployment name) for "
-                "LLM_PROVIDER=azure."
+                "Set AZURE_OPENAI_DEPLOYMENT (your model deployment name) for LLM_PROVIDER=azure."
             )
         api_version = _env("AZURE_OPENAI_API_VERSION", role, "2024-10-21")
         model = _env("AZURE_OPENAI_MODEL", role, deployment)
@@ -482,8 +476,7 @@ class MistralSettings:
         key = _env("MISTRAL_API_KEY", role)
         if not key:
             raise RuntimeError(
-                "Set MISTRAL_API_KEY in the environment. "
-                "See https://console.mistral.ai/api-keys/"
+                "Set MISTRAL_API_KEY in the environment. See https://console.mistral.ai/api-keys/"
             )
         model = _env("MISTRAL_MODEL", role, "mistral-large-latest")
         return cls(api_key=key, model=model)
@@ -509,8 +502,7 @@ class CohereSettings:
         key = _env("COHERE_API_KEY", role)
         if not key:
             raise RuntimeError(
-                "Set COHERE_API_KEY in the environment. "
-                "See https://dashboard.cohere.com/api-keys"
+                "Set COHERE_API_KEY in the environment. See https://dashboard.cohere.com/api-keys"
             )
         model = _env("COHERE_MODEL", role, "command-r-plus")
         return cls(api_key=key, model=model)
@@ -662,17 +654,19 @@ class EventsConfig:
     @classmethod
     def default(cls) -> EventsConfig:
         """Sensible default if no config file exists: watch ``~/Downloads``."""
-        return cls(sources={
-            "fs": SourceConfig(
-                name="fs",
-                enabled=True,
-                params={
-                    "roots": [str(Path.home() / "Downloads")],
-                    "ignore": ["*.tmp", ".DS_Store", "*.crdownload", "*.part"],
-                    "coalesce_window_ms": 750,
-                },
-            ),
-        })
+        return cls(
+            sources={
+                "fs": SourceConfig(
+                    name="fs",
+                    enabled=True,
+                    params={
+                        "roots": [str(Path.home() / "Downloads")],
+                        "ignore": ["*.tmp", ".DS_Store", "*.crdownload", "*.part"],
+                        "coalesce_window_ms": 750,
+                    },
+                ),
+            }
+        )
 
     def to_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {"sources": {}}

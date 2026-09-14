@@ -60,9 +60,7 @@ MAX_HISTORY_LIMIT = 200
 HISTORY_ENTRY_CHARS = 600
 
 
-def make_context_tools(
-    store: ArtifactStore, transcript_store: Any | None = None
-) -> list[BaseTool]:
+def make_context_tools(store: ArtifactStore, transcript_store: Any | None = None) -> list[BaseTool]:
     """Build the ctx_* tools bound to one artifact store.
 
     ``transcript_store`` is a
@@ -98,14 +96,11 @@ def make_context_tools(
         line the footer reports to continue. The full body is always there.
         """
         if start_line is not None:
-            ln = await store.read_lines(
-                artifact_id, start_line=start_line, line_count=line_count
-            )
+            ln = await store.read_lines(artifact_id, start_line=start_line, line_count=line_count)
             if ln is None:
                 return f"[error] artifact {artifact_id!r} not found (expired or wrong id)"
             header = (
-                f"[artifact {artifact_id} lines {ln.start_line}-{ln.end_line} "
-                f"of {ln.total_lines}]"
+                f"[artifact {artifact_id} lines {ln.start_line}-{ln.end_line} of {ln.total_lines}]"
             )
             if ln.line_truncated:
                 # Advancing to the next line here would skip the rest of THIS
@@ -117,22 +112,17 @@ def make_context_tools(
                 )
             elif ln.end_line < ln.total_lines:
                 more = (
-                    f"\n[more: call ctx_fetch_artifact(artifact_id, "
-                    f"start_line={ln.end_line + 1})]"
+                    f"\n[more: call ctx_fetch_artifact(artifact_id, start_line={ln.end_line + 1})]"
                 )
             else:
                 more = ""
             return f"{header}\n{ln.content}{more}"
 
-        sl = await store.get(
-            artifact_id, offset=offset, length=clamp_slice_length(length)
-        )
+        sl = await store.get(artifact_id, offset=offset, length=clamp_slice_length(length))
         if sl is None:
             return f"[error] artifact {artifact_id!r} not found (expired or wrong id)"
         end = sl.offset + len(sl.content)
-        header = (
-            f"[artifact {artifact_id} chars {sl.offset}-{end} of {sl.total_chars}]"
-        )
+        header = f"[artifact {artifact_id} chars {sl.offset}-{end} of {sl.total_chars}]"
         more = (
             f"\n[more: call ctx_fetch_artifact(artifact_id, offset={end})]"
             if end < sl.total_chars
@@ -141,9 +131,7 @@ def make_context_tools(
         return f"{header}\n{sl.content}{more}"
 
     @tool
-    async def ctx_grep_artifact(
-        artifact_id: str, pattern: str, max_matches: int = 20
-    ) -> str:
+    async def ctx_grep_artifact(artifact_id: str, pattern: str, max_matches: int = 20) -> str:
         """Regex-search an offloaded tool result; returns matching lines.
 
         Much cheaper than paging through ctx_fetch_artifact when you know
@@ -246,14 +234,8 @@ def make_context_tools(
             start = max(0, offset)
             content = body[start : start + clamp_slice_length(length)]
             end = start + len(content)
-            header = (
-                f"[history #{rec.seq} {rec.type} chars {start}-{end} of {total}]"
-            )
-            more = (
-                f"\n[more: call ctx_history_message({seq}, offset={end})]"
-                if end < total
-                else ""
-            )
+            header = f"[history #{rec.seq} {rec.type} chars {start}-{end} of {total}]"
+            more = f"\n[more: call ctx_history_message({seq}, offset={end})]" if end < total else ""
             return f"{header}\n{content}{more}"
 
         @tool
@@ -315,7 +297,10 @@ def make_context_tools(
                 f"score={h.score:.3f}\n   {h.snippet}"
                 for i, h in enumerate(hits)
             ]
-            return "[ctx_recall hits — fetch full text via ctx_fetch_artifact(artifact_id, offset)]\n" + "\n".join(lines)
+            return (
+                "[ctx_recall hits — fetch full text via ctx_fetch_artifact(artifact_id, offset)]\n"
+                + "\n".join(lines)
+            )
 
         tools.append(ctx_recall)
 

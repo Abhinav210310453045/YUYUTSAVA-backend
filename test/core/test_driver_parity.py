@@ -83,8 +83,7 @@ class ScriptedGraph:
         return _S()
 
 
-def _ai(text: str, *, tool_calls: list[dict] | None = None,
-        usage: dict | None = None) -> AIMessage:
+def _ai(text: str, *, tool_calls: list[dict] | None = None, usage: dict | None = None) -> AIMessage:
     msg = AIMessage(content=text, id="ai-1", tool_calls=tool_calls or [])
     if usage:
         msg.usage_metadata = usage  # type: ignore[attr-defined]
@@ -96,8 +95,7 @@ def _updates(*messages: Any) -> tuple[str, Any]:
 
 
 def _tokens(*texts: str) -> list[tuple[str, Any]]:
-    return [("messages", (AIMessageChunk(content=t), {"langgraph_node": "agent"}))
-            for t in texts]
+    return [("messages", (AIMessageChunk(content=t), {"langgraph_node": "agent"})) for t in texts]
 
 
 def _interrupt(*ivs: _Interrupt) -> tuple[str, Any]:
@@ -106,51 +104,75 @@ def _interrupt(*ivs: _Interrupt) -> tuple[str, Any]:
 
 #: label -> (passes, answers the user gives)
 SCENARIOS: dict[str, tuple[list[list[tuple[str, Any]]], list[str]]] = {
-    "plain reply": (
-        [[*_tokens("Hello", " world"), _updates(_ai("Hello world"))]], []),
+    "plain reply": ([[*_tokens("Hello", " world"), _updates(_ai("Hello world"))]], []),
     "tool call then reply": (
-        [[
-            *_tokens("Let me look"),
-            _updates(_ai("", tool_calls=[{"name": "tr_grep",
-                                          "args": {"pattern": "x"}, "id": "c1"}])),
-            _updates(ToolMessage(content="3 matches", tool_call_id="c1", name="tr_grep")),
-            _updates(_ai("Found 3.")),
-        ]], []),
+        [
+            [
+                *_tokens("Let me look"),
+                _updates(
+                    _ai("", tool_calls=[{"name": "tr_grep", "args": {"pattern": "x"}, "id": "c1"}])
+                ),
+                _updates(ToolMessage(content="3 matches", tool_call_id="c1", name="tr_grep")),
+                _updates(_ai("Found 3.")),
+            ]
+        ],
+        [],
+    ),
     "tool error": (
-        [[
-            _updates(ToolMessage(content="Error: boom", tool_call_id="c1",
-                                 name="tr_grep", status="error")),
-            _updates(_ai("That failed.")),
-        ]], []),
+        [
+            [
+                _updates(
+                    ToolMessage(
+                        content="Error: boom", tool_call_id="c1", name="tr_grep", status="error"
+                    )
+                ),
+                _updates(_ai("That failed.")),
+            ]
+        ],
+        [],
+    ),
     "oversized tool result": (
-        [[
-            _updates(ToolMessage(content="z" * 2000, tool_call_id="c1", name="tr_grep")),
-            _updates(_ai("Done.")),
-        ]], []),
+        [
+            [
+                _updates(ToolMessage(content="z" * 2000, tool_call_id="c1", name="tr_grep")),
+                _updates(_ai("Done.")),
+            ]
+        ],
+        [],
+    ),
     "usage metadata": (
-        [[_updates(_ai("Hi", usage={"input_tokens": 10, "output_tokens": 5,
-                                     "total_tokens": 15}))]], []),
+        [[_updates(_ai("Hi", usage={"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}))]],
+        [],
+    ),
     "no output at all": ([[]], []),
     "one interrupt approved": (
         [
             [_interrupt(_Interrupt({"type": "permission_request"}, id="i1"))],
             [_updates(_ai("Ran it."))],
-        ], ["approve"]),
+        ],
+        ["approve"],
+    ),
     "one interrupt with no id": (
         [
             [_interrupt(_Interrupt({"type": "permission_request"}, id=None))],
             [_updates(_ai("Ran it."))],
-        ], ["approve"]),
+        ],
+        ["approve"],
+    ),
     "two interrupts with ids": (
         [
             [_interrupt(_Interrupt({"a": 1}, id="i1"), _Interrupt({"b": 2}, id="i2"))],
             [_updates(_ai("Both done."))],
-        ], ["approve", "reject"]),
+        ],
+        ["approve", "reject"],
+    ),
     "two interrupts with NO ids": (
         [
             [_interrupt(_Interrupt({"a": 1}, id=None), _Interrupt({"b": 2}, id=None))],
             [_updates(_ai("Both done."))],
-        ], ["approve", "approve"]),
+        ],
+        ["approve", "approve"],
+    ),
     # Added after a negative control found the matrix could not see them: two
     # deliberate breakages — never closing the AI stream on an interrupt, and
     # never firing on_tick — both went undetected because no scenario streamed
@@ -159,27 +181,42 @@ SCENARIOS: dict[str, tuple[list[list[tuple[str, Any]]], list[str]]] = {
         [
             [*_tokens("Working"), _interrupt(_Interrupt({"a": 1}, id="i1"))],
             [_updates(_ai("Done."))],
-        ], ["approve"]),
+        ],
+        ["approve"],
+    ),
     # The tool-call-chunk guard closes the AI stream mid-flight. With only a
     # trailing update after it the newline lands either way, so a first version
     # of this scenario could not see the guard being removed at all — the text
     # chunk AFTER it is what makes the difference observable.
     "tool call chunk mid-stream": (
-        [[
-            *_tokens("thinking"),
-            ("messages", (AIMessageChunk(
-                content="calling", tool_call_chunks=[
-                    {"name": "tr_grep", "args": "{}", "id": "c1", "index": 0}]),
-                {"langgraph_node": "agent"})),
-            *_tokens("and more"),
-            _updates(_ai("Done.")),
-        ]], []),
+        [
+            [
+                *_tokens("thinking"),
+                (
+                    "messages",
+                    (
+                        AIMessageChunk(
+                            content="calling",
+                            tool_call_chunks=[
+                                {"name": "tr_grep", "args": "{}", "id": "c1", "index": 0}
+                            ],
+                        ),
+                        {"langgraph_node": "agent"},
+                    ),
+                ),
+                *_tokens("and more"),
+                _updates(_ai("Done.")),
+            ]
+        ],
+        [],
+    ),
     "multi-pass ticks": (
         [
-            [_updates(_ai("one")), _updates(_ai("two")),
-             _interrupt(_Interrupt({"a": 1}, id="i1"))],
+            [_updates(_ai("one")), _updates(_ai("two")), _interrupt(_Interrupt({"a": 1}, id="i1"))],
             [_updates(_ai("three"))],
-        ], ["approve"]),
+        ],
+        ["approve"],
+    ),
 }
 
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")
@@ -200,8 +237,7 @@ class _Capture(logging.Handler):
         self.records.append(f"{record.levelname}:{_scrub(record.getMessage())}")
 
 
-async def run_cli_driver(passes: list[list[tuple[str, Any]]],
-                         answers: list[str]) -> dict[str, Any]:
+async def run_cli_driver(passes: list[list[tuple[str, Any]]], answers: list[str]) -> dict[str, Any]:
     """Drive ``astream_agent`` over a scripted graph, capturing everything."""
     from yuyutsava.core import streaming
 
@@ -227,11 +263,10 @@ async def run_cli_driver(passes: list[list[tuple[str, Any]]],
     logger.addHandler(handler)
     buf = io.StringIO()
     try:
-        with patch.object(streaming, "prompt_permission", _fake_prompt), \
-                redirect_stderr(buf):
+        with patch.object(streaming, "prompt_permission", _fake_prompt), redirect_stderr(buf):
             final = await streaming.astream_agent(
-                graph, "do the thing", thread_id="thr-fixed", agent_path="cli",
-                on_tick=_on_tick)
+                graph, "do the thing", thread_id="thr-fixed", agent_path="cli", on_tick=_on_tick
+            )
     finally:
         logger.removeHandler(handler)
         logger.level = previous_level
@@ -262,8 +297,9 @@ class Parity(unittest.IsolatedAsyncioTestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.golden = (json.loads(GOLDEN_PATH.read_text(encoding="utf-8"))
-                      if GOLDEN_PATH.exists() else {})
+        cls.golden = (
+            json.loads(GOLDEN_PATH.read_text(encoding="utf-8")) if GOLDEN_PATH.exists() else {}
+        )
 
     async def test_every_scenario_matches(self) -> None:
         self.assertTrue(self.golden, "no golden record — capture it first")
@@ -273,7 +309,8 @@ class Parity(unittest.IsolatedAsyncioTestCase):
             with self.subTest(scenario=label):
                 got = await run_cli_driver(passes, answers)
                 self.assertEqual(
-                    got, self.golden[label],
+                    got,
+                    self.golden[label],
                     f"{label}: the CLI driver's observable output changed",
                 )
 
@@ -290,11 +327,13 @@ class Parity(unittest.IsolatedAsyncioTestCase):
                     f"{label}: something other than the resume command changed",
                 )
                 self.assertEqual(
-                    old["resumed"], ["{}"],
+                    old["resumed"],
+                    ["{}"],
                     "the golden no longer shows the old broken behaviour",
                 )
                 self.assertEqual(
-                    got["resumed"], ["approve"],
+                    got["resumed"],
+                    ["approve"],
                     "the CLI driver still drops multi-interrupt answers",
                 )
 
@@ -330,10 +369,12 @@ class TheAgentProtocol(unittest.TestCase):
         self.assertIsInstance(ScriptedGraph([]), Agent)
 
     def test_the_driver_no_longer_names_the_framework_class(self) -> None:
-        src = (pathlib.Path(__file__).resolve().parents[2]
-               / "yuyutsava/core/streaming.py").read_text(encoding="utf-8")
+        src = (
+            pathlib.Path(__file__).resolve().parents[2] / "yuyutsava/core/streaming.py"
+        ).read_text(encoding="utf-8")
         self.assertNotIn(
-            "CompiledStateGraph", src,
+            "CompiledStateGraph",
+            src,
             "streaming.py names LangGraph's compiled-graph class again; the "
             "driver should declare `Agent` and let the graph satisfy it",
         )
@@ -347,7 +388,8 @@ class TheAgentProtocol(unittest.TestCase):
         """
         root = pathlib.Path(__file__).resolve().parents[2] / "yuyutsava"
         callers = [
-            str(p.relative_to(root)) for p in root.rglob("*.py")
+            str(p.relative_to(root))
+            for p in root.rglob("*.py")
             if "__pycache__" not in p.parts
             and "create_deep_agent(" in p.read_text(encoding="utf-8")
         ]
@@ -381,10 +423,15 @@ class ResumeProtocolDrift(unittest.IsolatedAsyncioTestCase):
         async def ask(_value: Any) -> str:
             return queue.pop(0) if queue else "reject"
 
-        [_ev async for _ev in astream_agent_iter(
-            graph, "do the thing", thread_id="t", ask_handler=ask)]
+        [
+            _ev
+            async for _ev in astream_agent_iter(
+                graph, "do the thing", thread_id="t", ask_handler=ask
+            )
+        ]
         self.assertEqual(
-            graph.resumed, ["approve"],
+            graph.resumed,
+            ["approve"],
             "the daemon driver dropped the answers too",
         )
 
@@ -392,7 +439,8 @@ class ResumeProtocolDrift(unittest.IsolatedAsyncioTestCase):
         """Recorded from the pre-merge implementation, and now fixed."""
         golden = json.loads(GOLDEN_PATH.read_text(encoding="utf-8"))
         self.assertEqual(
-            golden["two interrupts with NO ids"]["resumed"], ["{}"],
+            golden["two interrupts with NO ids"]["resumed"],
+            ["{}"],
             "the golden no longer records the old behaviour, so the fix has "
             "nothing to be measured against",
         )
@@ -409,8 +457,12 @@ class ResumeProtocolDrift(unittest.IsolatedAsyncioTestCase):
         async def ask(_value: Any) -> str:
             return queue.pop(0) if queue else "reject"
 
-        [_ev async for _ev in astream_agent_iter(
-            daemon_graph, "do the thing", thread_id="t", ask_handler=ask)]
+        [
+            _ev
+            async for _ev in astream_agent_iter(
+                daemon_graph, "do the thing", thread_id="t", ask_handler=ask
+            )
+        ]
         cli = await run_cli_driver(passes, answers)
         self.assertEqual([str(r) for r in daemon_graph.resumed], cli["resumed"])
 
@@ -424,7 +476,8 @@ if __name__ == "__main__":
             for label, (passes, answers) in SCENARIOS.items():
                 out[label] = await run_cli_driver(passes, answers)
             GOLDEN_PATH.write_text(
-                json.dumps(out, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+                json.dumps(out, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+            )
             print(f"captured {len(out)} scenarios -> {GOLDEN_PATH}")
 
         asyncio.run(_capture())

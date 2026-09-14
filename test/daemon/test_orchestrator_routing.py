@@ -63,18 +63,22 @@ class _StubRouter:
 
 def _task(task_id: str, complexity: int = 3) -> OrchestratorTask:
     return OrchestratorTask(
-        proposal_id="p1", event_id="e1", topic="user.task.submitted",
-        summary="sum", instruction="do the thing", subagent_hint="general-purpose",
-        urgency=2, task_id=task_id, complexity=complexity,
+        proposal_id="p1",
+        event_id="e1",
+        topic="user.task.submitted",
+        summary="sum",
+        instruction="do the thing",
+        subagent_hint="general-purpose",
+        urgency=2,
+        task_id=task_id,
+        complexity=complexity,
     )
 
 
 class OrchestratorRoutingTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
-        self.registry = TaskRegistry(
-            sqlite_task_store(Path(self._tmp.name) / "state.db")
-        )
+        self.registry = TaskRegistry(sqlite_task_store(Path(self._tmp.name) / "state.db"))
         self.role_model = _NamedModel("role-orch")
         self.role_sub = _NamedModel("role-sub")
         self.tiers = {
@@ -168,7 +172,9 @@ class OrchestratorRoutingTests(unittest.IsolatedAsyncioTestCase):
             store=_RecordingStore(),
             orchestrator_model=self.role_model,
             deps=SimpleNamespace(
-                skill_registry=None, async_task_mirror=None, memory_store=None,
+                skill_registry=None,
+                async_task_mirror=None,
+                memory_store=None,
             ),
             orchestrator_token_budget=1000,
             task_registry=self.registry,

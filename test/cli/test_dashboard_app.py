@@ -36,15 +36,15 @@ from yuyutsava.cli.render.dashboard import ChatDashboard
 from yuyutsava.context.meter import ContextSnapshot, bus
 
 
-
-
 class _DashboardCase(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         bus().clear()
         self._pipe_cm = create_pipe_input()
         self._pipe = self._pipe_cm.__enter__()
         self.dash = ChatDashboard(
-            history_path=None, output=DummyOutput(), input=self._pipe,
+            history_path=None,
+            output=DummyOutput(),
+            input=self._pipe,
         )
 
     async def asyncTearDown(self) -> None:
@@ -72,9 +72,7 @@ class LayoutComposes(_DashboardCase):
         self.assertFalse(app.is_running)
 
     async def test_the_panel_and_transcript_split_the_width(self):
-        self.assertEqual(
-            self.dash.left_width + self.dash._panel_width + 1, self.dash._cols
-        )
+        self.assertEqual(self.dash.left_width + self.dash._panel_width + 1, self.dash._cols)
 
     async def test_hiding_the_panel_gives_the_width_to_the_transcript(self):
         before = self.dash.left_width
@@ -94,8 +92,18 @@ class BindingTable(_DashboardCase):
         bound = set()
         for binding in self.dash._app.key_bindings.bindings:
             bound.update(str(k) for k in binding.keys)
-        for key in (K.ControlM, K.ControlC, K.ControlD, K.PageUp, K.PageDown,
-                    K.End, K.ControlL, K.ControlG, K.ScrollUp, K.ScrollDown):
+        for key in (
+            K.ControlM,
+            K.ControlC,
+            K.ControlD,
+            K.PageUp,
+            K.PageDown,
+            K.End,
+            K.ControlL,
+            K.ControlG,
+            K.ScrollUp,
+            K.ScrollDown,
+        ):
             self.assertIn(str(key), bound, key)
 
 
@@ -103,8 +111,7 @@ class Keys(_DashboardCase):
     async def test_enter_submits_the_line_and_clears_the_buffer(self):
         self.dash._buf.text = "hello there"
         self.dash.submit()
-        self.assertEqual(await asyncio.wait_for(self.dash.read_input(), 2),
-                         "hello there")
+        self.assertEqual(await asyncio.wait_for(self.dash.read_input(), 2), "hello there")
         self.assertEqual(self.dash._buf.text, "")
 
     async def test_enter_follows_the_output_again(self):
@@ -180,8 +187,8 @@ class MidTurnMessages(_DashboardCase):
             self.dash._buf.text = "and also check the logs"
             self.dash.submit()
             self.assertEqual(
-                await asyncio.wait_for(self.dash.read_input(), 2),
-                "and also check the logs")
+                await asyncio.wait_for(self.dash.read_input(), 2), "and also check the logs"
+            )
             self.assertTrue(any("queued" in n for n in self.dash.notices()))
             self.assertFalse(task.done(), "the running turn must survive")
         finally:
@@ -269,17 +276,24 @@ class VisibleSlice(_DashboardCase):
 class SnapshotsReachThePanel(_DashboardCase):
     async def test_a_published_snapshot_appears_in_the_panel(self):
         await self.dash.start()
-        bus().publish(ContextSnapshot(
-            thread_id="t1", model="gemini-3.5-flash", max_input_tokens=1_000_000,
-            messages_tokens=29_200, call_no=3, input_tokens=41_087,
-        ))
+        bus().publish(
+            ContextSnapshot(
+                thread_id="t1",
+                model="gemini-3.5-flash",
+                max_input_tokens=1_000_000,
+                messages_tokens=29_200,
+                call_no=3,
+                input_tokens=41_087,
+            )
+        )
         text = "".join(t for _s, t in self.dash._panel_text())
         self.assertIn("gemini-3.5-flash", text)
         self.assertIn("41.1k", text)
 
     async def test_a_client_starting_mid_session_sees_the_last_snapshot(self):
-        bus().publish(ContextSnapshot(thread_id="t1", model="already-running",
-                                      max_input_tokens=1_000))
+        bus().publish(
+            ContextSnapshot(thread_id="t1", model="already-running", max_input_tokens=1_000)
+        )
         await self.dash.start()
         text = "".join(t for _s, t in self.dash._panel_text())
         self.assertIn("already-running", text)
@@ -288,8 +302,7 @@ class SnapshotsReachThePanel(_DashboardCase):
         await self.dash.start()
         await self.dash.stop()
         before = self.dash._snapshot
-        bus().publish(ContextSnapshot(thread_id="t1", model="after-stop",
-                                      max_input_tokens=1))
+        bus().publish(ContextSnapshot(thread_id="t1", model="after-stop", max_input_tokens=1))
         self.assertIs(self.dash._snapshot, before)
 
 
@@ -313,8 +326,7 @@ class PaneIntegrity(_DashboardCase):
     async def test_a_warning_lands_in_the_pane_not_the_terminal(self):
         await self.dash.start()
         warnings.warn("a long credentials warning " + "x" * 300, stacklevel=1)
-        self.assertTrue(
-            any("credentials warning" in ln for ln in self.dash.buffer.lines()))
+        self.assertTrue(any("credentials warning" in ln for ln in self.dash.buffer.lines()))
 
     async def test_a_logger_with_its_own_handler_is_captured(self):
         # core.engine.setup_logging attaches the CLI handler to the
@@ -328,9 +340,7 @@ class PaneIntegrity(_DashboardCase):
         try:
             await self.dash.start()
             log.warning("captured into the pane")
-            self.assertTrue(
-                any("captured into the pane" in ln
-                    for ln in self.dash.buffer.lines()))
+            self.assertTrue(any("captured into the pane" in ln for ln in self.dash.buffer.lines()))
             await self.dash.stop()
             self.assertIsNot(handler.stream, self.dash.buffer)
         finally:
@@ -342,18 +352,24 @@ class PaneIntegrity(_DashboardCase):
         self.dash.buffer.write("W" * 300 + "\n")
         for width in (200, 120, 60, 30):
             rows = self.dash._display_rows(200, width)
-            self.assertLessEqual(
-                max(visible_width(r) for r in rows), width, f"width={width}")
+            self.assertLessEqual(max(visible_width(r) for r in rows), width, f"width={width}")
 
     async def test_the_panel_never_exceeds_its_height(self):
         from yuyutsava.cli.render.context_panel import panel_fragments
 
         snap = ContextSnapshot(
-            thread_id="t", model="m", max_input_tokens=1_000,
-            messages_tokens=100, call_no=1, input_tokens=10, calls=1)
+            thread_id="t",
+            model="m",
+            max_input_tokens=1_000,
+            messages_tokens=100,
+            call_no=1,
+            input_tokens=10,
+            calls=1,
+        )
         for height in range(1, 45):
-            text = "".join(t for _s, t in panel_fragments(
-                snap, width=34, height=height, notices=["a notice"]))
+            text = "".join(
+                t for _s, t in panel_fragments(snap, width=34, height=height, notices=["a notice"])
+            )
             rows = [ln for ln in text.split("\n") if ln]
             self.assertLessEqual(len(rows), height, f"height={height}")
             self.assertEqual({len(r) for r in rows}, {34}, f"height={height}")
@@ -385,18 +401,32 @@ class Notices(_DashboardCase):
     async def test_an_unpriced_model_is_said_once_in_the_panel(self):
         await self.dash.start()
         for _ in range(3):
-            bus().publish(ContextSnapshot(
-                thread_id="t1", model="no-price-model", max_input_tokens=1_000,
-                call_no=1, input_tokens=10, priced=False))
+            bus().publish(
+                ContextSnapshot(
+                    thread_id="t1",
+                    model="no-price-model",
+                    max_input_tokens=1_000,
+                    call_no=1,
+                    input_tokens=10,
+                    priced=False,
+                )
+            )
         joined = " ".join(self.dash.notices())
         self.assertIn("no price entry", joined)
         self.assertEqual(len(self.dash.notices()), 1)
 
     async def test_a_priced_model_says_nothing(self):
         await self.dash.start()
-        bus().publish(ContextSnapshot(
-            thread_id="t1", model="claude-sonnet-4-5", max_input_tokens=1_000,
-            call_no=1, input_tokens=10, priced=True))
+        bus().publish(
+            ContextSnapshot(
+                thread_id="t1",
+                model="claude-sonnet-4-5",
+                max_input_tokens=1_000,
+                call_no=1,
+                input_tokens=10,
+                priced=True,
+            )
+        )
         self.assertEqual(self.dash.notices(), [])
 
     async def test_a_retry_becomes_a_notice(self):
@@ -564,17 +594,19 @@ class AsksAreReadThroughTheApplication(_DashboardCase):
                     for child in ast.walk(node):
                         scopes[id(child)] = node.name
             for node in ast.walk(tree):
-                if (isinstance(node, ast.Call)
-                        and isinstance(node.func, ast.Name)
-                        and node.func.id == "input"):
+                if (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name)
+                    and node.func.id == "input"
+                ):
                     where = scopes.get(id(node), "<module>")
                     if where in self._ALLOWED_DIRECT_READS:
                         continue
                     offenders.append(f"{path}:{node.lineno} in {where}()")
         self.assertEqual(
-            offenders, [],
-            "these must read through cli.line_reader.read_line:\n"
-            + "\n".join(offenders),
+            offenders,
+            [],
+            "these must read through cli.line_reader.read_line:\n" + "\n".join(offenders),
         )
 
     async def test_the_tripwire_would_catch_a_new_direct_read(self):
@@ -584,9 +616,9 @@ class AsksAreReadThroughTheApplication(_DashboardCase):
 
         tree = ast.parse("async def _ask_the_user():\n    return input('y/n> ')\n")
         calls = [
-            n for n in ast.walk(tree)
-            if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
-            and n.func.id == "input"
+            n
+            for n in ast.walk(tree)
+            if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "input"
         ]
         self.assertEqual(len(calls), 1)
         self.assertNotIn("_ask_the_user", self._ALLOWED_DIRECT_READS)
@@ -626,11 +658,12 @@ class AsksAreReadThroughTheApplication(_DashboardCase):
 
         line_reader.set_line_reader(first)
         line_reader.set_line_reader(second)
-        line_reader.clear_line_reader(first)   # the old front, tearing down late
+        line_reader.clear_line_reader(first)  # the old front, tearing down late
         try:
             self.assertEqual(await line_reader.read_line("> "), "2")
         finally:
             line_reader.clear_line_reader()
+
 
 class StreamCapture(_DashboardCase):
     async def test_stdout_and_stderr_are_captured_and_restored(self):
@@ -684,8 +717,6 @@ class StreamCapture(_DashboardCase):
         sink = Sink()
         self.dash.replay_to(sink)
         self.assertEqual(sink.text, "first\nsecond\n")
-
-
 
 
 if __name__ == "__main__":

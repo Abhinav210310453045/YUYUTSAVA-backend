@@ -81,9 +81,7 @@ async def read_line(prompt: str) -> str | None:
             return None
         return None if line is None else line.strip()
     try:
-        line = await asyncio.get_running_loop().run_in_executor(
-            None, lambda: input(prompt)
-        )
+        line = await asyncio.get_running_loop().run_in_executor(None, lambda: input(prompt))
     except (EOFError, KeyboardInterrupt):
         return None
     return line.strip()

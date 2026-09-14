@@ -142,16 +142,12 @@ class UnifiedArtifactStore(ArtifactStore):
         if self._recall_enabled:
             # Fire-and-forget: indexing must never add latency to the tool turn.
             # The artifact row is committed above before the chunk FK insert.
-            task = asyncio.create_task(
-                self._index_artifact(artifact_id, thread_id, content)
-            )
+            task = asyncio.create_task(self._index_artifact(artifact_id, thread_id, content))
             self._index_tasks.add(task)
             task.add_done_callback(self._index_tasks.discard)
         return artifact_id
 
-    async def _index_artifact(
-        self, artifact_id: str, thread_id: str, content: str
-    ) -> None:
+    async def _index_artifact(self, artifact_id: str, thread_id: str, content: str) -> None:
         """Chunk + embed + insert into ``artifact_chunks``. Never raises.
 
         Postgres-only by construction (``_recall_enabled`` requires vectors), so
@@ -164,16 +160,16 @@ class UnifiedArtifactStore(ArtifactStore):
             if not chunks:
                 return
             try:
-                embedded = await self._embedder.embed(
-                    [c.text for c in chunks], mode="document"
-                )
+                embedded = await self._embedder.embed([c.text for c in chunks], mode="document")
                 vectors: list[str | None] = [vector_literal(v) for v in embedded]
             except Exception:
                 # Embedder down: store rows with NULL vectors, and let backfill
                 # re-embed them. Losing the chunk entirely would be worse.
                 logger.warning(
                     "artifacts: chunk embedding failed for %s — storing %d NULL rows",
-                    artifact_id, len(chunks), exc_info=True,
+                    artifact_id,
+                    len(chunks),
+                    exc_info=True,
                 )
                 vectors = [None] * len(chunks)
             async with self._pool.connection() as conn:
@@ -183,8 +179,13 @@ class UnifiedArtifactStore(ArtifactStore):
                         "(chunk_id, artifact_id, thread_id, seq, char_offset, text, embedding) "
                         "VALUES (%s, %s, %s, %s, %s, %s, %s::vector)",
                         (
-                            mint_chunk_id(), artifact_id, thread_id,
-                            chunk.seq, chunk.char_offset, chunk.text, vec,
+                            mint_chunk_id(),
+                            artifact_id,
+                            thread_id,
+                            chunk.seq,
+                            chunk.char_offset,
+                            chunk.text,
+                            vec,
                         ),
                     )
         except Exception:
@@ -204,18 +205,14 @@ class UnifiedArtifactStore(ArtifactStore):
         try:
             qvec = vector_literal(await self._embedder.embed_one(query, mode="query"))
         except Exception:
-            logger.warning(
-                "artifacts: recall query embed failed — keyword fallback", exc_info=True
-            )
+            logger.warning("artifacts: recall query embed failed — keyword fallback", exc_info=True)
             async with self._pool.connection() as conn:
                 hits = await self._search.keyword_search(
                     conn, query, k, where=where, params=[thread_id]
                 )
             return [_to_recall_hit(h) for h in hits]
         async with self._pool.connection() as conn:
-            hits = await self._search.vector_search(
-                conn, qvec, k, where=where, params=[thread_id]
-            )
+            hits = await self._search.vector_search(conn, qvec, k, where=where, params=[thread_id])
         return [_to_recall_hit(h) for h in hits]
 
     async def get(
@@ -264,20 +261,24 @@ def sqlite_artifact_store(db_path: Path | None = None) -> UnifiedArtifactStore:
     from yuyutsava.storage.dialect import SqliteDialect
     from yuyutsava.storage.paths import state_db_path
 
-    return UnifiedArtifactStore(
-        SqliteDialect(ArtifactSchema(db_path or state_db_path()))
-    )
+    return UnifiedArtifactStore(SqliteDialect(ArtifactSchema(db_path or state_db_path())))
 
 
 def pg_artifact_store(
-    pool, *, embedder: Any | None = None, semantic_recall: bool = False,
+    pool,
+    *,
+    embedder: Any | None = None,
+    semantic_recall: bool = False,
     chunk_chars: int = 1_200,
 ) -> UnifiedArtifactStore:
     from yuyutsava.storage.dialect import PostgresDialect
 
     return UnifiedArtifactStore(
-        PostgresDialect(pool), embedder=embedder, pool=pool,
-        semantic_recall=semantic_recall, chunk_chars=chunk_chars,
+        PostgresDialect(pool),
+        embedder=embedder,
+        pool=pool,
+        semantic_recall=semantic_recall,
+        chunk_chars=chunk_chars,
     )
 
 

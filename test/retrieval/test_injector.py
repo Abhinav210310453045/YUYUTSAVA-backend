@@ -28,8 +28,12 @@ class _RecordingStore:
 class RetrievalInjectorTests(unittest.IsolatedAsyncioTestCase):
     def _inj(self, store, **kw):
         return RetrievalInjector(
-            store, top_k=5, prefix="PREFIX:", budget_chars=200,
-            render=lambda h: f"  - {h.text}", **kw,
+            store,
+            top_k=5,
+            prefix="PREFIX:",
+            budget_chars=200,
+            render=lambda h: f"  - {h.text}",
+            **kw,
         )
 
     async def test_empty_when_no_hits(self) -> None:
@@ -62,9 +66,11 @@ class RetrievalInjectorTests(unittest.IsolatedAsyncioTestCase):
 
 class SkillInjectorTests(unittest.IsolatedAsyncioTestCase):
     async def test_renders_skill_name_and_passes_agent(self) -> None:
-        store = _RecordingStore([
-            Hit("pdf-x", "edit pdfs", 0.9, payload={"name": "pdf-x"}),
-        ])
+        store = _RecordingStore(
+            [
+                Hit("pdf-x", "edit pdfs", 0.9, payload={"name": "pdf-x"}),
+            ]
+        )
         block = await SkillInjector(store, agent="orchestrator").build_block("edit a pdf")
         self.assertIn("RELEVANT SKILLS", block)
         self.assertIn("pdf-x: edit pdfs", block)

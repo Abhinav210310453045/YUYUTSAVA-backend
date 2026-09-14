@@ -115,9 +115,7 @@ class BaseSqliteStore:
         Each store call opens and closes its own connection; the WAL file
         is shared across opens so reads stay non-blocking.
         """
-        await asyncio.to_thread(
-            self._db_path.parent.mkdir, parents=True, exist_ok=True
-        )
+        await asyncio.to_thread(self._db_path.parent.mkdir, parents=True, exist_ok=True)
         conn = await aiosqlite.connect(str(self._db_path))
         try:
             await conn.execute(f"PRAGMA busy_timeout={int(self._busy_timeout_ms)}")
@@ -137,9 +135,7 @@ class BaseSqliteStore:
         if self._initialized:
             return
         if not self._SCHEMA_SQL:
-            raise RuntimeError(
-                f"{type(self).__name__} did not define _SCHEMA_SQL"
-            )
+            raise RuntimeError(f"{type(self).__name__} did not define _SCHEMA_SQL")
         async with amigration_lock():
             async with self._conn() as conn:
                 await conn.executescript(self._SCHEMA_SQL)

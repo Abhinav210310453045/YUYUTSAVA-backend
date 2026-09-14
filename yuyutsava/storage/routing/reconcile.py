@@ -32,12 +32,12 @@ class TableSpec:
     table: str
     pk: tuple[str, ...]
     columns: tuple[str, ...]
-    order: int                       # FK drain order (lower drains first)
+    order: int  # FK drain order (lower drains first)
     jsonb: frozenset[str] = frozenset()
     # Content-table extensions (empty/False for the events tables → no change):
-    ts_cols: frozenset[str] = frozenset()   # epoch REAL → to_timestamp() for TIMESTAMPTZ
-    thread_fk: bool = False                  # ensure_thread(thread_id) before insert
-    any_conflict: bool = False               # bare ON CONFLICT DO NOTHING (any unique)
+    ts_cols: frozenset[str] = frozenset()  # epoch REAL → to_timestamp() for TIMESTAMPTZ
+    thread_fk: bool = False  # ensure_thread(thread_id) before insert
+    any_conflict: bool = False  # bare ON CONFLICT DO NOTHING (any unique)
 
 
 # FK order: event_payloads → proposals → decisions; the rest are independent.
@@ -47,31 +47,83 @@ class TableSpec:
 # timestamp column is TIMESTAMPTZ on Postgres since migration v20 — before that
 # the events tables were DOUBLE PRECISION and needed no wrapping.
 EVENT_TABLE_SPECS: tuple[TableSpec, ...] = (
-    TableSpec("event_payloads", ("event_id",),
-              ("event_id", "topic", "ts", "payload_json", "blob_path"),
-              order=1, jsonb=frozenset({"payload_json"}),
-              ts_cols=frozenset({"ts"})),
-    TableSpec("proposals", ("proposal_id",),
-              ("proposal_id", "event_id", "topic", "summary", "proposed", "subagent",
-               "urgency", "created_ts", "expires_ts", "status", "session_id", "agent_path"),
-              order=2, ts_cols=frozenset({"created_ts", "expires_ts"})),
-    TableSpec("decisions", ("decision_id",),
-              ("decision_id", "proposal_id", "event_id", "outcome", "action_summary",
-               "ts", "session_id", "agent_path"),
-              order=3, ts_cols=frozenset({"ts"})),
-    TableSpec("consent_rules", ("rule_id",),
-              ("rule_id", "topic_glob", "match_json", "decision", "created_ts", "expires_ts"),
-              order=4, jsonb=frozenset({"match_json"}),
-              ts_cols=frozenset({"created_ts", "expires_ts"})),
-    TableSpec("tool_call_counters", ("tool_name", "day"),
-              ("tool_name", "day", "count"), order=4),
-    TableSpec("user_prefs", ("key",),
-              ("key", "value_json", "updated_ts"), order=4, jsonb=frozenset({"value_json"}),
-              ts_cols=frozenset({"updated_ts"})),
-    TableSpec("consent_grants", ("grant_id",),
-              ("grant_id", "domain", "subject_key", "decision", "scope", "scope_ref",
-               "created_ts", "expires_ts"), order=4,
-              ts_cols=frozenset({"created_ts", "expires_ts"})),
+    TableSpec(
+        "event_payloads",
+        ("event_id",),
+        ("event_id", "topic", "ts", "payload_json", "blob_path"),
+        order=1,
+        jsonb=frozenset({"payload_json"}),
+        ts_cols=frozenset({"ts"}),
+    ),
+    TableSpec(
+        "proposals",
+        ("proposal_id",),
+        (
+            "proposal_id",
+            "event_id",
+            "topic",
+            "summary",
+            "proposed",
+            "subagent",
+            "urgency",
+            "created_ts",
+            "expires_ts",
+            "status",
+            "session_id",
+            "agent_path",
+        ),
+        order=2,
+        ts_cols=frozenset({"created_ts", "expires_ts"}),
+    ),
+    TableSpec(
+        "decisions",
+        ("decision_id",),
+        (
+            "decision_id",
+            "proposal_id",
+            "event_id",
+            "outcome",
+            "action_summary",
+            "ts",
+            "session_id",
+            "agent_path",
+        ),
+        order=3,
+        ts_cols=frozenset({"ts"}),
+    ),
+    TableSpec(
+        "consent_rules",
+        ("rule_id",),
+        ("rule_id", "topic_glob", "match_json", "decision", "created_ts", "expires_ts"),
+        order=4,
+        jsonb=frozenset({"match_json"}),
+        ts_cols=frozenset({"created_ts", "expires_ts"}),
+    ),
+    TableSpec("tool_call_counters", ("tool_name", "day"), ("tool_name", "day", "count"), order=4),
+    TableSpec(
+        "user_prefs",
+        ("key",),
+        ("key", "value_json", "updated_ts"),
+        order=4,
+        jsonb=frozenset({"value_json"}),
+        ts_cols=frozenset({"updated_ts"}),
+    ),
+    TableSpec(
+        "consent_grants",
+        ("grant_id",),
+        (
+            "grant_id",
+            "domain",
+            "subject_key",
+            "decision",
+            "scope",
+            "scope_ref",
+            "created_ts",
+            "expires_ts",
+        ),
+        order=4,
+        ts_cols=frozenset({"created_ts", "expires_ts"}),
+    ),
 )
 
 
@@ -82,13 +134,34 @@ EVENT_TABLE_SPECS: tuple[TableSpec, ...] = (
 # has a threads FK; message_feedback deliberately has none (survives deletion) and
 # uses a bare ON CONFLICT (its natural key is a secondary unique index).
 CONTENT_TABLE_SPECS: tuple[TableSpec, ...] = (
-    TableSpec("visual_artifacts", ("visual_id",),
-              ("visual_id", "thread_id", "kind", "title", "mime", "path", "source", "created_ts"),
-              order=5, ts_cols=frozenset({"created_ts"}), thread_fk=True, any_conflict=True),
-    TableSpec("message_feedback", ("feedback_id",),
-              ("feedback_id", "thread_id", "session_id", "workspace", "message_ref",
-               "rating", "note", "user_text", "assistant_text", "created_ts"),
-              order=5, ts_cols=frozenset({"created_ts"}), any_conflict=True),
+    TableSpec(
+        "visual_artifacts",
+        ("visual_id",),
+        ("visual_id", "thread_id", "kind", "title", "mime", "path", "source", "created_ts"),
+        order=5,
+        ts_cols=frozenset({"created_ts"}),
+        thread_fk=True,
+        any_conflict=True,
+    ),
+    TableSpec(
+        "message_feedback",
+        ("feedback_id",),
+        (
+            "feedback_id",
+            "thread_id",
+            "session_id",
+            "workspace",
+            "message_ref",
+            "rating",
+            "note",
+            "user_text",
+            "assistant_text",
+            "created_ts",
+        ),
+        order=5,
+        ts_cols=frozenset({"created_ts"}),
+        any_conflict=True,
+    ),
     # TODO board (pg/migrations v16 + v17): durable user data, no thread FK.
     # Cards drain before their FK children; objectives before notes (notes'
     # objective_id FK). pinned/order_idx are INTEGER on both sides so the
@@ -96,29 +169,77 @@ CONTENT_TABLE_SPECS: tuple[TableSpec, ...] = (
     # deleted in PG mid-outage violates todo_notes_objective_fk on replay
     # (any_conflict doesn't cover FK errors) — same accepted risk class as
     # the card FK. todo_events is history: append-only, no objective FK.
-    TableSpec("todo_cards", ("card_id",),
-              ("card_id", "title", "status", "pinned", "tags", "workspace_path",
-               "created_ts", "updated_ts"),
-              order=6, jsonb=frozenset({"tags"}),
-              ts_cols=frozenset({"created_ts", "updated_ts"}), any_conflict=True),
-    TableSpec("todo_objectives", ("objective_id",),
-              ("objective_id", "card_id", "title", "phase", "order_idx",
-               "reason", "outcome", "created_ts", "updated_ts"),
-              order=7, ts_cols=frozenset({"created_ts", "updated_ts"}), any_conflict=True),
-    TableSpec("todo_notes", ("note_id",),
-              ("note_id", "card_id", "body", "author", "objective_id", "phase",
-               "created_ts", "updated_ts"),
-              order=8, ts_cols=frozenset({"created_ts", "updated_ts"}), any_conflict=True),
-    TableSpec("todo_attachments", ("attachment_id",),
-              ("attachment_id", "card_id", "kind", "path", "url", "mime", "title",
-               "meta", "created_ts"),
-              order=8, jsonb=frozenset({"meta"}),
-              ts_cols=frozenset({"created_ts"}), any_conflict=True),
-    TableSpec("todo_events", ("event_id",),
-              ("event_id", "card_id", "objective_id", "kind", "payload", "actor",
-               "created_ts"),
-              order=9, jsonb=frozenset({"payload"}),
-              ts_cols=frozenset({"created_ts"}), any_conflict=True),
+    TableSpec(
+        "todo_cards",
+        ("card_id",),
+        (
+            "card_id",
+            "title",
+            "status",
+            "pinned",
+            "tags",
+            "workspace_path",
+            "created_ts",
+            "updated_ts",
+        ),
+        order=6,
+        jsonb=frozenset({"tags"}),
+        ts_cols=frozenset({"created_ts", "updated_ts"}),
+        any_conflict=True,
+    ),
+    TableSpec(
+        "todo_objectives",
+        ("objective_id",),
+        (
+            "objective_id",
+            "card_id",
+            "title",
+            "phase",
+            "order_idx",
+            "reason",
+            "outcome",
+            "created_ts",
+            "updated_ts",
+        ),
+        order=7,
+        ts_cols=frozenset({"created_ts", "updated_ts"}),
+        any_conflict=True,
+    ),
+    TableSpec(
+        "todo_notes",
+        ("note_id",),
+        (
+            "note_id",
+            "card_id",
+            "body",
+            "author",
+            "objective_id",
+            "phase",
+            "created_ts",
+            "updated_ts",
+        ),
+        order=8,
+        ts_cols=frozenset({"created_ts", "updated_ts"}),
+        any_conflict=True,
+    ),
+    TableSpec(
+        "todo_attachments",
+        ("attachment_id",),
+        ("attachment_id", "card_id", "kind", "path", "url", "mime", "title", "meta", "created_ts"),
+        order=8,
+        jsonb=frozenset({"meta"}),
+        ts_cols=frozenset({"created_ts"}),
+        any_conflict=True,
+    ),
+    TableSpec(
+        "todo_events",
+        ("event_id",),
+        ("event_id", "card_id", "objective_id", "kind", "payload", "actor", "created_ts"),
+        order=9,
+        jsonb=frozenset({"payload"}),
+        ts_cols=frozenset({"created_ts"}),
+        any_conflict=True,
+    ),
 )
 
 
@@ -129,11 +250,13 @@ def _insert_sql(spec: TableSpec) -> str:
         return "%s::jsonb" if c in spec.jsonb else "%s"
 
     placeholders = ", ".join(_ph(c) for c in spec.columns)
-    conflict = "ON CONFLICT DO NOTHING" if spec.any_conflict \
+    conflict = (
+        "ON CONFLICT DO NOTHING"
+        if spec.any_conflict
         else f"ON CONFLICT ({', '.join(spec.pk)}) DO NOTHING"
+    )
     return (
-        f"INSERT INTO {spec.table} ({', '.join(spec.columns)}) "
-        f"VALUES ({placeholders}) {conflict}"
+        f"INSERT INTO {spec.table} ({', '.join(spec.columns)}) VALUES ({placeholders}) {conflict}"
     )
 
 

@@ -13,13 +13,21 @@ from fastapi import APIRouter, Depends, Query
 
 from yuyutsava.daemon.task_registry import TASK_STATUSES
 from yuyutsava.daemon.web.deps import (
-    get_async_watcher, get_hub, get_task_registry, get_task_submission,
+    get_async_watcher,
+    get_hub,
+    get_task_registry,
+    get_task_submission,
 )
 from yuyutsava.daemon.web.exceptions import ConflictError, NotFoundError, ServiceUnavailableError
 from yuyutsava.daemon.web.schemas.proposal import OkOut
 from yuyutsava.daemon.web.schemas.task import (
-    TaskEventsOut, TaskListOut, TaskLogMessage, TaskLogsOut,
-    TaskOut, TaskSubmitIn, TaskSubmitOut,
+    TaskEventsOut,
+    TaskListOut,
+    TaskLogMessage,
+    TaskLogsOut,
+    TaskOut,
+    TaskSubmitIn,
+    TaskSubmitOut,
 )
 
 router = APIRouter(tags=["tasks"])
@@ -40,7 +48,9 @@ async def submit_task(
 ) -> TaskSubmitOut:
     if body.mode == "direct":
         task_id = await submission.submit_direct(
-            body.instruction, origin=body.origin, complexity=body.complexity,
+            body.instruction,
+            origin=body.origin,
+            complexity=body.complexity,
         )
     else:
         task_id = await submission.submit_via_triage(body.instruction, origin=body.origin)

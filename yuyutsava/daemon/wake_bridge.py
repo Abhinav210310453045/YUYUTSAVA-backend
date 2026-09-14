@@ -23,7 +23,9 @@ logger = logging.getLogger("yuyutsava.daemon.wake_bridge")
 
 
 async def run_wake_bridge(
-    bus: EventBus, hub: WebHub, stop_event: asyncio.Event,
+    bus: EventBus,
+    hub: WebHub,
+    stop_event: asyncio.Event,
     runtime_settings: "object | None" = None,
 ) -> None:
     """Relay ``voice.wake`` bus events onto the web hub until stopped.
@@ -52,15 +54,19 @@ async def run_wake_bridge(
             # overlay can seed it as the first turn without re-popping.
             stage = ev.hints.get("stage", "open")
             command = ev.hints.get("command", "") if stage == "command" else ""
-            await hub.broadcast(StreamWakeItem(
-                wake_word=ev.hints.get("wake_word", ""),
-                transcript=command,
-                stage=stage,
-                command=command,
-                ts=ev.ts,
-            ))
+            await hub.broadcast(
+                StreamWakeItem(
+                    wake_word=ev.hints.get("wake_word", ""),
+                    transcript=command,
+                    stage=stage,
+                    command=command,
+                    ts=ev.ts,
+                )
+            )
             logger.debug(
-                "wake bridge: relayed %s (%s)", stage, ev.hints.get("wake_word", ""),
+                "wake bridge: relayed %s (%s)",
+                stage,
+                ev.hints.get("wake_word", ""),
             )
     except asyncio.CancelledError:
         raise

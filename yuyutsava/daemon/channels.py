@@ -113,8 +113,8 @@ class AppLogPayload:
     possible once it has been flattened into prose.
     """
 
-    level: str          # "DEBUG" | "INFO" | "WARNING" | "ERROR" | "CRITICAL"
-    logger: str         # e.g. "yuyutsava.context.compaction"
+    level: str  # "DEBUG" | "INFO" | "WARNING" | "ERROR" | "CRITICAL"
+    logger: str  # e.g. "yuyutsava.context.compaction"
     message: str
     ts: float
     kind: Literal["app_log"] = "app_log"
@@ -263,7 +263,7 @@ class AskPrompt:
     ask_id: str
     title: str
     body: str
-    options: list[str]              # e.g. ["approve","reject"] or free-text if empty
+    options: list[str]  # e.g. ["approve","reject"] or free-text if empty
     # ``interrupt_value`` is a raw passthrough from LangGraph's ``interrupt()``
     # — its shape is one of the variants documented in
     # :mod:`yuyutsava.models.interrupts` (plus the loose ``orchestrator_ask``
@@ -272,14 +272,14 @@ class AskPrompt:
     # when they need to. Typed as a read-only ``Mapping`` to discourage
     # mutation through this field.
     interrupt_value: Mapping[str, Any]
-    session_id: str | None = None    # thread_id of the originating run (HITL scoping)
-    agent_path: str | None = None    # e.g. "orchestrator/file_organizer#1" — who's asking
+    session_id: str | None = None  # thread_id of the originating run (HITL scoping)
+    agent_path: str | None = None  # e.g. "orchestrator/file_organizer#1" — who's asking
     # ---- ownership: which surface raised this, and how to get back to it ----
-    surface: str = "background"      # one of ASK_SURFACES
-    thread_id: str | None = None     # conversation thread, when a conversation owns it
-    card_id: str | None = None       # TODO card, for tinker asks
-    task_id: str | None = None       # background task id, for bg asks
-    agent_label: str | None = None   # short human name ("TinkerAgent", "file-organizer")
+    surface: str = "background"  # one of ASK_SURFACES
+    thread_id: str | None = None  # conversation thread, when a conversation owns it
+    card_id: str | None = None  # TODO card, for tinker asks
+    task_id: str | None = None  # background task id, for bg asks
+    agent_label: str | None = None  # short human name ("TinkerAgent", "file-organizer")
     # ``interrupt_id`` is LangGraph's own id for this interrupt (the ``it_id``
     # collected in core/streaming.py). Needed so a resume after a daemon
     # restart maps the reply back onto the right interrupt when a turn is
@@ -435,7 +435,8 @@ class ChannelRouter:
         origin = [c for c in self.channels if prefer and c.name == prefer]
         # 2. Primary channel (skip if it was the origin).
         primary = [
-            c for c in self.channels
+            c
+            for c in self.channels
             if c.name == self.primary_name and not (prefer and c.name == prefer)
         ]
         # 3. Everything else.
@@ -506,9 +507,7 @@ class ChannelRouter:
             # Detached because we are unwinding a cancellation and must not
             # await here.
             if self.ask_registry is not None:
-                asyncio.create_task(
-                    self.ask_registry.resolve(a.ask_id, "", status="cancelled")
-                )
+                asyncio.create_task(self.ask_registry.resolve(a.ask_id, "", status="cancelled"))
             raise
         if answer is None:
             logger.error("No channel could handle ask %s; defaulting to reject", a.ask_id)
@@ -528,15 +527,12 @@ class ChannelRouter:
         failed — the caller then falls back to the sequential path.
         """
         tasks = {
-            asyncio.create_task(c.post_ask(a), name=f"ask:{c.name}:{a.ask_id}"): c
-            for c in channels
+            asyncio.create_task(c.post_ask(a), name=f"ask:{c.name}:{a.ask_id}"): c for c in channels
         }
         answer: str | None = None
         try:
             while tasks:
-                done, _ = await asyncio.wait(
-                    tasks.keys(), return_when=asyncio.FIRST_COMPLETED
-                )
+                done, _ = await asyncio.wait(tasks.keys(), return_when=asyncio.FIRST_COMPLETED)
                 for t in done:
                     channel = tasks.pop(t)
                     try:
@@ -544,11 +540,13 @@ class ChannelRouter:
                     except asyncio.CancelledError:
                         continue
                     except NotImplementedError:
-                        continue          # this surface can't show asks
-                    except Exception:     # noqa: BLE001
+                        continue  # this surface can't show asks
+                    except Exception:  # noqa: BLE001
                         logger.warning(
                             "channel %s failed showing ask %s",
-                            channel.name, a.ask_id, exc_info=True,
+                            channel.name,
+                            a.ask_id,
+                            exc_info=True,
                         )
                         continue
                     return answer

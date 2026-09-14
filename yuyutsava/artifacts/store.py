@@ -122,9 +122,7 @@ def _record(
         thread_id=thread_id,
         created_ts=time.time(),
     )
-    (_artifact_dir(artifact_id) / "meta.json").write_text(
-        rec.model_dump_json(), encoding="utf-8"
-    )
+    (_artifact_dir(artifact_id) / "meta.json").write_text(rec.model_dump_json(), encoding="utf-8")
     return rec
 
 
@@ -139,8 +137,7 @@ def create_from_content(
     spec = CONTENT_KINDS.get(content_kind)
     if spec is None:
         raise ArtifactError(
-            f"unknown content kind {content_kind!r} "
-            f"(one of: {', '.join(sorted(CONTENT_KINDS))})"
+            f"unknown content kind {content_kind!r} (one of: {', '.join(sorted(CONTENT_KINDS))})"
         )
     if not content:
         raise ArtifactError(f"{content_kind} artifacts need non-empty content")
@@ -151,8 +148,13 @@ def create_from_content(
     path = d / f"artifact{ext}"
     path.write_text(content, encoding="utf-8")
     return _record(
-        artifact_id, kind, path, mime, title,
-        {"source": "content", "content_kind": content_kind}, thread_id,
+        artifact_id,
+        kind,
+        path,
+        mime,
+        title,
+        {"source": "content", "content_kind": content_kind},
+        thread_id,
     )
 
 
@@ -169,16 +171,19 @@ def generate(
     gen = next((b for b in blocks() if b.name == block_name), None)
     if gen is None or gen.generate is None:
         names = ", ".join(sorted(b.name for b in blocks() if b.generate))
-        raise ArtifactError(
-            f"no generative block named {block_name!r} (available: {names})"
-        )
+        raise ArtifactError(f"no generative block named {block_name!r} (available: {names})")
     artifact_id = _new_id()
     d = _artifact_dir(artifact_id)
     d.mkdir(parents=True, exist_ok=True)
     path, mime = gen.generate(dict(spec or {}), d)
     return _record(
-        artifact_id, gen.kind, Path(path), mime, title,
-        {"source": "generate", "block": block_name}, thread_id,
+        artifact_id,
+        gen.kind,
+        Path(path),
+        mime,
+        title,
+        {"source": "generate", "block": block_name},
+        thread_id,
     )
 
 
@@ -204,8 +209,13 @@ def attach_file(
     dest = d / src.name
     shutil.copy2(src, dest)
     return _record(
-        artifact_id, kind, dest, mime, title,
-        {"source": "attach", **(meta or {})}, thread_id,
+        artifact_id,
+        kind,
+        dest,
+        mime,
+        title,
+        {"source": "attach", **(meta or {})},
+        thread_id,
     )
 
 
@@ -233,10 +243,6 @@ def list_records(limit: int = 200) -> list[ArtifactRecordV1]:
     root = artifacts_root()
     if not root.is_dir():
         return []
-    recs = [
-        rec
-        for d in root.iterdir()
-        if d.is_dir() and (rec := load_record(d.name)) is not None
-    ]
+    recs = [rec for d in root.iterdir() if d.is_dir() and (rec := load_record(d.name)) is not None]
     recs.sort(key=lambda r: r.created_ts, reverse=True)
     return recs[:limit]

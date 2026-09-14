@@ -47,7 +47,7 @@ class KeywordCatalogProvider:
     async def search(self, query: str, max_results: int) -> SearchResult:
         q = query.strip()
         if q.lower().startswith(SELECT_PREFIX):
-            return self._select(q[len(SELECT_PREFIX):])
+            return self._select(q[len(SELECT_PREFIX) :])
         if "*" in q or "?" in q:
             return self._glob(q, max_results)
         return self._keyword(q, max_results)

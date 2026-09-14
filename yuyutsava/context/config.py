@@ -109,17 +109,11 @@ class ContextSettings:
             ),
             compact_fraction=_float("YUYUTSAVA_CONTEXT_COMPACT_FRACTION", 0.7),
             keep_messages=_int("YUYUTSAVA_CONTEXT_KEEP_MESSAGES", 20),
-            offload_threshold_chars=_int(
-                "YUYUTSAVA_CONTEXT_OFFLOAD_THRESHOLD_CHARS", 20_000
-            ),
-            always_offload_prefixes=_csv(
-                "YUYUTSAVA_CONTEXT_ALWAYS_OFFLOAD_PREFIXES", ("ws_",)
-            ),
+            offload_threshold_chars=_int("YUYUTSAVA_CONTEXT_OFFLOAD_THRESHOLD_CHARS", 20_000),
+            always_offload_prefixes=_csv("YUYUTSAVA_CONTEXT_ALWAYS_OFFLOAD_PREFIXES", ("ws_",)),
             semantic_recall=_bool("YUYUTSAVA_CONTEXT_SEMANTIC_RECALL", True),
             pin_first_messages=_int("YUYUTSAVA_CONTEXT_PIN_FIRST_MESSAGES", 2),
-            summarizer_input_tokens=_int(
-                "YUYUTSAVA_CONTEXT_SUMMARIZER_INPUT_TOKENS", 12_000
-            ),
+            summarizer_input_tokens=_int("YUYUTSAVA_CONTEXT_SUMMARIZER_INPUT_TOKENS", 12_000),
         )
 
     @property

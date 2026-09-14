@@ -61,15 +61,23 @@ class _RecordingStore:
 
 def _snap(cpu: float = 10.0, mem: float = 8000.0, disk: float = 100.0) -> ResourceSnapshot:
     return ResourceSnapshot(
-        cpu_pct=cpu, mem_available_mb=mem, disk_free_gb=disk, ts=time.time(),
+        cpu_pct=cpu,
+        mem_available_mb=mem,
+        disk_free_gb=disk,
+        ts=time.time(),
     )
 
 
 def _task(task_id: str, complexity: int = 5) -> OrchestratorTask:
     return OrchestratorTask(
-        proposal_id="p1", event_id="e1", topic="user.task.submitted",
-        summary="sum", instruction="do the heavy thing",
-        subagent_hint="general-purpose", urgency=2, task_id=task_id,
+        proposal_id="p1",
+        event_id="e1",
+        topic="user.task.submitted",
+        summary="sum",
+        instruction="do the heavy thing",
+        subagent_hint="general-purpose",
+        urgency=2,
+        task_id=task_id,
         complexity=complexity,
     )
 
@@ -77,9 +85,7 @@ def _task(task_id: str, complexity: int = 5) -> OrchestratorTask:
 class OrchestratorAdmissionTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
-        self.registry = TaskRegistry(
-            sqlite_task_store(Path(self._tmp.name) / "state.db")
-        )
+        self.registry = TaskRegistry(sqlite_task_store(Path(self._tmp.name) / "state.db"))
         self.channel = _RecordingChannel()
         self.store = _RecordingStore()
 
@@ -93,7 +99,9 @@ class OrchestratorAdmissionTests(unittest.IsolatedAsyncioTestCase):
             store=self.store,
             orchestrator_model=object(),
             deps=SimpleNamespace(
-                skill_registry=None, async_task_mirror=None, memory_store=None,
+                skill_registry=None,
+                async_task_mirror=None,
+                memory_store=None,
             ),
             orchestrator_token_budget=1000,
             task_registry=self.registry,
@@ -101,7 +109,9 @@ class OrchestratorAdmissionTests(unittest.IsolatedAsyncioTestCase):
         )
 
     def _admission(
-        self, *snaps: ResourceSnapshot, on_sleep=None,
+        self,
+        *snaps: ResourceSnapshot,
+        on_sleep=None,
     ) -> tuple[AdmissionController, ResourceMonitor]:
         """Admission over a scripted monitor; the fake sleep advances a fake
         clock and re-samples, optionally running ``on_sleep`` (e.g. cancel)."""
@@ -119,9 +129,12 @@ class OrchestratorAdmissionTests(unittest.IsolatedAsyncioTestCase):
                 await on_sleep()
 
         admission = AdmissionController(
-            monitor, monitor.settings, registry=self.registry,
+            monitor,
+            monitor.settings,
+            registry=self.registry,
             event_sink=self._loop_channels_post_event,
-            sleep=fake_sleep, clock=lambda: clock.now,
+            sleep=fake_sleep,
+            clock=lambda: clock.now,
         )
         return admission, monitor
 
@@ -144,7 +157,7 @@ class OrchestratorAdmissionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_heavy_task_deferred_then_runs_records_deferred_ms(self) -> None:
         admission, monitor = self._admission(_snap(cpu=95), _snap(cpu=20))
-        await monitor.sample_once()                # ring starts loaded
+        await monitor.sample_once()  # ring starts loaded
         task_id = self.registry.mint_task_id()
         await self.registry.create(task_id=task_id, origin="api", instruction="x")
 
@@ -156,10 +169,8 @@ class OrchestratorAdmissionTests(unittest.IsolatedAsyncioTestCase):
 
         rec = await self.registry.get(task_id)
         self.assertEqual(rec.status, "done")
-        self.assertEqual(rec.deferred_ms, 2000)    # one 2s backoff sleep
-        self.assertTrue(any(
-            "deferred — system busy" in ln for ln in self.channel.timeline_lines()
-        ))
+        self.assertEqual(rec.deferred_ms, 2000)  # one 2s backoff sleep
+        self.assertTrue(any("deferred — system busy" in ln for ln in self.channel.timeline_lines()))
 
     async def test_disk_critical_marks_task_failed(self) -> None:
         admission, monitor = self._admission(_snap(disk=1.0))
@@ -187,7 +198,9 @@ class OrchestratorAdmissionTests(unittest.IsolatedAsyncioTestCase):
             await self.registry.request_cancel(task_id)
 
         admission, monitor = self._admission(
-            _snap(cpu=95), _snap(cpu=20), on_sleep=cancel_while_deferred,
+            _snap(cpu=95),
+            _snap(cpu=20),
+            on_sleep=cancel_while_deferred,
         )
         await monitor.sample_once()
 

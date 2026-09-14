@@ -85,7 +85,8 @@ class _TranscriptContract:
         await self.store.put_messages(tid, _msgs("hi"))
         row = (await self.store.list_messages(tid))[0]
         self.assertIsInstance(
-            row.content, dict,
+            row.content,
+            dict,
             "content came back as a string. The web router does "
             "content.get('data', {}) on this — it would silently render nothing.",
         )
@@ -97,7 +98,8 @@ class _TranscriptContract:
         await self.store.put_messages(tid, _msgs("a", "b"))
         again = await self.store.put_messages(tid, _msgs("a", "b", "c"))
         self.assertEqual(
-            again, 1,
+            again,
+            1,
             "put_messages re-inserted messages it had already stored; a resumed "
             "thread would show every turn twice",
         )
@@ -163,7 +165,8 @@ class _TranscriptContract:
         await self.store.put_messages(tid, _msgs("keep"))
         await self.store.delete_older_than(_t.time() - 3600)
         self.assertEqual(
-            len(await self.store.list_messages(tid)), 1,
+            len(await self.store.list_messages(tid)),
+            1,
             "the TTL sweep deleted a message newer than the cutoff",
         )
         await self.store.delete_older_than(_t.time() + 3600)
@@ -175,8 +178,7 @@ class _TranscriptContract:
     async def test_task_id_is_optional(self) -> None:
         tid = self.tid("task")
         self.assertEqual(await self.store.put_messages(tid, _msgs("x"), task_id=None), 1)
-        self.assertEqual(
-            await self.store.put_messages(tid, _msgs("y"), task_id="task-123"), 1)
+        self.assertEqual(await self.store.put_messages(tid, _msgs("y"), task_id="task-123"), 1)
 
 
 # ---------------------------------------------------------------------------
@@ -241,11 +243,11 @@ class PostgresUnifiedTranscript(_TranscriptContract, unittest.IsolatedAsyncioTes
         tid = self.tid("fk")
         await self.store.put_messages(tid, _msgs("needs a parent"))
         async with self.pool.connection() as conn:
-            cur = await conn.execute(
-                "SELECT count(*) FROM threads WHERE thread_id = %s", (tid,))
+            cur = await conn.execute("SELECT count(*) FROM threads WHERE thread_id = %s", (tid,))
             row = await cur.fetchone()
         self.assertEqual(
-            row[0], 1,
+            row[0],
+            1,
             "the threads hub row was not created, so the insert can only have "
             "succeeded because the FK is missing — or it did not succeed",
         )

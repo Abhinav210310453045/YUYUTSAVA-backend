@@ -43,9 +43,7 @@ def _app() -> FastAPI:
 class EveryHandlerDeclaresIt(unittest.TestCase):
     def setUp(self) -> None:
         self.app = _app()
-        self.routes = [
-            r for r in self.app.routes if getattr(r, "path", "").startswith("/todos")
-        ]
+        self.routes = [r for r in self.app.routes if getattr(r, "path", "").startswith("/todos")]
 
     def test_routes_were_found(self) -> None:
         """Negative control — the checks below are vacuous with no routes."""
@@ -58,8 +56,7 @@ class EveryHandlerDeclaresIt(unittest.TestCase):
         import re
 
         src = (
-            pathlib.Path(__file__).resolve().parents[2]
-            / "yuyutsava/daemon/web/routers/todos.py"
+            pathlib.Path(__file__).resolve().parents[2] / "yuyutsava/daemon/web/routers/todos.py"
         ).read_text(encoding="utf-8")
         tree = ast.parse(src)
         offenders: list[str] = []
@@ -69,8 +66,10 @@ class EveryHandlerDeclaresIt(unittest.TestCase):
             if node.name == "board":
                 continue  # the dependency itself is allowed the fallback
             if not any(
-                isinstance(d, ast.Call) and isinstance(d.func, ast.Attribute)
-                and isinstance(d.func.value, ast.Name) and d.func.value.id == "router"
+                isinstance(d, ast.Call)
+                and isinstance(d.func, ast.Attribute)
+                and isinstance(d.func.value, ast.Name)
+                and d.func.value.id == "router"
                 for d in node.decorator_list
             ):
                 continue
@@ -78,7 +77,8 @@ class EveryHandlerDeclaresIt(unittest.TestCase):
             if re.search(r"\bget_default_exchange\(\)", seg):
                 offenders.append(node.name)
         self.assertEqual(
-            offenders, [],
+            offenders,
+            [],
             f"these handlers still resolve the board themselves: {offenders}. "
             f"Take it as `ex: TodoExchange = Depends(board)` — otherwise it is "
             f"invisible in the signature and cannot be overridden in a test.",
@@ -100,8 +100,7 @@ class EveryHandlerDeclaresIt(unittest.TestCase):
         import pathlib
 
         src = (
-            pathlib.Path(__file__).resolve().parents[2]
-            / "yuyutsava/daemon/web/routers/todos.py"
+            pathlib.Path(__file__).resolve().parents[2] / "yuyutsava/daemon/web/routers/todos.py"
         ).read_text(encoding="utf-8")
         offenders: list[str] = []
         for node in ast.walk(ast.parse(src)):
@@ -112,12 +111,14 @@ class EveryHandlerDeclaresIt(unittest.TestCase):
             params = {a.arg for a in node.args.args + node.args.kwonlyargs}
             uses = any(
                 isinstance(x, ast.Name) and x.id == "ex" and isinstance(x.ctx, ast.Load)
-                for stmt in node.body for x in ast.walk(stmt)
+                for stmt in node.body
+                for x in ast.walk(stmt)
             )
             if uses and "ex" not in params:
                 offenders.append(f"{node.name} (line {node.lineno})")
         self.assertEqual(
-            offenders, [],
+            offenders,
+            [],
             f"these functions reference `ex` without receiving it — a NameError "
             f"at request time:\n  {offenders}",
         )
@@ -150,7 +151,8 @@ class EveryRouteActuallyResponds(unittest.TestCase):
                 with self.subTest(path=path):
                     resp = client.get(path)
                     self.assertLess(
-                        resp.status_code, 500,
+                        resp.status_code,
+                        500,
                         f"{path} raised: {resp.text[:300]}",
                     )
 
@@ -175,12 +177,14 @@ class OverrideSeam(unittest.TestCase):
         with TestClient(app) as client:
             resp = client.get("/todos/snapshot")
         self.assertEqual(
-            fake.calls, ["board_snapshot"],
+            fake.calls,
+            ["board_snapshot"],
             "the override was ignored — the handler reached some other board, "
             "which means the dependency is not actually the seam",
         )
         self.assertNotEqual(
-            resp.status_code, 500,
+            resp.status_code,
+            500,
             f"handler errored through the override: {resp.text[:200]}",
         )
 
@@ -194,7 +198,8 @@ class OverrideSeam(unittest.TestCase):
         request = Mock(spec=Request)
         request.app.state.todo_exchange = sentinel
         self.assertIs(
-            board(request), sentinel,
+            board(request),
+            sentinel,
             "board() ignored app.state and fell through to the global — the "
             "daemon's own exchange would be bypassed",
         )

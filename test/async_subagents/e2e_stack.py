@@ -140,6 +140,7 @@ async def _main() -> int:
         # can be constructed. We don't need persistence for this test.
         try:
             from yuyutsava.storage.paths import state_dir  # noqa: F401
+
             store = Store(":memory:")
         except Exception as e:
             print(f"  (note: Store init failed — running without persistence): {e!r}")
@@ -152,12 +153,18 @@ async def _main() -> int:
     channels.session_origin = session_origin
 
     app = create_app(
-        hub, host="127.0.0.1",
-        channels=channels, session_origin=session_origin,
+        hub,
+        host="127.0.0.1",
+        channels=channels,
+        session_origin=session_origin,
     )
     config = uvicorn.Config(
-        app, host="127.0.0.1", port=api_port, log_level="warning",
-        access_log=False, lifespan="on",
+        app,
+        host="127.0.0.1",
+        port=api_port,
+        log_level="warning",
+        access_log=False,
+        lifespan="on",
     )
     api_server = uvicorn.Server(config)
     api_task = asyncio.create_task(api_server.serve(), name="e2e-api")
@@ -185,7 +192,9 @@ async def _main() -> int:
         mirror=mirror,
         host_url=lg_host.url,
         ask_handler=make_ask_handler(
-            channels, default_session_id="e2e", default_agent_path="e2e",
+            channels,
+            default_session_id="e2e",
+            default_agent_path="e2e",
         ),
         event_sink=channels.post_event,
         agent_path_root="e2e",
@@ -196,9 +205,13 @@ async def _main() -> int:
 
     # -- 4. /cli/attach roundtrip ------------------------------------------
     async with httpx.AsyncClient(base_url=api_base, timeout=5.0) as cli_http:
-        attach_resp = await cli_http.post("/cli/attach", json={
-            "session_id": "e2e-session", "label": "e2e-test",
-        })
+        attach_resp = await cli_http.post(
+            "/cli/attach",
+            json={
+                "session_id": "e2e-session",
+                "label": "e2e-test",
+            },
+        )
         if attach_resp.status_code == 200 and attach_resp.json().get("attached") is True:
             r.ok("/cli/attach registered CliRemoteChannel")
         else:
@@ -257,10 +270,11 @@ async def _main() -> int:
                                     ask_id_holder["ask_id"] = ask_id
 
         sse_task = asyncio.create_task(_sse_consumer(), name="e2e-sse")
-        await asyncio.sleep(0.3)   # let the consumer attach
+        await asyncio.sleep(0.3)  # let the consumer attach
 
         # -- 6. Drive a bg run --------------------------------------------------
         from langgraph_sdk import get_client
+
         lg = get_client(url=lg_host.url)
         thread = await lg.threads.create()
         await lg.runs.create(
@@ -268,13 +282,19 @@ async def _main() -> int:
             assistant_id="e2e-mock",
             input={"messages": [{"role": "user", "content": "go"}]},
         )
-        await mirror.upsert(MirroredTask(
-            task_id=thread["thread_id"], agent_name="e2e-mock-bg",
-            graph_id="e2e-mock", instruction="go", status="running",
-            started_at=time.time(), last_update_at=time.time(),
-            sub_thread_id=thread["thread_id"],
-            parent_thread_id="e2e-session",
-        ))
+        await mirror.upsert(
+            MirroredTask(
+                task_id=thread["thread_id"],
+                agent_name="e2e-mock-bg",
+                graph_id="e2e-mock",
+                instruction="go",
+                status="running",
+                started_at=time.time(),
+                last_update_at=time.time(),
+                sub_thread_id=thread["thread_id"],
+                parent_thread_id="e2e-session",
+            )
+        )
 
         # -- 7. Wait for the ask to surface, then respond ----------------------
         deadline = time.time() + 12

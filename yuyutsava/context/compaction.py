@@ -59,6 +59,7 @@ def request_compaction(thread_id: str) -> None:
     if thread_id:
         _FORCE_COMPACT.add(thread_id)
 
+
 YUYUTSAVA_SUMMARY_PROMPT = """<role>
 Context Extraction Assistant
 </role>
@@ -202,7 +203,7 @@ class YuyutsavaCompactionMiddleware(SummarizationMiddleware):
             return None
 
         pinned = self._pinned_head(messages)
-        rest = messages[len(pinned):]
+        rest = messages[len(pinned) :]
 
         keep_n = int(self.keep[1])
         cutoff = self._find_safe_cutoff(rest, keep_n)
@@ -223,7 +224,11 @@ class YuyutsavaCompactionMiddleware(SummarizationMiddleware):
 
         logger.info(
             "%s: compacted %d msgs (~%d tokens) → summary + %d pinned + %d kept",
-            self._role, len(to_summarize), total_tokens, len(pinned), len(preserved),
+            self._role,
+            len(to_summarize),
+            total_tokens,
+            len(pinned),
+            len(preserved),
         )
         # Compaction is the only step that removes messages from state, so
         # "how many times has this conversation been compacted" is the number
@@ -251,7 +256,7 @@ class YuyutsavaCompactionMiddleware(SummarizationMiddleware):
         if not self._should_summarize(messages, total_tokens):
             return None
         pinned = self._pinned_head(messages)
-        rest = messages[len(pinned):]
+        rest = messages[len(pinned) :]
         cutoff = self._find_safe_cutoff(rest, int(self.keep[1]))
         if cutoff <= 0:
             return None
@@ -298,7 +303,9 @@ class YuyutsavaCompactionMiddleware(SummarizationMiddleware):
             return None
         logger.info(
             "%s: resumed thread %s with persisted summary v%d",
-            self._role, thread_id, row.version,
+            self._role,
+            thread_id,
+            row.version,
         )
         return {
             "messages": [
@@ -368,7 +375,10 @@ class YuyutsavaCompactionMiddleware(SummarizationMiddleware):
         if stubbed:
             logger.info(
                 "%s: stubbed %d bulky tool arg(s) in the kept tail (~%d chars freed "
-                "per later call)", self._role, stubbed, saved,
+                "per later call)",
+                self._role,
+                stubbed,
+                saved,
             )
         return out
 
@@ -403,9 +413,7 @@ class YuyutsavaCompactionMiddleware(SummarizationMiddleware):
             return call, 0
 
         new_args = dict(args)
-        new_args[arg_name] = (
-            f"<stubbed: {len(value):,} chars, already written — {how}>"
-        )
+        new_args[arg_name] = f"<stubbed: {len(value):,} chars, already written — {how}>"
         freed = len(value) - len(new_args[arg_name])
         return {**call, "args": new_args}, max(0, freed)
 
@@ -435,17 +443,13 @@ class YuyutsavaCompactionMiddleware(SummarizationMiddleware):
             pass
         if self._summary_store is not None:
             try:
-                version = await self._summary_store.put(
-                    thread_id, summary, token_count=token_count
-                )
+                version = await self._summary_store.put(thread_id, summary, token_count=token_count)
                 logger.debug("compaction: stored summary v%d for %s", version, thread_id)
             except Exception:
                 logger.exception("compaction: failed to persist summary")
         if self._memory is not None:
             try:
-                await self._memory.add(
-                    kind="summary", text=summary, source_thread_id=thread_id
-                )
+                await self._memory.add(kind="summary", text=summary, source_thread_id=thread_id)
             except Exception:
                 logger.exception("compaction: failed to embed summary into memory")
 

@@ -163,6 +163,7 @@ class VadSegmenter:
     def _make_vad(aggressiveness: int):
         try:
             import webrtcvad  # type: ignore
+
             return webrtcvad.Vad(aggressiveness)
         except Exception:  # noqa: BLE001 — optional dep / build issues
             logger.info("webrtcvad unavailable — using energy-gate VAD fallback")
@@ -193,6 +194,7 @@ class VadSegmenter:
     def _rms(self, frame: bytes) -> float:
         # RMS over int16 samples without numpy (keeps fallback dependency-free).
         import array
+
         samples = array.array("h")
         samples.frombytes(frame)
         if not samples:
@@ -219,9 +221,7 @@ class VadSegmenter:
             self._preroll.append(frame)
             if speech:
                 self._speech_run += 1
-                onset_frames = (
-                    self._barge_start_frames if self._speaking else self._start_frames
-                )
+                onset_frames = self._barge_start_frames if self._speaking else self._start_frames
                 if self._speech_run >= onset_frames:
                     # Onset confirmed — open an utterance with the pre-roll.
                     self._in_speech = True

@@ -20,7 +20,8 @@ class TodoCreateIn(BaseModel):
     tags: list[str] = Field(default_factory=list)
     pinned: bool = False
     note: str | None = Field(
-        None, description="Optional first note added with the card",
+        None,
+        description="Optional first note added with the card",
     )
 
 
@@ -37,7 +38,8 @@ class NoteIn(BaseModel):
     body: str = Field(..., min_length=1, max_length=50_000)
     author: NoteAuthor = "user"
     objective_id: str | None = Field(
-        None, description="Attach the note to this objective on the same card",
+        None,
+        description="Attach the note to this objective on the same card",
     )
     phase: ObjectivePhase | None = None
 

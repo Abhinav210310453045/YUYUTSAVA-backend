@@ -51,9 +51,7 @@ class EmbedderTests(unittest.IsolatedAsyncioTestCase):
     async def test_document_prefix_applied(self) -> None:
         emb = _embedder(use_prefixes=True)
         await emb.embed_one("a durable fact", mode="document")
-        self.assertEqual(
-            emb._client.last_json["input"], ["search_document: a durable fact"]
-        )
+        self.assertEqual(emb._client.last_json["input"], ["search_document: a durable fact"])
 
     async def test_no_prefix_when_disabled(self) -> None:
         emb = _embedder(use_prefixes=False)

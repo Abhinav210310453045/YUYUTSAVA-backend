@@ -34,8 +34,8 @@ _MAX_DESC_CHARS = LIMITS.max_skill_desc_chars
 class SkillMeta:
     name: str
     description: str
-    path: Path   # absolute path to SKILL.md
-    scope: str   # "bundled" | "personal" | "workspace"
+    path: Path  # absolute path to SKILL.md
+    scope: str  # "bundled" | "personal" | "workspace"
     agent: str | None = None  # which agent this skill belongs to (bundled only)
     requires_tools: tuple[str, ...] = ()  # e.g. ("ws_*",) — picked up by BaseSubAgent
     platforms: tuple[str, ...] = ()  # OS families this skill applies to; empty = all
@@ -52,9 +52,7 @@ class SkillRegistry:
         bundled_dir: Path | None = None,
     ) -> None:
         self._home_dir = home_dir or (state_dir() / "skills")
-        self._workspace_dir = (
-            workspace_dir or WorkspaceLayout.for_workspace(Path.cwd()).skills
-        )
+        self._workspace_dir = workspace_dir or WorkspaceLayout.for_workspace(Path.cwd()).skills
         self._bundled_dir = bundled_dir or (Path(__file__).parent / "bundled")
         self._cache: list[SkillMeta] | None = None
 
@@ -104,9 +102,7 @@ class SkillRegistry:
         )
         (skill_dir / "SKILL.md").write_text(content, encoding="utf-8")
         self._cache = None  # invalidate cache
-        logger.info(
-            "skills: wrote personal skill %r (agent=%s) → %s", slug, agent, skill_dir
-        )
+        logger.info("skills: wrote personal skill %r (agent=%s) → %s", slug, agent, skill_dir)
         return slug
 
     def index_block(self, agent: str | None = None) -> str:
@@ -162,9 +158,7 @@ class SkillRegistry:
         from yuyutsava.platform import host_profile
 
         fam = host_profile().os_family
-        self._cache = [
-            s for s in seen.values() if not s.platforms or fam in s.platforms
-        ]
+        self._cache = [s for s in seen.values() if not s.platforms or fam in s.platforms]
         return self._cache
 
 
@@ -218,7 +212,7 @@ def _parse_frontmatter(path: Path, *, scope: str, agent: str | None) -> SkillMet
     description = " ".join(str(raw_desc).split())[:_MAX_DESC_CHARS]
     if not description:
         # Fall back to first non-empty line of body
-        body_lines = text[m.end() if m else 0:].strip().splitlines()
+        body_lines = text[m.end() if m else 0 :].strip().splitlines()
         description = next((line.lstrip("# ").strip() for line in body_lines if line.strip()), "")
 
     # ``requires_tools`` — optional list of tool-name globs the skill needs
@@ -237,9 +231,7 @@ def _parse_frontmatter(path: Path, *, scope: str, agent: str | None) -> SkillMet
     raw_plat = fm.get("platforms") or []
     if isinstance(raw_plat, str):
         raw_plat = [raw_plat]
-    platforms: tuple[str, ...] = tuple(
-        str(p).strip().lower() for p in raw_plat if str(p).strip()
-    )
+    platforms: tuple[str, ...] = tuple(str(p).strip().lower() for p in raw_plat if str(p).strip())
 
     return SkillMeta(
         name=_slugify(name),

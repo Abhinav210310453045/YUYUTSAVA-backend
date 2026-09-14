@@ -65,21 +65,18 @@ async def build_tinker_stack(
     the orchestrator master.
     """
     context_settings = ContextSettings.from_env(
-        "tinker", provider=_env("LLM_PROVIDER", None, "groq"),
+        "tinker",
+        provider=_env("LLM_PROVIDER", None, "groq"),
     )
     compaction_model = chat_model(llm_settings_from_env("compaction"), temperature=0.0)
 
-    skill_registry = SkillRegistry(
-        workspace_dir=WorkspaceLayout.for_workspace(workspace).skills
-    )
+    skill_registry = SkillRegistry(workspace_dir=WorkspaceLayout.for_workspace(workspace).skills)
 
     # Same retrieval wiring as the conversational stack: pgvector stores when
     # Postgres is up (the sync inside also indexes the bundled tinker skills,
     # agent-tagged by their bundled/tinker/ dir), SQLite keyword twins
     # otherwise. The bundle owns the pool/embedder and closes them in aclose.
-    memory_store, skill_store, pg_pool, embedder = await _build_retrieval_stores(
-        skill_registry
-    )
+    memory_store, skill_store, pg_pool, embedder = await _build_retrieval_stores(skill_registry)
 
     # One selection, shared with the CLI and the daemon (Phase 3 step 3.5).
     from yuyutsava.storage.backend import StorageSettings as _SS
@@ -145,9 +142,7 @@ async def build_tinker_stack(
             # and the bundle's compaction model belongs to this loop — Gemini
             # SDK clients bind to their first loop (see
             # llm/quirks/loop_affinity). ``model`` above is already host-only.
-            host_compaction_model = chat_model(
-                llm_settings_from_env("compaction"), temperature=0.0
-            )
+            host_compaction_model = chat_model(llm_settings_from_env("compaction"), temperature=0.0)
 
             return AsyncSubagentHost.from_subagents(
                 async_subagents,
@@ -170,20 +165,21 @@ async def build_tinker_stack(
                 ),
                 extra_tools_factory=(
                     (lambda: make_context_tools(artifact_store))
-                    if artifact_store is not None else None
+                    if artifact_store is not None
+                    else None
                 ),
             )
 
-        attachment = await asyncio.to_thread(
-            acquire_or_attach_host, factory=_build_host
-        )
+        attachment = await asyncio.to_thread(acquire_or_attach_host, factory=_build_host)
         async_host_attachment = attachment
         async_host_url = attachment.url
         async_host = attachment.host  # None when attached to another owner
         async_mirror = AsyncTaskMirror()
         logger.info(
             "tinker[%s]: async host %s @ %s",
-            card_id, "owner" if attachment.host is not None else "attached", async_host_url,
+            card_id,
+            "owner" if attachment.host is not None else "attached",
+            async_host_url,
         )
 
     # User-configured MCP servers (scope "tinker") + board-note recall. Both
@@ -191,6 +187,7 @@ async def build_tinker_stack(
     # note index on SQLite-only deployments.
     mcp_tools = mcp_manager.tools_for("tinker") if mcp_manager is not None else []
     from yuyutsava.todoboard.recall import get_default_note_index
+
     note_index = get_default_note_index()
 
     bundle = build_tinker_agent(

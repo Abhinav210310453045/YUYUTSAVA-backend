@@ -116,8 +116,11 @@ class Policy:
 
     def observes(self, phase: str) -> bool:
         """Whether this policy overrides the ``before_model``/… hook for *phase*."""
-        hook = {"before_model": "before_model", "after_model": "after_model",
-                "after_agent": "after_agent"}[phase]
+        hook = {
+            "before_model": "before_model",
+            "after_model": "after_model",
+            "after_agent": "after_agent",
+        }[phase]
         return getattr(type(self), hook) is not getattr(Policy, hook)
 
     def __repr__(self) -> str:

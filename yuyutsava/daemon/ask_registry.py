@@ -70,14 +70,13 @@ class AskRegistry:
             await self._store.put_pending_ask(record)
         except Exception:  # noqa: BLE001
             logger.warning(
-                "ask %s could not be persisted — it is live but will not "
-                "survive a restart", ask.ask_id, exc_info=True,
+                "ask %s could not be persisted — it is live but will not survive a restart",
+                ask.ask_id,
+                exc_info=True,
             )
         return record
 
-    async def resolve(
-        self, ask_id: str, response: str, *, status: str = "answered"
-    ) -> bool:
+    async def resolve(self, ask_id: str, response: str, *, status: str = "answered") -> bool:
         """Mark an ask resolved. False when it was already resolved.
 
         The DB compare-and-set is authoritative, so two surfaces answering
@@ -98,9 +97,7 @@ class AskRegistry:
 
     def pending(self) -> list[dict[str, Any]]:
         """Every unanswered ask, oldest first. Feeds ``GET /asks``."""
-        return sorted(
-            self._pending.values(), key=lambda r: r.get("created_ts") or 0.0
-        )
+        return sorted(self._pending.values(), key=lambda r: r.get("created_ts") or 0.0)
 
     def get(self, ask_id: str) -> dict[str, Any] | None:
         return self._pending.get(ask_id)
@@ -135,6 +132,7 @@ class AskRegistry:
         if rows:
             logger.info(
                 "ask registry: %d ask(s) still pending from a previous run — "
-                "answering one resumes its agent", len(rows),
+                "answering one resumes its agent",
+                len(rows),
             )
         return len(rows)

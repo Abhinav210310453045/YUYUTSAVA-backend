@@ -43,13 +43,10 @@ async def build_checkpointer(
 
     if settings.backend != "sqlite":
         raise NotImplementedError(
-            f"sessions backend {settings.backend!r} is not implemented; "
-            "use 'sqlite' or 'postgres'."
+            f"sessions backend {settings.backend!r} is not implemented; use 'sqlite' or 'postgres'."
         )
 
-    await asyncio.to_thread(
-        settings.db_path.parent.mkdir, parents=True, exist_ok=True
-    )
+    await asyncio.to_thread(settings.db_path.parent.mkdir, parents=True, exist_ok=True)
     async with AsyncSqliteSaver.from_conn_string(str(settings.db_path)) as saver:
         await saver.setup()
         yield saver

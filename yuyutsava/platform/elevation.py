@@ -104,10 +104,7 @@ class WindowsUACProvider:
         tmp = Path(tempfile.mkdtemp(prefix="yuyutsava_elev_"))
         out_f, err_f = tmp / "out.txt", tmp / "err.txt"
         # Inner command runs in a nested PowerShell whose streams are file-redirected.
-        inner = (
-            f"{command} "
-            f"1> '{out_f}' 2> '{err_f}'"
-        )
+        inner = f"{command} 1> '{out_f}' 2> '{err_f}'"
         b64 = _encode_powershell(inner)
         # Outer PowerShell launches the elevated child and waits for it.
         launcher = (
@@ -132,7 +129,9 @@ class WindowsUACProvider:
         # UAC declined / launcher failure surfaces on the launcher's stderr.
         if launch_err and not err:
             err = launch_err
-        return ElevationResult(stdout=out, stderr=err, exit_code=code, mechanism=self.mechanism_name)
+        return ElevationResult(
+            stdout=out, stderr=err, exit_code=code, mechanism=self.mechanism_name
+        )
 
 
 def _powershell_exe() -> str:
@@ -176,13 +175,12 @@ class MacAdminProvider:
         # `do shell script` already runs the command and returns its stdout;
         # it raises on non-zero exit, which osascript reports on stderr.
         script = (
-            'do shell script "' + _applescript_quote(command) + '" '
-            "with administrator privileges"
+            'do shell script "' + _applescript_quote(command) + '" with administrator privileges'
         )
-        out, err, code = await _run_capture(
-            ["osascript", "-e", script], timeout=timeout
+        out, err, code = await _run_capture(["osascript", "-e", script], timeout=timeout)
+        return ElevationResult(
+            stdout=out, stderr=err, exit_code=code, mechanism=self.mechanism_name
         )
-        return ElevationResult(stdout=out, stderr=err, exit_code=code, mechanism=self.mechanism_name)
 
 
 def _applescript_quote(command: str) -> str:
@@ -222,7 +220,9 @@ class LinuxSudoProvider:
                 mechanism="none",
             )
         out, err, code = await _run_capture(argv, timeout=timeout)
-        return ElevationResult(stdout=out, stderr=err, exit_code=code, mechanism=self.mechanism_name)
+        return ElevationResult(
+            stdout=out, stderr=err, exit_code=code, mechanism=self.mechanism_name
+        )
 
 
 def _posix_is_root() -> bool:

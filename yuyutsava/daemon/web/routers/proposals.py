@@ -14,7 +14,9 @@ from fastapi import APIRouter, Depends, Query, Request
 from yuyutsava.daemon.web.deps import get_decision_service
 from yuyutsava.daemon.web.exceptions import ConflictError
 from yuyutsava.daemon.web.schemas.proposal import (
-    AskRespondIn, OkOut, ProposalRespondIn,
+    AskRespondIn,
+    OkOut,
+    ProposalRespondIn,
 )
 from yuyutsava.daemon.web.services.decision_service import DecisionConflictError
 
@@ -57,7 +59,8 @@ async def respond_proposal(
 ) -> OkOut:
     try:
         outcome = await decisions.respond_proposal(
-            proposal_id, body.decision,
+            proposal_id,
+            body.decision,
             edited_instruction=body.edited_instruction,
         )
     except DecisionConflictError as exc:

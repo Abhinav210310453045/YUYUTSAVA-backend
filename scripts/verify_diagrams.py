@@ -95,11 +95,13 @@ def main() -> int:
         bad: list[str] = []
         for index, (line_no, src) in enumerate(blocks, 1):
             for label in _mindmap_traps(src):
-                bad.append(f"    block {index} (line {line_no}): mindmap label has "
-                           f"shape characters — {label!r}")
+                bad.append(
+                    f"    block {index} (line {line_no}): mindmap label has "
+                    f"shape characters — {label!r}"
+                )
             req = urllib.request.Request(
-                f"{base}/mermaid/svg", data=src.encode(),
-                headers={"Content-Type": "text/plain"})
+                f"{base}/mermaid/svg", data=src.encode(), headers={"Content-Type": "text/plain"}
+            )
             try:
                 with urllib.request.urlopen(req, timeout=30) as r:
                     r.read()
@@ -107,8 +109,7 @@ def main() -> int:
                 detail = e.read().decode(errors="replace").strip().replace("\n", " ")
                 bad.append(f"    block {index} (line {line_no}): {detail[:200]}")
             except Exception as e:  # noqa: BLE001
-                bad.append(f"    block {index} (line {line_no}): "
-                           f"{type(e).__name__}: {e}")
+                bad.append(f"    block {index} (line {line_no}): {type(e).__name__}: {e}")
         status = "OK" if not bad else f"{len(bad)} BROKEN"
         print(f"{name:<26} {len(blocks):>2} diagrams  {status}")
         for b in bad:

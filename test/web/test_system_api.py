@@ -29,14 +29,22 @@ class _RecordingStore:
 
 def _snap(cpu: float = 12.5, mem: float = 4096.0, disk: float = 42.0) -> ResourceSnapshot:
     return ResourceSnapshot(
-        cpu_pct=cpu, mem_available_mb=mem, disk_free_gb=disk, ts=time.time(),
+        cpu_pct=cpu,
+        mem_available_mb=mem,
+        disk_free_gb=disk,
+        ts=time.time(),
     )
 
 
 def _task(complexity: int = 5) -> OrchestratorTask:
     return OrchestratorTask(
-        proposal_id="p", event_id="e", topic="t", summary="s",
-        instruction="i", subagent_hint="general-purpose", urgency=2,
+        proposal_id="p",
+        event_id="e",
+        topic="t",
+        summary="s",
+        instruction="i",
+        subagent_hint="general-purpose",
+        urgency=2,
         complexity=complexity,
     )
 
@@ -47,12 +55,14 @@ class SystemApiTests(unittest.IsolatedAsyncioTestCase):
         self.monitor = ResourceMonitor(self.settings, sampler=_snap)
         self.admission = AdmissionController(self.monitor, self.settings)
         app = create_app(
-            WebHub(store=_RecordingStore()), host="127.0.0.1",
+            WebHub(store=_RecordingStore()),
+            host="127.0.0.1",
             resource_monitor=self.monitor,
             admission_controller=self.admission,
         )
         self.client = httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test",
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://test",
         )
 
     async def asyncTearDown(self) -> None:
@@ -87,11 +97,13 @@ class SystemApiTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_no_admission_degrades_to_monitor_only(self) -> None:
         app = create_app(
-            WebHub(store=_RecordingStore()), host="127.0.0.1",
+            WebHub(store=_RecordingStore()),
+            host="127.0.0.1",
             resource_monitor=self.monitor,
         )
         async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test",
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://test",
         ) as client:
             r = await client.get("/system/metrics")
         self.assertEqual(r.status_code, 200)
@@ -101,7 +113,8 @@ class SystemApiTests(unittest.IsolatedAsyncioTestCase):
     async def test_missing_monitor_is_503(self) -> None:
         app = create_app(WebHub(store=_RecordingStore()), host="127.0.0.1")
         async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test",
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://test",
         ) as client:
             r = await client.get("/system/metrics")
         self.assertEqual(r.status_code, 503)

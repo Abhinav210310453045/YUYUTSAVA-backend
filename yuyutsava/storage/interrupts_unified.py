@@ -64,10 +64,25 @@ def _select_list(d: "Dialect") -> str:
 
 #: Fixed read set; access is by name, so this drives *which* columns are read.
 _COLS: tuple[str, ...] = (
-    "id", "session_id", "thread_id", "agent_path", "requesting_agent",
-    "parent_agent", "invocation_mode", "kind", "operation", "paths_json",
-    "zone", "risk_level", "reason", "question", "payload_json", "outcome",
-    "user_response", "created_at", "resolved_at",
+    "id",
+    "session_id",
+    "thread_id",
+    "agent_path",
+    "requesting_agent",
+    "parent_agent",
+    "invocation_mode",
+    "kind",
+    "operation",
+    "paths_json",
+    "zone",
+    "risk_level",
+    "reason",
+    "question",
+    "payload_json",
+    "outcome",
+    "user_response",
+    "created_at",
+    "resolved_at",
 )
 
 
@@ -128,17 +143,25 @@ def _to_record(row: Any, d: Dialect) -> InterruptRecord:
     decoded = d.json_value(row["paths_json"])
     paths = list(decoded) if isinstance(decoded, (list, tuple)) else None
     return InterruptRecord(
-        session_id=row["session_id"], thread_id=row["thread_id"],
-        invocation_mode=row["invocation_mode"], payload=payload, kind=row["kind"],
-        agent_path=row["agent_path"], requesting_agent=row["requesting_agent"],
-        parent_agent=row["parent_agent"], operation=row["operation"], paths=paths,
-        zone=row["zone"], risk_level=row["risk_level"], reason=row["reason"],
-        question=row["question"], id=row["id"], outcome=row["outcome"],
+        session_id=row["session_id"],
+        thread_id=row["thread_id"],
+        invocation_mode=row["invocation_mode"],
+        payload=payload,
+        kind=row["kind"],
+        agent_path=row["agent_path"],
+        requesting_agent=row["requesting_agent"],
+        parent_agent=row["parent_agent"],
+        operation=row["operation"],
+        paths=paths,
+        zone=row["zone"],
+        risk_level=row["risk_level"],
+        reason=row["reason"],
+        question=row["question"],
+        id=row["id"],
+        outcome=row["outcome"],
         user_response=row["user_response"],
         created_at=float(row["created_at"]),
-        resolved_at=(
-            float(row["resolved_at"]) if row["resolved_at"] is not None else None
-        ),
+        resolved_at=(float(row["resolved_at"]) if row["resolved_at"] is not None else None),
     )
 
 
@@ -178,11 +201,22 @@ class UnifiedInterruptsStore(InterruptsStore):
                 f"{d.ph(9)}, {d.json_param()}, {d.ph(4)}, {d.json_param()}, "
                 f"NULL, NULL, {d.ts_param()}, NULL)",
                 (
-                    row_id, record.session_id, record.thread_id, record.agent_path,
-                    record.requesting_agent, record.parent_agent,
-                    record.invocation_mode, record.kind, record.operation,
-                    paths_json, record.zone, record.risk_level, record.reason,
-                    record.question, payload_json, now,
+                    row_id,
+                    record.session_id,
+                    record.thread_id,
+                    record.agent_path,
+                    record.requesting_agent,
+                    record.parent_agent,
+                    record.invocation_mode,
+                    record.kind,
+                    record.operation,
+                    paths_json,
+                    record.zone,
+                    record.risk_level,
+                    record.reason,
+                    record.question,
+                    payload_json,
+                    now,
                 ),
             )
             return row_id
@@ -194,9 +228,7 @@ class UnifiedInterruptsStore(InterruptsStore):
             logger.warning("InterruptsStore.record failed: %s", exc)
             return ""
 
-    async def resolve(
-        self, row_id: str, *, outcome: str, user_response: str | None = None
-    ) -> None:
+    async def resolve(self, row_id: str, *, outcome: str, user_response: str | None = None) -> None:
         """Mark a row resolved. Best-effort; failures are logged only."""
         if not row_id:
             return  # record() failed upstream — nothing to resolve
@@ -238,16 +270,12 @@ class UnifiedInterruptsStore(InterruptsStore):
         try:
             return await d.write(_do)
         except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "InterruptsStore.mark_orphaned_for_session failed: %s", exc
-            )
+            logger.warning("InterruptsStore.mark_orphaned_for_session failed: %s", exc)
             return 0
 
     # -- reads: typed records, never dicts ----------------------------------
 
-    async def list_for_session(
-        self, session_id: str, *, limit: int = 100
-    ) -> list[InterruptRecord]:
+    async def list_for_session(self, session_id: str, *, limit: int = 100) -> list[InterruptRecord]:
         d = self._d
         async with d.reading() as conn:
             cur = await conn.execute(
@@ -291,9 +319,7 @@ def sqlite_interrupts_store(
 
     return UnifiedInterruptsStore(
         SqliteDialect(
-            InterruptsSchema(
-                db_path or interrupts_db_path(), busy_timeout_ms=busy_timeout_ms
-            )
+            InterruptsSchema(db_path or interrupts_db_path(), busy_timeout_ms=busy_timeout_ms)
         )
     )
 

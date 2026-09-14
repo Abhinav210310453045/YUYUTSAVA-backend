@@ -130,7 +130,8 @@ class UnifiedSkillStore(SkillStore):
         self._pool = pool
         self._search = (
             PgVectorSearch(pool, _SKILLS_TABLE, min_score=min_score)
-            if (self._embedder is not None and pool is not None) else None
+            if (self._embedder is not None and pool is not None)
+            else None
         )
 
     @property
@@ -157,7 +158,8 @@ class UnifiedSkillStore(SkillStore):
                 # still found by keyword, and backfill_embeddings repairs it.
                 logger.warning(
                     "skills: embedding failed — indexing %r without vector",
-                    meta.name, exc_info=True,
+                    meta.name,
+                    exc_info=True,
                 )
 
         cols = ["name", "scope", "agent", "description", "body"]
@@ -172,7 +174,8 @@ class UnifiedSkillStore(SkillStore):
         params += [json.dumps(list(meta.requires_tools)), str(meta.path), now, now]
 
         updates = ", ".join(
-            f"{c} = EXCLUDED.{c}" for c in cols
+            f"{c} = EXCLUDED.{c}"
+            for c in cols
             # created_ts is set once; an update must not reset it.
             if c not in ("name", "created_ts")
         )
@@ -206,9 +209,7 @@ class UnifiedSkillStore(SkillStore):
         try:
             qvec = vector_literal(await self._embedder.embed_one(query, mode="query"))
         except Exception:
-            logger.warning(
-                "skills: query embedding failed — keyword fallback", exc_info=True
-            )
+            logger.warning("skills: query embedding failed — keyword fallback", exc_info=True)
             return await self._keyword_search(query, k, agent)
         where, params = _agent_filter(agent, self._d.ph())
         # The pool's own connection, NOT d.reading(): PgVectorSearch builds its
@@ -216,9 +217,7 @@ class UnifiedSkillStore(SkillStore):
         # connection uses dict_row so those lookups would raise. The vector path
         # is Postgres-only anyway, so there is nothing to abstract here.
         async with self._pool.connection() as conn:
-            return await self._search.vector_search(
-                conn, qvec, k, where=where, params=params
-            )
+            return await self._search.vector_search(conn, qvec, k, where=where, params=params)
 
     async def _keyword_search(self, query: str, k: int, agent: str | None) -> list[Hit]:
         """Rank by how many query words appear in the description.
@@ -234,8 +233,7 @@ class UnifiedSkillStore(SkillStore):
         # papered over this with a Postgres-only "::int" cast; CASE WHEN is
         # standard SQL and needs no dialect hook.
         clauses = " + ".join(
-            f"(CASE WHEN LOWER(description) LIKE {d.ph()} THEN 1 ELSE 0 END)"
-            for _ in words
+            f"(CASE WHEN LOWER(description) LIKE {d.ph()} THEN 1 ELSE 0 END)" for _ in words
         )
         like = [f"%{w}%" for w in words]
         params: list[Any] = [*like, *like]
@@ -252,7 +250,8 @@ class UnifiedSkillStore(SkillStore):
             rows = await cur.fetchall()
         return [
             Hit(
-                id=r["name"], text=r["description"],
+                id=r["name"],
+                text=r["description"],
                 # 0.0, not a normalised hit count: the score field means cosine
                 # similarity, and inventing a number here would let a caller
                 # compare keyword and vector results on one scale.
@@ -262,9 +261,7 @@ class UnifiedSkillStore(SkillStore):
             for r in rows
         ]
 
-    async def backfill_embeddings(
-        self, *, batch_size: int = 64, max_rows: int = 2000
-    ) -> int:
+    async def backfill_embeddings(self, *, batch_size: int = 64, max_rows: int = 2000) -> int:
         """Embed rows indexed without a vector. Returns rows repaired.
 
         **Always present**, unlike the twin it replaces. On a backend without
@@ -274,9 +271,7 @@ class UnifiedSkillStore(SkillStore):
         """
         if self._search is None:
             return 0
-        return await self._search.backfill(
-            self._embedder, batch_size=batch_size, max_rows=max_rows
-        )
+        return await self._search.backfill(self._embedder, batch_size=batch_size, max_rows=max_rows)
 
 
 def sqlite_skill_store(db_path: Path | None = None) -> UnifiedSkillStore:

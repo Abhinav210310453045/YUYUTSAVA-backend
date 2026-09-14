@@ -154,7 +154,9 @@ class MCPConfig:
             str(t) for t in (raw.get("trusted_workspaces", []) or []) if isinstance(t, str)
         )
         return cls(
-            servers=servers, scopes=scopes, default_scope=default_scope,
+            servers=servers,
+            scopes=scopes,
+            default_scope=default_scope,
             trusted_workspaces=trusted,
         )
 
@@ -175,7 +177,9 @@ class MCPConfig:
         default_scope = list(base.default_scope)
         default_scope.extend(n for n in overlay.default_scope if n not in default_scope)
         return MCPConfig(
-            servers=servers, scopes=scopes, default_scope=default_scope,
+            servers=servers,
+            scopes=scopes,
+            default_scope=default_scope,
             trusted_workspaces=base.trusted_workspaces,
         )
 
@@ -191,8 +195,10 @@ class MCPConfig:
             return cfg
         if not cfg.trusts(workspace):
             logger.warning(
-                "mcp: %s ignored — add %r to \"trusted_workspaces\" in %s to use it",
-                ws_path, str(Path(workspace).expanduser().resolve()), global_mcp_config_path(),
+                'mcp: %s ignored — add %r to "trusted_workspaces" in %s to use it',
+                ws_path,
+                str(Path(workspace).expanduser().resolve()),
+                global_mcp_config_path(),
             )
             return cfg
         overlay = cls.from_file(ws_path, workspace=workspace)

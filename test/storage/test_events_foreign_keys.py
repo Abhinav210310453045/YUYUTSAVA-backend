@@ -41,9 +41,17 @@ from yuyutsava.storage.models import Proposal
 def _proposal(pid: str, event_id: str) -> Proposal:
     now = time.time()
     return Proposal(
-        proposal_id=pid, event_id=event_id, topic="fs.changed", summary="s",
-        proposed="do it", subagent="coder", urgency=1, created_ts=now,
-        expires_ts=now + 60, status="pending", session_id="sess-1",
+        proposal_id=pid,
+        event_id=event_id,
+        topic="fs.changed",
+        summary="s",
+        proposed="do it",
+        subagent="coder",
+        urgency=1,
+        created_ts=now,
+        expires_ts=now + 60,
+        status="pending",
+        session_id="sess-1",
         agent_path="orchestrator",
     )
 
@@ -61,8 +69,7 @@ class _Base(unittest.IsolatedAsyncioTestCase):
 
     async def _seed(self, event_id: str) -> None:
         await self.backend.execute(
-            "INSERT INTO event_payloads(event_id, topic, ts, payload_json) "
-            "VALUES(?,?,?,?)",
+            "INSERT INTO event_payloads(event_id, topic, ts, payload_json) VALUES(?,?,?,?)",
             (event_id, "fs.changed", time.time(), "{}"),
         )
 
@@ -73,7 +80,8 @@ class EnforcementIsOn(_Base):
     async def test_pragma_is_enabled_on_the_connection(self) -> None:
         rows = await self.backend.fetchall("PRAGMA foreign_keys")
         self.assertEqual(
-            rows[0][0], 1,
+            rows[0][0],
+            1,
             "PRAGMA foreign_keys is OFF, so every REFERENCES clause in "
             "events/schema.py is inert and the schema claims an invariant it "
             "does not enforce",
@@ -102,14 +110,14 @@ class CascadeBehaviour(_Base):
     async def test_sweeping_an_event_removes_its_proposals(self) -> None:
         from yuyutsava.storage.dialect import EventsSqliteDialect
         from yuyutsava.storage.events.unified import (
-            UnifiedEventStore, UnifiedProposalStore,
+            UnifiedEventStore,
+            UnifiedProposalStore,
         )
 
         d = EventsSqliteDialect(self.backend)
         events, proposals = UnifiedEventStore(d), UnifiedProposalStore(d)
 
-        await events.put_event_payload(
-            event_id="ev-old", topic="fs.changed", ts=100.0, payload={})
+        await events.put_event_payload(event_id="ev-old", topic="fs.changed", ts=100.0, payload={})
         await proposals.put(_proposal("p-old", "ev-old"))
         self.assertIsNotNone(await proposals.get("p-old"))
 
@@ -126,25 +134,31 @@ class CascadeBehaviour(_Base):
         """SET NULL, not CASCADE — the audit record must outlive the proposal."""
         from yuyutsava.storage.dialect import EventsSqliteDialect
         from yuyutsava.storage.events.unified import (
-            UnifiedDecisionStore, UnifiedEventStore, UnifiedProposalStore,
+            UnifiedDecisionStore,
+            UnifiedEventStore,
+            UnifiedProposalStore,
         )
 
         d = EventsSqliteDialect(self.backend)
         events = UnifiedEventStore(d)
-        await events.put_event_payload(
-            event_id="ev-d", topic="t", ts=100.0, payload={})
+        await events.put_event_payload(event_id="ev-d", topic="t", ts=100.0, payload={})
         await UnifiedProposalStore(d).put(_proposal("p-d", "ev-d"))
         await UnifiedDecisionStore(d).put(
-            proposal_id="p-d", event_id="ev-d", outcome="approved",
-            action_summary="ran it", ts=time.time(),
+            proposal_id="p-d",
+            event_id="ev-d",
+            outcome="approved",
+            action_summary="ran it",
+            ts=time.time(),
         )
 
         await events.delete_event_payloads_older_than(500.0)
 
         rows = await self.backend.fetchall(
-            "SELECT decision_id, proposal_id FROM decisions WHERE event_id='ev-d'")
+            "SELECT decision_id, proposal_id FROM decisions WHERE event_id='ev-d'"
+        )
         self.assertEqual(
-            len(rows), 1,
+            len(rows),
+            1,
             "the decision was deleted along with its proposal. Decisions are the "
             "audit log — losing them means no record that the action ran.",
         )
@@ -157,13 +171,13 @@ class CascadeBehaviour(_Base):
         """The cascade must not fire on rows the sweep did not touch."""
         from yuyutsava.storage.dialect import EventsSqliteDialect
         from yuyutsava.storage.events.unified import (
-            UnifiedEventStore, UnifiedProposalStore,
+            UnifiedEventStore,
+            UnifiedProposalStore,
         )
 
         d = EventsSqliteDialect(self.backend)
         events, proposals = UnifiedEventStore(d), UnifiedProposalStore(d)
-        await events.put_event_payload(
-            event_id="ev-new", topic="t", ts=9000.0, payload={})
+        await events.put_event_payload(event_id="ev-new", topic="t", ts=9000.0, payload={})
         await proposals.put(_proposal("p-new", "ev-new"))
 
         await events.delete_event_payloads_older_than(500.0)
@@ -236,7 +250,8 @@ class MigrationFromV4(unittest.IsolatedAsyncioTestCase):
         async with self._opened() as b:
             rows = await b.fetchall("SELECT proposal_id FROM proposals")
             self.assertEqual(
-                {r["proposal_id"] for r in rows}, {"p-live"},
+                {r["proposal_id"] for r in rows},
+                {"p-live"},
                 "the rebuild lost a proposal whose event still exists",
             )
 
@@ -248,13 +263,15 @@ class MigrationFromV4(unittest.IsolatedAsyncioTestCase):
         """
         async with self._opened() as b:
             rows = await b.fetchall(
-                "SELECT proposal_id FROM proposals WHERE proposal_id='p-orphan'")
+                "SELECT proposal_id FROM proposals WHERE proposal_id='p-orphan'"
+            )
             self.assertEqual(rows, [])
 
     async def test_orphan_decisions_are_nulled_not_deleted(self) -> None:
         async with self._opened() as b:
             rows = await b.fetchall(
-                "SELECT proposal_id FROM decisions WHERE decision_id='d-orphan'")
+                "SELECT proposal_id FROM decisions WHERE decision_id='d-orphan'"
+            )
             self.assertEqual(len(rows), 1, "an audit record was destroyed by the rebuild")
             self.assertIsNone(rows[0]["proposal_id"])
 
@@ -264,10 +281,10 @@ class MigrationFromV4(unittest.IsolatedAsyncioTestCase):
             first = await b.fetchall("SELECT proposal_id FROM proposals")
         async with self._opened() as b:
             second = await b.fetchall("SELECT proposal_id FROM proposals")
-            self.assertEqual(
-                {r["proposal_id"] for r in first}, {r["proposal_id"] for r in second})
+            self.assertEqual({r["proposal_id"] for r in first}, {r["proposal_id"] for r in second})
             leftovers = await b.fetchall(
-                "SELECT name FROM sqlite_master WHERE name LIKE '%\\_v5' ESCAPE '\\'")
+                "SELECT name FROM sqlite_master WHERE name LIKE '%\\_v5' ESCAPE '\\'"
+            )
             self.assertEqual(leftovers, [], "a rebuild scratch table was left behind")
 
     async def test_no_violations_survive(self) -> None:
@@ -294,7 +311,8 @@ class FreshDatabaseIsNotRebuilt(_Base):
     async def _rootpages(self) -> dict:
         rows = await self.backend.fetchall(
             "SELECT name, rootpage FROM sqlite_master "
-            "WHERE type='table' AND name IN ('proposals','decisions')")
+            "WHERE type='table' AND name IN ('proposals','decisions')"
+        )
         return {r["name"]: r["rootpage"] for r in rows}
 
     async def test_the_rebuild_is_skipped_entirely(self) -> None:
@@ -303,7 +321,8 @@ class FreshDatabaseIsNotRebuilt(_Base):
         before = await self._rootpages()
         await _add_foreign_keys_v5(self.backend._c)
         self.assertEqual(
-            await self._rootpages(), before,
+            await self._rootpages(),
+            before,
             "the tables were dropped and recreated even though they already "
             "carried their constraints — that would happen on every first boot",
         )
@@ -315,26 +334,26 @@ class FreshDatabaseIsNotRebuilt(_Base):
         because ``rootpage`` never moves, not because the rebuild was skipped.
         """
         before = await self._rootpages()
-        await self.backend.execute(
-            "CREATE TABLE decisions_probe AS SELECT * FROM decisions")
+        await self.backend.execute("CREATE TABLE decisions_probe AS SELECT * FROM decisions")
         await self.backend.execute("DROP TABLE decisions")
         await self.backend.execute("ALTER TABLE decisions_probe RENAME TO decisions")
         self.assertNotEqual(
-            (await self._rootpages()).get("decisions"), before["decisions"],
+            (await self._rootpages()).get("decisions"),
+            before["decisions"],
             "rootpage did not move across a real drop+recreate, so it cannot "
             "be used to detect a rebuild",
         )
 
     async def test_no_scratch_tables_remain(self) -> None:
         rows = await self.backend.fetchall(
-            "SELECT name FROM sqlite_master WHERE name LIKE '%\\_v5' ESCAPE '\\'")
+            "SELECT name FROM sqlite_master WHERE name LIKE '%\\_v5' ESCAPE '\\'"
+        )
         self.assertEqual(rows, [])
 
     async def test_version_anchor_is_current(self) -> None:
         from yuyutsava.storage.events.schema import SCHEMA_VERSION
 
-        rows = await self.backend.fetchall(
-            "SELECT value FROM schema_meta WHERE key='version'")
+        rows = await self.backend.fetchall("SELECT value FROM schema_meta WHERE key='version'")
         self.assertEqual(int(rows[0]["value"]), SCHEMA_VERSION)
 
 
@@ -354,13 +373,15 @@ class ReconcilerIsNotEatenByTheCascade(_Base):
     async def test_buffered_proposals_reach_postgres(self) -> None:
         from yuyutsava.storage.dialect import EventsSqliteDialect
         from yuyutsava.storage.events.unified import (
-            UnifiedEventStore, UnifiedProposalStore,
+            UnifiedEventStore,
+            UnifiedProposalStore,
         )
         from yuyutsava.storage.routing.reconcile import Reconciler
 
         d = EventsSqliteDialect(self.backend)
         await UnifiedEventStore(d).put_event_payload(
-            event_id="ev-buf", topic="t", ts=time.time(), payload={"a": 1})
+            event_id="ev-buf", topic="t", ts=time.time(), payload={"a": 1}
+        )
         await UnifiedProposalStore(d).put(_proposal("p-buf", "ev-buf"))
 
         captured: list = []
@@ -379,14 +400,16 @@ class ReconcilerIsNotEatenByTheCascade(_Base):
         tables = " ".join(sql for sql, _ in captured)
         self.assertIn("event_payloads", tables)
         self.assertIn(
-            "proposals", tables,
+            "proposals",
+            tables,
             "the buffered proposal never reached Postgres. Deleting the drained "
             "event_payloads row cascaded it away first — data lost during outage "
             "recovery, which is exactly when it is least noticed.",
         )
         self.assertEqual(moved, 2)
         self.assertEqual(
-            await self.backend.fetchall("SELECT proposal_id FROM proposals"), [],
+            await self.backend.fetchall("SELECT proposal_id FROM proposals"),
+            [],
             "drain-and-delete: the buffer must be empty afterwards",
         )
 
@@ -403,7 +426,8 @@ class ReconcilerIsNotEatenByTheCascade(_Base):
         await Reconciler(self.backend, _Pool()).reconcile()
         rows = await self.backend.fetchall("PRAGMA foreign_keys")
         self.assertEqual(
-            rows[0][0], 1,
+            rows[0][0],
+            1,
             "foreign keys were left OFF after reconcile — every later write "
             "would skip the constraint",
         )

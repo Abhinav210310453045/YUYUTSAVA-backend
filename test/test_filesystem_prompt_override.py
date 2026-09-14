@@ -98,10 +98,12 @@ def _render_prompt() -> dict[str, Any]:
         # sync path meant this tripwire was exercising hooks nothing in
         # production runs — it went unnoticed until Phase 4, when the migrated
         # policies became async-only and this was the single caller that broke.
-        asyncio.run(bundle.agent.ainvoke(
-            {"messages": [{"role": "user", "content": "hi"}]},
-            config={"configurable": {"thread_id": "fs-prompt-test"}},
-        ))
+        asyncio.run(
+            bundle.agent.ainvoke(
+                {"messages": [{"role": "user", "content": "hi"}]},
+                config={"configurable": {"thread_id": "fs-prompt-test"}},
+            )
+        )
     finally:
         llm.chat_model = orig
 
@@ -146,7 +148,9 @@ def test_lazy_discovery_invariant_holds():
     bound = set(_render_prompt()["bound_tools"])
 
     leaked_prefix = {n for n in bound if n.startswith(_SUPPRESS_PREFIXES)}
-    assert not leaked_prefix, f"suppressed prefix families leaked to the model: {sorted(leaked_prefix)}"
+    assert not leaked_prefix, (
+        f"suppressed prefix families leaked to the model: {sorted(leaked_prefix)}"
+    )
 
     leaked_builtin = bound & _SUPPRESS_NAMES
     assert not leaked_builtin, (
@@ -155,7 +159,9 @@ def test_lazy_discovery_invariant_holds():
 
     # The lazy-discovery entry point and the deepagents built-ins we keep.
     assert "tool_search" in bound, "tool_search missing — lazy discovery is broken"
-    assert {"write_todos", "task"} <= bound, f"expected deepagents built-ins missing: {sorted(bound)}"
+    assert {"write_todos", "task"} <= bound, (
+        f"expected deepagents built-ins missing: {sorted(bound)}"
+    )
 
 
 if __name__ == "__main__":

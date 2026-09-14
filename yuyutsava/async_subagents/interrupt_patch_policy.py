@@ -74,8 +74,7 @@ class AsyncTaskInterruptPatchPolicy(Policy):
             return None
         tracked = self._tracked(call)
         if tracked is not None:
-            await self._patcher.patch_pending(
-                tracked["agent_name"], tracked["thread_id"])
+            await self._patcher.patch_pending(tracked["agent_name"], tracked["thread_id"])
         return None  # never refuses; the patch is a side effect
 
     def _tracked(self, call: ToolCall) -> dict | None:

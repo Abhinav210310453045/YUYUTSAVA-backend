@@ -166,8 +166,7 @@ class PgTranscriptIndex(VectorStore):
                 items.append((str(message_id), role, text))
 
             cur = await conn.execute(
-                "SELECT seq, role, text FROM voice_messages "
-                "WHERE thread_id = %s ORDER BY seq ASC",
+                "SELECT seq, role, text FROM voice_messages WHERE thread_id = %s ORDER BY seq ASC",
                 (thread_id,),
             )
             for seq, role, text in await cur.fetchall():
@@ -201,7 +200,9 @@ class PgTranscriptIndex(VectorStore):
             except Exception:
                 logger.warning(
                     "transcript_index: embedding failed for %s — storing %d NULL rows",
-                    thread_id, len(rows), exc_info=True,
+                    thread_id,
+                    len(rows),
+                    exc_info=True,
                 )
                 vectors = [None] * len(rows)
 
@@ -251,7 +252,9 @@ class PgTranscriptIndex(VectorStore):
             logger.warning("transcript_index: query embed failed — keyword fallback", exc_info=True)
             try:
                 async with self._pool.connection() as conn:
-                    return await self._search.keyword_search(conn, query, k, where=where, params=params)
+                    return await self._search.keyword_search(
+                        conn, query, k, where=where, params=params
+                    )
             except Exception:
                 logger.warning("transcript_index: keyword search failed", exc_info=True)
                 return []

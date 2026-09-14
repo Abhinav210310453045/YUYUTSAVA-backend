@@ -102,7 +102,9 @@ class TerminalChannel(UserChannel):
         print(f"\033[33m{_SEP}\033[0m", file=sys.stderr)
         print(f"  {a.body}", file=sys.stderr)
         if is_permission:
-            scope = " / [s]ession / [p]roject" if ("session" in options or "project" in options) else ""
+            scope = (
+                " / [s]ession / [p]roject" if ("session" in options or "project" in options) else ""
+            )
             print(f"  \033[2m[y]es / [n]o{scope}\033[0m", file=sys.stderr)
         elif options:
             print(f"  Options: {' | '.join(options)}", file=sys.stderr)

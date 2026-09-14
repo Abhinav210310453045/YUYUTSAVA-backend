@@ -72,9 +72,14 @@ class _TodoContract:
 
         now = time.time()
         base = dict(
-            card_id=cid, title="a card", status="inbox", pinned=False,
-            tags=["alpha", "beta"], workspace_path="/tmp/ws",
-            created_ts=now, updated_ts=now,
+            card_id=cid,
+            title="a card",
+            status="inbox",
+            pinned=False,
+            tags=["alpha", "beta"],
+            workspace_path="/tmp/ws",
+            created_ts=now,
+            updated_ts=now,
         )
         base.update(over)
         return TodoCardV1(**base)
@@ -83,8 +88,16 @@ class _TodoContract:
         from yuyutsava.todoboard.models import TodoNoteV1
 
         now = time.time()
-        base = dict(note_id=nid, card_id=cid, body="a note", author="user",
-                    objective_id=None, phase=None, created_ts=now, updated_ts=now)
+        base = dict(
+            note_id=nid,
+            card_id=cid,
+            body="a note",
+            author="user",
+            objective_id=None,
+            phase=None,
+            created_ts=now,
+            updated_ts=now,
+        )
         base.update(over)
         return TodoNoteV1(**base)
 
@@ -92,27 +105,49 @@ class _TodoContract:
         from yuyutsava.todoboard.models import TodoObjectiveV1
 
         now = time.time()
-        base = dict(objective_id=oid, card_id=cid, title="a step",
-                    phase="thinking", order_idx=0, reason=None, outcome=None,
-                    created_ts=now, updated_ts=now)
+        base = dict(
+            objective_id=oid,
+            card_id=cid,
+            title="a step",
+            phase="thinking",
+            order_idx=0,
+            reason=None,
+            outcome=None,
+            created_ts=now,
+            updated_ts=now,
+        )
         base.update(over)
         return TodoObjectiveV1(**base)
 
     def _attachment(self, aid: str, cid: str, **over):
         from yuyutsava.todoboard.models import TodoAttachmentV1
 
-        base = dict(attachment_id=aid, card_id=cid, kind="file",
-                    path="/tmp/x.png", url=None, mime="image/png",
-                    title="shot", meta={"w": 10, "h": 20}, created_ts=time.time())
+        base = dict(
+            attachment_id=aid,
+            card_id=cid,
+            kind="file",
+            path="/tmp/x.png",
+            url=None,
+            mime="image/png",
+            title="shot",
+            meta={"w": 10, "h": 20},
+            created_ts=time.time(),
+        )
         base.update(over)
         return TodoAttachmentV1(**base)
 
     def _event(self, eid: str, cid: str, **over):
         from yuyutsava.todoboard.models import TodoEventV1
 
-        base = dict(event_id=eid, card_id=cid, objective_id=None,
-                    kind="note_added", payload={"n": 1}, actor="user",
-                    created_ts=time.time())
+        base = dict(
+            event_id=eid,
+            card_id=cid,
+            objective_id=None,
+            kind="note_added",
+            payload={"n": 1},
+            actor="user",
+            created_ts=time.time(),
+        )
         base.update(over)
         return TodoEventV1(**base)
 
@@ -161,8 +196,15 @@ class _TodoContract:
     async def test_update_card_fields(self) -> None:
         cid = await self._seed_card("upd")
         ok = await self.store.update_card(
-            cid, {"title": "renamed", "status": "active", "pinned": True,
-                  "tags": ["x"], "updated_ts": time.time()})
+            cid,
+            {
+                "title": "renamed",
+                "status": "active",
+                "pinned": True,
+                "tags": ["x"],
+                "updated_ts": time.time(),
+            },
+        )
         self.assertTrue(ok)
         got = await self.store.get_card(cid)
         self.assertEqual(got.title, "renamed")
@@ -174,7 +216,8 @@ class _TodoContract:
         """The whitelist is the injection boundary — unknown keys are dropped."""
         cid = await self._seed_card("wl")
         ok = await self.store.update_card(
-            cid, {"title": "kept", "card_id = 'x' --": "boom", "created_ts": 0.0})
+            cid, {"title": "kept", "card_id = 'x' --": "boom", "created_ts": 0.0}
+        )
         self.assertTrue(ok)
         got = await self.store.get_card(cid)
         self.assertEqual(got.title, "kept")
@@ -185,8 +228,7 @@ class _TodoContract:
         self.assertTrue(await self.store.update_card(cid, {"nope": 1}))
 
     async def test_update_unknown_card_is_false(self) -> None:
-        self.assertFalse(
-            await self.store.update_card(self.cid("nocard"), {"title": "x"}))
+        self.assertFalse(await self.store.update_card(self.cid("nocard"), {"title": "x"}))
 
     async def test_list_cards_filters_by_status(self) -> None:
         a, b = self.cid("l-a"), self.cid("l-b")
@@ -202,7 +244,8 @@ class _TodoContract:
         await self.store.add_card(self._card(pinned, pinned=True))
         ids = [c.card_id for c in await self.store.list_cards(limit=500)]
         self.assertLess(
-            ids.index(pinned), ids.index(plain),
+            ids.index(pinned),
+            ids.index(plain),
             "a pinned card sorted below an unpinned one — pinning is how the "
             "user keeps a card at the top of the board",
         )
@@ -212,10 +255,8 @@ class _TodoContract:
         await self.store.add_note(self._note(self.cid("cnt-n"), cid))
         await self.store.add_attachment(self._attachment(self.cid("cnt-a"), cid))
         await self.store.add_objective(self._objective(self.cid("cnt-o"), cid))
-        await self.store.add_objective(
-            self._objective(self.cid("cnt-o2"), cid, phase="completed"))
-        card = next(c for c in await self.store.list_cards(limit=500)
-                    if c.card_id == cid)
+        await self.store.add_objective(self._objective(self.cid("cnt-o2"), cid, phase="completed"))
+        card = next(c for c in await self.store.list_cards(limit=500) if c.card_id == cid)
         self.assertEqual(card.note_count, 1)
         self.assertEqual(card.attachment_count, 1)
         self.assertEqual(card.objective_count, 2)
@@ -237,7 +278,8 @@ class _TodoContract:
         self.assertIsNone(await self.store.get_card(cid))
         self.assertEqual(await self.store.list_events(cid), [])
         self.assertEqual(
-            await self.child_counts(cid), (0, 0, 0, 0),
+            await self.child_counts(cid),
+            (0, 0, 0, 0),
             "a child row outlived its card — on SQLite the hand-written cascade "
             "missed a table, or on Postgres a foreign key lost its ON DELETE",
         )
@@ -247,8 +289,7 @@ class _TodoContract:
         await self.store.add_note(self._note(self.cid("k-n"), keep))
         await self.store.delete_card(drop)
         self.assertIsNotNone(await self.store.get_card(keep))
-        self.assertEqual((await self.store.get_card(keep)).notes[0].note_id,
-                         self.cid("k-n"))
+        self.assertEqual((await self.store.get_card(keep)).notes[0].note_id, self.cid("k-n"))
 
     async def test_delete_unknown_card_is_false(self) -> None:
         self.assertFalse(await self.store.delete_card(self.cid("nope")))
@@ -265,7 +306,8 @@ class _TodoContract:
     async def test_add_note_to_unknown_card_is_false(self) -> None:
         """False, not an exception — Postgres would raise on the FK otherwise."""
         self.assertFalse(
-            await self.store.add_note(self._note(self.cid("orph"), self.cid("nocard"))))
+            await self.store.add_note(self._note(self.cid("orph"), self.cid("nocard")))
+        )
 
     async def test_add_note_bumps_the_card(self) -> None:
         """``updated_ts`` orders the board; a missed bump buries a live card."""
@@ -273,9 +315,9 @@ class _TodoContract:
         before = (await self.store.get_card(cid)).updated_ts
         later = before + 100.0
         await self.store.add_note(
-            self._note(self.cid("b1"), cid, created_ts=later, updated_ts=later))
-        self.assertAlmostEqual(
-            (await self.store.get_card(cid)).updated_ts, later, delta=1e-6)
+            self._note(self.cid("b1"), cid, created_ts=later, updated_ts=later)
+        )
+        self.assertAlmostEqual((await self.store.get_card(cid)).updated_ts, later, delta=1e-6)
 
     async def test_update_note_returns_the_new_row(self) -> None:
         cid = await self._seed_card("un")
@@ -285,8 +327,7 @@ class _TodoContract:
         self.assertEqual(out.body, "edited")
 
     async def test_update_unknown_note_is_none(self) -> None:
-        self.assertIsNone(
-            await self.store.update_note(self.cid("nonote"), "x", time.time()))
+        self.assertIsNone(await self.store.update_note(self.cid("nonote"), "x", time.time()))
 
     async def test_delete_note(self) -> None:
         cid = await self._seed_card("dn")
@@ -301,23 +342,22 @@ class _TodoContract:
 
     async def test_add_and_get_objective(self) -> None:
         cid = await self._seed_card("obj")
-        self.assertTrue(
-            await self.store.add_objective(self._objective(self.cid("o1"), cid)))
+        self.assertTrue(await self.store.add_objective(self._objective(self.cid("o1"), cid)))
         got = await self.store.get_objective(self.cid("o1"))
         self.assertEqual(got.title, "a step")
         self.assertEqual(got.phase, "thinking")
 
     async def test_add_objective_to_unknown_card_is_false(self) -> None:
         self.assertFalse(
-            await self.store.add_objective(
-                self._objective(self.cid("o-orph"), self.cid("nocard"))))
+            await self.store.add_objective(self._objective(self.cid("o-orph"), self.cid("nocard")))
+        )
 
     async def test_update_objective(self) -> None:
         cid = await self._seed_card("uo")
         await self.store.add_objective(self._objective(self.cid("uo1"), cid))
         out = await self.store.update_objective(
-            self.cid("uo1"),
-            {"phase": "completed", "outcome": "done it", "updated_ts": time.time()})
+            self.cid("uo1"), {"phase": "completed", "outcome": "done it", "updated_ts": time.time()}
+        )
         self.assertIsNotNone(out)
         self.assertEqual(out.phase, "completed")
         self.assertEqual(out.outcome, "done it")
@@ -326,12 +366,12 @@ class _TodoContract:
         cid = await self._seed_card("uow")
         await self.store.add_objective(self._objective(self.cid("uow1"), cid))
         out = await self.store.update_objective(
-            self.cid("uow1"), {"title": "kept", "objective_id = 'x' --": "boom"})
+            self.cid("uow1"), {"title": "kept", "objective_id = 'x' --": "boom"}
+        )
         self.assertEqual(out.title, "kept")
 
     async def test_update_unknown_objective_is_none(self) -> None:
-        self.assertIsNone(
-            await self.store.update_objective(self.cid("noobj"), {"title": "x"}))
+        self.assertIsNone(await self.store.update_objective(self.cid("noobj"), {"title": "x"}))
 
     async def test_delete_objective_returns_the_row(self) -> None:
         cid = await self._seed_card("do")
@@ -346,24 +386,26 @@ class _TodoContract:
         cid = await self._seed_card("don")
         await self.store.add_objective(self._objective(self.cid("don-o"), cid))
         await self.store.add_note(
-            self._note(self.cid("don-n"), cid,
-                       objective_id=self.cid("don-o"), phase="thinking"))
+            self._note(self.cid("don-n"), cid, objective_id=self.cid("don-o"), phase="thinking")
+        )
         await self.store.delete_objective(self.cid("don-o"))
         card = await self.store.get_card(cid)
         self.assertEqual(len(card.notes), 1, "a note died with its objective")
         self.assertIsNone(
             card.notes[0].objective_id,
-            "the note kept a pointer to a deleted objective (expected SET NULL)")
+            "the note kept a pointer to a deleted objective (expected SET NULL)",
+        )
         self.assertEqual(
-            card.notes[0].phase, "thinking",
-            "phase was cleared — it is history, not a live pointer")
+            card.notes[0].phase, "thinking", "phase was cleared — it is history, not a live pointer"
+        )
 
     async def test_assign_note_to_an_objective(self) -> None:
         cid = await self._seed_card("asg")
         await self.store.add_objective(self._objective(self.cid("asg-o"), cid))
         await self.store.add_note(self._note(self.cid("asg-n"), cid))
         out = await self.store.assign_note(
-            self.cid("asg-n"), self.cid("asg-o"), "doing", time.time())
+            self.cid("asg-n"), self.cid("asg-o"), "doing", time.time()
+        )
         self.assertIsNotNone(out, "assign_note returned None for a live note")
         note = (await self.store.get_card(cid)).notes[0]
         self.assertEqual(note.objective_id, self.cid("asg-o"))
@@ -372,9 +414,11 @@ class _TodoContract:
     async def test_objectives_order_by_order_idx(self) -> None:
         cid = await self._seed_card("ord")
         await self.store.add_objective(
-            self._objective(self.cid("ord-2"), cid, order_idx=2, title="second"))
+            self._objective(self.cid("ord-2"), cid, order_idx=2, title="second")
+        )
         await self.store.add_objective(
-            self._objective(self.cid("ord-1"), cid, order_idx=1, title="first"))
+            self._objective(self.cid("ord-1"), cid, order_idx=1, title="first")
+        )
         titles = [o.title for o in (await self.store.get_card(cid)).objectives]
         self.assertEqual(titles, ["first", "second"])
 
@@ -382,8 +426,7 @@ class _TodoContract:
 
     async def test_add_attachment_and_meta_round_trip(self) -> None:
         cid = await self._seed_card("att")
-        self.assertTrue(
-            await self.store.add_attachment(self._attachment(self.cid("a1"), cid)))
+        self.assertTrue(await self.store.add_attachment(self._attachment(self.cid("a1"), cid)))
         att = (await self.store.get_card(cid)).attachments[0]
         self.assertEqual(att.meta, {"w": 10, "h": 20})
         self.assertEqual(att.mime, "image/png")
@@ -391,15 +434,18 @@ class _TodoContract:
     async def test_add_attachment_to_unknown_card_is_false(self) -> None:
         self.assertFalse(
             await self.store.add_attachment(
-                self._attachment(self.cid("a-orph"), self.cid("nocard"))))
+                self._attachment(self.cid("a-orph"), self.cid("nocard"))
+            )
+        )
 
     async def test_update_attachment(self) -> None:
         cid = await self._seed_card("ua")
         await self.store.add_attachment(self._attachment(self.cid("ua1"), cid))
         self.assertTrue(
             await self.store.update_attachment(
-                self._attachment(self.cid("ua1"), cid, title="renamed",
-                                 meta={"w": 99})))
+                self._attachment(self.cid("ua1"), cid, title="renamed", meta={"w": 99})
+            )
+        )
         att = (await self.store.get_card(cid)).attachments[0]
         self.assertEqual(att.title, "renamed")
         self.assertEqual(att.meta, {"w": 99})
@@ -435,7 +481,8 @@ class _TodoContract:
         cid = await self._seed_card("evo")
         await self.store.add_objective(self._objective(self.cid("evo-o"), cid))
         await self.store.add_event(
-            self._event(self.cid("evo-e"), cid, objective_id=self.cid("evo-o")))
+            self._event(self.cid("evo-e"), cid, objective_id=self.cid("evo-o"))
+        )
         await self.store.delete_objective(self.cid("evo-o"))
         evs = await self.store.list_events(cid)
         self.assertEqual(len(evs), 1, "an activity-timeline row died with an objective")
@@ -450,8 +497,7 @@ class _TodoContract:
         a, b = await self._seed_card("eva"), await self._seed_card("evb")
         await self.store.add_event(self._event(self.cid("eva-1"), a))
         await self.store.add_event(self._event(self.cid("evb-1"), b))
-        self.assertEqual([e.event_id for e in await self.store.list_events(a)],
-                         [self.cid("eva-1")])
+        self.assertEqual([e.event_id for e in await self.store.list_events(a)], [self.cid("eva-1")])
 
 
 # ---------------------------------------------------------------------------
@@ -475,10 +521,10 @@ class SqliteUnifiedTodo(_TodoContract, unittest.IsolatedAsyncioTestCase):
     async def child_counts(self, card_id: str) -> tuple[int, int, int, int]:
         out = []
         async with self.store._d.reading() as conn:
-            for tbl in ("todo_notes", "todo_attachments",
-                        "todo_objectives", "todo_events"):
+            for tbl in ("todo_notes", "todo_attachments", "todo_objectives", "todo_events"):
                 cur = await conn.execute(
-                    f"SELECT COUNT(*) AS n FROM {tbl} WHERE card_id = ?", (card_id,))
+                    f"SELECT COUNT(*) AS n FROM {tbl} WHERE card_id = ?", (card_id,)
+                )
                 out.append(int((await cur.fetchone())[0]))
         return tuple(out)
 
@@ -506,14 +552,15 @@ class PostgresUnifiedTodo(_TodoContract, unittest.IsolatedAsyncioTestCase):
         # Children first, then cards. Only rows carrying this run's marker.
         like = f"%{self._suffix}"
         async with self.pool.connection() as conn:
-            for tbl, col in (("todo_note_chunks", "note_id"),
-                             ("todo_notes", "note_id"),
-                             ("todo_attachments", "attachment_id"),
-                             ("todo_objectives", "objective_id"),
-                             ("todo_events", "event_id")):
+            for tbl, col in (
+                ("todo_note_chunks", "note_id"),
+                ("todo_notes", "note_id"),
+                ("todo_attachments", "attachment_id"),
+                ("todo_objectives", "objective_id"),
+                ("todo_events", "event_id"),
+            ):
                 try:
-                    await conn.execute(
-                        f"DELETE FROM {tbl} WHERE {col} LIKE %s", (like,))  # noqa: S608
+                    await conn.execute(f"DELETE FROM {tbl} WHERE {col} LIKE %s", (like,))  # noqa: S608
                 except Exception:  # table may not exist on this deployment
                     pass
             await conn.execute("DELETE FROM todo_cards WHERE card_id LIKE %s", (like,))
@@ -525,11 +572,11 @@ class PostgresUnifiedTodo(_TodoContract, unittest.IsolatedAsyncioTestCase):
     async def child_counts(self, card_id: str) -> tuple[int, int, int, int]:
         out = []
         async with self.pool.connection() as conn:
-            for tbl in ("todo_notes", "todo_attachments",
-                        "todo_objectives", "todo_events"):
+            for tbl in ("todo_notes", "todo_attachments", "todo_objectives", "todo_events"):
                 cur = await conn.execute(
                     f"SELECT COUNT(*) AS n FROM {tbl} WHERE card_id = %s",  # noqa: S608
-                    (card_id,))
+                    (card_id,),
+                )
                 out.append(int((await cur.fetchone())[0]))
         return tuple(out)
 
@@ -543,11 +590,11 @@ class PostgresUnifiedTodo(_TodoContract, unittest.IsolatedAsyncioTestCase):
             cur = await conn.execute(
                 "SELECT conrelid::regclass::text, pg_get_constraintdef(oid) "
                 "FROM pg_constraint "
-                "WHERE contype='f' AND confrelid = 'todo_cards'::regclass")
+                "WHERE contype='f' AND confrelid = 'todo_cards'::regclass"
+            )
             rows = await cur.fetchall()
         by_table = {t: d for t, d in rows}
-        for tbl in ("todo_notes", "todo_attachments",
-                    "todo_objectives", "todo_events"):
+        for tbl in ("todo_notes", "todo_attachments", "todo_objectives", "todo_events"):
             with self.subTest(table=tbl):
                 self.assertIn(tbl, by_table, f"{tbl} has no FK to todo_cards")
                 self.assertIn("ON DELETE CASCADE", by_table[tbl])

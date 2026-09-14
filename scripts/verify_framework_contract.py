@@ -61,9 +61,7 @@ def _check_declared_ranges() -> None:
             continue
         if req.marker and not req.marker.evaluate():
             continue
-        is_framework = any(
-            k in req.name for k in ("langchain", "langgraph", "deepagents")
-        )
+        is_framework = any(k in req.name for k in ("langchain", "langgraph", "deepagents"))
         if is_framework and "<" not in str(req.specifier):
             uncapped.append(req.name)
         try:
@@ -93,11 +91,20 @@ def main() -> int:
     checks = [
         ("filesystem block stripped (silent-failure seam)", fs.test_filesystem_block_removed),
         ("lazy-discovery invariant holds", fs.test_lazy_discovery_invariant_holds),
-        ("general-purpose override applies (silent-failure seam)", contract.test_general_purpose_override_contract),
-        ("override still keyed on spec['name'] (silent-failure seam)", contract.test_general_purpose_auto_add_still_name_keyed),
+        (
+            "general-purpose override applies (silent-failure seam)",
+            contract.test_general_purpose_override_contract,
+        ),
+        (
+            "override still keyed on spec['name'] (silent-failure seam)",
+            contract.test_general_purpose_auto_add_still_name_keyed,
+        ),
         ("docker backend satisfies protocol", contract.test_docker_backend_satisfies_protocol),
         ("backend= accepts a protocol instance", contract.test_backend_accepts_protocol_instance),
-        ("no build path reintroduced a backend factory", contract.test_no_build_path_passes_a_backend_factory),
+        (
+            "no build path reintroduced a backend factory",
+            contract.test_no_build_path_passes_a_backend_factory,
+        ),
         ("declared dependency ranges are sane", _check_declared_ranges),
     ]
 

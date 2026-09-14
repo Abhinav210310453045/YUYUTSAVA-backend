@@ -240,11 +240,13 @@ class WorkspaceLayout:
             state=state,
             sandbox=(
                 sandbox_override.expanduser().resolve()
-                if sandbox_override is not None else state / "sandbox"
+                if sandbox_override is not None
+                else state / "sandbox"
             ),
             outputs=(
                 outputs_override.expanduser().resolve()
-                if outputs_override is not None else state / "outputs"
+                if outputs_override is not None
+                else state / "outputs"
             ),
             scripts=state / "scripts",
             tmp=state / "tmp",
@@ -295,6 +297,7 @@ def _warn_home_collision_once(root: Path, state: Path) -> None:
         return
     _home_collision_warned = True
     logger.warning(
-        "workspace %s contains the global state dir; its per-workspace state "
-        "lives at %s instead", root, state,
+        "workspace %s contains the global state dir; its per-workspace state lives at %s instead",
+        root,
+        state,
     )

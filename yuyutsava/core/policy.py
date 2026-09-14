@@ -62,9 +62,14 @@ logger = logging.getLogger("yuyutsava.core.policy")
 
 # Policies we understand. Anything else is treated as "propose" and a
 # warning is logged at load time.
-_KNOWN_POLICIES: frozenset[str] = frozenset({
-    "auto_approve", "propose", "queue_for_user", "refuse_when_no_ui",
-})
+_KNOWN_POLICIES: frozenset[str] = frozenset(
+    {
+        "auto_approve",
+        "propose",
+        "queue_for_user",
+        "refuse_when_no_ui",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -112,7 +117,8 @@ class PermissionsPolicy:
             if policy not in _KNOWN_POLICIES:
                 logger.warning(
                     "permissions.json: unknown policy %r for %r; treating as 'propose'",
-                    policy, pattern,
+                    policy,
+                    pattern,
                 )
                 policy = "propose"
             cap_raw = body.get("daily_cap")

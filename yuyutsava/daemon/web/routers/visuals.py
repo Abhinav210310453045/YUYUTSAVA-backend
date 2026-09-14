@@ -54,12 +54,17 @@ class VisualOut(BaseModel):
 
 class RenderIn(BaseModel):
     kind: str = Field(..., description="chart | diagram | table | code | math | timeline")
-    spec: dict[str, Any] = Field(..., description="Renderer spec (see docs/reference/visual-tools.md)")
+    spec: dict[str, Any] = Field(
+        ..., description="Renderer spec (see docs/reference/visual-tools.md)"
+    )
     thread_id: str = Field("rest", description="Thread/session to file the visual under")
 
 
-@router.get("/sessions/{session_id}/visuals", response_model=list[VisualOut],
-            summary="List a session's rendered visuals")
+@router.get(
+    "/sessions/{session_id}/visuals",
+    response_model=list[VisualOut],
+    summary="List a session's rendered visuals",
+)
 async def list_session_visuals(session_id: str) -> list[VisualOut]:
     try:
         session = await get_default_session_store().get(session_id)
@@ -87,8 +92,11 @@ async def delete_visual(visual_id: str) -> dict[str, Any]:
     return {"ok": True, "visual_id": visual_id}
 
 
-@router.post("/visuals/render", response_model=VisualOut,
-             summary="Render a visual from a spec and persist it")
+@router.post(
+    "/visuals/render",
+    response_model=VisualOut,
+    summary="Render a visual from a spec and persist it",
+)
 async def render_visual(body: RenderIn) -> VisualOut:
     try:
         result = render(body.kind, body.spec)

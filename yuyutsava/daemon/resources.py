@@ -56,16 +56,16 @@ class DiskCriticalError(RuntimeError):
 class ResourceSettings:
     """Tunables for the monitor + admission controller."""
 
-    cpu_high_pct: float = 85.0       # loaded when cpu% is at/above this
-    mem_min_mb: int = 1024           # loaded when available memory drops below
-    disk_min_gb: float = 5.0         # fail heavy tasks when free disk is below
-    max_heavy_tasks: int = 1         # concurrent heavy-task slots
-    sample_sec: float = 5.0          # monitor loop interval
-    defer_max_sec: float = 600.0     # heavy-task deferral ceiling (then run anyway)
-    emit_sec: float = 10.0           # SystemMetricsPayload debounce while tasks run
-    heavy_complexity: int = 4        # complexity at/above this → heavy
+    cpu_high_pct: float = 85.0  # loaded when cpu% is at/above this
+    mem_min_mb: int = 1024  # loaded when available memory drops below
+    disk_min_gb: float = 5.0  # fail heavy tasks when free disk is below
+    max_heavy_tasks: int = 1  # concurrent heavy-task slots
+    sample_sec: float = 5.0  # monitor loop interval
+    defer_max_sec: float = 600.0  # heavy-task deferral ceiling (then run anyway)
+    emit_sec: float = 10.0  # SystemMetricsPayload debounce while tasks run
+    heavy_complexity: int = 4  # complexity at/above this → heavy
     heavy_hints: frozenset[str] = frozenset()  # subagent_hints that force heavy
-    docker_stats: bool = False       # sample `docker stats` into snapshots (opt-in)
+    docker_stats: bool = False  # sample `docker stats` into snapshots (opt-in)
 
     @classmethod
     def from_env(cls) -> "ResourceSettings":
@@ -118,7 +118,7 @@ def _psutil_sample() -> ResourceSnapshot:
     return ResourceSnapshot(
         cpu_pct=psutil.cpu_percent(interval=None),
         mem_available_mb=psutil.virtual_memory().available / (1024 * 1024),
-        disk_free_gb=psutil.disk_usage(str(Path.home())).free / (1024 ** 3),
+        disk_free_gb=psutil.disk_usage(str(Path.home())).free / (1024**3),
         ts=time.time(),
     )
 
@@ -191,6 +191,7 @@ class ResourceMonitor:
             stats = await self._docker_stats()
             if stats:
                 import dataclasses as _dc
+
                 snap = _dc.replace(snap, per_container=stats)
         self._ring.append(snap)
         return snap
@@ -200,8 +201,11 @@ class ResourceMonitor:
         logger.info(
             "resources: sampling every %.0fs (cpu_high=%.0f%%, mem_min=%dMB, "
             "disk_min=%.0fGB, max_heavy=%d)",
-            cfg.sample_sec, cfg.cpu_high_pct, cfg.mem_min_mb,
-            cfg.disk_min_gb, cfg.max_heavy_tasks,
+            cfg.sample_sec,
+            cfg.cpu_high_pct,
+            cfg.mem_min_mb,
+            cfg.disk_min_gb,
+            cfg.max_heavy_tasks,
         )
         # Prime psutil's cpu_percent delta so the first ring entry is real.
         with contextlib.suppress(Exception):
@@ -229,12 +233,16 @@ class ResourceMonitor:
         if now - self._last_emit < self._settings.emit_sec:
             return
         self._last_emit = now
-        await self._event_sink(ChannelEvent(payload=SystemMetricsPayload(
-            cpu_pct=snap.cpu_pct,
-            mem_available_mb=snap.mem_available_mb,
-            disk_free_gb=snap.disk_free_gb,
-            ts=snap.ts,
-        )))
+        await self._event_sink(
+            ChannelEvent(
+                payload=SystemMetricsPayload(
+                    cpu_pct=snap.cpu_pct,
+                    mem_available_mb=snap.mem_available_mb,
+                    disk_free_gb=snap.disk_free_gb,
+                    ts=snap.ts,
+                )
+            )
+        )
 
     @staticmethod
     async def _docker_stats() -> dict[str, dict[str, float]]:
@@ -288,7 +296,7 @@ class AdmissionController:
         monitor: ResourceMonitor,
         settings: ResourceSettings | None = None,
         *,
-        registry: object | None = None,    # daemon.task_registry.TaskRegistry
+        registry: object | None = None,  # daemon.task_registry.TaskRegistry
         event_sink: Callable[[ChannelEvent], Awaitable[None]] | None = None,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         clock: Callable[[], float] = time.monotonic,
@@ -345,8 +353,10 @@ class AdmissionController:
                     logger.exception("resources: set_deferred_ms failed for %s", task_id)
         key = task_id or f"anon-{id(task)}"
         self._active[key] = {
-            "task_id": task_id, "weight": weight,
-            "deferred_ms": deferred_ms, "since": time.time(),
+            "task_id": task_id,
+            "weight": weight,
+            "deferred_ms": deferred_ms,
+            "since": time.time(),
         }
         try:
             yield
@@ -401,9 +411,11 @@ class AdmissionController:
         if self._event_sink is None:
             return
         try:
-            await self._event_sink(ChannelEvent(
-                payload=TimelinePayload(line=line, cls="event-decision-skipped"),
-                task_id=task_id or None,
-            ))
+            await self._event_sink(
+                ChannelEvent(
+                    payload=TimelinePayload(line=line, cls="event-decision-skipped"),
+                    task_id=task_id or None,
+                )
+            )
         except Exception:
             logger.exception("resources: deferral timeline emit failed")

@@ -11,23 +11,28 @@ TaskStatusStr = Literal["queued", "running", "done", "failed", "cancelled"]
 
 class TaskSubmitIn(BaseModel):
     instruction: str = Field(
-        ..., min_length=1, max_length=20_000,
+        ...,
+        min_length=1,
+        max_length=20_000,
         description="What the orchestrator should do, in plain language",
     )
     mode: Literal["direct", "triage"] = Field(
         "direct",
         description="direct = trusted, runs immediately; "
-                    "triage = goes through LLM triage + Tier-1 consent",
+        "triage = goes through LLM triage + Tier-1 consent",
     )
     origin: str = Field(
-        "api", max_length=64,
+        "api",
+        max_length=64,
         description="Submitting surface, recorded on the task row",
     )
     complexity: int | None = Field(
-        None, ge=1, le=5,
+        None,
+        ge=1,
+        le=5,
         description="Optional client override of the 1-5 complexity score; "
-                    "when omitted, direct tasks are scored by a light-tier "
-                    "model call (if model routing is enabled)",
+        "when omitted, direct tasks are scored by a light-tier "
+        "model call (if model routing is enabled)",
     )
 
 
@@ -55,7 +60,8 @@ class TaskOut(BaseModel):
 class TaskListOut(BaseModel):
     tasks: list[TaskOut]
     next_cursor: str | None = Field(
-        None, description="Pass back as ?cursor= for the next page; null at end",
+        None,
+        description="Pass back as ?cursor= for the next page; null at end",
     )
 
 
@@ -63,7 +69,7 @@ class TaskEventsOut(BaseModel):
     task_id: str
     events: list[dict[str, Any]] = Field(
         description="Replay of the task's StreamItems in wire format "
-                    "(same envelopes the /stream SSE emits)",
+        "(same envelopes the /stream SSE emits)",
     )
 
 
@@ -80,5 +86,5 @@ class TaskLogsOut(BaseModel):
     messages: list[TaskLogMessage] = Field(
         default_factory=list,
         description="Full transcript of the background subagent's thread "
-                    "(tool calls, results, and text), fetched on demand.",
+        "(tool calls, results, and text), fetched on demand.",
     )

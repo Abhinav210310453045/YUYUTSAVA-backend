@@ -19,9 +19,7 @@ from yuyutsava.daemon.task_registry import (
 class TaskRegistryTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
-        self.registry = TaskRegistry(
-            sqlite_task_store(Path(self._tmp.name) / "state.db")
-        )
+        self.registry = TaskRegistry(sqlite_task_store(Path(self._tmp.name) / "state.db"))
 
     async def asyncTearDown(self) -> None:
         self._tmp.cleanup()
@@ -120,7 +118,10 @@ class TaskRegistryTests(unittest.IsolatedAsyncioTestCase):
         tid = mint_task_id()
         await self.registry.create(task_id=tid, origin="api", instruction="x")
         await self.registry.mark_running(
-            tid, thread_id="orch-1", complexity=4, model="big:70b",
+            tid,
+            thread_id="orch-1",
+            complexity=4,
+            model="big:70b",
         )
         rec = await self.registry.get(tid)
         self.assertEqual(rec.complexity, 4)

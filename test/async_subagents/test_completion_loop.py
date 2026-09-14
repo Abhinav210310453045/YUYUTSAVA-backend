@@ -81,10 +81,17 @@ class LaunchIndexTests(unittest.TestCase):
 class MirrorCompletionTests(unittest.IsolatedAsyncioTestCase):
     async def _mk(self, m: AsyncTaskMirror, tid: str, status: str = "running") -> None:
         now = time.time()
-        await m.upsert(MirroredTask(
-            task_id=tid, agent_name="file-organizer", graph_id="file-organizer",
-            instruction="organize", status=status, started_at=now, last_update_at=now,
-        ))
+        await m.upsert(
+            MirroredTask(
+                task_id=tid,
+                agent_name="file-organizer",
+                graph_id="file-organizer",
+                instruction="organize",
+                status=status,
+                started_at=now,
+                last_update_at=now,
+            )
+        )
 
     async def test_render_surfaces_completion_then_hides_after_notify(self):
         m = AsyncTaskMirror()
@@ -120,8 +127,7 @@ class _FakeRuns:
         self._p = parent
 
     async def list(self, thread_id: str, limit: int = 1):
-        return [{"run_id": "r1", "status": self._p.run_status,
-                 "assistant_id": "file-organizer"}]
+        return [{"run_id": "r1", "status": self._p.run_status, "assistant_id": "file-organizer"}]
 
     async def cancel(self, thread_id: str, run_id: str):
         return None
@@ -142,9 +148,11 @@ class _FakeThreads:
         return {
             "thread_id": thread_id,
             "status": self._p.thread_status,
-            "values": {"messages": [
-                {"role": "assistant", "content": self._p.final_text},
-            ]},
+            "values": {
+                "messages": [
+                    {"role": "assistant", "content": self._p.final_text},
+                ]
+            },
             "metadata": {},
         }
 
@@ -177,9 +185,12 @@ class WatcherCompletionTests(unittest.IsolatedAsyncioTestCase):
             return None
 
         w = AsyncTaskHealthWatcher(
-            mirror=mirror, host_url="http://127.0.0.1:0",
-            ask_handler=ask_handler, event_sink=event_sink,
-            completion_sink=sink, launch_index=idx,
+            mirror=mirror,
+            host_url="http://127.0.0.1:0",
+            ask_handler=ask_handler,
+            event_sink=event_sink,
+            completion_sink=sink,
+            launch_index=idx,
         )
         w._client = _FakeClient()
         return w, mirror, w._client, calls
@@ -195,12 +206,12 @@ class WatcherCompletionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_completion_sink_fires_once_on_terminal(self):
         w, mirror, client, calls = await self._build()
-        await w._discover_new_threads()      # ingest th-1 (running)
-        await w._poll_known_tasks()          # still running → no completion
+        await w._discover_new_threads()  # ingest th-1 (running)
+        await w._poll_known_tasks()  # still running → no completion
         self.assertEqual(calls, [])
 
-        client.run_status = "success"        # task finishes
-        await w._poll_known_tasks()          # terminal → sink fires
+        client.run_status = "success"  # task finishes
+        await w._poll_known_tasks()  # terminal → sink fires
         self.assertEqual(len(calls), 1)
         task, ok, summary = calls[0]
         self.assertTrue(ok)

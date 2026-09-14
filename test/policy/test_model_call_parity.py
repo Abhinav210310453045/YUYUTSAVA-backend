@@ -59,7 +59,8 @@ def _request(
         system_message = None
     elif extra_blocks is not None:
         system_message = SystemMessage(
-            content_blocks=[{"type": "text", "text": system}] + extra_blocks)
+            content_blocks=[{"type": "text", "text": system}] + extra_blocks
+        )
     else:
         system_message = SystemMessage(system)
     return ModelRequest(
@@ -112,8 +113,8 @@ class _BrokenInjector:
 
 
 GOLDEN = json.loads(
-    (pathlib.Path(__file__).resolve().parent / "model_call_golden.json")
-    .read_text(encoding="utf-8"))
+    (pathlib.Path(__file__).resolve().parent / "model_call_golden.json").read_text(encoding="utf-8")
+)
 
 
 def _pairs() -> list[tuple[str, Any]]:
@@ -159,8 +160,10 @@ class _Settings:
 
 REQUESTS: list[tuple[str, dict]] = [
     ("plain", {}),
-    ("with tools", {"tools": ["tr_grep", "ctx_recall", "execute", "tool_search",
-                              "ws_exa_search", "task"]}),
+    (
+        "with tools",
+        {"tools": ["tr_grep", "ctx_recall", "execute", "tool_search", "ws_exa_search", "task"]},
+    ),
     ("with the filesystem block", {"extra_blocks": [{"type": "text", "text": FS_BLOCK}]}),
     ("non-text block present", {"extra_blocks": [{"type": "image", "url": "x"}]}),
     ("last message is not human", {"messages": [HumanMessage("a"), AIMessage("b")]}),
@@ -200,7 +203,8 @@ class Parity(unittest.IsolatedAsyncioTestCase):
                 if before != after:
                     changed += 1
         self.assertGreater(
-            changed, 5,
+            changed,
+            5,
             f"only {changed} of the policy/request combinations changed the "
             f"request at all; the parity check above is mostly vacuous",
         )
@@ -267,8 +271,7 @@ class TheWholePoint(unittest.IsolatedAsyncioTestCase):
         from yuyutsava.policy.types import ModelCall
 
         policy = FilesystemPromptPolicy()
-        with self.assertLogs(
-                "yuyutsava.core.filesystem_prompt_policy", level="WARNING") as cm:
+        with self.assertLogs("yuyutsava.core.filesystem_prompt_policy", level="WARNING") as cm:
             await policy.revise_model_call(ModelCall(system_texts=("base",)))
             await policy.revise_model_call(ModelCall(system_texts=("base",)))
         self.assertEqual(len(cm.output), 1, "the warning repeats every turn")
@@ -335,7 +338,8 @@ class NonTextBlocksSurvive(unittest.IsolatedAsyncioTestCase):
 
         after = await _via_policy(_AlwaysVoice(), request)
         self.assertIn(
-            image, after["blocks"],
+            image,
+            after["blocks"],
             "a non-text system block was lost when the prompt was rebuilt",
         )
 

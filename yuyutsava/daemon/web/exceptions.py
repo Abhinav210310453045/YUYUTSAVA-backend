@@ -62,8 +62,9 @@ def register_exception_handlers(app: FastAPI) -> None:
     async def _req_validation(_: Request, exc: RequestValidationError) -> JSONResponse:
         return JSONResponse(
             status_code=422,
-            content=_envelope("validation_error", "Request body failed validation",
-                              {"errors": exc.errors()}),
+            content=_envelope(
+                "validation_error", "Request body failed validation", {"errors": exc.errors()}
+            ),
         )
 
     @app.exception_handler(StarletteHTTPException)

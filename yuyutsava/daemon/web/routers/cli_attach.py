@@ -39,13 +39,13 @@ _CLI_CHANNEL_NAME = "cli-remote"
 
 class CliAttachIn(BaseModel):
     session_id: str | None = None
-    label: str | None = None     # purely informational; logged for triage
+    label: str | None = None  # purely informational; logged for triage
 
 
 class CliAttachOut(BaseModel):
     ok: bool
     channel_name: str
-    attached: bool       # True if newly registered, False if already present
+    attached: bool  # True if newly registered, False if already present
 
 
 class CliDetachIn(BaseModel):

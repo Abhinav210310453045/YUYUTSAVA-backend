@@ -64,22 +64,40 @@ class _TaskContract:
         from yuyutsava.daemon.task_registry import TaskRecord
 
         base = dict(
-            task_id=task_id, origin="cli", instruction="do the thing",
-            status="queued", thread_id=None, complexity=None, model=None,
-            created_ts=time.time(), started_ts=None, finished_ts=None,
-            deferred_ms=0, result_summary=None, error=None,
+            task_id=task_id,
+            origin="cli",
+            instruction="do the thing",
+            status="queued",
+            thread_id=None,
+            complexity=None,
+            model=None,
+            created_ts=time.time(),
+            started_ts=None,
+            finished_ts=None,
+            deferred_ms=0,
+            result_summary=None,
+            error=None,
         )
         base.update(over)
         return TaskRecord(**base)
 
     async def test_insert_then_get_roundtrips_every_field(self) -> None:
         tid = self.tid("round")
-        rec = self._rec(tid, complexity=3, model="gemini-2.5-flash",
-                        deferred_ms=250, result_summary="ok")
+        rec = self._rec(
+            tid, complexity=3, model="gemini-2.5-flash", deferred_ms=250, result_summary="ok"
+        )
         await self.store.insert(rec)
         got = await self.store.get(tid)
-        for field in ("task_id", "origin", "instruction", "status", "complexity",
-                      "model", "deferred_ms", "result_summary"):
+        for field in (
+            "task_id",
+            "origin",
+            "instruction",
+            "status",
+            "complexity",
+            "model",
+            "deferred_ms",
+            "result_summary",
+        ):
             with self.subTest(field=field):
                 self.assertEqual(getattr(got, field), getattr(rec, field))
 
@@ -128,8 +146,15 @@ class _TaskContract:
         tid = self.tid("nulls")
         await self.store.insert(self._rec(tid))
         got = await self.store.get(tid)
-        for field in ("thread_id", "complexity", "model", "started_ts",
-                      "finished_ts", "result_summary", "error"):
+        for field in (
+            "thread_id",
+            "complexity",
+            "model",
+            "started_ts",
+            "finished_ts",
+            "result_summary",
+            "error",
+        ):
             with self.subTest(field=field):
                 self.assertIsNone(getattr(got, field))
 
@@ -158,10 +183,12 @@ class _TaskContract:
         ids = sorted(self.tid(f"p{i}") for i in range(3))
         for i in ids:
             await self.store.insert(self._rec(i))
-        page = [r.task_id for r in await self.store.list(cursor=ids[1], limit=200)
-                if r.task_id in ids]
+        page = [
+            r.task_id for r in await self.store.list(cursor=ids[1], limit=200) if r.task_id in ids
+        ]
         self.assertEqual(
-            page, [ids[0]],
+            page,
+            [ids[0]],
             "the cursor is inclusive on one backend — the boundary task would "
             "render twice while paging",
         )
@@ -175,9 +202,11 @@ class _TaskContract:
         ids = sorted(self.tid(f"c{i}") for i in range(3))
         for i in ids:
             await self.store.insert(self._rec(i, status="done"))
-        got = [r.task_id for r in
-               await self.store.list(status="done", cursor=ids[2], limit=200)
-               if r.task_id in ids]
+        got = [
+            r.task_id
+            for r in await self.store.list(status="done", cursor=ids[2], limit=200)
+            if r.task_id in ids
+        ]
         self.assertEqual(got, [ids[1], ids[0]])
 
 
@@ -226,11 +255,12 @@ class PostgresUnifiedTasks(_TaskContract, unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self) -> None:
         async with self.pool.connection() as conn:
             await conn.execute(
-                "DELETE FROM llm_usage WHERE task_id LIKE %s", (f"tsk_%{self._suffix}",))
+                "DELETE FROM llm_usage WHERE task_id LIKE %s", (f"tsk_%{self._suffix}",)
+            )
+            await conn.execute("DELETE FROM tasks WHERE task_id LIKE %s", (f"tsk_%{self._suffix}",))
             await conn.execute(
-                "DELETE FROM tasks WHERE task_id LIKE %s", (f"tsk_%{self._suffix}",))
-            await conn.execute(
-                "DELETE FROM threads WHERE thread_id LIKE %s", (f"thr-%{self._suffix}",))
+                "DELETE FROM threads WHERE thread_id LIKE %s", (f"thr-%{self._suffix}",)
+            )
         await self.pool.close()
 
     def tid(self, name: str) -> str:
@@ -241,8 +271,7 @@ class PostgresUnifiedTasks(_TaskContract, unittest.IsolatedAsyncioTestCase):
         thread = f"thr-fk-{self._suffix}"
         await self.store.insert(self._rec(self.tid("fk"), thread_id=thread))
         async with self.pool.connection() as conn:
-            cur = await conn.execute(
-                "SELECT count(*) FROM threads WHERE thread_id = %s", (thread,))
+            cur = await conn.execute("SELECT count(*) FROM threads WHERE thread_id = %s", (thread,))
             self.assertEqual((await cur.fetchone())[0], 1)
 
     async def test_origin_is_recorded_on_the_hub_row(self) -> None:
@@ -253,14 +282,13 @@ class PostgresUnifiedTasks(_TaskContract, unittest.IsolatedAsyncioTestCase):
         a null origin.
         """
         thread = f"thr-origin-{self._suffix}"
-        await self.store.insert(
-            self._rec(self.tid("origin"), thread_id=thread, origin="voice"))
+        await self.store.insert(self._rec(self.tid("origin"), thread_id=thread, origin="voice"))
         async with self.pool.connection() as conn:
-            cur = await conn.execute(
-                "SELECT origin FROM threads WHERE thread_id = %s", (thread,))
+            cur = await conn.execute("SELECT origin FROM threads WHERE thread_id = %s", (thread,))
             row = await cur.fetchone()
         self.assertEqual(
-            row[0], "voice",
+            row[0],
+            "voice",
             "the hub row was created without its origin — ensure_parent dropped "
             "the attribute it was given",
         )
@@ -270,8 +298,7 @@ class PostgresUnifiedTasks(_TaskContract, unittest.IsolatedAsyncioTestCase):
         tid = self.tid("late")
         thread = f"thr-late-{self._suffix}"
         await self.store.insert(self._rec(tid))
-        self.assertTrue(
-            await self.store.update(tid, {"status": "running", "thread_id": thread}))
+        self.assertTrue(await self.store.update(tid, {"status": "running", "thread_id": thread}))
         self.assertEqual((await self.store.get(tid)).thread_id, thread)
 
 

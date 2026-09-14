@@ -21,21 +21,27 @@ def _load(kind: str):
     """
     if kind == "chart":
         from .charts import render_chart
+
         return render_chart
     if kind == "diagram":
         from .diagrams import render_diagram
+
         return render_diagram
     if kind == "table":
         from .tables import render_table
+
         return render_table
     if kind == "code":
         from .code import render_code
+
         return render_code
     if kind == "math":
         from .math import render_math
+
         return render_math
     if kind == "timeline":
         from .timeline import render_timeline
+
         return render_timeline
     return None
 

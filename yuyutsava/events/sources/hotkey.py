@@ -71,6 +71,7 @@ class HotkeySource(EventSource):
                 except RuntimeError:
                     # Loop closed during shutdown.
                     pass
+
             return _fire
 
         callbacks: dict[str, Any] = {}
@@ -89,8 +90,11 @@ class HotkeySource(EventSource):
             listener = keyboard.GlobalHotKeys(callbacks)
             listener.start()
             self._listener = listener
-            logger.info("hotkey source: %d binding(s) active: %s",
-                        len(callbacks), ", ".join(callbacks.keys()))
+            logger.info(
+                "hotkey source: %d binding(s) active: %s",
+                len(callbacks),
+                ", ".join(callbacks.keys()),
+            )
         except Exception:
             logger.exception("hotkey: failed to start global listener")
             await ctx.cancelled.wait()

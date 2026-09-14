@@ -40,6 +40,7 @@ def _default_daemon_url() -> str:
         return env
     try:
         from yuyutsava.daemon.singleton import read_daemon_discovery
+
         disco = read_daemon_discovery()
         if disco and isinstance(disco.get("web_url"), str):
             url = str(disco["web_url"]).rstrip("/")
@@ -106,7 +107,8 @@ async def _run(args: argparse.Namespace) -> int:
                 print(
                     f"\033[35m[proposal] {p.get('instruction', '')[:140]}\033[0m  "
                     "(respond via the Electron renderer for now)",
-                    file=sys.stderr, flush=True,
+                    file=sys.stderr,
+                    flush=True,
                 )
                 continue
             if frame.event == "ask":
@@ -118,7 +120,8 @@ async def _run(args: argparse.Namespace) -> int:
                 if not ok:
                     print(
                         "\033[33m(reply rejected — ask may have already been answered)\033[0m",
-                        file=sys.stderr, flush=True,
+                        file=sys.stderr,
+                        flush=True,
                     )
     except (KeyboardInterrupt, asyncio.CancelledError):
         pass

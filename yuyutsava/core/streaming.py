@@ -139,12 +139,26 @@ def _print_scoping_chips(payload: Any, *, colour: str) -> None:
 # Accepted yes/no synonyms — also used by the chat REPL's _ask_handler
 # (yuyutsava.cli.commands.chat_repl) so both surfaces accept the same
 # vocabulary. Anything outside these sets falls through to "reject".
-_AFFIRMATIVE: frozenset[str] = frozenset({
-    "y", "yes", "a", "approve", "ok", "allow",
-})
-_NEGATIVE: frozenset[str] = frozenset({
-    "n", "no", "r", "reject", "deny", "cancel",
-})
+_AFFIRMATIVE: frozenset[str] = frozenset(
+    {
+        "y",
+        "yes",
+        "a",
+        "approve",
+        "ok",
+        "allow",
+    }
+)
+_NEGATIVE: frozenset[str] = frozenset(
+    {
+        "n",
+        "no",
+        "r",
+        "reject",
+        "deny",
+        "cancel",
+    }
+)
 
 
 def _normalize_yes_no(answer: str) -> str:
@@ -245,10 +259,12 @@ async def prompt_permission(
 
     # ── PermissionMiddleware: raw execute call triggered a pattern check ───
     if isinstance(interrupt_value, dict):
-        iv2 = PermissionRequestInterrupt.model_validate({
-            "command": interrupt_value.get("command", "<unknown>"),
-            "reason":  interrupt_value.get("reason", "Potentially dangerous operation"),
-        })
+        iv2 = PermissionRequestInterrupt.model_validate(
+            {
+                "command": interrupt_value.get("command", "<unknown>"),
+                "reason": interrupt_value.get("reason", "Potentially dangerous operation"),
+            }
+        )
     else:
         iv2 = PermissionRequestInterrupt(
             command=str(interrupt_value),
@@ -396,8 +412,7 @@ def _run_config(
         cfg["callbacks"] = [callback]
         cfg["metadata"] = {
             **(cfg.get("metadata") or {}),
-            **trace_metadata(session_id=thread_id, trace_name=trace_name,
-                             tags=trace_tags),
+            **trace_metadata(session_id=thread_id, trace_name=trace_name, tags=trace_tags),
         }
     return cfg
 
@@ -473,7 +488,9 @@ async def _drive_graph(
         steps = 0
 
         async for event in agent.astream(
-            current_input, config=cfg, stream_mode=["messages", "updates"],
+            current_input,
+            config=cfg,
+            stream_mode=["messages", "updates"],
         ):
             if not isinstance(event, tuple) or len(event) != 2:
                 continue
@@ -481,8 +498,9 @@ async def _drive_graph(
 
             if mode == "updates" and isinstance(data, dict) and "__interrupt__" in data:
                 for iv in data["__interrupt__"] or []:
-                    pending.append((getattr(iv, "id", None),
-                                    iv.value if hasattr(iv, "value") else iv))
+                    pending.append(
+                        (getattr(iv, "id", None), iv.value if hasattr(iv, "value") else iv)
+                    )
                 yield ("interrupt_seen", None)
                 continue
 
@@ -608,12 +626,17 @@ async def astream_agent_iter(
         else:
             logger.warning(
                 "resume requested for thread %s but no checkpoint state found; "
-                "starting a fresh run", _tid,
+                "starting a fresh run",
+                _tid,
             )
 
     steps_last_pass = 0
     async for kind, item in _drive_graph(
-        agent, first_input, cfg, ask=ask_handler, collected=final_messages,
+        agent,
+        first_input,
+        cfg,
+        ask=ask_handler,
+        collected=final_messages,
     ):
         if kind == "chunk":
             chunk, meta = item
@@ -674,18 +697,24 @@ async def astream_agent_iter(
     # log to the streaming bubble, and a turn that streamed nothing has no
     # bubble — so four consecutive dead turns reached the user as silence.
     if not final_text and steps_last_pass == 0:
-        yield StreamEvent("notice", {
-            "level": "error",
-            "text": (
-                f"Agent produced no output — possible recursion limit hit "
-                f"(limit={recursion_limit}) or graph exited unexpectedly."
-            ),
-        })
+        yield StreamEvent(
+            "notice",
+            {
+                "level": "error",
+                "text": (
+                    f"Agent produced no output — possible recursion limit hit "
+                    f"(limit={recursion_limit}) or graph exited unexpectedly."
+                ),
+            },
+        )
     elif not final_text:
-        yield StreamEvent("notice", {
-            "level": "warning",
-            "text": "Task ended with no assistant text. The agent may have stopped mid-task.",
-        })
+        yield StreamEvent(
+            "notice",
+            {
+                "level": "warning",
+                "text": "Task ended with no assistant text. The agent may have stopped mid-task.",
+            },
+        )
     yield StreamEvent("final", {"text": final_text})
 
 
@@ -760,7 +789,11 @@ async def astream_agent(
             in_ai_stream = False
 
     async for kind, item in _drive_graph(
-        agent, first_input, cfg, ask=_ask, collected=final_messages,
+        agent,
+        first_input,
+        cfg,
+        ask=_ask,
+        collected=final_messages,
     ):
         if kind == "interrupt_seen":
             _close_stream()
@@ -798,9 +831,17 @@ async def astream_agent(
 
                 if m.tool_calls:
                     for tc in m.tool_calls:
-                        name = tc.get("name", "?") if isinstance(tc, dict) else getattr(tc, "name", "?")
-                        args = tc.get("args", {}) if isinstance(tc, dict) else getattr(tc, "args", {})
-                        args_str = json.dumps(args, indent=4) if isinstance(args, dict) else str(args)
+                        name = (
+                            tc.get("name", "?")
+                            if isinstance(tc, dict)
+                            else getattr(tc, "name", "?")
+                        )
+                        args = (
+                            tc.get("args", {}) if isinstance(tc, dict) else getattr(tc, "args", {})
+                        )
+                        args_str = (
+                            json.dumps(args, indent=4) if isinstance(args, dict) else str(args)
+                        )
                         logger.info("")
                         logger.info("\033[33m🔧  TOOL CALL → %s\033[0m", name)
                         logger.info("    Input:\n%s", _indent(args_str, 4))
@@ -811,7 +852,9 @@ async def astream_agent(
                 safe_body = guard_tool_result(body, tn)
                 if safe_body is not body:
                     m.content = safe_body
-                preview = safe_body if len(safe_body) <= 600 else safe_body[:600] + "\n    … [truncated]"
+                preview = (
+                    safe_body if len(safe_body) <= 600 else safe_body[:600] + "\n    … [truncated]"
+                )
                 err = is_tool_error(m, safe_body)
                 logger.info("")
                 if err:

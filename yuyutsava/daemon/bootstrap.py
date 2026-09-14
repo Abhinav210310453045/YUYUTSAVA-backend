@@ -39,8 +39,13 @@ from yuyutsava.channels.plugin import InboundSink
 from yuyutsava.channels.registry import ChannelPluginRegistry
 from yuyutsava.context.config import ContextSettings
 from yuyutsava.core.config import (
-    DaemonConfig, EventsConfig, LlmSettings, SearchConfig, SourceConfig,
-    _env, llm_settings_from_env,
+    DaemonConfig,
+    EventsConfig,
+    LlmSettings,
+    SearchConfig,
+    SourceConfig,
+    _env,
+    llm_settings_from_env,
 )
 from yuyutsava.llm import chat_model
 from yuyutsava.core.model_router import ComplexityScorer, ModelRouter
@@ -128,9 +133,9 @@ class DaemonOptions:
     """
 
     workspace: Path
-    headless: bool      # --no-ui
-    voice: bool         # --voice
-    verbose: bool       # --verbose
+    headless: bool  # --no-ui
+    voice: bool  # --voice
+    verbose: bool  # --verbose
 
 
 # ---------------------------------------------------------------------------
@@ -251,14 +256,16 @@ def _inject_heartbeat(events_cfg: EventsConfig, heartbeat_sec: int) -> EventsCon
     """
     if heartbeat_sec <= 0:
         return events_cfg
-    return EventsConfig(sources={
-        name: SourceConfig(
-            name=src.name,
-            enabled=src.enabled,
-            params={**src.params, "heartbeat_sec": heartbeat_sec},
-        )
-        for name, src in events_cfg.sources.items()
-    })
+    return EventsConfig(
+        sources={
+            name: SourceConfig(
+                name=src.name,
+                enabled=src.enabled,
+                params={**src.params, "heartbeat_sec": heartbeat_sec},
+            )
+            for name, src in events_cfg.sources.items()
+        }
+    )
 
 
 def _apply_wake_toggle(events_cfg: EventsConfig, wake_enabled: bool) -> EventsConfig:
@@ -273,20 +280,24 @@ def _apply_wake_toggle(events_cfg: EventsConfig, wake_enabled: bool) -> EventsCo
     if src is None or src.enabled == wake_enabled:
         return events_cfg
     logger.info("  voice src : forced enabled=%s by the runtime toggle", wake_enabled)
-    return EventsConfig(sources={
-        **events_cfg.sources,
-        "voice": SourceConfig(name="voice", enabled=wake_enabled, params=dict(src.params)),
-    })
+    return EventsConfig(
+        sources={
+            **events_cfg.sources,
+            "voice": SourceConfig(name="voice", enabled=wake_enabled, params=dict(src.params)),
+        }
+    )
 
 
 def _build_initial_events_config(opts: DaemonOptions, daemon_cfg: DaemonConfig) -> EventsConfig:
     """Load events_config.json, fold in --voice, then inject heartbeat."""
     events_cfg = EventsConfig.from_file()
     if opts.voice and "voice" not in events_cfg.sources:
-        events_cfg = EventsConfig(sources={
-            **events_cfg.sources,
-            "voice": SourceConfig(name="voice", enabled=True, params={}),
-        })
+        events_cfg = EventsConfig(
+            sources={
+                **events_cfg.sources,
+                "voice": SourceConfig(name="voice", enabled=True, params={}),
+            }
+        )
     return _inject_heartbeat(events_cfg, daemon_cfg.heartbeat_sec)
 
 
@@ -374,9 +385,12 @@ async def build_storage(opts: DaemonOptions) -> StorageSubsystem:
                 await pg_pool.close()
             pg_pool = None
             from dataclasses import replace as _dc_replace
+
             storage = _dc_replace(storage, backend="sqlite")
     else:
-        logger.info("  storage   : sqlite (set YUYUTSAVA_STORAGE_BACKEND=postgres for durable mode)")
+        logger.info(
+            "  storage   : sqlite (set YUYUTSAVA_STORAGE_BACKEND=postgres for durable mode)"
+        )
 
     # ── embedder (shared by memory, skills, and the artifact recall index) --
     # Built here, before the stores, so PgArtifactStore can opt into the
@@ -399,7 +413,10 @@ async def build_storage(opts: DaemonOptions) -> StorageSubsystem:
     # after that point.
     storage_health = StorageHealth(pg_pool) if pg_pool is not None else None
     stores = StoreFactory(
-        storage, pg_pool=pg_pool, health=storage_health, embedder=embedder,
+        storage,
+        pg_pool=pg_pool,
+        health=storage_health,
+        embedder=embedder,
     )
 
     artifact_store = stores.artifacts(semantic_recall=_semantic_recall)
@@ -454,7 +471,6 @@ async def build_storage(opts: DaemonOptions) -> StorageSubsystem:
         set_default_visual_store(stores.visuals())
         set_default_feedback_store(stores.feedback())
         set_default_todo_store(stores.todos())
-
 
     return StorageSubsystem(
         settings=storage,
@@ -515,7 +531,8 @@ async def build_policy(store: Store) -> PolicySubsystem:
     if not (_voice_toggles.wake_enabled and _voice_toggles.tts_enabled):
         logger.info(
             "  voice mode: wake=%s tts=%s (runtime toggle)",
-            _voice_toggles.wake_enabled, _voice_toggles.tts_enabled,
+            _voice_toggles.wake_enabled,
+            _voice_toggles.tts_enabled,
         )
 
     # ── permissions policy (Tier-1.5: auto_approve, ws_* daily caps) ------
@@ -531,7 +548,6 @@ async def build_policy(store: Store) -> PolicySubsystem:
     # loaded from state.db; SESSION grants live in memory for the process.
     consent_registry = ConsentRegistry(store=store)
     set_default_consent(consent_registry)
-
 
     return PolicySubsystem(
         prefs_store=prefs_store,
@@ -622,7 +638,6 @@ async def build_retention(
         storage_health=storage_health,
     )
 
-
     return RetentionSubsystem(
         checkpointer_saver=checkpointer_saver,
         checkpointer=checkpointer,
@@ -674,8 +689,10 @@ async def build_retrieval(
         home_dir=home / "skills",
         workspace_dir=WorkspaceLayout.for_workspace(workspace).skills,
     )
-    logger.info("  skills    : %d bundled, scanning personal + workspace",
-                len([s for s in skill_registry.scan() if s.scope == "bundled"]))
+    logger.info(
+        "  skills    : %d bundled, scanning personal + workspace",
+        len([s for s in skill_registry.scan() if s.scope == "bundled"]),
+    )
 
     # Semantic skill index — shares the memory embedder. pgvector when live,
     # else the SQLite keyword twin. Caught up to on-disk skills at boot so a
@@ -709,7 +726,6 @@ async def build_retrieval(
             logger.info("  todo notes: pgvector recall enabled (todo_recall)")
         except Exception:
             logger.warning("todo notes: boot index sync failed", exc_info=True)
-
 
     return RetrievalSubsystem(
         skill_registry=skill_registry,
@@ -765,9 +781,10 @@ async def build_events(
         new_cfg = _apply_wake_toggle(new_cfg, runtime_settings.voice().wake_enabled)
         changed = await registry.reload(new_cfg)
         if changed:
-            logger.info("config reload: events sources now %s",
-                        ", ".join(new_cfg.sources.keys()) or "(none)")
-
+            logger.info(
+                "config reload: events sources now %s",
+                ", ".join(new_cfg.sources.keys()) or "(none)",
+            )
 
     return EventsSubsystem(
         bus=bus,
@@ -775,7 +792,6 @@ async def build_events(
         events_cfg=events_cfg,
         reload=_hot_reload_events_config,
     )
-
 
 
 @dataclass(frozen=True)
@@ -890,9 +906,7 @@ async def build_async_subagents(
             # subagent/compaction models must never serve host runs (see
             # llm/quirks/loop_affinity + Architecture.md "Event-loop ownership").
             host_subagent_model = chat_model(subagent_settings, temperature=0.1)
-            host_compaction_model = chat_model(
-                llm_settings_from_env("compaction"), temperature=0.0
-            )
+            host_compaction_model = chat_model(llm_settings_from_env("compaction"), temperature=0.0)
 
             return AsyncSubagentHost.from_subagents(
                 bg_subagent_list,
@@ -915,7 +929,8 @@ async def build_async_subagents(
                 ),
                 extra_tools_factory=(
                     (lambda: make_context_tools(artifact_store))
-                    if artifact_store is not None else None
+                    if artifact_store is not None
+                    else None
                 ),
             )
 
@@ -923,25 +938,22 @@ async def build_async_subagents(
         # allow_blocking). From here on, any synchronous blocking I/O run on this
         # event loop (os.replace/mkdir/scandir/socket/sqlite) raises BlockingError
         # — wrap such calls in asyncio.to_thread.
-        attachment = await asyncio.to_thread(
-            acquire_or_attach_host, factory=_build_host
-        )
+        attachment = await asyncio.to_thread(acquire_or_attach_host, factory=_build_host)
         async_host_attachment = attachment
         async_host_url = attachment.url
         async_host = attachment.host  # None when attaching to another owner
         register_host_cleanup(attachment)
 
         if attachment.host is not None:
-            logger.info("  async host: %s (owner; graphs=%s)",
-                        attachment.url, attachment.host.graph_ids)
+            logger.info(
+                "  async host: %s (owner; graphs=%s)", attachment.url, attachment.host.graph_ids
+            )
         else:
             logger.info("  async host: %s (attached to running owner)", attachment.url)
 
         async_mirror = AsyncTaskMirror()
 
-        async def _wake_master_on_completion(
-            task: "MirroredTask", ok: bool, summary: str
-        ) -> None:
+        async def _wake_master_on_completion(task: "MirroredTask", ok: bool, summary: str) -> None:
             """Re-enter the orchestrator queue when a bg subagent finishes.
 
             Resolves the launching conversation (so the master continues that
@@ -959,21 +971,27 @@ async def build_async_subagents(
             # "ARTIFACTS: id, id" trailer (see the tinker subagent prompt). Lift the
             # ids so the master can re-show them inline via artifact_show.
             artifact_ids = _parse_artifact_ids(summary)
-            await task_queue.put(OrchestratorTask(
-                proposal_id="", event_id="", topic="subagent_completion",
-                summary=f"{task.agent_name} {'ok' if ok else 'failed'}",
-                instruction="", subagent_hint="", urgency=2,
-                kind="subagent_completed",
-                origin=origin,
-                parent_thread_id=parent,
-                completion={
-                    "task_id": task.task_id,
-                    "agent_name": task.agent_name,
-                    "ok": ok,
-                    "summary": summary,
-                    "artifacts": artifact_ids,
-                },
-            ))
+            await task_queue.put(
+                OrchestratorTask(
+                    proposal_id="",
+                    event_id="",
+                    topic="subagent_completion",
+                    summary=f"{task.agent_name} {'ok' if ok else 'failed'}",
+                    instruction="",
+                    subagent_hint="",
+                    urgency=2,
+                    kind="subagent_completed",
+                    origin=origin,
+                    parent_thread_id=parent,
+                    completion={
+                        "task_id": task.task_id,
+                        "agent_name": task.agent_name,
+                        "ok": ok,
+                        "summary": summary,
+                        "artifacts": artifact_ids,
+                    },
+                )
+            )
             await async_mirror.mark_notified(task.task_id)
 
         async_watcher = AsyncTaskHealthWatcher(
@@ -1003,7 +1021,6 @@ async def build_async_subagents(
         watcher=async_watcher,
         attachment=async_host_attachment,
     )
-
 
 
 @dataclass(frozen=True)
@@ -1058,7 +1075,8 @@ def build_subagents(
     task_runner = TaskRunnerAgent(
         workspace_root=workspace,
         sandbox_root=WorkspaceLayout.for_workspace(workspace).sandbox,
-        policy=policy, consent=consent,
+        policy=policy,
+        consent=consent,
     )
     common: dict[str, Any] = {
         "skill_registry": skill_registry,
@@ -1085,11 +1103,16 @@ def build_subagents(
     from yuyutsava.agents.tinker.subagent import make_tinker_subagent
 
     tinker = make_tinker_subagent(
-        skill_registry=skill_registry, search_config=search_config,
-        mcp_manager=mcp_manager, cap_enforcer=cap_enforcer,
-        memory_store=memory_store, skill_store=skill_store,
-        policy=policy, consent=consent,
+        skill_registry=skill_registry,
+        search_config=search_config,
+        mcp_manager=mcp_manager,
+        cap_enforcer=cap_enforcer,
+        memory_store=memory_store,
+        skill_store=skill_store,
+        policy=policy,
+        consent=consent,
     )
+
     def _make_peers() -> list:
         """Fresh store-backed peers for another graph, same dependencies.
 
@@ -1162,15 +1185,21 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     await mcp_manager.start(mcp_cfg)
     if mcp_manager.known_servers():
         _ws_cfg = str(WorkspaceLayout.for_workspace(workspace).mcp_config)
-        logger.info("  mcp       : %s", ", ".join(
-            f"{n} (workspace)" if mcp_cfg.servers[n].source == _ws_cfg else n
-            for n in mcp_manager.known_servers()
-        ))
+        logger.info(
+            "  mcp       : %s",
+            ", ".join(
+                f"{n} (workspace)" if mcp_cfg.servers[n].source == _ws_cfg else n
+                for n in mcp_manager.known_servers()
+            ),
+        )
 
     # ── retention: checkpointer + TTL sweeper (extracted: build_retention) --
     _ret = await build_retention(
-        workspace=workspace, storage=storage, store=store,
-        artifact_store=artifact_store, storage_health=storage_health,
+        workspace=workspace,
+        storage=storage,
+        store=store,
+        artifact_store=artifact_store,
+        storage_health=storage_health,
     )
     checkpointer_saver = _ret.checkpointer_saver
     checkpointer = _ret.checkpointer
@@ -1178,8 +1207,10 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
 
     # ── events: bus + sources + hot reload (extracted: build_events) -------
     _ev = await build_events(
-        events_cfg=events_cfg, daemon_cfg=daemon_cfg,
-        store=store, runtime_settings=runtime_settings,
+        events_cfg=events_cfg,
+        daemon_cfg=daemon_cfg,
+        store=store,
+        runtime_settings=runtime_settings,
     )
     bus = _ev.bus
     registry = _ev.registry
@@ -1225,10 +1256,14 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     if opts.voice:
         try:
             from yuyutsava.daemon.voice_channel import voice_channel_from_env
+
             vc = voice_channel_from_env()
             channels.channels.append(vc)
-            logger.info("  voice     : enabled (TTS=%s STT=%s)",
-                        os.environ.get("TTS_PROVIDER", "piper"), type(vc._stt).__name__)
+            logger.info(
+                "  voice     : enabled (TTS=%s STT=%s)",
+                os.environ.get("TTS_PROVIDER", "piper"),
+                type(vc._stt).__name__,
+            )
         except Exception:
             logger.warning("voice channel init failed — running without voice", exc_info=True)
 
@@ -1237,9 +1272,11 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     # one failure mode that must never be quiet.
     for reason in (storage_fallback_reason, checkpointer_saver.fallback_reason):
         if reason:
-            await channels.post_event(ChannelEvent(
-                payload=TimelinePayload(line=f"storage: {reason}", cls="event-error"),
-            ))
+            await channels.post_event(
+                ChannelEvent(
+                    payload=TimelinePayload(line=f"storage: {reason}", cls="event-error"),
+                )
+            )
 
     # ── resource governor (Phase 5) ----------------------------------------
     # Monitor samples psutil into a ring (main.py schedules its run loop);
@@ -1250,14 +1287,18 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     res_settings = ResourceSettings.from_env()
     resource_monitor = ResourceMonitor(res_settings, event_sink=channels.post_event)
     admission = AdmissionController(
-        resource_monitor, res_settings,
-        registry=task_registry, event_sink=channels.post_event,
+        resource_monitor,
+        res_settings,
+        registry=task_registry,
+        event_sink=channels.post_event,
     )
     resource_monitor.activity_probe = lambda: bool(admission.active())
     logger.info(
         "  resources : cpu<%.0f%% mem>%dMB disk>%.0fGB, heavy=complexity≥%d (max %d)",
-        res_settings.cpu_high_pct, res_settings.mem_min_mb,
-        res_settings.disk_min_gb, res_settings.heavy_complexity,
+        res_settings.cpu_high_pct,
+        res_settings.mem_min_mb,
+        res_settings.disk_min_gb,
+        res_settings.heavy_complexity,
         res_settings.max_heavy_tasks,
     )
 
@@ -1275,6 +1316,7 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     # Warm the Langfuse reachability probe now — before the async host installs
     # blockbuster — so the runtime path never does urllib on the event loop.
     from yuyutsava.core.tracing import warm_reachability_cache
+
     await asyncio.to_thread(warm_reachability_cache)
 
     # Compaction model: role "compaction" so a cheap/local model can own
@@ -1295,8 +1337,11 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     # ── retrieval: skills + TODO-note indexes (extracted: build_retrieval) --
     _rtv = await build_retrieval(
         workspace=workspace,
-        home=home, stores=stores, mem_settings=mem_settings,
-        pg_pool=pg_pool, embedder=embedder,
+        home=home,
+        stores=stores,
+        mem_settings=mem_settings,
+        pg_pool=pg_pool,
+        embedder=embedder,
     )
     skill_registry = _rtv.skill_registry
     skill_store = _rtv.skill_store
@@ -1310,24 +1355,27 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         # Both stores declare backfill_embeddings unconditionally since
         # ADR-002 step 2.5b (it returns 0 without vectors), so no getattr probe.
         # `memory_store` can still be None when memory is switched off.
-        _backfills = [
-            s.backfill_embeddings
-            for s in (memory_store, skill_store) if s is not None
-        ]
+        _backfills = [s.backfill_embeddings for s in (memory_store, skill_store) if s is not None]
         _reconciler = Reconciler(
-            store.sqlite_backend, pg_pool, backfills=_backfills,
+            store.sqlite_backend,
+            pg_pool,
+            backfills=_backfills,
             content_specs=CONTENT_TABLE_SPECS,  # visuals + feedback (RoutedStore-wrapped)
         )
         storage_health.set_recover(_reconciler.reconcile)
 
         def _on_storage_degraded(reason: str) -> None:
             try:
-                asyncio.create_task(channels.post_event(ChannelEvent(
-                    payload=TimelinePayload(
-                        line=f"storage: postgres unreachable — buffering to SQLite ({reason})",
-                        cls="event-error",
-                    ),
-                )))
+                asyncio.create_task(
+                    channels.post_event(
+                        ChannelEvent(
+                            payload=TimelinePayload(
+                                line=f"storage: postgres unreachable — buffering to SQLite ({reason})",
+                                cls="event-error",
+                            ),
+                        )
+                    )
+                )
             except RuntimeError:
                 pass
 
@@ -1341,10 +1389,16 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
 
     # ── subagents ---------------------------------------------------------
     subs = build_subagents(
-        workspace=workspace, policy=policy, consent=consent_registry,
-        store=store, skill_registry=skill_registry, search_config=search_config,
-        mcp_manager=mcp_manager, cap_enforcer=cap_enforcer,
-        memory_store=memory_store, skill_store=skill_store,
+        workspace=workspace,
+        policy=policy,
+        consent=consent_registry,
+        store=store,
+        skill_registry=skill_registry,
+        search_config=search_config,
+        mcp_manager=mcp_manager,
+        cap_enforcer=cap_enforcer,
+        memory_store=memory_store,
+        skill_store=skill_store,
     )
     subagents = subs.sync
     bg_subagent_list = subs.background
@@ -1392,8 +1446,7 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     # complexity — only when routing is on (a score nobody routes on is
     # wasted spend). The scorer resolves its model lazily and never raises.
     complexity_scorer = (
-        ComplexityScorer(lambda: model_router.tier_model("light"))
-        if model_router.enabled else None
+        ComplexityScorer(lambda: model_router.tier_model("light")) if model_router.enabled else None
     )
     task_submission = TaskSubmissionService(
         registry=task_registry,
@@ -1405,7 +1458,10 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     )
 
     triage_loop = TriageLoop(
-        bus=bus, store=store, channels=channels, triage=triage,
+        bus=bus,
+        store=store,
+        channels=channels,
+        triage=triage,
         capabilities_block=capabilities_block,
         task_queue=task_queue,
         proposal_expiry_sec=daemon_cfg.proposal_expiry_sec,
@@ -1467,7 +1523,8 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     decision_service = DecisionService(store)
     if web_hub is not None:
         decision_service.add_waiters(
-            proposals=web_hub.pending_proposals, asks=web_hub.pending_asks,
+            proposals=web_hub.pending_proposals,
+            asks=web_hub.pending_asks,
         )
 
     def _daemon_status() -> str:
@@ -1484,10 +1541,13 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         status_provider=_daemon_status,
     )
     decision_service.add_waiters(
-        proposals=inbound_sink.pending_proposals, asks=inbound_sink.pending_asks,
+        proposals=inbound_sink.pending_proposals,
+        asks=inbound_sink.pending_asks,
     )
     channel_plugins = ChannelPluginRegistry(
-        router=channels, sink=inbound_sink, config=ChannelsConfig.from_file(),
+        router=channels,
+        sink=inbound_sink,
+        config=ChannelsConfig.from_file(),
     )
     await channel_plugins.start_all()
 
@@ -1495,16 +1555,16 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     if web_hub is not None:
         # from_env may mkdir + write the api_token file on a non-loopback bind →
         # off-loop (this runs after the subagent host activates blockbuster).
-        auth_settings = await asyncio.to_thread(
-            AuthSettings.from_env, host=daemon_cfg.web_host
-        )
+        auth_settings = await asyncio.to_thread(AuthSettings.from_env, host=daemon_cfg.web_host)
         if auth_settings.enforce:
-            logger.info("  web auth  : bearer token enforced (non-loopback bind %s)",
-                        daemon_cfg.web_host)
+            logger.info(
+                "  web auth  : bearer token enforced (non-loopback bind %s)", daemon_cfg.web_host
+            )
         # Lazy host for interactive text/voice conversations (Electron/mobile).
         # Builds its shared deepagent bundle on first /ws/converse use and
         # attaches to this daemon's async-subagent host (no second host).
         from yuyutsava.daemon.conversation_manager import ConversationManager
+
         # Fresh subagent instances for the chat master's sync roster — the
         # orchestrator's own instances stay on its graph (specs must not
         # share tool/middleware objects across graphs). GeneralPurposeAgent
@@ -1570,8 +1630,11 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
             logging.getLogger("yuyutsava").getEffectiveLevel()
         ).lower()
         config = uvicorn.Config(
-            app, host=daemon_cfg.web_host, port=daemon_cfg.web_port,
-            log_level=uvicorn_level, lifespan="on",
+            app,
+            host=daemon_cfg.web_host,
+            port=daemon_cfg.web_port,
+            log_level=uvicorn_level,
+            lifespan="on",
             # uvicorn's access log records full request lines including the
             # query string — which carries ?token= on /stream when auth is
             # enforced. Drop it off-loopback; the in-app HTTP log middleware

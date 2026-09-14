@@ -42,9 +42,7 @@ def _pg_dsn() -> str:
 def _pg_reachable() -> bool:
     u = urlparse(_pg_dsn())
     try:
-        with socket.create_connection(
-            (u.hostname or "127.0.0.1", u.port or 5432), timeout=1.5
-        ):
+        with socket.create_connection((u.hostname or "127.0.0.1", u.port or 5432), timeout=1.5):
             return True
     except OSError:
         return False
@@ -54,12 +52,21 @@ PG_UP = _pg_reachable()
 THREAD = "cache_tokens_test_thread"
 
 
-def _row(rid: str, *, cached: int = 0, created: int = 0, thread: str = THREAD,
-         tin: int = 1_000) -> UsageRow:
+def _row(
+    rid: str, *, cached: int = 0, created: int = 0, thread: str = THREAD, tin: int = 1_000
+) -> UsageRow:
     return UsageRow(
-        id=rid, ts=time.time(), thread_id=thread, task_id="", role="cli",
-        model="claude-cache-x", input_tokens=tin, output_tokens=100,
-        est_cost_usd=0.01, cache_read_tokens=cached, cache_creation_tokens=created,
+        id=rid,
+        ts=time.time(),
+        thread_id=thread,
+        task_id="",
+        role="cli",
+        model="claude-cache-x",
+        input_tokens=tin,
+        output_tokens=100,
+        est_cost_usd=0.01,
+        cache_read_tokens=cached,
+        cache_creation_tokens=created,
     )
 
 
@@ -113,10 +120,7 @@ class _CacheTokenContract:
         object.__setattr__(old, "ts", now - 3_600)
         await self.store.add(old)
         await self.store.add(_row("usg_ct_10"))
-        ids = {
-            r.id
-            for r in await self.store.list(thread_id=THREAD, since=now - 60, limit=50)
-        }
+        ids = {r.id for r in await self.store.list(thread_id=THREAD, since=now - 60, limit=50)}
         self.assertIn("usg_ct_10", ids)
         self.assertNotIn("usg_ct_9", ids)
 
@@ -185,11 +189,7 @@ class SqliteCacheTokens(_CacheTokenContract, unittest.IsolatedAsyncioTestCase):
     async def test_the_per_thread_index_exists(self) -> None:
         await self.store.list(limit=1)  # ensure schema
         con = sqlite3.connect(self.store._db_path)
-        names = {
-            r[0] for r in con.execute(
-                "SELECT name FROM sqlite_master WHERE type='index'"
-            )
-        }
+        names = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='index'")}
         con.close()
         self.assertIn("llm_usage_thread_ts_idx", names)
 
@@ -214,9 +214,7 @@ class PgCacheTokens(_CacheTokenContract, unittest.IsolatedAsyncioTestCase):
 
     async def _clean(self) -> None:
         async with self.pool.connection() as conn:
-            await conn.execute(
-                "DELETE FROM llm_usage WHERE id LIKE 'usg_ct_%%'"
-            )
+            await conn.execute("DELETE FROM llm_usage WHERE id LIKE 'usg_ct_%%'")
 
 
 if __name__ == "__main__":

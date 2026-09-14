@@ -45,9 +45,15 @@ class SnapshotWireShape(unittest.TestCase):
         import json
 
         snap = ContextSnapshot(
-            thread_id="t1", model="gemini-3.5-flash", max_input_tokens=1_000_000,
-            system_tokens=4_000, messages_tokens=29_200, call_no=3,
-            input_tokens=41_087, cache_read_tokens=38_000, calls=3,
+            thread_id="t1",
+            model="gemini-3.5-flash",
+            max_input_tokens=1_000_000,
+            system_tokens=4_000,
+            messages_tokens=29_200,
+            call_no=3,
+            input_tokens=41_087,
+            cache_read_tokens=38_000,
+            calls=3,
         )
         frame = {"type": "usage", **snap.as_dict()}
         json.dumps(frame)  # must not raise: it goes out over a websocket

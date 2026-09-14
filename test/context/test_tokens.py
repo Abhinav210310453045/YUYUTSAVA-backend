@@ -40,9 +40,7 @@ class PerModelTuning(unittest.TestCase):
 
     def test_everything_else_uses_the_default(self):
         for llm_type in ("chat-google-generativeai", "groq-chat", "openai-chat", ""):
-            self.assertEqual(
-                chars_per_token_for(_FakeModel(llm_type)), DEFAULT_CHARS_PER_TOKEN
-            )
+            self.assertEqual(chars_per_token_for(_FakeModel(llm_type)), DEFAULT_CHARS_PER_TOKEN)
 
     def test_no_model_uses_the_default(self):
         self.assertEqual(chars_per_token_for(None), DEFAULT_CHARS_PER_TOKEN)
@@ -56,9 +54,7 @@ class PerModelTuning(unittest.TestCase):
         )
 
         counter = _get_approximate_token_counter(_FakeModel("anthropic-chat"))
-        self.assertEqual(
-            counter.keywords["chars_per_token"], ANTHROPIC_CHARS_PER_TOKEN
-        )
+        self.assertEqual(counter.keywords["chars_per_token"], ANTHROPIC_CHARS_PER_TOKEN)
         generic = _get_approximate_token_counter(_FakeModel("groq-chat"))
         self.assertNotIn("chars_per_token", generic.keywords)
 
@@ -105,8 +101,7 @@ class NeverRaises(unittest.TestCase):
         self.assertEqual(chars_per_token_for(object()), DEFAULT_CHARS_PER_TOKEN)
 
     def test_a_non_string_llm_type_is_fine(self):
-        self.assertEqual(chars_per_token_for(_FakeModel(None)),
-                         DEFAULT_CHARS_PER_TOKEN)
+        self.assertEqual(chars_per_token_for(_FakeModel(None)), DEFAULT_CHARS_PER_TOKEN)
 
     def test_messages_with_odd_content_still_count(self):
         msgs = [AIMessage(content=[{"type": "text", "text": "hi"}])]

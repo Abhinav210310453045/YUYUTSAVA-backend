@@ -31,7 +31,8 @@ logger = logging.getLogger("yuyutsava.cli.remote_attach")
 @dataclass
 class StreamFrame:
     """One SSE frame off the daemon stream."""
-    event: str               # "event" | "proposal" | "ask" | "hello" | ...
+
+    event: str  # "event" | "proposal" | "ask" | "hello" | ...
     data: dict[str, Any]
 
 
@@ -177,13 +178,15 @@ def render_event_frame(frame_data: dict) -> None:
         print(
             f"\033[36m[bg started]\033[0m {data.get('agent_name', '?')}  "
             f"task={(data.get('task_id') or '')[:8]}",
-            file=sys.stderr, flush=True,
+            file=sys.stderr,
+            flush=True,
         )
     elif kind == "async_task_progress":
         print(
             f"\033[2m[bg progress]\033[0m {data.get('agent_name', '?')}  "
             f"{data.get('kind_hint', '?')}: {data.get('text', '')}",
-            file=sys.stderr, flush=True,
+            file=sys.stderr,
+            flush=True,
         )
     elif kind == "async_task_completed":
         ok = bool(data.get("ok"))
@@ -191,5 +194,6 @@ def render_event_frame(frame_data: dict) -> None:
         print(
             f"{colour}[bg done {'OK' if ok else 'FAIL'}]\033[0m "
             f"{data.get('agent_name', '?')}  {(data.get('summary') or '')[:100]}",
-            file=sys.stderr, flush=True,
+            file=sys.stderr,
+            flush=True,
         )

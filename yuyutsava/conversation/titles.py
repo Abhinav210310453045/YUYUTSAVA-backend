@@ -15,9 +15,7 @@ TITLE_MAX = 80
 
 # Mirrors the wrap composed in routers/converse.py (user_text handler) and the
 # client-side strip in useConverse.js — keep all three in sync.
-_SELECTION_BLOCK_RE = re.compile(
-    r"^<selection-context>\n[\s\S]*?\n</selection-context>\n\n"
-)
+_SELECTION_BLOCK_RE = re.compile(r"^<selection-context>\n[\s\S]*?\n</selection-context>\n\n")
 
 
 def strip_selection_context(text: str) -> str:

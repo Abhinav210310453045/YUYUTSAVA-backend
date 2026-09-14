@@ -50,7 +50,9 @@ class BudgetPolicy(Policy):
         self._exhausted = True
         logger.warning(
             "%s: token budget exhausted (%d/%d) — injecting wrap-up directive",
-            self._role, self._spent, self._cap,
+            self._role,
+            self._spent,
+            self._cap,
         )
         return Directive(
             f"Token budget for this task is exhausted "

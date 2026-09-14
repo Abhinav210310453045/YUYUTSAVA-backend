@@ -99,17 +99,17 @@ async def get_session_messages(session_id: str, request: Request) -> dict:
     if session.origin == "voice" and voice_store is not None:
         rows = await voice_store.list_messages(thread_id)
         for m in rows:
-            messages.append({
-                "role": m.role,
-                "text": m.text,
-                "modality": m.modality,
-                "has_audio": m.has_audio,
-                "audio_url": (
-                    f"/sessions/{session_id}/audio/{m.seq}" if m.has_audio else None
-                ),
-                "seq": m.seq,
-                "ts": m.created_ts,
-            })
+            messages.append(
+                {
+                    "role": m.role,
+                    "text": m.text,
+                    "modality": m.modality,
+                    "has_audio": m.has_audio,
+                    "audio_url": (f"/sessions/{session_id}/audio/{m.seq}" if m.has_audio else None),
+                    "seq": m.seq,
+                    "ts": m.created_ts,
+                }
+            )
     elif transcript_store is not None:
         rows = await transcript_store.list_messages(thread_id)
         # Artifacts made by tool calls attach to the assistant prose that
@@ -122,16 +122,18 @@ async def get_session_messages(session_id: str, request: Request) -> dict:
             # text-less assistant bubble instead of misattributing them to a
             # later turn.
             nonlocal pending_artifacts
-            messages.append({
-                "role": "assistant",
-                "text": "",
-                "modality": "text",
-                "has_audio": False,
-                "audio_url": None,
-                "seq": seq,
-                "ts": ts,
-                "artifacts": pending_artifacts,
-            })
+            messages.append(
+                {
+                    "role": "assistant",
+                    "text": "",
+                    "modality": "text",
+                    "has_audio": False,
+                    "audio_url": None,
+                    "seq": seq,
+                    "ts": ts,
+                    "artifacts": pending_artifacts,
+                }
+            )
             pending_artifacts = []
 
         for m in rows:

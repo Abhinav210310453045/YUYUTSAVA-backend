@@ -65,9 +65,7 @@ class SentenceChunker:
         # worth speaking (otherwise wait for a real sentence).
         if self._eager_first and not self._emitted_any:
             clause_m = _CLAUSE.search(self._buf)
-            if clause_m is not None and (
-                sentence_m is None or clause_m.end() <= sentence_m.end()
-            ):
+            if clause_m is not None and (sentence_m is None or clause_m.end() <= sentence_m.end()):
                 end = clause_m.end()
                 candidate = self._buf[:end].strip()
                 if len(candidate) >= self._first_min_chars:

@@ -17,6 +17,7 @@ async def _open_pool():
     settings = StorageSettings.from_env()
     # Force postgres knobs even if the env says sqlite — we only test the schema.
     from dataclasses import replace
+
     settings = replace(settings, backend="postgres")
     pool = PgPool(settings)
     await pool.open(timeout_sec=2.0)
@@ -39,8 +40,14 @@ class MigrationV9Tests(unittest.IsolatedAsyncioTestCase):
         await pg_migrations.apply(self.pool)
 
         expected_tables = {
-            "event_payloads", "proposals", "decisions", "consent_rules",
-            "tool_call_counters", "user_prefs", "consent_grants", "interrupts",
+            "event_payloads",
+            "proposals",
+            "decisions",
+            "consent_rules",
+            "tool_call_counters",
+            "user_prefs",
+            "consent_grants",
+            "interrupts",
         }
         async with self.pool.connection() as conn:
             cur = await conn.execute(

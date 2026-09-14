@@ -40,8 +40,7 @@ MAX_INDEX_BLOCK_CHARS = 2_000
 #: "memory" segment — it is baked into the prompt at build time, not appended
 #: per turn like the retrieval blocks.
 INDEX_BLOCK_HEADER = (
-    "## AGENT MEMORY — learned behaviors of this user "
-    "(read one in full with um_read(name))\n"
+    "## AGENT MEMORY — learned behaviors of this user (read one in full with um_read(name))\n"
 )
 
 _HEADER = INDEX_BLOCK_HEADER
@@ -84,7 +83,8 @@ class AgentMemoryStore:
             return block.rstrip()
         except Exception:
             logger.warning(
-                "agent memory: failed reading index for %s", self.agent_name,
+                "agent memory: failed reading index for %s",
+                self.agent_name,
                 exc_info=True,
             )
             return ""
@@ -137,9 +137,7 @@ class AgentMemoryStore:
     def _note_slugs(self) -> set[str]:
         if not self._dir.exists():
             return set()
-        return {
-            p.stem for p in self._dir.glob("*.md") if p.name != INDEX_NAME
-        }
+        return {p.stem for p in self._dir.glob("*.md") if p.name != INDEX_NAME}
 
     def _summary_of(self, slug: str) -> str:
         """First `> quoted` line of the note, else its first non-heading line."""
@@ -159,8 +157,7 @@ class AgentMemoryStore:
 
     def _index_lines(self) -> list[str]:
         return [
-            f"- [{slug}] {self._summary_of(slug)}".rstrip()
-            for slug in sorted(self._note_slugs())
+            f"- [{slug}] {self._summary_of(slug)}".rstrip() for slug in sorted(self._note_slugs())
         ]
 
     def _rebuild_index(self) -> None:
@@ -168,8 +165,7 @@ class AgentMemoryStore:
         lines = self._index_lines()
         tmp = self._dir / f".{INDEX_NAME}.tmp"
         tmp.write_text(
-            "# Agent memory index — one line per learned behavior\n\n"
-            + "\n".join(lines) + "\n",
+            "# Agent memory index — one line per learned behavior\n\n" + "\n".join(lines) + "\n",
             encoding="utf-8",
         )
         tmp.replace(self._dir / INDEX_NAME)

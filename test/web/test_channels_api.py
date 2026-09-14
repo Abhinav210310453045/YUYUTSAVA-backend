@@ -41,20 +41,24 @@ class ChannelsApiTests(unittest.IsolatedAsyncioTestCase):
         self.registry = ChannelPluginRegistry(
             router=self.router,
             sink=make_sink(),
-            config=ChannelsConfig(channels={
-                "fake": ChannelConfig(name="fake", enabled=False),
-            }),
+            config=ChannelsConfig(
+                channels={
+                    "fake": ChannelConfig(name="fake", enabled=False),
+                }
+            ),
             plugin_factories={
                 "fake": FakeChannelPlugin.from_config,
                 "broken": _broken_factory,
             },
         )
         app = create_app(
-            WebHub(store=_NullStore()), host="127.0.0.1",
+            WebHub(store=_NullStore()),
+            host="127.0.0.1",
             channel_plugins=self.registry,
         )
         self.client = httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test",
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://test",
         )
 
     async def asyncTearDown(self) -> None:

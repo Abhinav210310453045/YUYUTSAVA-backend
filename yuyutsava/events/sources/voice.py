@@ -64,11 +64,17 @@ class VoiceSource(EventSource):
         heartbeat_timeout = float(ctx.params.get("heartbeat_timeout_sec", 8.0))
 
         cmd = [
-            sys.executable, "-m", "yuyutsava.events.sources._voice_proc",
-            "--blob-dir", str(blob_dir),
-            "--capture-sec", str(capture_sec),
-            "--stt-provider", stt_provider,
-            "--sample-rate", str(sample_rate),
+            sys.executable,
+            "-m",
+            "yuyutsava.events.sources._voice_proc",
+            "--blob-dir",
+            str(blob_dir),
+            "--capture-sec",
+            str(capture_sec),
+            "--stt-provider",
+            stt_provider,
+            "--sample-rate",
+            str(sample_rate),
         ]
 
         # Wake config from params (set by the Settings UI / onboarding) wins over
@@ -84,7 +90,8 @@ class VoiceSource(EventSource):
             cmd += ["--wake-threshold", str(wake_threshold)]
         logger.info(
             "voice source: spawning subprocess (capture=%.1fs stt=%s)",
-            capture_sec, stt_provider,
+            capture_sec,
+            stt_provider,
         )
 
         self._proc = await asyncio.create_subprocess_exec(
@@ -94,9 +101,7 @@ class VoiceSource(EventSource):
             env={**os.environ},
         )
 
-        stderr_task = asyncio.create_task(
-            self._drain_stderr(self._proc), name="voice-stderr"
-        )
+        stderr_task = asyncio.create_task(self._drain_stderr(self._proc), name="voice-stderr")
         try:
             await self._read_loop(ctx, self._proc, heartbeat_timeout)
         finally:

@@ -61,9 +61,9 @@ class OpenWakeWordDetector(WakeWordDetector):
         self._threshold = threshold
         self._chunk_size = chunk_size
         self._model = None
-        self._last_score_log = 0.0       # throttle for the live score readout
-        self._score_log_every = 2.0      # seconds between readouts
-        self._peak_since_log = 0.0       # loudest match seen since last readout
+        self._last_score_log = 0.0  # throttle for the live score readout
+        self._score_log_every = 2.0  # seconds between readouts
+        self._peak_since_log = 0.0  # loudest match seen since last readout
         self._peak_word = ""
 
     def _valid_wake_words(self, official: set[str]) -> list[str]:
@@ -90,11 +90,13 @@ class OpenWakeWordDetector(WakeWordDetector):
                 "ignoring unsupported wake word(s) %s — openwakeword only ships "
                 "models for %s; a custom word needs a trained .onnx model "
                 "(point WAKE_WORDS at its path)",
-                unknown, sorted(official),
+                unknown,
+                sorted(official),
             )
         if not valid:
-            logger.warning("no usable wake words configured; falling back to %s",
-                           DEFAULT_WAKE_WORDS)
+            logger.warning(
+                "no usable wake words configured; falling back to %s", DEFAULT_WAKE_WORDS
+            )
             valid = list(DEFAULT_WAKE_WORDS)
         return valid
 
@@ -123,7 +125,7 @@ class OpenWakeWordDetector(WakeWordDetector):
                 raise RuntimeError(
                     f"openwakeword pretrained models missing and download failed: {exc}. "
                     f"Connect to the internet once, or pre-fetch with "
-                    f"python -c \"import openwakeword.utils as u; u.download_models()\""
+                    f'python -c "import openwakeword.utils as u; u.download_models()"'
                 ) from exc
             self._model = Model(
                 wakeword_models=self._wake_words,
@@ -160,7 +162,9 @@ class OpenWakeWordDetector(WakeWordDetector):
             self._last_score_log = now
             logger.debug(
                 "wake: peak score %.3f (%s) — fires at >= %.2f",
-                self._peak_since_log, self._peak_word or "?", self._threshold,
+                self._peak_since_log,
+                self._peak_word or "?",
+                self._threshold,
             )
             self._peak_since_log, self._peak_word = 0.0, ""
 

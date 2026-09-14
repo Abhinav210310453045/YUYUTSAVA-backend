@@ -21,11 +21,11 @@ VOICE_STYLE_ADDENDUM = (
     "- Use plain spoken prose. No markdown, no bullet or numbered lists, no "
     "headings, no code fences, no tables, no emoji.\n"
     "- Never spell out long IDs, hashes, UUIDs, URLs or file paths character by "
-    "character. Refer to them by name (e.g. \"the background task\") or read only "
+    'character. Refer to them by name (e.g. "the background task") or read only '
     "the last few characters if the user truly needs to distinguish them.\n"
-    "- Prefer natural phrasing and contractions (\"I've\", \"it's\", \"you're\").\n"
+    '- Prefer natural phrasing and contractions ("I\'ve", "it\'s", "you\'re").\n'
     "- If the full answer is long or has many parts, give the key point in one "
-    "breath and offer to go deeper (\"want me to walk through the rest?\") instead "
+    'breath and offer to go deeper ("want me to walk through the rest?") instead '
     "of dumping everything at once.\n"
     "This styling applies only to what you say back to the user; it does not "
     "change which tools you call or how you do the work."

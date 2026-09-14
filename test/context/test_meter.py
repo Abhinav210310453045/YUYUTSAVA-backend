@@ -91,8 +91,11 @@ class SnapshotArithmetic(unittest.TestCase):
     def test_used_is_the_sum_of_the_segments(self):
         snap = ContextSnapshot(
             max_input_tokens=1_000,
-            system_tokens=100, tools_tokens=200, memory_tokens=30,
-            skills_tokens=20, messages_tokens=50,
+            system_tokens=100,
+            tools_tokens=200,
+            memory_tokens=30,
+            skills_tokens=20,
+            messages_tokens=50,
         )
         self.assertEqual(snap.used_tokens, 400)
         self.assertEqual(snap.free_tokens, 600)
@@ -120,8 +123,7 @@ class SnapshotArithmetic(unittest.TestCase):
 
     def test_wire_shape_carries_ordered_segments_and_both_groups(self):
         d = ContextSnapshot(thread_id="t1", messages_tokens=10).as_dict()
-        self.assertEqual([s["key"] for s in d["segments"]],
-                         [k for k, _ in SEGMENT_LABELS])
+        self.assertEqual([s["key"] for s in d["segments"]], [k for k, _ in SEGMENT_LABELS])
         self.assertIn("input_tokens", d["call"])
         self.assertIn("calls", d["session"])
         self.assertEqual(d["thread_id"], "t1")
@@ -131,9 +133,12 @@ class SegmentAttribution(unittest.TestCase):
     def test_chars_sum_to_the_whole_prompt(self):
         text = (
             "BASE PROMPT\n\n"
-            + INDEX_BLOCK_HEADER + "- a: one\n- b: two\n"
-            + MEMORY_BLOCK_PREFIX + "\n  - [fact] x\n"
-            + SKILLS_BLOCK_PREFIX + "\n  - s: y"
+            + INDEX_BLOCK_HEADER
+            + "- a: one\n- b: two\n"
+            + MEMORY_BLOCK_PREFIX
+            + "\n  - [fact] x\n"
+            + SKILLS_BLOCK_PREFIX
+            + "\n  - s: y"
         )
         parts = split_system_chars(text)
         self.assertEqual(sum(parts.values()), len(text))
@@ -170,15 +175,16 @@ class ToolSchemaSizing(unittest.TestCase):
         # the "tool schemas" row exists to show.
         # The strong reference matters: the meter holds registries weakly, so a
         # local built inline would be collected before the first lookup.
-        self.registry = _FakeRegistry([
-            _FakeTool("tool_search", 100),
-            _FakeTool("tr_write_file", 900),
-            _FakeTool("ws_tavily_search", 700),
-        ])
+        self.registry = _FakeRegistry(
+            [
+                _FakeTool("tool_search", 100),
+                _FakeTool("tr_write_file", 900),
+                _FakeTool("ws_tavily_search", 700),
+            ]
+        )
         note_tool_registry("cli", self.registry)
         self.assertEqual(tool_schema_chars("cli", ("tool_search",)), 100)
-        self.assertEqual(
-            tool_schema_chars("cli", ("tool_search", "tr_write_file")), 1000)
+        self.assertEqual(tool_schema_chars("cli", ("tool_search", "tr_write_file")), 1000)
 
     def test_an_unknown_name_costs_nothing_rather_than_raising(self):
         self.registry = _FakeRegistry([])
@@ -307,8 +313,11 @@ class PolicyPublishing(unittest.TestCase):
                 SystemMessage(content="BASE PROMPT " + "p" * 400),
                 HumanMessage(content="hello " + "h" * 200),
                 AIMessage(content="hi"),
-                ToolMessage(content='{"offloaded": true, "id": "art_1"}',
-                            tool_call_id="c1", name="ws_tavily_search"),
+                ToolMessage(
+                    content='{"offloaded": true, "id": "art_1"}',
+                    tool_call_id="c1",
+                    name="ws_tavily_search",
+                ),
             ),
             thread_id="t1",
             usage=usage,
@@ -319,8 +328,7 @@ class PolicyPublishing(unittest.TestCase):
         run(self.policy.revise_model_call(model_call(tool_names=("tool_search",))))
         snap = self.seen[-1]
         self.assertEqual(snap.max_input_tokens, 1_000_000)
-        self.assertEqual(snap.compact_trigger_tokens,
-                         self.settings.compact_trigger_tokens)
+        self.assertEqual(snap.compact_trigger_tokens, self.settings.compact_trigger_tokens)
 
     def test_the_reviser_publishes_tool_schema_cost_and_the_count(self):
         run(self.policy.before_model(self._turn()))
@@ -347,8 +355,11 @@ class PolicyPublishing(unittest.TestCase):
         # If a SystemMessage also appears in state it is the same bytes the
         # framework moved into system_message — counting both would inflate
         # the window by the size of the prompt.
-        run(self.policy.before_model(Turn(
-            messages=(SystemMessage(content=SYSTEM_PROMPT),), thread_id="t1")))
+        run(
+            self.policy.before_model(
+                Turn(messages=(SystemMessage(content=SYSTEM_PROMPT),), thread_id="t1")
+            )
+        )
         run(self.policy.revise_model_call(model_call()))
         only_prompt = self.seen[-1]
         run(self.policy.before_model(Turn(messages=(), thread_id="t1")))
@@ -357,8 +368,11 @@ class PolicyPublishing(unittest.TestCase):
 
     def test_the_agent_memory_block_inside_the_prompt_is_attributed(self):
         run(self.policy.before_model(self._turn()))
-        run(self.policy.revise_model_call(model_call(
-            system_texts=(SYSTEM_PROMPT + "\n\n" + INDEX_BLOCK_HEADER + "x" * 900,))))
+        run(
+            self.policy.revise_model_call(
+                model_call(system_texts=(SYSTEM_PROMPT + "\n\n" + INDEX_BLOCK_HEADER + "x" * 900,))
+            )
+        )
         self.assertGreater(self.seen[-1].memory_tokens, 0)
 
     def test_offloaded_digests_are_counted_not_charged_as_prose(self):
@@ -381,10 +395,18 @@ class PolicyPublishing(unittest.TestCase):
         self.assertEqual(len(self.seen), before)
 
     def test_last_call_figures_are_the_provider_numbers_verbatim(self):
-        run(self.policy.after_model(self._turn(usage=Usage(
-            input_tokens=41_087, output_tokens=64,
-            cache_read_tokens=38_000, cache_creation_tokens=12,
-        ))))
+        run(
+            self.policy.after_model(
+                self._turn(
+                    usage=Usage(
+                        input_tokens=41_087,
+                        output_tokens=64,
+                        cache_read_tokens=38_000,
+                        cache_creation_tokens=12,
+                    )
+                )
+            )
+        )
         snap = self.seen[-1]
         self.assertEqual(snap.input_tokens, 41_087)
         self.assertEqual(snap.output_tokens, 64)
@@ -394,8 +416,13 @@ class PolicyPublishing(unittest.TestCase):
 
     def test_session_totals_accumulate_across_calls(self):
         for _ in range(3):
-            run(self.policy.after_model(self._turn(usage=Usage(
-                input_tokens=100, output_tokens=10, cache_read_tokens=50))))
+            run(
+                self.policy.after_model(
+                    self._turn(
+                        usage=Usage(input_tokens=100, output_tokens=10, cache_read_tokens=50)
+                    )
+                )
+            )
         snap = self.seen[-1]
         self.assertEqual(snap.calls, 3)
         self.assertEqual(snap.session_input_tokens, 300)
@@ -420,8 +447,7 @@ class PolicyPublishing(unittest.TestCase):
         run(self.policy.revise_model_call(model_call()))
         estimated = self.seen[-1].used_tokens
         # Provider says the same prompt was worth ~1.5x our estimate.
-        run(self.policy.after_model(self._turn(
-            usage=Usage(input_tokens=int(estimated * 1.5)))))
+        run(self.policy.after_model(self._turn(usage=Usage(input_tokens=int(estimated * 1.5)))))
         run(self.policy.before_model(self._turn()))
         run(self.policy.revise_model_call(model_call()))
         self.assertGreater(self.seen[-1].used_tokens, estimated)
@@ -444,8 +470,11 @@ class PolicyPublishing(unittest.TestCase):
         policy = ContextMeterPolicy(
             settings=self.settings, role="cli", model_name="claude-sonnet-4-5"
         )
-        run(policy.after_model(Turn(
-            thread_id="p", usage=Usage(input_tokens=1_000_000, output_tokens=0))))
+        run(
+            policy.after_model(
+                Turn(thread_id="p", usage=Usage(input_tokens=1_000_000, output_tokens=0))
+            )
+        )
         snap = bus().latest("p")
         self.assertTrue(snap.priced)
         self.assertGreater(snap.est_cost_usd, 0.0)
@@ -466,8 +495,7 @@ class PolicyPublishing(unittest.TestCase):
 
     def test_hooks_return_none_so_nothing_is_injected(self):
         self.assertIsNone(run(self.policy.before_model(self._turn())))
-        self.assertIsNone(run(self.policy.after_model(
-            self._turn(usage=Usage(input_tokens=1)))))
+        self.assertIsNone(run(self.policy.after_model(self._turn(usage=Usage(input_tokens=1)))))
 
 
 class SubagentsReportSpendButNotTheWindow(unittest.TestCase):
@@ -484,10 +512,11 @@ class SubagentsReportSpendButNotTheWindow(unittest.TestCase):
         bus().clear()
         settings = ContextSettings(max_input_tokens=500_000)
         self.master = ContextMeterPolicy(
-            settings=settings, role="cli", model_name="claude-sonnet-4-5")
+            settings=settings, role="cli", model_name="claude-sonnet-4-5"
+        )
         self.sub = ContextMeterPolicy(
-            settings=settings, role="general-purpose",
-            model_name="claude-haiku-4-5", window=False)
+            settings=settings, role="general-purpose", model_name="claude-haiku-4-5", window=False
+        )
 
     def tearDown(self):
         bus().clear()
@@ -495,26 +524,38 @@ class SubagentsReportSpendButNotTheWindow(unittest.TestCase):
         reset_sizing_caches()
 
     def _master_measure(self):
-        run(self.master.before_model(Turn(
-            messages=(SystemMessage(content="base " + "b" * 2_000),
-                      HumanMessage(content="q" * 800)),
-            thread_id="t1")))
+        run(
+            self.master.before_model(
+                Turn(
+                    messages=(
+                        SystemMessage(content="base " + "b" * 2_000),
+                        HumanMessage(content="q" * 800),
+                    ),
+                    thread_id="t1",
+                )
+            )
+        )
         run(self.master.revise_model_call(model_call()))
 
     def test_a_subagent_does_not_redraw_the_segments(self):
         self._master_measure()
         master_rows = bus().latest("t1").segments()
-        run(self.sub.before_model(Turn(
-            messages=(SystemMessage(content="tiny"),), thread_id="t1")))
+        run(self.sub.before_model(Turn(messages=(SystemMessage(content="tiny"),), thread_id="t1")))
         run(self.sub.revise_model_call(model_call()))
         self.assertEqual(bus().latest("t1").segments(), master_rows)
 
     def test_a_subagents_tokens_add_to_the_conversation_total(self):
         self._master_measure()
-        run(self.master.after_model(Turn(
-            thread_id="t1", usage=Usage(input_tokens=1_000, output_tokens=100))))
-        run(self.sub.after_model(Turn(
-            thread_id="t1", usage=Usage(input_tokens=400, output_tokens=40))))
+        run(
+            self.master.after_model(
+                Turn(thread_id="t1", usage=Usage(input_tokens=1_000, output_tokens=100))
+            )
+        )
+        run(
+            self.sub.after_model(
+                Turn(thread_id="t1", usage=Usage(input_tokens=400, output_tokens=40))
+            )
+        )
         snap = bus().latest("t1")
         self.assertEqual(snap.calls, 2)
         self.assertEqual(snap.session_input_tokens, 1_400)
@@ -523,14 +564,12 @@ class SubagentsReportSpendButNotTheWindow(unittest.TestCase):
     def test_a_subagent_call_keeps_the_window_rows_it_did_not_measure(self):
         self._master_measure()
         before = bus().latest("t1").used_tokens
-        run(self.sub.after_model(Turn(
-            thread_id="t1", usage=Usage(input_tokens=400))))
+        run(self.sub.after_model(Turn(thread_id="t1", usage=Usage(input_tokens=400))))
         self.assertEqual(bus().latest("t1").used_tokens, before)
 
     def test_a_subagent_does_not_relabel_the_panel(self):
         self._master_measure()
-        run(self.sub.after_model(Turn(
-            thread_id="t1", usage=Usage(input_tokens=400))))
+        run(self.sub.after_model(Turn(thread_id="t1", usage=Usage(input_tokens=400))))
         snap = bus().latest("t1")
         self.assertEqual(snap.role, "cli")
         self.assertEqual(snap.model, "claude-sonnet-4-5")
@@ -539,8 +578,7 @@ class SubagentsReportSpendButNotTheWindow(unittest.TestCase):
         # It has no pending estimate of its own, and its prompt is not the one
         # the master measured — dividing by that would corrupt the scale.
         self._master_measure()
-        run(self.sub.after_model(Turn(
-            thread_id="t1", usage=Usage(input_tokens=9_999_999))))
+        run(self.sub.after_model(Turn(thread_id="t1", usage=Usage(input_tokens=9_999_999))))
         self.assertFalse(bus().latest("t1").calibrated)
 
 
@@ -568,10 +606,8 @@ class InjectedBlocksAreCounted(unittest.TestCase):
 
         ri._last_blocks.clear()
         ri._last_blocks[SKILLS_BLOCK_PREFIX] = 4_000
-        policy = ContextMeterPolicy(
-            settings=ContextSettings(max_input_tokens=1_000), role="cli")
-        run(policy.before_model(Turn(
-            messages=(SystemMessage(content="base"),), thread_id="t")))
+        policy = ContextMeterPolicy(settings=ContextSettings(max_input_tokens=1_000), role="cli")
+        run(policy.before_model(Turn(messages=(SystemMessage(content="base"),), thread_id="t")))
         run(policy.revise_model_call(model_call()))
         self.assertGreater(self.seen[-1].skills_tokens, 0)
         ri._last_blocks.clear()
@@ -581,10 +617,8 @@ class InjectedBlocksAreCounted(unittest.TestCase):
 
         ri._last_blocks.clear()
         ri._last_blocks[SKILLS_BLOCK_PREFIX] = 0
-        policy = ContextMeterPolicy(
-            settings=ContextSettings(max_input_tokens=1_000), role="cli")
-        run(policy.before_model(Turn(
-            messages=(SystemMessage(content="base"),), thread_id="t")))
+        policy = ContextMeterPolicy(settings=ContextSettings(max_input_tokens=1_000), role="cli")
+        run(policy.before_model(Turn(messages=(SystemMessage(content="base"),), thread_id="t")))
         run(policy.revise_model_call(model_call()))
         self.assertEqual(self.seen[-1].skills_tokens, 0)
         ri._last_blocks.clear()
@@ -644,10 +678,14 @@ class TheHeadlineFollowsTheProvider(unittest.TestCase):
         run(self.policy.before_model(self._turn(n_messages)))
         run(self.policy.revise_model_call(model_call(tool_names=("tool_search",))))
         pre = self.seen[-1]
-        run(self.policy.after_model(Turn(
-            thread_id="t1",
-            usage=Usage(input_tokens=reported_in, output_tokens=reported_out),
-        )))
+        run(
+            self.policy.after_model(
+                Turn(
+                    thread_id="t1",
+                    usage=Usage(input_tokens=reported_in, output_tokens=reported_out),
+                )
+            )
+        )
         return pre, self.seen[-1]
 
     #: The eight calls of the real session, with the provider's numbers.
@@ -673,7 +711,8 @@ class TheHeadlineFollowsTheProvider(unittest.TestCase):
         _pre, post = self._sequence()
         for earlier, later in zip(post, post[1:]):
             self.assertLessEqual(
-                earlier, later,
+                earlier,
+                later,
                 f"a measured window shrank from {earlier} to {later} with "
                 f"nothing removed — sequence {post}",
             )
@@ -701,7 +740,8 @@ class TheHeadlineFollowsTheProvider(unittest.TestCase):
                 continue
             drift = (estimate - measured) / max(1, estimate)
             self.assertLess(
-                drift, 0.05,
+                drift,
+                0.05,
                 f"a measurement cut the headline by {drift:.1%} "
                 f"({estimate} -> {measured}); the growth estimate is no "
                 f"longer tracking the anchor",
@@ -758,8 +798,7 @@ class TheHeadlineFollowsTheProvider(unittest.TestCase):
         other = ContextMeterPolicy(
             settings=self.settings, role="cli", model_name="gemini-3.5-flash"
         )
-        run(other.before_model(Turn(
-            messages=(HumanMessage(content="hi"),), thread_id="t2")))
+        run(other.before_model(Turn(messages=(HumanMessage(content="hi"),), thread_id="t2")))
         run(other.revise_model_call(model_call(tool_names=("tool_search",))))
         fresh = bus().latest("t2")
         self.assertTrue(
@@ -774,8 +813,7 @@ class TheHeadlineFollowsTheProvider(unittest.TestCase):
         other = ContextMeterPolicy(
             settings=self.settings, role="cli", model_name="claude-sonnet-4-5"
         )
-        run(other.before_model(Turn(
-            messages=(HumanMessage(content="hi"),), thread_id="t3")))
+        run(other.before_model(Turn(messages=(HumanMessage(content="hi"),), thread_id="t3")))
         run(other.revise_model_call(model_call(tool_names=("tool_search",))))
         self.assertFalse(bus().latest("t3").calibrated)
 

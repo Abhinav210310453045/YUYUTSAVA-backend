@@ -57,8 +57,15 @@ logger = logging.getLogger("yuyutsava.storage.feedback_store_unified")
 #: Fixed read set. Access below is by name, so this drives *which* columns are
 #: fetched, not their positions.
 _COLS: tuple[str, ...] = (
-    "feedback_id", "thread_id", "session_id", "workspace", "message_ref",
-    "rating", "note", "user_text", "assistant_text",
+    "feedback_id",
+    "thread_id",
+    "session_id",
+    "workspace",
+    "message_ref",
+    "rating",
+    "note",
+    "user_text",
+    "assistant_text",
 )
 
 
@@ -94,9 +101,13 @@ class FeedbackSchema(BaseSqliteStore):
 def _to_rec(row: Any) -> MessageFeedback:
     """Map a row by name — see the module docstring on positional access."""
     return MessageFeedback(
-        feedback_id=row["feedback_id"], thread_id=row["thread_id"],
-        session_id=row["session_id"], workspace=row["workspace"],
-        message_ref=row["message_ref"], rating=row["rating"], note=row["note"],
+        feedback_id=row["feedback_id"],
+        thread_id=row["thread_id"],
+        session_id=row["session_id"],
+        workspace=row["workspace"],
+        message_ref=row["message_ref"],
+        rating=row["rating"],
+        note=row["note"],
         user_text=row["user_text"] or "",
         assistant_text=row["assistant_text"] or "",
         created_ts=float(row["created_ts"]),
@@ -211,9 +222,7 @@ def sqlite_feedback_store(db_path: Path | None = None) -> UnifiedFeedbackStore:
     from yuyutsava.storage.dialect import SqliteDialect
     from yuyutsava.storage.paths import state_db_path
 
-    return UnifiedFeedbackStore(
-        SqliteDialect(FeedbackSchema(db_path or state_db_path()))
-    )
+    return UnifiedFeedbackStore(SqliteDialect(FeedbackSchema(db_path or state_db_path())))
 
 
 def pg_feedback_store(pool) -> UnifiedFeedbackStore:

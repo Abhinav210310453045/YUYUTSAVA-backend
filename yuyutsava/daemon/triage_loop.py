@@ -24,7 +24,10 @@ from ulid import ULID
 
 from yuyutsava.agents.triage.agent import TriageAgent, TriageDecision
 from yuyutsava.daemon.channels import (
-    ChannelEvent, ChannelRouter, ProposalDecision, TimelinePayload,
+    ChannelEvent,
+    ChannelRouter,
+    ProposalDecision,
+    TimelinePayload,
 )
 from yuyutsava.daemon.consent import ConsentEvaluator
 from yuyutsava.events.bus import EventBus, EventEnvelope
@@ -48,7 +51,7 @@ class OrchestratorTask:
     event_id: str
     topic: str
     summary: str
-    instruction: str        # what the orchestrator/subagent should do
+    instruction: str  # what the orchestrator/subagent should do
     subagent_hint: str
     urgency: int
     # TaskRegistry join key (``tsk_<ULID>``). Set by TaskSubmissionService
@@ -224,17 +227,20 @@ class TriageLoop:
                 rule = (await self._consent.evaluate(ev)).rule
                 if rule and rule.decision == "auto_skip":
                     await self._store.put_decision(
-                        proposal_id=None, event_id=ev.event_id,
+                        proposal_id=None,
+                        event_id=ev.event_id,
                         outcome="skipped_by_rule",
                         action_summary=f"rule:{rule.rule_id}",
                     )
-                    await self._channels.post_event(ChannelEvent(
-                        payload=TimelinePayload(
-                            ts=ev.ts,
-                            line=f"auto-skipped: {ev.summary}",
-                            cls="event-decision-skipped",
-                        ),
-                    ))
+                    await self._channels.post_event(
+                        ChannelEvent(
+                            payload=TimelinePayload(
+                                ts=ev.ts,
+                                line=f"auto-skipped: {ev.summary}",
+                                cls="event-decision-skipped",
+                            ),
+                        )
+                    )
                     return
 
                 if rule and rule.decision == "auto_approve":
@@ -257,8 +263,7 @@ class TriageLoop:
 
                 # 2. LLM triage — include skills index if available.
                 skills_index = (
-                    self._skill_registry.index_block(agent="triage")
-                    if self._skill_registry else ""
+                    self._skill_registry.index_block(agent="triage") if self._skill_registry else ""
                 )
                 decision = await self._triage.classify(
                     ev, self._capabilities(), skills_index=skills_index
@@ -278,28 +283,36 @@ class TriageLoop:
                     # explanation anywhere. Found by submitting one and watching
                     # nothing happen.
                     await self._store.put_decision(
-                        proposal_id=None, event_id=ev.event_id,
-                        outcome="dropped", action_summary=decision.reason,
+                        proposal_id=None,
+                        event_id=ev.event_id,
+                        outcome="dropped",
+                        action_summary=decision.reason,
                     )
-                    await self._channels.post_event(ChannelEvent(
-                        payload=TimelinePayload(
-                            ts=ev.ts,
-                            line=f"dropped: {ev.summary} — {decision.reason}",
-                            cls="event-decision-skipped",
-                        ),
-                    ))
+                    await self._channels.post_event(
+                        ChannelEvent(
+                            payload=TimelinePayload(
+                                ts=ev.ts,
+                                line=f"dropped: {ev.summary} — {decision.reason}",
+                                cls="event-decision-skipped",
+                            ),
+                        )
+                    )
                     return
                 if decision.action == "log":
                     await self._store.put_decision(
-                        proposal_id=None, event_id=ev.event_id,
-                        outcome="logged", action_summary=decision.reason,
+                        proposal_id=None,
+                        event_id=ev.event_id,
+                        outcome="logged",
+                        action_summary=decision.reason,
                     )
-                    await self._channels.post_event(ChannelEvent(
-                        payload=TimelinePayload(
-                            ts=ev.ts,
-                            line=f"logged: {ev.summary} — {decision.reason}",
-                        ),
-                    ))
+                    await self._channels.post_event(
+                        ChannelEvent(
+                            payload=TimelinePayload(
+                                ts=ev.ts,
+                                line=f"logged: {ev.summary} — {decision.reason}",
+                            ),
+                        )
+                    )
                     return
 
                 # 3. action == "propose": Tier-1 consent.
@@ -316,7 +329,10 @@ class TriageLoop:
 
                 user_decision: ProposalDecision = await self._channels.post_proposal(proposal)
                 await self._handle_user_decision(
-                    ev, proposal, user_decision, complexity=decision.complexity,
+                    ev,
+                    proposal,
+                    user_decision,
+                    complexity=decision.complexity,
                 )
             except Exception:
                 logger.exception("triage handler crashed for %s", ev.event_id)
@@ -337,34 +353,48 @@ class TriageLoop:
         approved = dataclasses.replace(proposal, status="approved")
         await self._store.put_proposal(approved)
         await self._store.put_decision(
-            proposal_id=approved.proposal_id, event_id=ev.event_id,
-            outcome="auto_approved", action_summary=f"rule:{rule_id}",
+            proposal_id=approved.proposal_id,
+            event_id=ev.event_id,
+            outcome="auto_approved",
+            action_summary=f"rule:{rule_id}",
         )
-        await self._channels.post_event(ChannelEvent(
-            payload=TimelinePayload(
-                ts=ev.ts,
-                line=f"auto-approved: {approved.proposed}",
-                cls="event-decision-approved",
-            ),
-        ))
-        await self._task_queue.put(OrchestratorTask(
-            proposal_id=approved.proposal_id, event_id=ev.event_id,
-            topic=ev.topic, summary=ev.summary,
-            instruction=approved.proposed, subagent_hint=approved.subagent,
-            urgency=approved.urgency,
-            task_id=ev.hints.get("task_id", ""),
-            complexity=decision.complexity,
-        ))
+        await self._channels.post_event(
+            ChannelEvent(
+                payload=TimelinePayload(
+                    ts=ev.ts,
+                    line=f"auto-approved: {approved.proposed}",
+                    cls="event-decision-approved",
+                ),
+            )
+        )
+        await self._task_queue.put(
+            OrchestratorTask(
+                proposal_id=approved.proposal_id,
+                event_id=ev.event_id,
+                topic=ev.topic,
+                summary=ev.summary,
+                instruction=approved.proposed,
+                subagent_hint=approved.subagent,
+                urgency=approved.urgency,
+                task_id=ev.hints.get("task_id", ""),
+                complexity=decision.complexity,
+            )
+        )
 
     async def _handle_user_decision(
-        self, ev: EventEnvelope, proposal: Proposal, ud: ProposalDecision,
-        *, complexity: int = 3,
+        self,
+        ev: EventEnvelope,
+        proposal: Proposal,
+        ud: ProposalDecision,
+        *,
+        complexity: int = 3,
     ) -> None:
         outcome = ud.decision
 
         if ud.decision in ("skip", "skip_remember"):
             await self._store.put_decision(
-                proposal_id=proposal.proposal_id, event_id=ev.event_id,
+                proposal_id=proposal.proposal_id,
+                event_id=ev.event_id,
                 outcome="skipped",
             )
             if ud.decision == "skip_remember":
@@ -373,7 +403,8 @@ class TriageLoop:
 
         if ud.decision == "expired":
             await self._store.put_decision(
-                proposal_id=proposal.proposal_id, event_id=ev.event_id,
+                proposal_id=proposal.proposal_id,
+                event_id=ev.event_id,
                 outcome="expired",
             )
             return
@@ -381,26 +412,37 @@ class TriageLoop:
         # approve / approve_remember / modify → enqueue an OrchestratorTask
         instruction = (
             ud.edited_instruction.strip()
-            if ud.decision == "modify" and ud.edited_instruction else proposal.proposed
+            if ud.decision == "modify" and ud.edited_instruction
+            else proposal.proposed
         )
         if ud.decision == "approve_remember":
             await self._add_consent_rule_for(ev, decision_kind="auto_approve")
 
         await self._store.put_decision(
-            proposal_id=proposal.proposal_id, event_id=ev.event_id,
-            outcome=outcome, action_summary=instruction[:200],
+            proposal_id=proposal.proposal_id,
+            event_id=ev.event_id,
+            outcome=outcome,
+            action_summary=instruction[:200],
         )
-        await self._task_queue.put(OrchestratorTask(
-            proposal_id=proposal.proposal_id, event_id=ev.event_id,
-            topic=ev.topic, summary=ev.summary,
-            instruction=instruction, subagent_hint=proposal.subagent,
-            urgency=proposal.urgency,
-            task_id=ev.hints.get("task_id", ""),
-            complexity=complexity,
-        ))
+        await self._task_queue.put(
+            OrchestratorTask(
+                proposal_id=proposal.proposal_id,
+                event_id=ev.event_id,
+                topic=ev.topic,
+                summary=ev.summary,
+                instruction=instruction,
+                subagent_hint=proposal.subagent,
+                urgency=proposal.urgency,
+                task_id=ev.hints.get("task_id", ""),
+                complexity=complexity,
+            )
+        )
 
     async def _add_consent_rule_for(
-        self, ev: EventEnvelope, *, decision_kind: str,
+        self,
+        ev: EventEnvelope,
+        *,
+        decision_kind: str,
     ) -> None:
         # Scope by directory + ext so "remember for this PDF" means files in
         # the same directory, not every PDF on the machine.

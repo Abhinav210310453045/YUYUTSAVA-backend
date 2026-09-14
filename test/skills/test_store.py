@@ -19,8 +19,11 @@ from yuyutsava.skills.registry import SkillMeta
 
 def _meta(name: str, desc: str, *, scope: str = "personal", agent: str | None = None) -> SkillMeta:
     return SkillMeta(
-        name=name, description=desc, path=Path(f"/tmp/{name}/SKILL.md"),
-        scope=scope, agent=agent,
+        name=name,
+        description=desc,
+        path=Path(f"/tmp/{name}/SKILL.md"),
+        scope=scope,
+        agent=agent,
     )
 
 
@@ -34,8 +37,10 @@ class SqliteSkillStoreTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_upsert_and_keyword_search(self) -> None:
         await self.store.upsert(
-            _meta("pdf-manipulation-overview",
-                  "Read, modify, and save PDF files using Python libraries"),
+            _meta(
+                "pdf-manipulation-overview",
+                "Read, modify, and save PDF files using Python libraries",
+            ),
             body="full body",
         )
         await self.store.upsert(
@@ -59,7 +64,8 @@ class SqliteSkillStoreTests(unittest.IsolatedAsyncioTestCase):
     async def test_agent_filter(self) -> None:
         await self.store.upsert(_meta("universal", "shared apricot skill", agent=None), body="b")
         await self.store.upsert(
-            _meta("triage-only", "apricot triage skill", agent="triage"), body="b")
+            _meta("triage-only", "apricot triage skill", agent="triage"), body="b"
+        )
         # agent=orchestrator sees universal (agent NULL) but not triage's skill.
         hits = await self.store.search("apricot", agent="orchestrator")
         names = {h.payload["name"] for h in hits}

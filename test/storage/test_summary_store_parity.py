@@ -101,7 +101,8 @@ class _SummaryContract:
         errors = [r for r in results if isinstance(r, BaseException)]
         self.assertEqual(errors, [], f"concurrent puts raised: {errors}")
         self.assertEqual(
-            sorted(results), [1, 2, 3, 4, 5],
+            sorted(results),
+            [1, 2, 3, 4, 5],
             f"concurrent puts produced duplicate/skipped versions: {sorted(results)}",
         )
 

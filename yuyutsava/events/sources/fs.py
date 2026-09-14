@@ -28,9 +28,16 @@ from pathlib import Path
 from typing import Any, Callable
 
 from watchdog.events import (
-    DirCreatedEvent, DirDeletedEvent, DirModifiedEvent, DirMovedEvent,
-    FileCreatedEvent, FileDeletedEvent, FileModifiedEvent, FileMovedEvent,
-    FileSystemEvent, FileSystemEventHandler,
+    DirCreatedEvent,
+    DirDeletedEvent,
+    DirModifiedEvent,
+    DirMovedEvent,
+    FileCreatedEvent,
+    FileDeletedEvent,
+    FileModifiedEvent,
+    FileMovedEvent,
+    FileSystemEvent,
+    FileSystemEventHandler,
 )
 from watchdog.observers import Observer
 
@@ -47,10 +54,15 @@ _DEFAULT_IGNORE = ("*.tmp", ".DS_Store", "*.crdownload", "*.part", "*~")
 # contains the daemon workspace (e.g. ~/Desktop when the workspace lives at
 # ~/Desktop/YUYUTSAVA-backend) feeds the daemon's own writes back in as fs
 # events, creating an event → triage → write feedback loop.
-_IGNORED_DIR_COMPONENTS = frozenset({
-    ".git", ".langgraph_api", ".yuyutsava",
-    "large_tool_results", "conversation_history",
-})
+_IGNORED_DIR_COMPONENTS = frozenset(
+    {
+        ".git",
+        ".langgraph_api",
+        ".yuyutsava",
+        "large_tool_results",
+        "conversation_history",
+    }
+)
 
 
 class _CoalescingHandler(FileSystemEventHandler):
@@ -222,9 +234,7 @@ class FsSource(EventSource):
                     name="fs-flush",
                 )
 
-    async def _emit_one(
-        self, path: Path, info: dict[str, Any], ctx: SourceContext
-    ) -> None:
+    async def _emit_one(self, path: Path, info: dict[str, Any], ctx: SourceContext) -> None:
         # If the path doesn't exist now (was a create-then-delete), skip.
         kind = info["last_kind"]
         if kind != "deleted" and not path.exists():

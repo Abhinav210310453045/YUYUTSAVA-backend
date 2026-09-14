@@ -82,10 +82,14 @@ class _QueueHandler(logging.Handler):
             if len(self._sink) >= MAX_QUEUE:
                 self.dropped += 1
                 return
-            self._sink.append((
-                record.levelname, record.name, message,
-                record.created,
-            ))
+            self._sink.append(
+                (
+                    record.levelname,
+                    record.name,
+                    message,
+                    record.created,
+                )
+            )
         except Exception:  # noqa: BLE001 — logging must never raise at a caller
             self.dropped += 1
 
@@ -139,19 +143,26 @@ class LogBridge:
                     batch.append(self._queue.popleft())
                 dropped, self._handler.dropped = self._handler.dropped, 0
                 if dropped:
-                    batch.append((
-                        "WARNING", "yuyutsava.daemon.log_bridge",
-                        f"{dropped} log line(s) dropped — the UI could not keep up",
-                        time.time(),
-                    ))
+                    batch.append(
+                        (
+                            "WARNING",
+                            "yuyutsava.daemon.log_bridge",
+                            f"{dropped} log line(s) dropped — the UI could not keep up",
+                            time.time(),
+                        )
+                    )
                 for level, name, message, created in batch:
                     with contextlib.suppress(Exception):
-                        await self._hub.broadcast(StreamEventItem(
-                            payload=AppLogPayload(
-                                level=level, logger=name, message=message,
-                                ts=created,
-                            ),
-                        ))
+                        await self._hub.broadcast(
+                            StreamEventItem(
+                                payload=AppLogPayload(
+                                    level=level,
+                                    logger=name,
+                                    message=message,
+                                    ts=created,
+                                ),
+                            )
+                        )
             except asyncio.CancelledError:
                 raise
             except Exception:  # noqa: BLE001 — the bridge outlives its own bugs

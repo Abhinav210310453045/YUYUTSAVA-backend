@@ -36,8 +36,13 @@ from yuyutsava.policy.types import Denied, Raw, ToolCall
 class _Request:
     """The framework's ``ToolCallRequest`` shape, as the adapter reads it."""
 
-    def __init__(self, name: str = "execute", args: dict | None = None,
-                 call_id: str = "c1", state: dict | None = None) -> None:
+    def __init__(
+        self,
+        name: str = "execute",
+        args: dict | None = None,
+        call_id: str = "c1",
+        state: dict | None = None,
+    ) -> None:
         self.tool_call = {"name": name, "args": args or {}, "id": call_id}
         self.state = state or {}
         self.runtime = None
@@ -61,8 +66,9 @@ class _Recorder(Policy):
         return result
 
 
-async def _run(adapter: LangChainPolicyAdapter, request: Any = None,
-               result: Any = "TOOL-RAN") -> Any:
+async def _run(
+    adapter: LangChainPolicyAdapter, request: Any = None, result: Any = "TOOL-RAN"
+) -> Any:
     ran: list[bool] = []
 
     async def handler(_req: Any) -> Any:
@@ -77,7 +83,8 @@ class Ordering(unittest.IsolatedAsyncioTestCase):
     async def test_before_hooks_run_in_stack_order(self) -> None:
         log: list[str] = []
         adapter = LangChainPolicyAdapter(
-            [_Recorder("a", log), _Recorder("b", log), _Recorder("c", log)])
+            [_Recorder("a", log), _Recorder("b", log), _Recorder("c", log)]
+        )
         await _run(adapter)
         self.assertEqual(log[:3], ["before:a", "before:b", "before:c"])
 
@@ -85,16 +92,19 @@ class Ordering(unittest.IsolatedAsyncioTestCase):
         """Reversed, because the first policy is the outermost wrapper."""
         log: list[str] = []
         adapter = LangChainPolicyAdapter(
-            [_Recorder("a", log), _Recorder("b", log), _Recorder("c", log)])
+            [_Recorder("a", log), _Recorder("b", log), _Recorder("c", log)]
+        )
         await _run(adapter)
         self.assertEqual(
-            log[3:], ["after:c", "after:b", "after:a"],
+            log[3:],
+            ["after:c", "after:b", "after:a"],
             "after-hooks are not reversed; a policy that wrapped another would "
             "start seeing its unmodified result",
         )
 
     async def test_a_result_rewrite_is_visible_to_the_policy_outside_it(self) -> None:
         """The offload case, in miniature."""
+
         class Shrink(Policy):
             async def after_tool(self, call: ToolCall, result: Any) -> Any:
                 return "SHRUNK"
@@ -128,6 +138,7 @@ class Refusal(unittest.IsolatedAsyncioTestCase):
 
     async def test_the_refusal_is_addressed_to_the_call(self) -> None:
         """The model matches a result to its request by ``tool_call_id``."""
+
         class No(Policy):
             async def before_tool(self, call: ToolCall):
                 return Denied("nope")
@@ -147,12 +158,12 @@ class Refusal(unittest.IsolatedAsyncioTestCase):
                 log.append("before:no")
                 return Denied("nope")
 
-        adapter = LangChainPolicyAdapter(
-            [_Recorder("a", log), No(), _Recorder("c", log)])
+        adapter = LangChainPolicyAdapter([_Recorder("a", log), No(), _Recorder("c", log)])
         _, ran = await _run(adapter)
         self.assertFalse(ran)
         self.assertEqual(
-            log, ["before:a", "before:no"],
+            log,
+            ["before:a", "before:no"],
             "a policy after the refusal still ran, or an after-hook fired with "
             "no result to rewrite",
         )
@@ -182,6 +193,7 @@ class EscapeHatch(unittest.IsolatedAsyncioTestCase):
 
     async def test_an_unknown_decision_type_is_loud(self) -> None:
         """Silently ignoring it would let a policy think it refused a call."""
+
         class Confused(Policy):
             async def before_tool(self, call: ToolCall):
                 return "no"  # type: ignore[return-value]
@@ -201,9 +213,10 @@ class TheBoundary(unittest.IsolatedAsyncioTestCase):
                 seen.append(call)
                 return None
 
-        await _run(LangChainPolicyAdapter([Peek()]), _Request(
-            name="execute", args={"command": "ls"}, call_id="c9",
-            state={"messages": []}))
+        await _run(
+            LangChainPolicyAdapter([Peek()]),
+            _Request(name="execute", args={"command": "ls"}, call_id="c9", state={"messages": []}),
+        )
         (call,) = seen
         self.assertIsInstance(call, ToolCall)
         self.assertEqual(call.name, "execute")
@@ -236,8 +249,7 @@ class TheBoundary(unittest.IsolatedAsyncioTestCase):
                 seen.append(call)
                 return None
 
-        await _run(LangChainPolicyAdapter([Peek()]),
-                   _Request(args=["not", "a", "mapping"]))  # type: ignore[arg-type]
+        await _run(LangChainPolicyAdapter([Peek()]), _Request(args=["not", "a", "mapping"]))  # type: ignore[arg-type]
         self.assertEqual(dict(seen[0].args), {})
 
     async def test_the_ask_port_is_handed_to_the_policy(self) -> None:
@@ -323,7 +335,8 @@ class Identity(unittest.TestCase):
                     if isinstance(base, ast.Name) and base.id == "AgentMiddleware":
                         offenders.append(f"{path.name}:{node.name}")
         self.assertEqual(
-            offenders, ["adapter.py:LangChainPolicyAdapter"],
+            offenders,
+            ["adapter.py:LangChainPolicyAdapter"],
             f"the policy package must contain exactly one AgentMiddleware "
             f"subclass; found {offenders}",
         )
@@ -374,11 +387,13 @@ class TheSyncPathIsLoud(unittest.TestCase):
             for path in root.rglob("*.py")
             # This file is excluded because it *contains* the pattern above;
             # without that it reports itself and the check is permanently red.
-            if "__pycache__" not in path.parts and path.resolve() != here
+            if "__pycache__" not in path.parts
+            and path.resolve() != here
             and pattern.search(path.read_text(encoding="utf-8"))
         ]
         self.assertEqual(
-            sorted(offenders), [],
+            sorted(offenders),
+            [],
             f"a graph is driven synchronously in {sorted(offenders)}; the "
             f"adapter raises there. Drive it with ainvoke()/astream(), or give "
             f"the adapter a sync bridge before shipping that.",

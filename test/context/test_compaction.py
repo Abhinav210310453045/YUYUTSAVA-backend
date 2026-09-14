@@ -74,15 +74,13 @@ def _turn(i: int, chars: int = 400) -> list:
 def _assert_tool_pairs_intact(testcase: unittest.TestCase, messages: list) -> None:
     """Every ToolMessage in the rewritten state must have its AIMessage."""
     ai_call_ids = {
-        tc["id"]
-        for m in messages
-        if isinstance(m, AIMessage)
-        for tc in (m.tool_calls or [])
+        tc["id"] for m in messages if isinstance(m, AIMessage) for tc in (m.tool_calls or [])
     }
     for m in messages:
         if isinstance(m, ToolMessage):
             testcase.assertIn(
-                m.tool_call_id, ai_call_ids,
+                m.tool_call_id,
+                ai_call_ids,
                 f"orphaned ToolMessage {m.tool_call_id} after compaction",
             )
 
@@ -114,7 +112,8 @@ class CompactionTriggerTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(rebuilt[0], TASK)
         # A summary message exists and carries the structured sections.
         summaries = [
-            m for m in rebuilt
+            m
+            for m in rebuilt
             if isinstance(m, HumanMessage) and "## SESSION INTENT" in str(m.content)
         ]
         self.assertEqual(len(summaries), 1)
@@ -128,13 +127,15 @@ class CompactionTriggerTests(unittest.IsolatedAsyncioTestCase):
         for i in range(4):
             messages.extend(_turn(i))
         # Parallel tool-call turn positioned so a naive cut lands inside it.
-        messages.append(AIMessage(
-            content="",
-            tool_calls=[
-                {"name": "ws_a", "args": {}, "id": "par-1"},
-                {"name": "ws_b", "args": {}, "id": "par-2"},
-            ],
-        ))
+        messages.append(
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {"name": "ws_a", "args": {}, "id": "par-1"},
+                    {"name": "ws_b", "args": {}, "id": "par-2"},
+                ],
+            )
+        )
         messages.append(ToolMessage(content="a" * 300, tool_call_id="par-1", name="ws_a"))
         messages.append(ToolMessage(content="b" * 300, tool_call_id="par-2", name="ws_b"))
         messages.append(AIMessage(content="done with parallel work"))
@@ -161,9 +162,7 @@ class CompactionPersistenceTests(unittest.IsolatedAsyncioTestCase):
         for i in range(8):
             messages.extend(_turn(i))
 
-        with patch(
-            "yuyutsava.context.compaction._current_thread_id", return_value="t-persist"
-        ):
+        with patch("yuyutsava.context.compaction._current_thread_id", return_value="t-persist"):
             update = await mw.abefore_model({"messages": messages}, None)
 
         self.assertIsNotNone(update)
@@ -171,8 +170,11 @@ class CompactionPersistenceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(row)
         self.assertEqual(row.version, 1)
         for section in (
-            "## SESSION INTENT", "## DECISIONS MADE", "## WORK COMPLETED",
-            "## CURRENT STATE / NEXT STEP", "## OPEN QUESTIONS",
+            "## SESSION INTENT",
+            "## DECISIONS MADE",
+            "## WORK COMPLETED",
+            "## CURRENT STATE / NEXT STEP",
+            "## OPEN QUESTIONS",
         ):
             self.assertIn(section, row.summary)
 
@@ -192,9 +194,7 @@ class CompactionPersistenceTests(unittest.IsolatedAsyncioTestCase):
         messages = [TASK]
         for i in range(8):
             messages.extend(_turn(i))
-        with patch(
-            "yuyutsava.context.compaction._current_thread_id", return_value="t-mem"
-        ):
+        with patch("yuyutsava.context.compaction._current_thread_id", return_value="t-mem"):
             await mw.abefore_model({"messages": messages}, None)
 
         self.assertEqual(len(captured), 1)
@@ -206,9 +206,7 @@ class CompactionPersistenceTests(unittest.IsolatedAsyncioTestCase):
         await self.summary_store.put("t-resume", FAKE_SUMMARY + "v2 marker")
         mw = _mw(ContextSettings(), summary_store=self.summary_store)
 
-        with patch(
-            "yuyutsava.context.compaction._current_thread_id", return_value="t-resume"
-        ):
+        with patch("yuyutsava.context.compaction._current_thread_id", return_value="t-resume"):
             update = await mw.abefore_agent({"messages": [TASK]}, None)
 
         self.assertIsNotNone(update)
@@ -218,15 +216,11 @@ class CompactionPersistenceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_resume_noop_with_history_or_no_summary(self) -> None:
         mw = _mw(ContextSettings(), summary_store=self.summary_store)
-        with patch(
-            "yuyutsava.context.compaction._current_thread_id", return_value="t-fresh"
-        ):
+        with patch("yuyutsava.context.compaction._current_thread_id", return_value="t-fresh"):
             # Fresh thread, no stored summary.
             self.assertIsNone(await mw.abefore_agent({"messages": [TASK]}, None))
         await self.summary_store.put("t-live", FAKE_SUMMARY)
-        with patch(
-            "yuyutsava.context.compaction._current_thread_id", return_value="t-live"
-        ):
+        with patch("yuyutsava.context.compaction._current_thread_id", return_value="t-live"):
             # Live history present — no injection.
             state = {"messages": [TASK, AIMessage(content="working")]}
             self.assertIsNone(await mw.abefore_agent(state, None))
@@ -246,9 +240,7 @@ class ThreeCycleContinuityTests(unittest.IsolatedAsyncioTestCase):
         )
 
         messages: list = [TASK]
-        with patch(
-            "yuyutsava.context.compaction._current_thread_id", return_value="t-3cycles"
-        ):
+        with patch("yuyutsava.context.compaction._current_thread_id", return_value="t-3cycles"):
             turn = 0
             for _cycle in range(3):
                 # Grow the conversation until compaction fires.

@@ -65,10 +65,14 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--sample-rate", type=int, default=16000)
     # Wake config may arrive via events_config params (lets the Settings UI /
     # onboarding hot-apply a new wake word) or fall back to WAKE_WORDS env.
-    p.add_argument("--wake-words", default=None,
-                   help="comma-separated openwakeword model names (overrides WAKE_WORDS)")
-    p.add_argument("--wake-threshold", default=None,
-                   help="detection threshold 0..1 (overrides WAKE_THRESHOLD)")
+    p.add_argument(
+        "--wake-words",
+        default=None,
+        help="comma-separated openwakeword model names (overrides WAKE_WORDS)",
+    )
+    p.add_argument(
+        "--wake-threshold", default=None, help="detection threshold 0..1 (overrides WAKE_THRESHOLD)"
+    )
     args = p.parse_args(argv)
 
     # Params take precedence over env so a hot-reloaded events config wins.
@@ -83,8 +87,7 @@ def main(argv: list[str] | None = None) -> None:
     # own logger, so these lines appear in the daemon log either way.
     _level_name = os.environ.get("YUYUTSAVA_VOICE_LOG_LEVEL", "INFO").upper()
     _level = getattr(logging, _level_name, logging.INFO)
-    logging.basicConfig(level=_level, stream=sys.stderr,
-                        format="voice_proc: %(message)s")
+    logging.basicConfig(level=_level, stream=sys.stderr, format="voice_proc: %(message)s")
 
     # Check deps before anything else.
     try:
@@ -125,6 +128,7 @@ def main(argv: list[str] | None = None) -> None:
     # Cross-platform: registers SIGINT + (SIGTERM on POSIX / SIGBREAK on Windows).
     # Bare signal.signal(SIGTERM, …) raises ValueError on Windows.
     from yuyutsava.platform import install_terminate_handler
+
     install_terminate_handler(_stop)
 
     _emit({"kind": "ready"})
@@ -179,14 +183,16 @@ def main(argv: list[str] | None = None) -> None:
                 # that starved the pipeline's STT of CPU (the 10–20s lag).
                 logger.info("wake word '%s' detected; popping overlay", fired)
                 detector.reset()
-                _emit({
-                    "kind": "wake",
-                    "ts": time.time(),
-                    "wake_word": fired,
-                    "transcript": "",
-                    "blob_path": None,
-                    "duration_sec": 0.0,
-                })
+                _emit(
+                    {
+                        "kind": "wake",
+                        "ts": time.time(),
+                        "wake_word": fired,
+                        "transcript": "",
+                        "blob_path": None,
+                        "duration_sec": 0.0,
+                    }
+                )
                 last_heartbeat = time.time()
 
     except Exception as exc:

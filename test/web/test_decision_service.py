@@ -27,7 +27,11 @@ class _FakeStore:
         self.flips: list[tuple[str, str, str]] = []
 
     async def try_set_proposal_status(
-        self, proposal_id: str, *, from_status: str, to_status: str,
+        self,
+        proposal_id: str,
+        *,
+        from_status: str,
+        to_status: str,
     ) -> bool:
         self.flips.append((proposal_id, from_status, to_status))
         return self.flip_ok
@@ -50,7 +54,8 @@ class DecisionServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(outcome.ok)
         self.assertIsNone(outcome.note)
         self.assertEqual(
-            fut.result(), ProposalDecision(decision="approve", edited_instruction=None),
+            fut.result(),
+            ProposalDecision(decision="approve", edited_instruction=None),
         )
         self.assertEqual(store.flips, [("prop_1", "pending", "approved")])
 
@@ -131,7 +136,8 @@ class HttpRegressionTests(unittest.IsolatedAsyncioTestCase):
         self.hub = WebHub(store=self.store)
         app = create_app(self.hub, host="127.0.0.1")
         self.client = httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test",
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://test",
         )
 
     async def asyncTearDown(self) -> None:
@@ -141,7 +147,8 @@ class HttpRegressionTests(unittest.IsolatedAsyncioTestCase):
         fut: asyncio.Future = asyncio.get_running_loop().create_future()
         self.hub.pending_proposals["p1"] = fut
         r = await self.client.post(
-            "/proposal/p1/respond", json={"decision": "approve"},
+            "/proposal/p1/respond",
+            json={"decision": "approve"},
         )
         self.assertEqual(r.status_code, 200)
         self.assertTrue(r.json()["ok"])
@@ -150,7 +157,8 @@ class HttpRegressionTests(unittest.IsolatedAsyncioTestCase):
     async def test_proposal_conflict_409(self) -> None:
         self.store.flip_ok = False
         r = await self.client.post(
-            "/proposal/p1/respond", json={"decision": "approve"},
+            "/proposal/p1/respond",
+            json={"decision": "approve"},
         )
         self.assertEqual(r.status_code, 409)
 

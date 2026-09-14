@@ -118,9 +118,12 @@ def _middleware_descendants() -> list[str]:
         except Exception:
             continue
         for name, obj in vars(module).items():
-            if (isinstance(obj, type) and issubclass(obj, AgentMiddleware)
-                    and obj is not AgentMiddleware
-                    and getattr(obj, "__module__", "") == ".".join(parts)):
+            if (
+                isinstance(obj, type)
+                and issubclass(obj, AgentMiddleware)
+                and obj is not AgentMiddleware
+                and getattr(obj, "__module__", "") == ".".join(parts)
+            ):
                 found.append(f"{rel}:{name}")
     return sorted(set(found))
 
@@ -129,8 +132,10 @@ def main() -> int:
     result = scan()
     total = len(_modules())
     print(f"modules scanned            {total}")
-    print(f"import a framework         {len(result['importers'])} "
-          f"({len(result['importers']) * 100 // max(total, 1)}%)")
+    print(
+        f"import a framework         {len(result['importers'])} "
+        f"({len(result['importers']) * 100 // max(total, 1)}%)"
+    )
     print(f"AgentMiddleware subclasses {len(result['subclasses'])}  (written as such)")
     print(f"  ...including inherited   {len(result['descendants'])}  (issubclass, exact)")
     print(f"migrated Policy classes    {len(result['policies'])}")

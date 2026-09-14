@@ -85,7 +85,6 @@ def _kind_filter(kinds: tuple[str, ...] | None) -> tuple[str, list]:
     return "", []
 
 
-
 # NOTE: PgMemoryStore was replaced on 2026-08-09 by UnifiedMemoryStore in
 # memory/store_unified.py (ADR-002 step 2.5b). The pgvector asymmetry is a
 # DECLARED capability (supports_semantic_search), and backfill_embeddings now

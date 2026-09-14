@@ -58,8 +58,7 @@ class TranscriptRecorderPolicy(Policy):
         if not turn.messages or not turn.thread_id:
             return
         seen = self._seen.setdefault(turn.thread_id, set())
-        fresh = [m for m in turn.messages
-                 if getattr(m, "id", None) and m.id not in seen]
+        fresh = [m for m in turn.messages if getattr(m, "id", None) and m.id not in seen]
         if not fresh:
             return
         try:

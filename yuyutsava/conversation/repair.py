@@ -176,7 +176,9 @@ class Findings:
     def count(self, *, close_turn: bool = True) -> int:
         """How many messages a repair would add or change."""
         return (
-            len(self.cancelled) + len(self.dangling) + len(self.empty_assistant)
+            len(self.cancelled)
+            + len(self.dangling)
+            + len(self.empty_assistant)
             + (1 if self.unclosed_turn and close_turn else 0)
         )
 
@@ -189,11 +191,7 @@ def diagnose(messages: Any) -> Findings:
     from langchain_core.messages import AIMessage, ToolMessage
 
     msgs = list(messages or ())
-    answered = {
-        getattr(m, "tool_call_id", None)
-        for m in msgs
-        if isinstance(m, ToolMessage)
-    }
+    answered = {getattr(m, "tool_call_id", None) for m in msgs if isinstance(m, ToolMessage)}
     cancelled: list[Any] = []
     dangling: list[tuple[str, str]] = []
     empty: list[str] = []
@@ -224,10 +222,7 @@ def diagnose(messages: Any) -> Findings:
     # Is the model's turn still open? Judged on the history that will remain
     # once the empty assistant messages are removed, since those are going.
     doomed = set(empty)
-    tail = [
-        m for m in msgs
-        if not (isinstance(m, AIMessage) and getattr(m, "id", None) in doomed)
-    ]
+    tail = [m for m in msgs if not (isinstance(m, AIMessage) and getattr(m, "id", None) in doomed)]
     last = tail[-1] if tail else None
     unclosed = bool(last) and (
         isinstance(last, ToolMessage)
@@ -243,9 +238,7 @@ def needs_repair(messages: Any, *, close_turn: bool = True) -> bool:
     return diagnose(messages).any(close_turn=close_turn)
 
 
-def rewrite(
-    messages: Any, cause: Cause, *, close_turn: bool = True
-) -> list[Any]:
+def rewrite(messages: Any, cause: Cause, *, close_turn: bool = True) -> list[Any]:
     """The messages to write back for *messages*. Pure; no state access.
 
     Returns only what changes, which is what ``aupdate_state`` wants and what
@@ -266,23 +259,30 @@ def rewrite(
     out: list[Any] = []
 
     for m in found.cancelled:
-        out.append(ToolMessage(
-            # Same id: the add_messages reducer merges in place. A new id would
-            # append a second result for one call and make things worse.
-            id=m.id,
-            tool_call_id=m.tool_call_id,
-            name=getattr(m, "name", "tool") or "tool",
-            status="error",
-            content=body,
-        ))
+        out.append(
+            ToolMessage(
+                # Same id: the add_messages reducer merges in place. A new id would
+                # append a second result for one call and make things worse.
+                id=m.id,
+                tool_call_id=m.tool_call_id,
+                name=getattr(m, "name", "tool") or "tool",
+                status="error",
+                content=body,
+            )
+        )
     for mid in found.empty_assistant:
         out.append(RemoveMessage(id=mid))
     for cid, name in found.dangling:
         # No existing message to merge with — the result was never written, so
         # this one is appended and takes a fresh id.
-        out.append(ToolMessage(
-            tool_call_id=cid, name=name, status="error", content=body,
-        ))
+        out.append(
+            ToolMessage(
+                tool_call_id=cid,
+                name=name,
+                status="error",
+                content=body,
+            )
+        )
     if close_turn and found.unclosed_turn:
         out.append(AIMessage(content=_TURN_CLOSER[cause]))
     return out
@@ -318,10 +318,13 @@ async def repair_orphan_tool_calls(
         return 0
     found = diagnose(messages)
     logger.info(
-        "repaired thread=%s (%s): %d fabricated, %d dangling, %d empty, "
-        "turn closed=%s",
-        thread_id, cause.value, len(found.cancelled), len(found.dangling),
-        len(found.empty_assistant), bool(close_turn and found.unclosed_turn),
+        "repaired thread=%s (%s): %d fabricated, %d dangling, %d empty, turn closed=%s",
+        thread_id,
+        cause.value,
+        len(found.cancelled),
+        len(found.dangling),
+        len(found.empty_assistant),
+        bool(close_turn and found.unclosed_turn),
     )
     return len(patched)
 

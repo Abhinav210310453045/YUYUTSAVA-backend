@@ -45,7 +45,11 @@ _SUBAGENT_INLINE_CHARS = 4000
 
 class RichChatRenderer(ChatRenderer):
     def __init__(
-        self, *, verbose: bool, workspace: Path | None, console: Console,
+        self,
+        *,
+        verbose: bool,
+        workspace: Path | None,
+        console: Console,
         live: bool = True,
     ) -> None:
         super().__init__(verbose=verbose, workspace=workspace)
@@ -85,9 +89,7 @@ class RichChatRenderer(ChatRenderer):
         wait, and it clears itself as soon as real output arrives.
         """
         code = "429" if "ResourceExhausted" in type(exc).__name__ else "503"
-        self._retry_note = (
-            f"provider busy ({code}) · retry {attempt}/{retries} · {delay:.0f}s"
-        )
+        self._retry_note = f"provider busy ({code}) · retry {attempt}/{retries} · {delay:.0f}s"
         self._refresh()
 
     def begin_turn(self) -> None:
@@ -172,10 +174,7 @@ class RichChatRenderer(ChatRenderer):
         if self._in_flight:
             name = self._in_flight[-1]
             if name in _SUBAGENT_TOOLS:
-                extra = (
-                    f" ({len(self._in_flight)} in flight)"
-                    if len(self._in_flight) > 1 else ""
-                )
+                extra = f" ({len(self._in_flight)} in flight)" if len(self._in_flight) > 1 else ""
                 return f"Subagent working…{extra}"
             return f"Running {name}…"
         if self._md.started:
@@ -197,7 +196,10 @@ class RichChatRenderer(ChatRenderer):
             if name in _SUBAGENT_TOOLS:
                 label = Text.assemble(
                     ("Subagent working… ", "subagent"),
-                    (f"({len(self._in_flight)} in flight)" if len(self._in_flight) > 1 else "", "chrome"),
+                    (
+                        f"({len(self._in_flight)} in flight)" if len(self._in_flight) > 1 else "",
+                        "chrome",
+                    ),
                 )
             else:
                 label = Text.assemble(("Running ", "chrome"), (name, "tool"), ("…", "chrome"))
@@ -211,9 +213,7 @@ class RichChatRenderer(ChatRenderer):
         if tail:
             parts.append(Padding(Text(tail, style="chrome", no_wrap=False), (0, 0, 0, 2)))
         elif self._sub_activity:
-            parts.append(
-                Padding(Text(self._sub_activity, style="chrome"), (0, 0, 0, 2))
-            )
+            parts.append(Padding(Text(self._sub_activity, style="chrome"), (0, 0, 0, 2)))
         return Group(*parts)
 
     # ------------------------------------------------------------------
@@ -395,9 +395,7 @@ class RichChatRenderer(ChatRenderer):
                 pass
         title, kind = av.artifact_summary(data)
         suffix = f" ({kind})" if kind else ""
-        self._console.print(
-            Text(f"  ◨ artifact: {tf.sanitize(title)}{suffix}", style="chrome")
-        )
+        self._console.print(Text(f"  ◨ artifact: {tf.sanitize(title)}{suffix}", style="chrome"))
 
     def _print_todos(self, args: Any, idx: int) -> None:
         todos = args.get("todos") if isinstance(args, dict) else None

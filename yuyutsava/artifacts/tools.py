@@ -85,35 +85,49 @@ def make_artifact_tools() -> list[BaseTool]:
                     try:
                         spec = json.loads(spec)
                     except json.JSONDecodeError:
-                        return json.dumps({
-                            "status": "error",
-                            "error": 'spec must be a JSON object, e.g. {"text": "words to speak"}',
-                        })
+                        return json.dumps(
+                            {
+                                "status": "error",
+                                "error": 'spec must be a JSON object, e.g. {"text": "words to speak"}',
+                            }
+                        )
                 if spec is not None and not isinstance(spec, dict):
-                    return json.dumps({
-                        "status": "error",
-                        "error": "spec must be a JSON object, not a list/scalar",
-                    })
+                    return json.dumps(
+                        {
+                            "status": "error",
+                            "error": "spec must be a JSON object, not a list/scalar",
+                        }
+                    )
                 rec = await asyncio.to_thread(
-                    store.generate, _GENERATIVE[kind], dict(spec or {}),
-                    title=title, thread_id=tid,
+                    store.generate,
+                    _GENERATIVE[kind],
+                    dict(spec or {}),
+                    title=title,
+                    thread_id=tid,
                 )
             elif kind in store.CONTENT_KINDS:
                 if not content:
-                    return json.dumps({
-                        "status": "error",
-                        "error": f"{kind} artifacts need the `content` argument",
-                    })
+                    return json.dumps(
+                        {
+                            "status": "error",
+                            "error": f"{kind} artifacts need the `content` argument",
+                        }
+                    )
                 rec = await asyncio.to_thread(
-                    store.create_from_content, kind, content,
-                    title=title, thread_id=tid,
+                    store.create_from_content,
+                    kind,
+                    content,
+                    title=title,
+                    thread_id=tid,
                 )
             else:
                 kinds = ", ".join(sorted({*store.CONTENT_KINDS, *_GENERATIVE}))
-                return json.dumps({
-                    "status": "error",
-                    "error": f"unknown artifact kind {kind!r} (one of: {kinds})",
-                })
+                return json.dumps(
+                    {
+                        "status": "error",
+                        "error": f"unknown artifact kind {kind!r} (one of: {kinds})",
+                    }
+                )
         except store.ArtifactError as exc:
             return json.dumps({"status": "error", "error": str(exc)})
         except Exception as exc:  # noqa: BLE001 — a broken generator must not crash the turn
@@ -134,22 +148,26 @@ def make_artifact_tools() -> list[BaseTool]:
         """
         rec = await asyncio.to_thread(store.load_record, artifact_id)
         if rec is None:
-            return json.dumps({
-                "status": "error",
-                "error": f"no artifact with id {artifact_id!r}",
-            })
+            return json.dumps(
+                {
+                    "status": "error",
+                    "error": f"no artifact with id {artifact_id!r}",
+                }
+            )
         return _ok(rec)
 
     return [artifact_create, artifact_show]
 
 
 def _ok(rec: store.ArtifactRecordV1) -> str:
-    return json.dumps({
-        "status": "ok",
-        "artifact_id": rec.artifact_id,
-        "kind": rec.kind,
-        "mime": rec.mime,
-        "title": rec.title,
-        "path": rec.path,
-        "url": rec.url,
-    })
+    return json.dumps(
+        {
+            "status": "ok",
+            "artifact_id": rec.artifact_id,
+            "kind": rec.kind,
+            "mime": rec.mime,
+            "title": rec.title,
+            "path": rec.path,
+            "url": rec.url,
+        }
+    )

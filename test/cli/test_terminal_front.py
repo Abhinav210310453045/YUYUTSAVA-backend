@@ -49,14 +49,17 @@ TERMINAL_MARK = "THIS CONVERSATION IS A TERMINAL"
 
 def event_for(rec) -> StreamEvent:
     """The exact payload ``_artifact_event_from_result`` builds."""
-    return StreamEvent("artifact", {
-        "artifact_id": rec.artifact_id,
-        "attachment_id": rec.artifact_id,
-        "url": rec.url,
-        "kind": rec.kind,
-        "mime": rec.mime,
-        "title": rec.title,
-    })
+    return StreamEvent(
+        "artifact",
+        {
+            "artifact_id": rec.artifact_id,
+            "attachment_id": rec.artifact_id,
+            "url": rec.url,
+            "kind": rec.kind,
+            "mime": rec.mime,
+            "title": rec.title,
+        },
+    )
 
 
 def render_rich(ev: StreamEvent, width: int = 76) -> str:
@@ -71,14 +74,15 @@ def render_rich(ev: StreamEvent, width: int = 76) -> str:
 class ArtifactsAppearInTheTranscript(unittest.TestCase):
     def test_markdown_renders_inside_a_box(self):
         rec = store.create_from_content(
-            "markdown", "# Top chats\n\n| name | unread |\n|---|---|\n| Club | 566 |\n",
+            "markdown",
+            "# Top chats\n\n| name | unread |\n|---|---|\n| Club | 566 |\n",
             title="Top 10 WhatsApp Chats",
         )
         out = render_rich(event_for(rec))
         self.assertIn("Top 10 WhatsApp Chats", out)
-        self.assertIn("Top chats", out)   # the body, not just the title
+        self.assertIn("Top chats", out)  # the body, not just the title
         self.assertIn("566", out)
-        self.assertIn("╭", out)           # bounded, not loose text
+        self.assertIn("╭", out)  # bounded, not loose text
         self.assertIn("╰", out)
         self.assertIn(rec.artifact_id, out)
 
@@ -135,8 +139,7 @@ class RenderingNeverFeedsBackIntoContext(unittest.TestCase):
         render_rich(ev)
 
         self.assertEqual(ev.data, before)
-        self.assertEqual(json.dumps(ev.data, sort_keys=True),
-                         json.dumps(before, sort_keys=True))
+        self.assertEqual(json.dumps(ev.data, sort_keys=True), json.dumps(before, sort_keys=True))
 
     def test_the_payload_never_carries_the_body(self):
         # Guards the upstream shape too: if _artifact_event_from_result ever
@@ -168,9 +171,7 @@ class FrontAwarePrompt(unittest.TestCase):
         self.assertNotIn(TERMINAL_MARK, local_system_prompt(self.layout, front="app"))
 
     def test_docker_mode_too(self):
-        self.assertIn(
-            TERMINAL_MARK, docker_system_prompt(self.layout, None, front="terminal")
-        )
+        self.assertIn(TERMINAL_MARK, docker_system_prompt(self.layout, None, front="terminal"))
         self.assertNotIn(TERMINAL_MARK, docker_system_prompt(self.layout, None))
 
     def test_the_block_overrides_the_remembered_html_preference(self):
@@ -246,9 +247,7 @@ class BannerAndNoise(unittest.TestCase):
         from yuyutsava.storage.sessions import SessionsSettings
 
         settings = SessionsSettings.from_env()
-        with mock.patch(
-            "yuyutsava.storage.backend.StorageSettings.is_postgres", return_value=True
-        ):
+        with mock.patch("yuyutsava.storage.backend.StorageSettings.is_postgres", return_value=True):
             self.assertIn("storage: postgres", _startup_status_line(settings))
         with mock.patch(
             "yuyutsava.storage.backend.StorageSettings.is_postgres", return_value=False

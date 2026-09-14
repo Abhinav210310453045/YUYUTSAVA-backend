@@ -24,6 +24,7 @@ from .types import VisualError
 
 logger = logging.getLogger("yuyutsava.visuals.tools")
 
+
 # The image-serving route (see daemon/web/routers/visuals.py). visual_id is a
 # globally-unique ULID, so a flat path is enough and needs no session id.
 def _url(visual_id: str) -> str:
@@ -54,14 +55,16 @@ def make_visual_tools(
             return json.dumps({"status": "error", "error": f"render failed: {exc}"})
 
         rec = await store.save(result, thread_id_from_runtime(), out_dir=output_dir)
-        return json.dumps({
-            "status": "ok",
-            "visual_id": rec.visual_id,
-            "kind": rec.kind,
-            "title": rec.title,
-            "path": rec.path,
-            "url": _url(rec.visual_id),
-        })
+        return json.dumps(
+            {
+                "status": "ok",
+                "visual_id": rec.visual_id,
+                "kind": rec.kind,
+                "title": rec.title,
+                "path": rec.path,
+                "url": _url(rec.visual_id),
+            }
+        )
 
     @tool
     async def vis_chart(spec: dict) -> str:
@@ -140,14 +143,20 @@ def make_visual_tools(
         from yuyutsava.context.artifacts import thread_id_from_runtime
 
         records = await store.list_for_thread(thread_id_from_runtime())
-        return json.dumps({
-            "status": "ok",
-            "artifacts": [
-                {"visual_id": r.visual_id, "kind": r.kind, "title": r.title,
-                 "created_ts": r.created_ts}
-                for r in records
-            ],
-        })
+        return json.dumps(
+            {
+                "status": "ok",
+                "artifacts": [
+                    {
+                        "visual_id": r.visual_id,
+                        "kind": r.kind,
+                        "title": r.title,
+                        "created_ts": r.created_ts,
+                    }
+                    for r in records
+                ],
+            }
+        )
 
     @tool
     async def vis_show_artifact(visual_id: str) -> str:
@@ -160,20 +169,30 @@ def make_visual_tools(
         """
         rec = await store.get(visual_id)
         if rec is None:
-            return json.dumps({
-                "status": "error",
-                "error": f"no visual with id {visual_id!r} — call vis_list_artifacts first",
-            })
-        return json.dumps({
-            "status": "ok",
-            "visual_id": rec.visual_id,
-            "kind": rec.kind,
-            "title": rec.title,
-            "path": rec.path,
-            "url": _url(rec.visual_id),
-        })
+            return json.dumps(
+                {
+                    "status": "error",
+                    "error": f"no visual with id {visual_id!r} — call vis_list_artifacts first",
+                }
+            )
+        return json.dumps(
+            {
+                "status": "ok",
+                "visual_id": rec.visual_id,
+                "kind": rec.kind,
+                "title": rec.title,
+                "path": rec.path,
+                "url": _url(rec.visual_id),
+            }
+        )
 
     return [
-        vis_chart, vis_diagram, vis_table, vis_code, vis_math, vis_timeline,
-        vis_list_artifacts, vis_show_artifact,
+        vis_chart,
+        vis_diagram,
+        vis_table,
+        vis_code,
+        vis_math,
+        vis_timeline,
+        vis_list_artifacts,
+        vis_show_artifact,
     ]

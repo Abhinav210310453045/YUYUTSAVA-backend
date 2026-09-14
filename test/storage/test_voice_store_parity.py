@@ -53,8 +53,12 @@ class _VoiceContract:
 
     async def test_put_then_get_roundtrip(self) -> None:
         seq = await self.store.put_message(
-            self.thread, role="user", text="hello",
-            modality="audio", audio_blob_path="/tmp/a.wav", sample_rate=16000,
+            self.thread,
+            role="user",
+            text="hello",
+            modality="audio",
+            audio_blob_path="/tmp/a.wav",
+            sample_rate=16000,
         )
         got = await self.store.get_message(self.thread, seq)
         self.assertIsNotNone(got)
@@ -116,7 +120,8 @@ class _VoiceContract:
         self.assertEqual(await self.store.delete_for_thread(self.thread), 2)
         self.assertEqual(await self.store.list_messages(self.thread), [])
         self.assertEqual(
-            len(await self.store.list_messages(self.thread + "-other")), 1,
+            len(await self.store.list_messages(self.thread + "-other")),
+            1,
             "another thread's messages were deleted",
         )
 
@@ -135,8 +140,7 @@ class _VoiceContract:
         allocation mechanism, different safety — worth proving, not assuming.
         """
         results = await asyncio.gather(
-            *(self.store.put_message(self.thread, role="user", text=f"m{i}")
-              for i in range(5)),
+            *(self.store.put_message(self.thread, role="user", text=f"m{i}") for i in range(5)),
             return_exceptions=True,
         )
         errors = [r for r in results if isinstance(r, BaseException)]
@@ -148,8 +152,12 @@ class _VoiceContract:
         blob = Path(tempfile.mkdtemp()) / "clip.wav"
         blob.write_bytes(b"RIFF-fake-audio")
         await self.store.put_message(
-            self.thread, role="user", text="x",
-            modality="audio", audio_blob_path=str(blob), sample_rate=16000,
+            self.thread,
+            role="user",
+            text="x",
+            modality="audio",
+            audio_blob_path=str(blob),
+            sample_rate=16000,
         )
         await self.store.delete_for_thread(self.thread)
         self.assertTrue(

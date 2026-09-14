@@ -34,9 +34,7 @@ class TranscriptResult:
     confidence: float | None = None
 
 
-def _aggregate_confidence(
-    probs: list[float], weights: list[int], nsp: list[float]
-) -> float | None:
+def _aggregate_confidence(probs: list[float], weights: list[int], nsp: list[float]) -> float | None:
     """Length-weighted acoustic confidence, discounted by silence likelihood.
 
     Returns ``None`` when there is nothing to score (empty transcript). High
@@ -113,9 +111,7 @@ class FasterWhisperSTT(STT):
             # capture window doesn't get hallucinated into text. Threshold is
             # tunable: lower it to keep softer speech (FASTER_WHISPER_VAD_*).
             vad_filter=self._vad_filter,
-            vad_parameters=(
-                {"threshold": self._vad_threshold} if self._vad_filter else None
-            ),
+            vad_parameters=({"threshold": self._vad_threshold} if self._vad_filter else None),
             # Each utterance is independent — don't carry context across
             # them, which otherwise feeds repetition loops ("1kg 1kg 1kg").
             condition_on_previous_text=False,
@@ -155,15 +151,21 @@ class FasterWhisperSTT(STT):
         # FASTER_WHISPER_VAD_THRESHOLD lowers/raises its speech sensitivity
         # (default 0.5; try 0.2–0.3 if soft speech is being dropped).
         vad_filter = os.environ.get("FASTER_WHISPER_VAD_FILTER", "1").strip() not in (
-            "0", "false", "no", "off", ""
+            "0",
+            "false",
+            "no",
+            "off",
+            "",
         )
         try:
             vad_threshold = float(os.environ.get("FASTER_WHISPER_VAD_THRESHOLD", "0.5"))
         except ValueError:
             vad_threshold = 0.5
         return cls(
-            model_size=size, language=lang,
-            vad_filter=vad_filter, vad_threshold=vad_threshold,
+            model_size=size,
+            language=lang,
+            vad_filter=vad_filter,
+            vad_threshold=vad_threshold,
         )
 
 
@@ -178,9 +180,7 @@ class GroqWhisperSTT(STT):
         try:
             from groq import Groq  # type: ignore
         except ImportError as exc:
-            raise RuntimeError(
-                "groq package not installed — run: uv pip install groq"
-            ) from exc
+            raise RuntimeError("groq package not installed — run: uv pip install groq") from exc
 
         loop = asyncio.get_running_loop()
 

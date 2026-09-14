@@ -38,10 +38,10 @@ class AskResumeService:
     def __init__(
         self,
         *,
-        registry: Any,                       # daemon.ask_registry.AskRegistry
-        conversation_manager: Any = None,    # daemon.conversation_manager.ConversationManager
-        watcher: Any = None,                 # async_subagents.watcher.AsyncTaskHealthWatcher
-        channels: Any = None,                # daemon.channels.ChannelRouter
+        registry: Any,  # daemon.ask_registry.AskRegistry
+        conversation_manager: Any = None,  # daemon.conversation_manager.ConversationManager
+        watcher: Any = None,  # async_subagents.watcher.AsyncTaskHealthWatcher
+        channels: Any = None,  # daemon.channels.ChannelRouter
     ) -> None:
         self._registry = registry
         self._conversations = conversation_manager
@@ -71,7 +71,8 @@ class AskResumeService:
             else:
                 logger.warning(
                     "ask %s (surface=%s) has no owner this daemon can re-enter",
-                    ask_id, surface,
+                    ask_id,
+                    surface,
                 )
                 ok = False
         except Exception:  # noqa: BLE001 — a failed resume must not 500 the responder
@@ -88,7 +89,9 @@ class AskResumeService:
 
     async def _resume_background(self, record: dict[str, Any], response: str) -> bool:
         return await self._watcher.resume_interrupt(
-            str(record["task_id"]), record.get("interrupt_id"), response,
+            str(record["task_id"]),
+            record.get("interrupt_id"),
+            response,
         )
 
     async def _resume_conversation(self, record: dict[str, Any], response: str) -> bool:
@@ -114,6 +117,7 @@ class AskResumeService:
         ask_handler = None
         if self._channels is not None:
             from yuyutsava.daemon.orchestrator_loop import make_ask_handler
+
             ask_handler = make_ask_handler(
                 self._channels,
                 default_session_id=thread_id,
@@ -133,6 +137,7 @@ class AskResumeService:
         async def _body(run) -> None:
             async def _sink(ev) -> None:
                 run.emit({"type": ev.kind, **ev.data})
+
             await convo.run_turn(
                 "",
                 on_event=_sink,
@@ -156,11 +161,13 @@ class AskResumeService:
             # A turn is already executing on this thread — that means the
             # process never actually died and something else owns the answer.
             logger.warning(
-                "ask resume for %s skipped: a turn is already running", thread_id,
+                "ask resume for %s skipped: a turn is already running",
+                thread_id,
             )
             return False
         logger.info(
             "ask resume: re-entered %s (run %s) with a stored decision",
-            thread_id, run.run_id,
+            thread_id,
+            run.run_id,
         )
         return True

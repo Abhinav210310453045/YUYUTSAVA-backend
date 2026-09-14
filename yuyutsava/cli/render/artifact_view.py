@@ -117,15 +117,19 @@ def artifact_renderable(info: dict[str, Any]) -> Any:
     if not info["text"]:
         hint = (
             f"cannot be displayed in a terminal — open it with:\n  open {info['path']}"
-            if info["path"] else "no readable content"
+            if info["path"]
+            else "no readable content"
         )
         body = Text(hint, style="chrome")
     elif kind == "markdown":
         body = Markdown(info["text"])
     elif kind in _LEXERS:
         body = Syntax(
-            info["text"], _LEXERS.get(kind, "text"),
-            theme="ansi_dark", word_wrap=True, background_color="default",
+            info["text"],
+            _LEXERS.get(kind, "text"),
+            theme="ansi_dark",
+            word_wrap=True,
+            background_color="default",
         )
     else:
         body = Text(info["text"])

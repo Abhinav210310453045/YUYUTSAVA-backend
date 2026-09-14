@@ -38,7 +38,9 @@ def _internal_imports(path: Path) -> list[tuple[int, str]]:
                 found.append((node.lineno, mod))
         elif isinstance(node, ast.Import):
             for alias in node.names:
-                if alias.name.startswith("yuyutsava") and not alias.name.startswith("yuyutsava.ports"):
+                if alias.name.startswith("yuyutsava") and not alias.name.startswith(
+                    "yuyutsava.ports"
+                ):
                     found.append((node.lineno, alias.name))
     return found
 
@@ -51,13 +53,15 @@ class PortsIsALeaf(unittest.TestCase):
                 offenders.append(f"{path.relative_to(PORTS.parent.parent)}:{lineno} imports {mod}")
 
         self.assertEqual(
-            offenders, [],
-            "yuyutsava/ports/ imported the codebase:\n  " + "\n  ".join(offenders)
+            offenders,
+            [],
+            "yuyutsava/ports/ imported the codebase:\n  "
+            + "\n  ".join(offenders)
             + "\n\nports must be a LEAF. Anything it imports becomes part of every "
-              "cycle it was created to break — at which point the object|None "
-              "dependency fields and the deferred imports have to come back.\n"
-              "Fix: define the protocol structurally here instead of importing "
-              "the concrete type.",
+            "cycle it was created to break — at which point the object|None "
+            "dependency fields and the deferred imports have to come back.\n"
+            "Fix: define the protocol structurally here instead of importing "
+            "the concrete type.",
         )
 
     def test_ports_imports_only_stdlib_and_typing(self) -> None:
@@ -83,10 +87,12 @@ class PortsIsALeaf(unittest.TestCase):
                         offenders.append(f"{path.name}:{node.lineno} imports {m}")
 
         self.assertEqual(
-            offenders, [],
-            "ports/ imported a third-party package:\n  " + "\n  ".join(offenders)
+            offenders,
+            [],
+            "ports/ imported a third-party package:\n  "
+            + "\n  ".join(offenders)
             + f"\n\nAllowed: {sorted(allowed)}. A port typed against a framework "
-              "class couples every consumer to that framework.",
+            "class couples every consumer to that framework.",
         )
 
     def test_ports_is_importable_in_isolation(self) -> None:
@@ -100,22 +106,28 @@ class PortsIsALeaf(unittest.TestCase):
 
         repo = PORTS.parent.parent
         result = subprocess.run(
-            [sys.executable, "-c",
-             "import sys; import yuyutsava.ports as p; "
-             "leaked = [m for m in sys.modules if m.startswith('yuyutsava.') "
-             "and not m.startswith('yuyutsava.ports')]; "
-             "print('LEAKED:' + ','.join(sorted(leaked)))"],
-            capture_output=True, text=True, cwd=repo, timeout=120,
+            [
+                sys.executable,
+                "-c",
+                "import sys; import yuyutsava.ports as p; "
+                "leaked = [m for m in sys.modules if m.startswith('yuyutsava.') "
+                "and not m.startswith('yuyutsava.ports')]; "
+                "print('LEAKED:' + ','.join(sorted(leaked)))",
+            ],
+            capture_output=True,
+            text=True,
+            cwd=repo,
+            timeout=120,
         )
         self.assertEqual(result.returncode, 0, f"importing ports failed:\n{result.stderr}")
         leaked = result.stdout.strip().removeprefix("LEAKED:").strip()
         self.assertEqual(
-            leaked, "",
+            leaked,
+            "",
             f"importing yuyutsava.ports pulled in other yuyutsava modules: {leaked}\n"
             f"That means ports is not a leaf at runtime even if it looks like one "
             f"statically — most likely via a package __init__ re-export.",
         )
-
 
 
 class OrchestratorDepsIsFullyTyped(unittest.TestCase):
@@ -135,13 +147,13 @@ class OrchestratorDepsIsFullyTyped(unittest.TestCase):
         import pathlib as _p
 
         root = _p.Path(__file__).resolve().parents[1] / "yuyutsava"
-        tree = ast.parse(
-            (root / "agents/orchestrator/agent.py").read_text(encoding="utf-8"))
+        tree = ast.parse((root / "agents/orchestrator/agent.py").read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if isinstance(node, ast.ClassDef) and node.name == "OrchestratorDeps":
                 return [
                     (ast.unparse(s.target), ast.unparse(s.annotation))
-                    for s in node.body if isinstance(s, ast.AnnAssign)
+                    for s in node.body
+                    if isinstance(s, ast.AnnAssign)
                 ]
         raise AssertionError("OrchestratorDeps not found")
 
@@ -151,16 +163,16 @@ class OrchestratorDepsIsFullyTyped(unittest.TestCase):
 
     def test_no_field_is_untyped(self) -> None:
         vague = [
-            f"{name}: {ann}" for name, ann in self._fields()
-            if "object" in ann or "Any" in ann
+            f"{name}: {ann}" for name, ann in self._fields() if "object" in ann or "Any" in ann
         ]
         self.assertEqual(
-            vague, [],
+            vague,
+            [],
             "these dependency fields are back to an untyped placeholder:\n  "
             + "\n  ".join(vague)
             + "\nName what is actually used with a Protocol in yuyutsava/ports/ "
-              "— importing the concrete class is what the cycle forbids, and "
-              "`object` is what hides the dependency entirely.",
+            "— importing the concrete class is what the cycle forbids, and "
+            "`object` is what hides the dependency entirely.",
         )
 
     def test_the_new_protocols_are_structural(self) -> None:
@@ -169,7 +181,9 @@ class OrchestratorDepsIsFullyTyped(unittest.TestCase):
         from yuyutsava.async_subagents.remote import RemoteAsyncSubagentSpec
         from yuyutsava.context.config import ContextSettings
         from yuyutsava.ports.policy import (
-            ContextTuning, RemoteSubagentSpec, TaskMirror,
+            ContextTuning,
+            RemoteSubagentSpec,
+            TaskMirror,
         )
 
         self.assertIsInstance(ContextSettings.from_env("cli"), ContextTuning)
@@ -181,7 +195,8 @@ class OrchestratorDepsIsFullyTyped(unittest.TestCase):
         for proto in (ContextTuning, TaskMirror, RemoteSubagentSpec):
             with self.subTest(protocol=proto.__name__):
                 self.assertNotIn(
-                    proto, ContextSettings.__mro__,
+                    proto,
+                    ContextSettings.__mro__,
                     "the concrete class INHERITS the protocol; these must be "
                     "structural, or ports stops being a leaf",
                 )
@@ -207,8 +222,12 @@ class ProtocolsAgreeWithTheirImplementations(unittest.TestCase):
 
     #: (protocol, concrete class) pairs that production code substitutes.
     PAIRS = (
-        ("yuyutsava.ports.policy", "TaskMirror",
-         "yuyutsava.async_subagents.mirror", "AsyncTaskMirror"),
+        (
+            "yuyutsava.ports.policy",
+            "TaskMirror",
+            "yuyutsava.async_subagents.mirror",
+            "AsyncTaskMirror",
+        ),
     )
 
     def _methods(self, cls: type) -> dict[str, bool]:
@@ -245,7 +264,8 @@ class ProtocolsAgreeWithTheirImplementations(unittest.TestCase):
                     continue  # presence is the isinstance check's job
                 with self.subTest(protocol=pname, method=method):
                     self.assertEqual(
-                        is_async, actual[method],
+                        is_async,
+                        actual[method],
                         f"{pname}.{method} is declared "
                         f"{'async' if is_async else 'sync'} but "
                         f"{cname}.{method} is "

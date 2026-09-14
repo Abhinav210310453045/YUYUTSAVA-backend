@@ -50,8 +50,17 @@ def ruff_command() -> list[str]:
 
 def current_counts() -> Counts:
     proc = subprocess.run(
-        [*ruff_command(), "check", *PATHS, "--select", ",".join(RULES),
-         "--output-format", "json", "--exit-zero", "--no-cache"],
+        [
+            *ruff_command(),
+            "check",
+            *PATHS,
+            "--select",
+            ",".join(RULES),
+            "--output-format",
+            "json",
+            "--exit-zero",
+            "--no-cache",
+        ],
         cwd=REPO,
         capture_output=True,
         text=True,
@@ -87,7 +96,9 @@ def totals(counts: Counts) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--update", action="store_true", help="rewrite the baseline; refuses increases")
+    parser.add_argument(
+        "--update", action="store_true", help="rewrite the baseline; refuses increases"
+    )
     args = parser.parse_args()
 
     baseline: Counts = json.loads(BASELINE.read_text(encoding="utf-8")) if BASELINE.exists() else {}
@@ -98,7 +109,9 @@ def main() -> int:
         print(f"{len(grown)} ratcheted lint count(s) grew:")
         for line in grown:
             print(f"  {line}")
-        print("\nFix the new violation, or mark a justified exception with `# noqa: <RULE>  <reason>`.")
+        print(
+            "\nFix the new violation, or mark a justified exception with `# noqa: <RULE>  <reason>`."
+        )
         return 1
 
     if args.update:

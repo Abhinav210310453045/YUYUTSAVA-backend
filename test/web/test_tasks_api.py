@@ -37,22 +37,26 @@ class _RecordingBus:
 class TasksApiTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
-        self.registry = TaskRegistry(
-            sqlite_task_store(Path(self._tmp.name) / "state.db")
-        )
+        self.registry = TaskRegistry(sqlite_task_store(Path(self._tmp.name) / "state.db"))
         self.queue: asyncio.Queue = asyncio.Queue()
         self.bus = _RecordingBus()
         self.hub = WebHub(store=_RecordingStore())
         submission = TaskSubmissionService(
-            registry=self.registry, task_queue=self.queue,
-            store=_RecordingStore(), bus=self.bus, proposal_expiry_sec=300,
+            registry=self.registry,
+            task_queue=self.queue,
+            store=_RecordingStore(),
+            bus=self.bus,
+            proposal_expiry_sec=300,
         )
         app = create_app(
-            self.hub, host="127.0.0.1",
-            task_registry=self.registry, task_submission=submission,
+            self.hub,
+            host="127.0.0.1",
+            task_registry=self.registry,
+            task_submission=submission,
         )
         self.client = httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test",
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://test",
         )
 
     async def asyncTearDown(self) -> None:
@@ -61,7 +65,8 @@ class TasksApiTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_submit_direct_then_get(self) -> None:
         r = await self.client.post(
-            "/tasks", json={"instruction": "summarize ~/Downloads"},
+            "/tasks",
+            json={"instruction": "summarize ~/Downloads"},
         )
         self.assertEqual(r.status_code, 200)
         body = r.json()
@@ -78,7 +83,8 @@ class TasksApiTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_submit_triage_publishes(self) -> None:
         r = await self.client.post(
-            "/tasks", json={"instruction": "review inbox", "mode": "triage"},
+            "/tasks",
+            json={"instruction": "review inbox", "mode": "triage"},
         )
         self.assertEqual(r.status_code, 200)
         self.assertEqual(self.queue.qsize(), 0)
@@ -94,7 +100,8 @@ class TasksApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(body["next_cursor"])
 
         r = await self.client.get(
-            "/tasks", params={"limit": 2, "cursor": body["next_cursor"]},
+            "/tasks",
+            params={"limit": 2, "cursor": body["next_cursor"]},
         )
         self.assertEqual(len(r.json()["tasks"]), 1)
 
@@ -124,10 +131,13 @@ class TasksApiTests(unittest.IsolatedAsyncioTestCase):
         # WebChannel (the same path production uses).
         channel = WebChannel(self.hub)
         for i in range(3):
-            await channel.post_event(ChannelEvent(
-                payload=LogPayload(text=f"line {i}"),
-                task_id=task_id, session_id="orch-1-abc",
-            ))
+            await channel.post_event(
+                ChannelEvent(
+                    payload=LogPayload(text=f"line {i}"),
+                    task_id=task_id,
+                    session_id="orch-1-abc",
+                )
+            )
         # Untagged event must not leak into the ring.
         await channel.post_event(ChannelEvent(payload=LogPayload(text="noise")))
 
@@ -160,7 +170,9 @@ class TasksApiTests(unittest.IsolatedAsyncioTestCase):
             store=_RecordingStore(),
             orchestrator_model=object(),
             deps=SimpleNamespace(
-                skill_registry=None, async_task_mirror=None, memory_store=None,
+                skill_registry=None,
+                async_task_mirror=None,
+                memory_store=None,
             ),
             orchestrator_token_budget=1000,
             task_registry=self.registry,
@@ -170,11 +182,15 @@ class TasksApiTests(unittest.IsolatedAsyncioTestCase):
             yield StreamEvent(kind="log", data={"text": "working"})
             yield StreamEvent(kind="final", data={"text": "did it"})
 
-        with mock.patch(
-            "yuyutsava.daemon.orchestrator_loop.build_orchestrator",
-            return_value=object(),
-        ), mock.patch(
-            "yuyutsava.daemon.orchestrator_loop.astream_agent_iter", fake_stream,
+        with (
+            mock.patch(
+                "yuyutsava.daemon.orchestrator_loop.build_orchestrator",
+                return_value=object(),
+            ),
+            mock.patch(
+                "yuyutsava.daemon.orchestrator_loop.astream_agent_iter",
+                fake_stream,
+            ),
         ):
             await loop._run_task(self.queue.get_nowait())
 
@@ -194,7 +210,8 @@ class TasksApiTests(unittest.IsolatedAsyncioTestCase):
         r = await self.client.post("/tasks", json={"instruction": ""})
         self.assertEqual(r.status_code, 422)
         r = await self.client.post(
-            "/tasks", json={"instruction": "x", "mode": "bogus"},
+            "/tasks",
+            json={"instruction": "x", "mode": "bogus"},
         )
         self.assertEqual(r.status_code, 422)
 

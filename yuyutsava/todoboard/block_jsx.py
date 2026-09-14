@@ -22,7 +22,8 @@ from yuyutsava.todoboard.artifacts import ArtifactBlock, _file_validator
 mimetypes.add_type("text/jsx", ".jsx")
 
 JSX_BLOCK = ArtifactBlock(
-    name="jsx", kind="artifact",  # closed V1 vocabulary: JSX rides "artifact" by mime
+    name="jsx",
+    kind="artifact",  # closed V1 vocabulary: JSX rides "artifact" by mime
     validate=_file_validator("artifact"),
     mimes=("text/jsx",),
     upload_mimes=("text/jsx",),

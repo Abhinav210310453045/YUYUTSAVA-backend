@@ -159,7 +159,11 @@ def setup_logging(verbose: bool = False, *, debug_plumbing: bool = False) -> Non
     see those — useful only when debugging the runtime itself.
     """
     if not debug_plumbing:
-        debug_plumbing = os.environ.get("YUYUTSAVA_DEBUG_PLUMBING", "").lower() in ("1", "true", "yes")
+        debug_plumbing = os.environ.get("YUYUTSAVA_DEBUG_PLUMBING", "").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
 
     level = logging.DEBUG if verbose else logging.INFO
     handler = logging.StreamHandler(sys.stderr)
@@ -167,11 +171,11 @@ def setup_logging(verbose: bool = False, *, debug_plumbing: bool = False) -> Non
 
     class _Fmt(logging.Formatter):
         _COLOURS = {
-            logging.DEBUG:    "\033[2m",       # dim
-            logging.INFO:     "\033[0m",        # normal
-            logging.WARNING:  "\033[33m",       # yellow
-            logging.ERROR:    "\033[31m",       # red
-            logging.CRITICAL: "\033[1;31m",     # bold red
+            logging.DEBUG: "\033[2m",  # dim
+            logging.INFO: "\033[0m",  # normal
+            logging.WARNING: "\033[33m",  # yellow
+            logging.ERROR: "\033[31m",  # red
+            logging.CRITICAL: "\033[1;31m",  # bold red
         }
         _RESET = "\033[0m"
 
@@ -230,14 +234,14 @@ class AgentBundle:
     sandbox_root: Path | None = None
     output_dir: Path | None = None
     layout: WorkspaceLayout | None = None  # per-workspace .yuyutsava paths (post-task cleanup)
-    async_host: Any | None = None          # AsyncSubagentHost — duck-typed to avoid cycle
+    async_host: Any | None = None  # AsyncSubagentHost — duck-typed to avoid cycle
     async_host_url: str | None = None
     async_host_attachment: Any | None = None  # HostAttachment
-    async_task_mirror: Any | None = None   # AsyncTaskMirror
-    pg_pool: Any | None = None             # PgPool owned by the CLI (closed in aclose)
-    embedder: Any | None = None            # memory.Embedder owned by the CLI
-    mcp_manager: Any | None = None         # MCPClientManager owned by the CLI (stopped in aclose)
-    usage_store: Any | None = None         # UsageStore the graph writes to — read for /usage
+    async_task_mirror: Any | None = None  # AsyncTaskMirror
+    pg_pool: Any | None = None  # PgPool owned by the CLI (closed in aclose)
+    embedder: Any | None = None  # memory.Embedder owned by the CLI
+    mcp_manager: Any | None = None  # MCPClientManager owned by the CLI (stopped in aclose)
+    usage_store: Any | None = None  # UsageStore the graph writes to — read for /usage
 
     async def aclose(self) -> None:
         """Async teardown: stop the CLI-owned MCP manager (its sessions live on
@@ -265,6 +269,7 @@ class AgentBundle:
         if self.async_host_attachment is not None:
             try:
                 from yuyutsava.async_subagents.host_lock import release_host_lock
+
                 release_host_lock(self.async_host_attachment)
             except Exception:
                 logger.exception("AgentBundle: release_host_lock failed")
@@ -392,12 +397,12 @@ def _build_tool_registry_and_tools(
     from yuyutsava.agents.db_tools import make_db_tools
 
     search_tools = (
-        make_search_tools(search_config, cap_enforcer=cap_enforcer)
-        if search_config else []
+        make_search_tools(search_config, cap_enforcer=cap_enforcer) if search_config else []
     )
     skill_tools = (
         make_skill_tools(skill_registry, skill_store, agent_name=agent_name)
-        if skill_registry else []
+        if skill_registry
+        else []
     )
     db_tools = make_db_tools()  # always available — read-only by construction
     all_custom_tools = (
@@ -422,7 +427,6 @@ def _build_tool_registry_and_tools(
 
     note_bound_tools(agent_name or "agent", registry, startup_tools)
     return startup_tools, registry
-
 
 
 # Fixed pipeline order. The PROFILE says which policies a master has; this says
@@ -497,8 +501,9 @@ def _policy_middleware(
         elif policy is Policy.BUDGET and budget_tokens is not None:
             from yuyutsava.daemon.budget_policy import BudgetPolicy
 
-            out.append(LangChainPolicyAdapter(
-                [BudgetPolicy(max_input_tokens=budget_tokens, role=role)]))
+            out.append(
+                LangChainPolicyAdapter([BudgetPolicy(max_input_tokens=budget_tokens, role=role)])
+            )
         elif policy is Policy.USAGE and usage_store is not None:
             from yuyutsava.daemon.usage import UsagePolicy
             from yuyutsava.llm import model_name_of
@@ -512,16 +517,25 @@ def _policy_middleware(
                 extra["task_id"] = usage_task_id
             if usage_thread_id is not None:
                 extra["thread_id"] = usage_thread_id
-            out.append(LangChainPolicyAdapter([UsagePolicy(
-                usage_store, role=role, model_name=model_name_of(model), **extra,
-            )]))
+            out.append(
+                LangChainPolicyAdapter(
+                    [
+                        UsagePolicy(
+                            usage_store,
+                            role=role,
+                            model_name=model_name_of(model),
+                            **extra,
+                        )
+                    ]
+                )
+            )
         elif policy is Policy.PERMISSION and permission_check and workspace_root:
             # PermissionPolicy imports no framework and is tested without one
             # (test/policy/test_permission_parity.py); the adapter is what
             # attaches it to the graph.
-            out.append(LangChainPolicyAdapter(
-                [PermissionPolicy(workspace_root=workspace_root.resolve())]
-            ))
+            out.append(
+                LangChainPolicyAdapter([PermissionPolicy(workspace_root=workspace_root.resolve())])
+            )
     return out
 
 
@@ -553,8 +567,9 @@ def _context_middleware(
 
     out: list = []
     if artifact_store is not None and context_settings is not None:
-        out.append(LangChainPolicyAdapter(
-            [ToolResultOffloadPolicy(artifact_store, context_settings)]))
+        out.append(
+            LangChainPolicyAdapter([ToolResultOffloadPolicy(artifact_store, context_settings)])
+        )
     if context_settings is not None:
         out.append(
             YuyutsavaCompactionMiddleware(
@@ -572,8 +587,11 @@ def _context_middleware(
     if transcript_store is not None:
         from yuyutsava.context.transcript_policy import TranscriptRecorderPolicy
 
-        out.append(LangChainPolicyAdapter(
-            [TranscriptRecorderPolicy(transcript_store, index=transcript_index)]))
+        out.append(
+            LangChainPolicyAdapter(
+                [TranscriptRecorderPolicy(transcript_store, index=transcript_index)]
+            )
+        )
 
     # Observability, last in the list so these before_model hooks report the
     # message list AFTER offload + compaction — i.e. exactly what the model
@@ -592,15 +610,17 @@ def _context_middleware(
         from yuyutsava.context.meter import ContextMeterPolicy
         from yuyutsava.llm import model_name_of
 
-        observers.append(ContextMeterPolicy(
-            settings=context_settings,
-            role=role,
-            model=model,
-            model_name=model_name_of(model),
-            # A subagent's message list is its own, not the conversation's
-            # window; it reports spend but must not redraw the panel.
-            window=meter_window,
-        ))
+        observers.append(
+            ContextMeterPolicy(
+                settings=context_settings,
+                role=role,
+                model=model,
+                model_name=model_name_of(model),
+                # A subagent's message list is its own, not the conversation's
+                # window; it reports spend but must not redraw the panel.
+                window=meter_window,
+            )
+        )
     out.append(LangChainPolicyAdapter(observers))
     return out
 
@@ -654,10 +674,12 @@ def _shared_master_tools(
         # turns compaction evicted. Absent it (no transcript wiring) the
         # offload readers are still offered; only the history readers drop.
         from yuyutsava.context.tools import make_context_tools
+
         tools.extend(make_context_tools(artifact_store, transcript_store))
 
     if ToolFamily.MEMORY in fams and memory_store is not None:
         from yuyutsava.memory.tools import make_memory_tools
+
         tools.extend(make_memory_tools(memory_store))
 
     if ToolFamily.VISUALS in fams:
@@ -667,10 +689,12 @@ def _shared_master_tools(
                 "was supplied for rendered visuals to land in."
             )
         from yuyutsava.visuals.tools import make_visual_tools
+
         tools.extend(make_visual_tools(output_dir=output_dir))
 
     if ToolFamily.TODO in fams:
         from yuyutsava.todoboard.tools import make_todo_tools
+
         kwargs = {"scope": profile.todo_scope}
         if todo_author:
             kwargs["author"] = todo_author
@@ -682,6 +706,7 @@ def _shared_master_tools(
     if ToolFamily.AGENT_MEMORY in fams:
         from yuyutsava.memory.agent_memory import AgentMemoryStore
         from yuyutsava.memory.agent_memory_tools import make_agent_memory_tools
+
         store = AgentMemoryStore(profile.agent_memory_namespace)
         tools.extend(make_agent_memory_tools(store))
         agent_memory_block = store.read_index_block()
@@ -690,6 +715,7 @@ def _shared_master_tools(
         # Inline artifacts (interactive HTML/JSX, docs, audio) rendered in the
         # reply itself — the richer, non-card twin of the vis_* visuals.
         from yuyutsava.artifacts.tools import make_artifact_tools
+
         tools.extend(make_artifact_tools())
 
     if ToolFamily.MCP in fams and mcp_tools:
@@ -768,9 +794,12 @@ def _async_subagent_wiring(
 
     if async_task_mirror is not None:
         from yuyutsava.async_subagents.cap_policy import BackgroundTaskCapPolicy
-        middleware.append(LangChainPolicyAdapter([
-            BackgroundTaskCapPolicy(async_task_mirror, max_concurrent=async_max_concurrent)
-        ]))
+
+        middleware.append(
+            LangChainPolicyAdapter(
+                [BackgroundTaskCapPolicy(async_task_mirror, max_concurrent=async_max_concurrent)]
+            )
+        )
 
     from yuyutsava.async_subagents.check_guard_policy import CheckAsyncTaskGuardPolicy
     from yuyutsava.async_subagents.interrupt_patch_policy import (
@@ -823,32 +852,38 @@ def _retrieval_injection_middleware(
 
     if memory_store is not None:
         from yuyutsava.context.injector import MemoryInjector
+
         injectors.append(MemoryInjector(memory_store))
 
     if skill_store is not None:
         from yuyutsava.skills.injector import SkillInjector
+
         injectors.append(SkillInjector(skill_store, agent=skill_scope))
 
     if transcript_index is not None:
         # Recall this conversation's own earlier turns; survives the checkpoint sweep.
         from yuyutsava.context.conversation_injector import ConversationInjector
+
         injectors.append(ConversationInjector(transcript_index))
 
     if note_index is not None:
         # Board-wide: a related decision often lives on a DIFFERENT card than
         # the one this bundle is pinned to.
         from yuyutsava.todoboard.recall import TodoNoteInjector
+
         injectors.append(TodoNoteInjector(note_index))
 
     if prefs_store is not None:
         # Whitelisted user preferences, refreshed per turn.
         from yuyutsava.prefs.injector import PrefsInjector
+
         injectors.append(PrefsInjector(prefs_store))
 
     if not injectors:
         return []
 
     from yuyutsava.core.retrieval_injection_policy import RetrievalInjectionPolicy
+
     return [LangChainPolicyAdapter([RetrievalInjectionPolicy(injectors)])]
 
 
@@ -875,23 +910,26 @@ def _sync_subagent_specs(
     specs: list[dict] = []
     for sa in subagents:
         spec = sa.as_deepagents_subagent_spec()
-        spec["middleware"] = collapse_policy_adapters([
-            LangChainPolicyAdapter([ToolFilterPolicy()]),
-            *_context_middleware(
-                model=model,
-                artifact_store=artifact_store,
-                context_settings=context_settings,
-                summary_store=summary_store,
-                memory_store=memory_store,
-                transcript_store=None,
-                compaction_model=compaction_model,
-                role=sa.name,
-                meter_window=False,
-            ),
-        ])
+        spec["middleware"] = collapse_policy_adapters(
+            [
+                LangChainPolicyAdapter([ToolFilterPolicy()]),
+                *_context_middleware(
+                    model=model,
+                    artifact_store=artifact_store,
+                    context_settings=context_settings,
+                    summary_store=summary_store,
+                    memory_store=memory_store,
+                    transcript_store=None,
+                    compaction_model=compaction_model,
+                    role=sa.name,
+                    meter_window=False,
+                ),
+            ]
+        )
         if artifact_store is not None:
             # Fresh ctx_* instances per spec — never shared across graphs.
             from yuyutsava.context.tools import make_context_tools
+
             spec["tools"] = list(spec.get("tools") or []) + make_context_tools(artifact_store)
         specs.append(spec)
     return specs
@@ -990,19 +1028,24 @@ def build_cli_deepagent(
     # own prompt routes filesystem ops through tr_*, so the block only misleads the
     # model and wastes cache-prefix tokens. Pass replacement="..." to reword instead.
     middleware = _policy_middleware(
-        CLI_PROFILE, "pre", role="cli", runtime_settings=runtime_settings,
-    )
-    middleware.extend(_context_middleware(
-        model=model,
-        artifact_store=artifact_store,
-        context_settings=context_settings,
-        summary_store=summary_store,
-        memory_store=memory_store,
-        transcript_store=transcript_store,
-        transcript_index=transcript_index,
-        compaction_model=compaction_model,
+        CLI_PROFILE,
+        "pre",
         role="cli",
-    ))
+        runtime_settings=runtime_settings,
+    )
+    middleware.extend(
+        _context_middleware(
+            model=model,
+            artifact_store=artifact_store,
+            context_settings=context_settings,
+            summary_store=summary_store,
+            memory_store=memory_store,
+            transcript_store=transcript_store,
+            transcript_index=transcript_index,
+            compaction_model=compaction_model,
+            role="cli",
+        )
+    )
     # Absolute spend ceiling + passive accounting, after compaction (the
     # orchestrator's ordering rule). Both daemon-wired: the standalone CLI
     # passes neither and keeps its historical unbounded behavior. Lazy
@@ -1010,11 +1053,18 @@ def build_cli_deepagent(
     # Budget + usage sit AFTER compaction so they see post-compaction counts;
     # the ordering lives in _POLICY_ORDER_POST, not here. The chat bundle is
     # shared across threads, so usage rows land task-less/thread-less.
-    middleware.extend(_policy_middleware(
-        CLI_PROFILE, "post", role="cli",
-        budget_tokens=budget_tokens, usage_store=usage_store, model=model,
-        workspace_root=workspace_root, permission_check=permission_check,
-    ))
+    middleware.extend(
+        _policy_middleware(
+            CLI_PROFILE,
+            "post",
+            role="cli",
+            budget_tokens=budget_tokens,
+            usage_store=usage_store,
+            model=model,
+            workspace_root=workspace_root,
+            permission_check=permission_check,
+        )
+    )
 
     # Per-turn retrieval injection: surface the memory + skills relevant to the
     # user's latest message into the prompt (the CLI is a persistent graph, so
@@ -1024,17 +1074,21 @@ def build_cli_deepagent(
     # scoping keeps globally-authored skills available and excludes skills
     # another agent wrote for itself. This was previously unscoped, letting the
     # CLI master pull tinker/orchestrator-specific skills into its context.
-    middleware.extend(_retrieval_injection_middleware(
-        memory_store=memory_store,
-        skill_store=skill_store,
-        skill_scope="cli",
-        transcript_index=transcript_index,
-        prefs_store=prefs_store,
-    ))
+    middleware.extend(
+        _retrieval_injection_middleware(
+            memory_store=memory_store,
+            skill_store=skill_store,
+            skill_scope="cli",
+            transcript_index=transcript_index,
+            prefs_store=prefs_store,
+        )
+    )
 
     loc = local_settings or LocalSettings()
     layout = WorkspaceLayout.for_workspace(
-        workspace_root, sandbox_override=loc.sandbox_dir, outputs_override=loc.output_dir,
+        workspace_root,
+        sandbox_override=loc.sandbox_dir,
+        outputs_override=loc.output_dir,
     )
     ws, sandbox_root, output_dir = layout.root, layout.sandbox, layout.outputs
 
@@ -1052,15 +1106,17 @@ def build_cli_deepagent(
 
     subagent_specs: list[dict] = []
     if subagents:
-        subagent_specs.extend(_sync_subagent_specs(
-            subagents,
-            model=model,
-            artifact_store=artifact_store,
-            context_settings=context_settings,
-            summary_store=summary_store,
-            memory_store=memory_store,
-            compaction_model=compaction_model,
-        ))
+        subagent_specs.extend(
+            _sync_subagent_specs(
+                subagents,
+                model=model,
+                artifact_store=artifact_store,
+                context_settings=context_settings,
+                summary_store=summary_store,
+                memory_store=memory_store,
+                compaction_model=compaction_model,
+            )
+        )
 
     _async_specs, _async_mw = _async_subagent_wiring(
         role="build_cli_deepagent",
@@ -1101,15 +1157,19 @@ def build_cli_deepagent(
                 "docker: sandbox %s is outside %s and is not mounted in the "
                 "container — tr_execute_in_sandbox / tr_run_python will fail; "
                 "drop the sandbox override in docker mode",
-                sandbox_root, layout.state,
+                sandbox_root,
+                layout.state,
             )
         # tr_execute_in_sandbox / tr_run_python run INSIDE the container; every
         # other tr_* tool stays host-side (the bind mounts share the files).
         exec_backend = DockerExecBackend(docker_backend, layout)
         startup_tools, _registry = _build_tool_registry_and_tools(
             _bind_task_runner_tools(ws, sandbox_root, exec_backend=exec_backend),
-            search_config, skill_registry,
-            extra_tools=context_tools, skill_store=skill_store, agent_name="cli",
+            search_config,
+            skill_registry,
+            extra_tools=context_tools,
+            skill_store=skill_store,
+            agent_name="cli",
             cap_enforcer=cap_enforcer,
         )
         _prompt = docker_system_prompt(
@@ -1142,11 +1202,16 @@ def build_cli_deepagent(
         )
 
     backend = _scratch_root_backend(
-        _local_shell_backend(workspace_root, bash_timeout_sec), _SCRATCH_ROOT,
+        _local_shell_backend(workspace_root, bash_timeout_sec),
+        _SCRATCH_ROOT,
     )
     startup_tools, _registry = _build_tool_registry_and_tools(
-        _bind_task_runner_tools(ws, sandbox_root), search_config, skill_registry,
-        extra_tools=context_tools, skill_store=skill_store, agent_name="cli",
+        _bind_task_runner_tools(ws, sandbox_root),
+        search_config,
+        skill_registry,
+        extra_tools=context_tools,
+        skill_store=skill_store,
+        agent_name="cli",
         cap_enforcer=cap_enforcer,
     )
     _prompt = local_system_prompt(layout, _registry.catalog_block(), front=front)
@@ -1238,7 +1303,9 @@ def build_orchestrator(
         if skill_store is not None
         else (skill_registry.index_block(agent="orchestrator") if skill_registry else "")
     )
-    system_prompt = render_system_prompt(capabilities, skills_index=skills_index, prefs_block=prefs_block)
+    system_prompt = render_system_prompt(
+        capabilities, skills_index=skills_index, prefs_block=prefs_block
+    )
 
     master_tools: list = [
         _make_ask_user_tool(deps.channels),
@@ -1266,8 +1333,7 @@ def build_orchestrator(
         memory_store=deps.memory_store,
         transcript_store=getattr(deps, "transcript_store", None),
         mcp_tools=(
-            deps.mcp_manager.tools_for("orchestrator")
-            if deps.mcp_manager is not None else None
+            deps.mcp_manager.tools_for("orchestrator") if deps.mcp_manager is not None else None
         ),
     )
     master_tools.extend(_shared)
@@ -1294,9 +1360,7 @@ def build_orchestrator(
     if _catalog:
         system_prompt = f"{system_prompt}\n\n## AVAILABLE TOOLS (load a schema with tool_search before calling)\n{_catalog}"
 
-    def _ctx_mw(
-        agent_model: BaseChatModel, role: str, *, meter_window: bool = True
-    ) -> list:
+    def _ctx_mw(agent_model: BaseChatModel, role: str, *, meter_window: bool = True) -> list:
         return _context_middleware(
             model=agent_model,
             artifact_store=deps.artifact_store,
@@ -1316,13 +1380,20 @@ def build_orchestrator(
             return []
         from yuyutsava.llm import model_name_of
         from yuyutsava.daemon.usage import UsagePolicy
-        return [LangChainPolicyAdapter([UsagePolicy(
-            usage_store,
-            role=role,
-            model_name=model_name_of(agent_model),
-            task_id=getattr(usage_context, "task_id", ""),
-            thread_id=getattr(usage_context, "thread_id", ""),
-        )])]
+
+        return [
+            LangChainPolicyAdapter(
+                [
+                    UsagePolicy(
+                        usage_store,
+                        role=role,
+                        model_name=model_name_of(agent_model),
+                        task_id=getattr(usage_context, "task_id", ""),
+                        thread_id=getattr(usage_context, "thread_id", ""),
+                    )
+                ]
+            )
+        ]
 
     subagent_specs: list[dict] = []
     for sa in deps.subagents.values():
@@ -1330,17 +1401,21 @@ def build_orchestrator(
             continue
         spec = sa.as_deepagents_subagent_spec()
         spec["model"] = deps.subagent_model
-        spec["middleware"] = collapse_policy_adapters([
-            LangChainPolicyAdapter([ToolFilterPolicy()]),
-            *_ctx_mw(deps.subagent_model, sa.name, meter_window=False),
-            LangChainPolicyAdapter([BudgetPolicy(
-                max_input_tokens=deps.subagent_token_budget, role=sa.name)]),
-            *_usage_mw(deps.subagent_model, sa.name),
-        ])
+        spec["middleware"] = collapse_policy_adapters(
+            [
+                LangChainPolicyAdapter([ToolFilterPolicy()]),
+                *_ctx_mw(deps.subagent_model, sa.name, meter_window=False),
+                LangChainPolicyAdapter(
+                    [BudgetPolicy(max_input_tokens=deps.subagent_token_budget, role=sa.name)]
+                ),
+                *_usage_mw(deps.subagent_model, sa.name),
+            ]
+        )
         if deps.artifact_store is not None:
             # Subagents read their own offloaded results, so the ctx_* pair
             # must exist in their graphs too (fresh instances per spec).
             from yuyutsava.context.tools import make_context_tools
+
             spec["tools"] = list(spec.get("tools") or []) + make_context_tools(deps.artifact_store)
         subagent_specs.append(spec)
 
@@ -1361,7 +1436,8 @@ def build_orchestrator(
     subagent_specs.extend(_async_specs)
 
     budget = LangChainPolicyAdapter(
-        [BudgetPolicy(max_input_tokens=budget_tokens, role="orchestrator")])
+        [BudgetPolicy(max_input_tokens=budget_tokens, role="orchestrator")]
+    )
     workspace_root = str(deps.workspace_root.resolve()) if deps.workspace_root else "/"
 
     # Instance, not a factory closure — see _local_shell_backend. The
@@ -1385,7 +1461,9 @@ def build_orchestrator(
     # toggle still gets a clean refusal instead of a silent retry.
     master_middleware: list = [
         *_policy_middleware(
-            ORCHESTRATOR_PROFILE, "pre", role="orchestrator",
+            ORCHESTRATOR_PROFILE,
+            "pre",
+            role="orchestrator",
             runtime_settings=_runtime_settings,
         ),
         *_ctx_mw(model, "orchestrator"),
@@ -1401,12 +1479,14 @@ def build_orchestrator(
     # No prefs_store: the orchestrator receives preferences as the build-time
     # ``prefs_block`` string assembled by the daemon loop, not a per-turn
     # injector. See ORCHESTRATOR_PROFILE (PrefsInjector absent).
-    master_middleware.extend(_retrieval_injection_middleware(
-        memory_store=deps.memory_store,
-        skill_store=skill_store,
-        skill_scope="orchestrator",
-        transcript_index=getattr(deps, "transcript_index", None),
-    ))
+    master_middleware.extend(
+        _retrieval_injection_middleware(
+            memory_store=deps.memory_store,
+            skill_store=skill_store,
+            skill_scope="orchestrator",
+            transcript_index=getattr(deps, "transcript_index", None),
+        )
+    )
 
     master_middleware.extend(_async_mw)
 
@@ -1495,41 +1575,56 @@ def build_tinker_agent(
     # cached per card and can outlive a toggle change, so without the gate a
     # disabled subagent stays reachable from the board after it was switched off.
     middleware: list = _policy_middleware(
-        TINKER_PROFILE, "pre", role="tinker", runtime_settings=runtime_settings,
-    )
-    middleware.extend(_context_middleware(
-        model=model,
-        artifact_store=artifact_store,
-        context_settings=context_settings,
-        summary_store=summary_store,
-        memory_store=memory_store,
-        transcript_store=transcript_store,
-        transcript_index=transcript_index,
-        compaction_model=compaction_model,
+        TINKER_PROFILE,
+        "pre",
         role="tinker",
-    ))
+        runtime_settings=runtime_settings,
+    )
+    middleware.extend(
+        _context_middleware(
+            model=model,
+            artifact_store=artifact_store,
+            context_settings=context_settings,
+            summary_store=summary_store,
+            memory_store=memory_store,
+            transcript_store=transcript_store,
+            transcript_index=transcript_index,
+            compaction_model=compaction_model,
+            role="tinker",
+        )
+    )
     # Spend ceiling + accounting, after compaction. Unlike the chat bundle, a
     # tinker graph IS one conversation, so usage rows are pinned to the card.
-    middleware.extend(_policy_middleware(
-        TINKER_PROFILE, "post", role="tinker",
-        budget_tokens=budget_tokens, usage_store=usage_store, model=model,
-        workspace_root=ws, permission_check=permission_check,
-        usage_task_id=f"tinker:{card_id}", usage_thread_id=f"todo:{card_id}",
-    ))
+    middleware.extend(
+        _policy_middleware(
+            TINKER_PROFILE,
+            "post",
+            role="tinker",
+            budget_tokens=budget_tokens,
+            usage_store=usage_store,
+            model=model,
+            workspace_root=ws,
+            permission_check=permission_check,
+            usage_task_id=f"tinker:{card_id}",
+            usage_thread_id=f"todo:{card_id}",
+        )
+    )
 
     # Per-turn retrieval injection — the tinker graph is as persistent as the
     # CLI's, so memory/skills/transcript recall must be per-turn, and the
     # skills search is scoped to the tinker namespace (agent column).
     # note_index is tinker-only: board-wide note recall across ALL cards, not
     # just the one this bundle is pinned to.
-    middleware.extend(_retrieval_injection_middleware(
-        memory_store=memory_store,
-        skill_store=skill_store,
-        skill_scope="tinker",
-        transcript_index=transcript_index,
-        note_index=note_index,
-        prefs_store=prefs_store,
-    ))
+    middleware.extend(
+        _retrieval_injection_middleware(
+            memory_store=memory_store,
+            skill_store=skill_store,
+            skill_scope="tinker",
+            transcript_index=transcript_index,
+            note_index=note_index,
+            prefs_store=prefs_store,
+        )
+    )
 
     # todo_author="tinker": the board's full editing set, with notes attributed
     # to the tinker agent rather than the user.
@@ -1548,15 +1643,17 @@ def build_tinker_agent(
 
     subagent_specs: list[dict] = []
     if subagents:
-        subagent_specs.extend(_sync_subagent_specs(
-            subagents,
-            model=model,
-            artifact_store=artifact_store,
-            context_settings=context_settings,
-            summary_store=summary_store,
-            memory_store=memory_store,
-            compaction_model=compaction_model,
-        ))
+        subagent_specs.extend(
+            _sync_subagent_specs(
+                subagents,
+                model=model,
+                artifact_store=artifact_store,
+                context_settings=context_settings,
+                summary_store=summary_store,
+                memory_store=memory_store,
+                compaction_model=compaction_model,
+            )
+        )
     # Tinker delegates freely: any task, sync or async, local or on a peer
     # daemon. ``remote_async_subagents`` used to be omitted here, which silently
     # denied it cross-daemon background work its siblings could do.
@@ -1574,17 +1671,19 @@ def build_tinker_agent(
     backend = _scratch_root_backend(_local_shell_backend(ws, bash_timeout_sec), _SCRATCH_ROOT)
     startup_tools, _registry = _build_tool_registry_and_tools(
         _bind_task_runner_tools(ws, sandbox_root, agent_name="tinker"),
-        search_config, skill_registry,
-        extra_tools=context_tools, skill_store=skill_store, agent_name="tinker",
+        search_config,
+        skill_registry,
+        extra_tools=context_tools,
+        skill_store=skill_store,
+        agent_name="tinker",
         cap_enforcer=cap_enforcer,
     )
 
     # Semantic store present → SkillInjector surfaces the relevant modes per
     # turn; static index only as the keyword-less fallback (orchestrator rule).
     from yuyutsava.agents.tinker.prompts import render_tinker_system_prompt
-    skills_index = (
-        "" if skill_store is not None else skill_registry.index_block(agent="tinker")
-    )
+
+    skills_index = "" if skill_store is not None else skill_registry.index_block(agent="tinker")
     graph = create_deep_agent(
         model=model,
         tools=startup_tools,

@@ -49,12 +49,17 @@ def wedged_history() -> list:
     """The message shape recovered from the real thread, in order."""
     return [
         HumanMessage(content="can we do it through CUA"),
-        AIMessage(content="", tool_calls=[{
-            "id": "e22ccd65-22a8-463a-9c16-bce6e437d2b0",
-            "name": "tr_run_python",
-            "args": {"script_path": "/tmp/scrape_all_songs.py"},
-            "type": "tool_call",
-        }]),
+        AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "id": "e22ccd65-22a8-463a-9c16-bce6e437d2b0",
+                    "name": "tr_run_python",
+                    "args": {"script_path": "/tmp/scrape_all_songs.py"},
+                    "type": "tool_call",
+                }
+            ],
+        ),
         ToolMessage(
             id="msg-tool-1",
             tool_call_id="e22ccd65-22a8-463a-9c16-bce6e437d2b0",
@@ -83,8 +88,11 @@ class Detection(unittest.TestCase):
     def test_a_successful_tool_result_is_never_rewritten(self):
         # It IS reported as an unclosed turn — the assistant never got to say
         # what it concluded — but the result itself must not be touched.
-        msgs = [ToolMessage(id="t", tool_call_id="c", name="tr_ls",
-                            status="success", content='{"status": "ok"}')]
+        msgs = [
+            ToolMessage(
+                id="t", tool_call_id="c", name="tr_ls", status="success", content='{"status": "ok"}'
+            )
+        ]
         found = diagnose(msgs)
         self.assertEqual(found.cancelled, ())
         self.assertEqual(found.dangling, ())
@@ -93,8 +101,11 @@ class Detection(unittest.TestCase):
         self.assertFalse(needs_repair(msgs, close_turn=False))
 
     def test_non_string_content_does_not_crash_detection(self):
-        msgs = [ToolMessage(id="t", tool_call_id="c", name="x",
-                            content=[{"type": "text", "text": "hi"}])]
+        msgs = [
+            ToolMessage(
+                id="t", tool_call_id="c", name="x", content=[{"type": "text", "text": "hi"}]
+            )
+        ]
         self.assertEqual(diagnose(msgs).cancelled, ())
 
 
@@ -110,8 +121,7 @@ class Rewriting(unittest.TestCase):
         # worse history than the one being repaired.
         out = rewrite(wedged_history(), Cause.INTERRUPTED_BY_USER)
         self.assertEqual(out[0].id, "msg-tool-1")
-        self.assertEqual(
-            out[0].tool_call_id, "e22ccd65-22a8-463a-9c16-bce6e437d2b0")
+        self.assertEqual(out[0].tool_call_id, "e22ccd65-22a8-463a-9c16-bce6e437d2b0")
 
     def test_the_tool_name_survives(self):
         out = rewrite(wedged_history(), Cause.INTERRUPTED_BY_USER)
@@ -136,8 +146,13 @@ class Rewriting(unittest.TestCase):
 
     def test_several_cancelled_calls_are_all_repaired(self):
         msgs = wedged_history() + [
-            ToolMessage(id="msg-tool-2", tool_call_id="c2", name="tr_ls",
-                        status="success", content=WEDGED_BODY),
+            ToolMessage(
+                id="msg-tool-2",
+                tool_call_id="c2",
+                name="tr_ls",
+                status="success",
+                content=WEDGED_BODY,
+            ),
         ]
         out = rewrite(msgs, Cause.INTERRUPTED_BY_USER)
         rewritten = {m.id for m in out if isinstance(m, ToolMessage)}
@@ -216,6 +231,7 @@ class EmptyOutputIsANotice(unittest.TestCase):
 # 14 Sep: the graceful interrupt left the assistant's turn hanging open
 # ----------------------------------------------------------------------
 
+
 def interrupted_history() -> list:
     """The tail measured from thread ``cli-1789337564-…``, seq 6400-6401.
 
@@ -225,14 +241,22 @@ def interrupted_history() -> list:
     """
     return [
         HumanMessage(content="where is the turn driven"),
-        AIMessage(content="", id="ai-6400", tool_calls=[{
-            "id": "2a294c14",
-            "name": "tr_grep",
-            "args": {"pattern": "(class |async def )"},
-            "type": "tool_call",
-        }]),
+        AIMessage(
+            content="",
+            id="ai-6400",
+            tool_calls=[
+                {
+                    "id": "2a294c14",
+                    "name": "tr_grep",
+                    "args": {"pattern": "(class |async def )"},
+                    "type": "tool_call",
+                }
+            ],
+        ),
         ToolMessage(
-            id="tool-6401", tool_call_id="2a294c14", name="tr_grep",
+            id="tool-6401",
+            tool_call_id="2a294c14",
+            name="tr_grep",
             status="success",
             content='{"status":"success","result":"167 matching lines"}',
         ),
@@ -259,8 +283,11 @@ class TheUnfinishedTurn(unittest.TestCase):
     def test_the_closer_is_the_last_message_so_the_user_follows_a_model_turn(self):
         msgs = interrupted_history()
         msgs[-1] = ToolMessage(
-            id="tool-x", tool_call_id="2a294c14", name="tr_grep",
-            status="success", content=WEDGED_BODY,
+            id="tool-x",
+            tool_call_id="2a294c14",
+            name="tr_grep",
+            status="success",
+            content=WEDGED_BODY,
         )
         out = rewrite(msgs, Cause.INTERRUPTED_BY_USER)
         # The rewritten tool result first, the closing turn last.
@@ -270,8 +297,7 @@ class TheUnfinishedTurn(unittest.TestCase):
     def test_a_resume_does_not_declare_the_turn_interrupted(self):
         # Answering a permission prompt continues the SAME turn; saying it was
         # interrupted would be a lie the model then reasons from.
-        out = rewrite(
-            interrupted_history(), Cause.INTERRUPTED_BY_USER, close_turn=False)
+        out = rewrite(interrupted_history(), Cause.INTERRUPTED_BY_USER, close_turn=False)
         self.assertEqual(out, [])
 
     def test_a_history_ending_on_the_users_turn_is_already_closed(self):
@@ -307,8 +333,7 @@ class EmptyAssistantMessages(unittest.TestCase):
             HumanMessage(content="get it now?"),
             AIMessage(content="", id="ai-6405"),
         ]
-        self.assertEqual(
-            list(diagnose(msgs).empty_assistant), ["ai-6403", "ai-6405"])
+        self.assertEqual(list(diagnose(msgs).empty_assistant), ["ai-6403", "ai-6405"])
 
     def test_a_tool_calling_reply_with_no_text_is_normal_and_kept(self):
         # Every tool call in the wedged histories looks like this. Removing
@@ -328,13 +353,13 @@ class EmptyAssistantMessages(unittest.TestCase):
 
         msgs = wedged_history() + [
             AIMessage(content="", id="ai-empty"),
-            ToolMessage(id="t9", tool_call_id="c9", name="tr_ls",
-                        status="success", content="ok"),
+            ToolMessage(id="t9", tool_call_id="c9", name="tr_ls", status="success", content="ok"),
         ]
         out = rewrite(msgs, Cause.INTERRUPTED_BY_USER)
         kinds = [type(m).__name__ for m in out]
         self.assertLess(
-            kinds.index("RemoveMessage"), kinds.index("AIMessage"),
+            kinds.index("RemoveMessage"),
+            kinds.index("AIMessage"),
             f"removals must precede appends, got {kinds}",
         )
 
@@ -345,15 +370,22 @@ class DanglingToolCalls(unittest.TestCase):
     def _dangling(self) -> list:
         return [
             HumanMessage(content="run it"),
-            AIMessage(content="", id="ai-1", tool_calls=[{
-                "id": "call-1", "name": "tr_run_python",
-                "args": {"script_path": "/tmp/x.py"}, "type": "tool_call",
-            }]),
+            AIMessage(
+                content="",
+                id="ai-1",
+                tool_calls=[
+                    {
+                        "id": "call-1",
+                        "name": "tr_run_python",
+                        "args": {"script_path": "/tmp/x.py"},
+                        "type": "tool_call",
+                    }
+                ],
+            ),
         ]
 
     def test_a_call_with_no_result_anywhere_is_found(self):
-        self.assertEqual(
-            diagnose(self._dangling()).dangling, (("call-1", "tr_run_python"),))
+        self.assertEqual(diagnose(self._dangling()).dangling, (("call-1", "tr_run_python"),))
 
     def test_a_result_is_synthesised_for_it(self):
         out = rewrite(self._dangling(), Cause.INTERRUPTED_BY_USER)
@@ -375,12 +407,15 @@ class DanglingToolCalls(unittest.TestCase):
 
     def test_one_answered_one_not_reports_only_the_orphan(self):
         msgs = [
-            AIMessage(content="", id="ai-1", tool_calls=[
-                {"id": "a", "name": "tr_ls", "args": {}, "type": "tool_call"},
-                {"id": "b", "name": "tr_grep", "args": {}, "type": "tool_call"},
-            ]),
-            ToolMessage(id="t-a", tool_call_id="a", name="tr_ls",
-                        status="success", content="ok"),
+            AIMessage(
+                content="",
+                id="ai-1",
+                tool_calls=[
+                    {"id": "a", "name": "tr_ls", "args": {}, "type": "tool_call"},
+                    {"id": "b", "name": "tr_grep", "args": {}, "type": "tool_call"},
+                ],
+            ),
+            ToolMessage(id="t-a", tool_call_id="a", name="tr_ls", status="success", content="ok"),
         ]
         self.assertEqual(diagnose(msgs).dangling, (("b", "tr_grep"),))
 
@@ -413,14 +448,17 @@ class AnEmptyTurnIsAlwaysRetried(unittest.TestCase):
             drives.append((user_text, resume))
             return "recovered", 3
 
-        final, steps = asyncio.run(svc._recover_empty_turn(
-            bundle, on_event=events.append, drive=drive,
-        ))
+        final, steps = asyncio.run(
+            svc._recover_empty_turn(
+                bundle,
+                on_event=events.append,
+                drive=drive,
+            )
+        )
         return final, steps, events, drives
 
     def test_a_clean_history_still_gets_its_one_retry(self):
-        final, steps, _events, drives = self._run(
-            [HumanMessage(content="hi")])
+        final, steps, _events, drives = self._run([HumanMessage(content="hi")])
         self.assertEqual(final, "recovered")
         self.assertEqual(steps, 3)
         self.assertEqual(len(drives), 1, "exactly one retry, never a loop")
@@ -428,13 +466,11 @@ class AnEmptyTurnIsAlwaysRetried(unittest.TestCase):
     def test_the_retry_sends_no_new_user_message(self):
         # Theirs is already in history; sending it twice makes the model
         # answer itself.
-        _final, _steps, _events, drives = self._run(
-            [HumanMessage(content="hi")])
+        _final, _steps, _events, drives = self._run([HumanMessage(content="hi")])
         self.assertEqual(drives[0], (None, None))
 
     def test_the_user_is_told_a_retry_is_happening(self):
-        _final, _steps, events, _drives = self._run(
-            [HumanMessage(content="hi")])
+        _final, _steps, events, _drives = self._run([HumanMessage(content="hi")])
         self.assertTrue(events, "silence is the one forbidden outcome")
         self.assertEqual(events[0].kind, "notice")
         self.assertIn("Retrying", events[0].data["text"])
@@ -452,9 +488,13 @@ class AnEmptyTurnIsAlwaysRetried(unittest.TestCase):
         async def drive(user_text, resume):
             return "", 1
 
-        final, _steps = asyncio.run(svc._recover_empty_turn(
-            bundle, on_event=events.append, drive=drive,
-        ))
+        final, _steps = asyncio.run(
+            svc._recover_empty_turn(
+                bundle,
+                on_event=events.append,
+                drive=drive,
+            )
+        )
         self.assertEqual(final, "")
         self.assertEqual(events[-1].data["level"], "error")
         self.assertIn("twice", events[-1].data["text"])

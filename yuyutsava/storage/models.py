@@ -142,7 +142,7 @@ class ConsentRule:
     rule_id: str
     topic_glob: str
     match_json: str
-    decision: str               # "auto_approve" | "auto_skip"
+    decision: str  # "auto_approve" | "auto_skip"
     created_ts: float
     expires_ts: float | None
 
@@ -184,8 +184,8 @@ class InterruptRecord:
 
     session_id: str
     thread_id: str
-    invocation_mode: str           # "cli" | "daemon"
-    payload: dict                  # original interrupt value
+    invocation_mode: str  # "cli" | "daemon"
+    payload: dict  # original interrupt value
     # Derived / structured fields — populated from payload at construction.
     kind: str = "other"
     agent_path: str = "unknown"

@@ -32,14 +32,16 @@ def _entry(name: str, group: str, blurb: str) -> CatalogEntry:
 
 
 def _provider() -> KeywordCatalogProvider:
-    return KeywordCatalogProvider([
-        _entry("tr_write_file", "tr", "write a file to disk"),
-        _entry("tr_read_file", "tr", "read a file from disk"),
-        _entry("tr_grep", "tr", "search file contents"),
-        _entry("ws_tavily_search", "ws", "search the web"),
-        _entry("ws_exa_search", "ws", "search the web with exa"),
-        _entry("db_query", "db", "run a read-only sql query"),
-    ])
+    return KeywordCatalogProvider(
+        [
+            _entry("tr_write_file", "tr", "write a file to disk"),
+            _entry("tr_read_file", "tr", "read a file from disk"),
+            _entry("tr_grep", "tr", "search file contents"),
+            _entry("ws_tavily_search", "ws", "search the web"),
+            _entry("ws_exa_search", "ws", "search the web with exa"),
+            _entry("db_query", "db", "run a read-only sql query"),
+        ]
+    )
 
 
 class KeywordProviderTests(unittest.IsolatedAsyncioTestCase):

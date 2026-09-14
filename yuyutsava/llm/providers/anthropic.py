@@ -21,9 +21,7 @@ class AnthropicProvider(Provider):
         self, settings: AnthropicSettings, *, temperature: float, disable_reasoning: bool
     ) -> BaseChatModel:
         # Not behind a yuyutsava extra — the install hint names the dist directly.
-        mod = require(
-            "langchain_anthropic", provider="anthropic", install="langchain-anthropic"
-        )
+        mod = require("langchain_anthropic", provider="anthropic", install="langchain-anthropic")
         return mod.ChatAnthropic(
             api_key=SecretStr(settings.api_key),
             model_name=settings.model,

@@ -103,9 +103,9 @@ class MiddlewareOrderingRule(unittest.TestCase):
                 chain = fp["chains"]["model_call"]
                 self.assertTrue(chain, f"{key}: no model-call policies at all")
                 self.assertEqual(
-                    chain[0], "ToolFilterPolicy",
-                    f"{key}: ToolFilterPolicy must lead the model-call chain; "
-                    f"got {chain}",
+                    chain[0],
+                    "ToolFilterPolicy",
+                    f"{key}: ToolFilterPolicy must lead the model-call chain; got {chain}",
                 )
 
     def test_every_order_rule_actually_fires(self) -> None:
@@ -123,12 +123,14 @@ class MiddlewareOrderingRule(unittest.TestCase):
         fingerprints = all_fingerprints()
         for chain, earlier, later, why in _ORDER_RULES:
             fired = sum(
-                1 for fp in fingerprints.values()
+                1
+                for fp in fingerprints.values()
                 if earlier in fp["chains"][chain] and later in fp["chains"][chain]
             )
             with self.subTest(rule=f"{chain}:{earlier}<{later}"):
                 self.assertGreater(
-                    fired, 0,
+                    fired,
+                    0,
                     f"the rule '{earlier} before {later}' in the {chain} chain "
                     f"fires in NO configuration, so it enforces nothing. Either "
                     f"a name is stale or the behaviour is gone. ({why})",
@@ -157,12 +159,9 @@ class CrossChainFactsAreNotListOrder(unittest.TestCase):
     """
 
     _CROSS_CHAIN = (
-        ("ToolResultOffloadPolicy", "tool_after",
-         "YuyutsavaCompactionMiddleware", "before_model"),
-        ("YuyutsavaCompactionMiddleware", "before_model",
-         "BudgetPolicy", "after_model"),
-        ("ToolFilterPolicy", "model_call",
-         "ToolResultOffloadPolicy", "tool_after"),
+        ("ToolResultOffloadPolicy", "tool_after", "YuyutsavaCompactionMiddleware", "before_model"),
+        ("YuyutsavaCompactionMiddleware", "before_model", "BudgetPolicy", "after_model"),
+        ("ToolFilterPolicy", "model_call", "ToolResultOffloadPolicy", "tool_after"),
     )
 
     def test_each_pair_is_still_in_different_chains(self) -> None:
@@ -172,13 +171,15 @@ class CrossChainFactsAreNotListOrder(unittest.TestCase):
             for a, chain_a, b, chain_b in self._CROSS_CHAIN:
                 with self.subTest(pair=f"{a}/{b}"):
                     self.assertIn(
-                        a, fp["chains"][chain_a],
+                        a,
+                        fp["chains"][chain_a],
                         f"{a} left the {chain_a} chain; the loop-structure "
                         f"argument no longer covers its order against {b}, so "
                         f"this needs a real ordering rule",
                     )
                     self.assertIn(
-                        b, fp["chains"][chain_b],
+                        b,
+                        fp["chains"][chain_b],
                         f"{b} left the {chain_b} chain; see above",
                     )
                     self.assertNotEqual(chain_a, chain_b)
@@ -238,7 +239,7 @@ class InjectorChain(unittest.TestCase):
             start = entry.find(self._MARKER)
             if start == -1:
                 continue
-            inner = entry[start + len(self._MARKER):]
+            inner = entry[start + len(self._MARKER) :]
             depth = 1
             for i, ch in enumerate(inner):
                 depth += (ch == "[") - (ch == "]")
@@ -280,8 +281,11 @@ class InjectorChain(unittest.TestCase):
     def test_injector_order_is_stable(self) -> None:
         """Order is a cached-prompt-prefix property, not cosmetics."""
         canonical = [
-            "MemoryInjector", "SkillInjector", "ConversationInjector",
-            "TodoNoteInjector", "PrefsInjector",
+            "MemoryInjector",
+            "SkillInjector",
+            "ConversationInjector",
+            "TodoNoteInjector",
+            "PrefsInjector",
         ]
         for key, fp in all_fingerprints().items():
             if not key.endswith(":wired"):
@@ -312,15 +316,16 @@ class InjectorChain(unittest.TestCase):
             with self.subTest(profile=key):
                 if expected is None:
                     self.assertIn(
-                        "SkillInjector,", entry + ",",
+                        "SkillInjector,",
+                        entry + ",",
                         f"{key}: expected an UNSCOPED SkillInjector (searches every "
                         f"agent's skills); digest was {entry}",
                     )
                 else:
                     self.assertIn(
-                        f"SkillInjector({expected})", entry,
-                        f"{key}: expected SkillInjector scoped to {expected!r}; "
-                        f"digest was {entry}",
+                        f"SkillInjector({expected})",
+                        entry,
+                        f"{key}: expected SkillInjector scoped to {expected!r}; digest was {entry}",
                     )
 
 
@@ -379,7 +384,8 @@ class ProfileDrivenToolFamilies(unittest.TestCase):
         names = all_fingerprints()["orchestrator:wired"]["tools"]
         leaked = [n for n in names if n.startswith(("tr_", "db_", "vis_"))]
         self.assertEqual(
-            leaked, [],
+            leaked,
+            [],
             f"The orchestrator gained execution tools it must not have: {leaked}. "
             f"It is a plain router — see ORCHESTRATOR_PROFILE and the by-design "
             f"divergence notes in core/agent_profiles.py.",
@@ -397,7 +403,8 @@ class ProfileDrivenToolFamilies(unittest.TestCase):
             with self.subTest(profile=key, scope=scope):
                 if scope == "capture":
                     self.assertEqual(
-                        present, set(),
+                        present,
+                        set(),
                         f"{key}: todo_scope='capture' but board-editing tools are "
                         f"bound: {sorted(present)}. Only the tinker master may edit "
                         f"the board.",
@@ -405,8 +412,7 @@ class ProfileDrivenToolFamilies(unittest.TestCase):
                 else:
                     self.assertTrue(
                         present,
-                        f"{key}: todo_scope={scope!r} but no board-editing tools "
-                        f"are bound.",
+                        f"{key}: todo_scope={scope!r} but no board-editing tools are bound.",
                     )
 
 
@@ -423,7 +429,8 @@ class StructuralSnapshot(unittest.TestCase):
         actual = all_fingerprints()
 
         self.assertEqual(
-            sorted(expected), sorted(actual),
+            sorted(expected),
+            sorted(actual),
             "the set of profile/wiring combinations changed",
         )
 

@@ -1062,6 +1062,4 @@ async def apply(pool: PgPool) -> None:
                 current = version
             logger.info("pg migrations: at v%d", current)
         finally:
-            await conn.execute(
-                "SELECT pg_advisory_unlock(%s)", (_ADVISORY_LOCK_KEY,)
-            )
+            await conn.execute("SELECT pg_advisory_unlock(%s)", (_ADVISORY_LOCK_KEY,))

@@ -48,9 +48,7 @@ class Embedder:
             )
         )
 
-    async def embed(
-        self, texts: list[str], *, mode: str = "document"
-    ) -> list[list[float]]:
+    async def embed(self, texts: list[str], *, mode: str = "document") -> list[list[float]]:
         """Embed ``texts``; raises on HTTP errors or dimension mismatch.
 
         ``mode`` is ``"document"`` (stored memories) or ``"query"`` (search
@@ -101,7 +99,9 @@ class Embedder:
             logger.warning(
                 "memory: embedder unreachable at %s (model %s): %s — "
                 "semantic memory degrades to keyword search until it recovers",
-                self._settings.embed_base_url, self._settings.embed_model, exc,
+                self._settings.embed_base_url,
+                self._settings.embed_model,
+                exc,
             )
             return False
 

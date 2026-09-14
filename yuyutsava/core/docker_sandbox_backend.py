@@ -184,14 +184,19 @@ class DockerSandboxBackend(BaseSandbox):
             self._container_workdir,
             "--network",
             self._network,
-            "--memory", self._memory,
-            "--cpus", self._cpus,
-            "--pids-limit", str(self._pids_limit),
+            "--memory",
+            self._memory,
+            "--cpus",
+            self._cpus,
+            "--pids-limit",
+            str(self._pids_limit),
             "--read-only",
             # The rootfs is read-only; give scripts a writable /tmp so
             # tempfile/pip/etc. work without loosening anything else.
-            "--tmpfs", "/tmp:rw,size=64m",
-            "--security-opt", "no-new-privileges",
+            "--tmpfs",
+            "/tmp:rw,size=64m",
+            "--security-opt",
+            "no-new-privileges",
             self._image,
             "sleep",
             "infinity",
@@ -374,9 +379,14 @@ class DockerSandboxBackend(BaseSandbox):
         _slog.info("[SANDBOX LOG] aexecute  cmd=%s", command[:120].replace("\n", " "))
 
         exec_argv = [
-            "docker", "exec", "-i",
-            "-w", self._container_workdir,
-            cid, "sh", "-s",
+            "docker",
+            "exec",
+            "-i",
+            "-w",
+            self._container_workdir,
+            cid,
+            "sh",
+            "-s",
         ]
 
         proc: asyncio.subprocess.Process | None = None
@@ -479,7 +489,9 @@ class DockerSandboxBackend(BaseSandbox):
                     results.append(
                         FileUploadResponse(
                             path=path,
-                            error="permission_denied" if "Permission" in err_msg else "invalid_path",
+                            error="permission_denied"
+                            if "Permission" in err_msg
+                            else "invalid_path",
                         ),
                     )
                 else:

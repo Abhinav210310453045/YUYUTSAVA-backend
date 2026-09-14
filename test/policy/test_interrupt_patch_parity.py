@@ -57,8 +57,9 @@ class _Tool:
 
 
 class _Request:
-    def __init__(self, tool_name: str | None, *, task_id: str = "t1",
-                 state: dict | None = None) -> None:
+    def __init__(
+        self, tool_name: str | None, *, task_id: str = "t1", state: dict | None = None
+    ) -> None:
         self.tool = _Tool(tool_name) if tool_name is not None else None
         self.tool_call = {
             "name": tool_name or "made_up_tool",
@@ -81,8 +82,10 @@ class _Patched:
 
 
 GOLDEN = json.loads(
-    (pathlib.Path(__file__).resolve().parent / "tool_policies_golden.json")
-    .read_text(encoding="utf-8"))["interrupt_patch"]
+    (pathlib.Path(__file__).resolve().parent / "tool_policies_golden.json").read_text(
+        encoding="utf-8"
+    )
+)["interrupt_patch"]
 
 
 async def _drive_new(request: Any, recorder: _Patched) -> tuple[Any, list]:
@@ -98,22 +101,35 @@ async def _drive_new(request: Any, recorder: _Patched) -> tuple[Any, list]:
 
 #: (label, tool name, task_id, state, expected patch targets)
 CASES: list[tuple[str, str, str, dict | None, list]] = [
-    ("update triggers a patch", "update_async_task", "t1", None,
-     [("researcher", "th-1")]),
-    ("cancel triggers a patch", "cancel_async_task", "t1", None,
-     [("researcher", "th-1")]),
+    ("update triggers a patch", "update_async_task", "t1", None, [("researcher", "th-1")]),
+    ("cancel triggers a patch", "cancel_async_task", "t1", None, [("researcher", "th-1")]),
     ("an unrelated tool does not", "start_async_task", "t1", None, []),
     ("check does not", "check_async_task", "t1", None, []),
     ("no task_id", "cancel_async_task", "", None, []),
     ("task not tracked", "cancel_async_task", "t9", None, []),
     ("empty state", "cancel_async_task", "t1", {}, []),
     ("no async_tasks key", "cancel_async_task", "t1", {"messages": []}, []),
-    ("record missing thread_id", "cancel_async_task", "t1",
-     {"async_tasks": {"t1": {"agent_name": "researcher"}}}, []),
-    ("record missing agent_name", "cancel_async_task", "t1",
-     {"async_tasks": {"t1": {"thread_id": "th-1"}}}, []),
-    ("unknown subagent", "cancel_async_task", "t1",
-     {"async_tasks": {"t1": {"agent_name": "stranger", "thread_id": "th-1"}}}, []),
+    (
+        "record missing thread_id",
+        "cancel_async_task",
+        "t1",
+        {"async_tasks": {"t1": {"agent_name": "researcher"}}},
+        [],
+    ),
+    (
+        "record missing agent_name",
+        "cancel_async_task",
+        "t1",
+        {"async_tasks": {"t1": {"thread_id": "th-1"}}},
+        [],
+    ),
+    (
+        "unknown subagent",
+        "cancel_async_task",
+        "t1",
+        {"async_tasks": {"t1": {"agent_name": "stranger", "thread_id": "th-1"}}},
+        [],
+    ),
 ]
 
 
@@ -122,14 +138,17 @@ class Parity(unittest.IsolatedAsyncioTestCase):
         for label, tool, task_id, state, expected in CASES:
             with self.subTest(case=label):
                 result, calls = await _drive_new(
-                    _Request(tool, task_id=task_id, state=state), _Patched())
+                    _Request(tool, task_id=task_id, state=state), _Patched()
+                )
                 recorded = GOLDEN[label]
                 self.assertEqual(
-                    [list(c) for c in calls], recorded["patched"],
+                    [list(c) for c in calls],
+                    recorded["patched"],
                     f"{label}: patch targets differ from the middleware's",
                 )
                 self.assertEqual(
-                    [list(c) for c in calls], [list(c) for c in expected],
+                    [list(c) for c in calls],
+                    [list(c) for c in expected],
                     f"{label}: unexpected targets",
                 )
                 self.assertEqual(repr(result), recorded["result"], f"{label}: result")
@@ -148,7 +167,8 @@ class Parity(unittest.IsolatedAsyncioTestCase):
         for label, tool, task_id, state, _ in CASES:
             with self.subTest(case=label):
                 result, _ = await _drive_new(
-                    _Request(tool, task_id=task_id, state=state), _Patched())
+                    _Request(tool, task_id=task_id, state=state), _Patched()
+                )
                 self.assertEqual(result, "RAN")
 
 
@@ -163,7 +183,8 @@ class TheCrashThatWas(unittest.IsolatedAsyncioTestCase):
         one. Its absence IS the evidence.
         """
         self.assertNotIn(
-            "__unresolved__", GOLDEN,
+            "__unresolved__",
+            GOLDEN,
             "an outcome was recorded for the unresolved-tool case, so the "
             "middleware did NOT crash — finding BA needs revisiting",
         )
@@ -171,9 +192,9 @@ class TheCrashThatWas(unittest.IsolatedAsyncioTestCase):
     async def test_the_policy_lets_it_through(self) -> None:
         result, calls = await _drive_new(_Request(None), _Patched())
         self.assertEqual(
-            result, "RAN",
-            "an unresolved tool call no longer reaches the framework's "
-            "unknown-tool handling",
+            result,
+            "RAN",
+            "an unresolved tool call no longer reaches the framework's unknown-tool handling",
         )
         self.assertEqual(calls, [], "a patch was attempted for a tool that is not bound")
 
@@ -188,8 +209,12 @@ class TheWholePoint(unittest.IsolatedAsyncioTestCase):
         from yuyutsava.policy.types import ToolCall
 
         return ToolCall(
-            name=tool or "made_up_tool", args={"task_id": task_id}, id="c1",
-            state=TRACKED if state is None else state, resolved_tool=tool)
+            name=tool or "made_up_tool",
+            args={"task_id": task_id},
+            id="c1",
+            state=TRACKED if state is None else state,
+            resolved_tool=tool,
+        )
 
     def test_it_finds_the_tracked_thread(self) -> None:
         self.assertEqual(

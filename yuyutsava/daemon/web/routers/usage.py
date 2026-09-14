@@ -36,8 +36,11 @@ router = APIRouter(tags=["usage"])
 
 def _row(a: Any) -> UsageRowOut:
     return UsageRowOut(
-        key=a.key, calls=a.calls, input_tokens=a.input_tokens,
-        output_tokens=a.output_tokens, est_cost_usd=a.est_cost_usd,
+        key=a.key,
+        calls=a.calls,
+        input_tokens=a.input_tokens,
+        output_tokens=a.output_tokens,
+        est_cost_usd=a.est_cost_usd,
         cache_read_tokens=a.cache_read_tokens,
         cache_creation_tokens=a.cache_creation_tokens,
     )
@@ -50,7 +53,8 @@ def _row(a: Any) -> UsageRowOut:
 )
 async def get_usage(
     since: float | None = Query(
-        None, description="Only count calls at/after this epoch-seconds timestamp",
+        None,
+        description="Only count calls at/after this epoch-seconds timestamp",
     ),
     group_by: Literal["task", "model", "day", "thread"] | None = Query(
         None,
@@ -76,7 +80,8 @@ async def get_usage(
 )
 async def get_usage_summary(
     since: float | None = Query(
-        None, description="Only count calls at/after this epoch-seconds timestamp",
+        None,
+        description="Only count calls at/after this epoch-seconds timestamp",
     ),
     usage_store=Depends(get_usage_store),
 ) -> UsageSummaryOut:
@@ -93,12 +98,9 @@ async def get_usage_summary(
     from yuyutsava.core.model_router import is_priced, load_price_table
 
     prices = load_price_table()
-    unpriced = sorted(
-        {a.key for a in by_model if a.key and not is_priced(a.key, prices)}
-    )
+    unpriced = sorted({a.key for a in by_model if a.key and not is_priced(a.key, prices)})
 
-    blank = UsageRowOut(key="all", calls=0, input_tokens=0, output_tokens=0,
-                        est_cost_usd=0.0)
+    blank = UsageRowOut(key="all", calls=0, input_tokens=0, output_tokens=0, est_cost_usd=0.0)
     return UsageSummaryOut(
         since=since,
         totals=_row(totals[0]) if totals else blank,
@@ -117,7 +119,8 @@ async def get_usage_summary(
 )
 async def get_usage_sessions(
     since: float | None = Query(
-        None, description="Only count calls at/after this epoch-seconds timestamp",
+        None,
+        description="Only count calls at/after this epoch-seconds timestamp",
     ),
     limit: int = Query(50, ge=1, le=500),
     usage_store=Depends(get_usage_store),
@@ -143,22 +146,24 @@ async def get_usage_sessions(
     rows: list[UsageSessionOut] = []
     for t in totals:
         title, origin = titles.get(t.thread_id, ("", ""))
-        rows.append(UsageSessionOut(
-            thread_id=t.thread_id,
-            title=title or ("unattributed" if not t.thread_id else ""),
-            origin=origin,
-            calls=t.calls,
-            input_tokens=t.input_tokens,
-            output_tokens=t.output_tokens,
-            cache_read_tokens=t.cache_read_tokens,
-            est_cost_usd=t.est_cost_usd,
-            # One unpriced model makes the whole row's cost an undercount, so
-            # the client can label it rather than showing a confident total.
-            priced=bool(t.models) and all(is_priced(m, prices) for m in t.models),
-            models=list(t.models),
-            first_ts=t.first_ts,
-            last_ts=t.last_ts,
-        ))
+        rows.append(
+            UsageSessionOut(
+                thread_id=t.thread_id,
+                title=title or ("unattributed" if not t.thread_id else ""),
+                origin=origin,
+                calls=t.calls,
+                input_tokens=t.input_tokens,
+                output_tokens=t.output_tokens,
+                cache_read_tokens=t.cache_read_tokens,
+                est_cost_usd=t.est_cost_usd,
+                # One unpriced model makes the whole row's cost an undercount, so
+                # the client can label it rather than showing a confident total.
+                priced=bool(t.models) and all(is_priced(m, prices) for m in t.models),
+                models=list(t.models),
+                first_ts=t.first_ts,
+                last_ts=t.last_ts,
+            )
+        )
     return UsageSessionsOut(since=since, rows=rows)
 
 

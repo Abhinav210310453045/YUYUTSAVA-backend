@@ -15,10 +15,10 @@ from enum import Enum
 class ConsentScope(str, Enum):
     """How long / how widely a remembered decision applies."""
 
-    ONCE = "once"             # not remembered — this request only
-    SESSION = "session"       # remembered for the current session/thread (in-memory)
-    PROJECT = "project"       # remembered for this workspace (persisted)
-    PERSISTENT = "persistent" # remembered everywhere (persisted)
+    ONCE = "once"  # not remembered — this request only
+    SESSION = "session"  # remembered for the current session/thread (in-memory)
+    PROJECT = "project"  # remembered for this workspace (persisted)
+    PERSISTENT = "persistent"  # remembered everywhere (persisted)
 
 
 class Verdict(str, Enum):
@@ -32,11 +32,11 @@ class Grant:
     """A remembered consent decision for a subject within a scope."""
 
     grant_id: str
-    domain: str             # "tool_permission" | "event" | …
-    subject_key: str        # domain-built normalized key (what is being allowed)
-    decision: str           # Verdict.ALLOW / Verdict.DENY value
-    scope: str              # ConsentScope value
-    scope_ref: str          # session_id / workspace root / "*" (persistent)
+    domain: str  # "tool_permission" | "event" | …
+    subject_key: str  # domain-built normalized key (what is being allowed)
+    decision: str  # Verdict.ALLOW / Verdict.DENY value
+    scope: str  # ConsentScope value
+    scope_ref: str  # session_id / workspace root / "*" (persistent)
     created_ts: float
     expires_ts: float | None = None
 
@@ -62,8 +62,8 @@ class ConsentRequest:
 
 @dataclass(frozen=True)
 class ConsentDecision:
-    verdict: str                 # Verdict value
-    grant: Grant | None = None   # the grant that decided it (None for PROMPT)
+    verdict: str  # Verdict value
+    grant: Grant | None = None  # the grant that decided it (None for PROMPT)
 
 
 # ---------------------------------------------------------------------------

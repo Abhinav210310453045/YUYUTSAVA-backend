@@ -59,8 +59,8 @@ class TierMappingTests(unittest.TestCase):
 
     def test_none_and_out_of_range_clamp(self) -> None:
         self.assertEqual(self.router.tier_for(None), "standard")  # default 3
-        self.assertEqual(self.router.tier_for(0), "light")        # clamps to 1
-        self.assertEqual(self.router.tier_for(99), "heavy")       # clamps to 5
+        self.assertEqual(self.router.tier_for(0), "light")  # clamps to 1
+        self.assertEqual(self.router.tier_for(99), "heavy")  # clamps to 5
 
 
 class ModelForTests(unittest.TestCase):
@@ -103,29 +103,23 @@ class PriceTableTests(unittest.TestCase):
     def test_known_token_counts_sum_correctly(self) -> None:
         prices = {"m": (1.00, 5.00)}
         # 200k in + 40k out @ $1/$5 per 1M = 0.2 + 0.2
-        self.assertAlmostEqual(
-            estimate_cost_usd("m", 200_000, 40_000, prices), 0.4
-        )
+        self.assertAlmostEqual(estimate_cost_usd("m", 200_000, 40_000, prices), 0.4)
 
     def test_override_file_merges_over_defaults(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             (Path(tmp) / "model_prices.json").write_text(
                 json.dumps({"claude-opus-4": [9.0, 99.0], "my-model": [1.0, 2.0]})
             )
-            with mock.patch(
-                "yuyutsava.core.model_router.state_dir", return_value=Path(tmp)
-            ):
+            with mock.patch("yuyutsava.core.model_router.state_dir", return_value=Path(tmp)):
                 table = load_price_table()
-        self.assertEqual(table["claude-opus-4"], (9.0, 99.0))   # file wins
-        self.assertEqual(table["my-model"], (1.0, 2.0))         # file extends
-        self.assertIn("gpt-4o-mini", table)                     # defaults kept
+        self.assertEqual(table["claude-opus-4"], (9.0, 99.0))  # file wins
+        self.assertEqual(table["my-model"], (1.0, 2.0))  # file extends
+        self.assertIn("gpt-4o-mini", table)  # defaults kept
 
     def test_malformed_override_file_ignored(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             (Path(tmp) / "model_prices.json").write_text("{not json")
-            with mock.patch(
-                "yuyutsava.core.model_router.state_dir", return_value=Path(tmp)
-            ):
+            with mock.patch("yuyutsava.core.model_router.state_dir", return_value=Path(tmp)):
                 table = load_price_table()
         self.assertIn("gpt-4o-mini", table)
 
@@ -156,9 +150,7 @@ class ComplexityScorerTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_unparseable_reply_defaults(self) -> None:
         model = _ScoreModel("hard to say")
-        self.assertEqual(
-            await ComplexityScorer(lambda: model).score("x"), DEFAULT_COMPLEXITY
-        )
+        self.assertEqual(await ComplexityScorer(lambda: model).score("x"), DEFAULT_COMPLEXITY)
 
     async def test_llm_failure_defaults(self) -> None:
         scorer = ComplexityScorer(lambda: _ExplodingModel())
@@ -167,6 +159,7 @@ class ComplexityScorerTests(unittest.IsolatedAsyncioTestCase):
     async def test_factory_failure_defaults(self) -> None:
         def boom():
             raise RuntimeError("tier misconfigured")
+
         self.assertEqual(await ComplexityScorer(boom).score("x"), DEFAULT_COMPLEXITY)
 
     async def test_model_resolved_once(self) -> None:

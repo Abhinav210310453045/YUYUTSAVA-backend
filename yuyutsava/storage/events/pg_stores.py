@@ -30,6 +30,7 @@ from yuyutsava.storage.events.abc import (
     ProposalStore,
     ToolCounterStore,
 )
+
 # The pending_asks row<->record codecs are backend-agnostic (plain JSON text
 # columns), so both twins share one implementation rather than drifting.
 from yuyutsava.storage.events.sqlite_backend import (
@@ -43,7 +44,6 @@ from yuyutsava.storage.pg.pool import PgPool
 logger = logging.getLogger("yuyutsava.storage.events.pg")
 
 
-
 # NOTE: PgEventStore was replaced on 2026-08-08 by the Unified* store in
 # events/unified.py (ADR-002 step 2.5b). Parity verified against both twins on
 # both live backends in test/storage/test_events_unified_parity.py.
@@ -53,7 +53,6 @@ logger = logging.getLogger("yuyutsava.storage.events.pg")
 # (ADR-002 step 2.5b) — one implementation over the dialect adapter. Parity
 # verified against both twins on both live backends in
 # test/storage/test_events_unified_parity.py.
-
 
 
 # NOTE: PgDecisionStore was replaced on 2026-08-08 by the Unified* stores in events/unified.py
@@ -96,12 +95,10 @@ class PgPrefsBackend(PrefsBackend):
         return {r[0]: r[1] for r in rows}
 
 
-
 # NOTE: PgConsentGrantStore was replaced on 2026-08-08 by the Unified* stores in events/unified.py
 # (ADR-002 step 2.5b) — one implementation over the dialect adapter. Parity
 # verified against both twins on both live backends in
 # test/storage/test_events_unified_parity.py.
-
 
 
 # NOTE: PgPendingAskStore was replaced on 2026-08-08 by UnifiedPendingAskStore

@@ -45,7 +45,8 @@ class FakeUsageStore:
         # Mirrors the real store's filters, thread_id included — the REPL asks
         # the store to narrow by conversation now rather than doing it itself.
         return [
-            r for r in self.rows
+            r
+            for r in self.rows
             if (since is None or r.ts >= since)
             and (not thread_id or r.thread_id == thread_id)
             and (not task_id or r.task_id == task_id)
@@ -55,12 +56,18 @@ class FakeUsageStore:
         return []
 
 
-def row(thread="T", *, tin=1000, tout=10, cost=0.001, model="gemini-3.5-flash",
-        ts=None, cached=0):
+def row(thread="T", *, tin=1000, tout=10, cost=0.001, model="gemini-3.5-flash", ts=None, cached=0):
     return UsageRow(
-        id=f"usg_{tin}", ts=ts if ts is not None else time.time(), thread_id=thread,
-        task_id="", role="cli", model=model, input_tokens=tin, output_tokens=tout,
-        est_cost_usd=cost, cache_read_tokens=cached,
+        id=f"usg_{tin}",
+        ts=ts if ts is not None else time.time(),
+        thread_id=thread,
+        task_id="",
+        role="cli",
+        model=model,
+        input_tokens=tin,
+        output_tokens=tout,
+        est_cost_usd=cost,
+        cache_read_tokens=cached,
     )
 
 
@@ -97,7 +104,9 @@ class PolicyTagsTheThread(unittest.IsolatedAsyncioTestCase):
         # whatever thread the call happens to run on.
         store = FakeUsageStore()
         policy = UsagePolicy(store, role="orchestrator", thread_id="pinned")
-        await policy.after_model(Turn(thread_id="other", usage=Usage(input_tokens=5, output_tokens=1)))
+        await policy.after_model(
+            Turn(thread_id="other", usage=Usage(input_tokens=5, output_tokens=1))
+        )
         self.assertEqual(store.added[0].thread_id, "pinned")
 
     async def test_a_call_with_no_reported_usage_is_not_recorded(self):
@@ -121,7 +130,9 @@ class PolicyTagsTheThread(unittest.IsolatedAsyncioTestCase):
 
 class Reporting(unittest.TestCase):
     def test_footer_shape(self):
-        out = _fmt_usage([row(tin=41_087, tout=64, cost=0.0032), row(tin=43_617, tout=79, cost=0.0034)])
+        out = _fmt_usage(
+            [row(tin=41_087, tout=64, cost=0.0032), row(tin=43_617, tout=79, cost=0.0034)]
+        )
         self.assertEqual(out, "2 calls · in 84,704 · out 143 · ~$0.0066")
 
     def test_singular_call(self):
@@ -180,9 +191,7 @@ class Reporting(unittest.TestCase):
         # Output goes to stderr; this pins that neither path raises.
         asyncio.run(_print_usage_summary(FakeUsageStore(), "T", 0))
         asyncio.run(
-            _print_usage_summary(
-                FakeUsageStore([row("T", model="a"), row("T", model="b")]), "T", 0
-            )
+            _print_usage_summary(FakeUsageStore([row("T", model="a"), row("T", model="b")]), "T", 0)
         )
 
 

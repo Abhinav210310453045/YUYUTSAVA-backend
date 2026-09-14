@@ -86,7 +86,9 @@ from yuyutsava.audio_io.sentence import SentenceChunker
 from yuyutsava.core.streaming import StreamEvent
 from yuyutsava.daemon.channels import AskPrompt
 from yuyutsava.daemon.interrupt_format import (
-    body_for_interrupt, options_for_interrupt, title_for_interrupt,
+    body_for_interrupt,
+    options_for_interrupt,
+    title_for_interrupt,
 )
 from yuyutsava.daemon.turn_registry import TurnRun
 from yuyutsava.daemon.web.exceptions import ConflictError, ServiceUnavailableError
@@ -123,6 +125,7 @@ router = APIRouter(tags=["converse"])
 # Bytes per outbound audio frame (~0.5s of 16 kHz mono int16) — small enough to
 # start playback quickly, large enough to avoid WS frame overhead.
 _AUDIO_FRAME_BYTES = 16_000
+
 
 # Grace window after the agent starts speaking during which VAD speech onsets are
 # ignored for barge-in. Covers the initial TTS burst / echo settle so the agent's
@@ -161,11 +164,15 @@ _STT_MIN_CONFIDENCE = _stt_min_confidence()
 # that transcribes to nothing is ignored.
 def _barge_in_enabled() -> bool:
     return os.environ.get("YUYUTSAVA_VOICE_BARGE_IN", "0").strip().lower() in (
-        "1", "true", "yes", "on",
+        "1",
+        "true",
+        "yes",
+        "on",
     )
 
 
 _BARGE_IN_ENABLED = _barge_in_enabled()
+
 
 # How long after the agent stops speaking we keep ignoring mic input, so the tail
 # of buffered playback (still audible, still hitting the mic) can't self-trigger.
@@ -211,7 +218,8 @@ async def _dictate(ws: WebSocket) -> None:
             if text and conf is not None and _STT_MIN_CONFIDENCE > 0 and conf < _STT_MIN_CONFIDENCE:
                 logger.info(
                     "dictate: low-confidence transcript dropped (%.2f) %r",
-                    conf, text[:80],
+                    conf,
+                    text[:80],
                 )
                 continue
             if text:
@@ -335,9 +343,9 @@ async def converse(ws: WebSocket) -> None:
         await _dictate(ws)
         return
     if manager is None:
-        await ws.send_text(json.dumps(
-            {"type": "error", "message": "conversation manager not initialized"}
-        ))
+        await ws.send_text(
+            json.dumps({"type": "error", "message": "conversation manager not initialized"})
+        )
         await ws.close()
         return
 
@@ -356,8 +364,11 @@ async def converse(ws: WebSocket) -> None:
 
     try:
         convo, resuming = await manager.open(
-            agent=agent, card_id=card_id,
-            origin=origin, resume_id=resume_id, continue_latest=continue_latest,
+            agent=agent,
+            card_id=card_id,
+            origin=origin,
+            resume_id=resume_id,
+            continue_latest=continue_latest,
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("converse: failed to open conversation", exc_info=True)
@@ -390,8 +401,14 @@ async def converse(ws: WebSocket) -> None:
     logger.info(
         "converse: WS open agent=%s card=%s origin=%s resume_id=%s → session=%s "
         "resuming=%s voice_barge_in=%s (post_speak_grace=%.1fs)",
-        agent, card_id, origin, resume_id, convo.session_id, resuming,
-        _BARGE_IN_ENABLED, _POST_SPEAK_GRACE_SEC,
+        agent,
+        card_id,
+        origin,
+        resume_id,
+        convo.session_id,
+        resuming,
+        _BARGE_IN_ENABLED,
+        _POST_SPEAK_GRACE_SEC,
     )
 
     send_lock = asyncio.Lock()
@@ -411,36 +428,39 @@ async def converse(ws: WebSocket) -> None:
     live_run: TurnRun | None = _chan.run
     last_sent_seq = replay[-1]["seq"] if replay else floor
 
-    await _send({
-        "type": "hello",
-        "session_id": convo.session_id,
-        "thread_id": convo.thread_id,
-        "origin": origin,
-        "agent": agent,
-        "card_id": card_id,
-        "resuming": resuming,
-        # Where this thread's frame counter stands, and what (if anything) is
-        # running on it right now — so a client that reattaches mid-turn knows
-        # to stay in its "busy" state instead of releasing the composer.
-        "seq": _chan.seq,
-        "run": live_run.to_wire() if live_run is not None else None,
-        # Tell the client the voice interruption policy so it can match: when
-        # barge-in is off (default) the client runs half-duplex — it mutes the
-        # mic while the reply is still playing so noise can't cut it off.
-        "barge_in": _BARGE_IN_ENABLED,
-        # Voice-mode snapshot at connect. The live source of truth is the
-        # `settings` SSE item (which every surface, including the overlay,
-        # already listens to); this is just so a freshly-opened panel renders
-        # the right affordance before its first SSE frame arrives.
-        "voice": (
-            _voice_toggles.voice().to_dict() if _voice_toggles is not None
-            else {"wake_enabled": True, "tts_enabled": True}
-        ),
-        # Last known context/spend reading for this conversation, so a panel
-        # opened between turns shows real numbers instead of waiting for the
-        # next model call to say anything.
-        "usage": _latest_usage_snapshot(convo.thread_id),
-    })
+    await _send(
+        {
+            "type": "hello",
+            "session_id": convo.session_id,
+            "thread_id": convo.thread_id,
+            "origin": origin,
+            "agent": agent,
+            "card_id": card_id,
+            "resuming": resuming,
+            # Where this thread's frame counter stands, and what (if anything) is
+            # running on it right now — so a client that reattaches mid-turn knows
+            # to stay in its "busy" state instead of releasing the composer.
+            "seq": _chan.seq,
+            "run": live_run.to_wire() if live_run is not None else None,
+            # Tell the client the voice interruption policy so it can match: when
+            # barge-in is off (default) the client runs half-duplex — it mutes the
+            # mic while the reply is still playing so noise can't cut it off.
+            "barge_in": _BARGE_IN_ENABLED,
+            # Voice-mode snapshot at connect. The live source of truth is the
+            # `settings` SSE item (which every surface, including the overlay,
+            # already listens to); this is just so a freshly-opened panel renders
+            # the right affordance before its first SSE frame arrives.
+            "voice": (
+                _voice_toggles.voice().to_dict()
+                if _voice_toggles is not None
+                else {"wake_enabled": True, "tts_enabled": True}
+            ),
+            # Last known context/spend reading for this conversation, so a panel
+            # opened between turns shows real numbers instead of waiting for the
+            # next model call to say anything.
+            "usage": _latest_usage_snapshot(convo.thread_id),
+        }
+    )
     # The gap this client missed while it was away (or the in-flight turn from
     # its start, for a client with no prior state), oldest first.
     for frame in replay:
@@ -508,10 +528,12 @@ async def converse(ws: WebSocket) -> None:
         The thread is already streaming a turn to every viewer; broadcasting a
         "busy" error onto the channel would blank it out for all of them.
         """
-        await _send({
-            "type": "error",
-            "message": "a turn is already running on this conversation",
-        })
+        await _send(
+            {
+                "type": "error",
+                "message": "a turn is already running on this conversation",
+            }
+        )
         await _send({"type": "turn_end"})
 
     @contextlib.asynccontextmanager
@@ -546,12 +568,14 @@ async def converse(ws: WebSocket) -> None:
             # (subagent_completed).
             manager.record_async_launch(ev, thread_id=thread_id, origin=origin)
             run.emit({"type": ev.kind, **ev.data})
+
         return _sink
 
     def _ask_handler(run: TurnRun):
         async def _ask(interrupt_value) -> str:
             iv = (
-                dict(interrupt_value) if isinstance(interrupt_value, dict)
+                dict(interrupt_value)
+                if isinstance(interrupt_value, dict)
                 else {"type": "user_question", "question": str(interrupt_value)}
             )
             ask = AskPrompt(
@@ -597,6 +621,7 @@ async def converse(ws: WebSocket) -> None:
                 # this thread clears its inline card. Without this, answering in
                 # the Inbox would leave a dead prompt sitting in the chat.
                 run.emit({"type": "ask_resolved", "ask_id": ask.ask_id})
+
         return _ask
 
     async def _run_turn(run: TurnRun) -> None:
@@ -631,8 +656,12 @@ async def converse(ws: WebSocket) -> None:
         return voice
 
     async def _persist_voice_message(
-        *, role: str, modality: str, text: str,
-        pcm: bytes | None = None, rate: int | None = None,
+        *,
+        role: str,
+        modality: str,
+        text: str,
+        pcm: bytes | None = None,
+        rate: int | None = None,
     ) -> None:
         """Best-effort append of one turn to the replayable voice history.
 
@@ -645,7 +674,10 @@ async def converse(ws: WebSocket) -> None:
             blob_path = None
             if pcm and rate:
                 blob_path = await asyncio.to_thread(
-                    write_voice_wav, convo.thread_id, pcm, rate,
+                    write_voice_wav,
+                    convo.thread_id,
+                    pcm,
+                    rate,
                 )
             await voice_store.put_message(
                 convo.thread_id,
@@ -685,11 +717,13 @@ async def converse(ws: WebSocket) -> None:
                 frame = pcm[i : i + _AUDIO_FRAME_BYTES]
                 # Ephemeral: fanned out live to every viewer, never ringed (a
                 # turn's PCM is megabytes). The persisted WAV is the replay path.
-                run.emit({
-                    "type": "audio_chunk",
-                    "pcm": base64.b64encode(frame).decode("ascii"),
-                    "sample_rate": rate,
-                })
+                run.emit(
+                    {
+                        "type": "audio_chunk",
+                        "pcm": base64.b64encode(frame).decode("ascii"),
+                        "sample_rate": rate,
+                    }
+                )
                 await asyncio.sleep(0)  # let the pumps drain between frames
 
         async def _tts_worker() -> None:
@@ -706,7 +740,8 @@ async def converse(ws: WebSocket) -> None:
                     if not pcm:
                         logger.warning(
                             "voice[%s]: TTS produced no audio for %r — check PIPER_MODEL / `say`",
-                            origin, sentence[:80],
+                            origin,
+                            sentence[:80],
                         )
                     if pcm and not cancel.is_set():
                         if not spoke:
@@ -857,15 +892,20 @@ async def converse(ws: WebSocket) -> None:
         if conf is not None and _STT_MIN_CONFIDENCE > 0 and conf < _STT_MIN_CONFIDENCE:
             logger.info(
                 "voice[%s]: low-confidence transcript (%.2f < %.2f) %r — asking to repeat",
-                origin, conf, _STT_MIN_CONFIDENCE, text[:120],
+                origin,
+                conf,
+                _STT_MIN_CONFIDENCE,
+                text[:120],
             )
-            await _send({
-                "type": "clarify",
-                "reason": "low_confidence",
-                "confidence": round(conf, 3),
-                "heard": text,
-                "message": "I didn't quite catch that — could you say it again?",
-            })
+            await _send(
+                {
+                    "type": "clarify",
+                    "reason": "low_confidence",
+                    "confidence": round(conf, 3),
+                    "heard": text,
+                    "message": "I didn't quite catch that — could you say it again?",
+                }
+            )
             await _send({"type": "turn_end"})
             return
         logger.info("voice[%s]: transcript=%r → running turn", origin, text[:120])
@@ -919,7 +959,9 @@ async def converse(ws: WebSocket) -> None:
             if conf is not None and _STT_MIN_CONFIDENCE > 0 and conf < _STT_MIN_CONFIDENCE:
                 logger.info(
                     "voice[%s]: talk-over ignored — low confidence (%.2f) %r",
-                    origin, conf, text[:80],
+                    origin,
+                    conf,
+                    text[:80],
                 )
                 return
             # Real talk-over: stop the agent's audio + turn, then answer the new
@@ -958,6 +1000,7 @@ async def converse(ws: WebSocket) -> None:
                     from yuyutsava.daemon.web.services.decision_service import (
                         DecisionConflictError,
                     )
+
                     try:
                         await decisions.respond_ask(str(ask_id), text)
                     except DecisionConflictError:

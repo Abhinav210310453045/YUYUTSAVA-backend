@@ -139,8 +139,12 @@ class _FakeChannel(UserChannel):
 
 def _ask(ask_id: str, session_id: str | None = None) -> AskPrompt:
     return AskPrompt(
-        ask_id=ask_id, title="t", body="b", options=["ok"],
-        interrupt_value={}, session_id=session_id,
+        ask_id=ask_id,
+        title="t",
+        body="b",
+        options=["ok"],
+        interrupt_value={},
+        session_id=session_id,
     )
 
 
@@ -214,7 +218,10 @@ class RemoteSpecTests(unittest.TestCase):
 
     def test_round_trip_with_headers(self):
         r = RemoteAsyncSubagentSpec(
-            name="x", description="d", graph_id="g", url="u",
+            name="x",
+            description="d",
+            graph_id="g",
+            url="u",
             headers={"Authorization": "Bearer xyz"},
         )
         spec = r.as_async_subagent_spec()

@@ -15,7 +15,6 @@ from yuyutsava.storage.sessions import SessionNotFound, SqliteSessionStore
 
 
 class SqliteSessionStoreTests(unittest.IsolatedAsyncioTestCase):
-
     async def asyncSetUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
         self.db = Path(self._tmp.name) / "sessions.db"

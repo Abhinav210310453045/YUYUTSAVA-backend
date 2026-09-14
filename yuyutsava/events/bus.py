@@ -34,13 +34,13 @@ class EventEnvelope:
     ``payload_ref``. Keep this struct small — it ends up in LLM prompts.
     """
 
-    event_id: str             # ULID
-    topic: str                # dotted, e.g. "fs.changed"
-    source: str               # source name, e.g. "fs"
-    ts: float                 # epoch seconds
-    severity: int             # 0 trace, 1 info, 2 notable, 3 urgent
-    summary: str              # <=120 chars; what triage and orchestrator see
-    payload_ref: str          # "sqlite://event_payloads/<id>" or "file://..."
+    event_id: str  # ULID
+    topic: str  # dotted, e.g. "fs.changed"
+    source: str  # source name, e.g. "fs"
+    ts: float  # epoch seconds
+    severity: int  # 0 trace, 1 info, 2 notable, 3 urgent
+    summary: str  # <=120 chars; what triage and orchestrator see
+    payload_ref: str  # "sqlite://event_payloads/<id>" or "file://..."
     hints: dict[str, str] = field(default_factory=dict)
 
 
@@ -80,7 +80,8 @@ class EventBus:
                 if sub.dropped % 100 == 1:
                     logger.warning(
                         "EventBus: dropped %d events for pattern %r (slow consumer)",
-                        sub.dropped, sub.pattern,
+                        sub.dropped,
+                        sub.pattern,
                     )
 
     async def close(self) -> None:
@@ -138,6 +139,7 @@ def make_envelope(
 ) -> EventEnvelope:
     """Build an envelope. ``event_id`` defaults to a fresh ULID."""
     from ulid import ULID  # local import keeps optional dep out of cold paths
+
     return EventEnvelope(
         event_id=event_id or str(ULID()),
         topic=topic,

@@ -120,8 +120,9 @@ class HostAttachment:
     at a running host owned by another process. Caller must not call
     ``host.shutdown()`` (it doesn't own one).
     """
+
     url: str
-    host: Any | None      # AsyncSubagentHost — duck-typed to avoid cycle
+    host: Any | None  # AsyncSubagentHost — duck-typed to avoid cycle
     lock: FileLock | None
 
 
@@ -145,8 +146,11 @@ def acquire_or_attach_host(*, factory: Callable[[], Any]) -> HostAttachment:
             # Lock held — check discovery + health.
             disco = read_host_discovery()
             if disco is not None and _ping_ok(str(disco.get("url", ""))):
-                logger.info("attaching to existing async host at %s (pid=%s)",
-                            disco.get("url"), disco.get("pid"))
+                logger.info(
+                    "attaching to existing async host at %s (pid=%s)",
+                    disco.get("url"),
+                    disco.get("pid"),
+                )
                 return HostAttachment(url=str(disco["url"]), host=None, lock=None)
             # Stale lock or dead host — clean up once and retry.
             if attempt == 1:

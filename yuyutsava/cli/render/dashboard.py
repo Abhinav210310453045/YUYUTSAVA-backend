@@ -129,9 +129,7 @@ def wide_enough(cols: int | None = None) -> bool:
     return cols >= MIN_DASHBOARD_COLS
 
 
-def display_mode(
-    *, classic: bool, is_tty: bool, rich: bool, enabled: bool, wide: bool
-) -> str:
+def display_mode(*, classic: bool, is_tty: bool, rich: bool, enabled: bool, wide: bool) -> str:
     """``"dashboard"`` | ``"rich"`` | ``"plain"`` — the whole fallback ladder.
 
     Extracted from the REPL so the decision is testable: five conditions
@@ -157,7 +155,8 @@ class TranscriptBuffer:
     errors = "replace"
 
     def __init__(
-        self, max_lines: int = DEFAULT_SCROLLBACK,
+        self,
+        max_lines: int = DEFAULT_SCROLLBACK,
         on_write: Callable[[], None] | None = None,
     ) -> None:
         self._lines: deque[str] = deque(maxlen=max(1, max_lines))
@@ -298,8 +297,7 @@ class ChatDashboard:
     def _make_console(self):
         from yuyutsava.cli.render.console import make_console
 
-        return make_console(file=self.buffer, width=self.left_width,
-                            force_terminal=True)
+        return make_console(file=self.buffer, width=self.left_width, force_terminal=True)
 
     @property
     def left_width(self) -> int:
@@ -325,20 +323,22 @@ class ChatDashboard:
         from prompt_toolkit.layout.menus import CompletionsMenu
         from prompt_toolkit.styles import Style
 
-        history = (
-            FileHistory(str(history_path)) if history_path is not None
-            else InMemoryHistory()
-        )
+        history = FileHistory(str(history_path)) if history_path is not None else InMemoryHistory()
         self._buf = Buffer(
-            history=history, completer=completer, complete_while_typing=True,
+            history=history,
+            completer=completer,
+            complete_while_typing=True,
             multiline=False,
         )
 
         self._out_control = _ScrollableTextControl(
-            self._visible_transcript, on_scroll=self._on_wheel,
+            self._visible_transcript,
+            on_scroll=self._on_wheel,
         )
         self._out_window = Window(
-            content=self._out_control, wrap_lines=False, always_hide_cursor=True,
+            content=self._out_control,
+            wrap_lines=False,
+            always_hide_cursor=True,
         )
         self._panel_window = Window(
             content=FormattedTextControl(self._panel_text),
@@ -350,24 +350,38 @@ class ChatDashboard:
         divider = Window(width=1, char="│", style="class:ctx.border")
         panel_visible = Condition(lambda: self._panel_visible)
 
-        left = HSplit([
-            self._out_window,
-            Window(content=FormattedTextControl(self._status_text), height=1),
-            VSplit([
-                Window(content=FormattedTextControl(self._prompt_text),
-                       width=lambda: len(self._prompt), height=1),
-                Window(content=BufferControl(buffer=self._buf), height=1),
-            ]),
-        ])
-        body = VSplit([
-            left,
-            ConditionalContainer(divider, panel_visible),
-            ConditionalContainer(panel, panel_visible),
-        ])
+        left = HSplit(
+            [
+                self._out_window,
+                Window(content=FormattedTextControl(self._status_text), height=1),
+                VSplit(
+                    [
+                        Window(
+                            content=FormattedTextControl(self._prompt_text),
+                            width=lambda: len(self._prompt),
+                            height=1,
+                        ),
+                        Window(content=BufferControl(buffer=self._buf), height=1),
+                    ]
+                ),
+            ]
+        )
+        body = VSplit(
+            [
+                left,
+                ConditionalContainer(divider, panel_visible),
+                ConditionalContainer(panel, panel_visible),
+            ]
+        )
         root = FloatContainer(
             content=body,
-            floats=[Float(xcursor=True, ycursor=True,
-                          content=CompletionsMenu(max_height=8, scroll_offset=1))],
+            floats=[
+                Float(
+                    xcursor=True,
+                    ycursor=True,
+                    content=CompletionsMenu(max_height=8, scroll_offset=1),
+                )
+            ],
         )
 
         self._app = Application(
@@ -420,8 +434,7 @@ class ChatDashboard:
         task = self._turn_task
         if text.strip() and task is not None and not task.done():
             self.notice(
-                "queued — sends when this turn ends. Ctrl+S to interrupt and "
-                "send it now.",
+                "queued — sends when this turn ends. Ctrl+S to interrupt and send it now.",
                 ttl=90.0,
             )
 
@@ -580,8 +593,11 @@ class ChatDashboard:
         info = self._panel_window.render_info
         height = info.window_height if info is not None else None
         return panel_fragments(
-            self._snapshot, width=self._panel_width, height=height,
-            status=self._safe(self._status), tool=self._safe(self._tool),
+            self._snapshot,
+            width=self._panel_width,
+            height=height,
+            status=self._safe(self._status),
+            tool=self._safe(self._tool),
             notices=self.notices(),
         )
 
@@ -666,9 +682,7 @@ class ChatDashboard:
         self._install_streams()
         self._meter_token = bus().subscribe("", self._on_snapshot)
         self._snapshot = bus().latest()
-        self._app_task = asyncio.create_task(
-            self._app.run_async(), name="yuyutsava-dashboard"
-        )
+        self._app_task = asyncio.create_task(self._app.run_async(), name="yuyutsava-dashboard")
         # Let the first frame render before the caller starts printing into it.
         await asyncio.sleep(0)
 
@@ -691,8 +705,10 @@ class ChatDashboard:
     ) -> None:
         """Provider-busy retries as a panel notice as well as a status line."""
         code = "429" if "ResourceExhausted" in type(exc).__name__ else "503"
-        self.notice(f"provider busy ({code}) — retry {attempt}/{retries} in {delay:.0f}s",
-                    ttl=max(5.0, delay + 5.0))
+        self.notice(
+            f"provider busy ({code}) — retry {attempt}/{retries} in {delay:.0f}s",
+            ttl=max(5.0, delay + 5.0),
+        )
 
     async def read_input(self) -> str | None:
         """Next submitted line, or ``None`` when the user asked to quit."""

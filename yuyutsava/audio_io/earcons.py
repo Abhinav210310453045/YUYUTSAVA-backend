@@ -39,11 +39,11 @@ EARCON_NAMES: tuple[str, ...] = ("open", "close", "listening", "done", "error")
 # Default tone designs: each earcon is a sequence of (frequency_hz, seconds).
 # Rising = "opening/positive", falling = "closing", low/long = "error".
 _DEFAULT_TONES: dict[str, list[tuple[float, float]]] = {
-    "open": [(660.0, 0.09), (988.0, 0.12)],          # ascending two-tone
-    "close": [(988.0, 0.09), (660.0, 0.12)],         # descending two-tone
-    "listening": [(880.0, 0.10)],                     # single soft blip
+    "open": [(660.0, 0.09), (988.0, 0.12)],  # ascending two-tone
+    "close": [(988.0, 0.09), (660.0, 0.12)],  # descending two-tone
+    "listening": [(880.0, 0.10)],  # single soft blip
     "done": [(660.0, 0.08), (880.0, 0.08), (1175.0, 0.13)],  # pleasant rising triad
-    "error": [(220.0, 0.16), (180.0, 0.20)],          # low, downward buzz
+    "error": [(220.0, 0.16), (180.0, 0.20)],  # low, downward buzz
 }
 
 

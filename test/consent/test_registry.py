@@ -58,9 +58,7 @@ class ToolPermissionDomainTests(unittest.TestCase):
 
     def test_directory_of_multiple_uses_common_parent(self):
         d = ToolPermissionDomain()
-        self.assertEqual(
-            d.directory_of([f"{FOLDER}/Docs/a.txt", f"{FOLDER}/Img/b.png"]), FOLDER
-        )
+        self.assertEqual(d.directory_of([f"{FOLDER}/Docs/a.txt", f"{FOLDER}/Img/b.png"]), FOLDER)
 
     def test_subject_key_shape(self):
         d = ToolPermissionDomain()
@@ -83,8 +81,12 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
         reg = ConsentRegistry()
         self.assertEqual(self._check(reg, "list", [FOLDER]), Verdict.PROMPT.value)
         await reg.grant_tool_permission(
-            operation="list", zone="external", paths=[FOLDER],
-            scope=ConsentScope.SESSION.value, session_id="S1", workspace="/ws",
+            operation="list",
+            zone="external",
+            paths=[FOLDER],
+            scope=ConsentScope.SESSION.value,
+            session_id="S1",
+            workspace="/ws",
         )
         # subpath in same session → allow
         self.assertEqual(self._check(reg, "list", [f"{FOLDER}/Documents"]), Verdict.ALLOW.value)
@@ -92,24 +94,36 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
     async def test_session_isolation(self):
         reg = ConsentRegistry()
         await reg.grant_tool_permission(
-            operation="list", zone="external", paths=[FOLDER],
-            scope=ConsentScope.SESSION.value, session_id="S1", workspace="/ws",
+            operation="list",
+            zone="external",
+            paths=[FOLDER],
+            scope=ConsentScope.SESSION.value,
+            session_id="S1",
+            workspace="/ws",
         )
         self.assertEqual(self._check(reg, "list", [FOLDER], session="S2"), Verdict.PROMPT.value)
 
     async def test_operation_isolation(self):
         reg = ConsentRegistry()
         await reg.grant_tool_permission(
-            operation="list", zone="external", paths=[FOLDER],
-            scope=ConsentScope.SESSION.value, session_id="S1", workspace="/ws",
+            operation="list",
+            zone="external",
+            paths=[FOLDER],
+            scope=ConsentScope.SESSION.value,
+            session_id="S1",
+            workspace="/ws",
         )
         self.assertEqual(self._check(reg, "write", [f"{FOLDER}/a.txt"]), Verdict.PROMPT.value)
 
     async def test_directory_isolation(self):
         reg = ConsentRegistry()
         await reg.grant_tool_permission(
-            operation="list", zone="external", paths=[FOLDER],
-            scope=ConsentScope.SESSION.value, session_id="S1", workspace="/ws",
+            operation="list",
+            zone="external",
+            paths=[FOLDER],
+            scope=ConsentScope.SESSION.value,
+            session_id="S1",
+            workspace="/ws",
         )
         self.assertEqual(self._check(reg, "list", ["/etc"]), Verdict.PROMPT.value)
 
@@ -117,15 +131,22 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
         store = _FakeStore()
         reg = ConsentRegistry(store=store)
         await reg.grant_tool_permission(
-            operation="list", zone="external", paths=[FOLDER],
-            scope=ConsentScope.PROJECT.value, session_id="S1", workspace="/ws",
+            operation="list",
+            zone="external",
+            paths=[FOLDER],
+            scope=ConsentScope.PROJECT.value,
+            session_id="S1",
+            workspace="/ws",
         )
         self.assertEqual(len(store.grants), 1)  # persisted
         # a fresh registry over the same store loads it; different session still hits
         reg2 = ConsentRegistry(store=store)
         v = reg2.check_tool_permission(
-            operation="list", zone="external", paths=[f"{FOLDER}/Documents"],
-            session_id="OTHER", workspace="/ws",
+            operation="list",
+            zone="external",
+            paths=[f"{FOLDER}/Documents"],
+            session_id="OTHER",
+            workspace="/ws",
         )
         self.assertEqual(v, Verdict.ALLOW.value)
 
@@ -135,15 +156,21 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
         # every subfolder (Archives / Audio / Data / …) with no re-asks.
         reg = ConsentRegistry()
         await reg.grant_tool_permission(
-            operation="delete", zone="workspace",
+            operation="delete",
+            zone="workspace",
             paths=[f"{FOLDER}/Archives/sample.zip"],
-            scope=ConsentScope.SESSION.value, session_id="S1", workspace=FOLDER,
+            scope=ConsentScope.SESSION.value,
+            session_id="S1",
+            workspace=FOLDER,
             directory=FOLDER,
         )
         for sub in ("Archives/sample.zip", "Audio/sample.mp3", "Data/sample.csv"):
             v = reg.check_tool_permission(
-                operation="delete", zone="workspace", paths=[f"{FOLDER}/{sub}"],
-                session_id="S1", workspace=FOLDER,
+                operation="delete",
+                zone="workspace",
+                paths=[f"{FOLDER}/{sub}"],
+                session_id="S1",
+                workspace=FOLDER,
             )
             self.assertEqual(v, Verdict.ALLOW.value, sub)
 
@@ -152,18 +179,27 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
         # folder only — the original behaviour, kept for the `once` path.
         reg = ConsentRegistry()
         await reg.grant_tool_permission(
-            operation="delete", zone="workspace",
+            operation="delete",
+            zone="workspace",
             paths=[f"{FOLDER}/Archives/sample.zip"],
-            scope=ConsentScope.SESSION.value, session_id="S1", workspace=FOLDER,
+            scope=ConsentScope.SESSION.value,
+            session_id="S1",
+            workspace=FOLDER,
         )
         same = reg.check_tool_permission(
-            operation="delete", zone="workspace", paths=[f"{FOLDER}/Archives/other.zip"],
-            session_id="S1", workspace=FOLDER,
+            operation="delete",
+            zone="workspace",
+            paths=[f"{FOLDER}/Archives/other.zip"],
+            session_id="S1",
+            workspace=FOLDER,
         )
         self.assertEqual(same, Verdict.ALLOW.value)
         sibling = reg.check_tool_permission(
-            operation="delete", zone="workspace", paths=[f"{FOLDER}/Audio/x.mp3"],
-            session_id="S1", workspace=FOLDER,
+            operation="delete",
+            zone="workspace",
+            paths=[f"{FOLDER}/Audio/x.mp3"],
+            session_id="S1",
+            workspace=FOLDER,
         )
         self.assertEqual(sibling, Verdict.PROMPT.value)
 
@@ -171,18 +207,30 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
         store = _FakeStore()
         reg = ConsentRegistry(store=store)
         await reg.grant_tool_permission(
-            operation="list", zone="external", paths=[FOLDER],
-            scope=ConsentScope.SESSION.value, session_id="S1", workspace="/ws",
+            operation="list",
+            zone="external",
+            paths=[FOLDER],
+            scope=ConsentScope.SESSION.value,
+            session_id="S1",
+            workspace="/ws",
         )
         self.assertEqual(store.grants, [])  # session never touches the store
 
     async def test_expired_grant_ignored(self):
-        store = _FakeStore(seed=[Grant(
-            grant_id="g1", domain="tool_permission",
-            subject_key=f"list|external|{FOLDER}", decision="allow",
-            scope="project", scope_ref="/ws", created_ts=time.time() - 100,
-            expires_ts=time.time() - 1,
-        )])
+        store = _FakeStore(
+            seed=[
+                Grant(
+                    grant_id="g1",
+                    domain="tool_permission",
+                    subject_key=f"list|external|{FOLDER}",
+                    decision="allow",
+                    scope="project",
+                    scope_ref="/ws",
+                    created_ts=time.time() - 100,
+                    expires_ts=time.time() - 1,
+                )
+            ]
+        )
         reg = ConsentRegistry(store=store)
         self.assertEqual(self._check(reg, "list", [FOLDER]), Verdict.PROMPT.value)
 

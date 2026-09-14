@@ -215,7 +215,9 @@ class _FirstChunkRetryMixin:
         if attempt >= retries:
             logger.warning(
                 "%s: %s before first chunk — giving up after %d attempt(s)",
-                label, type(exc).__name__, attempt,
+                label,
+                type(exc).__name__,
+                attempt,
             )
             return None
         delay = _backoff(attempt, self)
@@ -224,12 +226,19 @@ class _FirstChunkRetryMixin:
             logger.warning(
                 "%s: %s before first chunk — giving up after %.0fs "
                 "(VERTEX_RETRY_BUDGET_SEC=%.0f); the provider is still busy",
-                label, type(exc).__name__, elapsed, budget,
+                label,
+                type(exc).__name__,
+                elapsed,
+                budget,
             )
             return None
         logger.warning(
             "%s: %s before first chunk — retry %d/%d in %.1fs",
-            label, type(exc).__name__, attempt + 1, retries, delay,
+            label,
+            type(exc).__name__,
+            attempt + 1,
+            retries,
+            delay,
         )
         return delay
 

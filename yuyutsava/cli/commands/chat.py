@@ -70,6 +70,7 @@ async def run_chat(
         if bundle.async_host_url is not None and bundle.async_task_mirror is not None:
             from yuyutsava.async_subagents.watcher import AsyncTaskHealthWatcher
             from yuyutsava.cli.async_hitl import CliHitlBridge
+
             cli_bridge = CliHitlBridge()
             cli_watcher = AsyncTaskHealthWatcher(
                 mirror=bundle.async_task_mirror,

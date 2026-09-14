@@ -85,10 +85,13 @@ class SqliteBackend(unittest.TestCase):
             with self.subTest(store=name):
                 cls = type(store).__name__
                 self.assertNotIn(
-                    "Pg", cls, f"{name} returned a Postgres store on the SQLite backend",
+                    "Pg",
+                    cls,
+                    f"{name} returned a Postgres store on the SQLite backend",
                 )
                 self.assertNotEqual(
-                    cls, "RoutedStore",
+                    cls,
+                    "RoutedStore",
                     f"{name} was wrapped for failover on SQLite — there is nothing "
                     f"to fail over from, and the wrapper would proxy to a "
                     f"Postgres store that does not exist",
@@ -117,7 +120,10 @@ class PostgresBackend(unittest.TestCase):
         cls.pool = PgPool(cls.settings)
         cls.health = StorageHealth(cls.pool)
         cls.f = StoreFactory(
-            cls.settings, pg_pool=cls.pool, health=cls.health, embedder=None,
+            cls.settings,
+            pg_pool=cls.pool,
+            health=cls.health,
+            embedder=None,
         )
 
     @classmethod
@@ -139,7 +145,8 @@ class PostgresBackend(unittest.TestCase):
         }.items():
             with self.subTest(store=name):
                 self.assertNotEqual(
-                    type(store).__name__, "RoutedStore",
+                    type(store).__name__,
+                    "RoutedStore",
                     f"{name} gained spillover failover it did not have before; "
                     f"an outage would now buffer writes instead of raising",
                 )
@@ -153,7 +160,8 @@ class PostgresBackend(unittest.TestCase):
         }.items():
             with self.subTest(store=name):
                 self.assertEqual(
-                    type(store).__name__, "RoutedStore",
+                    type(store).__name__,
+                    "RoutedStore",
                     f"{name} lost its spillover buffer — a Postgres blip would "
                     f"now lose the write outright",
                 )
@@ -162,7 +170,8 @@ class PostgresBackend(unittest.TestCase):
         """The wiring and the declaration cannot drift apart."""
         declared = {d.table for d in DOMAINS if d.failover is Failover.SPILLOVER}
         self.assertEqual(
-            declared, {"visual_artifacts", "message_feedback", "todo_cards"},
+            declared,
+            {"visual_artifacts", "message_feedback", "todo_cards"},
             "the set of spillover domains changed; that alters outage behaviour "
             "and should be a deliberate, reviewed decision",
         )
