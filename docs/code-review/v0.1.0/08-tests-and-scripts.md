@@ -207,6 +207,30 @@ loudly the moment the injection point moved.
 
 ---
 
+## R-TST-09 — A test broken by a signature change, unnoticed
+
+**Severity** P2 · **Wave** W6 · **Status** Open (found during W2)
+
+**Claim.** `test/daemon/test_build_retrieval.py` calls `build_retrieval()` without
+the keyword-only `workspace` argument the function now requires, so both of its
+SQLite tests error with `TypeError` before asserting anything. The other two tests
+skip without Postgres.
+
+**Evidence.** The file reports 2 errors and 2 skipped tests. The result is
+identical at `f4ec45c`, at the commit before W2 step 3, and on the working tree,
+each run in its own worktree at the same moment.
+
+**Consequence.** The retrieval builder has had no working test since its signature
+changed, and nothing noticed because no test runs in CI (`R-TST-01`). This is the
+decay that finding predicts, observed.
+
+**Fix.** Pass a temporary workspace in both tests.
+
+**Verification.** Both tests pass. A deliberately wrong `workspace` makes them fail,
+proving they exercise the builder.
+
+---
+
 ## R-SCR-01 — Maintainer scripts are undocumented
 
 **Severity** P2 · **Wave** W6 · **Status** Open
