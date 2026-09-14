@@ -1,35 +1,11 @@
-"""
-Public exports for YUYUTSAVA core: LLM settings, agent builder, and invoke helper.
-"""
+"""Agent assembly: the builders that turn settings, stores and policies into a runnable graph.
 
-from yuyutsava.core.config import (
-    GroqSettings,
-    LlmSettings,
-    OllamaSettings,
-    OpenRouterSettings,
-    llm_settings_from_env,
-)
-from yuyutsava.core.engine import (
-    AgentBundle,
-    build_cli_deepagent,
-    build_orchestrator,
-)
-from yuyutsava.core.streaming import astream_agent
-from yuyutsava.core.docker_sandbox_backend import (
-    DockerSandboxBackend,
-    pull_virtual_paths_to_host,
-)
+Import a name from the module that owns it — ``yuyutsava.core.engine``,
+``yuyutsava.core.streaming``, ``yuyutsava.core.config`` — never from this package.
 
-__all__ = [
-    "AgentBundle",
-    "DockerSandboxBackend",
-    "GroqSettings",
-    "LlmSettings",
-    "OllamaSettings",
-    "OpenRouterSettings",
-    "astream_agent",
-    "build_cli_deepagent",
-    "build_orchestrator",
-    "llm_settings_from_env",
-    "pull_virtual_paths_to_host",
-]
+This file deliberately imports nothing. Python runs a package's ``__init__.py``
+before any module inside it, so every import placed here is paid by every
+``yuyutsava.core.*`` import, however small: re-exporting the engine made importing
+the settings module load the entire agent stack, and closed import cycles through
+every package that needed a setting (docs/code-review/v0.1.0/03-imports-and-packages.md).
+"""
