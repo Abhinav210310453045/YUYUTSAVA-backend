@@ -174,7 +174,7 @@ budget and usage through the profile.
 
 ## R-DRY-01 — Environment variables parsed about eighteen ways
 
-**Severity** P1 · **Wave** W2 · **Status** Open
+**Severity** P1 · **Wave** W2 · **Status** Done (`21db0c8`, `2eff394`, `b239429`, `fc7dbde`, `dbd8e30`). The sites the helpers cannot express, and the raising `WAKE_THRESHOLD`, are listed under W2 in [11](11-remediation-plan.md).
 
 **Claim.** Boolean, integer and float environment variables are parsed by
 hand-written snippets that disagree on what counts as true.

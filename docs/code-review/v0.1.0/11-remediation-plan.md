@@ -48,7 +48,7 @@ W0 safety net ─► W1 guardrails ─► W2 __init__ + imports ─► W3 layeri
 |---|---|---|
 | W0 | Safety net: `verify_imports.py`, `measure_code_health.py`, baselines | Done with this review |
 | W1 | Guardrails | Done — see the outcome under W1 |
-| W2 | `__init__.py` and import hygiene | Planned |
+| W2 | `__init__.py` and import hygiene | In progress — steps 1–3 done; see the outcome under W2 |
 | W3 | Layering and placement | Planned |
 | W4 | Readability, SOLID, DRY | Planned |
 | W5 | Errors, logging, state, defects | Planned |
@@ -151,6 +151,58 @@ on that order (`R-IMP-01`); it is safe only after W2.1 empties `core/__init__.py
 - `private_cross_package_imports` 0.
 - `inits_*` metrics 0.
 - Fingerprint byte-identical.
+
+**Outcome so far — steps 1–3 done.** On `code-improvement`:
+
+| Step | Commit | What landed |
+|---|---|---|
+| 1 | `2ce0c1c` | `core/__init__.py` is a docstring. `import yuyutsava.core.config`: 532 ms → 12–18 ms, 2,398 → 107 modules, no LangChain (`R-INIT-01`) |
+| 2 | `b0b73e3` | The `context`, `memory`, `agents` and `mcp` inits stop importing (`R-INIT-02`) |
+| 2 | `c4a7475`, `c2ebd89` | Ten inits become docstring-only; the rest re-export only what is imported from them (`R-INIT-03`, part of `R-INIT-06`) |
+| 2 | `6e83f16` | The provider registry moves to `llm/providers/registry.py` (`R-INIT-04`) |
+| 2 | `b7478e2`, `12bf744`, `8863a0f` | The last five init docstrings; `ports` stops re-exporting two unused protocols; four docstrings corrected (`R-INIT-05`, `R-INIT-03`, `R-INIT-06`) |
+| 2 | `50b65f9` | `measure_code_health.py` now counts attribute reads through a bound package (`yplatform.kill_tree`) as uses. It had reported three live `platform` exports as unused |
+| 3 | `21db0c8` | `yuyutsava/config/env.py`: `env`, `env_int`, `env_float`, `env_flag`, with tests |
+| 3 | `2eff394` | The private `core.config._env` becomes the public `env`; six private cross-package imports go (`R-IMP-07`) |
+| 3 | `b239429` | 42 numeric settings in 12 modules use `env_int` / `env_float` |
+| 3 | `fc7dbde` | 12 flags that already stripped their value use `env_flag` |
+| 3 | `dbd8e30` | **fix:** 8 flags that did not strip now do, so a padded `"1 "` counts. A behaviour change, so it is its own commit (`R-DRY-01`) |
+
+**Measured at `8863a0f`, against the `f4ec45c` baseline.**
+- Init metrics:
+  - `inits_without_docstring` 5 → 0;
+  - `inits_with_logic` 1 → 0;
+  - `inits_with_unused_exports` 24 → 0, with the corrected metric.
+- `private_cross_package_imports` 14 → 8.
+- `history_narration_phrases` 176 → 166.
+- `in_function_imports` 415, unchanged. Moving these imports is step 4.
+- `deferred_internal_import_ratio` 0.246 → 0.251. Step 4 is the step that lowers it.
+- `mid_file_imports` 5, unchanged (step 5).
+
+**How the migrations were proven.**
+- **Behaviour probes.** Each probe compared the tree before and after, in fresh interpreters confirmed to import their own tree:
+  - numeric settings: every site under 23 environments, identical;
+  - flags: 35 environments, identical for the refactor, and exactly the 31 intended differences for the `fix:` commit.
+- **After every commit:** the W1 gates, `yuyutsava --print-tools` (sha256 unchanged), and a sweep of 42–76 test files. Every failing file was re-run at `f4ec45c` and failed there identically.
+
+**Left out of step 3 on purpose.**
+- Sites the helpers cannot express:
+  - `LANGFUSE_ENABLED`: unset and empty differ;
+  - `FASTER_WHISPER_VAD_FILTER`: empty means off;
+  - `YUYUTSAVA_ALLOW_BLOCKING`: three states;
+  - `first_chunk_retry._max_retries`: a blank value and garbage fall back to different defaults.
+- `WAKE_THRESHOLD` and the sessions busy timeout raise on a bad value. Making them forgiving is a W5 behaviour change.
+- Enum-like selectors (`STT_PROVIDER`, `YUYUTSAVA_STORAGE_BACKEND`, …) are not flags.
+
+**Found along the way.**
+- `R-TST-08`, `R-TST-09`, `R-TST-10`.
+- New `R-TST-01` evidence: pytest is not declared, so the two pytest files cannot be imported.
+
+**Still open in W2.** Steps 4–7, and every exit criterion except the init metrics:
+- `verify_imports.py` still fails the three `todoboard.block_*` modules (step 5);
+- the deferred ratio;
+- mid-file imports;
+- private imports.
 
 ## W3 — Layering and placement
 

@@ -140,7 +140,7 @@ a different module.
 
 ## R-IMP-04 — Names used in annotations are never imported
 
-**Severity** P1 · **Wave** W1 · **Status** Open
+**Severity** P1 · **Wave** W1 · **Status** Done (`4599d33`, `08cce31`)
 
 **Claim.** 35 annotations reference names that are not defined in their module
 (ruff `F821`).
@@ -169,7 +169,7 @@ default hides the unresolved type. `typing.get_type_hints` on any of them raises
 
 ## R-IMP-05 — `__all__` exports classes that no longer exist
 
-**Severity** P2 · **Wave** W1 · **Status** Open
+**Severity** P2 · **Wave** W1 · **Status** Done (`4599d33`)
 
 **Claim.** `todoboard/store.py:225-226` lists `SqliteTodoStore` and `PgTodoStore`
 in `__all__`; both classes were deleted (ruff `F822`).
@@ -197,7 +197,7 @@ commit; both rules gated afterwards.
 
 ## R-IMP-07 — Private names imported across package boundaries
 
-**Severity** P1 · **Wave** W2 · **Status** Open
+**Severity** P1 · **Wave** W2 · **Status** In progress: 14 → 8 (`2eff394` removed the six `core.config._env` imports)
 
 **Claim.** 14 imports take an underscore-prefixed name from another sub-package.
 
@@ -245,7 +245,7 @@ REPL banner then fails at start-up.
 
 ## R-INIT-01 — `core/__init__.py` loads the whole agent stack
 
-**Severity** P0 · **Wave** W2 · **Status** Open
+**Severity** P0 · **Wave** W2 · **Status** Done (`2ce0c1c`)
 
 **Claim.** `core/__init__.py:5-21` eagerly imports `core.engine`, `core.streaming`
 and `core.docker_sandbox_backend`. Python runs a package's `__init__.py` before
@@ -287,7 +287,7 @@ to submodule imports.
 
 ## R-INIT-02 — Other eager package initialisers
 
-**Severity** P1 · **Wave** W2 · **Status** Open
+**Severity** P1 · **Wave** W2 · **Status** Done (`b0b73e3`)
 
 | `__init__.py` | Eagerly loads | Root consumers |
 |---|---|---|
@@ -307,7 +307,7 @@ its name suggests.
 
 ## R-INIT-03 — Package exports nobody uses
 
-**Severity** P2 · **Wave** W2 · **Status** Open
+**Severity** P2 · **Wave** W2 · **Status** Done (`c4a7475`, `c2ebd89`, `12bf744`; metric corrected in `50b65f9`)
 
 **Claim.** 24 packages export names through `__all__` that no module, test or
 script imports from the package root.
@@ -340,7 +340,7 @@ describe an API nobody uses.
 
 ## R-INIT-04 — Logic in an `__init__.py`
 
-**Severity** P2 · **Wave** W2 · **Status** Open
+**Severity** P2 · **Wave** W2 · **Status** Done (`6e83f16`; the `__init__.py` re-exports nothing, because no consumer imports `provider_for` from the package root)
 
 **Evidence.** `llm/providers/__init__.py` constructs the provider instances, holds
 the `_PROVIDERS` tuple and defines `provider_for`.
@@ -352,7 +352,7 @@ the `_PROVIDERS` tuple and defines `provider_for`.
 
 ## R-INIT-05 — Packages without a docstring
 
-**Severity** P2 · **Wave** W2 · **Status** Open
+**Severity** P2 · **Wave** W2 · **Status** Done (`b7478e2`)
 
 **Evidence.**
 - 0-byte `__init__.py`: `agents/face_watcher/`, `daemon/web/routers/`,
@@ -365,7 +365,7 @@ the `_PROVIDERS` tuple and defines `provider_for`.
 
 ## R-INIT-06 — Package docstrings that contradict the code
 
-**Severity** P2 · **Wave** W2 · **Status** Open
+**Severity** P2 · **Wave** W2 · **Status** Done (`b0b73e3`, `c4a7475`, `8863a0f`)
 
 | `__init__.py` | Says | Reality |
 |---|---|---|

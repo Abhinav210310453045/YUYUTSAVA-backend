@@ -20,6 +20,10 @@ Postgres or an API key, and CI therefore runs no tests at all.
 **Evidence.**
 - 115 files use `unittest`; 2 import `pytest`. There is no `conftest.py` and no
   `[tool.pytest.ini_options]`.
+- `pytest` itself is not declared in `pyproject.toml` and is not installed in the
+  project venv. The two files that import it, `test/web/test_voice_ws.py` and
+  `test/test_general_purpose_search_tools.py`, fail at `import pytest` under any
+  runner (found during W2; identical at `f4ec45c`).
 - `CONTRIBUTING.md` lists "No test gate in CI" as a known gap. It never says how
   to run the tests.
 - An unknown subset needs a live Postgres or model credentials, and nothing
@@ -228,6 +232,37 @@ decay that finding predicts, observed.
 
 **Verification.** Both tests pass. A deliberately wrong `workspace` makes them fail,
 proving they exercise the builder.
+
+---
+
+## R-TST-10 — A regression test that cannot import what it tests
+
+**Severity** P1 · **Wave** W6 · **Status** Open (found during W2)
+
+**Claim.** `test/test_ask_handler.py` imports `_ask_handler` from
+`yuyutsava.cli.commands.chat_repl`. No module-level function has had that name
+since `2c7357e` (2026-07-19). The handler is now the closure returned by
+`make_ask_handler(renderer, console)` (`chat_repl.py:421`), so the import fails
+and the file runs no test.
+
+**Evidence.**
+- `python -m unittest test.test_ask_handler` reports one error:
+  `ImportError: cannot import name '_ask_handler'`.
+- The result is identical at `f4ec45c` and on every W2 commit, each run in its own
+  worktree.
+- The test last changed in `2af69af` (2026-06-21), before the handler moved.
+
+**Consequence.** As its docstring says, the file guards a real bug: under several
+parallel asks, a stray blank stdin line was read as a rejection and turned an
+approval into a denied DELETE. Nothing has checked that fix since July. Like
+`R-TST-09`, this is decay that a CI test job (`R-TST-01`) would have caught the
+same day.
+
+**Fix.** Build the handler through `make_ask_handler` with a stub renderer, and
+keep the assertions.
+
+**Verification.** The file passes. Removing the blank-line skip from the handler
+makes it fail.
 
 ---
 
