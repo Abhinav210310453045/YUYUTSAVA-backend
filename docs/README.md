@@ -15,7 +15,21 @@ How the system is built and why.
 | [architecture/task-runner.md](architecture/task-runner.md) | The filesystem/shell gateway — zones, permission model, rule table. |
 | [mcp_architecture.html](mcp_architecture.html) | MCP connectivity: client manager lifecycle, tool scoping, and what is *not* supported (SSE only, no sampling, no elicitation). Hand-drawn SVG diagrams — GitHub shows this as source, so open it in a browser. |
 
-### Architecture review
+## Code review
+
+[code-review/](code-review/README.md) holds versioned, evidence-based reviews of
+the code itself — readability, SOLID/KISS/DRY, placement, import hygiene,
+`__init__.py` contents, errors, tests and the Electron app — each with normative
+standards and a remediation plan. Start with
+[code-review/v0.1.0/00-executive-summary.md](code-review/v0.1.0/00-executive-summary.md);
+engineers changing code should read
+[code-review/v0.1.0/01-standards.md](code-review/v0.1.0/01-standards.md).
+
+### Architecture review (superseded)
+
+Superseded by Code Review v0.1.0, whose
+[legacy ledger](code-review/v0.1.0/10-legacy-ledger.md) records the status of
+every finding below. This section is removed when the review's fixes land.
 
 [architecture/review/](architecture/review/) is a strict evaluation of the
 `yuyutsava/` package against SOLID, DRY and KISS, plus an analysis of coupling
