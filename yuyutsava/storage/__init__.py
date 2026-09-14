@@ -1,23 +1,22 @@
-"""Persistence layer for yuyutsava.
+"""Persistence: the backends, the store factory, and the core stores.
 
-This package owns every store that touches durable state: SQLite files
-backing sessions, events, proposals, decisions, interrupts, preferences,
-and the LangGraph checkpointer; on-disk blob directories; and the unified
-TTL sweeper that ages them out.
+- Locations and formats: :mod:`~yuyutsava.storage.paths` (every persisted file),
+  :mod:`~yuyutsava.storage.ids` (thread ids)
+- Backends: :mod:`~yuyutsava.storage.backend` (SQLite by default, or Postgres),
+  :mod:`~yuyutsava.storage.dialect` (the SQL seam that lets one store serve both),
+  ``pg/`` (pool and migrations), ``routing/`` (SQLite buffers writes while Postgres
+  is down), :mod:`~yuyutsava.storage.domains` (one declaration per table)
+- Building stores: :class:`~yuyutsava.storage.factory.StoreFactory` resolves the
+  backend once and builds the stores, including those that live in ``context``,
+  ``memory``, ``skills``, ``visuals``, ``todoboard`` and ``daemon``;
+  :class:`~yuyutsava.storage.context.AppContext` holds the handles;
+  :mod:`~yuyutsava.storage.base` is the SQLite store base class and
+  :mod:`~yuyutsava.storage.models` the typed records
+- Stores kept here: ``sessions/``; ``events/`` (payloads, proposals, decisions,
+  consent rules, quotas); ``interrupts``; ``prefs``; message feedback; voice
+  messages. A ``*_unified`` module is the single implementation over both backends.
+- Housekeeping: ``sweeper`` (TTL expiry), ``purge`` (delete everything for a
+  session), ``introspect`` (read-only SQL for the ``/db`` API)
 
-Layout
-------
-- ``paths``       canonical filesystem locations for every persisted artifact
-- ``ids``         thread_id minting + parsing, shared by stores and sweepers
-- ``base``        BaseSqliteStore — WAL, busy_timeout, write lock, migration
-- ``models``      typed records returned from store reads (filled in Step 2)
-- ``sessions/``   session index store (Step 2)
-- ``events/``     event payload + proposal + rule + quota stores (Step 2)
-- ``interrupts``  HITL audit log (Step 2)
-- ``prefs``       user preferences (Step 2)
-- ``introspect``  read-only SQL execution for the debug UI
-- ``sweeper``     UnifiedSweeper coordinating all TTL policies
-
-Public boundary: nothing under ``yuyutsava.core`` may import from this
-package; ``daemon/`` and ``cli/`` depend on it via dependency injection.
+This package re-exports nothing: import a name from the module that owns it.
 """
