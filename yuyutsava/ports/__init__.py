@@ -28,9 +28,8 @@ anything and without a single call site changing. Only declared types move.
 """
 
 from yuyutsava.ports.agent import Agent
-from yuyutsava.ports.ask import AskUser
 from yuyutsava.ports.policy import CapEnforcer, RuntimeToggles
-from yuyutsava.ports.retrieval import ConversationIndex, VectorSearcher
+from yuyutsava.ports.retrieval import ConversationIndex
 from yuyutsava.ports.storage import (
     ArtifactStore,
     MemoryStore,
@@ -42,7 +41,6 @@ from yuyutsava.ports.storage import (
 __all__ = [
     "Agent",
     "ArtifactStore",
-    "AskUser",
     "CapEnforcer",
     "ConversationIndex",
     "MemoryStore",
@@ -50,5 +48,4 @@ __all__ = [
     "RuntimeToggles",
     "TranscriptStore",
     "UsageStore",
-    "VectorSearcher",
 ]
