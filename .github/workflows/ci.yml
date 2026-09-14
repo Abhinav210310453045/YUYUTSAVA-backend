@@ -83,6 +83,11 @@ jobs:
       - name: Ruff gate
         run: uvx ruff@0.16.5 check yuyutsava test scripts
 
+      # The tree was reformatted once (see .git-blame-ignore-revs); this keeps it
+      # that way, so formatting never has to ride along with a real change again.
+      - name: Ruff format
+        run: uvx ruff@0.16.5 format --check yuyutsava test scripts
+
       # Rules with too many existing violations to gate at zero: per-file counts
       # may only fall, and the baseline must move with them.
       - name: Lint ratchet

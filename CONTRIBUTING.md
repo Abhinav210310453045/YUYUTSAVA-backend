@@ -91,6 +91,7 @@ you should run locally:
 ```bash
 python -m compileall yuyutsava                  # syntax across the package
 uvx ruff@0.16.5 check yuyutsava test scripts    # lint gate — must be clean
+uvx ruff@0.16.5 format yuyutsava test scripts   # formatting — CI runs it with --check
 python scripts/check_lint_ratchet.py            # ratcheted lint counts may not grow
 uv build --wheel                                # packaging metadata still valid
 cd electron-app && npm run build                # renderer builds
