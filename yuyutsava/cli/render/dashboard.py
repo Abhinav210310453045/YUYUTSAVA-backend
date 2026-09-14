@@ -282,6 +282,13 @@ class ChatDashboard:
         # says it should be.
         self._output = output or create_output(stdout=sys.__stdout__)
         self._input = input
+        #: A question the next submitted line answers *instead* of starting a
+        #: turn. The full-screen application owns stdin in raw mode, so a
+        #: blocking ``input()`` elsewhere in the process can never see a
+        #: keystroke — the permission prompt printed "approve/reject>" into the
+        #: pane and then swallowed every key. Asks have to be read here.
+        self._ask: asyncio.Future[str | None] | None = None
+        self._prompt = "> "
 
         self.console = self._make_console()
         self._build_app(history_path, completer)
@@ -347,8 +354,8 @@ class ChatDashboard:
             self._out_window,
             Window(content=FormattedTextControl(self._status_text), height=1),
             VSplit([
-                Window(content=FormattedTextControl([("class:prompt", "> ")]),
-                       width=2, height=1),
+                Window(content=FormattedTextControl(self._prompt_text),
+                       width=lambda: len(self._prompt), height=1),
                 Window(content=BufferControl(buffer=self._buf), height=1),
             ]),
         ])
@@ -402,6 +409,13 @@ class ChatDashboard:
         # A new turn means "follow the output again": leaving the view parked
         # 200 lines up would hide the reply about to arrive.
         self._scroll = 0
+        # An outstanding question takes the line first. It is not a new turn:
+        # queueing it would park the answer behind the very turn that is
+        # blocked waiting for it.
+        ask = self._ask
+        if ask is not None and not ask.done():
+            ask.set_result(text)
+            return
         self._queue.put_nowait(text)
         task = self._turn_task
         if text.strip() and task is not None and not task.done():
@@ -430,7 +444,15 @@ class ChatDashboard:
         Raw mode means Ctrl+C never arrives as SIGINT, so the REPL's
         asyncio-cancellation path has to be triggered by hand. With no turn in
         flight this does what Ctrl+C does at a shell prompt.
+
+        An outstanding question is refused first: Ctrl+C on a permission
+        prompt must deny, and cancelling the turn while the prompt still waits
+        would leave the tool call hanging on a future nobody resolves.
         """
+        if self._ask is not None and not self._ask.done():
+            self._buf.reset()
+            self._cancel_ask()
+            return
         task = self._turn_task
         if task is not None and not task.done():
             task.cancel()
@@ -441,6 +463,8 @@ class ChatDashboard:
         """Ctrl+D — but only on an empty line, as in a shell."""
         if self._buf.text:
             return
+        # Quitting with a question open is a refusal, not an approval.
+        self._cancel_ask()
         self._queue.put_nowait(None)
 
     def follow(self) -> None:
@@ -631,6 +655,12 @@ class ChatDashboard:
     # -- lifecycle ----------------------------------------------------------
 
     async def start(self) -> None:
+        # Claim stdin for the application's lifetime. Every CLI prompt reads
+        # through this seam, because a blocking input() cannot win a keystroke
+        # against a full-screen application (see cli/line_reader.py).
+        from yuyutsava.cli.line_reader import set_line_reader
+
+        set_line_reader(self.ask)
         from yuyutsava.context.meter import bus
 
         self._install_streams()
@@ -670,13 +700,66 @@ class ChatDashboard:
             return None
         return await self._queue.get()
 
+    async def ask(self, prompt: str = "approve/reject> ") -> str | None:
+        """Read one line as the answer to a question, not as a new turn.
+
+        The application has stdin in raw mode for its whole lifetime, so the
+        permission prompt's ``input()`` could never receive a key: the card
+        rendered, "approve/reject>" appeared in the transcript, and typing did
+        nothing. Reading through the application's own buffer is the only way
+        a full-screen front can ask anything.
+
+        Returns the line, or ``None`` if the user cancelled (Ctrl+C) or quit —
+        which callers must treat as a refusal, never as consent.
+        """
+        if self._app_task is not None and self._app_task.done():
+            return None
+        loop = asyncio.get_running_loop()
+        mine: asyncio.Future[str | None] = loop.create_future()
+        previous, self._ask = self._ask, mine
+        if previous is not None and not previous.done():
+            # Parallel asks: the older one is no longer answerable, and
+            # leaving it pending would hang its tool call forever.
+            previous.set_result(None)
+        self._prompt = prompt
+        self._invalidate()
+        try:
+            return await mine
+        finally:
+            # Only clear the slot if it is still ours. A superseded ask resumes
+            # *after* its replacement has installed itself, and blindly
+            # clearing here wiped the live future — so the next submitted line
+            # was queued as a new turn instead of answering the question.
+            if self._ask is mine:
+                self._ask = None
+                self._prompt = "> "
+                self._invalidate()
+
+    def _cancel_ask(self) -> None:
+        """Refuse any outstanding question. Used by Ctrl+C and by quit."""
+        ask = self._ask
+        if ask is not None and not ask.done():
+            ask.set_result(None)
+
+    def _prompt_text(self):
+        return [("class:prompt", self._prompt)]
+
     async def stop(self) -> None:
+        from yuyutsava.cli.line_reader import clear_line_reader
         from yuyutsava.context.meter import bus
+
+        # Release stdin before refusing the open question, so nothing new can
+        # arrive in between.
+        clear_line_reader(self.ask)
 
         if self._meter_token is not None:
             with contextlib.suppress(Exception):
                 bus().unsubscribe(self._meter_token)
             self._meter_token = None
+        # A shutdown with a question still open must not leave its tool call
+        # waiting on a future that will never be resolved.
+        with contextlib.suppress(Exception):
+            self._cancel_ask()
         with contextlib.suppress(Exception):
             if self._app.is_running:
                 self._app.exit()

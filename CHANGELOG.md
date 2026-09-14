@@ -9,6 +9,19 @@ While the version stays `0.x`, minor bumps may contain breaking changes.
 ## [Unreleased]
 
 ### Fixed
+- **A permission prompt in the split terminal view could not be answered at
+  all.** The card rendered, `approve/reject>` appeared in the pane, and typing
+  did nothing: the prompt was a blocking `input()` while the full-screen
+  prompt_toolkit application held stdin in raw mode, so every keystroke went to
+  the application and the read never completed. The turn sat waiting on an
+  answer that could never arrive. Reading a line is now a seam
+  (`cli/line_reader.py`) that the front owning the terminal installs once —
+  the same shape as the retry listener and the meter bus — and all four CLI
+  prompts go through it, including the background-subagent bridge and
+  `yuyutsava attach`, which had the same latent bug. Ctrl+C, Ctrl+D and
+  shutdown refuse an open question rather than hanging it, because a question
+  that cannot be answered is never consent. An AST tripwire (with a negative
+  control) fails the build if a new prompt calls `input()` directly.
 - **The context meter's total did not add up, and could fall while the
   conversation grew.** One chat read `26.9k / 1.0M` on its first call and
   `23.5k / 1.0M` seven calls later, with the provider reporting 13.4k and then

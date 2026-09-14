@@ -405,13 +405,20 @@ def make_ask_handler(renderer: "ChatRenderer", console: Any = None):
     ``input()`` (a repainting Live would fight the prompt) and restarts it
     after. With a rich ``console`` the card is a humanized Panel; the plain
     path keeps the ANSI card, now with the same plain-English headline.
+
+    The read goes through ``cli.line_reader.read_line``, never ``input()``:
+    in the split view a prompt_toolkit application holds stdin in raw mode for
+    the whole session, so a blocking read anywhere else in the process never
+    sees a keystroke. The card rendered, ``approve/reject>`` appeared in the
+    pane, and every key went to the application instead — the prompt could not
+    be answered at all.
     """
+    from yuyutsava.cli.line_reader import read_line
 
     async def _ask_handler(interrupt_value: Any) -> str:
         """Render a permission/question interrupt and read the user's reply."""
         payload = interrupt_value if isinstance(interrupt_value, dict) else {"text": str(interrupt_value)}
         itype = payload.get("type", "")
-        loop = asyncio.get_running_loop()
 
         from yuyutsava.cli.render import panels
 
@@ -425,11 +432,10 @@ def make_ask_handler(renderer: "ChatRenderer", console: Any = None):
                     body = payload.get("body") or payload.get("question") or ""
                     if body:
                         print(f"  {body}", file=sys.stderr)
-                try:
-                    answer = await loop.run_in_executor(None, lambda: input("> ").strip())
-                except (EOFError, KeyboardInterrupt):
+                answer = await read_line("answer> ")
+                if answer is None:
                     return "reject"
-                return answer or "no response"
+                return answer.strip() or "no response"
 
             if console is not None:
                 panels.print_ask_panel(console, payload)
@@ -448,10 +454,10 @@ def make_ask_handler(renderer: "ChatRenderer", console: Any = None):
             # reject words and EOF/Ctrl-C still reject; retries are capped so a
             # closed stdin can't spin forever.
             for _ in range(3):
-                try:
-                    raw = await loop.run_in_executor(None, lambda: input("approve/reject> ").strip())
-                except (EOFError, KeyboardInterrupt):
+                raw = await read_line("approve/reject> ")
+                if raw is None:
                     return "reject"
+                raw = raw.strip()
                 if not raw:
                     continue
                 token = _decision_token(raw)

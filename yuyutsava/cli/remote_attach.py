@@ -17,7 +17,6 @@ Wire format: each SSE event is ``{"event": "<type>", "data": <json>}`` where
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import sys
@@ -147,12 +146,11 @@ async def prompt_user_for_ask(frame_data: dict) -> str:
     elif options:
         print(f"  options: {' / '.join(options)}", file=sys.stderr)
     sys.stderr.flush()
+    from yuyutsava.cli.line_reader import read_line
+
     prompt = "approve/reject> " if is_permission else "> "
-    try:
-        line = await asyncio.get_running_loop().run_in_executor(
-            None, lambda: input(prompt).strip()
-        )
-    except (EOFError, KeyboardInterrupt):
+    line = await read_line(prompt)
+    if line is None:
         return "reject"
     if is_permission:
         return decision_token(line) or "reject"

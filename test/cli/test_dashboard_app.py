@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import pathlib
 import sys
 import unittest
 import warnings
@@ -402,6 +403,234 @@ class Notices(_DashboardCase):
         self.dash.note_retry("m", 2, 6, 4.0, RuntimeError("ResourceExhausted"))
         self.assertTrue(any("provider busy" in n for n in self.dash.notices()))
 
+
+class AsksAreReadThroughTheApplication(_DashboardCase):
+    """The application owns stdin; nothing else in the process can read it.
+
+    Measured failure: a permission card rendered, ``approve/reject>`` appeared
+    in the pane, and typing did nothing at all. The prompt was a blocking
+    ``input()`` in a thread executor while the full-screen application held
+    the terminal in raw mode, so every keystroke went to the application and
+    the read never completed.
+    """
+
+    async def test_a_submitted_line_answers_the_question(self):
+        pending = asyncio.create_task(self.dash.ask())
+        await asyncio.sleep(0)
+        self.dash._buf.text = "y"
+        self.dash.submit()
+        self.assertEqual(await asyncio.wait_for(pending, 2), "y")
+
+    async def test_the_answer_does_not_become_a_new_turn(self):
+        # Queueing it would park the answer behind the very turn that is
+        # blocked waiting for it.
+        pending = asyncio.create_task(self.dash.ask())
+        await asyncio.sleep(0)
+        self.dash._buf.text = "y"
+        self.dash.submit()
+        await asyncio.wait_for(pending, 2)
+        with self.assertRaises(asyncio.TimeoutError):
+            await asyncio.wait_for(self.dash.read_input(), 0.2)
+
+    async def test_answering_mid_turn_does_not_queue_or_warn(self):
+        async def _long():
+            await asyncio.sleep(30)
+
+        task = asyncio.create_task(_long())
+        self.dash.set_turn_task(task)
+        try:
+            pending = asyncio.create_task(self.dash.ask())
+            await asyncio.sleep(0)
+            self.dash._buf.text = "s"
+            self.dash.submit()
+            self.assertEqual(await asyncio.wait_for(pending, 2), "s")
+            self.assertEqual(self.dash.notices(), [])
+            self.assertFalse(task.done(), "the turn is waiting on this answer")
+        finally:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+
+    async def test_the_prompt_says_what_is_being_asked_then_reverts(self):
+        self.assertEqual(self.dash._prompt, "> ")
+        pending = asyncio.create_task(self.dash.ask("approve/reject> "))
+        await asyncio.sleep(0)
+        self.assertEqual(self.dash._prompt, "approve/reject> ")
+        self.dash._buf.text = "n"
+        self.dash.submit()
+        await asyncio.wait_for(pending, 2)
+        self.assertEqual(self.dash._prompt, "> ")
+
+    async def test_a_frame_renders_with_the_question_prompt_showing(self):
+        # The prompt window is sized from the label; a stale width=2 would
+        # clip "approve/reject> " to "ap".
+        pending = asyncio.create_task(self.dash.ask("approve/reject> "))
+        await asyncio.sleep(0)
+        app = self.dash._app
+        loop = asyncio.get_running_loop()
+        loop.call_later(0.2, lambda: app.exit() if app.is_running else None)
+        await asyncio.wait_for(app.run_async(), timeout=10)
+        self.dash._cancel_ask()
+        self.assertIsNone(await asyncio.wait_for(pending, 2))
+
+    async def test_ctrl_c_refuses_rather_than_hanging(self):
+        # A question that cannot be answered is never consent.
+        pending = asyncio.create_task(self.dash.ask())
+        await asyncio.sleep(0)
+        self.dash.interrupt()
+        self.assertIsNone(await asyncio.wait_for(pending, 2))
+
+    async def test_ctrl_c_on_a_question_leaves_the_turn_alone(self):
+        # Cancelling the turn while the prompt still waits would hang the tool
+        # call on a future nobody resolves.
+        async def _long():
+            await asyncio.sleep(30)
+
+        task = asyncio.create_task(_long())
+        self.dash.set_turn_task(task)
+        try:
+            pending = asyncio.create_task(self.dash.ask())
+            await asyncio.sleep(0)
+            self.dash.interrupt()
+            self.assertIsNone(await asyncio.wait_for(pending, 2))
+            self.assertFalse(task.done())
+        finally:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+
+    async def test_quitting_refuses_the_question(self):
+        pending = asyncio.create_task(self.dash.ask())
+        await asyncio.sleep(0)
+        self.dash._buf.text = ""
+        self.dash.request_quit()
+        self.assertIsNone(await asyncio.wait_for(pending, 2))
+
+    async def test_shutting_down_refuses_the_question(self):
+        pending = asyncio.create_task(self.dash.ask())
+        await asyncio.sleep(0)
+        await self.dash.stop()
+        self.assertIsNone(await asyncio.wait_for(pending, 2))
+
+    async def test_a_second_question_releases_the_first(self):
+        # Parallel asks: the older one is no longer answerable, and leaving it
+        # pending would hang its tool call forever.
+        first = asyncio.create_task(self.dash.ask("first> "))
+        await asyncio.sleep(0)
+        second = asyncio.create_task(self.dash.ask("second> "))
+        await asyncio.sleep(0)
+        self.assertIsNone(await asyncio.wait_for(first, 2))
+        self.dash._buf.text = "y"
+        self.dash.submit()
+        self.assertEqual(await asyncio.wait_for(second, 2), "y")
+
+    async def test_starting_claims_stdin_and_stopping_releases_it(self):
+        from yuyutsava.cli.line_reader import has_line_reader
+
+        self.assertFalse(has_line_reader())
+        await self.dash.start()
+        self.assertTrue(has_line_reader())
+        await self.dash.stop()
+        self.assertFalse(has_line_reader())
+
+    #: The one legitimate direct read. ``_read_input`` is the REPL's own turn
+    #: loop, and it branches to ``dashboard.read_input()`` first — the blocking
+    #: call is its non-TTY fallback, which by construction never coexists with
+    #: the dashboard (``display_mode`` requires a TTY).
+    _ALLOWED_DIRECT_READS = {"_read_input"}
+
+    async def test_every_cli_prompt_goes_through_the_seam(self):
+        """No new prompt may call ``input()`` and inherit the same bug.
+
+        Nothing in the type of ``input()`` says "not while a full-screen
+        application owns the terminal", so this is the only thing that stops
+        the next prompt being unanswerable. AST-based, not grep: the modules
+        discuss ``input()`` in prose all over, and a comment is not a call.
+        """
+        import ast
+
+        offenders = []
+        for path in sorted(pathlib.Path("yuyutsava/cli").rglob("*.py")):
+            if path.name == "line_reader.py":
+                continue
+            tree = ast.parse(path.read_text())
+            scopes: dict[int, str] = {}
+            for node in ast.walk(tree):
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    # ast.walk is breadth-first, so a nested function is seen
+                    # after its parent and overwrites it — leaving the
+                    # *innermost* enclosing name, which is the one that says
+                    # whether this read is the allowed one.
+                    for child in ast.walk(node):
+                        scopes[id(child)] = node.name
+            for node in ast.walk(tree):
+                if (isinstance(node, ast.Call)
+                        and isinstance(node.func, ast.Name)
+                        and node.func.id == "input"):
+                    where = scopes.get(id(node), "<module>")
+                    if where in self._ALLOWED_DIRECT_READS:
+                        continue
+                    offenders.append(f"{path}:{node.lineno} in {where}()")
+        self.assertEqual(
+            offenders, [],
+            "these must read through cli.line_reader.read_line:\n"
+            + "\n".join(offenders),
+        )
+
+    async def test_the_tripwire_would_catch_a_new_direct_read(self):
+        # Negative control: the check above is only worth having if it fails
+        # on the thing it is meant to forbid.
+        import ast
+
+        tree = ast.parse("async def _ask_the_user():\n    return input('y/n> ')\n")
+        calls = [
+            n for n in ast.walk(tree)
+            if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+            and n.func.id == "input"
+        ]
+        self.assertEqual(len(calls), 1)
+        self.assertNotIn("_ask_the_user", self._ALLOWED_DIRECT_READS)
+
+    async def test_a_refused_read_is_never_read_as_consent(self):
+        from yuyutsava.cli import line_reader
+
+        async def cancelled(_prompt):
+            return None
+
+        line_reader.set_line_reader(cancelled)
+        try:
+            self.assertIsNone(await line_reader.read_line("approve/reject> "))
+        finally:
+            line_reader.clear_line_reader(cancelled)
+
+    async def test_a_raising_reader_refuses_rather_than_hanging_the_turn(self):
+        from yuyutsava.cli import line_reader
+
+        async def boom(_prompt):
+            raise RuntimeError("front is gone")
+
+        line_reader.set_line_reader(boom)
+        try:
+            self.assertIsNone(await line_reader.read_line("> "))
+        finally:
+            line_reader.clear_line_reader(boom)
+
+    async def test_a_late_teardown_cannot_unhook_the_new_owner(self):
+        from yuyutsava.cli import line_reader
+
+        async def first(_p):
+            return "1"
+
+        async def second(_p):
+            return "2"
+
+        line_reader.set_line_reader(first)
+        line_reader.set_line_reader(second)
+        line_reader.clear_line_reader(first)   # the old front, tearing down late
+        try:
+            self.assertEqual(await line_reader.read_line("> "), "2")
+        finally:
+            line_reader.clear_line_reader()
 
 class StreamCapture(_DashboardCase):
     async def test_stdout_and_stderr_are_captured_and_restored(self):
