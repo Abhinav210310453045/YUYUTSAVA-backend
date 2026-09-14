@@ -225,7 +225,7 @@ export default function ChatPanel({
   showContext = false,
 }) {
   const {
-    messages, connected, busy, pendingAsk, pendingAsks, hello, listening, speaking,
+    messages, connected, busy, pendingAsks, hello, listening, speaking,
     playingId, paused, usage, queued,
     send, answerAsk, interrupt, startVoice, stopVoice, replay, togglePause, newSession,
     sendNow, discardQueued,

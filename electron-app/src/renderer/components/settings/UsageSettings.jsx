@@ -327,7 +327,7 @@ export default function UsageSettings() {
 
           <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6 }}>
             Cached input is charged at the full input rate here, so a
-            well-cached conversation's cost is an upper bound. Deleting a
+            well-cached conversation&apos;s cost is an upper bound. Deleting a
             session removes its usage rows with it.
           </div>
         </>

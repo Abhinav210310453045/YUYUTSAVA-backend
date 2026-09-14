@@ -26,7 +26,7 @@ let overlayWin = null
 // conversation that happens to be using it.
 let shownFor = null
 
-function _position(winw) {
+function _position() {
   // Bottom-right of the display under the cursor (multi-monitor friendly).
   const point = screen.getCursorScreenPoint()
   const display = screen.getDisplayNearestPoint(point)
@@ -92,7 +92,7 @@ function create() {
 // 'hotkey' | 'wake'; `wakeWord` is set for wake-triggered opens.
 function show({ reason = 'hotkey', wakeWord = '' } = {}) {
   const w = create()
-  const { x, y } = _position(WIDTH)
+  const { x, y } = _position()
   w.setBounds({ x, y, width: WIDTH, height: HEIGHT })
   // Re-assert float-over-everything on every show. macOS resets a window's
   // collection behaviour when it's hidden/shown, so a one-time setup in create()
@@ -138,7 +138,7 @@ function sendCommand({ command = '' } = {}) {
 function showAsk({ title = '', agent = '', mainFocused = false } = {}) {
   if (mainFocused) return
   const w = create()
-  const { x, y } = _position(WIDTH)
+  const { x, y } = _position()
   w.setBounds({ x, y, width: WIDTH, height: HEIGHT })
   // macOS resets a window's collection behaviour on hide/show, so these have to
   // be re-applied every time or the overlay won't cross into another app's

@@ -522,7 +522,7 @@ export default function ThinkBoard({
     const v = Number(localStorage.getItem(COL_W_KEY))
     return v >= COL_MIN && v <= COL_MAX ? v : 320
   })
-  const [colDragging, setColDragging] = useState(false)
+  const [, setColDragging] = useState(false)
 
   const onDragState = useCallback((active) => {
     setDragging(active)

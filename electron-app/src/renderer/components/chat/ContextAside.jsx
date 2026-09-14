@@ -141,7 +141,7 @@ export default function ContextAside({ usage }) {
 
       {!usage ? (
         <div style={{ fontSize: 11, color: 'var(--text-dim)', lineHeight: 1.6 }}>
-          No model call yet. The window, the last call and this session's spend
+          No model call yet. The window, the last call and this session&apos;s spend
           appear here as soon as the agent runs.
         </div>
       ) : (

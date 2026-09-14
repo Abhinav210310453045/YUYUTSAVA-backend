@@ -32,7 +32,7 @@ export default function WakeWordOnboarding({ save, onDone }) {
       await save({ WAKE_WORDS: choice, [ONBOARDED_KEY]: '1' })
       await enableVoiceSource(choice)
       onDone?.(true)
-    } catch (e) {
+    } catch {
       setError('Could not enable the wake word. Is the daemon running?')
       setBusy(false)
     }

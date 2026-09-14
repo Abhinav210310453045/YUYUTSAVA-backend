@@ -6,7 +6,7 @@
 // until the user comes back. Click → focus the window and tell the renderer
 // to scroll to the proposal that triggered the notification.
 
-const { Notification, app, BrowserWindow } = require('electron')
+const { Notification, app } = require('electron')
 const tray = require('./tray')
 
 let _win = null
