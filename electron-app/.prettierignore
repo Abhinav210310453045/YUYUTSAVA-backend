@@ -1,0 +1,6 @@
+dist/
+release/
+node_modules/
+conversation_history/
+large_tool_results/
+package-lock.json

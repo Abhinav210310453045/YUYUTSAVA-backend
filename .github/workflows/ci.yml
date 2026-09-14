@@ -104,6 +104,12 @@ jobs:
         working-directory: electron-app
         run: npm ci
 
+      # Errors must be zero; the warning ceiling is a ratchet that may only fall
+      # (docs/code-review/v0.1.0/01-standards.md §14).
+      - name: Lint
+        working-directory: electron-app
+        run: npm run lint
+
       - name: Build renderer
         working-directory: electron-app
         run: npm run build
