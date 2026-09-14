@@ -17,17 +17,13 @@ Two primitives:
 The Electron/mobile renderer has its own parallel sound layer
 (``electron-app/src/renderer/audio/``) for client-side playback, since the
 daemon may be remote (Tailscale); both expose the same earcon vocabulary.
+
+``Announcer`` is re-exported because other modules import it from here; import
+anything else from the module that owns it.
 """
 
 from __future__ import annotations
 
-from yuyutsava.audio_io.announcer import Announcer, announcer_from_env
-from yuyutsava.audio_io.earcons import EARCON_NAMES, earcon_path, ensure_earcons
+from yuyutsava.audio_io.announcer import Announcer
 
-__all__ = [
-    "Announcer",
-    "announcer_from_env",
-    "EARCON_NAMES",
-    "earcon_path",
-    "ensure_earcons",
-]
+__all__ = ["Announcer"]

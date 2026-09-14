@@ -28,11 +28,13 @@ Native SDKs (lazy-imported; install the matching extra):
     cohere    → ChatCohere               [yuyutsava[cohere]]
 
 Layering: this package imports ``yuyutsava.core.config`` (provider DATA — how to
-reach a provider) and never the reverse. Config is a leaf that ~31 modules depend
-on; a quirk hook hanging off a Settings class would invert that.
+reach a provider) and never the reverse. Config is a leaf much of the codebase
+depends on; a quirk hook hanging off a Settings class would invert that.
+
+The names below are re-exported because other modules import them from here;
+import anything else from the module that owns it.
 """
 
-from yuyutsava.llm.base import Provider, require
 from yuyutsava.llm.factory import (
     chat_model,
     handle_for,
@@ -46,12 +48,10 @@ from yuyutsava.llm.providers import provider_for
 __all__ = [
     "Capability",
     "ModelHandle",
-    "Provider",
     "chat_model",
     "handle_for",
     "model_handle",
     "model_name_of",
     "provider_for",
-    "require",
     "supports",
 ]

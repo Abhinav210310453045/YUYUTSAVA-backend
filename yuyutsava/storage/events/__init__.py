@@ -1,28 +1,16 @@
-"""Events storage: event payloads, proposals, decisions, consent rules, quotas.
+"""Events storage: event payloads, proposals, decisions, consent rules and quotas.
 
-Phase 2 split the old monolith into per-domain ABCs (:mod:`abc`) each with a
-SQLite twin (:mod:`sqlite_backend`) and a Postgres twin (:mod:`pg_stores`).
-:class:`Store` is now a thin composition facade (:mod:`store`) re-exposing the
-historical method names and routing them — through
-:class:`~yuyutsava.storage.routing.RoutedStore` on the Postgres backend (with a
-SQLite spillover buffer) — so call sites barely changed.
+Each domain has an abstract store (:mod:`~yuyutsava.storage.events.abc`) with SQLite
+and Postgres implementations. :class:`~yuyutsava.storage.events.store.Store` is the
+composition facade that routes each call to the right domain store — through a
+:class:`~yuyutsava.storage.routing.facade.RoutedStore` on the Postgres backend, with
+SQLite as the spillover buffer.
 
-Public re-exports keep the import path stable:
-``from yuyutsava.storage.events import Store, Proposal, ConsentRule``.
+``Store``, ``Proposal`` and ``ConsentRule`` are re-exported because other modules
+import them from here; import anything else from the module that owns it.
 """
 
 from yuyutsava.storage.events.store import Store
-from yuyutsava.storage.models import (
-    ConsentRule,
-    Decision,
-    EventRecord,
-    Proposal,
-)
+from yuyutsava.storage.models import ConsentRule, Proposal
 
-__all__ = [
-    "ConsentRule",
-    "Decision",
-    "EventRecord",
-    "Proposal",
-    "Store",
-]
+__all__ = ["ConsentRule", "Proposal", "Store"]

@@ -14,7 +14,7 @@ Construction:
 - ``Store()`` / ``Store(db_path)`` — SQLite-only (CLI ``prefs`` subcommand,
   tests). SQLite is the permanent primary.
 - ``Store.for_backend(storage, pg_pool, health)`` — on the Postgres backend
-  each domain is a :class:`~yuyutsava.storage.routing.RoutedStore` wrapping the
+  each domain is a :class:`~yuyutsava.storage.routing.facade.RoutedStore` wrapping the
   Pg twin (primary) over the SQLite twin (failover buffer); on the SQLite
   backend it is the plain SQLite twin.
 """
@@ -308,7 +308,7 @@ class Store:
         return await self._prefs.list()
 
     # ------------------------------------------------------------------ #
-    # consent_grants (yuyutsava.consent.ConsentStore Protocol)            #
+    # consent_grants (yuyutsava.consent.store.ConsentStore Protocol)      #
     # ------------------------------------------------------------------ #
 
     async def put_consent_grant(self, grant: "Grant") -> None:
