@@ -8,6 +8,7 @@ Zone priority (highest → lowest): SYSTEM_CRITICAL → SANDBOX → WORKSPACE �
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 from yuyutsava.models.operations import FilesystemZone
 from yuyutsava.platform import host_profile

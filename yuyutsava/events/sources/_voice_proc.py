@@ -140,7 +140,6 @@ def main(argv: list[str] | None = None) -> None:
             dtype="int16",
             blocksize=_CHUNK_FRAMES,
         ) as stream:
-            chunk_buf = b""
             detector_errors = 0  # consecutive process() failures
             while not stopping["v"]:
                 now = time.time()

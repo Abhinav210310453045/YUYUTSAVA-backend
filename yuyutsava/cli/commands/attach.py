@@ -117,7 +117,7 @@ async def _run(args: argparse.Namespace) -> int:
                 ok = await client.respond_ask(ask_id, reply)
                 if not ok:
                     print(
-                        f"\033[33m(reply rejected — ask may have already been answered)\033[0m",
+                        "\033[33m(reply rejected — ask may have already been answered)\033[0m",
                         file=sys.stderr, flush=True,
                     )
     except (KeyboardInterrupt, asyncio.CancelledError):

@@ -49,6 +49,7 @@ from yuyutsava.daemon.web.schemas.todo import (
 from yuyutsava.todoboard.exchange import (
     TodoAttachmentError,
     TodoError,
+    TodoExchange,
     TodoNotFoundError,
     TodoValidationError,
     get_default_exchange,

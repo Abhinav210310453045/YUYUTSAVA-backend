@@ -106,7 +106,7 @@ def _bar(ax, spec) -> None:
     if labels:
         # Rotate + right-align when labels are many or long so they don't overlap
         # (the exact pain the user hit — no need to hand-roll a custom chart).
-        crowded = len(labels) > 6 or any(len(l) > 8 for l in labels)
+        crowded = len(labels) > 6 or any(len(label) > 8 for label in labels)
         if crowded:
             ax.set_xticklabels(labels, rotation=40, ha="right", fontsize=8)
         else:

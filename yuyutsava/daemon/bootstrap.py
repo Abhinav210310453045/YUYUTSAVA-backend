@@ -65,6 +65,7 @@ from yuyutsava.mcp.config import MCPConfig
 from yuyutsava.mcp.loader import MCPClientManager
 from yuyutsava.memory.config import MemorySettings
 from yuyutsava.memory.embedder import Embedder
+from yuyutsava.ports import CapEnforcer
 from yuyutsava.prefs.injector import PrefsInjector
 from yuyutsava.prefs.runtime import RuntimeSettings
 from yuyutsava.skills.registry import SkillRegistry
@@ -858,7 +859,7 @@ async def build_async_subagents(
             acquire_or_attach_host,
             register_host_cleanup,
         )
-        from yuyutsava.async_subagents.mirror import AsyncTaskMirror
+        from yuyutsava.async_subagents.mirror import AsyncTaskMirror, MirroredTask
         from yuyutsava.async_subagents.watcher import AsyncTaskHealthWatcher
 
         logger.info("  async subs: enabled (YUYUTSAVA_ASYNC_SUBAGENTS=1)")
@@ -1299,7 +1300,6 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     )
     skill_registry = _rtv.skill_registry
     skill_store = _rtv.skill_store
-    note_index = _rtv.note_index
 
     # ── storage spillover recovery -----------------------------------------
     # On Postgres recovery the health probe drains the buffered SQLite rows back
@@ -1346,8 +1346,7 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         mcp_manager=mcp_manager, cap_enforcer=cap_enforcer,
         memory_store=memory_store, skill_store=skill_store,
     )
-    task_runner = subs.task_runner
-    subagent_list, subagents = subs.sync_list, subs.sync
+    subagents = subs.sync
     bg_subagent_list = subs.background
 
     # Orchestrator work queue + the launch index that links a background task

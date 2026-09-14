@@ -219,7 +219,7 @@ def _parse_frontmatter(path: Path, *, scope: str, agent: str | None) -> SkillMet
     if not description:
         # Fall back to first non-empty line of body
         body_lines = text[m.end() if m else 0:].strip().splitlines()
-        description = next((l.lstrip("# ").strip() for l in body_lines if l.strip()), "")
+        description = next((line.lstrip("# ").strip() for line in body_lines if line.strip()), "")
 
     # ``requires_tools`` — optional list of tool-name globs the skill needs
     # exposed at build time. BaseSubAgent reads this to decide whether to

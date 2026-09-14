@@ -20,9 +20,10 @@ import os
 import re
 import shutil
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from deepagents import create_deep_agent
 from deepagents.backends import CompositeBackend, LocalShellBackend
@@ -56,6 +57,9 @@ from yuyutsava.skills.registry import SkillRegistry
 from yuyutsava.skills.tools import make_skill_tools
 from yuyutsava.storage.paths import WORKSPACE_STATE_DIRNAME, WorkspaceLayout
 from yuyutsava.tools.search import make_search_tools
+
+if TYPE_CHECKING:
+    from yuyutsava.agents.orchestrator.agent import OrchestratorDeps
 
 # ---------------------------------------------------------------------------
 # Logging setup
