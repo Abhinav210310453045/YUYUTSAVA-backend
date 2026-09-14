@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 from pathlib import Path
 from typing import Any, Literal
 
@@ -27,7 +26,7 @@ from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
 from yuyutsava.agents.task_runner.tools import set_default_consent
 from yuyutsava.consent import ConsentRegistry
 from yuyutsava.context.config import ContextSettings
-from yuyutsava.config.env import env
+from yuyutsava.config.env import env, env_flag
 from yuyutsava.core.config import DockerSettings, LlmSettings, LocalSettings, SearchConfig
 from yuyutsava.core.engine import AgentBundle, build_cli_deepagent
 from yuyutsava.llm import chat_model
@@ -41,7 +40,7 @@ logger = logging.getLogger("yuyutsava.cli.agent_stack")
 
 
 def _async_enabled() -> bool:
-    return os.environ.get("YUYUTSAVA_ASYNC_SUBAGENTS", "").lower() in ("1", "true", "yes")
+    return env_flag("YUYUTSAVA_ASYNC_SUBAGENTS", true=("1", "true", "yes"))
 
 
 async def _build_retrieval_stores(skill_registry: SkillRegistry):

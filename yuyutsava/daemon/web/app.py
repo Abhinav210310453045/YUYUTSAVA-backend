@@ -20,6 +20,7 @@ from typing import Awaitable, Callable
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
+from yuyutsava.config.env import env_flag
 from yuyutsava.daemon.web.auth import (
     AuthSettings,
     install_auth_middleware,
@@ -230,7 +231,7 @@ def create_app(
         artifacts_router.router,
     ]
     # Read-only DB introspection. Opt-out via env (defaults on).
-    if os.environ.get("YUYUTSAVA_DB_API_ENABLED", "true").lower() not in {"0", "false", "no"}:
+    if env_flag("YUYUTSAVA_DB_API_ENABLED", default=True, false=("0", "false", "no")):
         api_routers.append(db_router.router)
 
     for r in api_routers:

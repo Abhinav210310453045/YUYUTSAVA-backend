@@ -46,6 +46,7 @@ from yuyutsava.cli.render.plain import (
     _YELLOW,
     ChatRenderer,
 )
+from yuyutsava.config.env import env_flag
 from yuyutsava.consent import decision_token as _decision_token
 from yuyutsava.core.config import DockerSettings, LlmSettings, LocalSettings, SearchConfig
 from yuyutsava.core.engine import cleanup_local_sandbox, silence_plumbing_loggers
@@ -899,11 +900,7 @@ async def run_chat_repl(
 ) -> int:
     """Drive the interactive chat loop. Returns process exit code."""
     if not debug_plumbing:
-        debug_plumbing = os.environ.get("YUYUTSAVA_DEBUG_PLUMBING", "").lower() in (
-            "1",
-            "true",
-            "yes",
-        )
+        debug_plumbing = env_flag("YUYUTSAVA_DEBUG_PLUMBING", true=("1", "true", "yes"))
     if not debug_plumbing:
         silence_plumbing_loggers()
 

@@ -15,6 +15,8 @@ import logging
 import os
 from abc import ABC, abstractmethod
 
+from yuyutsava.config.env import env_flag
+
 logger = logging.getLogger("yuyutsava.io.wake")
 
 # Default openwakeword model. The ONNX weights are fetched on first use (see
@@ -25,7 +27,7 @@ DEFAULT_WAKE_WORDS = ["hey_jarvis"]
 # tuning aid (see OpenWakeWordDetector.process); it floods the voice log when
 # left on, so it is OFF by default and only emitted when this flag is truthy.
 # Mirrors the YUYUTSAVA_DEBUG_* env-flag idiom used elsewhere.
-MIC_TUNE_LOG = os.environ.get("YUYUTSAVA_MIC_TUNE_LOG", "").lower() in ("1", "true", "yes")
+MIC_TUNE_LOG = env_flag("YUYUTSAVA_MIC_TUNE_LOG", true=("1", "true", "yes"))
 
 
 class WakeWordDetector(ABC):

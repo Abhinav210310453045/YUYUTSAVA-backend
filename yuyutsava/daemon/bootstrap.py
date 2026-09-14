@@ -30,7 +30,7 @@ from yuyutsava.agents.orchestrator.agent import OrchestratorDeps
 from yuyutsava.agents.orchestrator.capabilities import render_capabilities_block
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
 from yuyutsava.agents.task_runner.tools import set_default_consent, set_default_policy
-from yuyutsava.config.env import env
+from yuyutsava.config.env import env, env_flag
 from yuyutsava.consent import ConsentRegistry
 from yuyutsava.agents.triage.agent import TriageAgent
 from yuyutsava.async_subagents.launch_index import LaunchIndex
@@ -865,7 +865,7 @@ async def build_async_subagents(
     async_mirror = None
     async_watcher = None
     async_host_attachment = None
-    enabled = os.environ.get("YUYUTSAVA_ASYNC_SUBAGENTS", "").lower() in ("1", "true", "yes")
+    enabled = env_flag("YUYUTSAVA_ASYNC_SUBAGENTS", true=("1", "true", "yes"))
     if enabled:
         from yuyutsava.async_subagents.host import (
             AsyncSubagentHost,

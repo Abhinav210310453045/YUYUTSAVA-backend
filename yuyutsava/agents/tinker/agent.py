@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 from pathlib import Path
 from typing import Any
 
@@ -27,7 +26,7 @@ from yuyutsava.agents.general_purpose.agent import GeneralPurposeAgent
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
 from yuyutsava.cli.agent_stack import _build_retrieval_stores
 from yuyutsava.context.config import ContextSettings
-from yuyutsava.config.env import env
+from yuyutsava.config.env import env, env_flag
 from yuyutsava.core.config import LlmSettings, SearchConfig, llm_settings_from_env
 from yuyutsava.core.engine import AgentBundle, build_tinker_agent
 from yuyutsava.llm import chat_model
@@ -38,7 +37,7 @@ logger = logging.getLogger("yuyutsava.agents.tinker")
 
 
 def _async_enabled() -> bool:
-    return os.environ.get("YUYUTSAVA_ASYNC_SUBAGENTS", "").lower() in ("1", "true", "yes")
+    return env_flag("YUYUTSAVA_ASYNC_SUBAGENTS", true=("1", "true", "yes"))
 
 
 async def build_tinker_stack(

@@ -43,6 +43,7 @@ except ImportError:  # pragma: no cover
 
 from yuyutsava import platform as yplatform
 from yuyutsava.aio import run as aio_run
+from yuyutsava.config.env import env_flag
 from yuyutsava.core.engine import silence_plumbing_loggers
 from yuyutsava.daemon.bootstrap import DaemonOptions, DaemonSubsystems, build_daemon
 from yuyutsava.daemon.lifecycle import install_reload_handler, install_signal_handlers
@@ -92,11 +93,7 @@ def _setup_logging(
     to see them.
     """
     if not debug_plumbing:
-        debug_plumbing = os.environ.get("YUYUTSAVA_DEBUG_PLUMBING", "").lower() in (
-            "1",
-            "true",
-            "yes",
-        )
+        debug_plumbing = env_flag("YUYUTSAVA_DEBUG_PLUMBING", true=("1", "true", "yes"))
 
     if verbose:
         level = logging.DEBUG

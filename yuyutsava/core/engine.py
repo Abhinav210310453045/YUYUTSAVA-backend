@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 import shutil
 import sys
@@ -32,6 +31,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.state import CompiledStateGraph
 
+from yuyutsava.config.env import env_flag
 from yuyutsava.core.config import DockerSettings, LocalSettings, LlmSettings, SearchConfig
 from yuyutsava.core.docker_sandbox_backend import DockerSandboxBackend
 from yuyutsava.core.filesystem_prompt_policy import FilesystemPromptPolicy
@@ -159,11 +159,7 @@ def setup_logging(verbose: bool = False, *, debug_plumbing: bool = False) -> Non
     see those — useful only when debugging the runtime itself.
     """
     if not debug_plumbing:
-        debug_plumbing = os.environ.get("YUYUTSAVA_DEBUG_PLUMBING", "").lower() in (
-            "1",
-            "true",
-            "yes",
-        )
+        debug_plumbing = env_flag("YUYUTSAVA_DEBUG_PLUMBING", true=("1", "true", "yes"))
 
     level = logging.DEBUG if verbose else logging.INFO
     handler = logging.StreamHandler(sys.stderr)
