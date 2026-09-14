@@ -47,7 +47,7 @@ W0 safety net ─► W1 guardrails ─► W2 __init__ + imports ─► W3 layeri
 | Wave | Scope | Status |
 |---|---|---|
 | W0 | Safety net: `verify_imports.py`, `measure_code_health.py`, baselines | Done with this review |
-| W1 | Guardrails | Planned |
+| W1 | Guardrails | Done — see the outcome under W1 |
 | W2 | `__init__.py` and import hygiene | Planned |
 | W3 | Layering and placement | Planned |
 | W4 | Readability, SOLID, DRY | Planned |
@@ -78,6 +78,41 @@ W0 safety net ─► W1 guardrails ─► W2 __init__ + imports ─► W3 layeri
 | `style` | `ruff format` plus import sorting, alone, recorded in `.git-blame-ignore-revs` | `R-IMP-06` |
 
 **Exit.** Every new gate is green and has been seen red on a deliberate break.
+
+**Outcome — done.** On `code-improvement`:
+
+| Commit | What landed |
+|---|---|
+| `4599d33` `fix(types)` | Every annotation name imported; all bug-class lint cleared (`R-IMP-04`, `R-IMP-05`) |
+| `08cce31` `fix(test)` | The same rules cleared in `test/` |
+| `99fa073` `build(lint)` | ruff gate at zero; `scripts/check_lint_ratchet.py` + baseline (BLE001 70, C901 20, PLC0415 432, PLR0913 38, S110 50, T201 86); CI `lint` job |
+| `ac880ce` `test(arch)` | `test/architecture/test_import_layers.py`: 21 upward and 14 private imports allowlisted, both lists shrink-only |
+| `a309b8a` `style` + `2dd8f89` | ruff format, 342 files: syntax trees, docstrings and `--print-tools` output unchanged; blame-ignored |
+| `57b8fb5` `fix(ui)` | A hook-order bug in `ChatPanel.jsx`'s `Bubble`, found by `rules-of-hooks` |
+| `cdd4eaa` `refactor(ui)` | Unused bindings removed, two JSX apostrophes escaped |
+| `080f207` `build(ui)` | ESLint 9 and Prettier configuration; errors at zero, warnings capped at 33; CI Lint step |
+| `994ee6c` `style(ui)` + `de2c54a` | Prettier, 86 files, render-equivalent in all 90 JS files; CI Formatting step; blame-ignored |
+| `111fc6a` `fix(test)` | A regression from `a309b8a` (see below) |
+| `ffca3f5` `build(lint)` | CI checks Python formatting, so the tree cannot drift back |
+
+**A regression, caught and fixed.** The Python reformat broke one test:
+`test/conversation/test_repair.py` searched `core/streaming.py` for the substring
+`StreamEvent("notice"`, and the formatter wrapped both calls across lines (2
+occurrences before, 0 after). Behaviour was unchanged; the reformat's syntax-tree
+comparison and gate tests could not see a source-text assertion, and that file was
+not in the set run before committing. Found during W2 step 1; every one of the 42
+test files that read source text was then run, and no other broke. The test now
+asserts on parsed calls, and is negative-controlled. Lesson carried into every
+later mechanical change: run the source-reading tests, not just the gates.
+
+Negative controls observed: the gate failed on an injected undefined name, the
+ratchet on an injected `print`, the layer test on an injected `models → daemon`
+import, and `verify_imports.py` on an injected cycle; each passed again once the
+file was restored.
+
+**Deviation.** Import sorting (`I001`) moved from W1 to W2. Reordering imports
+changes module initialisation order, and six modules on this tree crash depending
+on that order (`R-IMP-01`); it is safe only after W2.1 empties `core/__init__.py`.
 
 ## W2 — `__init__.py` and import hygiene
 
