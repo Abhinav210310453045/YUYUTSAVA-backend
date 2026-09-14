@@ -381,9 +381,12 @@ def measure() -> dict[str, object]:
         if re.search(r"CREATE TABLE", module.source, re.IGNORECASE):
             create_table_modules.append(str(module.path))
 
-    # __init__.py audit
+    # __init__.py audit. A name is used from a package root when it is imported
+    # from it, or read as an attribute of the bound package
+    # (``from yuyutsava import platform as yplatform`` ... ``yplatform.kill_tree``).
     root_imports: dict[str, set[str]] = defaultdict(set)
     for consumer in consumers:
+        bound_packages: dict[str, str] = {}
         for node in ast.walk(consumer.tree):
             if (
                 isinstance(node, ast.ImportFrom)
@@ -392,6 +395,20 @@ def measure() -> dict[str, object]:
                 and is_internal(node.module)
             ):
                 root_imports[node.module].update(alias.name for alias in node.names)
+                if node.module == PACKAGE:
+                    for alias in node.names:
+                        bound_packages[alias.asname or alias.name] = f"{PACKAGE}.{alias.name}"
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    if is_internal(alias.name):
+                        bound_packages[alias.asname or alias.name] = alias.name
+        if not bound_packages:
+            continue
+        for node in ast.walk(consumer.tree):
+            if isinstance(node, ast.Attribute):
+                owner = ast.unparse(node.value)
+                if owner in bound_packages:
+                    root_imports[bound_packages[owner]].add(node.attr)
     inits_without_docstring, inits_with_logic, unused_exports = [], [], {}
     for module in (m for m in modules if m.is_package):
         if ast.get_docstring(module.tree) is None:
