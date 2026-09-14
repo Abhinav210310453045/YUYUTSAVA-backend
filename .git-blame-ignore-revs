@@ -4,3 +4,6 @@
 
 # style: ruff format the Python tree at line length 100
 a309b8a4403aaa7c3ef97f034e786e8260d413bb
+
+# style(ui): format the Electron app with Prettier
+994ee6c0db45c5b2f0f54ddd293482d3df8bebd3
