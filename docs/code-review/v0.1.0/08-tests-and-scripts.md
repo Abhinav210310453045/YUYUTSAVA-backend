@@ -173,6 +173,40 @@ mid-file module-level imports (`R-IMP-03`) are not covered by that allowance.
 
 ---
 
+## R-TST-08 — A test double nothing reads, so a unit test calls a live service
+
+**Severity** P1 · **Wave** W6 · **Status** Open (found during W2)
+
+**Claim.** `test/memory/test_embedder.py` injects its fake HTTP client by
+assigning `emb._client`, but `Embedder` keeps one client per event loop in
+`_clients` (`memory/embedder.py:43-49`) and never reads `_client`. The fake is
+bypassed, and every test posts to the real configured embedding endpoint.
+
+**Evidence.** Of 7 tests:
+- **4 error:** the fake's `last_json` is still `None`, because it never received a
+  request.
+- **2 fail:** `test_dim_mismatch_raises` gets no `ValueError`, and
+  `test_healthcheck_false_on_error` gets `True`. A real endpoint answered both.
+
+The result is identical at `f4ec45c` and at the commit before W2 step 2, each run
+in its own worktree.
+
+**Consequence.** The file tests none of what it names. Its outcome depends on
+whether an embedding server happens to be running, and a "unit" test quietly makes
+network calls. A test that asserted the fake had been called would have failed
+loudly the moment the injection point moved.
+
+**Fix.**
+- Give `Embedder` a seam the class actually uses: a client-factory constructor
+  argument that tests pass.
+- Have the tests assert the fake received each request.
+
+**Verification.**
+- The file passes with no embedding server running.
+- Negative control: a fake that records nothing makes it fail.
+
+---
+
 ## R-SCR-01 — Maintainer scripts are undocumented
 
 **Severity** P2 · **Wave** W6 · **Status** Open
