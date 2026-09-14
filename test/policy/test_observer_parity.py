@@ -198,8 +198,7 @@ class Budget(unittest.IsolatedAsyncioTestCase):
         policy = self._policy()
         for _ in range(20):
             await _observe(policy, "after_model", [_ai("x")])
-        self.assertIsNone(policy_result := None or
-                          await _observe(policy, "after_model", [_ai("x")]))
+        self.assertIsNone(await _observe(policy, "after_model", [_ai("x")]))
         self.assertEqual(policy._spent, 0)
 
     async def test_no_messages_is_a_no_op(self) -> None:

@@ -263,7 +263,7 @@ async def _main() -> int:
         from langgraph_sdk import get_client
         lg = get_client(url=lg_host.url)
         thread = await lg.threads.create()
-        run = await lg.runs.create(
+        await lg.runs.create(
             thread_id=thread["thread_id"],
             assistant_id="e2e-mock",
             input={"messages": [{"role": "user", "content": "go"}]},
@@ -349,7 +349,7 @@ async def _main() -> int:
     lg_host.shutdown()
 
     # -- Summary ------------------------------------------------------------
-    print(f"\n== Summary ==")
+    print("\n== Summary ==")
     print(f"  passed: {len(r.passes)}")
     print(f"  failed: {len(r.failures)}")
     for fail in r.failures:

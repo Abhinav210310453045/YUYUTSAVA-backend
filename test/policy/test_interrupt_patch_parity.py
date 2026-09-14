@@ -136,7 +136,7 @@ class Parity(unittest.IsolatedAsyncioTestCase):
 
     def test_every_case_has_a_recorded_outcome(self) -> None:
         """Negative control — a case the record does not cover asserts nothing."""
-        self.assertEqual([l for l, _, _, _, _ in CASES if l not in GOLDEN], [])
+        self.assertEqual([label for label, _, _, _, _ in CASES if label not in GOLDEN], [])
 
     async def test_the_matrix_both_patches_and_declines(self) -> None:
         """Negative control — all-patch or all-decline would prove nothing."""
