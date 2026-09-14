@@ -166,3 +166,40 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["yuyutsava"]
+
+# ── Lint ─────────────────────────────────────────────────────────────────────
+# Rules and their reasons: docs/code-review/v0.1.0/01-standards.md.
+[tool.ruff]
+# Pinned so a local run, the ratchet script and CI see the same findings.
+required-version = "==0.16.5"
+target-version = "py311"
+
+[tool.ruff.lint]
+# The gate — CI fails on any of these. They find real defects (names that do not
+# exist, dead exports, unused locals) or break the import-placement standard.
+select = ["E402", "E741", "F541", "F821", "F822", "F841"]
+# Rules with too many existing violations to gate at zero (PLC0415, C901,
+# PLR0913, BLE001, S110, T201) are not selected here: scripts/check_lint_ratchet.py
+# counts them per file against scripts/lint_ratchet.json, and no count may grow.
+
+[tool.ruff.lint.mccabe]
+max-complexity = 15
+
+[tool.ruff.lint.pylint]
+max-args = 7
+
+[tool.ruff.lint.per-file-ignores]
+# print is how the terminal front end and maintainer scripts talk to people.
+"yuyutsava/cli/**" = ["T201"]
+"scripts/**" = ["T201"]
+# Tests defer heavy imports into test bodies to keep collection fast.
+"test/**" = ["PLC0415", "T201"]
+# Imports that follow sys.path manipulation — removed with it (R-TST-02, W6).
+"test/async_subagents/test_completion_loop.py" = ["E402"]
+"test/async_subagents/test_unit.py" = ["E402"]
+"test/consent/test_registry.py" = ["E402"]
+"test/test_ask_handler.py" = ["E402"]
+"test/test_async.py" = ["E402"]
+"test/test_fetch_verify.py" = ["E402"]
+# An import after module code — fixed with the other misplaced imports (R-IMP-03, W2).
+"yuyutsava/core/docker_sandbox_backend.py" = ["E402"]

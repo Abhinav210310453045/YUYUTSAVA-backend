@@ -1,0 +1,552 @@
+{
+  "scripts/benchmark_policy_adapter.py": {
+    "PLC0415": 8
+  },
+  "scripts/measure_code_health.py": {
+    "C901": 1
+  },
+  "scripts/measure_framework_surface.py": {
+    "BLE001": 2,
+    "C901": 1,
+    "PLC0415": 2
+  },
+  "scripts/verify_diagrams.py": {
+    "BLE001": 1
+  },
+  "scripts/verify_framework_contract.py": {
+    "PLC0415": 5
+  },
+  "scripts/verify_loop_affinity.py": {
+    "C901": 1,
+    "PLC0415": 7
+  },
+  "yuyutsava/agents/base_sub_agent.py": {
+    "PLC0415": 6,
+    "PLR0913": 1
+  },
+  "yuyutsava/agents/face_watcher/agent.py": {
+    "PLR0913": 1
+  },
+  "yuyutsava/agents/file_organizer/agent.py": {
+    "PLR0913": 1
+  },
+  "yuyutsava/agents/general_purpose/agent.py": {
+    "PLC0415": 1
+  },
+  "yuyutsava/agents/orchestrator/agent.py": {
+    "PLC0415": 1
+  },
+  "yuyutsava/agents/orchestrator/prompts.py": {
+    "PLC0415": 1
+  },
+  "yuyutsava/agents/orchestrator/spawn.py": {
+    "PLR0913": 1
+  },
+  "yuyutsava/agents/task_runner/agent.py": {
+    "BLE001": 1,
+    "PLC0415": 2
+  },
+  "yuyutsava/agents/task_runner/executor.py": {
+    "PLC0415": 2
+  },
+  "yuyutsava/agents/task_runner/permissions.py": {
+    "PLC0415": 1
+  },
+  "yuyutsava/agents/task_runner/tools.py": {
+    "C901": 1,
+    "PLC0415": 2
+  },
+  "yuyutsava/agents/tinker/agent.py": {
+    "PLC0415": 9,
+    "PLR0913": 1
+  },
+  "yuyutsava/agents/tinker/subagent.py": {
+    "PLC0415": 5,
+    "PLR0913": 1
+  },
+  "yuyutsava/agents/triage/agent.py": {
+    "BLE001": 1
+  },
+  "yuyutsava/artifacts/store.py": {
+    "PLC0415": 2
+  },
+  "yuyutsava/artifacts/tools.py": {
+    "PLC0415": 1
+  },
+  "yuyutsava/async_subagents/check_guard_policy.py": {
+    "PLC0415": 4
+  },
+  "yuyutsava/async_subagents/host.py": {
+    "PLC0415": 1
+  },
+  "yuyutsava/async_subagents/host_lock.py": {
+    "PLC0415": 1
+  },
+  "yuyutsava/async_subagents/interrupt_middleware.py": {
+    "PLC0415": 3,
+    "S110": 2
+  },
+  "yuyutsava/async_subagents/interrupt_patch_policy.py": {
+    "PLC0415": 1
+  },
+  "yuyutsava/async_subagents/watcher.py": {
+    "BLE001": 3,
+    "PLC0415": 1,
+    "PLR0913": 1,
+    "S110": 4
+  },
+  "yuyutsava/audio_io/announcer.py": {
+    "PLC0415": 1,
+    "S110": 2
+  },
+  "yuyutsava/audio_io/synth.py": {
+    "PLC0415": 5
+  },
+  "yuyutsava/audio_io/vad.py": {
+    "PLC0415": 2,
+    "PLR0913": 1
+  },
+  "yuyutsava/channels/registry.py": {
+    "PLC0415": 1
+  },
+  "yuyutsava/channels/telegram/channel.py": {
+    "S110": 1
+  },
+  "yuyutsava/cli/agent_stack.py": {
+    "PLC0415": 23,
+    "PLR0913": 1
+  },
+  "yuyutsava/cli/async_hitl.py": {
+    "PLC0415": 3
+  },
+  "yuyutsava/cli/cli.py": {
+    "BLE001": 1,
+    "PLC0415": 3
+  },
+  "yuyutsava/cli/commands/attach.py": {
+    "BLE001": 1,
+    "PLC0415": 1,
+    "S110": 1
+  },
+  "yuyutsava/cli/commands/chat.py": {
+    "BLE001": 1,
+    "PLC0415": 2,
+    "PLR0913": 1,
+    "S110": 1
+  },
+  "yuyutsava/cli/commands/chat_repl.py": {
+    "BLE001": 8,
+    "C901": 1,
+    "PLC0415": 29,
+    "PLR0913": 1,
+    "S110": 5
+  },
+  "yuyutsava/cli/remote_attach.py": {
+    "PLC0415": 2
+  },
+  "yuyutsava/cli/render/artifact_view.py": {
+    "PLC0415": 6
+  },
+  "yuyutsava/cli/render/context_panel.py": {
+    "PLC0415": 5
+  },
+  "yuyutsava/cli/render/dashboard.py": {
+    "PLC0415": 19
+  },
+  "yuyutsava/cli/render/plain.py": {
+    "BLE001": 7,
+    "C901": 1,
+    "PLC0415": 2,
+    "S110": 5
+  },
+  "yuyutsava/cli/render/renderer.py": {
+    "C901": 1,
+    "PLC0415": 1,
+    "S110": 1
+  },
+  "yuyutsava/cli/render/tool_format.py": {
+    "C901": 1
+  },
+  "yuyutsava/cli/stream_smoother.py": {
+    "S110": 1
+  },
+  "yuyutsava/consent/registry.py": {
+    "PLR0913": 1
+  },
+  "yuyutsava/context/artifacts.py": {
+    "BLE001": 1,
+    "PLC0415": 1
+  },
+  "yuyutsava/context/artifacts_unified.py": {
+    "PLC0415": 4
+  },
+  "yuyutsava/context/compaction.py": {
+    "BLE001": 2,
+    "PLC0415": 1,
+    "S110": 1
+  },
+  "yuyutsava/context/meter.py": {
+    "PLC0415": 6,
+    "S110": 3
+  },
+  "yuyutsava/context/offload_policy.py": {
+    "PLC0415": 1
+  },
+  "yuyutsava/context/prompt_inspector.py": {
+    "BLE001": 1,
+    "PLC0415": 1
+  },
+  "yuyutsava/context/summary_store_unified.py": {
+    "PLC0415": 3
+  },
+  "yuyutsava/context/tokens.py": {
+    "PLC0415": 1
+  },
+  "yuyutsava/context/tools.py": {
+    "C901": 1,
+    "PLC0415": 2
+  },
+  "yuyutsava/context/transcript_index.py": {
+    "BLE001": 1
+  },
+  "yuyutsava/context/transcript_store_unified.py": {
+    "PLC0415": 3
+  },
+  "yuyutsava/conversation/repair.py": {
+    "PLC0415": 3
+  },
+  "yuyutsava/conversation/service.py": {
+    "PLC0415": 2,
+    "PLR0913": 3,
+    "S110": 1
+  },
+  "yuyutsava/core/agent_context.py": {
+    "PLC0415": 1
+  },
+  "yuyutsava/core/agent_profiles.py": {
+    "T201": 5
+  },
+  "yuyutsava/core/docker_sandbox_backend.py": {
+    "PLR0913": 1
+  },
+  "yuyutsava/core/engine.py": {
+    "BLE001": 1,
+    "PLC0415": 45,
+    "PLR0913": 6
+  },
+  "yuyutsava/core/filesystem_prompt_policy.py": {
+    "BLE001": 1
+  },
+  "yuyutsava/core/model_router.py": {
+    "BLE001": 1
+  },
+  "yuyutsava/core/pricing.py": {
+    "BLE001": 1
+  },
+  "yuyutsava/core/retrieval_injection_policy.py": {
+    "BLE001": 1
+  },
+  "yuyutsava/core/streaming.py": {
+    "C901": 3,
+    "PLR0913": 2,
+    "T201": 34
+  },
+  "yuyutsava/core/tool_registry.py": {
+    "BLE001": 1
+  },
+  "yuyutsava/core/tool_result.py": {
+    "BLE001": 1
+  },
+  "yuyutsava/core/tracing.py": {
+    "BLE001": 1,
+    "PLC0415": 6
+  },
+  "yuyutsava/core/voice_style_policy.py": {
+    "PLC0415": 1
+  },
+  "yuyutsava/daemon/ask_resume.py": {
+    "PLC0415": 1
+  },
+  "yuyutsava/daemon/bootstrap.py": {
+    "C901": 1,
+    "PLC0415": 18,
+    "PLR0913": 2
+  },
+  "yuyutsava/daemon/checkpointing.py": {
+    "BLE001": 1,
+    "PLC0415": 1,
+    "S110": 1
+  },
+  "yuyutsava/daemon/consent.py": {
+    "BLE001": 1
+  },
+  "yuyutsava/daemon/conversation_manager.py": {
+    "PLC0415": 6,
+    "PLR0913": 1
+  },
+  "yuyutsava/daemon/log_bridge.py": {
+    "PLC0415": 2
+  },
+  "yuyutsava/daemon/main.py": {
+    "BLE001": 2,
+    "C901": 1,
+    "PLC0415": 4,
+    "S110": 1,
+    "T201": 13
+  },
+  "yuyutsava/daemon/orchestrator_loop.py": {
+    "BLE001": 1,
+    "PLC0415": 1,
+    "PLR0913": 1
+  },
+  "yuyutsava/daemon/resources.py": {
+    "BLE001": 1,
+    "PLC0415": 1
+  },
+  "yuyutsava/daemon/singleton.py": {
+    "PLC0415": 1
+  },
+  "yuyutsava/daemon/task_store_unified.py": {
+    "PLC0415": 3
+  },
+  "yuyutsava/daemon/terminal_channel.py": {
+    "PLC0415": 1,
+    "T201": 22
+  },
+  "yuyutsava/daemon/triage_loop.py": {
+    "PLR0913": 1
+  },
+  "yuyutsava/daemon/turn_registry.py": {
+    "PLR0913": 1
+  },
+  "yuyutsava/daemon/voice_channel.py": {
+    "BLE001": 2,
+    "PLC0415": 2,
+    "S110": 2
+  },
+  "yuyutsava/daemon/web/app.py": {
+    "BLE001": 1,
+    "PLR0913": 1,
+    "S110": 1
+  },
+  "yuyutsava/daemon/web/routers/converse.py": {
+    "C901": 3,
+    "PLC0415": 3,
+    "S110": 3
+  },
+  "yuyutsava/daemon/web/routers/sessions.py": {
+    "C901": 1
+  },
+  "yuyutsava/daemon/web/routers/todos.py": {
+    "PLC0415": 1
+  },
+  "yuyutsava/daemon/web/routers/usage.py": {
+    "PLC0415": 3
+  },
+  "yuyutsava/daemon/web/server.py": {
+    "PLR0913": 1
+  },
+  "yuyutsava/daemon/web/voice_pipeline.py": {
+    "PLC0415": 1,
+    "S110": 1
+  },
+  "yuyutsava/events/bus.py": {
+    "BLE001": 2,
+    "PLC0415": 1,
+    "PLR0913": 1,
+    "S110": 2
+  },
+  "yuyutsava/events/registry.py": {
+    "BLE001": 1,
+    "PLC0415": 6,
+    "S110": 1
+  },
+  "yuyutsava/events/sources/_voice_proc.py": {
+    "BLE001": 4,
+    "PLC0415": 4
+  },
+  "yuyutsava/events/sources/_webcam_proc.py": {
+    "BLE001": 2,
+    "PLC0415": 3,
+    "S110": 1
+  },
+  "yuyutsava/events/sources/appfocus.py": {
+    "PLC0415": 1
+  },
+  "yuyutsava/events/sources/clipboard.py": {
+    "PLC0415": 1
+  },
+  "yuyutsava/events/sources/fs.py": {
+    "BLE001": 2,
+    "S110": 2
+  },
+  "yuyutsava/events/sources/hotkey.py": {
+    "BLE001": 2,
+    "PLC0415": 1,
+    "S110": 2
+  },
+  "yuyutsava/events/sources/voice.py": {
+    "BLE001": 1,
+    "S110": 1
+  },
+  "yuyutsava/events/sources/webcam.py": {
+    "BLE001": 1,
+    "PLC0415": 1,
+    "S110": 1
+  },
+  "yuyutsava/io/audio.py": {
+    "PLC0415": 3
+  },
+  "yuyutsava/io/stt.py": {
+    "PLC0415": 2
+  },
+  "yuyutsava/io/tts.py": {
+    "PLC0415": 2
+  },
+  "yuyutsava/io/wake.py": {
+    "PLC0415": 5
+  },
+  "yuyutsava/llm/providers/azure.py": {
+    "PLC0415": 1
+  },
+  "yuyutsava/llm/quirks/first_chunk_retry.py": {
+    "PLC0415": 2
+  },
+  "yuyutsava/llm/quirks/loop_affinity.py": {
+    "S110": 1
+  },
+  "yuyutsava/memory/embedder.py": {
+    "BLE001": 1
+  },
+  "yuyutsava/memory/store_unified.py": {
+    "PLC0415": 3
+  },
+  "yuyutsava/platform/elevation.py": {
+    "BLE001": 1
+  },
+  "yuyutsava/platform/process.py": {
+    "BLE001": 1
+  },
+  "yuyutsava/policy/adapter.py": {
+    "PLC0415": 7
+  },
+  "yuyutsava/policy/ask.py": {
+    "PLC0415": 1
+  },
+  "yuyutsava/sessions/runner.py": {
+    "PLC0415": 1,
+    "PLR0913": 1,
+    "T201": 12
+  },
+  "yuyutsava/skills/registry.py": {
+    "PLC0415": 1
+  },
+  "yuyutsava/skills/store_unified.py": {
+    "PLC0415": 3
+  },
+  "yuyutsava/skills/tools.py": {
+    "BLE001": 1,
+    "PLC0415": 1
+  },
+  "yuyutsava/storage/context.py": {
+    "PLC0415": 5
+  },
+  "yuyutsava/storage/dialect.py": {
+    "PLC0415": 4
+  },
+  "yuyutsava/storage/events/sqlite_backend.py": {
+    "BLE001": 2,
+    "S110": 1
+  },
+  "yuyutsava/storage/events/store.py": {
+    "PLC0415": 2
+  },
+  "yuyutsava/storage/events/unified.py": {
+    "PLC0415": 1
+  },
+  "yuyutsava/storage/factory.py": {
+    "PLC0415": 14
+  },
+  "yuyutsava/storage/feedback_store.py": {
+    "PLC0415": 1,
+    "PLR0913": 1
+  },
+  "yuyutsava/storage/feedback_store_unified.py": {
+    "PLC0415": 3,
+    "PLR0913": 1
+  },
+  "yuyutsava/storage/ids.py": {
+    "PLC0415": 1
+  },
+  "yuyutsava/storage/interrupts_unified.py": {
+    "PLC0415": 3
+  },
+  "yuyutsava/storage/models.py": {
+    "PLR0913": 1
+  },
+  "yuyutsava/storage/purge.py": {
+    "PLC0415": 2
+  },
+  "yuyutsava/storage/routing/health.py": {
+    "S110": 1
+  },
+  "yuyutsava/storage/sessions/checkpointer.py": {
+    "PLC0415": 1
+  },
+  "yuyutsava/storage/sessions/pg_impl.py": {
+    "BLE001": 1
+  },
+  "yuyutsava/storage/sessions/sqlite_impl.py": {
+    "PLC0415": 1
+  },
+  "yuyutsava/storage/sweeper.py": {
+    "PLC0415": 1
+  },
+  "yuyutsava/storage/voice_store_unified.py": {
+    "PLC0415": 3
+  },
+  "yuyutsava/todoboard/artifacts.py": {
+    "PLC0415": 2
+  },
+  "yuyutsava/todoboard/block_audio.py": {
+    "PLC0415": 3
+  },
+  "yuyutsava/todoboard/block_journey.py": {
+    "C901": 1,
+    "PLC0415": 1
+  },
+  "yuyutsava/todoboard/exchange.py": {
+    "PLC0415": 4,
+    "PLR0913": 1
+  },
+  "yuyutsava/todoboard/store.py": {
+    "PLC0415": 2
+  },
+  "yuyutsava/todoboard/store_unified.py": {
+    "PLC0415": 3
+  },
+  "yuyutsava/todoboard/tools.py": {
+    "C901": 1
+  },
+  "yuyutsava/tools/search.py": {
+    "PLC0415": 3
+  },
+  "yuyutsava/visuals/charts.py": {
+    "PLC0415": 3
+  },
+  "yuyutsava/visuals/code.py": {
+    "PLC0415": 5
+  },
+  "yuyutsava/visuals/render.py": {
+    "PLC0415": 6
+  },
+  "yuyutsava/visuals/store.py": {
+    "PLC0415": 2
+  },
+  "yuyutsava/visuals/store_unified.py": {
+    "PLC0415": 3
+  },
+  "yuyutsava/visuals/tools.py": {
+    "PLC0415": 2
+  }
+}

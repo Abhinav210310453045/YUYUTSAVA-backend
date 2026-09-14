@@ -89,10 +89,18 @@ There is no full test gate yet (see *Known gaps* below). What CI runs, and what
 you should run locally:
 
 ```bash
-python -m compileall yuyutsava        # syntax across the package
-uv build --wheel                      # packaging metadata still valid
-cd electron-app && npm run build      # renderer builds
+python -m compileall yuyutsava                  # syntax across the package
+uvx ruff@0.16.5 check yuyutsava test scripts    # lint gate — must be clean
+python scripts/check_lint_ratchet.py            # ratcheted lint counts may not grow
+uv build --wheel                                # packaging metadata still valid
+cd electron-app && npm run build                # renderer builds
 ```
+
+The lint rules, and why each exists, are in
+[docs/code-review/v0.1.0/01-standards.md](docs/code-review/v0.1.0/01-standards.md).
+When a change removes ratcheted violations, run
+`python scripts/check_lint_ratchet.py --update` in the same commit: CI fails when
+a count falls without the baseline moving, so the ratchet can only tighten.
 
 For agent behaviour, run it. Most changes here are only really testable by
 driving the CLI or the daemon:
@@ -109,6 +117,9 @@ Some checks in `scripts/` verify specific invariants:
 | `scripts/verify_framework_contract.py` | The deepagents/LangGraph couplings that fail silently on upgrade |
 | `scripts/verify_loop_affinity.py` | One chat model per event loop |
 | `scripts/verify_diagrams.py` | Mermaid blocks in the architecture docs actually render |
+| `scripts/verify_imports.py` | Every module imports on its own, in a fresh interpreter — run it after moving an import or editing an `__init__.py` |
+| `scripts/check_lint_ratchet.py` | Ratcheted lint counts match `scripts/lint_ratchet.json` |
+| `scripts/measure_code_health.py` | The code-health metrics the code reviews track |
 
 > **Careful with `test/test_async.py`** — it makes real, billable LLM calls. It
 > is guarded and refuses to run unless `YUYUTSAVA_ALLOW_BILLABLE=1` is set.
@@ -157,9 +168,10 @@ Being upfront so you are not surprised:
 - **No test gate in CI.** `test/` exists and is substantial, but an unknown
   subset needs API keys or a live Postgres, so it has never run in CI. Making a
   hermetic subset run is a welcome contribution.
-- **No lint gate.** The codebase predates any ruff configuration and would not
-  pass one today. Adoption is planned as its own change; please do not bundle a
-  reformat into an unrelated PR.
+- **The lint gate is partial.** Defect and import-placement rules are gated at
+  zero; six noisier rules are ratcheted (counts may only fall) until the
+  remediation in `docs/code-review/v0.1.0/` brings them down. Please do not
+  bundle a reformat into an unrelated PR.
 - **Interfaces are unstable.** This is alpha. Expect things to move.
 - **The architecture review is honest about the debt.** Start at
   [docs/architecture/review/00-executive-summary.md](docs/architecture/review/00-executive-summary.md)

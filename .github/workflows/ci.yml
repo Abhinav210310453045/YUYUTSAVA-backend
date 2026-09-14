@@ -63,6 +63,31 @@ jobs:
           print("wheel license metadata OK")
           EOF
 
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Defects and import-placement rules; the selection lives in pyproject.toml
+      # and must stay at zero. The version matches its required-version pin.
+      - name: Ruff gate
+        run: uvx ruff@0.16.5 check yuyutsava test scripts
+
+      # Rules with too many existing violations to gate at zero: per-file counts
+      # may only fall, and the baseline must move with them.
+      - name: Lint ratchet
+        run: python scripts/check_lint_ratchet.py
+
   electron:
     name: Electron renderer
     runs-on: ubuntu-latest
