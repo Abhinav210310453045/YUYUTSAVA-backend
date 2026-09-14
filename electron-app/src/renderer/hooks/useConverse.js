@@ -19,7 +19,11 @@ import { acquireSession, conversationKey } from '../conversations/store'
 // chat" produces another chat with the same origin/agent/card and no resumeId
 // yet, and only the host knows those are meant to be different conversations.
 export function useConverse({
-  origin = 'cli', resumeId = null, agent = null, card = null, sessionKey = null,
+  origin = 'cli',
+  resumeId = null,
+  agent = null,
+  card = null,
+  sessionKey = null,
   // Whether the panel showing this conversation is actually on screen. Ask
   // routing depends on it: an ask renders inline only where the user can see
   // it, and "on the Chat tab" is not the same as "looking at THIS chat".

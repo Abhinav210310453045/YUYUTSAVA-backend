@@ -17,9 +17,7 @@ import { useSSE } from './useSSE.jsx'
 
 function sortAsks(map) {
   // Oldest first: the ask that has been blocking longest is the one to answer.
-  return [...map.values()].sort(
-    (a, b) => (a.created_ts || 0) - (b.created_ts || 0),
-  )
+  return [...map.values()].sort((a, b) => (a.created_ts || 0) - (b.created_ts || 0))
 }
 
 // Shared answer path: optimistic removal, then the POST. On failure the ask is
@@ -30,22 +28,25 @@ function useAnswer(remove, restore) {
 
   return {
     answering,
-    answer: useCallback(async (ask, response) => {
-      const id = ask?.ask_id
-      if (!id) return false
-      setAnswering(id)
-      remove(id)
-      try {
-        await respondAsk(id, response)
-        return true
-      } catch (e) {
-        console.warn('answering ask failed:', e)
-        restore(ask)
-        return false
-      } finally {
-        setAnswering(null)
-      }
-    }, [remove, restore]),
+    answer: useCallback(
+      async (ask, response) => {
+        const id = ask?.ask_id
+        if (!id) return false
+        setAnswering(id)
+        remove(id)
+        try {
+          await respondAsk(id, response)
+          return true
+        } catch (e) {
+          console.warn('answering ask failed:', e)
+          restore(ask)
+          return false
+        } finally {
+          setAnswering(null)
+        }
+      },
+      [remove, restore],
+    ),
   }
 }
 
@@ -73,25 +74,32 @@ export function useAsks() {
         if (cancelled) return
         setHydrated(new Map((res?.asks || []).map((a) => [a.ask_id, a])))
       })
-      .catch(() => { /* the SSE stream is still the live path */ })
-    return () => { cancelled = true }
+      .catch(() => {
+        /* the SSE stream is still the live path */
+      })
+    return () => {
+      cancelled = true
+    }
   }, [connected])
 
   const merged = useMemo(() => {
     const m = new Map(hydrated)
-    for (const [id, a] of liveAsks) m.set(id, a)   // live frames win
+    for (const [id, a] of liveAsks) m.set(id, a) // live frames win
     return m
   }, [hydrated, liveAsks])
 
-  const remove = useCallback((id) => {
-    removeAsk(id)
-    setHydrated((prev) => {
-      if (!prev.has(id)) return prev
-      const next = new Map(prev)
-      next.delete(id)
-      return next
-    })
-  }, [removeAsk])
+  const remove = useCallback(
+    (id) => {
+      removeAsk(id)
+      setHydrated((prev) => {
+        if (!prev.has(id)) return prev
+        const next = new Map(prev)
+        next.delete(id)
+        return next
+      })
+    },
+    [removeAsk],
+  )
 
   const restore = useCallback((ask) => {
     setHydrated((prev) => new Map(prev).set(ask.ask_id, ask))
@@ -116,12 +124,13 @@ export function useStandaloneAsks() {
   useEffect(() => {
     let cancelled = false
     const upsert = (a) => setAsksMap((prev) => new Map(prev).set(a.ask_id, a))
-    const drop = (id) => setAsksMap((prev) => {
-      if (!prev.has(id)) return prev
-      const next = new Map(prev)
-      next.delete(id)
-      return next
-    })
+    const drop = (id) =>
+      setAsksMap((prev) => {
+        if (!prev.has(id)) return prev
+        const next = new Map(prev)
+        next.delete(id)
+        return next
+      })
 
     const hydrate = () => {
       getAsks()
@@ -133,25 +142,36 @@ export function useStandaloneAsks() {
             return next
           })
         })
-        .catch(() => { /* best effort */ })
+        .catch(() => {
+          /* best effort */
+        })
     }
 
     const client = new SSEClient({
       onConnected: hydrate,
-      onAsk: (data) => { if (data?.ask) upsert(data.ask) },
+      onAsk: (data) => {
+        if (data?.ask) upsert(data.ask)
+      },
       onAskResolved: (data) => drop(data?.ask_id),
     })
     client.connect()
     hydrate()
-    return () => { cancelled = true; client.disconnect() }
+    return () => {
+      cancelled = true
+      client.disconnect()
+    }
   }, [])
 
-  const remove = useCallback((id) => setAsksMap((prev) => {
-    if (!prev.has(id)) return prev
-    const next = new Map(prev)
-    next.delete(id)
-    return next
-  }), [])
+  const remove = useCallback(
+    (id) =>
+      setAsksMap((prev) => {
+        if (!prev.has(id)) return prev
+        const next = new Map(prev)
+        next.delete(id)
+        return next
+      }),
+    [],
+  )
   const restore = useCallback((ask) => {
     setAsksMap((prev) => new Map(prev).set(ask.ask_id, ask))
   }, [])

@@ -15,17 +15,27 @@ import { submitFeedback } from '../../api/client'
 function IconBtn({ title, onClick, active, activeColor = 'var(--neon-green)', children }) {
   return (
     <button
-      onClick={onClick} title={title} className="tap-pop"
+      onClick={onClick}
+      title={title}
+      className="tap-pop"
       style={{
-        display: 'inline-flex', alignItems: 'center', gap: 4,
-        fontFamily: 'var(--font-mono)', fontSize: 11, cursor: 'pointer',
-        padding: '3px 7px', borderRadius: 7,
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 4,
+        fontFamily: 'var(--font-mono)',
+        fontSize: 11,
+        cursor: 'pointer',
+        padding: '3px 7px',
+        borderRadius: 7,
         background: active ? `${activeColor}1f` : 'var(--glass-bg)',
         border: `1px solid ${active ? activeColor : 'var(--glass-border)'}`,
         color: active ? activeColor : 'var(--text-muted)',
-        backdropFilter: 'blur(8px)', transition: 'all 0.15s',
+        backdropFilter: 'blur(8px)',
+        transition: 'all 0.15s',
       }}
-    >{children}</button>
+    >
+      {children}
+    </button>
   )
 }
 
@@ -36,7 +46,13 @@ export default function MessageActions({ message, userText, sessionId, onRegener
   const rated = message.feedback
 
   const copy = async () => {
-    try { await navigator.clipboard.writeText(message.text || ''); setCopied(true); setTimeout(() => setCopied(false), 1400) } catch { /* ignore */ }
+    try {
+      await navigator.clipboard.writeText(message.text || '')
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1400)
+    } catch {
+      /* ignore */
+    }
   }
 
   const react = async (rating, extraNote = null) => {
@@ -51,7 +67,9 @@ export default function MessageActions({ message, userText, sessionId, onRegener
         assistant_text: message.text || '',
         note: extraNote,
       })
-    } catch { /* non-fatal — the reaction still shows locally */ }
+    } catch {
+      /* non-fatal — the reaction still shows locally */
+    }
   }
 
   return (
@@ -61,26 +79,47 @@ export default function MessageActions({ message, userText, sessionId, onRegener
           {copied ? '✓ copied' : '⧉ copy'}
         </IconBtn>
         {onRegenerate && (
-          <IconBtn title="Regenerate reply" onClick={onRegenerate}>↻ retry</IconBtn>
+          <IconBtn title="Regenerate reply" onClick={onRegenerate}>
+            ↻ retry
+          </IconBtn>
         )}
         <span style={{ flex: 1 }} />
-        <IconBtn title="Good response" onClick={() => react('up')} active={rated === 'up'}>👍</IconBtn>
+        <IconBtn title="Good response" onClick={() => react('up')} active={rated === 'up'}>
+          👍
+        </IconBtn>
         <IconBtn
-          title="Bad response — add a note" activeColor="var(--neon-red)"
-          onClick={() => { react('down'); setShowNote((v) => !v) }}
+          title="Bad response — add a note"
+          activeColor="var(--neon-red)"
+          onClick={() => {
+            react('down')
+            setShowNote((v) => !v)
+          }}
           active={rated === 'down'}
-        >👎</IconBtn>
+        >
+          👎
+        </IconBtn>
       </div>
       {showNote && rated === 'down' && (
         <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
           <input
-            value={note} onChange={(e) => setNote(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter' && note.trim()) { react('down', note.trim()); setShowNote(false) } }}
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && note.trim()) {
+                react('down', note.trim())
+                setShowNote(false)
+              }
+            }}
             placeholder="what was off? (optional, Enter to save)"
             style={{
-              flex: 1, background: 'var(--bg-deep)', color: 'var(--text-primary)',
-              border: '1px solid var(--border-card)', borderRadius: 6, padding: '5px 9px',
-              fontSize: 11, fontFamily: 'var(--font-ui)',
+              flex: 1,
+              background: 'var(--bg-deep)',
+              color: 'var(--text-primary)',
+              border: '1px solid var(--border-card)',
+              borderRadius: 6,
+              padding: '5px 9px',
+              fontSize: 11,
+              fontFamily: 'var(--font-ui)',
             }}
           />
         </div>

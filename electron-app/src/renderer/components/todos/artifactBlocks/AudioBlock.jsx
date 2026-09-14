@@ -40,15 +40,21 @@ export default function AudioBlock({ attachment, cardId }) {
   const playingRef = useRef(false)
 
   const clearPoll = () => {
-    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
+    if (pollRef.current) {
+      clearInterval(pollRef.current)
+      pollRef.current = null
+    }
   }
 
   // Stop our own playback when the tile unmounts (card closed, attachment
   // deleted) — the shared player would otherwise keep the clip audible.
-  useEffect(() => () => {
-    clearPoll()
-    if (playingRef.current) audioPlayer.stop()
-  }, [])
+  useEffect(
+    () => () => {
+      clearPoll()
+      if (playingRef.current) audioPlayer.stop()
+    },
+    [],
+  )
 
   const stopped = () => {
     clearPoll()
@@ -82,7 +88,10 @@ export default function AudioBlock({ attachment, cardId }) {
 
   // ▶ plays (or resumes a paused clip), ⏸ pauses in place with position held.
   const onToggle = async () => {
-    if (!playing) { await start(); return }
+    if (!playing) {
+      await start()
+      return
+    }
     if (audioPlayer.isPaused()) {
       await audioPlayer.resume()
       setPaused(false)
@@ -95,19 +104,34 @@ export default function AudioBlock({ attachment, cardId }) {
   const size = humanSize(attachment.meta?.size)
   const audible = playing && !paused
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px',
-      background: 'var(--bg-card)', border: '1px solid var(--border-subtle)',
-      borderRadius: 6, fontFamily: 'var(--font-mono)', fontSize: 11, minWidth: 0,
-    }}>
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        padding: '8px 10px',
+        background: 'var(--bg-card)',
+        border: '1px solid var(--border-subtle)',
+        borderRadius: 6,
+        fontFamily: 'var(--font-mono)',
+        fontSize: 11,
+        minWidth: 0,
+      }}
+    >
       <button
         onClick={onToggle}
         disabled={loading}
         title={playing ? (paused ? 'resume playback' : 'pause playback') : 'play audio'}
         className="tap-pop"
         style={{
-          cursor: 'pointer', width: 24, height: 24, borderRadius: '50%', flexShrink: 0,
-          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          cursor: 'pointer',
+          width: 24,
+          height: 24,
+          borderRadius: '50%',
+          flexShrink: 0,
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
           background: audible ? 'rgba(120,160,255,0.30)' : 'rgba(120,160,255,0.12)',
           border: `1px solid rgba(120,160,255,${audible ? 0.6 : 0.35})`,
           color: 'var(--text-info)',
@@ -115,15 +139,26 @@ export default function AudioBlock({ attachment, cardId }) {
           transition: 'background 0.2s, box-shadow 0.2s',
           opacity: loading ? 0.5 : 1,
         }}
-      ><PlayPauseIcon playing={audible} /></button>
+      >
+        <PlayPauseIcon playing={audible} />
+      </button>
       <span style={{ fontSize: 14, flexShrink: 0 }}>🔊</span>
-      <span style={{
-        flex: 1, minWidth: 0, color: error ? 'var(--neon-red)' : 'var(--text-dim)',
-        fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-      }}>
-        {error ? `> ${error}`
-          : loading ? 'loading…'
-          : `${attachment.mime}${size ? ` · ${size}` : ''}${paused ? ' · paused' : audible ? ' · playing' : ''}`}
+      <span
+        style={{
+          flex: 1,
+          minWidth: 0,
+          color: error ? 'var(--neon-red)' : 'var(--text-dim)',
+          fontSize: 10,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {error
+          ? `> ${error}`
+          : loading
+            ? 'loading…'
+            : `${attachment.mime}${size ? ` · ${size}` : ''}${paused ? ' · paused' : audible ? ' · playing' : ''}`}
       </span>
     </div>
   )

@@ -15,7 +15,10 @@ function Switch({ on, onClick, disabled }) {
       role="switch"
       aria-checked={on}
       style={{
-        width: 40, height: 22, borderRadius: 11, flexShrink: 0,
+        width: 40,
+        height: 22,
+        borderRadius: 11,
+        flexShrink: 0,
         background: on ? 'rgba(var(--accent-rgb),0.3)' : 'var(--bg-elevated)',
         border: '1px solid',
         borderColor: on ? 'var(--neon-green)' : 'var(--border-card)',
@@ -26,27 +29,43 @@ function Switch({ on, onClick, disabled }) {
         boxShadow: on ? 'var(--glow-green)' : 'none',
       }}
     >
-      <div style={{
-        position: 'absolute', top: 3, left: on ? 20 : 3,
-        width: 14, height: 14, borderRadius: '50%',
-        background: on ? 'var(--neon-green)' : 'var(--text-muted)',
-        transition: 'all 0.2s',
-      }} />
+      <div
+        style={{
+          position: 'absolute',
+          top: 3,
+          left: on ? 20 : 3,
+          width: 14,
+          height: 14,
+          borderRadius: '50%',
+          background: on ? 'var(--neon-green)' : 'var(--text-muted)',
+          transition: 'all 0.2s',
+        }}
+      />
     </div>
   )
 }
 
 function ToggleRow({ title, hint, on, onToggle, disabled }) {
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 12,
-      padding: '8px 0',
-    }}>
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        padding: '8px 0',
+      }}
+    >
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{
-          fontSize: 12, color: 'var(--text-secondary)',
-          fontFamily: 'var(--font-mono)', letterSpacing: '0.04em',
-        }}>{title}</div>
+        <div
+          style={{
+            fontSize: 12,
+            color: 'var(--text-secondary)',
+            fontFamily: 'var(--font-mono)',
+            letterSpacing: '0.04em',
+          }}
+        >
+          {title}
+        </div>
         {hint && (
           <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{hint}</div>
         )}
@@ -89,9 +108,15 @@ export function SubagentSettings() {
   useEffect(() => {
     let alive = true
     getSubagentRoster()
-      .then((r) => { if (alive) setRoster(r?.subagents || []) })
-      .catch(() => { if (alive) setError(true) })
-    return () => { alive = false }
+      .then((r) => {
+        if (alive) setRoster(r?.subagents || [])
+      })
+      .catch(() => {
+        if (alive) setError(true)
+      })
+    return () => {
+      alive = false
+    }
   }, [])
 
   if (error) {
@@ -122,18 +147,19 @@ export function SubagentSettings() {
         <ToggleRow
           key={sa.name}
           title={sa.name}
-          hint={sa.togglable
-            ? (sa.description || '').slice(0, 160)
-            : 'Always on — the master falls back to this one when it delegates.'}
+          hint={
+            sa.togglable
+              ? (sa.description || '').slice(0, 160)
+              : 'Always on — the master falls back to this one when it delegates.'
+          }
           on={!off.has(sa.name)}
           disabled={saving || !sa.togglable}
           onToggle={() => setSubagentEnabled(sa.name, off.has(sa.name)).catch(() => {})}
         />
       ))}
       <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
-        A switched-off subagent is hidden from the orchestrator, chat and voice
-        agents, and event triage stops routing work to it. Background tasks
-        already running finish normally.
+        A switched-off subagent is hidden from the orchestrator, chat and voice agents, and event
+        triage stops routing work to it. Background tasks already running finish normally.
       </div>
     </div>
   )

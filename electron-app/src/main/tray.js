@@ -6,7 +6,7 @@ let _win = null
 let _daemon = null
 let _pendingCount = 0
 let _daemonRunning = false
-let _hintShown = false  // one "still in the menu bar" notice per app run
+let _hintShown = false // one "still in the menu bar" notice per app run
 
 function init(win, daemonModule) {
   _win = win
@@ -63,11 +63,14 @@ function _maybeShowHideHint() {
   try {
     new Notification({
       title: 'YUYUTSAVA is still running',
-      body: 'The app lives in the menu bar and the daemon keeps working. '
-          + 'Click the tray icon to reopen this window.',
+      body:
+        'The app lives in the menu bar and the daemon keeps working. ' +
+        'Click the tray icon to reopen this window.',
       silent: true,
     }).show()
-  } catch { /* notifications optional */ }
+  } catch {
+    /* notifications optional */
+  }
 }
 
 // Daemon controls invoked from the tray. They mirror the IPC handlers but are
@@ -91,7 +94,11 @@ async function _restartDaemon() {
   // instead of sitting blank. Only reload once the daemon answered /health so
   // we don't reload into another dead-backend state.
   if (ready && _win && !_win.isDestroyed()) {
-    try { _win.webContents.reload() } catch { /* window may be gone */ }
+    try {
+      _win.webContents.reload()
+    } catch {
+      /* window may be gone */
+    }
   }
 }
 
@@ -110,9 +117,19 @@ function refreshMenu(running) {
     { label: _daemonRunning ? '● Daemon running' : '○ Daemon stopped', enabled: false },
   ]
   if (_daemonRunning) {
-    template.push({ label: 'Restart Daemon', click: () => { _restartDaemon() } })
+    template.push({
+      label: 'Restart Daemon',
+      click: () => {
+        _restartDaemon()
+      },
+    })
   } else {
-    template.push({ label: 'Start Daemon', click: () => { _startDaemon() } })
+    template.push({
+      label: 'Start Daemon',
+      click: () => {
+        _startDaemon()
+      },
+    })
   }
   template.push({ type: 'separator' })
   // Quitting stops the daemon (which closes the UI with it); the before-quit
@@ -144,7 +161,9 @@ function incrPending() {
 // (no-op on macOS; on Windows we cancel flashFrame).
 function clearAttention() {
   if (process.platform === 'win32' && _win && !_win.isDestroyed()) {
-    try { _win.flashFrame(false) } catch {}
+    try {
+      _win.flashFrame(false)
+    } catch {}
   }
 }
 

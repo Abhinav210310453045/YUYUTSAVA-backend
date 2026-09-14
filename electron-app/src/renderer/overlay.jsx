@@ -24,6 +24,6 @@ initBase().then(() => {
     <>
       <VoiceOverlay />
       <AskOverlay />
-    </>
+    </>,
   )
 })

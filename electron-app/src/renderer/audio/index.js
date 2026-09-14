@@ -14,11 +14,24 @@
 
 // Earcon tone sequences: [frequencyHz, seconds][]. Mirrors the server defaults.
 const EARCON_TONES = {
-  open: [[660, 0.09], [988, 0.12]],
-  close: [[988, 0.09], [660, 0.12]],
-  listening: [[880, 0.10]],
-  done: [[660, 0.08], [880, 0.08], [1175, 0.13]],
-  error: [[220, 0.16], [180, 0.20]],
+  open: [
+    [660, 0.09],
+    [988, 0.12],
+  ],
+  close: [
+    [988, 0.09],
+    [660, 0.12],
+  ],
+  listening: [[880, 0.1]],
+  done: [
+    [660, 0.08],
+    [880, 0.08],
+    [1175, 0.13],
+  ],
+  error: [
+    [220, 0.16],
+    [180, 0.2],
+  ],
 }
 
 export const EARCON_NAMES = Object.keys(EARCON_TONES)
@@ -59,7 +72,11 @@ export class AudioPlayer {
   _notify() {
     const state = this.playbackState()
     for (const fn of [...this._listeners]) {
-      try { fn(state) } catch { /* a bad subscriber never breaks playback */ }
+      try {
+        fn(state)
+      } catch {
+        /* a bad subscriber never breaks playback */
+      }
     }
   }
 
@@ -74,7 +91,10 @@ export class AudioPlayer {
       const playing = this.isPlaying()
       if (playing === this._lastPlaying) return
       this._lastPlaying = playing
-      if (!playing) { clearInterval(this._watch); this._watch = null }
+      if (!playing) {
+        clearInterval(this._watch)
+        this._watch = null
+      }
       this._notify()
     }, 200)
   }
@@ -96,7 +116,11 @@ export class AudioPlayer {
       this._analyser.connect(this._ctx.destination)
     }
     if (this._ctx.state === 'suspended' && !this._userPaused) {
-      try { await this._ctx.resume() } catch { /* ignore */ }
+      try {
+        await this._ctx.resume()
+      } catch {
+        /* ignore */
+      }
     }
     return this._ctx
   }
@@ -107,7 +131,11 @@ export class AudioPlayer {
   async pause() {
     this._userPaused = true
     if (this._ctx && this._ctx.state === 'running') {
-      try { await this._ctx.suspend() } catch { /* ignore */ }
+      try {
+        await this._ctx.suspend()
+      } catch {
+        /* ignore */
+      }
     }
     this._notify()
   }
@@ -115,25 +143,38 @@ export class AudioPlayer {
   async resume() {
     this._userPaused = false
     if (this._ctx && this._ctx.state === 'suspended') {
-      try { await this._ctx.resume() } catch { /* ignore */ }
+      try {
+        await this._ctx.resume()
+      } catch {
+        /* ignore */
+      }
     }
     this._notify()
   }
 
-  isPaused() { return !!this._userPaused }
+  isPaused() {
+    return !!this._userPaused
+  }
 
   // AnalyserNode for the agent's TTS output, or null before first playback.
   // Consumers (VoiceOrb) call getByteFrequencyData/getByteTimeDomainData on it.
-  getAnalyser() { return this._analyser }
+  getAnalyser() {
+    return this._analyser
+  }
 
   // Where playback sources should connect: through the analyser when present so
   // the visualizer sees the audio, else straight to the speakers.
-  _out() { return this._analyser || this._ctx.destination }
+  _out() {
+    return this._analyser || this._ctx.destination
+  }
 
   // Play a named earcon. Unknown names are a no-op (logged).
   async playEarcon(name) {
     const tones = EARCON_TONES[name]
-    if (!tones) { console.warn(`unknown earcon ${name}`); return }
+    if (!tones) {
+      console.warn(`unknown earcon ${name}`)
+      return
+    }
     const ctx = await this.ensureContext()
     let t = ctx.currentTime
     for (const [freq, dur] of tones) {
@@ -215,7 +256,11 @@ export class AudioPlayer {
   // all future audio (earcons, the next reply) forever.
   stop() {
     for (const node of this._active) {
-      try { node.stop() } catch { /* already stopped */ }
+      try {
+        node.stop()
+      } catch {
+        /* already stopped */
+      }
     }
     this._active.clear()
     this._pcmCursor = this._ctx ? this._ctx.currentTime : 0
@@ -225,7 +270,10 @@ export class AudioPlayer {
         this._ctx.resume().catch(() => {})
       }
     }
-    if (this._watch) { clearInterval(this._watch); this._watch = null }
+    if (this._watch) {
+      clearInterval(this._watch)
+      this._watch = null
+    }
     this._lastPlaying = false
     this._notify()
   }

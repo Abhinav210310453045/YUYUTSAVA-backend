@@ -23,12 +23,7 @@ module.exports = {
     perMachine: false,
     allowToChangeInstallationDirectory: true,
   },
-  files: [
-    'dist/renderer/**',
-    'src/main/**',
-    'assets/**',
-    'package.json',
-  ],
+  files: ['dist/renderer/**', 'src/main/**', 'assets/**', 'package.json'],
   extraResources: [
     {
       from: '../',

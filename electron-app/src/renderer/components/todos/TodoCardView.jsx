@@ -1,7 +1,12 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import {
-  getTodo, patchTodo, uploadTodoAttachment,
-  addTodoObjective, listTodoEvents, generateTodoArtifact, listTodoChats,
+  getTodo,
+  patchTodo,
+  uploadTodoAttachment,
+  addTodoObjective,
+  listTodoEvents,
+  generateTodoArtifact,
+  listTodoChats,
 } from '../../api/client'
 import { STATUS_ACCENT, PHASE_ACCENT, TagChips, PinIcon, humanAge } from './shared'
 import ArtifactModal from '../artifacts/ArtifactModal'
@@ -32,15 +37,24 @@ function humanizeEvent(e) {
   const p = e.payload || {}
   const title = p.title || ''
   switch (e.kind) {
-    case 'card_status': return `card moved ${p.from} → ${p.to}`
-    case 'objective_created': return `objective added: “${title}” [${p.phase}]`
-    case 'objective_phase': return `“${title}”: ${p.from} → ${p.to}${p.reason ? ` — ${p.reason}` : ''}`
-    case 'objective_updated': return `“${title}”: ${(p.fields || []).join(', ')} changed`
-    case 'objective_deleted': return `objective removed: “${title}”`
-    case 'note_assigned': return 'a note was assigned to an objective'
-    case 'artifact_attached': return `attached ${p.kind}${title ? `: ${title}` : ''}`
-    case 'journey_generated': return 'journey document generated'
-    default: return e.kind
+    case 'card_status':
+      return `card moved ${p.from} → ${p.to}`
+    case 'objective_created':
+      return `objective added: “${title}” [${p.phase}]`
+    case 'objective_phase':
+      return `“${title}”: ${p.from} → ${p.to}${p.reason ? ` — ${p.reason}` : ''}`
+    case 'objective_updated':
+      return `“${title}”: ${(p.fields || []).join(', ')} changed`
+    case 'objective_deleted':
+      return `objective removed: “${title}”`
+    case 'note_assigned':
+      return 'a note was assigned to an objective'
+    case 'artifact_attached':
+      return `attached ${p.kind}${title ? `: ${title}` : ''}`
+    case 'journey_generated':
+      return 'journey document generated'
+    default:
+      return e.kind
   }
 }
 
@@ -67,7 +81,7 @@ export default function TodoCardView({ cardId }) {
   // no resume, else a session id. `epoch` bumps force a ChatPanel remount.
   const [chats, setChats] = useState(null)
   const chatParam = params.chat
-  const chatSelId = chatParam === undefined ? undefined : (chatParam === 'new' ? null : chatParam)
+  const chatSelId = chatParam === undefined ? undefined : chatParam === 'new' ? null : chatParam
   const [chatEpoch, setChatEpoch] = useViewState('chatEpoch', 0, scope)
   const [liveChatId, setLiveChatId] = useState(null)
   const [uploading, setUploading] = useState(0) // in-flight upload count
@@ -85,7 +99,11 @@ export default function TodoCardView({ cardId }) {
   const [events, setEvents] = useState([])
   // Objective collapse state — persisted per card, pruned to live ids on load.
   const [collapsedObjectives, setCollapsedObjectives] = useState(() => {
-    try { return new Set(JSON.parse(localStorage.getItem(collapseKey(cardId)) || '[]')) } catch { return new Set() }
+    try {
+      return new Set(JSON.parse(localStorage.getItem(collapseKey(cardId)) || '[]'))
+    } catch {
+      return new Set()
+    }
   })
   // Resizable tinker pane — same handle + drag pattern as App.jsx's activity rail.
   const [tinkerW, setTinkerW] = useState(() => {
@@ -111,7 +129,11 @@ export default function TodoCardView({ cardId }) {
   const draggingRef = useRef(false)
 
   const loadEvents = useCallback(async () => {
-    try { setEvents(await listTodoEvents(cardId)) } catch { /* strip is best-effort */ }
+    try {
+      setEvents(await listTodoEvents(cardId))
+    } catch {
+      /* strip is best-effort */
+    }
   }, [cardId])
 
   const refresh = useCallback(async () => {
@@ -126,8 +148,12 @@ export default function TodoCardView({ cardId }) {
     }
   }, [cardId, setTitle])
 
-  useEffect(() => { refresh() }, [refresh])
-  useEffect(() => { if (activityOpen) loadEvents() }, [activityOpen, loadEvents])
+  useEffect(() => {
+    refresh()
+  }, [refresh])
+  useEffect(() => {
+    if (activityOpen) loadEvents()
+  }, [activityOpen, loadEvents])
 
   // Prune collapse state to objectives that still exist once the card loads.
   useEffect(() => {
@@ -136,19 +162,31 @@ export default function TodoCardView({ cardId }) {
       const live = new Set(card.objectives.map((o) => o.objective_id))
       const next = new Set([...s].filter((id) => live.has(id)))
       if (next.size === s.size) return s
-      try { localStorage.setItem(collapseKey(cardId), JSON.stringify([...next])) } catch { /* quota */ }
+      try {
+        localStorage.setItem(collapseKey(cardId), JSON.stringify([...next]))
+      } catch {
+        /* quota */
+      }
       return next
     })
   }, [card, cardId])
 
-  const onToggleCollapse = useCallback((objectiveId) => {
-    setCollapsedObjectives((s) => {
-      const next = new Set(s)
-      if (next.has(objectiveId)) next.delete(objectiveId); else next.add(objectiveId)
-      try { localStorage.setItem(collapseKey(cardId), JSON.stringify([...next])) } catch { /* quota */ }
-      return next
-    })
-  }, [cardId])
+  const onToggleCollapse = useCallback(
+    (objectiveId) => {
+      setCollapsedObjectives((s) => {
+        const next = new Set(s)
+        if (next.has(objectiveId)) next.delete(objectiveId)
+        else next.add(objectiveId)
+        try {
+          localStorage.setItem(collapseKey(cardId), JSON.stringify([...next]))
+        } catch {
+          /* quota */
+        }
+        return next
+      })
+    },
+    [cardId],
+  )
 
   // The card's chat sessions — resolves which chat the tinker pane opens on
   // (most recent, or fresh when the card has none). Best-effort: on failure
@@ -167,7 +205,9 @@ export default function TodoCardView({ cardId }) {
     }
   }, [cardId, replace])
 
-  useEffect(() => { if (thinkOpen) loadChats() }, [thinkOpen, loadChats])
+  useEffect(() => {
+    if (thinkOpen) loadChats()
+  }, [thinkOpen, loadChats])
 
   const onNewChat = useCallback(() => {
     // 'new' + epoch bump remounts the ChatPanel with no resume_id → the
@@ -176,10 +216,13 @@ export default function TodoCardView({ cardId }) {
     replace({ chat: 'new' })
   }, [replace, setChatEpoch])
 
-  const onSelectChat = useCallback((s) => {
-    setChatEpoch((n) => n + 1)
-    replace({ chat: s.id })
-  }, [replace, setChatEpoch])
+  const onSelectChat = useCallback(
+    (s) => {
+      setChatEpoch((n) => n + 1)
+      replace({ chat: s.id })
+    },
+    [replace, setChatEpoch],
+  )
 
   // A tinker turn may have written objectives/notes/events — re-pull both;
   // the chat list too (first turn sets the session's title + message count).
@@ -189,29 +232,32 @@ export default function TodoCardView({ cardId }) {
     loadChats()
   }, [refresh, loadEvents, activityOpen, loadChats])
 
-  const startTinkerDrag = useCallback((e) => {
-    e.preventDefault()
-    const startX = e.clientX
-    const startW = tinkerW
-    setTinkerDragging(true)
-    let w = startW
-    const onMove = (ev) => {
-      w = Math.min(TINKER_MAX, Math.max(TINKER_MIN, startW - (ev.clientX - startX)))
-      setTinkerW(w)
-    }
-    const onUp = () => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-      setTinkerDragging(false)
-      localStorage.setItem(TINKER_W_KEY, String(w))
-    }
-    document.body.style.cursor = 'col-resize'
-    document.body.style.userSelect = 'none'
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-  }, [tinkerW])
+  const startTinkerDrag = useCallback(
+    (e) => {
+      e.preventDefault()
+      const startX = e.clientX
+      const startW = tinkerW
+      setTinkerDragging(true)
+      let w = startW
+      const onMove = (ev) => {
+        w = Math.min(TINKER_MAX, Math.max(TINKER_MIN, startW - (ev.clientX - startX)))
+        setTinkerW(w)
+      }
+      const onUp = () => {
+        window.removeEventListener('mousemove', onMove)
+        window.removeEventListener('mouseup', onUp)
+        document.body.style.cursor = ''
+        document.body.style.userSelect = ''
+        setTinkerDragging(false)
+        localStorage.setItem(TINKER_W_KEY, String(w))
+      }
+      document.body.style.cursor = 'col-resize'
+      document.body.style.userSelect = 'none'
+      window.addEventListener('mousemove', onMove)
+      window.addEventListener('mouseup', onUp)
+    },
+    [tinkerW],
+  )
 
   // Bounded so the reference block the tinker receives stays reviewable.
   const MAX_SELECTION = 20
@@ -299,7 +345,9 @@ export default function TodoCardView({ cardId }) {
       setObjComposerOpen(false)
       // New objectives land in thinking — bring that column into view.
       requestAnimationFrame(() => {
-        document.getElementById('yy-phase-thinking')?.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' })
+        document
+          .getElementById('yy-phase-thinking')
+          ?.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' })
       })
     } catch (e) {
       alert(`Add objective failed: ${e.message}`)
@@ -338,52 +386,68 @@ export default function TodoCardView({ cardId }) {
 
   // Shared partial-update path: PATCH, then swap in the returned card (the
   // response is the fully hydrated TodoCardV1, notes included).
-  const patch = useCallback(async (fields) => {
-    setPatching(true)
-    try {
-      const c = await patchTodo(cardId, fields)
-      setCard(c)
-      setTitle(c.title)
-      setTitleDirty(false)
-    } catch (e) {
-      alert(`Update failed: ${e.message}`)
-    } finally {
-      setPatching(false)
-    }
-  }, [cardId, setTitle, setTitleDirty])
+  const patch = useCallback(
+    async (fields) => {
+      setPatching(true)
+      try {
+        const c = await patchTodo(cardId, fields)
+        setCard(c)
+        setTitle(c.title)
+        setTitleDirty(false)
+      } catch (e) {
+        alert(`Update failed: ${e.message}`)
+      } finally {
+        setPatching(false)
+      }
+    },
+    [cardId, setTitle, setTitleDirty],
+  )
 
   const onTitleCommit = () => {
     if (revertingRef.current) {
       revertingRef.current = false
-      setTitle(card?.title || ''); setTitleDirty(false); return
+      setTitle(card?.title || '')
+      setTitleDirty(false)
+      return
     }
     const t = title.trim()
-    if (!card || !t || t === card.title) { setTitle(card?.title || ''); setTitleDirty(false); return }
+    if (!card || !t || t === card.title) {
+      setTitle(card?.title || '')
+      setTitleDirty(false)
+      return
+    }
     patch({ title: t })
   }
 
   // Shared by every drop target on the board and the drawer: upload each file
   // (with its objective/note association when dropped onto one), appending the
   // returned row; a per-file failure reports and moves on to the next.
-  const onFiles = useCallback(async (files, assoc = {}) => {
-    for (const file of Array.from(files || [])) {
-      setUploading((n) => n + 1)
-      try {
-        const att = await uploadTodoAttachment(cardId, file, assoc)
-        setCard((c) => (c ? { ...c, attachments: [...c.attachments, att] } : c))
-      } catch (e) {
-        alert(`Upload of ${file.name} failed: ${e.message}`)
-      } finally {
-        setUploading((n) => n - 1)
+  const onFiles = useCallback(
+    async (files, assoc = {}) => {
+      for (const file of Array.from(files || [])) {
+        setUploading((n) => n + 1)
+        try {
+          const att = await uploadTodoAttachment(cardId, file, assoc)
+          setCard((c) => (c ? { ...c, attachments: [...c.attachments, att] } : c))
+        } catch (e) {
+          alert(`Upload of ${file.name} failed: ${e.message}`)
+        } finally {
+          setUploading((n) => n - 1)
+        }
       }
-    }
-  }, [cardId])
+    },
+    [cardId],
+  )
 
   const onAttachmentDeleted = useCallback((attachmentId) => {
-    setCard((c) => (c ? {
-      ...c,
-      attachments: c.attachments.filter((a) => a.attachment_id !== attachmentId),
-    } : c))
+    setCard((c) =>
+      c
+        ? {
+            ...c,
+            attachments: c.attachments.filter((a) => a.attachment_id !== attachmentId),
+          }
+        : c,
+    )
   }, [])
 
   const accent = STATUS_ACCENT[card?.status] || STATUS_ACCENT.inbox
@@ -391,10 +455,16 @@ export default function TodoCardView({ cardId }) {
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 10,
-        padding: '14px 24px', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-bar)',
-      }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          padding: '14px 24px',
+          borderBottom: '1px solid var(--border-subtle)',
+          background: 'var(--bg-bar)',
+        }}
+      >
         <BackButton variant="labelled" label="Board" title="back to board" />
 
         {card && (
@@ -403,31 +473,56 @@ export default function TodoCardView({ cardId }) {
             <input
               ref={titleRef}
               value={title}
-              onChange={(e) => { setTitle(e.target.value); setTitleDirty(true) }}
+              onChange={(e) => {
+                setTitle(e.target.value)
+                setTitleDirty(true)
+              }}
               onBlur={onTitleCommit}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') titleRef.current?.blur()
-                if (e.key === 'Escape') { revertingRef.current = true; titleRef.current?.blur() }
+                if (e.key === 'Escape') {
+                  revertingRef.current = true
+                  titleRef.current?.blur()
+                }
               }}
               disabled={patching}
               title="click to rename"
               style={{
-                flex: 1, minWidth: 0,
-                background: 'transparent', color: 'var(--text-primary)',
-                border: '1px solid transparent', borderRadius: 6, padding: '5px 10px',
-                fontFamily: 'var(--font-mono)', fontSize: 13, fontWeight: 'var(--fw-semibold)',
+                flex: 1,
+                minWidth: 0,
+                background: 'transparent',
+                color: 'var(--text-primary)',
+                border: '1px solid transparent',
+                borderRadius: 6,
+                padding: '5px 10px',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 13,
+                fontWeight: 'var(--fw-semibold)',
                 outline: 'none',
               }}
-              onFocus={(e) => { e.target.style.border = '1px solid var(--border-card)'; e.target.style.background = 'var(--bg-card)' }}
-              onBlurCapture={(e) => { e.target.style.border = '1px solid transparent'; e.target.style.background = 'transparent' }}
+              onFocus={(e) => {
+                e.target.style.border = '1px solid var(--border-card)'
+                e.target.style.background = 'var(--bg-card)'
+              }}
+              onBlurCapture={(e) => {
+                e.target.style.border = '1px solid transparent'
+                e.target.style.background = 'transparent'
+              }}
             />
 
             {doneCount > 0 || card.objectives.length > 0 ? (
-              <span style={{
-                fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--neon-green)',
-                background: 'rgba(var(--accent-rgb),0.08)', border: '1px solid rgba(var(--accent-rgb),0.2)',
-                borderRadius: 10, padding: '1px 7px', whiteSpace: 'nowrap',
-              }}>
+              <span
+                style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 10,
+                  color: 'var(--neon-green)',
+                  background: 'rgba(var(--accent-rgb),0.08)',
+                  border: '1px solid rgba(var(--accent-rgb),0.2)',
+                  borderRadius: 10,
+                  padding: '1px 7px',
+                  whiteSpace: 'nowrap',
+                }}
+              >
                 {doneCount}/{card.objectives.length}
               </span>
             ) : null}
@@ -437,8 +532,12 @@ export default function TodoCardView({ cardId }) {
               disabled={patching}
               title={card.pinned ? 'unpin' : 'pin to top'}
               style={{
-                width: 28, height: 28, borderRadius: 6,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                width: 28,
+                height: 28,
+                borderRadius: 6,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
                 background: card.pinned ? 'rgba(250,204,21,0.10)' : 'transparent',
                 border: `1px solid ${card.pinned ? 'rgba(250,204,21,0.3)' : 'var(--border-card)'}`,
                 cursor: 'pointer',
@@ -453,12 +552,21 @@ export default function TodoCardView({ cardId }) {
               disabled={patching}
               title="card status"
               style={{
-                background: 'var(--bg-card)', color: accent.bar,
-                border: `1px solid ${accent.border}`, borderRadius: 6, padding: '5px 8px',
-                fontFamily: 'var(--font-mono)', fontSize: 11, cursor: 'pointer',
+                background: 'var(--bg-card)',
+                color: accent.bar,
+                border: `1px solid ${accent.border}`,
+                borderRadius: 6,
+                padding: '5px 8px',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 11,
+                cursor: 'pointer',
               }}
             >
-              {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+              {STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
             </select>
 
             {/* "+ Objective" popover — new objectives start in thinking. */}
@@ -469,15 +577,25 @@ export default function TodoCardView({ cardId }) {
                 onChange={(e) => setNewObjective(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') onAddObjective()
-                  if (e.key === 'Escape') { setObjComposerOpen(false); setNewObjective('') }
+                  if (e.key === 'Escape') {
+                    setObjComposerOpen(false)
+                    setNewObjective('')
+                  }
                 }}
-                onBlur={() => { if (!newObjective.trim()) setObjComposerOpen(false) }}
+                onBlur={() => {
+                  if (!newObjective.trim()) setObjComposerOpen(false)
+                }}
                 placeholder="objective title… (Enter)"
                 disabled={addingObjective}
                 style={{
-                  width: 220, background: 'var(--bg-card)', color: 'var(--text-primary)',
-                  border: '1px solid rgba(167,139,250,0.4)', borderRadius: 6,
-                  padding: '5px 10px', fontFamily: 'var(--font-mono)', fontSize: 11,
+                  width: 220,
+                  background: 'var(--bg-card)',
+                  color: 'var(--text-primary)',
+                  border: '1px solid rgba(167,139,250,0.4)',
+                  borderRadius: 6,
+                  padding: '5px 10px',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 11,
                   outline: 'none',
                 }}
               />
@@ -486,10 +604,15 @@ export default function TodoCardView({ cardId }) {
                 onClick={() => setObjComposerOpen(true)}
                 title="add an objective (a small, checkable step) — starts in thinking"
                 style={{
-                  fontFamily: 'var(--font-mono)', fontSize: 11, padding: '5px 12px',
-                  background: 'rgba(167,139,250,0.10)', color: 'var(--text-lavender)',
-                  border: '1px solid rgba(167,139,250,0.3)', borderRadius: 6,
-                  cursor: 'pointer', whiteSpace: 'nowrap',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 11,
+                  padding: '5px 12px',
+                  background: 'rgba(167,139,250,0.10)',
+                  color: 'var(--text-lavender)',
+                  border: '1px solid rgba(167,139,250,0.3)',
+                  borderRadius: 6,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
                 }}
               >
                 + Objective
@@ -499,14 +622,25 @@ export default function TodoCardView({ cardId }) {
             {/* Multi-select of notes/objectives → a reference block seeded
                 into the tinker chat. The count button appears once armed. */}
             <button
-              onClick={() => { setSelectMode((v) => !v); setSelected(new Set()) }}
-              title={selectMode ? 'exit selection' : 'select notes/objectives to ask the TinkerAgent about'}
+              onClick={() => {
+                setSelectMode((v) => !v)
+                setSelected(new Set())
+              }}
+              title={
+                selectMode
+                  ? 'exit selection'
+                  : 'select notes/objectives to ask the TinkerAgent about'
+              }
               style={{
-                fontFamily: 'var(--font-mono)', fontSize: 11, padding: '5px 12px',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 11,
+                padding: '5px 12px',
                 background: selectMode ? 'rgba(196,181,253,0.16)' : 'transparent',
                 color: selectMode ? 'var(--text-lavender)' : 'var(--text-muted)',
                 border: `1px solid ${selectMode ? 'rgba(167,139,250,0.4)' : 'var(--border-card)'}`,
-                borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap',
+                borderRadius: 6,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
               }}
             >
               {selectMode ? '✕ Select' : '☐ Select'}
@@ -517,11 +651,16 @@ export default function TodoCardView({ cardId }) {
               disabled={journeyBusy}
               title="compile this card's journey — objectives, notes, and timeline — into a document"
               style={{
-                fontFamily: 'var(--font-mono)', fontSize: 11, padding: '5px 12px',
-                background: 'rgba(250,204,21,0.08)', color: 'var(--text-warning)',
-                border: '1px solid rgba(250,204,21,0.3)', borderRadius: 6,
+                fontFamily: 'var(--font-mono)',
+                fontSize: 11,
+                padding: '5px 12px',
+                background: 'rgba(250,204,21,0.08)',
+                color: 'var(--text-warning)',
+                border: '1px solid rgba(250,204,21,0.3)',
+                borderRadius: 6,
                 cursor: journeyBusy ? 'default' : 'pointer',
-                opacity: journeyBusy ? 0.6 : 1, whiteSpace: 'nowrap',
+                opacity: journeyBusy ? 0.6 : 1,
+                whiteSpace: 'nowrap',
               }}
             >
               {journeyBusy ? '… compiling' : '📜 Journey'}
@@ -529,13 +668,19 @@ export default function TodoCardView({ cardId }) {
 
             <button
               onClick={() => setThinkOpen((v) => !v)}
-              title={thinkOpen ? 'close the TinkerAgent chat' : 'think on this card with the TinkerAgent'}
+              title={
+                thinkOpen ? 'close the TinkerAgent chat' : 'think on this card with the TinkerAgent'
+              }
               style={{
-                fontFamily: 'var(--font-mono)', fontSize: 11, padding: '5px 12px',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 11,
+                padding: '5px 12px',
                 background: thinkOpen ? 'rgba(120,160,255,0.18)' : 'rgba(120,160,255,0.06)',
                 color: 'var(--text-info)',
                 border: `1px solid rgba(120,160,255,${thinkOpen ? 0.5 : 0.3})`,
-                borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap',
+                borderRadius: 6,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
               }}
             >
               {thinkOpen ? '✕ Tinker' : '✦ Tinker'}
@@ -545,20 +690,41 @@ export default function TodoCardView({ cardId }) {
       </div>
 
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div
+          style={{
+            flex: 1,
+            minWidth: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+          }}
+        >
           {error && (
-            <div style={{
-              fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--neon-red)',
-              margin: '12px 24px', padding: '6px 10px',
-              border: '1px solid rgba(255,51,102,0.25)',
-              borderRadius: 6, background: 'rgba(255,51,102,0.05)',
-            }}>
+            <div
+              style={{
+                fontFamily: 'var(--font-mono)',
+                fontSize: 11,
+                color: 'var(--neon-red)',
+                margin: '12px 24px',
+                padding: '6px 10px',
+                border: '1px solid rgba(255,51,102,0.25)',
+                borderRadius: 6,
+                background: 'rgba(255,51,102,0.05)',
+              }}
+            >
               {`> card: ${error}`}
             </div>
           )}
 
           {!card && !error && (
-            <div style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: 12, margin: '12px 24px' }}>
+            <div
+              style={{
+                color: 'var(--text-muted)',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 12,
+                margin: '12px 24px',
+              }}
+            >
               loading…
             </div>
           )}
@@ -566,19 +732,31 @@ export default function TodoCardView({ cardId }) {
           {card && (
             <>
               {/* Meta strip: tags, timestamps, activity toggle. */}
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 12,
-                padding: '10px 24px 0', fontFamily: 'var(--font-mono)', fontSize: 11,
-                color: 'var(--text-muted)', flexShrink: 0,
-              }}>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                  padding: '10px 24px 0',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 11,
+                  color: 'var(--text-muted)',
+                  flexShrink: 0,
+                }}
+              >
                 <TagChips tags={card.tags} />
                 <span style={{ flex: 1 }} />
                 <button
                   onClick={() => setActivityOpen((v) => !v)}
                   style={{
-                    fontFamily: 'var(--font-mono)', fontSize: 10, padding: '2px 8px',
-                    background: 'transparent', color: 'var(--text-muted)',
-                    border: '1px solid var(--border-card)', borderRadius: 6, cursor: 'pointer',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 10,
+                    padding: '2px 8px',
+                    background: 'transparent',
+                    color: 'var(--text-muted)',
+                    border: '1px solid var(--border-card)',
+                    borderRadius: 6,
+                    cursor: 'pointer',
                   }}
                 >
                   {activityOpen ? '▾ Activity' : '▸ Activity'}
@@ -589,21 +767,36 @@ export default function TodoCardView({ cardId }) {
               </div>
 
               {activityOpen && (
-                <div style={{
-                  display: 'flex', flexDirection: 'column', gap: 4,
-                  fontFamily: 'var(--font-mono)', fontSize: 11,
-                  borderLeft: '2px solid var(--border-card)',
-                  margin: '8px 24px 0', paddingLeft: 12,
-                  maxHeight: 140, overflowY: 'auto', flexShrink: 0,
-                }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 4,
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 11,
+                    borderLeft: '2px solid var(--border-card)',
+                    margin: '8px 24px 0',
+                    paddingLeft: 12,
+                    maxHeight: 140,
+                    overflowY: 'auto',
+                    flexShrink: 0,
+                  }}
+                >
                   {events.length === 0 && (
                     <span style={{ color: 'var(--text-dim)' }}>{'> no activity recorded yet'}</span>
                   )}
                   {events.map((e) => (
-                    <div key={e.event_id} style={{ display: 'flex', gap: 8, color: 'var(--text-muted)' }}>
-                      <span style={{ color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>{humanAge(e.created_ts)}</span>
+                    <div
+                      key={e.event_id}
+                      style={{ display: 'flex', gap: 8, color: 'var(--text-muted)' }}
+                    >
+                      <span style={{ color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>
+                        {humanAge(e.created_ts)}
+                      </span>
                       <span style={{ color: 'var(--text-info)' }}>[{e.actor}]</span>
-                      <span style={{ minWidth: 0, wordBreak: 'break-word' }}>{humanizeEvent(e)}</span>
+                      <span style={{ minWidth: 0, wordBreak: 'break-word' }}>
+                        {humanizeEvent(e)}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -644,12 +837,19 @@ export default function TodoCardView({ cardId }) {
           <>
             {/* Same drag-bar resize as the app's activity rail; width persists. */}
             <ResizeHandle onMouseDown={startTinkerDrag} side="right" />
-            <div style={{
-              width: tinkerW, minWidth: TINKER_MIN, maxWidth: TINKER_MAX, flexShrink: 0,
-              borderLeft: '1px solid var(--border-subtle)',
-              display: 'flex', flexDirection: 'column', overflow: 'hidden',
-              transition: tinkerDragging ? 'none' : 'width 0.15s ease',
-            }}>
+            <div
+              style={{
+                width: tinkerW,
+                minWidth: TINKER_MIN,
+                maxWidth: TINKER_MAX,
+                flexShrink: 0,
+                borderLeft: '1px solid var(--border-subtle)',
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden',
+                transition: tinkerDragging ? 'none' : 'width 0.15s ease',
+              }}
+            >
               {/* The shared chat surface, unforked: agent=tinker + card routes
                   to the card's bundle; resumeId picks WHICH of the card's
                   chats (none = fresh). The key hard-remounts on chat switch so

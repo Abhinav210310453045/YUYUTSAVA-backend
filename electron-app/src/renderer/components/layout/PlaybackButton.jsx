@@ -37,8 +37,10 @@ export default function PlaybackButton() {
   const nav = speaker?.nav || null
   // Already looking at the conversation that's speaking? Its own bubble
   // controls are right there — a second transport in the titlebar is noise.
-  const onOwningView = !!nav && activePanel === nav.panel
-    && (nav.panel !== 'todos' || params.cardId === nav.params?.cardId)
+  const onOwningView =
+    !!nav &&
+    activePanel === nav.panel &&
+    (nav.panel !== 'todos' || params.cardId === nav.params?.cardId)
 
   const onToggle = useCallback(() => {
     if (audioPlayer.isPaused()) audioPlayer.resume()
@@ -57,17 +59,19 @@ export default function PlaybackButton() {
   const label = speaker.label || 'Conversation'
 
   return (
-    <span style={{
-      display: 'flex',
-      alignItems: 'center',
-      gap: 4,
-      height: 28,
-      padding: '0 4px 0 2px',
-      borderRadius: 6,
-      border: '1px solid rgba(120,160,255,0.30)',
-      background: 'rgba(120,160,255,0.10)',
-      animation: 'fade-in 0.2s ease',
-    }}>
+    <span
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 4,
+        height: 28,
+        padding: '0 4px 0 2px',
+        borderRadius: 6,
+        border: '1px solid rgba(120,160,255,0.30)',
+        background: 'rgba(120,160,255,0.10)',
+        animation: 'fade-in 0.2s ease',
+      }}
+    >
       <button
         onClick={onToggle}
         title={paused ? `Resume ${label}'s spoken reply` : `Pause ${label}'s spoken reply`}

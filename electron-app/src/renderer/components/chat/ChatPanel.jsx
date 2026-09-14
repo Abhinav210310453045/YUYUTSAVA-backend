@@ -26,20 +26,30 @@ function ToolEvents({ events }) {
         if (e.kind === 'tool_call') {
           const args = e.args ? JSON.stringify(e.args).slice(0, 100) : ''
           return (
-            <div key={i} style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)' }}>
-              · {e.name}{args ? ` ${args}` : ''}
+            <div
+              key={i}
+              style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)' }}
+            >
+              · {e.name}
+              {args ? ` ${args}` : ''}
             </div>
           )
         }
         if (e.kind === 'tool_result') {
           return (
-            <div key={i} style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-dim)' }}>
+            <div
+              key={i}
+              style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-dim)' }}
+            >
               ↳ {e.name}: {(e.preview || '').slice(0, 80)}
             </div>
           )
         }
         return (
-          <div key={i} style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--neon-amber)' }}>
+          <div
+            key={i}
+            style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--neon-amber)' }}
+          >
             {e.text}
           </div>
         )
@@ -50,7 +60,11 @@ function ToolEvents({ events }) {
 
 // Three-dot typing indicator shown while a reply streams in.
 const TypingDots = () => (
-  <span className="typing-dots" style={{ marginLeft: 2 }}><i /><i /><i /></span>
+  <span className="typing-dots" style={{ marginLeft: 2 }}>
+    <i />
+    <i />
+    <i />
+  </span>
 )
 
 // Glyph for the spoken-reply control: ▶ to play (or resume), ⏸ while audible.
@@ -77,25 +91,45 @@ function NoticeRow({ m }) {
     info: { fg: 'var(--text-muted)', bd: 'var(--border-subtle)', mark: '·' },
   }[m.level || 'info']
   return (
-    <div style={{
-      display: 'flex', gap: 8, alignItems: 'flex-start', flexShrink: 0,
-      padding: '8px 12px', borderRadius: 'var(--radius-card)',
-      border: `1px solid ${tone.bd}`, background: 'rgba(255,255,255,0.03)',
-      fontSize: 12, lineHeight: 1.6, color: tone.fg,
-    }}>
+    <div
+      style={{
+        display: 'flex',
+        gap: 8,
+        alignItems: 'flex-start',
+        flexShrink: 0,
+        padding: '8px 12px',
+        borderRadius: 'var(--radius-card)',
+        border: `1px solid ${tone.bd}`,
+        background: 'rgba(255,255,255,0.03)',
+        fontSize: 12,
+        lineHeight: 1.6,
+        color: tone.fg,
+      }}
+    >
       <span style={{ fontFamily: 'var(--font-mono)' }}>{tone.mark}</span>
       <span style={{ color: 'var(--text-secondary)' }}>{m.text}</span>
     </div>
   )
 }
 
-function Bubble({ m, userText, sessionId, onRegenerate, onFeedback, playing, paused, onReplay, onTogglePause }) {
+function Bubble({
+  m,
+  userText,
+  sessionId,
+  onRegenerate,
+  onFeedback,
+  playing,
+  paused,
+  onReplay,
+  onTogglePause,
+}) {
   // Hooks first: an early return above a hook changes the hook count between
   // renders, which React rejects if a bubble's role ever changes.
   const [hover, setHover] = useState(false)
   if (m.role === 'notice') return <NoticeRow m={m} />
   const isUser = m.role === 'user'
-  const empty = !m.text && (!m.images || m.images.length === 0) && (!m.artifacts || m.artifacts.length === 0)
+  const empty =
+    !m.text && (!m.images || m.images.length === 0) && (!m.artifacts || m.artifacts.length === 0)
   // Spoken replies carry in-session PCM chunks (live turn) or a persisted
   // audio_url (resumed thread) — either makes the bubble playable.
   const hasAudio = !isUser && ((m.audioChunks && m.audioChunks.length > 0) || !!m.audioUrl)
@@ -114,8 +148,8 @@ function Bubble({ m, userText, sessionId, onRegenerate, onFeedback, playing, pau
           backdropFilter: 'blur(var(--glass-blur))',
           WebkitBackdropFilter: 'blur(var(--glass-blur))',
           border: `1px solid ${m.error ? 'var(--border-red)' : isUser ? 'transparent' : 'var(--glass-border)'}`,
-          borderLeft: isUser ? undefined : (m.error ? undefined : '2px solid transparent'),
-          borderImage: (!isUser && !m.error) ? 'var(--grad-accent) 1' : undefined,
+          borderLeft: isUser ? undefined : m.error ? undefined : '2px solid transparent',
+          borderImage: !isUser && !m.error ? 'var(--grad-accent) 1' : undefined,
           borderRadius: 16,
           padding: '10px 14px',
           color: m.error ? 'var(--neon-red)' : 'var(--text-primary)',
@@ -137,19 +171,30 @@ function Bubble({ m, userText, sessionId, onRegenerate, onFeedback, playing, pau
             {hasAudio && (
               <button
                 onClick={() => (playing ? onTogglePause() : onReplay(m))}
-                title={playing ? (paused ? 'resume playback' : 'pause playback') : 'play spoken reply'}
+                title={
+                  playing ? (paused ? 'resume playback' : 'pause playback') : 'play spoken reply'
+                }
                 className="tap-pop"
                 style={{
-                  float: 'right', marginLeft: 8, cursor: 'pointer',
-                  width: 24, height: 24, borderRadius: '50%',
-                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                  background: playing && !paused ? 'rgba(120,160,255,0.30)' : 'rgba(120,160,255,0.12)',
+                  float: 'right',
+                  marginLeft: 8,
+                  cursor: 'pointer',
+                  width: 24,
+                  height: 24,
+                  borderRadius: '50%',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background:
+                    playing && !paused ? 'rgba(120,160,255,0.30)' : 'rgba(120,160,255,0.12)',
                   border: `1px solid rgba(120,160,255,${playing && !paused ? 0.6 : 0.35})`,
                   color: 'var(--text-info)',
                   boxShadow: playing && !paused ? '0 0 10px rgba(120,160,255,0.5)' : 'none',
                   transition: 'background 0.2s, box-shadow 0.2s',
                 }}
-              ><PlayPauseIcon playing={playing && !paused} /></button>
+              >
+                <PlayPauseIcon playing={playing && !paused} />
+              </button>
             )}
             {empty && m.streaming ? <TypingDots /> : <Markdown>{m.text}</Markdown>}
             {m.text && m.streaming ? <TypingDots /> : null}
@@ -225,10 +270,27 @@ export default function ChatPanel({
   showContext = false,
 }) {
   const {
-    messages, connected, busy, pendingAsks, hello, listening, speaking,
-    playingId, paused, usage, queued,
-    send, answerAsk, interrupt, startVoice, stopVoice, replay, togglePause, newSession,
-    sendNow, discardQueued,
+    messages,
+    connected,
+    busy,
+    pendingAsks,
+    hello,
+    listening,
+    speaking,
+    playingId,
+    paused,
+    usage,
+    queued,
+    send,
+    answerAsk,
+    interrupt,
+    startVoice,
+    stopVoice,
+    replay,
+    togglePause,
+    newSession,
+    sendNow,
+    discardQueued,
   } = useConverse({ origin, resumeId, agent, card, sessionKey, active })
   const [draft, setDraft] = useState('')
   const [fb, setFb] = useState({}) // messageId -> 'up' | 'down' (local selection)
@@ -240,26 +302,29 @@ export default function ChatPanel({
   const [ctxOpen, setCtxOpen] = useViewState(`ctx:open:${origin}`, false)
   const [ctxW, setCtxW] = useViewState(`ctx:w:${origin}`, CTX_DEFAULT_W)
   const [ctxDragging, setCtxDragging] = useState(false)
-  const startCtxDrag = useCallback((e) => {
-    e.preventDefault()
-    const startX = e.clientX
-    const startW = ctxW
-    setCtxDragging(true)
-    const onMove = (ev) => {
-      setCtxW(Math.min(CTX_MAX_W, Math.max(CTX_MIN_W, startW - (ev.clientX - startX))))
-    }
-    const onUp = () => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-      setCtxDragging(false)
-    }
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-    document.body.style.cursor = 'col-resize'
-    document.body.style.userSelect = 'none'
-  }, [ctxW, setCtxW])
+  const startCtxDrag = useCallback(
+    (e) => {
+      e.preventDefault()
+      const startX = e.clientX
+      const startW = ctxW
+      setCtxDragging(true)
+      const onMove = (ev) => {
+        setCtxW(Math.min(CTX_MAX_W, Math.max(CTX_MIN_W, startW - (ev.clientX - startX))))
+      }
+      const onUp = () => {
+        window.removeEventListener('mousemove', onMove)
+        window.removeEventListener('mouseup', onUp)
+        document.body.style.cursor = ''
+        document.body.style.userSelect = ''
+        setCtxDragging(false)
+      }
+      window.addEventListener('mousemove', onMove)
+      window.addEventListener('mouseup', onUp)
+      document.body.style.cursor = 'col-resize'
+      document.body.style.userSelect = 'none'
+    },
+    [ctxW, setCtxW],
+  )
 
   // Follow the output only when the user is already at the bottom. This used
   // to pin scrollTop unconditionally, and `messages` gets a new identity on
@@ -313,7 +378,10 @@ export default function ChatPanel({
     if (hasChips) onChipsConsumed?.()
   }
   const onKeyDown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSubmit() }
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      onSubmit()
+    }
   }
 
   // Text of the user turn immediately preceding message index i (for feedback
@@ -325,84 +393,145 @@ export default function ChatPanel({
 
   return (
     <div style={{ flex: 1, display: 'flex', minWidth: 0, overflow: 'hidden' }}>
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden', position: 'relative' }}>
-      {/* header */}
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 8,
-        padding: '14px 24px', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-bar)',
-      }}>
-        <span style={{
-          width: 8, height: 8, borderRadius: '50%',
-          background: connected ? 'var(--neon-green)' : 'var(--neon-red)',
-          boxShadow: connected ? '0 0 6px var(--neon-green)' : 'none',
-        }} />
-        <span style={{
-          fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.1em',
-          textTransform: 'uppercase', color: 'var(--text-primary)', fontWeight: 'var(--fw-semibold)',
-        }}>{title}</span>
-        {(headerActions || showNewSession || showContext) && (
-          <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            {showContext && (
-              <ContextMeter
-                usage={usage}
-                open={ctxOpen}
-                onClick={() => setCtxOpen(!ctxOpen)}
-              />
-            )}
-            {headerActions}
-            {showNewSession && <NewSessionButton onClick={newSession} label="New chat" />}
-          </span>
-        )}
-      </div>
-
-      {/* animated gradient mesh behind the thread */}
-      <div aria-hidden style={{
-        position: 'absolute', inset: 0, top: 50, background: 'var(--grad-mesh)',
-        opacity: 0.7, pointerEvents: 'none', animation: 'mesh-drift 18s ease-in-out infinite',
-        zIndex: 0,
-      }} />
-
-      {/* messages */}
-      <div ref={scrollRef} onScroll={onScroll} style={{
-        flex: 1, overflowY: 'auto', padding: '20px 24px', position: 'relative', zIndex: 1,
-        display: 'flex', flexDirection: 'column', gap: 12,
-      }}>
-        {messages.length === 0 && (
-          <div style={{
-            flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
-            justifyContent: 'center', gap: 10, color: 'var(--text-muted)',
-            fontFamily: 'var(--font-mono)', fontSize: 12,
-          }}>
-            <div style={{
-              fontSize: 40, fontWeight: 700,
-              background: 'var(--grad-accent)', backgroundClip: 'text', WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-            }} className="grad-animated">{emptyGlyph}</div>
-            <div>{emptyHint}</div>
-          </div>
-        )}
-        {messages.map((m, i) => (
-          <Bubble
-            key={m.id}
-            m={{ ...m, feedback: fb[m.id] }}
-            userText={precedingUserText(i)}
-            sessionId={hello?.session_id || null}
-            onRegenerate={m.role === 'assistant' && !busy ? () => send(precedingUserText(i)) : null}
-            onFeedback={(rating) => setFb((p) => ({ ...p, [m.id]: rating }))}
-            playing={playingId === m.id}
-            paused={playingId === m.id && paused}
-            onReplay={replay}
-            onTogglePause={togglePause}
+      <div
+        style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          minWidth: 0,
+          overflow: 'hidden',
+          position: 'relative',
+        }}
+      >
+        {/* header */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '14px 24px',
+            borderBottom: '1px solid var(--border-subtle)',
+            background: 'var(--bg-bar)',
+          }}
+        >
+          <span
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
+              background: connected ? 'var(--neon-green)' : 'var(--neon-red)',
+              boxShadow: connected ? '0 0 6px var(--neon-green)' : 'none',
+            }}
           />
-        ))}
+          <span
+            style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 11,
+              letterSpacing: '0.1em',
+              textTransform: 'uppercase',
+              color: 'var(--text-primary)',
+              fontWeight: 'var(--fw-semibold)',
+            }}
+          >
+            {title}
+          </span>
+          {(headerActions || showNewSession || showContext) && (
+            <span
+              style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+            >
+              {showContext && (
+                <ContextMeter usage={usage} open={ctxOpen} onClick={() => setCtxOpen(!ctxOpen)} />
+              )}
+              {headerActions}
+              {showNewSession && <NewSessionButton onClick={newSession} label="New chat" />}
+            </span>
+          )}
+        </div>
 
-        {/* The ask block, and the ONLY place an ask renders inline. It arrives
+        {/* animated gradient mesh behind the thread */}
+        <div
+          aria-hidden
+          style={{
+            position: 'absolute',
+            inset: 0,
+            top: 50,
+            background: 'var(--grad-mesh)',
+            opacity: 0.7,
+            pointerEvents: 'none',
+            animation: 'mesh-drift 18s ease-in-out infinite',
+            zIndex: 0,
+          }}
+        />
+
+        {/* messages */}
+        <div
+          ref={scrollRef}
+          onScroll={onScroll}
+          style={{
+            flex: 1,
+            overflowY: 'auto',
+            padding: '20px 24px',
+            position: 'relative',
+            zIndex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 12,
+          }}
+        >
+          {messages.length === 0 && (
+            <div
+              style={{
+                flex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 10,
+                color: 'var(--text-muted)',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 12,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 40,
+                  fontWeight: 700,
+                  background: 'var(--grad-accent)',
+                  backgroundClip: 'text',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                }}
+                className="grad-animated"
+              >
+                {emptyGlyph}
+              </div>
+              <div>{emptyHint}</div>
+            </div>
+          )}
+          {messages.map((m, i) => (
+            <Bubble
+              key={m.id}
+              m={{ ...m, feedback: fb[m.id] }}
+              userText={precedingUserText(i)}
+              sessionId={hello?.session_id || null}
+              onRegenerate={
+                m.role === 'assistant' && !busy ? () => send(precedingUserText(i)) : null
+              }
+              onFeedback={(rating) => setFb((p) => ({ ...p, [m.id]: rating }))}
+              playing={playingId === m.id}
+              paused={playingId === m.id && paused}
+              onReplay={replay}
+              onTogglePause={togglePause}
+            />
+          ))}
+
+          {/* The ask block, and the ONLY place an ask renders inline. It arrives
             on this conversation's own channel, so it is this conversation's by
             construction — an ask raised anywhere else reaches the user through
             the Inbox and the overlay instead, never through someone's open
             chat. Same card as those surfaces, so the option set (including the
             approve/session/project consent scopes) is identical everywhere. */}
-        {/* Every pending question, oldest first.
+          {/* Every pending question, oldest first.
             The wrapper is load-bearing: AskCard sets `overflow: hidden`, which
             per CSS flexbox makes its automatic minimum size 0, so in a long
             thread flexbox took all the negative free space out of the card and
@@ -411,195 +540,294 @@ export default function ChatPanel({
             overflow and refuse to shrink, so the card was the only victim.
             overflow: visible + flexShrink: 0 is exactly what ProposalsPanel
             does, which is why the same card behaves there. */}
-        {/* jump back to live, when the user has scrolled away */}
-        {!atBottom && (
-          <button
-            onClick={() => {
-              const el = scrollRef.current
-              if (el) el.scrollTop = el.scrollHeight
-              setAtBottom(true)
-            }}
-            style={{
-              position: 'sticky', bottom: 4, alignSelf: 'center', zIndex: 3,
-              padding: '3px 12px', borderRadius: 12, cursor: 'pointer',
-              fontFamily: 'var(--font-mono)', fontSize: 10,
-              background: 'var(--bg-elevated)',
-              border: '1px solid var(--border-subtle)',
-              color: 'var(--text-secondary)',
-            }}
-          >↓ latest</button>
-        )}
-
-        {pendingAsks.map((ask) => (
-          <div
-            key={ask.ask_id || 'ask'}
-            style={{ display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0 }}
-          >
-            <AskCard
-              ask={ask}
-              onAnswer={(_ask, response) => answerAsk(response, ask.ask_id)}
-            />
-          </div>
-        ))}
-      </div>
-
-      {/* selection-context chips — what the next message will be scoped to */}
-      {contextChips && contextChips.length > 0 && (
-        <div style={{
-          display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6,
-          padding: '8px 24px 0', position: 'relative', zIndex: 1,
-        }}>
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-            context
-          </span>
-          {contextChips.map((chip) => (
-            <span
-              key={chip.key}
-              title={chip.title || chip.label}
+          {/* jump back to live, when the user has scrolled away */}
+          {!atBottom && (
+            <button
+              onClick={() => {
+                const el = scrollRef.current
+                if (el) el.scrollTop = el.scrollHeight
+                setAtBottom(true)
+              }}
               style={{
-                display: 'inline-flex', alignItems: 'center', gap: 5,
-                fontFamily: 'var(--font-mono)', fontSize: 10,
-                padding: '2px 8px', borderRadius: 10,
-                background: chip.accent?.glow || 'rgba(120,160,255,0.10)',
-                color: chip.accent?.bar || 'var(--text-info)',
-                border: `1px solid ${chip.accent?.border || 'rgba(120,160,255,0.3)'}`,
-                maxWidth: 220,
+                position: 'sticky',
+                bottom: 4,
+                alignSelf: 'center',
+                zIndex: 3,
+                padding: '3px 12px',
+                borderRadius: 12,
+                cursor: 'pointer',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 10,
+                background: 'var(--bg-elevated)',
+                border: '1px solid var(--border-subtle)',
+                color: 'var(--text-secondary)',
               }}
             >
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {chip.label}
-              </span>
-              <button
-                onClick={() => onRemoveChip?.(chip.key)}
-                title="remove from context"
+              ↓ latest
+            </button>
+          )}
+
+          {pendingAsks.map((ask) => (
+            <div
+              key={ask.ask_id || 'ask'}
+              style={{ display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0 }}
+            >
+              <AskCard ask={ask} onAnswer={(_ask, response) => answerAsk(response, ask.ask_id)} />
+            </div>
+          ))}
+        </div>
+
+        {/* selection-context chips — what the next message will be scoped to */}
+        {contextChips && contextChips.length > 0 && (
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              gap: 6,
+              padding: '8px 24px 0',
+              position: 'relative',
+              zIndex: 1,
+            }}
+          >
+            <span
+              style={{
+                fontFamily: 'var(--font-mono)',
+                fontSize: 9,
+                color: 'var(--text-dim)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.08em',
+              }}
+            >
+              context
+            </span>
+            {contextChips.map((chip) => (
+              <span
+                key={chip.key}
+                title={chip.title || chip.label}
                 style={{
-                  background: 'none', border: 'none', color: 'inherit',
-                  cursor: 'pointer', padding: 0, fontSize: 10, lineHeight: 1,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 10,
+                  padding: '2px 8px',
+                  borderRadius: 10,
+                  background: chip.accent?.glow || 'rgba(120,160,255,0.10)',
+                  color: chip.accent?.bar || 'var(--text-info)',
+                  border: `1px solid ${chip.accent?.border || 'rgba(120,160,255,0.3)'}`,
+                  maxWidth: 220,
                 }}
               >
-                ✕
+                <span
+                  style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                >
+                  {chip.label}
+                </span>
+                <button
+                  onClick={() => onRemoveChip?.(chip.key)}
+                  title="remove from context"
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'inherit',
+                    cursor: 'pointer',
+                    padding: 0,
+                    fontSize: 10,
+                    lineHeight: 1,
+                  }}
+                >
+                  ✕
+                </button>
+              </span>
+            ))}
+            {contextChips.length > 1 && (
+              <button
+                onClick={() => onClearChips?.()}
+                style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 9,
+                  padding: '2px 8px',
+                  background: 'transparent',
+                  color: 'var(--text-muted)',
+                  border: '1px solid var(--border-card)',
+                  borderRadius: 10,
+                  cursor: 'pointer',
+                }}
+              >
+                clear all
               </button>
-            </span>
-          ))}
-          {contextChips.length > 1 && (
-            <button
-              onClick={() => onClearChips?.()}
+            )}
+          </div>
+        )}
+
+        {/* A message typed mid-turn is held, not dropped and not allowed to kill
+          the running tool call. Both choices are offered explicitly, because
+          silently doing either is what made the agent look broken. */}
+        {queued && (
+          <div
+            style={{
+              margin: '0 24px 8px',
+              padding: '8px 12px',
+              position: 'relative',
+              zIndex: 1,
+              borderRadius: 'var(--radius-card)',
+              flexShrink: 0,
+              border: '1px solid var(--border-amber)',
+              background: 'rgba(255,255,255,0.03)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              fontSize: 12,
+            }}
+          >
+            <span style={{ color: 'var(--neon-amber)', fontFamily: 'var(--font-mono)' }}>⏸</span>
+            <span
               style={{
-                fontFamily: 'var(--font-mono)', fontSize: 9, padding: '2px 8px',
-                background: 'transparent', color: 'var(--text-muted)',
-                border: '1px solid var(--border-card)', borderRadius: 10, cursor: 'pointer',
+                flex: 1,
+                color: 'var(--text-secondary)',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
               }}
             >
-              clear all
+              queued — sends when this turn ends: “{queued.text}”
+            </span>
+            <button
+              onClick={() => sendNow()}
+              title="Interrupt the turn and send now"
+              style={{
+                padding: '3px 10px',
+                borderRadius: 'var(--radius-btn)',
+                cursor: 'pointer',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 10,
+                background: 'rgba(var(--accent-rgb), 0.12)',
+                border: '1px solid rgba(var(--accent-rgb), 0.3)',
+                color: 'var(--neon-green)',
+              }}
+            >
+              send now
+            </button>
+            <button
+              onClick={discardQueued}
+              title="Discard the queued message"
+              style={{
+                padding: '3px 8px',
+                borderRadius: 'var(--radius-btn)',
+                cursor: 'pointer',
+                background: 'transparent',
+                border: '1px solid var(--border-subtle)',
+                color: 'var(--text-muted)',
+                fontSize: 11,
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
+        {/* composer */}
+        <div
+          style={{
+            display: 'flex',
+            gap: 8,
+            padding: '12px 24px 18px',
+            position: 'relative',
+            zIndex: 1,
+            borderTop: '1px solid var(--border-subtle)',
+          }}
+        >
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={onKeyDown}
+            rows={1}
+            placeholder={busy ? 'agent is working — your message will be queued' : placeholder}
+            style={{
+              flex: 1,
+              resize: 'none',
+              background: 'var(--glass-bg)',
+              color: 'var(--text-primary)',
+              border: '1px solid var(--glass-border)',
+              borderRadius: 22,
+              padding: '11px 16px',
+              fontSize: 13,
+              fontFamily: 'var(--font-ui)',
+              maxHeight: 120,
+              backdropFilter: 'blur(var(--glass-blur))',
+              outline: 'none',
+            }}
+          />
+          {showVoice && (
+            <button
+              onClick={() => (listening ? stopVoice() : startVoice())}
+              title={listening ? 'stop microphone' : 'talk to the agent'}
+              className="tap-pop"
+              style={micBtnStyle(listening)}
+            >
+              {listening ? '● mic' : '🎙 mic'}
+            </button>
+          )}
+          {busy ? (
+            <button onClick={interrupt} className="tap-pop" style={btnStyle(false)}>
+              stop
+            </button>
+          ) : (
+            <button
+              onClick={onSubmit}
+              disabled={!draft.trim()}
+              className="grad-animated tap-pop"
+              style={sendStyle(!!draft.trim())}
+            >
+              send
             </button>
           )}
         </div>
-      )}
-
-      {/* A message typed mid-turn is held, not dropped and not allowed to kill
-          the running tool call. Both choices are offered explicitly, because
-          silently doing either is what made the agent look broken. */}
-      {queued && (
-        <div style={{
-          margin: '0 24px 8px', padding: '8px 12px', position: 'relative', zIndex: 1,
-          borderRadius: 'var(--radius-card)', flexShrink: 0,
-          border: '1px solid var(--border-amber)',
-          background: 'rgba(255,255,255,0.03)',
-          display: 'flex', alignItems: 'center', gap: 10, fontSize: 12,
-        }}>
-          <span style={{ color: 'var(--neon-amber)', fontFamily: 'var(--font-mono)' }}>⏸</span>
-          <span style={{
-            flex: 1, color: 'var(--text-secondary)', overflow: 'hidden',
-            textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          }}>
-            queued — sends when this turn ends: “{queued.text}”
-          </span>
-          <button
-            onClick={() => sendNow()}
-            title="Interrupt the turn and send now"
+        {(listening || speaking) && (
+          <div
             style={{
-              padding: '3px 10px', borderRadius: 'var(--radius-btn)', cursor: 'pointer',
-              fontFamily: 'var(--font-mono)', fontSize: 10,
-              background: 'rgba(var(--accent-rgb), 0.12)',
-              border: '1px solid rgba(var(--accent-rgb), 0.3)',
-              color: 'var(--neon-green)',
+              padding: '0 24px 10px',
+              fontFamily: 'var(--font-mono)',
+              fontSize: 10,
+              position: 'relative',
+              zIndex: 1,
+              color: speaking ? 'var(--neon-green)' : 'var(--neon-amber)',
             }}
-          >send now</button>
-          <button
-            onClick={discardQueued}
-            title="Discard the queued message"
-            style={{
-              padding: '3px 8px', borderRadius: 'var(--radius-btn)', cursor: 'pointer',
-              background: 'transparent', border: '1px solid var(--border-subtle)',
-              color: 'var(--text-muted)', fontSize: 11,
-            }}
-          >✕</button>
-        </div>
-      )}
-
-      {/* composer */}
-      <div style={{
-        display: 'flex', gap: 8, padding: '12px 24px 18px', position: 'relative', zIndex: 1,
-        borderTop: '1px solid var(--border-subtle)',
-      }}>
-        <textarea
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={onKeyDown}
-          rows={1}
-          placeholder={busy ? 'agent is working — your message will be queued' : placeholder}
-          style={{
-            flex: 1, resize: 'none', background: 'var(--glass-bg)', color: 'var(--text-primary)',
-            border: '1px solid var(--glass-border)', borderRadius: 22, padding: '11px 16px',
-            fontSize: 13, fontFamily: 'var(--font-ui)', maxHeight: 120,
-            backdropFilter: 'blur(var(--glass-blur))', outline: 'none',
-          }}
-        />
-        {showVoice && (
-          <button
-            onClick={() => (listening ? stopVoice() : startVoice())}
-            title={listening ? 'stop microphone' : 'talk to the agent'}
-            className="tap-pop"
-            style={micBtnStyle(listening)}
           >
-            {listening ? '● mic' : '🎙 mic'}
-          </button>
-        )}
-        {busy ? (
-          <button onClick={interrupt} className="tap-pop" style={btnStyle(false)}>stop</button>
-        ) : (
-          <button onClick={onSubmit} disabled={!draft.trim()} className="grad-animated tap-pop" style={sendStyle(!!draft.trim())}>send</button>
+            {speaking ? '▸ agent speaking…' : '● listening — speak, then pause (or stop the mic)'}
+          </div>
         )}
       </div>
-      {(listening || speaking) && (
-        <div style={{
-          padding: '0 24px 10px', fontFamily: 'var(--font-mono)', fontSize: 10, position: 'relative', zIndex: 1,
-          color: speaking ? 'var(--neon-green)' : 'var(--neon-amber)',
-        }}>
-          {speaking ? '▸ agent speaking…' : '● listening — speak, then pause (or stop the mic)'}
-        </div>
+      {showContext && ctxOpen && (
+        <>
+          <ResizeHandle onMouseDown={startCtxDrag} side="right" />
+          <div
+            style={{
+              width: ctxW,
+              minWidth: CTX_MIN_W,
+              maxWidth: CTX_MAX_W,
+              flexShrink: 0,
+              borderLeft: '1px solid var(--border-subtle)',
+              overflow: 'hidden',
+              transition: ctxDragging ? 'none' : 'width 0.15s ease',
+            }}
+          >
+            <ContextAside usage={usage} />
+          </div>
+        </>
       )}
-    </div>
-    {showContext && ctxOpen && (
-      <>
-        <ResizeHandle onMouseDown={startCtxDrag} side="right" />
-        <div style={{
-          width: ctxW, minWidth: CTX_MIN_W, maxWidth: CTX_MAX_W, flexShrink: 0,
-          borderLeft: '1px solid var(--border-subtle)', overflow: 'hidden',
-          transition: ctxDragging ? 'none' : 'width 0.15s ease',
-        }}>
-          <ContextAside usage={usage} />
-        </div>
-      </>
-    )}
     </div>
   )
 }
 
 function btnStyle(primary) {
   return {
-    fontFamily: 'var(--font-mono)', fontSize: 12, cursor: 'pointer',
-    padding: '8px 14px', borderRadius: 10,
+    fontFamily: 'var(--font-mono)',
+    fontSize: 12,
+    cursor: 'pointer',
+    padding: '8px 14px',
+    borderRadius: 10,
     background: primary ? 'rgba(var(--accent-rgb),0.1)' : 'rgba(255,51,102,0.08)',
     border: `1px solid ${primary ? 'rgba(var(--accent-rgb),0.3)' : 'rgba(255,51,102,0.3)'}`,
     color: primary ? 'var(--neon-green)' : 'var(--neon-red)',
@@ -608,8 +836,13 @@ function btnStyle(primary) {
 
 function sendStyle(enabled) {
   return {
-    fontFamily: 'var(--font-mono)', fontSize: 12, fontWeight: 700, cursor: enabled ? 'pointer' : 'default',
-    padding: '8px 18px', borderRadius: 22, border: 'none',
+    fontFamily: 'var(--font-mono)',
+    fontSize: 12,
+    fontWeight: 700,
+    cursor: enabled ? 'pointer' : 'default',
+    padding: '8px 18px',
+    borderRadius: 22,
+    border: 'none',
     background: enabled ? 'var(--grad-accent)' : 'var(--glass-bg)',
     color: enabled ? '#04120a' : 'var(--text-dim)',
     opacity: enabled ? 1 : 0.6,
@@ -619,8 +852,11 @@ function sendStyle(enabled) {
 
 function micBtnStyle(active) {
   return {
-    fontFamily: 'var(--font-mono)', fontSize: 12, cursor: 'pointer',
-    padding: '8px 12px', borderRadius: 22,
+    fontFamily: 'var(--font-mono)',
+    fontSize: 12,
+    cursor: 'pointer',
+    padding: '8px 12px',
+    borderRadius: 22,
     background: active ? 'rgba(120,160,255,0.18)' : 'rgba(120,160,255,0.06)',
     border: `1px solid rgba(120,160,255,${active ? 0.5 : 0.3})`,
     color: 'var(--text-info)',

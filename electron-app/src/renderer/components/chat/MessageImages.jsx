@@ -26,7 +26,9 @@ export default function MessageImages({ images }) {
             key={img.visual_id}
             className="hover-bulge"
             style={{
-              margin: 0, borderRadius: 12, overflow: 'hidden',
+              margin: 0,
+              borderRadius: 12,
+              overflow: 'hidden',
               border: `1px solid ${accent}44`,
               background: 'var(--bg-deep)',
               boxShadow: `0 2px 14px rgba(0,0,0,0.4), 0 0 18px ${accent}18`,
@@ -36,23 +38,54 @@ export default function MessageImages({ images }) {
             }}
           >
             <img
-              src={visualUrl(img.url)} alt={img.title || img.kind} loading="lazy"
+              src={visualUrl(img.url)}
+              alt={img.title || img.kind}
+              loading="lazy"
               onClick={() => setZoomed(img)}
-              style={{ display: 'block', width: '100%', maxHeight: 260, objectFit: 'contain', background: 'var(--bg-deep)', cursor: 'zoom-in' }}
+              style={{
+                display: 'block',
+                width: '100%',
+                maxHeight: 260,
+                objectFit: 'contain',
+                background: 'var(--bg-deep)',
+                cursor: 'zoom-in',
+              }}
             />
-            <figcaption style={{
-              display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px',
-              borderTop: `1px solid ${accent}22`,
-            }}>
-              <span style={{
-                fontFamily: 'var(--font-mono)', fontSize: 9, textTransform: 'uppercase',
-                letterSpacing: '0.06em', color: accent, border: `1px solid ${accent}55`,
-                borderRadius: 6, padding: '1px 6px',
-              }}>{img.kind}</span>
-              <span style={{
-                fontSize: 11, color: 'var(--text-secondary)', overflow: 'hidden',
-                whiteSpace: 'nowrap', textOverflow: 'ellipsis', flex: 1,
-              }}>{img.title || 'visual'}</span>
+            <figcaption
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '6px 10px',
+                borderTop: `1px solid ${accent}22`,
+              }}
+            >
+              <span
+                style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 9,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.06em',
+                  color: accent,
+                  border: `1px solid ${accent}55`,
+                  borderRadius: 6,
+                  padding: '1px 6px',
+                }}
+              >
+                {img.kind}
+              </span>
+              <span
+                style={{
+                  fontSize: 11,
+                  color: 'var(--text-secondary)',
+                  overflow: 'hidden',
+                  whiteSpace: 'nowrap',
+                  textOverflow: 'ellipsis',
+                  flex: 1,
+                }}
+              >
+                {img.title || 'visual'}
+              </span>
               <VisualActions visual={img} onDeleted={onDeleted} />
             </figcaption>
           </figure>

@@ -68,12 +68,14 @@ function TodoCard({ card, onOpen, onDeleted }) {
             <PinIcon />
           </span>
         )}
-        <span style={{
-          flex: 1,
-          fontWeight: 'var(--fw-semibold)',
-          wordBreak: 'break-word',
-          color: 'var(--text-primary)',
-        }}>
+        <span
+          style={{
+            flex: 1,
+            fontWeight: 'var(--fw-semibold)',
+            wordBreak: 'break-word',
+            color: 'var(--text-primary)',
+          }}
+        >
           {card.title}
         </span>
         <button
@@ -102,16 +104,25 @@ function TodoCard({ card, onOpen, onDeleted }) {
       {/* Think-flow progress: completed / total objectives (summary counts). */}
       {card.objective_count > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div style={{
-            flex: 1, height: 4, borderRadius: 2,
-            background: 'rgba(255,255,255,0.06)', overflow: 'hidden',
-          }}>
-            <div style={{
-              width: `${Math.round((card.objective_done_count / card.objective_count) * 100)}%`,
-              height: '100%', borderRadius: 2,
-              background: PHASE_ACCENT.completed.bar,
-              opacity: 0.8, transition: 'width 0.3s ease',
-            }} />
+          <div
+            style={{
+              flex: 1,
+              height: 4,
+              borderRadius: 2,
+              background: 'rgba(255,255,255,0.06)',
+              overflow: 'hidden',
+            }}
+          >
+            <div
+              style={{
+                width: `${Math.round((card.objective_done_count / card.objective_count) * 100)}%`,
+                height: '100%',
+                borderRadius: 2,
+                background: PHASE_ACCENT.completed.bar,
+                opacity: 0.8,
+                transition: 'width 0.3s ease',
+              }}
+            />
           </div>
           <span style={{ color: 'var(--text-muted)', fontSize: 10, whiteSpace: 'nowrap' }}>
             {card.objective_done_count}/{card.objective_count}
@@ -136,78 +147,99 @@ function BoardColumn({ col, cards, loaded, error, onOpen, onDeleted }) {
   const accent = STATUS_ACCENT[col.key]
   const isEmpty = loaded && cards.length === 0
   return (
-    <div style={{
-      flex: 1,
-      minWidth: 0,
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 12,
-      overflow: 'hidden',
-    }}>
+    <div
+      style={{
+        flex: 1,
+        minWidth: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 12,
+        overflow: 'hidden',
+      }}
+    >
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-        <span style={{ width: 8, height: 8, borderRadius: '50%', background: accent.bar, flexShrink: 0 }} />
-        <h2 style={{
-          fontSize: 13,
-          fontWeight: 'var(--fw-semibold)',
-          fontFamily: 'var(--font-mono)',
-          color: 'var(--text-primary)',
-          textTransform: 'uppercase',
-          letterSpacing: '0.1em',
-          margin: 0,
-        }}>
+        <span
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: '50%',
+            background: accent.bar,
+            flexShrink: 0,
+          }}
+        />
+        <h2
+          style={{
+            fontSize: 13,
+            fontWeight: 'var(--fw-semibold)',
+            fontFamily: 'var(--font-mono)',
+            color: 'var(--text-primary)',
+            textTransform: 'uppercase',
+            letterSpacing: '0.1em',
+            margin: 0,
+          }}
+        >
           {col.title}
         </h2>
         {cards.length > 0 && (
-          <span style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: 10,
-            color: accent.bar,
-            background: accent.glow,
-            border: `1px solid ${accent.border}`,
-            borderRadius: 10,
-            padding: '1px 7px',
-          }}>
+          <span
+            style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 10,
+              color: accent.bar,
+              background: accent.glow,
+              border: `1px solid ${accent.border}`,
+              borderRadius: 10,
+              padding: '1px 7px',
+            }}
+          >
             {cards.length}
           </span>
         )}
       </div>
 
-      <div ref={scrollRef} style={{
-        flex: 1,
-        overflowY: 'auto',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 12,
-        paddingRight: 4,
-        scrollbarWidth: 'thin',
-      }}>
+      <div
+        ref={scrollRef}
+        style={{
+          flex: 1,
+          overflowY: 'auto',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 12,
+          paddingRight: 4,
+          scrollbarWidth: 'thin',
+        }}
+      >
         {error && (
-          <div style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: 11,
-            color: 'var(--neon-red)',
-            padding: '6px 10px',
-            border: '1px solid rgba(255,51,102,0.25)',
-            borderRadius: 6,
-            background: 'rgba(255,51,102,0.05)',
-          }}>
+          <div
+            style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 11,
+              color: 'var(--neon-red)',
+              padding: '6px 10px',
+              border: '1px solid rgba(255,51,102,0.25)',
+              borderRadius: 6,
+              background: 'rgba(255,51,102,0.05)',
+            }}
+          >
             {`> todos endpoint: ${error}`}
           </div>
         )}
 
         {isEmpty && !error && (
-          <div style={{
-            flex: 1,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 12,
-            color: 'var(--text-muted)',
-            fontFamily: 'var(--font-mono)',
-            fontSize: 12,
-            padding: '24px 8px',
-          }}>
+          <div
+            style={{
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 12,
+              color: 'var(--text-muted)',
+              fontFamily: 'var(--font-mono)',
+              fontSize: 12,
+              padding: '24px 8px',
+            }}
+          >
             <div style={{ fontSize: 28, opacity: 0.3 }}>☐</div>
             <div>{'> none'}</div>
             <div style={{ fontSize: 11, color: 'var(--text-dim)', textAlign: 'center' }}>
@@ -284,38 +316,65 @@ export default function TodosPanel() {
   for (const col of COLUMNS) byStatus[col.key] = []
   for (const c of cards) (byStatus[c.status] || byStatus.inbox).push(c)
   for (const key of Object.keys(byStatus)) {
-    byStatus[key].sort((a, b) => (b.pinned - a.pinned) || (b.updated_ts - a.updated_ts))
+    byStatus[key].sort((a, b) => b.pinned - a.pinned || b.updated_ts - a.updated_ts)
   }
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 10,
-        padding: '14px 24px', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-bar)',
-      }}>
-        <span style={{
-          fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.1em',
-          textTransform: 'uppercase', color: 'var(--text-primary)', fontWeight: 'var(--fw-semibold)',
-        }}>Todos — board</span>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          padding: '14px 24px',
+          borderBottom: '1px solid var(--border-subtle)',
+          background: 'var(--bg-bar)',
+        }}
+      >
+        <span
+          style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: 11,
+            letterSpacing: '0.1em',
+            textTransform: 'uppercase',
+            color: 'var(--text-primary)',
+            fontWeight: 'var(--fw-semibold)',
+          }}
+        >
+          Todos — board
+        </span>
         <input
           value={newTitle}
           onChange={(e) => setNewTitle(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') onCreate() }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') onCreate()
+          }}
           placeholder="new TODO title…"
           style={{
-            marginLeft: 'auto', flex: 1, maxWidth: 420,
-            background: 'var(--bg-card)', color: 'var(--text-primary)',
-            border: '1px solid var(--border-card)', borderRadius: 6, padding: '5px 10px',
-            fontFamily: 'var(--font-mono)', fontSize: 12, outline: 'none',
+            marginLeft: 'auto',
+            flex: 1,
+            maxWidth: 420,
+            background: 'var(--bg-card)',
+            color: 'var(--text-primary)',
+            border: '1px solid var(--border-card)',
+            borderRadius: 6,
+            padding: '5px 10px',
+            fontFamily: 'var(--font-mono)',
+            fontSize: 12,
+            outline: 'none',
           }}
         />
         <button
           onClick={onCreate}
           disabled={creating || !newTitle.trim()}
           style={{
-            fontFamily: 'var(--font-mono)', fontSize: 11, padding: '5px 12px',
-            background: 'rgba(var(--accent-rgb),0.08)', color: 'var(--neon-green)',
-            border: '1px solid rgba(var(--accent-rgb),0.25)', borderRadius: 6,
+            fontFamily: 'var(--font-mono)',
+            fontSize: 11,
+            padding: '5px 12px',
+            background: 'rgba(var(--accent-rgb),0.08)',
+            color: 'var(--neon-green)',
+            border: '1px solid rgba(var(--accent-rgb),0.25)',
+            borderRadius: 6,
             cursor: creating || !newTitle.trim() ? 'default' : 'pointer',
             opacity: creating || !newTitle.trim() ? 0.5 : 1,
           }}
@@ -326,20 +385,29 @@ export default function TodosPanel() {
           onClick={refresh}
           title="Refresh"
           style={{
-            fontFamily: 'var(--font-mono)', fontSize: 11, padding: '5px 10px',
-            background: 'rgba(var(--accent-rgb),0.08)', color: 'var(--neon-green)',
-            border: '1px solid rgba(var(--accent-rgb),0.25)', borderRadius: 6, cursor: 'pointer',
+            fontFamily: 'var(--font-mono)',
+            fontSize: 11,
+            padding: '5px 10px',
+            background: 'rgba(var(--accent-rgb),0.08)',
+            color: 'var(--neon-green)',
+            border: '1px solid rgba(var(--accent-rgb),0.25)',
+            borderRadius: 6,
+            cursor: 'pointer',
           }}
-        >↻</button>
+        >
+          ↻
+        </button>
       </div>
 
-      <div style={{
-        flex: 1,
-        overflow: 'hidden',
-        padding: '20px 24px',
-        display: 'flex',
-        gap: 24,
-      }}>
+      <div
+        style={{
+          flex: 1,
+          overflow: 'hidden',
+          padding: '20px 24px',
+          display: 'flex',
+          gap: 24,
+        }}
+      >
         {COLUMNS.map((col) => (
           <BoardColumn
             key={col.key}

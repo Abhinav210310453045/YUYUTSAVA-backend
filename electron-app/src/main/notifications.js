@@ -10,15 +10,21 @@ const { Notification, app } = require('electron')
 const tray = require('./tray')
 
 let _win = null
-let _activeIds = new Set()  // ids the renderer expects clicks for
+let _activeIds = new Set() // ids the renderer expects clicks for
 
-function init(win) { _win = win }
+function init(win) {
+  _win = win
+}
 
 function _platformBounce() {
   if (process.platform === 'darwin') {
-    try { app.dock.bounce('informational') } catch {}
+    try {
+      app.dock.bounce('informational')
+    } catch {}
   } else if (process.platform === 'win32' && _win && !_win.isDestroyed()) {
-    try { _win.flashFrame(true) } catch {}
+    try {
+      _win.flashFrame(true)
+    } catch {}
   }
 }
 
@@ -47,7 +53,9 @@ function show({ title, body, proposalId, urgency }) {
         _win.webContents.send('notify:click', { proposalId })
       }
     })
-    note.on('close', () => { _activeIds.delete(proposalId) })
+    note.on('close', () => {
+      _activeIds.delete(proposalId)
+    })
   }
 
   note.show()
@@ -56,6 +64,8 @@ function show({ title, body, proposalId, urgency }) {
 
 // The dock bounce / taskbar flash on its own — the ask overlay pops without
 // an OS banner (it IS the surface), but still wants to be noticed.
-function bounce() { _platformBounce() }
+function bounce() {
+  _platformBounce()
+}
 
 module.exports = { init, show, bounce }

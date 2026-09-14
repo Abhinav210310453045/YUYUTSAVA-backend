@@ -29,7 +29,10 @@ export function useDictation({ onText, onError } = {}) {
   onErrorRef.current = onError
 
   const teardown = useCallback(() => {
-    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null }
+    if (timerRef.current) {
+      clearTimeout(timerRef.current)
+      timerRef.current = null
+    }
     const mic = micRef.current
     micRef.current = null
     if (mic) mic.stop()
@@ -47,13 +50,18 @@ export function useDictation({ onText, onError } = {}) {
         onMessage: (msg) => {
           if (msg.type === 'transcript' && msg.text) onTextRef.current?.(msg.text)
           else if (msg.type === 'dictate_done') teardown()
-          else if (msg.type === 'error') { onErrorRef.current?.(new Error(msg.message || 'dictation failed')); teardown() }
+          else if (msg.type === 'error') {
+            onErrorRef.current?.(new Error(msg.message || 'dictation failed'))
+            teardown()
+          }
         },
         // A dropped socket can never deliver more transcripts — release the UI.
         // teardown() is idempotent and marks the client stopped, so this also
         // suppresses ConverseClient's auto-reconnect (a reconnect would greet a
         // fresh dictation loop with a dead mic).
-        onDisconnected: () => { if (clientRef.current) teardown() },
+        onDisconnected: () => {
+          if (clientRef.current) teardown()
+        },
       },
       { origin: 'dictate', mode: 'dictate' },
     )
@@ -88,7 +96,12 @@ export function useDictation({ onText, onError } = {}) {
   }, [dictating, finishing, start, stop])
 
   // Never leave a hot mic or a dangling socket behind on unmount.
-  useEffect(() => () => { teardown() }, [teardown])
+  useEffect(
+    () => () => {
+      teardown()
+    },
+    [teardown],
+  )
 
   return { dictating, finishing, start, stop, toggle }
 }

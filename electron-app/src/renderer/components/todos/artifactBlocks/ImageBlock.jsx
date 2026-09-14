@@ -9,8 +9,11 @@ export default function ImageBlock({ attachment, cardId, expanded }) {
       src={blockSrc(attachment, cardId)}
       alt={attachment.title || attachment.kind}
       style={{
-        display: 'block', maxWidth: '100%', maxHeight: expanded ? '82vh' : 260,
-        objectFit: 'contain', borderRadius: 6,
+        display: 'block',
+        maxWidth: '100%',
+        maxHeight: expanded ? '82vh' : 260,
+        objectFit: 'contain',
+        borderRadius: 6,
         background: 'var(--bg-card)',
       }}
     />

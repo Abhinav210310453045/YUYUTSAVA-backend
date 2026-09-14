@@ -17,33 +17,43 @@ import { useNotifications } from '../../hooks/useNotifications.jsx'
 function SectionHeading({ title, count, hint }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
-      <h2 style={{
-        fontSize: 13,
-        fontWeight: 'var(--fw-semibold)',
-        fontFamily: 'var(--font-mono)',
-        color: 'var(--text-primary)',
-        textTransform: 'uppercase',
-        letterSpacing: '0.1em',
-      }}>
+      <h2
+        style={{
+          fontSize: 13,
+          fontWeight: 'var(--fw-semibold)',
+          fontFamily: 'var(--font-mono)',
+          color: 'var(--text-primary)',
+          textTransform: 'uppercase',
+          letterSpacing: '0.1em',
+        }}
+      >
         {title}
       </h2>
       {count > 0 && (
-        <span style={{
-          fontFamily: 'var(--font-mono)',
-          fontSize: 10,
-          color: 'var(--neon-green)',
-          background: 'rgba(var(--accent-rgb),0.08)',
-          border: '1px solid rgba(var(--accent-rgb),0.2)',
-          borderRadius: 10,
-          padding: '1px 7px',
-        }}>
+        <span
+          style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: 10,
+            color: 'var(--neon-green)',
+            background: 'rgba(var(--accent-rgb),0.08)',
+            border: '1px solid rgba(var(--accent-rgb),0.2)',
+            borderRadius: 10,
+            padding: '1px 7px',
+          }}
+        >
           {count}
         </span>
       )}
       {hint && (
-        <span style={{
-          fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-dim)',
-        }}>{hint}</span>
+        <span
+          style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: 10,
+            color: 'var(--text-dim)',
+          }}
+        >
+          {hint}
+        </span>
       )}
     </div>
   )
@@ -74,14 +84,16 @@ export default function ProposalsPanel({ proposals, onRemoveProposal }) {
   }, [highlightId])
 
   return (
-    <div style={{
-      flex: 1,
-      overflowY: 'auto',
-      padding: '20px 24px',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 12,
-    }}>
+    <div
+      style={{
+        flex: 1,
+        overflowY: 'auto',
+        padding: '20px 24px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 12,
+      }}
+    >
       <SectionHeading
         title="Inbox"
         count={asks.length}
@@ -89,17 +101,19 @@ export default function ProposalsPanel({ proposals, onRemoveProposal }) {
       />
 
       {isEmpty && (
-        <div style={{
-          flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 12,
-          color: 'var(--text-muted)',
-          fontFamily: 'var(--font-mono)',
-          fontSize: 12,
-        }}>
+        <div
+          style={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 12,
+            color: 'var(--text-muted)',
+            fontFamily: 'var(--font-mono)',
+            fontSize: 12,
+          }}
+        >
           <div style={{ fontSize: 32, opacity: 0.3 }}>⚡</div>
           <div>{'> nothing waiting on you'}</div>
           <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>
@@ -122,27 +136,32 @@ export default function ProposalsPanel({ proposals, onRemoveProposal }) {
             ask={ask}
             onAnswer={answer}
             answering={answering === ask.ask_id}
-            headerAction={!isOnOwningView(ask) && ask.surface !== 'background' ? (
-              <button
-                onClick={() => goToAsk(ask)}
-                title="Open the conversation this belongs to"
-                style={{
-                  background: 'transparent', border: 'none', cursor: 'pointer',
-                  color: 'var(--text-info)', fontFamily: 'var(--font-mono)',
-                  fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase',
-                  padding: '2px 4px',
-                }}
-              >
-                open ↗
-              </button>
-            ) : null}
+            headerAction={
+              !isOnOwningView(ask) && ask.surface !== 'background' ? (
+                <button
+                  onClick={() => goToAsk(ask)}
+                  title="Open the conversation this belongs to"
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    color: 'var(--text-info)',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 9,
+                    letterSpacing: '0.08em',
+                    textTransform: 'uppercase',
+                    padding: '2px 4px',
+                  }}
+                >
+                  open ↗
+                </button>
+              ) : null
+            }
           />
         </div>
       ))}
 
-      {proposalList.length > 0 && (
-        <SectionHeading title="Proposals" count={proposalList.length} />
-      )}
+      {proposalList.length > 0 && <SectionHeading title="Proposals" count={proposalList.length} />}
       {proposalList.map((p) => (
         <div
           key={p.proposal_id}

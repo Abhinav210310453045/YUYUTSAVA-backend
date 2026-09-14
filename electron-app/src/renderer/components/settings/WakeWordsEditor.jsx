@@ -26,7 +26,9 @@ export default function WakeWordsEditor({ value, threshold, onChange }) {
     onChange?.('WAKE_WORDS', csv)
     // Hot-apply now; best-effort (a stopped daemon just picks it up on next start
     // from the saved .env).
-    enableVoiceSource(next, threshold || null).catch(() => { /* daemon down — fine */ })
+    enableVoiceSource(next, threshold || null).catch(() => {
+      /* daemon down — fine */
+    })
   }
 
   function add(word) {
@@ -60,17 +62,20 @@ export default function WakeWordsEditor({ value, threshold, onChange }) {
       )}
 
       {words.map((w) => (
-        <div key={w} style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          padding: '6px 10px',
-          background: 'var(--bg-elevated)',
-          border: '1px solid var(--border-card)',
-          borderRadius: 'var(--radius-card)',
-          fontFamily: 'var(--font-mono)',
-          fontSize: 11,
-        }}>
+        <div
+          key={w}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '6px 10px',
+            background: 'var(--bg-elevated)',
+            border: '1px solid var(--border-card)',
+            borderRadius: 'var(--radius-card)',
+            fontFamily: 'var(--font-mono)',
+            fontSize: 11,
+          }}
+        >
           <span style={{ flex: 1, color: 'var(--text-primary)' }}>{w}</span>
           <button
             onClick={() => remove(w)}
@@ -91,7 +96,12 @@ export default function WakeWordsEditor({ value, threshold, onChange }) {
         <input
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(draft) } }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              add(draft)
+            }
+          }}
           placeholder="custom wake word"
           style={{
             flex: 1,

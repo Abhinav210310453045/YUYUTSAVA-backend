@@ -29,13 +29,20 @@ export default function TinkerChatHistory({ chats, activeId, onSelect, onRefresh
         onMouseLeave={() => setHover(false)}
         title="Chat history — continue an earlier tinker chat"
         style={{
-          display: 'inline-flex', alignItems: 'center', gap: 5,
-          fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.08em',
-          textTransform: 'uppercase', fontWeight: 'var(--fw-semibold)',
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 5,
+          fontFamily: 'var(--font-mono)',
+          fontSize: 10,
+          letterSpacing: '0.08em',
+          textTransform: 'uppercase',
+          fontWeight: 'var(--fw-semibold)',
           color,
           background: hover || open ? 'rgba(120,160,255,0.14)' : 'transparent',
           border: '1px solid rgba(120,160,255,0.3)',
-          borderRadius: 6, padding: '4px 10px', cursor: 'pointer',
+          borderRadius: 6,
+          padding: '4px 10px',
+          cursor: 'pointer',
           transition: 'background 0.15s ease, transform 0.15s ease',
           transform: hover ? 'translateY(-1px)' : 'none',
         }}
@@ -47,23 +54,35 @@ export default function TinkerChatHistory({ chats, activeId, onSelect, onRefresh
       {open && (
         <>
           {/* click-away backdrop */}
+          <div style={{ position: 'fixed', inset: 0, zIndex: 19 }} onClick={() => setOpen(false)} />
           <div
-            style={{ position: 'fixed', inset: 0, zIndex: 19 }}
-            onClick={() => setOpen(false)}
-          />
-          <div style={{
-            position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 20,
-            width: 280, maxHeight: 320, overflowY: 'auto',
-            background: 'var(--bg-elevated, #1a1a2e)',
-            border: '1px solid var(--border-card)', borderRadius: 8,
-            boxShadow: '0 8px 30px rgba(0,0,0,0.5)',
-            padding: 4, display: 'flex', flexDirection: 'column', gap: 2,
-          }}>
+            style={{
+              position: 'absolute',
+              top: 'calc(100% + 6px)',
+              right: 0,
+              zIndex: 20,
+              width: 280,
+              maxHeight: 320,
+              overflowY: 'auto',
+              background: 'var(--bg-elevated, #1a1a2e)',
+              border: '1px solid var(--border-card)',
+              borderRadius: 8,
+              boxShadow: '0 8px 30px rgba(0,0,0,0.5)',
+              padding: 4,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 2,
+            }}
+          >
             {rows.length === 0 && (
-              <div style={{
-                fontFamily: 'var(--font-mono)', fontSize: 10,
-                color: 'var(--text-dim)', padding: '10px 12px',
-              }}>
+              <div
+                style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 10,
+                  color: 'var(--text-dim)',
+                  padding: '10px 12px',
+                }}
+              >
                 no past chats on this card yet
               </div>
             )}
@@ -73,33 +92,52 @@ export default function TinkerChatHistory({ chats, activeId, onSelect, onRefresh
               return (
                 <button
                   key={s.id}
-                  onClick={() => { setOpen(false); onSelect?.(s) }}
+                  onClick={() => {
+                    setOpen(false)
+                    onSelect?.(s)
+                  }}
                   onMouseEnter={() => setHoverId(s.id)}
                   onMouseLeave={() => setHoverId(null)}
                   style={{
-                    display: 'flex', flexDirection: 'column', gap: 3,
-                    textAlign: 'left', width: '100%', cursor: 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 3,
+                    textAlign: 'left',
+                    width: '100%',
+                    cursor: 'pointer',
                     background: isActive
                       ? 'rgba(var(--accent-rgb),0.10)'
-                      : isHover ? 'var(--bg-hover, rgba(255,255,255,0.04))' : 'transparent',
-                    border: 'none', borderRadius: 6, padding: '7px 10px',
+                      : isHover
+                        ? 'var(--bg-hover, rgba(255,255,255,0.04))'
+                        : 'transparent',
+                    border: 'none',
+                    borderRadius: 6,
+                    padding: '7px 10px',
                     borderLeft: isActive
                       ? '2px solid rgba(var(--accent-rgb),0.8)'
                       : '2px solid transparent',
                   }}
                 >
-                  <span style={{
-                    fontFamily: 'var(--font-mono)', fontSize: 11,
-                    color: 'var(--text-primary)',
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    maxWidth: '100%',
-                  }}>
+                  <span
+                    style={{
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: 11,
+                      color: 'var(--text-primary)',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      maxWidth: '100%',
+                    }}
+                  >
                     {s.title || s.task_preview || s.id.slice(0, 12)}
                   </span>
-                  <span style={{
-                    fontFamily: 'var(--font-mono)', fontSize: 9,
-                    color: 'var(--text-dim)',
-                  }}>
+                  <span
+                    style={{
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: 9,
+                      color: 'var(--text-dim)',
+                    }}
+                  >
                     {humanAge(s.updated_at)} · {s.message_count} msgs{isActive ? ' · current' : ''}
                   </span>
                 </button>

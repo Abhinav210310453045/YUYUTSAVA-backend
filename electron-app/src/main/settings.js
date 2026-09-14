@@ -24,7 +24,10 @@ function readSettings() {
     const eq = trimmed.indexOf('=')
     if (eq === -1) continue
     const key = trimmed.slice(0, eq).trim()
-    const val = trimmed.slice(eq + 1).trim().replace(/^["']|["']$/g, '')
+    const val = trimmed
+      .slice(eq + 1)
+      .trim()
+      .replace(/^["']|["']$/g, '')
     result[key] = val
   }
   return result
@@ -36,7 +39,7 @@ function writeSettings(updates) {
 
   const existing = fs.readFileSync(filePath, 'utf8').split('\n')
   const handled = new Set()
-  const newLines = existing.map(line => {
+  const newLines = existing.map((line) => {
     const trimmed = line.trim()
     if (!trimmed || trimmed.startsWith('#')) return line
     const eq = trimmed.indexOf('=')

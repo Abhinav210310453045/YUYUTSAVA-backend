@@ -58,66 +58,91 @@ export default function AskOverlay() {
   }
 
   return (
-    <div style={{
-      position: 'absolute',
-      inset: 0,
-      display: 'flex',
-      flexDirection: 'column',
-      justifyContent: 'flex-end',
-      padding: 12,
-      gap: 8,
-      boxSizing: 'border-box',
-      // The voice overlay shares this window; only the card itself may take
-      // clicks, so an idle ask can't swallow taps meant for the mic.
-      pointerEvents: 'none',
-    }}>
-      {/* Ambient wash so the card reads as lit rather than pasted on. */}
-      <div aria-hidden style={{
-        position: 'absolute', inset: 0, borderRadius: 22,
-        background: 'radial-gradient(70% 55% at 50% 100%, rgba(251,191,36,0.10), transparent 70%)',
+    <div
+      style={{
+        position: 'absolute',
+        inset: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'flex-end',
+        padding: 12,
+        gap: 8,
+        boxSizing: 'border-box',
+        // The voice overlay shares this window; only the card itself may take
+        // clicks, so an idle ask can't swallow taps meant for the mic.
         pointerEvents: 'none',
-      }} />
+      }}
+    >
+      {/* Ambient wash so the card reads as lit rather than pasted on. */}
+      <div
+        aria-hidden
+        style={{
+          position: 'absolute',
+          inset: 0,
+          borderRadius: 22,
+          background:
+            'radial-gradient(70% 55% at 50% 100%, rgba(251,191,36,0.10), transparent 70%)',
+          pointerEvents: 'none',
+        }}
+      />
 
       {visible.length > 1 && (
-        <div style={{
-          alignSelf: 'flex-start',
-          display: 'inline-flex', alignItems: 'center', gap: 6,
-          fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 'var(--fw-semibold)',
-          letterSpacing: '0.1em', textTransform: 'uppercase',
-          color: 'var(--text-muted)',
-          background: 'rgba(255,255,255,0.05)',
-          border: '1px solid var(--glass-border)',
-          borderRadius: 999, padding: '4px 10px',
-          backdropFilter: 'blur(10px)',
-          position: 'relative',
-        }}>
+        <div
+          style={{
+            alignSelf: 'flex-start',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            fontFamily: 'var(--font-mono)',
+            fontSize: 9,
+            fontWeight: 'var(--fw-semibold)',
+            letterSpacing: '0.1em',
+            textTransform: 'uppercase',
+            color: 'var(--text-muted)',
+            background: 'rgba(255,255,255,0.05)',
+            border: '1px solid var(--glass-border)',
+            borderRadius: 999,
+            padding: '4px 10px',
+            backdropFilter: 'blur(10px)',
+            position: 'relative',
+          }}
+        >
           +{visible.length - 1} more in your inbox
         </div>
       )}
 
-      <div style={{ pointerEvents: 'auto', position: 'relative', animation: 'card-enter 0.24s ease' }}>
+      <div
+        style={{ pointerEvents: 'auto', position: 'relative', animation: 'card-enter 0.24s ease' }}
+      >
         <AskCard
           ask={ask}
           onAnswer={answer}
           answering={answering === ask.ask_id}
           dense
-          headerAction={(
+          headerAction={
             <button
               onClick={onHide}
               title="Close without answering — it stays in your Inbox"
               className="tap-pop"
               style={{
-                width: 22, height: 22, lineHeight: 1, borderRadius: '50%',
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                width: 22,
+                height: 22,
+                lineHeight: 1,
+                borderRadius: '50%',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
                 background: 'rgba(255,255,255,0.05)',
                 border: '1px solid var(--glass-border)',
-                color: 'var(--text-muted)', cursor: 'pointer',
-                fontFamily: 'var(--font-mono)', fontSize: 11,
+                color: 'var(--text-muted)',
+                cursor: 'pointer',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 11,
               }}
             >
               ✕
             </button>
-          )}
+          }
         />
       </div>
     </div>

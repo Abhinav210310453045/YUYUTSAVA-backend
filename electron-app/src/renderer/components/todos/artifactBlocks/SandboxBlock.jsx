@@ -53,7 +53,8 @@ const escScript = (s) => s.replace(/<\/script/gi, '<\\/script')
 // artifact (upload or artifact_create) has a path and takes the bundle route.
 function buildHtmlDoc(src) {
   if (/<head[^>]*>/i.test(src)) return src.replace(/<head[^>]*>/i, (m) => m + CSP_META)
-  if (/<html[^>]*>/i.test(src)) return src.replace(/<html[^>]*>/i, (m) => m + `<head>${CSP_META}</head>`)
+  if (/<html[^>]*>/i.test(src))
+    return src.replace(/<html[^>]*>/i, (m) => m + `<head>${CSP_META}</head>`)
   return `<!doctype html><html><head><meta charset="utf-8">${CSP_META}</head><body>${src}</body></html>`
 }
 
@@ -71,7 +72,10 @@ async function buildJsxDoc(src) {
     filename: 'artifact.jsx',
     // classic runtime: JSX compiles to React.createElement against the
     // inlined UMD globals (automatic would require("react/jsx-runtime")).
-    presets: [['env', { modules: 'commonjs' }], ['react', { runtime: 'classic' }]],
+    presets: [
+      ['env', { modules: 'commonjs' }],
+      ['react', { runtime: 'classic' }],
+    ],
   }).code
 
   return `<!doctype html><html><head><meta charset="utf-8">${CSP_META}
@@ -137,7 +141,7 @@ ${escScript(compiled)}
 }
 
 export default function SandboxBlock({ attachment, cardId, expanded }) {
-  const [doc, setDoc] = useState(null)      // srcDoc — the inlined modes only
+  const [doc, setDoc] = useState(null) // srcDoc — the inlined modes only
   const [source, setSource] = useState(null)
   const [error, setError] = useState(null)
   const [showSource, setShowSource] = useState(false)
@@ -160,14 +164,16 @@ export default function SandboxBlock({ attachment, cardId, expanded }) {
         const text = await res.text()
         if (cancelled) return
         setSource(text)
-        if (frameSrc) return  // the frame loads its own bytes from the bundle
+        if (frameSrc) return // the frame loads its own bytes from the bundle
         const built = isJsx ? await buildJsxDoc(text) : buildHtmlDoc(text)
         if (!cancelled) setDoc(built)
       } catch (e) {
         if (!cancelled) setError(e.message)
       }
     })()
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [cardId, attachment.attachment_id, attachment.mime, frameSrc, isJsx])
 
   if (error) {
@@ -185,9 +191,15 @@ export default function SandboxBlock({ attachment, cardId, expanded }) {
             key={mode}
             onClick={() => setShowSource(mode === 'source')}
             style={{
-              fontSize: 9, padding: '2px 8px', borderRadius: 8, cursor: 'pointer',
-              fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.05em',
-              background: (mode === 'source') === showSource ? 'rgba(120,160,255,0.12)' : 'transparent',
+              fontSize: 9,
+              padding: '2px 8px',
+              borderRadius: 8,
+              cursor: 'pointer',
+              fontFamily: 'var(--font-mono)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              background:
+                (mode === 'source') === showSource ? 'rgba(120,160,255,0.12)' : 'transparent',
               color: (mode === 'source') === showSource ? 'var(--text-info)' : 'var(--text-dim)',
               border: `1px solid ${(mode === 'source') === showSource ? 'rgba(120,160,255,0.25)' : 'var(--border-subtle)'}`,
             }}
@@ -197,12 +209,22 @@ export default function SandboxBlock({ attachment, cardId, expanded }) {
         ))}
       </div>
       {showSource ? (
-        <pre style={{
-          margin: 0, padding: '8px 10px', maxHeight: expanded ? '78vh' : 280, overflow: 'auto',
-          background: 'var(--bg-card)', border: '1px solid var(--border-subtle)',
-          borderRadius: 6, fontFamily: 'var(--font-mono)', fontSize: 11,
-          color: 'var(--text-primary)', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-        }}>
+        <pre
+          style={{
+            margin: 0,
+            padding: '8px 10px',
+            maxHeight: expanded ? '78vh' : 280,
+            overflow: 'auto',
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: 6,
+            fontFamily: 'var(--font-mono)',
+            fontSize: 11,
+            color: 'var(--text-primary)',
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+          }}
+        >
           {source == null ? 'loading…' : source}
         </pre>
       ) : !frameSrc && doc == null ? (
@@ -216,8 +238,11 @@ export default function SandboxBlock({ attachment, cardId, expanded }) {
           {...(frameSrc ? { src: frameSrc } : { srcDoc: doc })}
           title={attachment.title || 'artifact sandbox'}
           style={{
-            width: '100%', height: expanded ? '78vh' : 280, border: '1px solid var(--border-subtle)',
-            borderRadius: 6, background: 'var(--bg-card, #10101c)',
+            width: '100%',
+            height: expanded ? '78vh' : 280,
+            border: '1px solid var(--border-subtle)',
+            borderRadius: 6,
+            background: 'var(--bg-card, #10101c)',
           }}
         />
       )}

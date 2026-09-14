@@ -42,21 +42,46 @@ const FALLBACK_SCHEMA = {
     {
       name: 'LLM Provider',
       vars: [
-        { key: 'LLM_PROVIDER', label: 'Provider', type: 'select', default: 'groq',
-          options: ['groq', 'openrouter', 'anthropic', 'ollama'], reload_class: 'restart_resume' },
-        { key: 'GROQ_API_KEY', label: 'Groq API key', type: 'password', secret: true,
-          placeholder: 'gsk_...', reload_class: 'restart_resume',
-          depends_key: 'LLM_PROVIDER', depends_value: 'groq' },
-        { key: 'GROQ_MODEL', label: 'Groq model', type: 'text',
-          placeholder: 'llama-3.3-70b-versatile', reload_class: 'restart_resume',
-          depends_key: 'LLM_PROVIDER', depends_value: 'groq' },
+        {
+          key: 'LLM_PROVIDER',
+          label: 'Provider',
+          type: 'select',
+          default: 'groq',
+          options: ['groq', 'openrouter', 'anthropic', 'ollama'],
+          reload_class: 'restart_resume',
+        },
+        {
+          key: 'GROQ_API_KEY',
+          label: 'Groq API key',
+          type: 'password',
+          secret: true,
+          placeholder: 'gsk_...',
+          reload_class: 'restart_resume',
+          depends_key: 'LLM_PROVIDER',
+          depends_value: 'groq',
+        },
+        {
+          key: 'GROQ_MODEL',
+          label: 'Groq model',
+          type: 'text',
+          placeholder: 'llama-3.3-70b-versatile',
+          reload_class: 'restart_resume',
+          depends_key: 'LLM_PROVIDER',
+          depends_value: 'groq',
+        },
       ],
     },
     {
       name: 'Daemon',
       vars: [
-        { key: 'YUYUTSAVA_DAEMON_PORT', label: 'Port', type: 'number', default: '7654',
-          placeholder: '7654', reload_class: 'restart_no_resume' },
+        {
+          key: 'YUYUTSAVA_DAEMON_PORT',
+          label: 'Port',
+          type: 'number',
+          default: '7654',
+          placeholder: '7654',
+          reload_class: 'restart_no_resume',
+        },
       ],
     },
   ],
@@ -72,14 +97,16 @@ export default function SettingsPanel() {
   const [saved, setSaved] = useState(false)
   const [daemonStatus, setDaemonStatus] = useState(null)
   const [daemonBusy, setDaemonBusy] = useState(false)
-  const [reloadPrompt, setReloadPrompt] = useState(null)  // { keys: [...], noResume: bool }
+  const [reloadPrompt, setReloadPrompt] = useState(null) // { keys: [...], noResume: bool }
   const scrollRef = useScrollRestore(!loading)
 
   // Any field the user has touched but not saved. Read through a ref by the
   // load effect, which must refresh the baseline without stomping the edits.
   const dirty = useMemo(
-    () => Object.keys({ ...initial, ...settings })
-      .some((k) => (settings[k] ?? '') !== (initial[k] ?? '')),
+    () =>
+      Object.keys({ ...initial, ...settings }).some(
+        (k) => (settings[k] ?? '') !== (initial[k] ?? ''),
+      ),
     [settings, initial],
   )
   const dirtyRef = useRef(dirty)
@@ -128,15 +155,15 @@ export default function SettingsPanel() {
   }
 
   function onChange(key, val) {
-    setSettings(prev => ({ ...prev, [key]: val }))
+    setSettings((prev) => ({ ...prev, [key]: val }))
   }
 
   async function save() {
     await window.electronAPI?.saveSettings(settings)
-    const changed = Object.keys(settings).filter(k => (settings[k] ?? '') !== (initial[k] ?? ''))
-    const restartKeys = changed.filter(k => reloadClassOf(k) !== 'hot')
-    const noResume = restartKeys.some(k => reloadClassOf(k) === 'restart_no_resume')
-    setInitial({ ...settings })  // new baseline
+    const changed = Object.keys(settings).filter((k) => (settings[k] ?? '') !== (initial[k] ?? ''))
+    const restartKeys = changed.filter((k) => reloadClassOf(k) !== 'hot')
+    const noResume = restartKeys.some((k) => reloadClassOf(k) === 'restart_no_resume')
+    setInitial({ ...settings }) // new baseline
     await refreshStatus()
     if (restartKeys.length && daemonStatus?.running) {
       setReloadPrompt({ keys: restartKeys, noResume })
@@ -152,25 +179,37 @@ export default function SettingsPanel() {
     await window.electronAPI?.restartDaemon()
     setSaved(true)
     setTimeout(() => setSaved(false), 4000)
-    setTimeout(async () => { await refreshStatus(); setDaemonBusy(false) }, 2500)
+    setTimeout(async () => {
+      await refreshStatus()
+      setDaemonBusy(false)
+    }, 2500)
   }
 
   async function startDaemon() {
     setDaemonBusy(true)
     await window.electronAPI?.startDaemon()
-    setTimeout(async () => { await refreshStatus(); setDaemonBusy(false) }, 1500)
+    setTimeout(async () => {
+      await refreshStatus()
+      setDaemonBusy(false)
+    }, 1500)
   }
 
   async function stopDaemon() {
     setDaemonBusy(true)
     await window.electronAPI?.stopDaemon()
-    setTimeout(async () => { await refreshStatus(); setDaemonBusy(false) }, 1500)
+    setTimeout(async () => {
+      await refreshStatus()
+      setDaemonBusy(false)
+    }, 1500)
   }
 
   async function restartDaemon() {
     setDaemonBusy(true)
     await window.electronAPI?.restartDaemon()
-    setTimeout(async () => { await refreshStatus(); setDaemonBusy(false) }, 2000)
+    setTimeout(async () => {
+      await refreshStatus()
+      setDaemonBusy(false)
+    }, 2000)
   }
 
   function renderField(v) {
@@ -181,7 +220,14 @@ export default function SettingsPanel() {
     if (v.key === 'WAKE_WORDS') {
       return (
         <div key={v.key} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <label style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', letterSpacing: '0.04em' }}>
+          <label
+            style={{
+              fontSize: 11,
+              color: 'var(--text-secondary)',
+              fontFamily: 'var(--font-mono)',
+              letterSpacing: '0.04em',
+            }}
+          >
             {v.label}
             <span style={{ color: 'var(--text-dim)', marginLeft: 6, fontSize: 10 }}>{v.key}</span>
           </label>
@@ -193,9 +239,10 @@ export default function SettingsPanel() {
         </div>
       )
     }
-    const options = (v.options && v.options.length)
-      ? v.options.map(o => ({ value: o, label: o === '' ? '(default)' : o }))
-      : undefined
+    const options =
+      v.options && v.options.length
+        ? v.options.map((o) => ({ value: o, label: o === '' ? '(default)' : o }))
+        : undefined
     return (
       <SettingsField
         key={v.key}
@@ -212,16 +259,52 @@ export default function SettingsPanel() {
 
   if (loading) {
     return (
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+      <div
+        style={{
+          flex: 1,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: 'var(--text-muted)',
+          fontFamily: 'var(--font-mono)',
+          fontSize: 12,
+        }}
+      >
         loading settings...
       </div>
     )
   }
 
   return (
-    <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-        <h2 style={{ fontSize: 13, fontWeight: 'var(--fw-semibold)', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+    <div
+      ref={scrollRef}
+      style={{
+        flex: 1,
+        overflowY: 'auto',
+        padding: '20px 24px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 16,
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 4,
+        }}
+      >
+        <h2
+          style={{
+            fontSize: 13,
+            fontWeight: 'var(--fw-semibold)',
+            fontFamily: 'var(--font-mono)',
+            color: 'var(--text-secondary)',
+            textTransform: 'uppercase',
+            letterSpacing: '0.1em',
+          }}
+        >
           Settings
         </h2>
         <button
@@ -247,31 +330,37 @@ export default function SettingsPanel() {
       </div>
 
       {saved && (
-        <div style={{
-          background: 'rgba(var(--accent-rgb),0.06)',
-          border: '1px solid rgba(var(--accent-rgb),0.2)',
-          borderRadius: 'var(--radius-card)',
-          padding: '9px 14px',
-          fontSize: 11,
-          color: 'var(--neon-green)',
-          fontFamily: 'var(--font-mono)',
-        }}>
+        <div
+          style={{
+            background: 'rgba(var(--accent-rgb),0.06)',
+            border: '1px solid rgba(var(--accent-rgb),0.2)',
+            borderRadius: 'var(--radius-card)',
+            padding: '9px 14px',
+            fontSize: 11,
+            color: 'var(--neon-green)',
+            fontFamily: 'var(--font-mono)',
+          }}
+        >
           ✓ Settings saved.
         </div>
       )}
 
       {/* Reload prompt: changed vars need a daemon restart to take effect. */}
       {reloadPrompt && (
-        <div style={{
-          background: 'rgba(251,191,36,0.07)',
-          border: '1px solid rgba(251,191,36,0.3)',
-          borderRadius: 'var(--radius-card)',
-          padding: '12px 14px',
-          fontSize: 11,
-          color: 'var(--neon-amber)',
-          fontFamily: 'var(--font-mono)',
-          display: 'flex', flexDirection: 'column', gap: 8,
-        }}>
+        <div
+          style={{
+            background: 'rgba(251,191,36,0.07)',
+            border: '1px solid rgba(251,191,36,0.3)',
+            borderRadius: 'var(--radius-card)',
+            padding: '12px 14px',
+            fontSize: 11,
+            color: 'var(--neon-amber)',
+            fontFamily: 'var(--font-mono)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+          }}
+        >
           <div>
             Restart the daemon to apply changes to{' '}
             <strong>{reloadPrompt.keys.map(labelOf).join(', ')}</strong>.
@@ -303,24 +392,45 @@ export default function SettingsPanel() {
       )}
 
       {/* Daemon status + controls */}
-      <div style={{
-        background: 'var(--bg-elevated)',
-        border: `1px solid ${daemonStatus?.running ? 'rgba(var(--accent-rgb),0.15)' : 'rgba(255,51,102,0.15)'}`,
-        borderRadius: 'var(--radius-card)',
-        padding: '10px 14px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 12,
-      }}>
+      <div
+        style={{
+          background: 'var(--bg-elevated)',
+          border: `1px solid ${daemonStatus?.running ? 'rgba(var(--accent-rgb),0.15)' : 'rgba(255,51,102,0.15)'}`,
+          borderRadius: 'var(--radius-card)',
+          padding: '10px 14px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+        }}
+      >
         {/* Status indicator */}
-        <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'var(--font-mono)', fontSize: 11, flex: 1 }}>
-          <span style={{
-            width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
-            background: daemonStatus?.running ? 'var(--neon-green)' : 'var(--neon-red)',
-            boxShadow: daemonStatus?.running ? 'var(--glow-green)' : 'var(--glow-red)',
-            animation: daemonStatus?.running ? 'neon-pulse 2s ease-in-out infinite' : 'none',
-          }} />
-          <span style={{ color: daemonStatus?.running ? 'var(--neon-green)' : 'var(--neon-red)', fontWeight: 'var(--fw-semibold)' }}>
+        <span
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            fontFamily: 'var(--font-mono)',
+            fontSize: 11,
+            flex: 1,
+          }}
+        >
+          <span
+            style={{
+              width: 7,
+              height: 7,
+              borderRadius: '50%',
+              flexShrink: 0,
+              background: daemonStatus?.running ? 'var(--neon-green)' : 'var(--neon-red)',
+              boxShadow: daemonStatus?.running ? 'var(--glow-green)' : 'var(--glow-red)',
+              animation: daemonStatus?.running ? 'neon-pulse 2s ease-in-out infinite' : 'none',
+            }}
+          />
+          <span
+            style={{
+              color: daemonStatus?.running ? 'var(--neon-green)' : 'var(--neon-red)',
+              fontWeight: 'var(--fw-semibold)',
+            }}
+          >
             {daemonStatus?.running ? 'Running' : 'Stopped'}
           </span>
           <span style={{ color: 'var(--text-dim)' }}>·</span>

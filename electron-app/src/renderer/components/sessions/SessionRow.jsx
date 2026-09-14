@@ -36,9 +36,24 @@ const CHAT_PREVIEW_MARKER = '(interactive chat)'
 // Per-origin accent used for the card's left bar, border tint, and glow so the
 // three columns are distinguishable at a glance. Keyed by session.origin.
 const ORIGIN_ACCENT = {
-  ui:    { bar: 'var(--neon-green)', border: 'rgba(var(--accent-rgb), 0.30)', glow: 'rgba(var(--accent-rgb), 0.10)', hover: 'rgba(var(--accent-rgb), 0.28)' },
-  voice: { bar: '#7aa2ff', border: 'rgba(120, 160, 255, 0.34)', glow: 'rgba(120, 160, 255, 0.12)', hover: 'rgba(120, 160, 255, 0.32)' },
-  cli:   { bar: 'var(--neon-amber)', border: 'rgba(251, 191, 36, 0.30)', glow: 'rgba(251, 191, 36, 0.10)', hover: 'rgba(251, 191, 36, 0.28)' },
+  ui: {
+    bar: 'var(--neon-green)',
+    border: 'rgba(var(--accent-rgb), 0.30)',
+    glow: 'rgba(var(--accent-rgb), 0.10)',
+    hover: 'rgba(var(--accent-rgb), 0.28)',
+  },
+  voice: {
+    bar: '#7aa2ff',
+    border: 'rgba(120, 160, 255, 0.34)',
+    glow: 'rgba(120, 160, 255, 0.12)',
+    hover: 'rgba(120, 160, 255, 0.32)',
+  },
+  cli: {
+    bar: 'var(--neon-amber)',
+    border: 'rgba(251, 191, 36, 0.30)',
+    glow: 'rgba(251, 191, 36, 0.10)',
+    hover: 'rgba(251, 191, 36, 0.28)',
+  },
 }
 
 function CopyButton({ label, command, accent = 'var(--neon-green)' }) {
@@ -94,8 +109,9 @@ export default function SessionRow({ session, onDeleted, onOpenSession }) {
   const isChat = isResumableInUi || (session.task_preview || '').trim() === CHAT_PREVIEW_MARKER
   // Conversation name, Claude-Code style: the first user message (server-set
   // title), falling back to the latest one (task_preview) for pre-title rows.
-  const chatTitle = session.title
-    || ((session.task_preview || '').trim() === CHAT_PREVIEW_MARKER ? '' : session.task_preview)
+  const chatTitle =
+    session.title ||
+    ((session.task_preview || '').trim() === CHAT_PREVIEW_MARKER ? '' : session.task_preview)
   const accent = ORIGIN_ACCENT[session.origin] || ORIGIN_ACCENT.cli
   // Pass the whole session so the parent can route by origin (voice→Voice panel,
   // ui/chat→Chat panel) instead of always opening chat.
@@ -110,7 +126,8 @@ export default function SessionRow({ session, onDeleted, onOpenSession }) {
 
   const onDelete = async (e) => {
     e.stopPropagation()
-    if (!confirm(`Delete session ${shortId}?\n\nThis also deletes the LangGraph checkpoint rows.`)) return
+    if (!confirm(`Delete session ${shortId}?\n\nThis also deletes the LangGraph checkpoint rows.`))
+      return
     setDeleting(true)
     try {
       await deleteSession(session.id)
@@ -151,14 +168,19 @@ export default function SessionRow({ session, onDeleted, onOpenSession }) {
           aria-label={session.status}
           title={session.status}
           style={{
-            width: 8, height: 8, borderRadius: '50%',
+            width: 8,
+            height: 8,
+            borderRadius: '50%',
             background: dotColor,
             flexShrink: 0,
             boxShadow: session.status === 'running' ? `0 0 6px ${dotColor}` : 'none',
           }}
         />
         <span
-          onClick={(e) => { e.stopPropagation(); setIdExpanded((v) => !v) }}
+          onClick={(e) => {
+            e.stopPropagation()
+            setIdExpanded((v) => !v)
+          }}
           title={idExpanded ? 'click to collapse' : session.id}
           style={{
             color: 'var(--neon-green)',
@@ -176,16 +198,18 @@ export default function SessionRow({ session, onDeleted, onOpenSession }) {
           {idExpanded ? session.id : shortId}
         </span>
         {isChat && (
-          <span style={{
-            fontSize: 9,
-            padding: '1px 6px',
-            borderRadius: 8,
-            background: 'rgba(120, 160, 255, 0.12)',
-            color: 'var(--text-info)',
-            border: '1px solid rgba(120, 160, 255, 0.25)',
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em',
-          }}>
+          <span
+            style={{
+              fontSize: 9,
+              padding: '1px 6px',
+              borderRadius: 8,
+              background: 'rgba(120, 160, 255, 0.12)',
+              color: 'var(--text-info)',
+              border: '1px solid rgba(120, 160, 255, 0.25)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+            }}
+          >
             {isVoice ? 'voice' : 'chat'}
           </span>
         )}
@@ -214,7 +238,15 @@ export default function SessionRow({ session, onDeleted, onOpenSession }) {
       )}
 
       {!isChat && (
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', color: 'var(--text-muted)', fontSize: 11 }}>
+        <div
+          style={{
+            display: 'flex',
+            gap: 10,
+            flexWrap: 'wrap',
+            color: 'var(--text-muted)',
+            fontSize: 11,
+          }}
+        >
           <span>msgs: {session.message_count}</span>
           <span>·</span>
           <span>mem: {session.memory_files_count}</span>
@@ -247,7 +279,10 @@ export default function SessionRow({ session, onDeleted, onOpenSession }) {
         {isResumableInUi ? (
           <>
             <button
-              onClick={(e) => { e.stopPropagation(); onOpenSession?.(session) }}
+              onClick={(e) => {
+                e.stopPropagation()
+                onOpenSession?.(session)
+              }}
               style={{
                 flex: 1,
                 fontFamily: 'var(--font-mono)',
@@ -265,13 +300,21 @@ export default function SessionRow({ session, onDeleted, onOpenSession }) {
             </button>
             {/* Voice convos can also be resumed from the terminal as a chat. */}
             {isVoice && (
-              <CopyButton label="Copy CLI resume" command={chatResumeCmd} accent="rgba(255,200,80,0.95)" />
+              <CopyButton
+                label="Copy CLI resume"
+                command={chatResumeCmd}
+                accent="rgba(255,200,80,0.95)"
+              />
             )}
           </>
         ) : (
           <>
             <CopyButton label="Copy chat resume" command={chatResumeCmd} />
-            <CopyButton label="Copy CLI resume" command={cliResumeCmd} accent="rgba(255,200,80,0.95)" />
+            <CopyButton
+              label="Copy CLI resume"
+              command={cliResumeCmd}
+              accent="rgba(255,200,80,0.95)"
+            />
           </>
         )}
         <button

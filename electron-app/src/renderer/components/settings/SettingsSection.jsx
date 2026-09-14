@@ -7,12 +7,14 @@ export default function SettingsSection({ title, children, defaultOpen = true })
   const [open, setOpen] = useViewState(`section:${title}`, defaultOpen)
 
   return (
-    <div style={{
-      border: '1px solid var(--border-card)',
-      borderRadius: 'var(--radius-card)',
-    }}>
+    <div
+      style={{
+        border: '1px solid var(--border-card)',
+        borderRadius: 'var(--radius-card)',
+      }}
+    >
       <button
-        onClick={() => setOpen(o => !o)}
+        onClick={() => setOpen((o) => !o)}
         style={{
           width: '100%',
           display: 'flex',
@@ -33,18 +35,29 @@ export default function SettingsSection({ title, children, defaultOpen = true })
         }}
       >
         {title}
-        <span style={{ fontSize: 10, color: 'var(--text-muted)', transform: open ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>›</span>
+        <span
+          style={{
+            fontSize: 10,
+            color: 'var(--text-muted)',
+            transform: open ? 'rotate(90deg)' : 'rotate(0deg)',
+            transition: 'transform 0.2s',
+          }}
+        >
+          ›
+        </span>
       </button>
 
       {open && (
-        <div style={{
-          background: 'var(--bg-card)',
-          padding: '16px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 14,
-          borderRadius: '0 0 var(--radius-card) var(--radius-card)',
-        }}>
+        <div
+          style={{
+            background: 'var(--bg-card)',
+            padding: '16px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 14,
+            borderRadius: '0 0 var(--radius-card) var(--radius-card)',
+          }}
+        >
           {children}
         </div>
       )}

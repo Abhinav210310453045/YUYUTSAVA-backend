@@ -12,7 +12,13 @@ export function setAskShowing(next) {
   const v = !!next
   if (v === askShowing) return
   askShowing = v
-  for (const fn of listeners) { try { fn(v) } catch { /* ignore */ } }
+  for (const fn of listeners) {
+    try {
+      fn(v)
+    } catch {
+      /* ignore */
+    }
+  }
 }
 
 export function subscribeAskShowing(fn) {
@@ -20,4 +26,6 @@ export function subscribeAskShowing(fn) {
   return () => listeners.delete(fn)
 }
 
-export function isAskShowing() { return askShowing }
+export function isAskShowing() {
+  return askShowing
+}

@@ -12,14 +12,22 @@ export default function NewSessionButton({ onClick, label = 'New', color = 'var(
       title="Start a new conversation"
       style={{
         marginLeft: 'auto',
-        display: 'inline-flex', alignItems: 'center', gap: 5,
-        fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.08em',
-        textTransform: 'uppercase', fontWeight: 'var(--fw-semibold)',
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 5,
+        fontFamily: 'var(--font-mono)',
+        fontSize: 10,
+        letterSpacing: '0.08em',
+        textTransform: 'uppercase',
+        fontWeight: 'var(--fw-semibold)',
         color: hover ? '#04120b' : color,
         background: hover ? color : 'transparent',
         border: `1px solid ${color}`,
-        borderRadius: 6, padding: '4px 10px', cursor: 'pointer',
-        transition: 'transform 0.15s ease, background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease',
+        borderRadius: 6,
+        padding: '4px 10px',
+        cursor: 'pointer',
+        transition:
+          'transform 0.15s ease, background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease',
         transform: hover ? 'translateY(-1px)' : 'none',
         boxShadow: hover ? `0 0 12px ${color}66` : 'none',
       }}

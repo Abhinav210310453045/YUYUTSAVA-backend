@@ -98,7 +98,7 @@ export function NotificationsProvider({ children }) {
       if (seenAskIds.current.has(id)) continue
       seenAskIds.current.add(id)
 
-      if (isOnOwningView(ask)) continue   // the inline card is already visible
+      if (isOnOwningView(ask)) continue // the inline card is already visible
 
       const who = ask.agent_label || 'An agent'
       if (!focused) {
@@ -148,9 +148,7 @@ export function NotificationsProvider({ children }) {
   }, [highlightId])
 
   return (
-    <NotificationsContext.Provider
-      value={{ toasts, pushToast, dismissToast, highlightId }}
-    >
+    <NotificationsContext.Provider value={{ toasts, pushToast, dismissToast, highlightId }}>
       {children}
     </NotificationsContext.Provider>
   )

@@ -17,12 +17,18 @@ export default function CountdownBadge({ expiresTs }) {
   const isCrit = secs < 15
 
   return (
-    <span style={{
-      fontFamily: 'var(--font-mono)',
-      fontSize: 11,
-      color: isCrit ? 'var(--neon-red)' : isWarn ? 'var(--neon-amber)' : 'var(--text-muted)',
-      animation: isCrit ? 'countdown-crit 0.5s infinite' : isWarn ? 'countdown-warn 1s infinite' : 'none',
-    }}>
+    <span
+      style={{
+        fontFamily: 'var(--font-mono)',
+        fontSize: 11,
+        color: isCrit ? 'var(--neon-red)' : isWarn ? 'var(--neon-amber)' : 'var(--text-muted)',
+        animation: isCrit
+          ? 'countdown-crit 0.5s infinite'
+          : isWarn
+            ? 'countdown-warn 1s infinite'
+            : 'none',
+      }}
+    >
       {mm}:{ss}
     </span>
   )

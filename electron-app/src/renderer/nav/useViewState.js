@@ -26,7 +26,10 @@ const cache = new Map() // scope -> Map(slot -> value); insertion order = LRU
 
 function touch(scope) {
   const slots = cache.get(scope)
-  if (slots) { cache.delete(scope); cache.set(scope, slots) }
+  if (slots) {
+    cache.delete(scope)
+    cache.set(scope, slots)
+  }
   return slots
 }
 
@@ -67,11 +70,14 @@ export function useViewState(slot, initial, scopeOverride) {
   const scopeRef = useRef(scope)
   scopeRef.current = scope
 
-  const set = useCallback((next) => {
-    const value = typeof next === 'function' ? next(valueRef.current) : next
-    writeViewState(scopeRef.current, slot, value)
-    setEntry({ scope: scopeRef.current, value })
-  }, [slot])
+  const set = useCallback(
+    (next) => {
+      const value = typeof next === 'function' ? next(valueRef.current) : next
+      writeViewState(scopeRef.current, slot, value)
+      setEntry({ scope: scopeRef.current, value })
+    },
+    [slot],
+  )
 
   return [entry.scope === scope ? entry.value : readViewState(scope, slot, initial), set]
 }
@@ -95,7 +101,10 @@ export function useScrollRestore(ready = true, scopeOverride, slot = 'scrollTop'
     let raf = 0
     const onScroll = () => {
       if (raf) return
-      raf = requestAnimationFrame(() => { raf = 0; writeViewState(scope, slot, el.scrollTop) })
+      raf = requestAnimationFrame(() => {
+        raf = 0
+        writeViewState(scope, slot, el.scrollTop)
+      })
     }
     el.addEventListener('scroll', onScroll, { passive: true })
     return () => {

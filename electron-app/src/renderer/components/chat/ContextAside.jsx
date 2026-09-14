@@ -48,35 +48,52 @@ export function fmtPct(fraction) {
 function Bar({ fraction, height = 4 }) {
   const pct = Math.max(0, Math.min(1, Number(fraction) || 0)) * 100
   return (
-    <div style={{
-      flex: 1, height, borderRadius: height / 2,
-      background: 'rgba(255,255,255,0.06)', overflow: 'hidden',
-    }}>
-      <div style={{
-        // A real 7% must not round to an invisible sliver: the bar exists to
-        // deny "nothing is used".
-        width: `${pct > 0 ? Math.max(2, pct) : 0}%`,
-        height: '100%', borderRadius: height / 2,
-        background: 'var(--neon-green)', opacity: 0.85,
-        transition: 'width 0.3s ease',
-      }} />
+    <div
+      style={{
+        flex: 1,
+        height,
+        borderRadius: height / 2,
+        background: 'rgba(255,255,255,0.06)',
+        overflow: 'hidden',
+      }}
+    >
+      <div
+        style={{
+          // A real 7% must not round to an invisible sliver: the bar exists to
+          // deny "nothing is used".
+          width: `${pct > 0 ? Math.max(2, pct) : 0}%`,
+          height: '100%',
+          borderRadius: height / 2,
+          background: 'var(--neon-green)',
+          opacity: 0.85,
+          transition: 'width 0.3s ease',
+        }}
+      />
     </div>
   )
 }
 
 function Row({ label, value, dim, approx }) {
   return (
-    <div style={{
-      display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
-      gap: 8, fontSize: 11,
-    }}>
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'baseline',
+        justifyContent: 'space-between',
+        gap: 8,
+        fontSize: 11,
+      }}
+    >
       <span style={{ color: 'var(--text-muted)' }}>{label}</span>
-      <span style={{
-        fontFamily: 'var(--font-mono)',
-        color: dim ? 'var(--text-dim)' : 'var(--text-secondary)',
-        whiteSpace: 'nowrap',
-      }}>
-        {approx ? APPROX : ''}{value}
+      <span
+        style={{
+          fontFamily: 'var(--font-mono)',
+          color: dim ? 'var(--text-dim)' : 'var(--text-secondary)',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {approx ? APPROX : ''}
+        {value}
       </span>
     </div>
   )
@@ -84,11 +101,17 @@ function Row({ label, value, dim, approx }) {
 
 function SectionLabel({ children }) {
   return (
-    <div style={{
-      fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.1em',
-      textTransform: 'uppercase', color: 'var(--text-dim)',
-      marginTop: 4, marginBottom: 2,
-    }}>
+    <div
+      style={{
+        fontFamily: 'var(--font-mono)',
+        fontSize: 10,
+        letterSpacing: '0.1em',
+        textTransform: 'uppercase',
+        color: 'var(--text-dim)',
+        marginTop: 4,
+        marginBottom: 2,
+      }}
+    >
       {children}
     </div>
   )
@@ -108,18 +131,26 @@ export function ContextMeter({ usage, onClick, open }) {
       title={open ? 'Hide context panel' : 'Show context panel'}
       className="hover-bulge"
       style={{
-        display: 'flex', alignItems: 'center', gap: 8,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
         background: open ? 'rgba(var(--accent-rgb), 0.12)' : 'transparent',
         border: `1px solid ${open ? 'rgba(var(--accent-rgb), 0.3)' : 'var(--border-subtle)'}`,
-        borderRadius: 'var(--radius-btn)', padding: '3px 8px',
-        cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 10,
+        borderRadius: 'var(--radius-btn)',
+        padding: '3px 8px',
+        cursor: 'pointer',
+        fontFamily: 'var(--font-mono)',
+        fontSize: 10,
         color: 'var(--text-secondary)',
       }}
     >
-      <span style={{ width: 34 }}><Bar fraction={usage.used_fraction} height={3} /></span>
+      <span style={{ width: 34 }}>
+        <Bar fraction={usage.used_fraction} height={3} />
+      </span>
       <span>{fmtPct(usage.used_fraction)}</span>
       <span style={{ color: 'var(--text-dim)' }}>
-        in {fmtTokens(usage.call?.input_tokens)}{cacheShare}
+        in {fmtTokens(usage.call?.input_tokens)}
+        {cacheShare}
       </span>
     </button>
   )
@@ -127,53 +158,76 @@ export function ContextMeter({ usage, onClick, open }) {
 
 export default function ContextAside({ usage }) {
   return (
-    <div style={{
-      display: 'flex', flexDirection: 'column', gap: 6,
-      padding: '14px 14px 20px', overflowY: 'auto', height: '100%',
-      background: 'var(--bg-panel)',
-    }}>
-      <div style={{
-        fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.1em',
-        textTransform: 'uppercase', color: 'var(--neon-green)',
-      }}>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 6,
+        padding: '14px 14px 20px',
+        overflowY: 'auto',
+        height: '100%',
+        background: 'var(--bg-panel)',
+      }}
+    >
+      <div
+        style={{
+          fontFamily: 'var(--font-mono)',
+          fontSize: 10,
+          letterSpacing: '0.1em',
+          textTransform: 'uppercase',
+          color: 'var(--neon-green)',
+        }}
+      >
         context
       </div>
 
       {!usage ? (
         <div style={{ fontSize: 11, color: 'var(--text-dim)', lineHeight: 1.6 }}>
-          No model call yet. The window, the last call and this session&apos;s spend
-          appear here as soon as the agent runs.
+          No model call yet. The window, the last call and this session&apos;s spend appear here as
+          soon as the agent runs.
         </div>
       ) : (
         <>
-          <div style={{
-            fontSize: 11, color: 'var(--text-secondary)',
-            fontFamily: 'var(--font-mono)', wordBreak: 'break-all',
-          }}>
+          <div
+            style={{
+              fontSize: 11,
+              color: 'var(--text-secondary)',
+              fontFamily: 'var(--font-mono)',
+              wordBreak: 'break-all',
+            }}
+          >
             {usage.model || 'model unknown'}
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 }}>
             <Bar fraction={usage.used_fraction} />
-            <span style={{
-              fontFamily: 'var(--font-mono)', fontSize: 11,
-              color: 'var(--text-primary)', whiteSpace: 'nowrap',
-            }}>
+            <span
+              style={{
+                fontFamily: 'var(--font-mono)',
+                fontSize: 11,
+                color: 'var(--text-primary)',
+                whiteSpace: 'nowrap',
+              }}
+            >
               {fmtPct(usage.used_fraction)}
             </span>
           </div>
-          <div style={{
-            fontSize: 10, color: 'var(--text-dim)', fontFamily: 'var(--font-mono)',
-          }}>
+          <div
+            style={{
+              fontSize: 10,
+              color: 'var(--text-dim)',
+              fontFamily: 'var(--font-mono)',
+            }}
+          >
             {usage.window_measured ? '' : APPROX}
             {fmtTokens(usage.used_tokens)} / {fmtTokens(usage.max_input_tokens)}
           </div>
-          {usage.compact_trigger_tokens > 0
-            && usage.used_tokens >= usage.compact_trigger_tokens && (
-            <div style={{ fontSize: 10, color: 'var(--neon-amber)' }}>
-              compaction imminent — older turns will be summarised
-            </div>
-          )}
+          {usage.compact_trigger_tokens > 0 &&
+            usage.used_tokens >= usage.compact_trigger_tokens && (
+              <div style={{ fontSize: 10, color: 'var(--neon-amber)' }}>
+                compaction imminent — older turns will be summarised
+              </div>
+            )}
 
           <SectionLabel>window</SectionLabel>
           {(usage.segments || []).map((s) => (
@@ -219,16 +273,22 @@ export default function ContextAside({ usage }) {
             <Row label="digests in ctx" value={usage.offloaded_digests} dim />
           )}
 
-          <div style={{
-            marginTop: 10, fontSize: 10, color: 'var(--text-dim)', lineHeight: 1.6,
-          }}>
+          <div
+            style={{
+              marginTop: 10,
+              fontSize: 10,
+              color: 'var(--text-dim)',
+              lineHeight: 1.6,
+            }}
+          >
             {usage.anchored
-              ? `${APPROX} rows are estimated and scaled to sum to the total. `
-                + 'The total itself is measured: the provider\'s input tokens '
-                + 'for the last prompt, plus what has been appended since.'
-              : `${APPROX} estimated${usage.calibrated ? '' : ', uncalibrated'}.`
-                + " Last-call figures are the provider's own."}
-            {!usage.call?.priced && ' No price entry for this model, so cost is unknown rather than zero.'}
+              ? `${APPROX} rows are estimated and scaled to sum to the total. ` +
+                "The total itself is measured: the provider's input tokens " +
+                'for the last prompt, plus what has been appended since.'
+              : `${APPROX} estimated${usage.calibrated ? '' : ', uncalibrated'}.` +
+                " Last-call figures are the provider's own."}
+            {!usage.call?.priced &&
+              ' No price entry for this model, so cost is unknown rather than zero.'}
           </div>
         </>
       )}

@@ -5,7 +5,7 @@ export function useSettings() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    ;(window.electronAPI?.getSettings() || Promise.resolve({})).then(s => {
+    ;(window.electronAPI?.getSettings() || Promise.resolve({})).then((s) => {
       setSettings(s || {})
       setLoading(false)
     })
@@ -13,7 +13,7 @@ export function useSettings() {
 
   async function save(updates) {
     await window.electronAPI?.saveSettings(updates)
-    setSettings(prev => ({ ...prev, ...updates }))
+    setSettings((prev) => ({ ...prev, ...updates }))
   }
 
   return { settings, loading, save }

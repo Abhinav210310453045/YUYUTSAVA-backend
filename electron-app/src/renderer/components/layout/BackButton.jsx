@@ -4,8 +4,17 @@ import { useNav } from '../../nav/NavProvider'
 // Chevron in the same envelope as the nav glyphs (navIcons.jsx): 24-box,
 // currentColor stroke, round caps.
 export const BackChevron = ({ size = 16 }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="15 18 9 12 15 6"/>
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <polyline points="15 18 9 12 15 6" />
   </svg>
 )
 

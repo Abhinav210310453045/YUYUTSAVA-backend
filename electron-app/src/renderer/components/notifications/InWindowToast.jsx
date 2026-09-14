@@ -8,20 +8,24 @@ export default function InWindowToast() {
   if (!toasts || toasts.length === 0) return null
 
   return (
-    <div style={{
-      position: 'fixed',
-      right: 16,
-      bottom: 16,
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 8,
-      zIndex: 1000,
-      pointerEvents: 'none',
-    }}>
+    <div
+      style={{
+        position: 'fixed',
+        right: 16,
+        bottom: 16,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
+        zIndex: 1000,
+        pointerEvents: 'none',
+      }}
+    >
       {toasts.map((t) => (
         <div
           key={t.id}
-          onClick={() => { if (!t.action) dismissToast(t.id) }}
+          onClick={() => {
+            if (!t.action) dismissToast(t.id)
+          }}
           style={{
             pointerEvents: 'auto',
             cursor: t.action ? 'default' : 'pointer',
@@ -35,27 +39,31 @@ export default function InWindowToast() {
             boxShadow: '0 6px 24px rgba(0,0,0,0.45)',
           }}
         >
-          <div style={{
-            fontSize: 10,
-            color: t.kind === 'ask' ? 'var(--neon-orange, #ffa040)' : 'var(--neon-green)',
-            textTransform: 'uppercase',
-            letterSpacing: '0.08em',
-            marginBottom: 4,
-          }}>
+          <div
+            style={{
+              fontSize: 10,
+              color: t.kind === 'ask' ? 'var(--neon-orange, #ffa040)' : 'var(--neon-green)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.08em',
+              marginBottom: 4,
+            }}
+          >
             {t.kind}
           </div>
           <div style={{ fontSize: 12, fontWeight: 'var(--fw-semibold)' }}>{t.title}</div>
           {t.body && (
-            <div style={{
-              fontSize: 11,
-              color: 'var(--text-muted)',
-              marginTop: 4,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              display: '-webkit-box',
-              WebkitLineClamp: 2,
-              WebkitBoxOrient: 'vertical',
-            }}>
+            <div
+              style={{
+                fontSize: 11,
+                color: 'var(--text-muted)',
+                marginTop: 4,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical',
+              }}
+            >
               {t.body}
             </div>
           )}
@@ -66,22 +74,38 @@ export default function InWindowToast() {
           {t.action && (
             <div style={{ display: 'flex', gap: 6, marginTop: 8, justifyContent: 'flex-end' }}>
               <button
-                onClick={(e) => { e.stopPropagation(); dismissToast(t.id) }}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  dismissToast(t.id)
+                }}
                 style={{
-                  fontFamily: 'var(--font-mono)', fontSize: 10, cursor: 'pointer',
-                  padding: '4px 10px', borderRadius: 6,
-                  background: 'transparent', color: 'var(--text-muted)',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 10,
+                  cursor: 'pointer',
+                  padding: '4px 10px',
+                  borderRadius: 6,
+                  background: 'transparent',
+                  color: 'var(--text-muted)',
                   border: '1px solid var(--border-subtle)',
                 }}
               >
                 Later
               </button>
               <button
-                onClick={(e) => { e.stopPropagation(); t.action.run?.(); dismissToast(t.id) }}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  t.action.run?.()
+                  dismissToast(t.id)
+                }}
                 style={{
-                  fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 'var(--fw-semibold)',
-                  cursor: 'pointer', padding: '4px 10px', borderRadius: 6,
-                  background: 'rgba(var(--accent-rgb),0.10)', color: 'var(--neon-green)',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 10,
+                  fontWeight: 'var(--fw-semibold)',
+                  cursor: 'pointer',
+                  padding: '4px 10px',
+                  borderRadius: 6,
+                  background: 'rgba(var(--accent-rgb),0.10)',
+                  color: 'var(--neon-green)',
                   border: '1px solid rgba(var(--accent-rgb),0.35)',
                 }}
               >

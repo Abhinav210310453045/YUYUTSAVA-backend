@@ -9,8 +9,16 @@ const LEVELS = ['DEBUG', 'INFO', 'WARNING']
 // Mic glyph, struck through when voice mode is off.
 function MicIcon({ off }) {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-         stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      aria-hidden
+    >
       <rect x="9" y="2" width="6" height="11" rx="3" />
       <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
       {off && <path d="M3 3l18 18" />}
@@ -35,19 +43,21 @@ export default function Titlebar({
 }) {
   const { theme, setTheme, themes } = useTheme()
   return (
-    <div style={{
-      height: 'var(--titlebar-h)',
-      display: 'flex',
-      alignItems: 'center',
-      paddingLeft: 80,
-      paddingRight: 16,
-      WebkitAppRegion: 'drag',
-      borderBottom: '1px solid var(--border-subtle)',
-      background: 'var(--bg-titlebar)',
-      backdropFilter: 'blur(20px)',
-      flexShrink: 0,
-      gap: 12,
-    }}>
+    <div
+      style={{
+        height: 'var(--titlebar-h)',
+        display: 'flex',
+        alignItems: 'center',
+        paddingLeft: 80,
+        paddingRight: 16,
+        WebkitAppRegion: 'drag',
+        borderBottom: '1px solid var(--border-subtle)',
+        background: 'var(--bg-titlebar)',
+        backdropFilter: 'blur(20px)',
+        flexShrink: 0,
+        gap: 12,
+      }}
+    >
       {/* Global back arrow, sat where a macOS back chevron belongs — just
           right of the traffic lights, ahead of everything else. Pops the
           active tab's stack; dimmed at that tab's home view. */}
@@ -55,48 +65,56 @@ export default function Titlebar({
         <BackButton />
       </span>
 
-      <span style={{
-        fontFamily: 'var(--font-mono)',
-        fontSize: 11,
-        fontWeight: 'var(--fw-semibold)',
-        letterSpacing: '0.15em',
-        color: 'var(--neon-green)',
-        textShadow: 'var(--title-glow)',
-        textTransform: 'uppercase',
-      }}>
+      <span
+        style={{
+          fontFamily: 'var(--font-mono)',
+          fontSize: 11,
+          fontWeight: 'var(--fw-semibold)',
+          letterSpacing: '0.15em',
+          color: 'var(--neon-green)',
+          textShadow: 'var(--title-glow)',
+          textTransform: 'uppercase',
+        }}
+      >
         YUYUTSAVA Terminal
       </span>
 
-      <span style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 5,
-        fontSize: 10,
-        color: connected ? 'var(--neon-green)' : 'var(--text-muted)',
-        fontFamily: 'var(--font-mono)',
-        WebkitAppRegion: 'no-drag',
-        transition: 'color 0.3s',
-      }}>
-        <span style={{
-          width: 5,
-          height: 5,
-          borderRadius: '50%',
-          background: connected ? 'var(--neon-green)' : 'var(--text-muted)',
-          boxShadow: connected ? '0 0 6px var(--neon-green)' : 'none',
-          flexShrink: 0,
-          transition: 'all 0.3s',
-        }} />
+      <span
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 5,
+          fontSize: 10,
+          color: connected ? 'var(--neon-green)' : 'var(--text-muted)',
+          fontFamily: 'var(--font-mono)',
+          WebkitAppRegion: 'no-drag',
+          transition: 'color 0.3s',
+        }}
+      >
+        <span
+          style={{
+            width: 5,
+            height: 5,
+            borderRadius: '50%',
+            background: connected ? 'var(--neon-green)' : 'var(--text-muted)',
+            boxShadow: connected ? '0 0 6px var(--neon-green)' : 'none',
+            flexShrink: 0,
+            transition: 'all 0.3s',
+          }}
+        />
         {connected ? 'daemon connected' : 'disconnected'}
       </span>
 
       {/* right-aligned cluster: nav · panel toggle · log level · logs toggle */}
-      <div style={{
-        marginLeft: 'auto',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
-        WebkitAppRegion: 'no-drag',
-      }}>
+      <div
+        style={{
+          marginLeft: 'auto',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          WebkitAppRegion: 'no-drag',
+        }}
+      >
         {/* Nav icons (moved here from the old left rail). */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
           {NAV_ITEMS.map((item) => {
@@ -123,25 +141,27 @@ export default function Titlebar({
               >
                 {navIcons[item.id]}
                 {item.id === 'proposals' && pendingCount > 0 && (
-                  <span style={{
-                    position: 'absolute',
-                    top: 1,
-                    right: 1,
-                    minWidth: 12,
-                    height: 12,
-                    borderRadius: 6,
-                    background: 'var(--neon-red)',
-                    color: '#fff',
-                    fontSize: 8,
-                    fontWeight: 700,
-                    fontFamily: 'var(--font-mono)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: '0 2px',
-                    boxShadow: 'var(--glow-red)',
-                    lineHeight: 1,
-                  }}>
+                  <span
+                    style={{
+                      position: 'absolute',
+                      top: 1,
+                      right: 1,
+                      minWidth: 12,
+                      height: 12,
+                      borderRadius: 6,
+                      background: 'var(--neon-red)',
+                      color: '#fff',
+                      fontSize: 8,
+                      fontWeight: 700,
+                      fontFamily: 'var(--font-mono)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '0 2px',
+                      boxShadow: 'var(--glow-red)',
+                      lineHeight: 1,
+                    }}
+                  >
                     {pendingCount > 99 ? '99+' : pendingCount}
                   </span>
                 )}
@@ -163,9 +183,11 @@ export default function Titlebar({
         <button
           onClick={() => onToggleVoice?.(!voiceOn)}
           disabled={voiceSaving}
-          title={voiceOn
-            ? 'Voice mode is ON — wake word is listening and replies are spoken. Click to turn off.'
-            : 'Voice mode is OFF — nothing is listening for you and replies stay text. The mic button still works.'}
+          title={
+            voiceOn
+              ? 'Voice mode is ON — wake word is listening and replies are spoken. Click to turn off.'
+              : 'Voice mode is OFF — nothing is listening for you and replies stay text. The mic button still works.'
+          }
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -208,7 +230,11 @@ export default function Titlebar({
             letterSpacing: '0.08em',
           }}
         >
-          {themes.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+          {themes.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.label}
+            </option>
+          ))}
         </select>
 
         {/* VS Code-style toggle for the right Activity panel. */}
@@ -249,7 +275,11 @@ export default function Titlebar({
             letterSpacing: '0.08em',
           }}
         >
-          {LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
+          {LEVELS.map((l) => (
+            <option key={l} value={l}>
+              {l}
+            </option>
+          ))}
         </select>
 
         <button

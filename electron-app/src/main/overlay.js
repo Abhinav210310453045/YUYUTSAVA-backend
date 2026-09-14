@@ -153,7 +153,11 @@ function showAsk({ title = '', agent = '', mainFocused = false } = {}) {
   // Bounce the dock / flash the taskbar: quiet, but noticeable when the user is
   // heads-down in another app. Only on the first pop, so a second ask arriving
   // while the window is already up doesn't rattle the dock again.
-  if (!wasVisible) { try { require('./notifications').bounce() } catch {} }
+  if (!wasVisible) {
+    try {
+      require('./notifications').bounce()
+    } catch {}
+  }
   const send = () => w.webContents.send('overlay:ask', { title, agent })
   if (w.webContents.isLoading()) w.webContents.once('did-finish-load', send)
   else send()
@@ -178,7 +182,9 @@ function hide() {
 // on mount, because the window is now shared: it must start the microphone
 // when it was summoned for a voice turn, and stay silent when it was summoned
 // to show a permission request.
-function currentReason() { return shownFor }
+function currentReason() {
+  return shownFor
+}
 
 function isVisible() {
   return !!(overlayWin && !overlayWin.isDestroyed() && overlayWin.isVisible())
@@ -191,4 +197,14 @@ function destroy() {
   overlayWin = null
 }
 
-module.exports = { show, showAsk, hide, hideAsk, isVisible, destroy, create, sendCommand, currentReason }
+module.exports = {
+  show,
+  showAsk,
+  hide,
+  hideAsk,
+  isVisible,
+  destroy,
+  create,
+  sendCommand,
+  currentReason,
+}

@@ -57,14 +57,16 @@ function createWindow() {
   win.webContents.on('render-process-gone', (_e, details) => {
     if (app.quitting || win.isDestroyed()) return
     if (details && details.reason === 'clean-exit') return
-    try { win.reload() } catch {}
+    try {
+      win.reload()
+    } catch {}
   })
 
   ipcHandlers.register(win)
   tray.init(win, daemon)
 
   // Forward daemon logs to renderer
-  daemon.onLog(line => {
+  daemon.onLog((line) => {
     if (win && !win.isDestroyed()) {
       win.webContents.send('daemon:log', line)
     }
@@ -94,7 +96,13 @@ function activateVoice({ reason = 'hotkey', wakeWord = '' } = {}) {
 }
 
 function registerVoiceHotkey() {
-  const cfg = (() => { try { return settings.readSettings() } catch { return {} } })()
+  const cfg = (() => {
+    try {
+      return settings.readSettings()
+    } catch {
+      return {}
+    }
+  })()
   const accel = (cfg.VOICE_HOTKEY || DEFAULT_VOICE_HOTKEY).trim()
   globalShortcut.unregisterAll()
   try {
@@ -187,7 +195,7 @@ async function onReady() {
       // restart is in flight — the daemon is intentionally down for a moment and
       // will be back, so quitting would tear the UI away from its own restart.
       if (lastRunning === true && running === false && !app.quitting && !daemon.isRestarting()) {
-        app.quitting = true  // skip the before-quit daemon dialog; it's already dead
+        app.quitting = true // skip the before-quit daemon dialog; it's already dead
         app.quit()
         return
       }
@@ -212,12 +220,15 @@ app.on('will-quit', () => {
 })
 
 app.on('activate', () => {
-  if (win) { win.show(); win.focus() }
+  if (win) {
+    win.show()
+    win.focus()
+  }
 })
 
 // Intercept Cmd+Q / app.quit() calls — show daemon dialog first if needed
 app.on('before-quit', async (event) => {
-  if (app.quitting) return  // already confirmed, let it proceed
+  if (app.quitting) return // already confirmed, let it proceed
   // Never let a quit slip through while a restart is mid-flight. A restart
   // briefly stops the daemon, and any stray quit (e.g. a racing status poll)
   // would tear the window away from its own restart, leaving the daemon running
@@ -247,7 +258,7 @@ app.on('before-quit', async (event) => {
     defaultId: 0,
     cancelId: 2,
   })
-  if (response === 2) return  // user cancelled — stay open
+  if (response === 2) return // user cancelled — stay open
   app.quitting = true
   if (response === 0) await daemon.stop()
   app.quit()

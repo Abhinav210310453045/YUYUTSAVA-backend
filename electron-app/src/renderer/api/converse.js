@@ -10,7 +10,10 @@ export class ConverseClient {
   // Omitted → the shared master deepagent, exactly as before. `mode='dictate'`
   // selects the transcribe-only server loop (STT dictation — audio frames in,
   // transcript frames out, no agent turns; see useDictation).
-  constructor(handlers, { origin = 'cli', resumeId = null, agent = null, card = null, mode = null } = {}) {
+  constructor(
+    handlers,
+    { origin = 'cli', resumeId = null, agent = null, card = null, mode = null } = {},
+  ) {
     this.handlers = handlers
     this.origin = origin
     this.resumeId = resumeId
@@ -40,7 +43,12 @@ export class ConverseClient {
 
   disconnect() {
     this._stopped = true
-    if (this._ws) { try { this._ws.close() } catch {} this._ws = null }
+    if (this._ws) {
+      try {
+        this._ws.close()
+      } catch {}
+      this._ws = null
+    }
   }
 
   // Pin the live thread so any future reconnect (socket drop, daemon restart)
@@ -85,10 +93,16 @@ export class ConverseClient {
     // before it means the resume was rejected outright, not a mid-turn failure.
     let helloReceived = false
 
-    ws.onopen = () => { this.handlers.onConnected?.() }
+    ws.onopen = () => {
+      this.handlers.onConnected?.()
+    }
     ws.onmessage = (e) => {
       let msg
-      try { msg = JSON.parse(e.data) } catch { return }
+      try {
+        msg = JSON.parse(e.data)
+      } catch {
+        return
+      }
       if (msg.type === 'hello') {
         helloReceived = true
         this._retryDelay = 1000
@@ -111,11 +125,17 @@ export class ConverseClient {
       this.handlers.onDisconnected?.()
       if (!this._stopped) this._scheduleReconnect()
     }
-    ws.onerror = () => { try { ws.close() } catch {} }
+    ws.onerror = () => {
+      try {
+        ws.close()
+      } catch {}
+    }
   }
 
   _scheduleReconnect() {
-    setTimeout(() => { if (!this._stopped) this._open() }, this._retryDelay)
+    setTimeout(() => {
+      if (!this._stopped) this._open()
+    }, this._retryDelay)
     this._retryDelay = Math.min(this._retryDelay * 2, 10000)
   }
 
@@ -137,10 +157,16 @@ export class ConverseClient {
   answerAsk(text, askId = null) {
     return this._send({ type: 'ask_response', text, ...(askId ? { ask_id: askId } : {}) })
   }
-  interrupt() { return this._send({ type: 'interrupt' }) }
+  interrupt() {
+    return this._send({ type: 'interrupt' })
+  }
   // Stream one frame of mic PCM (Int16Array, 16 kHz mono) to the daemon.
-  sendAudio(int16) { return this._send({ type: 'audio', pcm: int16ToBase64(int16) }) }
-  endAudio() { return this._send({ type: 'audio_end' }) }
+  sendAudio(int16) {
+    return this._send({ type: 'audio', pcm: int16ToBase64(int16) })
+  }
+  endAudio() {
+    return this._send({ type: 'audio_end' })
+  }
 }
 
 // Consecutive pre-`hello` resume rejections before giving up on a dead

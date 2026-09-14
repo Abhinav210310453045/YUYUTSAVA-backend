@@ -19,7 +19,9 @@ export default function WatchedDirsEditor() {
     }
   }
 
-  useEffect(() => { refresh() }, [])
+  useEffect(() => {
+    refresh()
+  }, [])
 
   async function addDir() {
     setBusy(true)
@@ -50,21 +52,27 @@ export default function WatchedDirsEditor() {
   }
 
   if (loading) {
-    return <div style={{ color: 'var(--text-muted)', fontSize: 11, fontFamily: 'var(--font-mono)' }}>loading…</div>
+    return (
+      <div style={{ color: 'var(--text-muted)', fontSize: 11, fontFamily: 'var(--font-mono)' }}>
+        loading…
+      </div>
+    )
   }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       {error && (
-        <div style={{
-          background: 'rgba(255,51,102,0.06)',
-          border: '1px solid rgba(255,51,102,0.25)',
-          borderRadius: 'var(--radius-card)',
-          padding: '6px 10px',
-          fontSize: 11,
-          color: 'var(--neon-red)',
-          fontFamily: 'var(--font-mono)',
-        }}>
+        <div
+          style={{
+            background: 'rgba(255,51,102,0.06)',
+            border: '1px solid rgba(255,51,102,0.25)',
+            borderRadius: 'var(--radius-card)',
+            padding: '6px 10px',
+            fontSize: 11,
+            color: 'var(--neon-red)',
+            fontFamily: 'var(--font-mono)',
+          }}
+        >
           {error}
         </div>
       )}
@@ -75,19 +83,30 @@ export default function WatchedDirsEditor() {
         </div>
       )}
 
-      {roots.map(path => (
-        <div key={path} style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          padding: '6px 10px',
-          background: 'var(--bg-elevated)',
-          border: '1px solid var(--border-card)',
-          borderRadius: 'var(--radius-card)',
-          fontFamily: 'var(--font-mono)',
-          fontSize: 11,
-        }}>
-          <span style={{ flex: 1, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      {roots.map((path) => (
+        <div
+          key={path}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '6px 10px',
+            background: 'var(--bg-elevated)',
+            border: '1px solid var(--border-card)',
+            borderRadius: 'var(--radius-card)',
+            fontFamily: 'var(--font-mono)',
+            fontSize: 11,
+          }}
+        >
+          <span
+            style={{
+              flex: 1,
+              color: 'var(--text-primary)',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
             {path}
           </span>
           <button

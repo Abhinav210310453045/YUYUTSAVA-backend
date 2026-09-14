@@ -60,7 +60,7 @@ export default function VoiceOrb({ listening, speaking, getMicAnalyser, size = 2
         let sum = 0
         for (let i = 0; i < n; i++) sum += freq[i]
         bins = n
-        level = n ? Math.min(1, (sum / n) / 140) : 0
+        level = n ? Math.min(1, sum / n / 140) : 0
       }
       if (!active) level = 0.12 + 0.05 * Math.sin(phase * 1.4) // idle breathing
       smoothLevel += (level - smoothLevel) * 0.18
@@ -78,7 +78,9 @@ export default function VoiceOrb({ listening, speaking, getMicAnalyser, size = 2
       glow.addColorStop(0, `rgba(${r},${g},${b},${0.22 + smoothLevel * 0.4})`)
       glow.addColorStop(1, `rgba(${r},${g},${b},0)`)
       ctx.fillStyle = glow
-      ctx.beginPath(); ctx.arc(cx, cy, glowR, 0, Math.PI * 2); ctx.fill()
+      ctx.beginPath()
+      ctx.arc(cx, cy, glowR, 0, Math.PI * 2)
+      ctx.fill()
 
       // Radial waveform ring
       if (analyser && bins) {
@@ -103,7 +105,9 @@ export default function VoiceOrb({ listening, speaking, getMicAnalyser, size = 2
       core.addColorStop(0, `rgba(${r},${g},${b},0.95)`)
       core.addColorStop(1, `rgba(${r},${g},${b},0.35)`)
       ctx.fillStyle = core
-      ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fill()
+      ctx.beginPath()
+      ctx.arc(cx, cy, R, 0, Math.PI * 2)
+      ctx.fill()
 
       raf = requestAnimationFrame(draw)
     }
@@ -112,10 +116,6 @@ export default function VoiceOrb({ listening, speaking, getMicAnalyser, size = 2
   }, [size])
 
   return (
-    <canvas
-      ref={canvasRef}
-      style={{ width: size, height: size, display: 'block' }}
-      aria-hidden
-    />
+    <canvas ref={canvasRef} style={{ width: size, height: size, display: 'block' }} aria-hidden />
   )
 }

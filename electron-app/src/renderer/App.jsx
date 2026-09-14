@@ -40,7 +40,8 @@ function AppShell() {
   // navigating away — e.g. to Settings mid-conversation — and back preserves the
   // live WebSocket, messages, and audio instead of destroying them.
   const [visited, setVisited] = useState(() => ({ chat: true, voice: activePanel === 'voice' }))
-  const { proposals, eventLines, logLines, bgTasks, connected, pendingCount, removeProposal } = useSSE()
+  const { proposals, eventLines, logLines, bgTasks, connected, pendingCount, removeProposal } =
+    useSSE()
 
   // A tab only needs mounting once it's been looked at — including when the
   // nav tree is restored straight onto Voice after a reload.
@@ -53,10 +54,13 @@ function AppShell() {
   // Open a session from a Sessions row, routing by its origin: voice sessions
   // resume in the Voice panel, chat/ui sessions in the Chat panel. Both reuse
   // the session's own thread_id so the backend continues the same conversation.
-  const onOpenSession = useCallback((session) => {
-    const target = session?.origin === 'voice' ? 'voice' : 'chat'
-    switchTab(target, { resumeId: session.id })
-  }, [switchTab])
+  const onOpenSession = useCallback(
+    (session) => {
+      const target = session?.origin === 'voice' ? 'voice' : 'chat'
+      switchTab(target, { resumeId: session.id })
+    },
+    [switchTab],
+  )
 
   // Daemon-owned voice mode. The titlebar button flips it; the state also
   // reaches the overlay and the CLI, since it lives in the daemon.
@@ -69,11 +73,14 @@ function AppShell() {
     window.electronAPI?.setVoiceModeEnabled?.(voiceOn)
   }, [voiceOn])
 
-  const onToggleVoice = useCallback((next) => {
-    // One button, both halves: "voice mode" as the user thinks of it is
-    // "does it listen for me, and does it talk back".
-    setVoice({ wake_enabled: next, tts_enabled: next }).catch(() => {})
-  }, [setVoice])
+  const onToggleVoice = useCallback(
+    (next) => {
+      // One button, both halves: "voice mode" as the user thinks of it is
+      // "does it listen for me, and does it talk back".
+      setVoice({ wake_enabled: next, tts_enabled: next }).catch(() => {})
+    },
+    [setVoice],
+  )
 
   // Hotkey/wake while the window is focused: switch to the Voice panel and bump
   // a nonce so the panel auto-starts the mic (even if it was already mounted).
@@ -90,7 +97,9 @@ function AppShell() {
   const [logLevel, setLogLevelState] = useState('INFO')
 
   useEffect(() => {
-    getLogLevel().then((r) => setLogLevelState(r.level)).catch(() => {})
+    getLogLevel()
+      .then((r) => setLogLevelState(r.level))
+      .catch(() => {})
   }, [])
 
   const onToggleLogs = useCallback((next) => {
@@ -126,38 +135,43 @@ function AppShell() {
   const [activityOpen, setActivityOpen] = useState(false)
   const [dragging, setDragging] = useState(false)
 
-  const startDrag = useCallback((e) => {
-    e.preventDefault()
-    const startX = e.clientX
-    const startActivity = activityW
-    setDragging(true)
+  const startDrag = useCallback(
+    (e) => {
+      e.preventDefault()
+      const startX = e.clientX
+      const startActivity = activityW
+      setDragging(true)
 
-    const onMove = (ev) => {
-      const dx = ev.clientX - startX
-      setActivityW(Math.min(ACTIVITY_MAX, Math.max(ACTIVITY_MIN, startActivity - dx)))
-    }
-    const onUp = () => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-      setDragging(false)
-    }
-    document.body.style.cursor = 'col-resize'
-    document.body.style.userSelect = 'none'
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-  }, [activityW])
+      const onMove = (ev) => {
+        const dx = ev.clientX - startX
+        setActivityW(Math.min(ACTIVITY_MAX, Math.max(ACTIVITY_MIN, startActivity - dx)))
+      }
+      const onUp = () => {
+        window.removeEventListener('mousemove', onMove)
+        window.removeEventListener('mouseup', onUp)
+        document.body.style.cursor = ''
+        document.body.style.userSelect = ''
+        setDragging(false)
+      }
+      document.body.style.cursor = 'col-resize'
+      document.body.style.userSelect = 'none'
+      window.addEventListener('mousemove', onMove)
+      window.addEventListener('mouseup', onUp)
+    },
+    [activityW],
+  )
 
   return (
     <NotificationsProvider>
-      <div style={{
-        height: '100vh',
-        display: 'flex',
-        flexDirection: 'column',
-        background: 'var(--bg-deep)',
-        overflow: 'hidden',
-      }}>
+      <div
+        style={{
+          height: '100vh',
+          display: 'flex',
+          flexDirection: 'column',
+          background: 'var(--bg-deep)',
+          overflow: 'hidden',
+        }}
+      >
         <Titlebar
           connected={connected}
           logsEnabled={logsEnabled}
@@ -180,17 +194,31 @@ function AppShell() {
               from the route and their view state from useViewState. Chat &
               Voice stay mounted once visited and are only hidden, preserving
               their live conversation across navigation. */}
-          <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minWidth: 0, position: 'relative' }}>
-            {(activePanel === 'proposals' || activePanel === 'sessions' || activePanel === 'todos' || activePanel === 'artifacts' || activePanel === 'settings') && (
+          <div
+            style={{
+              flex: 1,
+              display: 'flex',
+              overflow: 'hidden',
+              minWidth: 0,
+              position: 'relative',
+            }}
+          >
+            {(activePanel === 'proposals' ||
+              activePanel === 'sessions' ||
+              activePanel === 'todos' ||
+              activePanel === 'artifacts' ||
+              activePanel === 'settings') && (
               <div
                 key={activePanel}
-                style={{ flex: 1, display: 'flex', overflow: 'hidden', animation: 'fade-in 0.2s ease' }}
+                style={{
+                  flex: 1,
+                  display: 'flex',
+                  overflow: 'hidden',
+                  animation: 'fade-in 0.2s ease',
+                }}
               >
                 {activePanel === 'proposals' && (
-                  <ProposalsPanel
-                    proposals={proposals}
-                    onRemoveProposal={removeProposal}
-                  />
+                  <ProposalsPanel proposals={proposals} onRemoveProposal={removeProposal} />
                 )}
                 {activePanel === 'sessions' && <SessionsPanel onOpenSession={onOpenSession} />}
                 {activePanel === 'todos' && <TodosPanel />}
@@ -199,7 +227,14 @@ function AppShell() {
               </div>
             )}
             {visited.chat && (
-              <div style={{ flex: 1, display: activePanel === 'chat' ? 'flex' : 'none', overflow: 'hidden', minWidth: 0 }}>
+              <div
+                style={{
+                  flex: 1,
+                  display: activePanel === 'chat' ? 'flex' : 'none',
+                  overflow: 'hidden',
+                  minWidth: 0,
+                }}
+              >
                 {/* showContext: the chat screen has the room for the live
                     context column. The card view's tinker chat does not — it
                     is already an aside. */}
@@ -207,23 +242,38 @@ function AppShell() {
               </div>
             )}
             {visited.voice && (
-              <div style={{ flex: 1, display: activePanel === 'voice' ? 'flex' : 'none', overflow: 'hidden', minWidth: 0 }}>
-                <VoicePanel onOpenSettings={() => switchTab('settings')} autoStartSignal={voiceAutoStart} resumeId={voiceResumeId} active={activePanel === 'voice'} voiceSettings={voice} />
+              <div
+                style={{
+                  flex: 1,
+                  display: activePanel === 'voice' ? 'flex' : 'none',
+                  overflow: 'hidden',
+                  minWidth: 0,
+                }}
+              >
+                <VoicePanel
+                  onOpenSettings={() => switchTab('settings')}
+                  autoStartSignal={voiceAutoStart}
+                  resumeId={voiceResumeId}
+                  active={activePanel === 'voice'}
+                  voiceSettings={voice}
+                />
               </div>
             )}
           </div>
 
           {activityOpen && <ResizeHandle onMouseDown={startDrag} side="right" />}
 
-          <div style={{
-            width: activityOpen ? activityW : 0,
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden',
-            borderTop: 'none',
-            flexShrink: 0,
-            transition: dragging ? 'none' : 'width 0.25s ease',
-          }}>
+          <div
+            style={{
+              width: activityOpen ? activityW : 0,
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+              borderTop: 'none',
+              flexShrink: 0,
+              transition: dragging ? 'none' : 'width 0.25s ease',
+            }}
+          >
             <ActivityLog events={eventLines} logs={logLines} bgTasks={bgTasks} width={activityW} />
           </div>
         </div>

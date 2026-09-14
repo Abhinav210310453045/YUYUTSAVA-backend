@@ -31,43 +31,62 @@ export function useRuntimeSettings() {
   useEffect(() => {
     alive.current = true
     getRuntimeSettings()
-      .then((s) => { if (alive.current && s) setSettings(s) })
-      .catch(() => { /* daemon not up yet — defaults stand, SSE will correct us */ })
-      .finally(() => { if (alive.current) setLoaded(true) })
+      .then((s) => {
+        if (alive.current && s) setSettings(s)
+      })
+      .catch(() => {
+        /* daemon not up yet — defaults stand, SSE will correct us */
+      })
+      .finally(() => {
+        if (alive.current) setLoaded(true)
+      })
 
     const client = new SSEClient({
-      onSettings: (msg) => { if (alive.current && msg?.settings) setSettings(msg.settings) },
+      onSettings: (msg) => {
+        if (alive.current && msg?.settings) setSettings(msg.settings)
+      },
       // A reconnect means we may have missed a change while disconnected.
       onConnected: () => {
         getRuntimeSettings()
-          .then((s) => { if (alive.current && s) setSettings(s) })
+          .then((s) => {
+            if (alive.current && s) setSettings(s)
+          })
           .catch(() => {})
       },
     })
     client.connect()
-    return () => { alive.current = false; client.disconnect() }
+    return () => {
+      alive.current = false
+      client.disconnect()
+    }
   }, [])
 
   // Optimistic: apply locally, then let the server's response (and the SSE
   // echo) confirm. On failure we roll back so the button never lies.
-  const patch = useCallback(async (body) => {
-    const previous = settings
-    setSettings((cur) => ({
-      voice: { ...cur.voice, ...(body.voice || {}) },
-      subagents: { ...cur.subagents, ...(body.subagents?.disabled ? { disabled: body.subagents.disabled } : {}) },
-    }))
-    setSaving(true)
-    try {
-      const next = await patchRuntimeSettings(body)
-      if (alive.current && next) setSettings(next)
-      return next
-    } catch (e) {
-      if (alive.current) setSettings(previous)
-      throw e
-    } finally {
-      if (alive.current) setSaving(false)
-    }
-  }, [settings])
+  const patch = useCallback(
+    async (body) => {
+      const previous = settings
+      setSettings((cur) => ({
+        voice: { ...cur.voice, ...(body.voice || {}) },
+        subagents: {
+          ...cur.subagents,
+          ...(body.subagents?.disabled ? { disabled: body.subagents.disabled } : {}),
+        },
+      }))
+      setSaving(true)
+      try {
+        const next = await patchRuntimeSettings(body)
+        if (alive.current && next) setSettings(next)
+        return next
+      } catch (e) {
+        if (alive.current) setSettings(previous)
+        throw e
+      } finally {
+        if (alive.current) setSaving(false)
+      }
+    },
+    [settings],
+  )
 
   const voice = settings.voice || DEFAULTS.voice
   const setVoice = useCallback((v) => patch({ voice: v }), [patch])

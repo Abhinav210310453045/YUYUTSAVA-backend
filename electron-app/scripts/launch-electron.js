@@ -113,7 +113,7 @@ if (process.platform === 'darwin' && fs.existsSync(plistPath)) {
       execFileSync(
         '/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister',
         ['-f', appBundleDir],
-        { stdio: 'ignore' }
+        { stdio: 'ignore' },
       )
     } catch (_) {}
     try {
@@ -136,4 +136,4 @@ const proc = spawn(binaryPath, ['.'], {
   env: childEnv,
 })
 
-proc.on('close', code => process.exit(code ?? 0))
+proc.on('close', (code) => process.exit(code ?? 0))

@@ -20,7 +20,9 @@ function read() {
   try {
     const v = localStorage.getItem(KEY)
     return VALID.has(v) ? v : 'dark'
-  } catch { return 'dark' }
+  } catch {
+    return 'dark'
+  }
 }
 
 function apply(theme) {
@@ -34,11 +36,17 @@ apply(read())
 export function useTheme() {
   const [theme, setThemeState] = useState(read)
 
-  useEffect(() => { apply(theme) }, [theme])
+  useEffect(() => {
+    apply(theme)
+  }, [theme])
 
   const setTheme = useCallback((next) => {
     if (!VALID.has(next)) return
-    try { localStorage.setItem(KEY, next) } catch { /* ignore */ }
+    try {
+      localStorage.setItem(KEY, next)
+    } catch {
+      /* ignore */
+    }
     setThemeState(next)
   }, [])
 

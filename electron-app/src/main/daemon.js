@@ -8,21 +8,27 @@ const { readSettings } = require('./settings')
 
 let _proc = null
 let _logCallback = null
-let _managed = true  // default: app manages the daemon
-let _restarting = false  // true while restart() tears down + brings back up
+let _managed = true // default: app manages the daemon
+let _restarting = false // true while restart() tears down + brings back up
 
 // True during the stop→start window of a restart. The status poll in index.js
 // checks this so the transient "daemon down" state doesn't get mistaken for a
 // crash and quit the whole app.
-function isRestarting() { return _restarting }
+function isRestarting() {
+  return _restarting
+}
 
 function getPort() {
   const s = readSettings()
   return parseInt(s['YUYUTSAVA_DAEMON_PORT'] || '7654', 10)
 }
 
-function isManaged() { return _managed }
-function setManaged(v) { _managed = v }
+function isManaged() {
+  return _managed
+}
+function setManaged(v) {
+  _managed = v
+}
 
 function isRunning() {
   return _proc !== null && _proc.exitCode === null
@@ -41,14 +47,18 @@ function stateDir() {
   return path.join(os.homedir(), '.yuyutsava')
 }
 
-function discoveryPath() { return path.join(stateDir(), 'daemon.json') }
-function lockPath() { return path.join(stateDir(), 'daemon.lock') }
+function discoveryPath() {
+  return path.join(stateDir(), 'daemon.json')
+}
+function lockPath() {
+  return path.join(stateDir(), 'daemon.lock')
+}
 
 function readDiscovery() {
   try {
     return JSON.parse(fs.readFileSync(discoveryPath(), 'utf8'))
   } catch (_) {
-    return null  // missing or malformed
+    return null // missing or malformed
   }
 }
 
@@ -82,11 +92,15 @@ async function isAlive() {
 
 function _unlinkStaleFiles() {
   for (const p of [discoveryPath(), lockPath()]) {
-    try { fs.unlinkSync(p) } catch (_) {}
+    try {
+      fs.unlinkSync(p)
+    } catch (_) {}
   }
 }
 
-function onLog(cb) { _logCallback = cb }
+function onLog(cb) {
+  _logCallback = cb
+}
 
 function _log(line) {
   if (_logCallback) _logCallback(line)
@@ -113,21 +127,29 @@ function backendRoot() {
 // %LOCALAPPDATA%\Programs) install locations.
 function _spawnPath() {
   const home = os.homedir()
-  const extra = process.platform === 'win32'
-    ? [
-        path.join(home, '.local', 'bin'), // uv standalone installer
-        path.join(home, '.cargo', 'bin'),
-        path.join(process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local'),
-                  'Microsoft', 'WinGet', 'Links'),
-        path.join(process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local'),
-                  'Programs', 'uv'),
-      ]
-    : [
-        '/opt/homebrew/bin',
-        '/usr/local/bin',
-        path.join(home, '.local/bin'),
-        path.join(home, '.cargo/bin'),
-      ]
+  const extra =
+    process.platform === 'win32'
+      ? [
+          path.join(home, '.local', 'bin'), // uv standalone installer
+          path.join(home, '.cargo', 'bin'),
+          path.join(
+            process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local'),
+            'Microsoft',
+            'WinGet',
+            'Links',
+          ),
+          path.join(
+            process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local'),
+            'Programs',
+            'uv',
+          ),
+        ]
+      : [
+          '/opt/homebrew/bin',
+          '/usr/local/bin',
+          path.join(home, '.local/bin'),
+          path.join(home, '.cargo/bin'),
+        ]
   return [...extra, process.env.PATH].filter(Boolean).join(path.delimiter)
 }
 
@@ -137,7 +159,7 @@ async function start(workspacePath) {
   // (or a prior session) already holds the singleton lock — a second spawn
   // would just die on it. Detect it via the discovery file / health probe.
   const disco = readDiscovery()
-  if ((disco && pidAlive(disco.pid)) || await ping(getPort())) {
+  if ((disco && pidAlive(disco.pid)) || (await ping(getPort()))) {
     _log('[daemon] already running; not spawning a duplicate\n')
     return
   }
@@ -151,7 +173,7 @@ async function start(workspacePath) {
   // usable workspace — fall back to the backend root there.
   const codeRoot = backendRoot()
   const packaged = !!(app && app.isPackaged)
-  const workspace = (!packaged && workspacePath) ? workspacePath : codeRoot
+  const workspace = !packaged && workspacePath ? workspacePath : codeRoot
   const settings = readSettings()
   const env = { ...process.env, ...Object.fromEntries(Object.entries(settings)) }
   env.PATH = _spawnPath()
@@ -168,8 +190,8 @@ async function start(workspacePath) {
     detached: isPosix,
   })
 
-  _proc.stdout.on('data', d => _log(d.toString()))
-  _proc.stderr.on('data', d => _log(d.toString()))
+  _proc.stdout.on('data', (d) => _log(d.toString()))
+  _proc.stderr.on('data', (d) => _log(d.toString()))
   // Without this handler a failed spawn (e.g. `uv` not on PATH → ENOENT) is
   // swallowed and "Start Daemon" silently does nothing.
   _proc.on('error', (err) => {
@@ -190,11 +212,19 @@ async function start(workspacePath) {
 function _killTree(pid, signal) {
   if (!Number.isInteger(pid) || pid <= 0) return
   if (process.platform === 'win32') {
-    try { spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore' }) } catch (_) {}
+    try {
+      spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore' })
+    } catch (_) {}
     return
   }
-  try { process.kill(-pid, signal) }        // negative pid → process group
-  catch (_) { try { process.kill(pid, signal) } catch (_) {} }
+  try {
+    process.kill(-pid, signal)
+  } catch (_) {
+    // negative pid → process group
+    try {
+      process.kill(pid, signal)
+    } catch (_) {}
+  }
 }
 
 function _killGroup(proc, signal) {
@@ -207,7 +237,10 @@ async function stop() {
   // python PID (which owns the SIGTERM handler); falling back to _proc covers
   // the brief window before discovery is written.
   const pid = getDaemonPid()
-  if (pid === null) { _proc = null; return }
+  if (pid === null) {
+    _proc = null
+    return
+  }
 
   if (_proc && _proc.exitCode === null) {
     // We own it: kill the whole tree so the `uv` wrapper AND its python
@@ -221,7 +254,9 @@ async function stop() {
     // Windows Node maps the signal to a hard TerminateProcess (no graceful
     // teardown — SQLite's per-transaction durability keeps state intact, and
     // the stale-file sweep below / next start() clears the lock).
-    try { process.kill(pid, 'SIGTERM') } catch (_) {}
+    try {
+      process.kill(pid, 'SIGTERM')
+    } catch (_) {}
   }
 
   // Wait for the daemon to actually go away: /health stops responding AND the
@@ -231,8 +266,11 @@ async function stop() {
   let stopped = false
   while (Date.now() < deadline) {
     const gone = !(await ping(port)) && !pidAlive(pid)
-    if (gone || (_proc && _proc.exitCode !== null)) { stopped = true; break }
-    await new Promise(r => setTimeout(r, 150))
+    if (gone || (_proc && _proc.exitCode !== null)) {
+      stopped = true
+      break
+    }
+    await new Promise((r) => setTimeout(r, 150))
   }
 
   if (!stopped) {
@@ -266,12 +304,15 @@ async function restart(workspacePath) {
 }
 
 function ping(port) {
-  return new Promise(resolve => {
-    const req = http.get(`http://127.0.0.1:${port}/health`, res => {
+  return new Promise((resolve) => {
+    const req = http.get(`http://127.0.0.1:${port}/health`, (res) => {
       resolve(res.statusCode === 200)
     })
     req.on('error', () => resolve(false))
-    req.setTimeout(1000, () => { req.destroy(); resolve(false) })
+    req.setTimeout(1000, () => {
+      req.destroy()
+      resolve(false)
+    })
   })
 }
 
@@ -279,9 +320,22 @@ async function waitUntilReady(port, maxMs = 10000) {
   const start = Date.now()
   while (Date.now() - start < maxMs) {
     if (await ping(port)) return true
-    await new Promise(r => setTimeout(r, 400))
+    await new Promise((r) => setTimeout(r, 400))
   }
   return false
 }
 
-module.exports = { start, stop, restart, isRestarting, isRunning, isAlive, isManaged, setManaged, getPort, onLog, waitUntilReady, ping }
+module.exports = {
+  start,
+  stop,
+  restart,
+  isRestarting,
+  isRunning,
+  isAlive,
+  isManaged,
+  setManaged,
+  getPort,
+  onLog,
+  waitUntilReady,
+  ping,
+}

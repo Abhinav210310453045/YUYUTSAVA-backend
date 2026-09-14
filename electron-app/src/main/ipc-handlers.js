@@ -10,25 +10,35 @@ function _daemonRequest(method, path, body) {
   return new Promise((resolve, reject) => {
     const port = daemon.getPort()
     const data = body ? Buffer.from(JSON.stringify(body)) : null
-    const req = http.request({
-      host: '127.0.0.1', port, path, method,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(data ? { 'Content-Length': data.length } : {}),
+    const req = http.request(
+      {
+        host: '127.0.0.1',
+        port,
+        path,
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          ...(data ? { 'Content-Length': data.length } : {}),
+        },
       },
-    }, res => {
-      let chunks = ''
-      res.on('data', c => chunks += c.toString())
-      res.on('end', () => {
-        try {
-          const parsed = chunks ? JSON.parse(chunks) : null
-          if (res.statusCode >= 400) reject({ status: res.statusCode, body: parsed })
-          else resolve(parsed)
-        } catch (e) { reject(e) }
-      })
-    })
+      (res) => {
+        let chunks = ''
+        res.on('data', (c) => (chunks += c.toString()))
+        res.on('end', () => {
+          try {
+            const parsed = chunks ? JSON.parse(chunks) : null
+            if (res.statusCode >= 400) reject({ status: res.statusCode, body: parsed })
+            else resolve(parsed)
+          } catch (e) {
+            reject(e)
+          }
+        })
+      },
+    )
     req.on('error', reject)
-    req.setTimeout(5000, () => { req.destroy(new Error('daemon request timeout')) })
+    req.setTimeout(5000, () => {
+      req.destroy(new Error('daemon request timeout'))
+    })
     if (data) req.write(data)
     req.end()
   })
@@ -69,7 +79,10 @@ function register(win) {
   })
   ipcMain.handle('daemon:start', async () => {
     const port = daemon.getPort()
-    if (await daemon.ping(port)) { tray.refreshMenu(true); return { ok: true, alreadyRunning: true } }
+    if (await daemon.ping(port)) {
+      tray.refreshMenu(true)
+      return { ok: true, alreadyRunning: true }
+    }
     await daemon.start(process.cwd())
     tray.refreshMenu(await daemon.isAlive())
     return { ok: true }

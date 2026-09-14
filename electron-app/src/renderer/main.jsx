@@ -14,6 +14,6 @@ initBase().then(() => {
   createRoot(document.getElementById('root')).render(
     <SSEProvider>
       <App />
-    </SSEProvider>
+    </SSEProvider>,
   )
 })

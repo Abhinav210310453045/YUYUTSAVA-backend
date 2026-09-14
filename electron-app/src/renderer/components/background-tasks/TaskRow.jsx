@@ -3,15 +3,16 @@ import { getTaskLogs } from '../../api/client'
 
 function fmtElapsed(seconds) {
   if (seconds < 60) return `${Math.floor(seconds)}s`
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m${String(Math.floor(seconds % 60)).padStart(2, '0')}s`
+  if (seconds < 3600)
+    return `${Math.floor(seconds / 60)}m${String(Math.floor(seconds % 60)).padStart(2, '0')}s`
   return `${Math.floor(seconds / 3600)}h${String(Math.floor((seconds % 3600) / 60)).padStart(2, '0')}m`
 }
 
 const STATUS_STYLES = {
-  running:        { color: 'var(--neon-cyan, var(--text-cyan))', label: 'running' },
-  awaiting_user:  { color: 'var(--neon-amber, var(--neon-amber))', label: 'awaiting user' },
-  success:        { color: 'var(--neon-green, var(--neon-green))', label: 'done' },
-  failed:         { color: 'var(--neon-red, var(--neon-red))',   label: 'failed' },
+  running: { color: 'var(--neon-cyan, var(--text-cyan))', label: 'running' },
+  awaiting_user: { color: 'var(--neon-amber, var(--neon-amber))', label: 'awaiting user' },
+  success: { color: 'var(--neon-green, var(--neon-green))', label: 'done' },
+  failed: { color: 'var(--neon-red, var(--neon-red))', label: 'failed' },
 }
 
 export default function TaskRow({ task, onOpen }) {
@@ -20,7 +21,7 @@ export default function TaskRow({ task, onOpen }) {
   const [hover, setHover] = useState(false)
   useEffect(() => {
     if (task.status === 'success' || task.status === 'failed') return
-    const t = setInterval(() => force(x => x + 1), 1000)
+    const t = setInterval(() => force((x) => x + 1), 1000)
     return () => clearInterval(t)
   }, [task.status])
 
@@ -71,7 +72,8 @@ export default function TaskRow({ task, onOpen }) {
         transition: 'transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease',
         transform: hover ? 'translateY(-2px) scale(1.01)' : 'none',
         boxShadow: hover ? `0 6px 18px rgba(0,0,0,0.35), 0 0 10px ${style.color}22` : 'none',
-      }}>
+      }}
+    >
       <div
         onClick={() => onOpen && onOpen(task)}
         title="open task detail"
@@ -81,7 +83,8 @@ export default function TaskRow({ task, onOpen }) {
           gap: 8,
           padding: '6px 8px',
           cursor: onOpen ? 'pointer' : 'default',
-        }}>
+        }}
+      >
         <div style={{ minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <span style={{ color: 'var(--text-primary)', fontWeight: 'var(--fw-semibold)' }}>
@@ -92,18 +95,23 @@ export default function TaskRow({ task, onOpen }) {
             </span>
           </div>
           {summary && (
-            <div style={{
-              color: 'var(--text-secondary)',
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              marginTop: 2,
-            }}>
+            <div
+              style={{
+                color: 'var(--text-secondary)',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                marginTop: 2,
+              }}
+            >
               {summary}
             </div>
           )}
           <button
-            onClick={(e) => { e.stopPropagation(); toggleLogs() }}
+            onClick={(e) => {
+              e.stopPropagation()
+              toggleLogs()
+            }}
             style={{
               marginTop: 4,
               background: 'none',
@@ -127,33 +135,38 @@ export default function TaskRow({ task, onOpen }) {
           <span style={{ color: style.color, fontWeight: 'var(--fw-semibold)' }}>
             {style.label}
           </span>
-          <span style={{ color: 'var(--text-dim)', marginLeft: 6 }}>
-            {fmtElapsed(elapsed)}
-          </span>
+          <span style={{ color: 'var(--text-dim)', marginLeft: 6 }}>{fmtElapsed(elapsed)}</span>
         </div>
       </div>
       {open && (
-        <div style={{
-          borderTop: '1px solid rgba(255,255,255,0.06)',
-          padding: '6px 8px',
-          maxHeight: 240,
-          overflowY: 'auto',
-        }}>
+        <div
+          style={{
+            borderTop: '1px solid rgba(255,255,255,0.06)',
+            padding: '6px 8px',
+            maxHeight: 240,
+            overflowY: 'auto',
+          }}
+        >
           {loading && <div style={{ color: 'var(--text-dim)' }}>loading logs…</div>}
-          {logsErr && <div style={{ color: 'var(--neon-red, var(--neon-red))' }}>error: {logsErr}</div>}
+          {logsErr && (
+            <div style={{ color: 'var(--neon-red, var(--neon-red))' }}>error: {logsErr}</div>
+          )}
           {!loading && !logsErr && logs && logs.length === 0 && (
             <div style={{ color: 'var(--text-dim)' }}>(no log messages yet)</div>
           )}
-          {!loading && !logsErr && logs && logs.map((m, i) => (
-            <TaskLogLine key={i} msg={m} />
-          ))}
+          {!loading && !logsErr && logs && logs.map((m, i) => <TaskLogLine key={i} msg={m} />)}
           {!loading && !logsErr && logs && (
             <button
               onClick={loadLogs}
               style={{
-                marginTop: 4, background: 'none', border: 'none', padding: 0,
-                cursor: 'pointer', color: 'var(--text-dim)',
-                fontFamily: 'var(--font-mono)', fontSize: 10,
+                marginTop: 4,
+                background: 'none',
+                border: 'none',
+                padding: 0,
+                cursor: 'pointer',
+                color: 'var(--text-dim)',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 10,
               }}
             >
               ⟳ refresh
@@ -166,9 +179,9 @@ export default function TaskRow({ task, onOpen }) {
 }
 
 const ROLE_COLORS = {
-  assistant:   'var(--text-primary)',
-  user:        'var(--neon-green, var(--neon-green))',
-  tool_call:   'var(--neon-cyan, var(--text-cyan))',
+  assistant: 'var(--text-primary)',
+  user: 'var(--neon-green, var(--neon-green))',
+  tool_call: 'var(--neon-cyan, var(--text-cyan))',
   tool_result: 'var(--text-secondary)',
 }
 
@@ -185,7 +198,12 @@ function TaskLogLine({ msg }) {
   }
   return (
     <div style={{ marginBottom: 4, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-      <span style={{ color: isErr ? 'var(--neon-red, var(--neon-red))' : color, fontWeight: 'var(--fw-semibold)' }}>
+      <span
+        style={{
+          color: isErr ? 'var(--neon-red, var(--neon-red))' : color,
+          fontWeight: 'var(--fw-semibold)',
+        }}
+      >
         {label}:
       </span>{' '}
       <span style={{ color: isErr ? 'var(--neon-red, var(--neon-red))' : 'var(--text-secondary)' }}>

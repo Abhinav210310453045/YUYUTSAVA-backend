@@ -13,8 +13,11 @@ export default function DiagramBlock({ attachment, cardId, expanded }) {
       src={blockSrc(attachment, cardId)}
       alt={attachment.title || 'diagram'}
       style={{
-        display: 'block', maxWidth: '100%', maxHeight: expanded ? '82vh' : 260,
-        objectFit: 'contain', borderRadius: 6,
+        display: 'block',
+        maxWidth: '100%',
+        maxHeight: expanded ? '82vh' : 260,
+        objectFit: 'contain',
+        borderRadius: 6,
         background: '#fff', // Kroki/mpl output assumes a light canvas
       }}
     />

@@ -9,11 +9,18 @@ export default function LinkBlock({ attachment }) {
       target="_blank"
       rel="noreferrer"
       style={{
-        display: 'block', padding: '10px 12px',
-        background: 'var(--bg-card)', border: '1px solid rgba(120,160,255,0.25)',
-        borderRadius: 6, fontFamily: 'var(--font-mono)', fontSize: 11,
-        color: 'var(--text-info)', textDecoration: 'none',
-        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        display: 'block',
+        padding: '10px 12px',
+        background: 'var(--bg-card)',
+        border: '1px solid rgba(120,160,255,0.25)',
+        borderRadius: 6,
+        fontFamily: 'var(--font-mono)',
+        fontSize: 11,
+        color: 'var(--text-info)',
+        textDecoration: 'none',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
       }}
       title={attachment.url}
     >

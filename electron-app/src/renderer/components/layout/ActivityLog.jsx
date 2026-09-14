@@ -3,25 +3,29 @@ import TaskRow from '../background-tasks/TaskRow'
 import TaskDetail from '../background-tasks/TaskDetail'
 
 const KIND_STYLE = {
-  log:            { color: '#5eead4' },
-  token:          { color: 'var(--neon-green)' },
-  tool_call:      { color: 'var(--neon-amber)', prefix: '→ ' },
-  tool_result:    { color: 'var(--text-secondary)', prefix: '← ' },
-  timeline:       { color: 'var(--text-primary)', borderLeft: '2px solid var(--neon-purple)', paddingLeft: 6 },
-  http_log:       { color: 'var(--text-dim)', prefix: 'HTTP ' },
-  app_log:        { color: 'var(--text-secondary)' },
-  bg_task:        { color: 'var(--neon-cyan)' },
+  log: { color: '#5eead4' },
+  token: { color: 'var(--neon-green)' },
+  tool_call: { color: 'var(--neon-amber)', prefix: '→ ' },
+  tool_result: { color: 'var(--text-secondary)', prefix: '← ' },
+  timeline: {
+    color: 'var(--text-primary)',
+    borderLeft: '2px solid var(--neon-purple)',
+    paddingLeft: 6,
+  },
+  http_log: { color: 'var(--text-dim)', prefix: 'HTTP ' },
+  app_log: { color: 'var(--text-secondary)' },
+  bg_task: { color: 'var(--neon-cyan)' },
   system_metrics: { color: 'var(--text-dim)', prefix: '◴ ' },
-  default:        { color: 'var(--text-muted)' },
+  default: { color: 'var(--text-muted)' },
 }
 
 // Severity carried on the wire and, until now, thrown away. A log list without
 // levels is a wall of identical grey text.
 const LEVEL_STYLE = {
-  DEBUG:    { color: 'var(--text-dim)', tag: 'DBG' },
-  INFO:     { color: 'var(--text-secondary)', tag: 'INF' },
-  WARNING:  { color: 'var(--neon-amber)', tag: 'WRN' },
-  ERROR:    { color: 'var(--neon-red)', tag: 'ERR' },
+  DEBUG: { color: 'var(--text-dim)', tag: 'DBG' },
+  INFO: { color: 'var(--text-secondary)', tag: 'INF' },
+  WARNING: { color: 'var(--neon-amber)', tag: 'WRN' },
+  ERROR: { color: 'var(--neon-red)', tag: 'ERR' },
   CRITICAL: { color: 'var(--neon-red)', tag: 'CRT' },
 }
 
@@ -72,31 +76,41 @@ function EventRow({ line, isLast }) {
         <span
           title={line.level}
           style={{
-            flexShrink: 0, fontSize: 9, fontWeight: 600,
+            flexShrink: 0,
+            fontSize: 9,
+            fontWeight: 600,
             color: (LEVEL_STYLE[line.level] || LEVEL_STYLE.INFO).color,
           }}
-        >{(LEVEL_STYLE[line.level] || LEVEL_STYLE.INFO).tag}</span>
+        >
+          {(LEVEL_STYLE[line.level] || LEVEL_STYLE.INFO).tag}
+        </span>
       )}
       {line.logger && (
         <span
           title={line.logger}
           style={{
-            flexShrink: 0, width: 108, overflow: 'hidden',
-            textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 9,
+            flexShrink: 0,
+            width: 108,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            fontSize: 9,
             color: 'var(--text-dim)',
           }}
-        >{shortLogger(line.logger)}</span>
+        >
+          {shortLogger(line.logger)}
+        </span>
       )}
       <span
         className="selectable"
         style={{
-          wordBreak: 'break-word', flex: 1,
-          color: line.level
-            ? (LEVEL_STYLE[line.level] || LEVEL_STYLE.INFO).color
-            : undefined,
+          wordBreak: 'break-word',
+          flex: 1,
+          color: line.level ? (LEVEL_STYLE[line.level] || LEVEL_STYLE.INFO).color : undefined,
         }}
       >
-        {prefix}{line.text}
+        {prefix}
+        {line.text}
       </span>
       <button
         onClick={copy}
@@ -134,8 +148,8 @@ const EMPTY_MAP = new Map()
 
 const TABS = [
   { id: 'events', label: 'Events', emptyText: '> awaiting events...' },
-  { id: 'logs',   label: 'Logs',   emptyText: '> awaiting logs...' },
-  { id: 'tasks',  label: 'Tasks',  emptyText: '> no background tasks' },
+  { id: 'logs', label: 'Logs', emptyText: '> awaiting logs...' },
+  { id: 'tasks', label: 'Tasks', emptyText: '> no background tasks' },
 ]
 
 export default function ActivityLog({ events = [], logs = [], bgTasks = EMPTY_MAP, width }) {
@@ -161,8 +175,12 @@ export default function ActivityLog({ events = [], logs = [], bgTasks = EMPTY_MA
       if (l.level && LEVEL_ORDER.indexOf(l.level) < floor) return false
       if (!q) return true
       return (
-        String(l.text || '').toLowerCase().includes(q)
-        || String(l.logger || '').toLowerCase().includes(q)
+        String(l.text || '')
+          .toLowerCase()
+          .includes(q) ||
+        String(l.logger || '')
+          .toLowerCase()
+          .includes(q)
       )
     })
   }, [tab, rawLines, query, minLevel, showHttp])
@@ -175,13 +193,17 @@ export default function ActivityLog({ events = [], logs = [], bgTasks = EMPTY_MA
   // (running/awaiting) first, newest first; then completed/failed, newest first.
   const allTasks = useMemo(() => Array.from(bgTasks?.values() || []), [bgTasks])
   const activeTasks = useMemo(
-    () => allTasks.filter(t => t.status === 'running' || t.status === 'awaiting_user')
-                  .sort((a, b) => (b.last_update_at || 0) - (a.last_update_at || 0)),
+    () =>
+      allTasks
+        .filter((t) => t.status === 'running' || t.status === 'awaiting_user')
+        .sort((a, b) => (b.last_update_at || 0) - (a.last_update_at || 0)),
     [allTasks],
   )
   const doneTasks = useMemo(
-    () => allTasks.filter(t => t.status === 'success' || t.status === 'failed')
-                  .sort((a, b) => (b.last_update_at || 0) - (a.last_update_at || 0)),
+    () =>
+      allTasks
+        .filter((t) => t.status === 'success' || t.status === 'failed')
+        .sort((a, b) => (b.last_update_at || 0) - (a.last_update_at || 0)),
     [allTasks],
   )
 
@@ -195,7 +217,9 @@ export default function ActivityLog({ events = [], logs = [], bgTasks = EMPTY_MA
   }, [lines, autoScroll, isTasks])
 
   // Reset scroll when switching tabs.
-  useEffect(() => { setAutoScroll(true) }, [tab])
+  useEffect(() => {
+    setAutoScroll(true)
+  }, [tab])
 
   const handleScroll = () => {
     const el = containerRef.current
@@ -208,28 +232,35 @@ export default function ActivityLog({ events = [], logs = [], bgTasks = EMPTY_MA
   // Resolve the open drawer's task from the live map so it keeps updating; if the
   // task disappears, close the drawer.
   const detailTask = detailId ? bgTasks?.get?.(detailId) || null : null
-  useEffect(() => { if (detailId && !detailTask) setDetailId(null) }, [detailId, detailTask])
+  useEffect(() => {
+    if (detailId && !detailTask) setDetailId(null)
+  }, [detailId, detailTask])
 
   return (
-    <div style={{
-      width: width ?? 'var(--activity-w)',
-      borderLeft: '1px solid var(--border-subtle)',
-      background: 'var(--bg-panel)',
-      display: 'flex',
-      flexDirection: 'column',
-      flex: 1,
-      minHeight: 0,
-      height: '100%',
-      position: 'relative',
-    }}>
-      <div style={{
+    <div
+      style={{
+        width: width ?? 'var(--activity-w)',
+        borderLeft: '1px solid var(--border-subtle)',
+        background: 'var(--bg-panel)',
         display: 'flex',
-        borderBottom: '1px solid var(--border-subtle)',
-        background: 'var(--bg-bar)',
-        flexShrink: 0,
-      }}>
+        flexDirection: 'column',
+        flex: 1,
+        minHeight: 0,
+        height: '100%',
+        position: 'relative',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          borderBottom: '1px solid var(--border-subtle)',
+          background: 'var(--bg-bar)',
+          flexShrink: 0,
+        }}
+      >
         {TABS.map((t) => {
-          const count = t.id === 'logs' ? logs.length : t.id === 'tasks' ? (bgTasks?.size ?? 0) : events.length
+          const count =
+            t.id === 'logs' ? logs.length : t.id === 'tasks' ? (bgTasks?.size ?? 0) : events.length
           const active = t.id === tab
           return (
             <button
@@ -255,11 +286,13 @@ export default function ActivityLog({ events = [], logs = [], bgTasks = EMPTY_MA
               }}
             >
               <span>{t.label}</span>
-              <span style={{
-                fontSize: 9,
-                color: active ? 'var(--neon-green)' : 'var(--text-dim)',
-                opacity: 0.7,
-              }}>
+              <span
+                style={{
+                  fontSize: 9,
+                  color: active ? 'var(--neon-green)' : 'var(--text-dim)',
+                  opacity: 0.7,
+                }}
+              >
                 {count > 999 ? '999+' : count}
               </span>
             </button>
@@ -271,21 +304,32 @@ export default function ActivityLog({ events = [], logs = [], bgTasks = EMPTY_MA
           hides DEBUG chatter; HTTP access lines are off by default because
           they are the UI's own polling and used to be the ENTIRE tab. */}
       {tab === 'logs' && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0,
-          padding: '6px 10px', borderBottom: '1px solid var(--border-subtle)',
-          background: 'var(--bg-bar)',
-        }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            flexShrink: 0,
+            padding: '6px 10px',
+            borderBottom: '1px solid var(--border-subtle)',
+            background: 'var(--bg-bar)',
+          }}
+        >
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="filter…"
             style={{
-              flex: 1, minWidth: 0, background: 'var(--bg-card)',
+              flex: 1,
+              minWidth: 0,
+              background: 'var(--bg-card)',
               border: '1px solid var(--border-subtle)',
-              borderRadius: 'var(--radius-btn)', padding: '2px 6px',
-              color: 'var(--text-primary)', fontFamily: 'var(--font-mono)',
-              fontSize: 10, outline: 'none',
+              borderRadius: 'var(--radius-btn)',
+              padding: '2px 6px',
+              color: 'var(--text-primary)',
+              fontFamily: 'var(--font-mono)',
+              fontSize: 10,
+              outline: 'none',
             }}
           />
           <select
@@ -293,13 +337,19 @@ export default function ActivityLog({ events = [], logs = [], bgTasks = EMPTY_MA
             onChange={(e) => setMinLevel(e.target.value)}
             title="Minimum level"
             style={{
-              background: 'var(--bg-card)', border: '1px solid var(--border-subtle)',
-              borderRadius: 'var(--radius-btn)', color: 'var(--text-secondary)',
-              fontFamily: 'var(--font-mono)', fontSize: 10, padding: '2px 4px',
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border-subtle)',
+              borderRadius: 'var(--radius-btn)',
+              color: 'var(--text-secondary)',
+              fontFamily: 'var(--font-mono)',
+              fontSize: 10,
+              padding: '2px 4px',
             }}
           >
             {LEVEL_ORDER.map((lv) => (
-              <option key={lv} value={lv}>{lv}</option>
+              <option key={lv} value={lv}>
+                {lv}
+              </option>
             ))}
           </select>
           <button
@@ -308,11 +358,16 @@ export default function ActivityLog({ events = [], logs = [], bgTasks = EMPTY_MA
             style={{
               background: showHttp ? 'rgba(var(--accent-rgb), 0.12)' : 'transparent',
               border: `1px solid ${showHttp ? 'rgba(var(--accent-rgb), 0.3)' : 'var(--border-subtle)'}`,
-              borderRadius: 'var(--radius-btn)', cursor: 'pointer',
+              borderRadius: 'var(--radius-btn)',
+              cursor: 'pointer',
               color: showHttp ? 'var(--neon-green)' : 'var(--text-dim)',
-              fontFamily: 'var(--font-mono)', fontSize: 9, padding: '2px 6px',
+              fontFamily: 'var(--font-mono)',
+              fontSize: 9,
+              padding: '2px 6px',
             }}
-          >HTTP</button>
+          >
+            HTTP
+          </button>
         </div>
       )}
 
@@ -328,33 +383,69 @@ export default function ActivityLog({ events = [], logs = [], bgTasks = EMPTY_MA
         }}
       >
         {/* Subtle scan-line overlay */}
-        <div style={{
-          position: 'absolute',
-          inset: 0,
-          pointerEvents: 'none',
-          backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px)',
-          zIndex: 0,
-        }} />
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            pointerEvents: 'none',
+            backgroundImage:
+              'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px)',
+            zIndex: 0,
+          }}
+        />
 
         {isTasks ? (
           allTasks.length === 0 ? (
-            <div style={{ padding: '20px 12px', color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', fontSize: 11 }}>
+            <div
+              style={{
+                padding: '20px 12px',
+                color: 'var(--text-dim)',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 11,
+              }}
+            >
               {emptyText}
               <span style={{ animation: 'blink 1s step-end infinite' }}>_</span>
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '4px 10px', position: 'relative', zIndex: 1 }}>
-              {activeTasks.map(t => <TaskRow key={t.task_id} task={t} onOpen={() => setDetailId(t.task_id)} />)}
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 4,
+                padding: '4px 10px',
+                position: 'relative',
+                zIndex: 1,
+              }}
+            >
+              {activeTasks.map((t) => (
+                <TaskRow key={t.task_id} task={t} onOpen={() => setDetailId(t.task_id)} />
+              ))}
               {doneTasks.length > 0 && activeTasks.length > 0 && (
-                <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', margin: '4px 0 0', paddingTop: 4 }} />
+                <div
+                  style={{
+                    borderTop: '1px solid rgba(255,255,255,0.06)',
+                    margin: '4px 0 0',
+                    paddingTop: 4,
+                  }}
+                />
               )}
-              {doneTasks.map(t => <TaskRow key={t.task_id} task={t} onOpen={() => setDetailId(t.task_id)} />)}
+              {doneTasks.map((t) => (
+                <TaskRow key={t.task_id} task={t} onOpen={() => setDetailId(t.task_id)} />
+              ))}
             </div>
           )
         ) : (
           <>
             {lines.length === 0 && (
-              <div style={{ padding: '20px 12px', color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', fontSize: 11 }}>
+              <div
+                style={{
+                  padding: '20px 12px',
+                  color: 'var(--text-dim)',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 11,
+                }}
+              >
                 {emptyText}
                 <span style={{ animation: 'blink 1s step-end infinite' }}>_</span>
               </div>
@@ -370,7 +461,10 @@ export default function ActivityLog({ events = [], logs = [], bgTasks = EMPTY_MA
 
       {!isTasks && !autoScroll && (
         <button
-          onClick={() => { setAutoScroll(true); bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }}
+          onClick={() => {
+            setAutoScroll(true)
+            bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+          }}
           style={{
             position: 'absolute',
             bottom: 12,
@@ -389,9 +483,7 @@ export default function ActivityLog({ events = [], logs = [], bgTasks = EMPTY_MA
         </button>
       )}
 
-      {detailTask && (
-        <TaskDetail task={detailTask} onClose={() => setDetailId(null)} />
-      )}
+      {detailTask && <TaskDetail task={detailTask} onClose={() => setDetailId(null)} />}
     </div>
   )
 }

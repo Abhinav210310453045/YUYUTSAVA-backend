@@ -9,7 +9,9 @@ export async function initBase() {
   }
 }
 
-export function getBase() { return _base }
+export function getBase() {
+  return _base
+}
 
 async function _json(method, path, body) {
   const opts = { method, headers: { 'Content-Type': 'application/json' } }
@@ -23,8 +25,7 @@ async function _json(method, path, body) {
 export const respondProposal = (id, decision, editedInstruction = null) =>
   _json('POST', `/proposal/${id}/respond`, { decision, edited_instruction: editedInstruction })
 
-export const respondAsk = (id, response) =>
-  _json('POST', `/ask/${id}/respond`, { response })
+export const respondAsk = (id, response) => _json('POST', `/ask/${id}/respond`, { response })
 
 // Every ask still awaiting an answer. Asks never expire and the SSE broadcast
 // can drop frames, so this is how a surface (re)discovers what is pending —
@@ -74,15 +75,12 @@ export const deleteVisual = (visualId) =>
 // every TODO card's attachments — the non-visual half of the Artifacts gallery.
 // Each record carries `attachment_id`; artifacts resolve bytes from their `url`,
 // card attachments from todoAttachmentUrl(card_id, attachment_id).
-export const listArtifacts = (limit = 200) =>
-  _json('GET', `/artifacts?limit=${limit}`)
-export const listAllAttachments = (limit = 200) =>
-  _json('GET', `/todos/attachments?limit=${limit}`)
+export const listArtifacts = (limit = 200) => _json('GET', `/artifacts?limit=${limit}`)
+export const listAllAttachments = (limit = 200) => _json('GET', `/todos/attachments?limit=${limit}`)
 
 // Full transcript of a background (async-subagent) task, fetched on demand
 // (tool calls, results, and text) for the TASKS panel's expandable log view.
-export const getTaskLogs = (taskId) =>
-  _json('GET', `/tasks/${encodeURIComponent(taskId)}/logs`)
+export const getTaskLogs = (taskId) => _json('GET', `/tasks/${encodeURIComponent(taskId)}/logs`)
 
 export const getLogLevel = () => _json('GET', '/logs/level')
 export const setLogLevel = (level) => _json('PUT', '/logs/level', { level })
@@ -104,26 +102,47 @@ export const getTodo = (cardId) => _json('GET', `/todos/${encodeURIComponent(car
 export const patchTodo = (cardId, fields) =>
   _json('PATCH', `/todos/${encodeURIComponent(cardId)}`, fields)
 export const deleteTodo = (cardId) => _json('DELETE', `/todos/${encodeURIComponent(cardId)}`)
-export const addTodoNote = (cardId, body, author = 'user', { objectiveId = null, phase = null } = {}) =>
-  _json('POST', `/todos/${encodeURIComponent(cardId)}/notes`,
-    { body, author, objective_id: objectiveId, phase })
+export const addTodoNote = (
+  cardId,
+  body,
+  author = 'user',
+  { objectiveId = null, phase = null } = {},
+) =>
+  _json('POST', `/todos/${encodeURIComponent(cardId)}/notes`, {
+    body,
+    author,
+    objective_id: objectiveId,
+    phase,
+  })
 export const patchTodoNote = (cardId, noteId, body) =>
-  _json('PATCH', `/todos/${encodeURIComponent(cardId)}/notes/${encodeURIComponent(noteId)}`, { body })
+  _json('PATCH', `/todos/${encodeURIComponent(cardId)}/notes/${encodeURIComponent(noteId)}`, {
+    body,
+  })
 export const deleteTodoNote = (cardId, noteId) =>
   _json('DELETE', `/todos/${encodeURIComponent(cardId)}/notes/${encodeURIComponent(noteId)}`)
 // Move a note onto an objective (objectiveId=null clears the assignment).
 export const assignTodoNote = (cardId, noteId, objectiveId, phase = null) =>
-  _json('PATCH', `/todos/${encodeURIComponent(cardId)}/notes/${encodeURIComponent(noteId)}/assign`,
-    { objective_id: objectiveId, phase })
+  _json(
+    'PATCH',
+    `/todos/${encodeURIComponent(cardId)}/notes/${encodeURIComponent(noteId)}/assign`,
+    { objective_id: objectiveId, phase },
+  )
 
 // Think-flow objectives: a card's structured decomposition. phase is one of
 // thinking/planning/doing/completed/blocked/abandoned; PATCH is partial.
 export const addTodoObjective = (cardId, title, phase = 'thinking') =>
   _json('POST', `/todos/${encodeURIComponent(cardId)}/objectives`, { title, phase })
 export const patchTodoObjective = (cardId, objectiveId, fields) =>
-  _json('PATCH', `/todos/${encodeURIComponent(cardId)}/objectives/${encodeURIComponent(objectiveId)}`, fields)
+  _json(
+    'PATCH',
+    `/todos/${encodeURIComponent(cardId)}/objectives/${encodeURIComponent(objectiveId)}`,
+    fields,
+  )
 export const deleteTodoObjective = (cardId, objectiveId) =>
-  _json('DELETE', `/todos/${encodeURIComponent(cardId)}/objectives/${encodeURIComponent(objectiveId)}`)
+  _json(
+    'DELETE',
+    `/todos/${encodeURIComponent(cardId)}/objectives/${encodeURIComponent(objectiveId)}`,
+  )
 // The card's activity timeline (oldest first) — feeds the Activity strip.
 export const listTodoEvents = (cardId, limit = 500) =>
   _json('GET', `/todos/${encodeURIComponent(cardId)}/events?limit=${limit}`)
@@ -138,7 +157,11 @@ export const generateTodoArtifact = (cardId, block, spec = {}, title = null) =>
 // TODO attachments (Phase 4). Upload is multipart FormData — no Content-Type
 // header, the browser sets the boundary. Rejections (415 mime / 413 size)
 // carry a human `detail` worth surfacing, unlike the generic _json errors.
-export async function uploadTodoAttachment(cardId, file, { title, kind, objectiveId, noteId } = {}) {
+export async function uploadTodoAttachment(
+  cardId,
+  file,
+  { title, kind, objectiveId, noteId } = {},
+) {
   const form = new FormData()
   form.append('file', file)
   if (title) form.append('title', title)
@@ -152,7 +175,11 @@ export async function uploadTodoAttachment(cardId, file, { title, kind, objectiv
   })
   if (!res.ok) {
     let detail = ''
-    try { detail = (await res.json()).detail || '' } catch { /* non-JSON body */ }
+    try {
+      detail = (await res.json()).detail || ''
+    } catch {
+      /* non-JSON body */
+    }
     throw new Error(detail || `upload → ${res.status}`)
   }
   return res.json()
@@ -163,11 +190,15 @@ export async function uploadTodoAttachment(cardId, file, { title, kind, objectiv
 // attachment id/URL, so pass the row's created_ts to defeat stale HTTP cache.
 export const todoAttachmentUrl = (cardId, attachmentId, { download = false, v = null } = {}) => {
   const qs = [download ? 'download=true' : null, v != null ? `v=${encodeURIComponent(v)}` : null]
-    .filter(Boolean).join('&')
+    .filter(Boolean)
+    .join('&')
   return `${_base}/todos/${encodeURIComponent(cardId)}/attachments/${encodeURIComponent(attachmentId)}${qs ? `?${qs}` : ''}`
 }
 export const deleteTodoAttachment = (cardId, attachmentId) =>
-  _json('DELETE', `/todos/${encodeURIComponent(cardId)}/attachments/${encodeURIComponent(attachmentId)}`)
+  _json(
+    'DELETE',
+    `/todos/${encodeURIComponent(cardId)}/attachments/${encodeURIComponent(attachmentId)}`,
+  )
 
 // Percent-encode each segment but keep the separators — a bundle rel_path may be
 // nested, and filenames routinely carry spaces ("Face Rig.dc.html").

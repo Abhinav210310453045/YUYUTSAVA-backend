@@ -1,5 +1,8 @@
 import {
-  todoAttachmentUrl, artifactUrl, todoAttachmentBundleUrl, artifactBundleUrl,
+  todoAttachmentUrl,
+  artifactUrl,
+  todoAttachmentBundleUrl,
+  artifactBundleUrl,
 } from '../../../api/client'
 
 // Resolve the bytes URL for an attachment/artifact record, source-agnostic so
@@ -12,7 +15,8 @@ export function blockSrc(attachment, cardId, { download = false } = {}) {
   // fresh bytes under the same attachment id/URL.
   if (cardId) {
     return todoAttachmentUrl(cardId, attachment.attachment_id, {
-      download, v: attachment.created_ts,
+      download,
+      v: attachment.created_ts,
     })
   }
   return artifactUrl(attachment.url)
@@ -22,8 +26,7 @@ export function blockSrc(attachment, cardId, { download = false } = {}) {
 // label, and an upload that collided was renamed ("x-1.html") — only the path's
 // basename addresses the actual file. Split on both separators; the daemon may
 // be serving from Windows.
-export const primaryName = (attachment) =>
-  (attachment.path || '').split(/[\\/]/).pop() || ''
+export const primaryName = (attachment) => (attachment.path || '').split(/[\\/]/).pop() || ''
 
 // Bytes URL for one file of a MULTI-file artifact, resolved inside the record's
 // own directory — the twin of blockSrc, source-agnostic the same way. Framing the

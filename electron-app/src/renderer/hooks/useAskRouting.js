@@ -1,8 +1,6 @@
 import { useCallback, useMemo, useSyncExternalStore } from 'react'
 import { useNav } from '../nav/NavProvider'
-import {
-  isThreadVisible, subscribeVisibleThreads, visibleThreadIds,
-} from '../conversations/store'
+import { isThreadVisible, subscribeVisibleThreads, visibleThreadIds } from '../conversations/store'
 
 // useSyncExternalStore needs a snapshot that changes when visibility changes;
 // the count of on-screen conversations is enough and is stable between changes.
@@ -56,8 +54,10 @@ export function askOwnedByConversation(ask, { threadId, sessionId, cardId, surfa
 export function useInlineAsks(asks, coords) {
   const { threadId, sessionId, cardId, surface } = coords || {}
   return useMemo(
-    () => (asks || []).filter((a) =>
-      askOwnedByConversation(a, { threadId, sessionId, cardId, surface })),
+    () =>
+      (asks || []).filter((a) =>
+        askOwnedByConversation(a, { threadId, sessionId, cardId, surface }),
+      ),
     [asks, threadId, sessionId, cardId, surface],
   )
 }
@@ -68,7 +68,10 @@ export function askDestination(ask) {
   switch (ask.surface) {
     case 'tinker':
       return ask.card_id
-        ? { panel: 'todos', params: { cardId: ask.card_id, ...(ask.thread_id ? { chat: ask.thread_id } : {}) } }
+        ? {
+            panel: 'todos',
+            params: { cardId: ask.card_id, ...(ask.thread_id ? { chat: ask.thread_id } : {}) },
+          }
         : { panel: 'proposals', params: {} }
     case 'voice':
       return { panel: 'voice', params: {} }
@@ -90,32 +93,38 @@ export function useAskRouting(asks) {
   // pane opened, chat switched).
   const visibleTick = useSyncExternalStore(subscribeVisibleThreads, visibleThreadCount)
 
-  const isOnOwningView = useCallback((ask) => {
-    // The question is "can the user SEE the conversation that owns this?" —
-    // not "are they on the tab it lives on". Two chats share the Chat panel and
-    // a card holds many tinker threads, so a panel match is not an ownership
-    // match: answering that too loosely leaves an agent waiting with no
-    // notification, because we wrongly assumed the inline card was in front of
-    // them. The conversation store reports which threads are actually rendered.
-    if (!ask) return false
-    if (ask.surface === 'background' || ask.task_id) return false
-    if (isThreadVisible(ask.thread_id) || isThreadVisible(ask.session_id)) return true
-    // A tinker ask whose thread the pane hasn't resolved yet still counts as
-    // visible when its card view is open.
-    if (ask.surface === 'tinker' && ask.card_id) {
-      return activePanel === 'todos' && params.cardId === ask.card_id
-    }
-    return false
+  const isOnOwningView = useCallback(
+    (ask) => {
+      // The question is "can the user SEE the conversation that owns this?" —
+      // not "are they on the tab it lives on". Two chats share the Chat panel and
+      // a card holds many tinker threads, so a panel match is not an ownership
+      // match: answering that too loosely leaves an agent waiting with no
+      // notification, because we wrongly assumed the inline card was in front of
+      // them. The conversation store reports which threads are actually rendered.
+      if (!ask) return false
+      if (ask.surface === 'background' || ask.task_id) return false
+      if (isThreadVisible(ask.thread_id) || isThreadVisible(ask.session_id)) return true
+      // A tinker ask whose thread the pane hasn't resolved yet still counts as
+      // visible when its card view is open.
+      if (ask.surface === 'tinker' && ask.card_id) {
+        return activePanel === 'todos' && params.cardId === ask.card_id
+      }
+      return false
+    },
     // visibleTick is a dependency on purpose: it is the change signal.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activePanel, params.cardId, visibleTick])
+    [activePanel, params.cardId, visibleTick],
+  )
 
-  const goToAsk = useCallback((ask) => {
-    const dest = askDestination(ask)
-    if (!dest) return
-    if (dest.panel === 'todos') push('todos', dest.params)
-    else switchTab(dest.panel)
-  }, [push, switchTab])
+  const goToAsk = useCallback(
+    (ask) => {
+      const dest = askDestination(ask)
+      if (!dest) return
+      if (dest.panel === 'todos') push('todos', dest.params)
+      else switchTab(dest.panel)
+    },
+    [push, switchTab],
+  )
 
   // Asks the user cannot currently see inline. These are the ones that need a
   // notification — and they are announced, never rendered, outside their owner.

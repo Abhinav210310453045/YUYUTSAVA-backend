@@ -60,22 +60,39 @@ export class MicCapture {
     this._analyser = null
   }
 
-  get active() { return this._ctx != null }
+  get active() {
+    return this._ctx != null
+  }
 
   // AnalyserNode tapping the live mic, or null when not capturing. Drives the
   // Voice orb/waveform while the user is speaking.
-  getAnalyser() { return this._analyser }
+  getAnalyser() {
+    return this._analyser
+  }
 
   async start() {
     if (this._ctx) return
     this._stream = await navigator.mediaDevices.getUserMedia({
-      audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: false },
+      audio: {
+        channelCount: 1,
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: false,
+      },
     })
     const Ctx = window.AudioContext || window.webkitAudioContext
     this._ctx = new Ctx({ sampleRate: this._sampleRate })
-    if (this._ctx.state === 'suspended') { try { await this._ctx.resume() } catch { /* ignore */ } }
+    if (this._ctx.state === 'suspended') {
+      try {
+        await this._ctx.resume()
+      } catch {
+        /* ignore */
+      }
+    }
 
-    this._workletUrl = URL.createObjectURL(new Blob([WORKLET_SRC], { type: 'application/javascript' }))
+    this._workletUrl = URL.createObjectURL(
+      new Blob([WORKLET_SRC], { type: 'application/javascript' }),
+    )
     await this._ctx.audioWorklet.addModule(this._workletUrl)
 
     this._source = this._ctx.createMediaStreamSource(this._stream)
@@ -87,7 +104,9 @@ export class MicCapture {
     this._node = new AudioWorkletNode(this._ctx, 'pcm-capture', {
       processorOptions: { frameSamples: FRAME_SAMPLES },
     })
-    this._node.port.onmessage = (e) => { this._onFrame?.(e.data) }
+    this._node.port.onmessage = (e) => {
+      this._onFrame?.(e.data)
+    }
 
     // A worklet only runs when its output is pulled — route through a silent
     // gain to the destination so it processes without any audible monitor.
@@ -98,12 +117,38 @@ export class MicCapture {
   }
 
   async stop() {
-    try { this._node && (this._node.port.onmessage = null) } catch { /* ignore */ }
-    try { this._source && this._source.disconnect() } catch { /* ignore */ }
-    try { this._node && this._node.disconnect() } catch { /* ignore */ }
-    try { this._stream && this._stream.getTracks().forEach((t) => t.stop()) } catch { /* ignore */ }
-    try { this._ctx && (await this._ctx.close()) } catch { /* ignore */ }
-    if (this._workletUrl) { try { URL.revokeObjectURL(this._workletUrl) } catch { /* ignore */ } }
+    try {
+      this._node && (this._node.port.onmessage = null)
+    } catch {
+      /* ignore */
+    }
+    try {
+      this._source && this._source.disconnect()
+    } catch {
+      /* ignore */
+    }
+    try {
+      this._node && this._node.disconnect()
+    } catch {
+      /* ignore */
+    }
+    try {
+      this._stream && this._stream.getTracks().forEach((t) => t.stop())
+    } catch {
+      /* ignore */
+    }
+    try {
+      this._ctx && (await this._ctx.close())
+    } catch {
+      /* ignore */
+    }
+    if (this._workletUrl) {
+      try {
+        URL.revokeObjectURL(this._workletUrl)
+      } catch {
+        /* ignore */
+      }
+    }
     this._stream = this._ctx = this._node = this._source = this._workletUrl = this._analyser = null
   }
 }

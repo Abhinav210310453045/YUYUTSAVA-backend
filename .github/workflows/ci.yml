@@ -110,6 +110,10 @@ jobs:
         working-directory: electron-app
         run: npm run lint
 
+      - name: Formatting
+        working-directory: electron-app
+        run: npm run format:check
+
       - name: Build renderer
         working-directory: electron-app
         run: npm run build

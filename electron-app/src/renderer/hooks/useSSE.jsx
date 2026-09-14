@@ -33,7 +33,9 @@ function readLogsEnabled() {
 
 export function setLogsEnabled(enabled) {
   logsFlag.enabled = enabled
-  try { localStorage.setItem(LOGS_ENABLED_KEY, enabled ? '1' : '0') } catch {}
+  try {
+    localStorage.setItem(LOGS_ENABLED_KEY, enabled ? '1' : '0')
+  } catch {}
 }
 
 export function getLogsEnabled() {
@@ -110,11 +112,17 @@ function reducer(state, action) {
     }
     case 'EVENT_LINE': {
       const eventLines = [...state.eventLines, action.line]
-      return { ...state, eventLines: eventLines.length > MAX_LINES ? eventLines.slice(-MAX_LINES) : eventLines }
+      return {
+        ...state,
+        eventLines: eventLines.length > MAX_LINES ? eventLines.slice(-MAX_LINES) : eventLines,
+      }
     }
     case 'LOG_LINE': {
       const logLines = [...state.logLines, action.line]
-      return { ...state, logLines: logLines.length > MAX_LINES ? logLines.slice(-MAX_LINES) : logLines }
+      return {
+        ...state,
+        logLines: logLines.length > MAX_LINES ? logLines.slice(-MAX_LINES) : logLines,
+      }
     }
     case 'BG_TASK': {
       // ``payload`` is the inner ``data`` from a ``async_task_*`` event.
@@ -134,12 +142,12 @@ function reducer(state, action) {
         ...data,
         status,
         last_kind: kind,
-        last_update_at: data?.ts || (Date.now() / 1000),
+        last_update_at: data?.ts || Date.now() / 1000,
       }
       bgTasks.set(taskId, next)
       // Trim completed/failed beyond the cap (FIFO by last_update_at).
       const finished = Array.from(bgTasks.values()).filter(
-        t => t.status === 'success' || t.status === 'failed',
+        (t) => t.status === 'success' || t.status === 'failed',
       )
       if (finished.length > MAX_COMPLETED_BG_TASKS) {
         finished.sort((a, b) => (a.last_update_at || 0) - (b.last_update_at || 0))
@@ -158,7 +166,7 @@ const initialState = {
   asks: new Map(),
   eventLines: [],
   logLines: [],
-  bgTasks: new Map(),     // task_id -> { task_id, agent_name, status, ... }
+  bgTasks: new Map(), // task_id -> { task_id, agent_name, status, ... }
   connected: false,
   pendingCount: 0,
 }
@@ -227,22 +235,29 @@ export function SSEProvider({ children }) {
         if (isLog && !logsFlag.enabled) return
         let text = ''
         if (kind === 'tool_call') text = `${d.name || ''}(${fmtArgs(d.args)})`
-        else if (kind === 'tool_result') text = `${d.name || ''}: ${String(d.preview ?? '').replace(/\s+/g, ' ').slice(0, 200)}`
+        else if (kind === 'tool_result')
+          text = `${d.name || ''}: ${String(d.preview ?? '')
+            .replace(/\s+/g, ' ')
+            .slice(0, 200)}`
         else if (kind === 'timeline') text = d.line || d.text || d.summary || ''
         else if (kind === 'system_metrics') text = fmtMetrics(d)
-        else if (kind === 'http_log') text = `${d.method} ${d.path} → ${d.status} (${d.duration_ms}ms)`
+        else if (kind === 'http_log')
+          text = `${d.method} ${d.path} → ${d.status} (${d.duration_ms}ms)`
         else if (kind === 'app_log') text = d.message || ''
         else text = d.text || d.message || kind
 
         dispatch({
           type: isLog ? 'LOG_LINE' : 'EVENT_LINE',
           line: {
-            kind, text, ts, raw: data,
+            kind,
+            text,
+            ts,
+            raw: data,
             // Structured fields the panel renders as columns and filters on.
             // Flattening these into the text was what made a log line
             // unreadable and unfilterable.
-            level: kind === 'app_log' ? (d.level || 'INFO') : null,
-            logger: kind === 'app_log' ? (d.logger || '') : null,
+            level: kind === 'app_log' ? d.level || 'INFO' : null,
+            logger: kind === 'app_log' ? d.logger || '' : null,
             // The SSE envelope carries these; dropping them made every line
             // unattributable to a task or conversation.
             taskId: data.task_id || null,

@@ -1,4 +1,12 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 
 // App navigation: one back stack per tab (iOS tab-bar model), not a single
 // global history. Switching tabs never counts as "back" — each tab remembers
@@ -29,7 +37,9 @@ function emptyStacks() {
 // Stable, order-independent serialization so a routeKey doesn't change just
 // because params were built in a different order.
 function serializeParams(params) {
-  const keys = Object.keys(params || {}).filter((k) => params[k] !== undefined && params[k] !== null).sort()
+  const keys = Object.keys(params || {})
+    .filter((k) => params[k] !== undefined && params[k] !== null)
+    .sort()
   return keys.map((k) => `${k}=${String(params[k])}`).join('&')
 }
 
@@ -86,25 +96,35 @@ export function NavProvider({ children }) {
   // (daemon restart, crash recovery) and the nav tree should come back.
   useEffect(() => {
     let cancelled = false
-    Promise.resolve(window.electronAPI?.getAppRunId?.()).then((runId) => {
-      if (cancelled) return
-      try {
-        if (runId && localStorage.getItem(RUN_ID_KEY) === String(runId)) {
-          const saved = JSON.parse(localStorage.getItem(NAV_KEY) || 'null')
-          if (isValidTree(saved) && !touched.current) setTree(saved)
-        } else if (runId) {
-          localStorage.setItem(RUN_ID_KEY, String(runId))
-          localStorage.removeItem(NAV_KEY)
+    Promise.resolve(window.electronAPI?.getAppRunId?.())
+      .then((runId) => {
+        if (cancelled) return
+        try {
+          if (runId && localStorage.getItem(RUN_ID_KEY) === String(runId)) {
+            const saved = JSON.parse(localStorage.getItem(NAV_KEY) || 'null')
+            if (isValidTree(saved) && !touched.current) setTree(saved)
+          } else if (runId) {
+            localStorage.setItem(RUN_ID_KEY, String(runId))
+            localStorage.removeItem(NAV_KEY)
+          }
+        } catch {
+          /* corrupt or unavailable storage — start at home */
         }
-      } catch { /* corrupt or unavailable storage — start at home */ }
-      setArmed(true)
-    }).catch(() => setArmed(true))
-    return () => { cancelled = true }
+        setArmed(true)
+      })
+      .catch(() => setArmed(true))
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   useEffect(() => {
     if (!armed) return
-    try { localStorage.setItem(NAV_KEY, JSON.stringify(tree)) } catch { /* quota */ }
+    try {
+      localStorage.setItem(NAV_KEY, JSON.stringify(tree))
+    } catch {
+      /* quota */
+    }
   }, [tree, armed])
 
   const navigate = useCallback((fn) => {
@@ -114,44 +134,50 @@ export function NavProvider({ children }) {
 
   // push(params) → deeper in the current tab. push(panel, params) → switch
   // tabs and go deeper there.
-  const push = useCallback((panelOrParams, maybeParams) => {
-    const explicit = typeof panelOrParams === 'string'
-    const panel = explicit ? panelOrParams : null
-    const params = explicit ? (maybeParams || {}) : (panelOrParams || {})
-    navigate((s) => {
-      const target = panel && PANELS.includes(panel) ? panel : s.activePanel
-      const stack = s.stacks[target]
-      const next = { panel: target, params }
-      // Re-pushing the route you're already on is a no-op, not a duplicate
-      // level — otherwise back would need two presses to do anything.
-      if (routeKey(stack[stack.length - 1]) === routeKey(next)) {
-        return target === s.activePanel ? s : { ...s, activePanel: target }
-      }
-      return {
-        activePanel: target,
-        stacks: { ...s.stacks, [target]: [...stack, next] },
-      }
-    })
-  }, [navigate])
+  const push = useCallback(
+    (panelOrParams, maybeParams) => {
+      const explicit = typeof panelOrParams === 'string'
+      const panel = explicit ? panelOrParams : null
+      const params = explicit ? maybeParams || {} : panelOrParams || {}
+      navigate((s) => {
+        const target = panel && PANELS.includes(panel) ? panel : s.activePanel
+        const stack = s.stacks[target]
+        const next = { panel: target, params }
+        // Re-pushing the route you're already on is a no-op, not a duplicate
+        // level — otherwise back would need two presses to do anything.
+        if (routeKey(stack[stack.length - 1]) === routeKey(next)) {
+          return target === s.activePanel ? s : { ...s, activePanel: target }
+        }
+        return {
+          activePanel: target,
+          stacks: { ...s.stacks, [target]: [...stack, next] },
+        }
+      })
+    },
+    [navigate],
+  )
 
   // Lateral move: swap the top route's params without adding depth. Used for
   // things like picking a different tinker chat inside a card, so back still
   // goes card → board instead of walking every chat you opened.
-  const replace = useCallback((patch) => {
-    navigate((s) => {
-      const stack = s.stacks[s.activePanel]
-      const top = stack[stack.length - 1]
-      const params = mergeParams(top.params, patch)
-      if (serializeParams(params) === serializeParams(top.params)) return s
-      return {
-        ...s,
-        stacks: {
-          ...s.stacks,
-          [s.activePanel]: [...stack.slice(0, -1), { panel: top.panel, params }],
-        },
-      }
-    })
-  }, [navigate])
+  const replace = useCallback(
+    (patch) => {
+      navigate((s) => {
+        const stack = s.stacks[s.activePanel]
+        const top = stack[stack.length - 1]
+        const params = mergeParams(top.params, patch)
+        if (serializeParams(params) === serializeParams(top.params)) return s
+        return {
+          ...s,
+          stacks: {
+            ...s.stacks,
+            [s.activePanel]: [...stack.slice(0, -1), { panel: top.panel, params }],
+          },
+        }
+      })
+    },
+    [navigate],
+  )
 
   const pop = useCallback(() => {
     navigate((s) => {
@@ -172,24 +198,27 @@ export function NavProvider({ children }) {
   // Switch tabs, keeping that tab's stack exactly as it was. An optional
   // params patch is merged into whatever route that tab is currently showing
   // (e.g. opening a session row → chat tab with a resumeId).
-  const switchTab = useCallback((panel, patch) => {
-    if (!PANELS.includes(panel)) return
-    navigate((s) => {
-      if (!patch) {
-        return s.activePanel === panel ? s : { ...s, activePanel: panel }
-      }
-      const stack = s.stacks[panel]
-      const top = stack[stack.length - 1]
-      const params = mergeParams(top.params, patch)
-      return {
-        activePanel: panel,
-        stacks: {
-          ...s.stacks,
-          [panel]: [...stack.slice(0, -1), { panel, params }],
-        },
-      }
-    })
-  }, [navigate])
+  const switchTab = useCallback(
+    (panel, patch) => {
+      if (!PANELS.includes(panel)) return
+      navigate((s) => {
+        if (!patch) {
+          return s.activePanel === panel ? s : { ...s, activePanel: panel }
+        }
+        const stack = s.stacks[panel]
+        const top = stack[stack.length - 1]
+        const params = mergeParams(top.params, patch)
+        return {
+          activePanel: panel,
+          stacks: {
+            ...s.stacks,
+            [panel]: [...stack.slice(0, -1), { panel, params }],
+          },
+        }
+      })
+    },
+    [navigate],
+  )
 
   const { activePanel, stacks } = tree
   const stack = stacks[activePanel] || [rootRoute(activePanel)]
@@ -197,33 +226,49 @@ export function NavProvider({ children }) {
 
   // The route a given tab is currently showing, whether or not it's active —
   // needed by panels that stay mounted while hidden (Chat, Voice).
-  const topRouteOf = useCallback((panel) => {
-    const st = stacks[panel]
-    return st && st.length ? st[st.length - 1] : rootRoute(panel)
-  }, [stacks])
+  const topRouteOf = useCallback(
+    (panel) => {
+      const st = stacks[panel]
+      return st && st.length ? st[st.length - 1] : rootRoute(panel)
+    },
+    [stacks],
+  )
 
-  const value = useMemo(() => ({
-    activePanel,
-    route,
-    params: route.params,
-    routeKey: routeKey(route),
-    depth: stack.length,
-    canGoBack: stack.length > 1,
-    topRouteOf,
-    push, replace, pop, popToRoot, switchTab,
-  }), [activePanel, route, stack.length, topRouteOf, push, replace, pop, popToRoot, switchTab])
+  const value = useMemo(
+    () => ({
+      activePanel,
+      route,
+      params: route.params,
+      routeKey: routeKey(route),
+      depth: stack.length,
+      canGoBack: stack.length > 1,
+      topRouteOf,
+      push,
+      replace,
+      pop,
+      popToRoot,
+      switchTab,
+    }),
+    [activePanel, route, stack.length, topRouteOf, push, replace, pop, popToRoot, switchTab],
+  )
 
   // Global back gestures: ⌘/Ctrl+[ , Alt+←, and the mouse's back button.
   useEffect(() => {
     const onKey = (e) => {
-      const inField = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target?.tagName || '')
-        || e.target?.isContentEditable
-      const chord = ((e.metaKey || e.ctrlKey) && e.key === '[') || (e.altKey && e.key === 'ArrowLeft')
+      const inField =
+        /^(INPUT|TEXTAREA|SELECT)$/.test(e.target?.tagName || '') || e.target?.isContentEditable
+      const chord =
+        ((e.metaKey || e.ctrlKey) && e.key === '[') || (e.altKey && e.key === 'ArrowLeft')
       if (!chord || inField) return
       e.preventDefault()
       pop()
     }
-    const onMouse = (e) => { if (e.button === 3) { e.preventDefault(); pop() } }
+    const onMouse = (e) => {
+      if (e.button === 3) {
+        e.preventDefault()
+        pop()
+      }
+    }
     window.addEventListener('keydown', onKey)
     window.addEventListener('mouseup', onMouse)
     return () => {

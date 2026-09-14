@@ -7,11 +7,19 @@ import { respondAsk } from '../../api/client'
 function prettyBody(body) {
   if (body == null) return ''
   if (typeof body !== 'string') {
-    try { return JSON.stringify(body, null, 2) } catch { return String(body) }
+    try {
+      return JSON.stringify(body, null, 2)
+    } catch {
+      return String(body)
+    }
   }
   const trimmed = body.trim()
   if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-    try { return JSON.stringify(JSON.parse(trimmed), null, 2) } catch { /* not JSON */ }
+    try {
+      return JSON.stringify(JSON.parse(trimmed), null, 2)
+    } catch {
+      /* not JSON */
+    }
   }
   return body
 }
@@ -69,34 +77,38 @@ export default function AskCard({ ask, onResolved }) {
   }
 
   return (
-    <div style={{
-      background: 'var(--bg-card)',
-      border: '1px solid var(--border-amber)',
-      borderRadius: 'var(--radius-card)',
-      padding: '14px 16px',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 10,
-      animation: 'card-enter 0.2s ease',
-      boxShadow: 'var(--shadow-card)',
-      animationName: 'neon-pulse-amber',
-      animationDuration: '2s',
-      animationTimingFunction: 'ease-in-out',
-      animationIterationCount: 'infinite',
-    }}>
+    <div
+      style={{
+        background: 'var(--bg-card)',
+        border: '1px solid var(--border-amber)',
+        borderRadius: 'var(--radius-card)',
+        padding: '14px 16px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 10,
+        animation: 'card-enter 0.2s ease',
+        boxShadow: 'var(--shadow-card)',
+        animationName: 'neon-pulse-amber',
+        animationDuration: '2s',
+        animationTimingFunction: 'ease-in-out',
+        animationIterationCount: 'infinite',
+      }}
+    >
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <span style={{
-          fontFamily: 'var(--font-mono)',
-          fontSize: 10,
-          color: 'var(--neon-amber)',
-          background: 'rgba(251,191,36,0.08)',
-          border: '1px solid rgba(251,191,36,0.25)',
-          borderRadius: 3,
-          padding: '2px 6px',
-          textTransform: 'uppercase',
-          letterSpacing: '0.08em',
-        }}>
+        <span
+          style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: 10,
+            color: 'var(--neon-amber)',
+            background: 'rgba(251,191,36,0.08)',
+            border: '1px solid rgba(251,191,36,0.25)',
+            borderRadius: 3,
+            padding: '2px 6px',
+            textTransform: 'uppercase',
+            letterSpacing: '0.08em',
+          }}
+        >
           Permission
         </span>
         {isBackground && (
@@ -117,7 +129,9 @@ export default function AskCard({ ask, onResolved }) {
             Background
           </span>
         )}
-        <span style={{ color: 'var(--text-primary)', fontWeight: 'var(--fw-semibold)', fontSize: 13 }}>
+        <span
+          style={{ color: 'var(--text-primary)', fontWeight: 'var(--fw-semibold)', fontSize: 13 }}
+        >
           {ask.title || 'Permission request'}
         </span>
         {ask.agent_path && (
@@ -151,26 +165,29 @@ export default function AskCard({ ask, onResolved }) {
       </div>
 
       {/* Body */}
-      <pre className="selectable" style={{
-        fontFamily: 'var(--font-mono)',
-        fontSize: 11,
-        lineHeight: 1.6,
-        color: 'var(--text-secondary)',
-        background: 'rgba(0,0,0,0.4)',
-        border: '1px solid rgba(251,191,36,0.1)',
-        borderRadius: 4,
-        padding: '8px 10px',
-        whiteSpace: 'pre-wrap',
-        wordBreak: 'break-word',
-        margin: 0,
-      }}>
+      <pre
+        className="selectable"
+        style={{
+          fontFamily: 'var(--font-mono)',
+          fontSize: 11,
+          lineHeight: 1.6,
+          color: 'var(--text-secondary)',
+          background: 'rgba(0,0,0,0.4)',
+          border: '1px solid rgba(251,191,36,0.1)',
+          borderRadius: 4,
+          padding: '8px 10px',
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word',
+          margin: 0,
+        }}
+      >
         {prettyBody(ask.body)}
       </pre>
 
       {/* Response */}
       {hasOptions ? (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {ask.options.map(opt => {
+          {ask.options.map((opt) => {
             const meta = optMeta(opt)
             return (
               <button
@@ -180,8 +197,12 @@ export default function AskCard({ ask, onResolved }) {
                 style={{
                   ...btnBase,
                   color: meta.affirmative ? 'var(--neon-green)' : 'var(--neon-red)',
-                  borderColor: meta.affirmative ? 'rgba(var(--accent-rgb),0.3)' : 'rgba(255,51,102,0.3)',
-                  background: meta.affirmative ? 'rgba(var(--accent-rgb),0.06)' : 'rgba(255,51,102,0.06)',
+                  borderColor: meta.affirmative
+                    ? 'rgba(var(--accent-rgb),0.3)'
+                    : 'rgba(255,51,102,0.3)',
+                  background: meta.affirmative
+                    ? 'rgba(var(--accent-rgb),0.06)'
+                    : 'rgba(255,51,102,0.06)',
                 }}
               >
                 {loading === opt ? '...' : meta.label}
@@ -194,8 +215,10 @@ export default function AskCard({ ask, onResolved }) {
           <input
             type="text"
             value={freeText}
-            onChange={e => setFreeText(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter' && freeText.trim()) respond(freeText.trim()) }}
+            onChange={(e) => setFreeText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && freeText.trim()) respond(freeText.trim())
+            }}
             placeholder="Type response and press Enter…"
             disabled={!!loading}
             style={{ flex: 1, fontFamily: 'var(--font-mono)', fontSize: 11 }}
@@ -203,7 +226,12 @@ export default function AskCard({ ask, onResolved }) {
           <button
             onClick={() => respond(freeText.trim() || 'reject')}
             disabled={!!loading}
-            style={{ ...btnBase, color: 'var(--neon-green)', borderColor: 'rgba(var(--accent-rgb),0.3)', background: 'rgba(var(--accent-rgb),0.06)' }}
+            style={{
+              ...btnBase,
+              color: 'var(--neon-green)',
+              borderColor: 'rgba(var(--accent-rgb),0.3)',
+              background: 'rgba(var(--accent-rgb),0.06)',
+            }}
           >
             Send
           </button>
