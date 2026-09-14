@@ -207,18 +207,38 @@ class EmptyOutputIsANotice(unittest.TestCase):
     """The warnings the app dropped are now an undroppable kind."""
 
     def test_streaming_emits_notice_not_log_for_an_empty_turn(self):
+        import ast
         import inspect
 
         from yuyutsava.core import streaming
 
-        src = inspect.getsource(streaming)
-        self.assertIn('StreamEvent("notice"', src)
-        self.assertIn("Agent produced no output", src)
-        # The old droppable form must be gone for these two.
-        self.assertNotIn(
-            'StreamEvent("log", {\n            "text": (\n                f"⚠️  Agent produced no output',
-            src,
-        )
+        # Parsed rather than substring-matched, so how a call happens to be
+        # line-wrapped can neither break this check nor fake it.
+        tree = ast.parse(inspect.getsource(streaming))
+
+        def event_texts(kind: str) -> list[str]:
+            """The string literals inside every ``StreamEvent(kind, ...)`` call."""
+            texts = []
+            for node in ast.walk(tree):
+                if (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name)
+                    and node.func.id == "StreamEvent"
+                    and node.args
+                    and isinstance(node.args[0], ast.Constant)
+                    and node.args[0].value == kind
+                ):
+                    literals = [
+                        n.value
+                        for n in ast.walk(node)
+                        if isinstance(n, ast.Constant) and isinstance(n.value, str)
+                    ]
+                    texts.append(" ".join(literals))
+            return texts
+
+        self.assertTrue(any("Agent produced no output" in text for text in event_texts("notice")))
+        # The old droppable form must be gone for this warning.
+        self.assertFalse(any("Agent produced no output" in text for text in event_texts("log")))
 
     def test_the_kind_is_documented_with_the_distinction(self):
         from yuyutsava.core.streaming import StreamEvent
