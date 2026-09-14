@@ -32,7 +32,7 @@ from typing import Any, Awaitable, Callable, Literal
 
 import psutil
 
-from yuyutsava.config.env import env
+from yuyutsava.config.env import env, env_float
 from yuyutsava.daemon.channels import ChannelEvent, SystemMetricsPayload, TimelinePayload
 from yuyutsava.platform.process import run_capture
 
@@ -69,24 +69,17 @@ class ResourceSettings:
 
     @classmethod
     def from_env(cls) -> "ResourceSettings":
-        def _num(name: str, default: float) -> float:
-            raw = env(name)
-            try:
-                return float(raw) if raw else default
-            except ValueError:
-                return default
-
         hints_raw = env("YUYUTSAVA_RES_HEAVY_HINTS")
         hints = frozenset(h.strip() for h in hints_raw.split(",") if h.strip())
         return cls(
-            cpu_high_pct=_num("YUYUTSAVA_RES_CPU_HIGH_PCT", 85.0),
-            mem_min_mb=int(_num("YUYUTSAVA_RES_MEM_MIN_MB", 1024)),
-            disk_min_gb=_num("YUYUTSAVA_RES_DISK_MIN_GB", 5.0),
-            max_heavy_tasks=max(1, int(_num("YUYUTSAVA_MAX_HEAVY_TASKS", 1))),
-            sample_sec=max(1.0, _num("YUYUTSAVA_RES_SAMPLE_SEC", 5.0)),
-            defer_max_sec=max(0.0, _num("YUYUTSAVA_RES_DEFER_MAX_SEC", 600.0)),
-            emit_sec=max(1.0, _num("YUYUTSAVA_RES_EMIT_SEC", 10.0)),
-            heavy_complexity=int(_num("YUYUTSAVA_RES_HEAVY_COMPLEXITY", 4)),
+            cpu_high_pct=env_float("YUYUTSAVA_RES_CPU_HIGH_PCT", default=85.0),
+            mem_min_mb=int(env_float("YUYUTSAVA_RES_MEM_MIN_MB", default=1024)),
+            disk_min_gb=env_float("YUYUTSAVA_RES_DISK_MIN_GB", default=5.0),
+            max_heavy_tasks=max(1, int(env_float("YUYUTSAVA_MAX_HEAVY_TASKS", default=1))),
+            sample_sec=max(1.0, env_float("YUYUTSAVA_RES_SAMPLE_SEC", default=5.0)),
+            defer_max_sec=max(0.0, env_float("YUYUTSAVA_RES_DEFER_MAX_SEC", default=600.0)),
+            emit_sec=max(1.0, env_float("YUYUTSAVA_RES_EMIT_SEC", default=10.0)),
+            heavy_complexity=int(env_float("YUYUTSAVA_RES_HEAVY_COMPLEXITY", default=4)),
             heavy_hints=hints,
             docker_stats=env("YUYUTSAVA_RES_DOCKER_STATS").lower() in ("1", "true", "yes"),
         )

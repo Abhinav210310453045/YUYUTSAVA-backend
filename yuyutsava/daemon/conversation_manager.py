@@ -28,10 +28,10 @@ from __future__ import annotations
 import asyncio
 import functools
 import logging
-import os
 from pathlib import Path
 from typing import Any
 
+from yuyutsava.config.env import env_int
 from yuyutsava.conversation import ConversationService
 from yuyutsava.core.config import (
     DockerSettings,
@@ -53,10 +53,7 @@ logger = logging.getLogger("yuyutsava.daemon.conversation_manager")
 
 
 def _bash_timeout_sec() -> int:
-    try:
-        return max(1, int(os.environ.get("YUYUTSAVA_BASH_TIMEOUT", "300")))
-    except ValueError:
-        return 300
+    return max(1, env_int("YUYUTSAVA_BASH_TIMEOUT", default=300))
 
 
 # No BudgetPolicy on the conversational bundle (removed 2026-09-13).

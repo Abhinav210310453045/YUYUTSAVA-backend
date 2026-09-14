@@ -20,27 +20,14 @@ from __future__ import annotations
 
 import collections
 import logging
-import os
 from dataclasses import dataclass
+
+from yuyutsava.config.env import env_float, env_int
 
 logger = logging.getLogger("yuyutsava.audio_io.vad")
 
 _SAMPLE_RATE = 16_000
 _BYTES_PER_SAMPLE = 2
-
-
-def _env_float(name: str, default: float) -> float:
-    try:
-        return float(os.environ[name])
-    except (KeyError, ValueError):
-        return default
-
-
-def _env_int(name: str, default: int) -> int:
-    try:
-        return int(os.environ[name])
-    except (KeyError, ValueError):
-        return default
 
 
 @dataclass
@@ -103,10 +90,10 @@ class VadSegmenter:
           YUYUTSAVA_VAD_MIN_UTTERANCE_MS minimum voiced audio to count as a turn
         """
         return cls(
-            aggressiveness=_env_int("YUYUTSAVA_VAD_AGGRESSIVENESS", 2),
-            energy_threshold=_env_float("YUYUTSAVA_VAD_ENERGY", 1000.0),
-            barge_energy_threshold=_env_float("YUYUTSAVA_VAD_BARGE_ENERGY", 4000.0),
-            barge_start_frames=_env_int("YUYUTSAVA_VAD_BARGE_FRAMES", 15),
+            aggressiveness=env_int("YUYUTSAVA_VAD_AGGRESSIVENESS", default=2),
+            energy_threshold=env_float("YUYUTSAVA_VAD_ENERGY", default=1000.0),
+            barge_energy_threshold=env_float("YUYUTSAVA_VAD_BARGE_ENERGY", default=4000.0),
+            barge_start_frames=env_int("YUYUTSAVA_VAD_BARGE_FRAMES", default=15),
             # Conversational pause window: a hands-free voice session stays
             # listening through natural mid-thought pauses and only ends the
             # utterance after ~2 s of continuous silence, so the user isn't
@@ -116,8 +103,8 @@ class VadSegmenter:
             # longer after a real stop is far smaller than losing the tail of a
             # sentence. Raise it (YUYUTSAVA_VAD_SILENCE_MS) for even more
             # forgiving pauses, lower it for snappier push-to-talk turns.
-            silence_ms=_env_int("YUYUTSAVA_VAD_SILENCE_MS", 2000),
-            min_utterance_ms=_env_int("YUYUTSAVA_VAD_MIN_UTTERANCE_MS", 300),
+            silence_ms=env_int("YUYUTSAVA_VAD_SILENCE_MS", default=2000),
+            min_utterance_ms=env_int("YUYUTSAVA_VAD_MIN_UTTERANCE_MS", default=300),
         )
 
     def __init__(

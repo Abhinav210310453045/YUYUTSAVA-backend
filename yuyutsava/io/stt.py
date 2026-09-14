@@ -19,6 +19,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
 
+from yuyutsava.config.env import env_float
+
 logger = logging.getLogger("yuyutsava.io.stt")
 
 
@@ -157,10 +159,7 @@ class FasterWhisperSTT(STT):
             "off",
             "",
         )
-        try:
-            vad_threshold = float(os.environ.get("FASTER_WHISPER_VAD_THRESHOLD", "0.5"))
-        except ValueError:
-            vad_threshold = 0.5
+        vad_threshold = env_float("FASTER_WHISPER_VAD_THRESHOLD", default=0.5)
         return cls(
             model_size=size,
             language=lang,

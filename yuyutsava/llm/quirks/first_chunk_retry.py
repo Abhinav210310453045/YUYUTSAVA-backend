@@ -27,6 +27,8 @@ import time
 from functools import lru_cache
 from typing import Callable
 
+from yuyutsava.config.env import env_float
+
 logger = logging.getLogger("yuyutsava.llm.retry")
 
 # Indirections so tests can patch the sleeps without touching asyncio/time.
@@ -47,13 +49,7 @@ _DEFAULT_BUDGET_SEC = 90.0
 
 
 def _budget_sec() -> float:
-    raw = os.environ.get("VERTEX_RETRY_BUDGET_SEC", "").strip()
-    if not raw:
-        return _DEFAULT_BUDGET_SEC
-    try:
-        value = float(raw)
-    except ValueError:
-        return _DEFAULT_BUDGET_SEC
+    value = env_float("VERTEX_RETRY_BUDGET_SEC", default=_DEFAULT_BUDGET_SEC)
     return value if value > 0 else _DEFAULT_BUDGET_SEC
 
 

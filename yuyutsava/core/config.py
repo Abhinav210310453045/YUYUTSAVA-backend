@@ -43,7 +43,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, Protocol
 
-from yuyutsava.config.env import env
+from yuyutsava.config.env import env, env_int
 from yuyutsava.storage.paths import events_config_path
 
 
@@ -156,11 +156,7 @@ class DockerSettings:
         memory = os.environ.get("YUYUTSAVA_DOCKER_MEMORY", "").strip() or "512m"
         cpus = os.environ.get("YUYUTSAVA_DOCKER_CPUS", "").strip() or "1.0"
 
-        raw_pids = os.environ.get("YUYUTSAVA_DOCKER_PIDS_LIMIT", "").strip()
-        try:
-            pids_limit = int(raw_pids) if raw_pids else 100
-        except ValueError:
-            pids_limit = 100
+        pids_limit = env_int("YUYUTSAVA_DOCKER_PIDS_LIMIT", default=100)
 
         raw_export = os.environ.get("YUYUTSAVA_DOCKER_EXPORT_DIR", "").strip()
         export_dir = Path(raw_export) if raw_export else None
@@ -355,11 +351,7 @@ class VertexSettings:
             )
         location = env("VERTEX_LOCATION", role, "us-central1")
         model = env("VERTEX_MODEL", role, "gemini-2.5-flash")
-        raw_retries = env("VERTEX_MAX_RETRIES", role, "6")
-        try:
-            max_retries = max(0, int(raw_retries))
-        except (TypeError, ValueError):
-            max_retries = 6
+        max_retries = max(0, env_int("VERTEX_MAX_RETRIES", role, 6))
         return cls(project=project, location=location, model=model, max_retries=max_retries)
 
 
@@ -720,43 +712,22 @@ class DaemonConfig:
 
     @classmethod
     def from_env(cls) -> DaemonConfig:
-        port_raw = os.environ.get("YUYUTSAVA_DAEMON_PORT", "").strip()
-        try:
-            port = int(port_raw) if port_raw else 7654
-        except ValueError:
-            port = 7654
+        port = env_int("YUYUTSAVA_DAEMON_PORT", default=7654)
 
         host = os.environ.get("YUYUTSAVA_DAEMON_HOST", "127.0.0.1").strip() or "127.0.0.1"
 
         open_browser_raw = os.environ.get("YUYUTSAVA_DAEMON_OPEN_BROWSER", "").strip().lower()
         open_browser = open_browser_raw in ("1", "true", "yes")
 
-        expiry_raw = os.environ.get("YUYUTSAVA_PROPOSAL_EXPIRY_SEC", "").strip()
-        try:
-            expiry = int(expiry_raw) if expiry_raw else 300
-        except ValueError:
-            expiry = 300
+        expiry = env_int("YUYUTSAVA_PROPOSAL_EXPIRY_SEC", default=300)
 
         # Fallbacks match the dataclass defaults (they used to disagree:
         # 8000/30000 here vs 60000 on the class — from_env silently shrank
         # every budget).
-        orch_raw = os.environ.get("YUYUTSAVA_ORCHESTRATOR_TOKEN_BUDGET", "").strip()
-        try:
-            orch_budget = int(orch_raw) if orch_raw else 60000
-        except ValueError:
-            orch_budget = 60000
+        orch_budget = env_int("YUYUTSAVA_ORCHESTRATOR_TOKEN_BUDGET", default=60000)
+        sub_budget = env_int("YUYUTSAVA_SUBAGENT_TOKEN_BUDGET", default=60000)
 
-        sub_raw = os.environ.get("YUYUTSAVA_SUBAGENT_TOKEN_BUDGET", "").strip()
-        try:
-            sub_budget = int(sub_raw) if sub_raw else 60000
-        except ValueError:
-            sub_budget = 60000
-
-        heartbeat_raw = os.environ.get("YUYUTSAVA_HEARTBEAT_SEC", "").strip()
-        try:
-            heartbeat = int(heartbeat_raw) if heartbeat_raw else 30
-        except ValueError:
-            heartbeat = 30
+        heartbeat = env_int("YUYUTSAVA_HEARTBEAT_SEC", default=30)
 
         return cls(
             web_host=host,

@@ -16,7 +16,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-from yuyutsava.config.env import env
+from yuyutsava.config.env import env, env_float, env_int
 from yuyutsava.core.config import OLLAMA_BASE_URL
 
 # Must match the vector(768) column in storage/pg/migrations.py.
@@ -67,26 +67,13 @@ class MemorySettings:
             base = base + "/v1"
         model = os.environ.get("YUYUTSAVA_EMBED_MODEL", "").strip() or "nomic-embed-text"
 
-        raw_k = os.environ.get("YUYUTSAVA_MEMORY_TOP_K", "").strip()
-        try:
-            top_k = int(raw_k) if raw_k else 5
-        except ValueError:
-            top_k = 5
+        top_k = env_int("YUYUTSAVA_MEMORY_TOP_K", default=5)
 
         raw_pfx = os.environ.get("YUYUTSAVA_EMBED_PREFIXES", "").strip().lower()
         use_prefixes = raw_pfx in ("1", "true", "yes") if raw_pfx else "nomic" in model.lower()
 
-        raw_min = os.environ.get("YUYUTSAVA_MEMORY_MIN_SCORE", "").strip()
-        try:
-            min_score = float(raw_min) if raw_min else 0.3
-        except ValueError:
-            min_score = 0.3
-
-        raw_dedup = os.environ.get("YUYUTSAVA_MEMORY_DEDUP", "").strip()
-        try:
-            dedup_threshold = float(raw_dedup) if raw_dedup else 0.97
-        except ValueError:
-            dedup_threshold = 0.97
+        min_score = env_float("YUYUTSAVA_MEMORY_MIN_SCORE", default=0.3)
+        dedup_threshold = env_float("YUYUTSAVA_MEMORY_DEDUP", default=0.97)
 
         return cls(
             enabled=enabled,

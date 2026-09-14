@@ -37,6 +37,8 @@ import os
 import urllib.error
 import urllib.request
 
+from yuyutsava.config.env import env_int
+
 logger = logging.getLogger("yuyutsava.core.tracing")
 
 # Process-wide cache for the reachability probe. ``None`` = not yet probed.
@@ -161,10 +163,7 @@ def _build_exporter():
         sdk_version = version("langfuse")
     except PackageNotFoundError:
         sdk_version = "unknown"
-    try:
-        timeout = int(os.getenv("LANGFUSE_TIMEOUT") or 5)
-    except ValueError:
-        timeout = 5
+    timeout = env_int("LANGFUSE_TIMEOUT", default=5)
 
     auth = base64.b64encode(f"{public_key}:{secret_key}".encode()).decode("ascii")
     headers = {

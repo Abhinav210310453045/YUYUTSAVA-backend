@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from yuyutsava.cli.stream_smoother import TokenSmoother
+from yuyutsava.config.env import env_float, env_int
 from yuyutsava.core.streaming import StreamEvent
 
 _CYAN = "\033[36m"
@@ -65,16 +66,8 @@ class ChatRenderer:
         self._verbose = verbose
         self._workspace = workspace
         self._in_ai_stream = False
-        try:
-            ring_size = max(1, int(os.environ.get("YUYUTSAVA_REPL_RING", "50")))
-        except ValueError:
-            ring_size = 50
-        try:
-            self._entry_cap = max(
-                1024, int(os.environ.get("YUYUTSAVA_REPL_RING_ENTRY_KB", "100")) * 1024
-            )
-        except ValueError:
-            self._entry_cap = 100 * 1024
+        ring_size = max(1, env_int("YUYUTSAVA_REPL_RING", default=50))
+        self._entry_cap = max(1024, env_int("YUYUTSAVA_REPL_RING_ENTRY_KB", default=100) * 1024)
         self._ring: deque[RingEntry] = deque(maxlen=ring_size)
         self._next_index = 1
         self._smoother = self._make_smoother()
@@ -138,10 +131,7 @@ class ChatRenderer:
                 return None
         except (ValueError, AttributeError):
             return None
-        try:
-            base_cps = float(os.environ.get("YUYUTSAVA_REPL_SMOOTH_CPS", "180"))
-        except ValueError:
-            base_cps = 180.0
+        base_cps = env_float("YUYUTSAVA_REPL_SMOOTH_CPS", default=180.0)
         return TokenSmoother(
             sys.stdout.write,
             flush=sys.stdout.flush,

@@ -83,6 +83,7 @@ from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
 
 from yuyutsava.audio_io.blobs import write_voice_wav
 from yuyutsava.audio_io.sentence import SentenceChunker
+from yuyutsava.config.env import env_float
 from yuyutsava.core.streaming import StreamEvent
 from yuyutsava.daemon.channels import AskPrompt
 from yuyutsava.daemon.interrupt_format import (
@@ -132,10 +133,7 @@ _AUDIO_FRAME_BYTES = 16_000
 # own voice can't self-interrupt; a real user talking over still cuts in after it.
 # Tunable via YUYUTSAVA_BARGE_GRACE_SEC for noisy rooms (fan/AC settle time).
 def _barge_grace_sec() -> float:
-    try:
-        return max(0.0, float(os.environ.get("YUYUTSAVA_BARGE_GRACE_SEC", "0.8")))
-    except ValueError:
-        return 0.8
+    return max(0.0, env_float("YUYUTSAVA_BARGE_GRACE_SEC", default=0.8))
 
 
 _BARGE_GRACE_SEC = _barge_grace_sec()
@@ -146,10 +144,7 @@ _BARGE_GRACE_SEC = _barge_grace_sec()
 # Only backends that expose a confidence (faster-whisper) are gated; Groq and
 # any backend returning None are never gated. Set 0 to disable the gate.
 def _stt_min_confidence() -> float:
-    try:
-        return max(0.0, min(1.0, float(os.environ.get("YUYUTSAVA_STT_MIN_CONFIDENCE", "0.35"))))
-    except ValueError:
-        return 0.35
+    return max(0.0, min(1.0, env_float("YUYUTSAVA_STT_MIN_CONFIDENCE", default=0.35)))
 
 
 _STT_MIN_CONFIDENCE = _stt_min_confidence()
@@ -177,10 +172,7 @@ _BARGE_IN_ENABLED = _barge_in_enabled()
 # How long after the agent stops speaking we keep ignoring mic input, so the tail
 # of buffered playback (still audible, still hitting the mic) can't self-trigger.
 def _post_speak_grace_sec() -> float:
-    try:
-        return max(0.0, float(os.environ.get("YUYUTSAVA_VOICE_POST_SPEAK_GRACE_SEC", "1.2")))
-    except ValueError:
-        return 1.2
+    return max(0.0, env_float("YUYUTSAVA_VOICE_POST_SPEAK_GRACE_SEC", default=1.2))
 
 
 _POST_SPEAK_GRACE_SEC = _post_speak_grace_sec()

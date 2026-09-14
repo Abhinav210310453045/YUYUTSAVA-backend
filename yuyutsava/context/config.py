@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from yuyutsava.config.env import env
+from yuyutsava.config.env import env, env_float, env_int
 
 # Conservative per-provider input-context defaults. These are *budgets* the
 # compactor steers under, not API hard limits — erring low just compacts a
@@ -75,20 +75,6 @@ class ContextSettings:
 
     @classmethod
     def from_env(cls, role: str | None = None, *, provider: str = "") -> ContextSettings:
-        def _int(name: str, default: int) -> int:
-            raw = env(name, role)
-            try:
-                return int(raw) if raw else default
-            except ValueError:
-                return default
-
-        def _float(name: str, default: float) -> float:
-            raw = env(name, role)
-            try:
-                return float(raw) if raw else default
-            except ValueError:
-                return default
-
         def _csv(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
             raw = env(name, role)
             if not raw:
@@ -103,17 +89,20 @@ class ContextSettings:
             return raw.strip().lower() in ("1", "true", "yes", "on")
 
         return cls(
-            max_input_tokens=_int(
-                "YUYUTSAVA_CONTEXT_MAX_INPUT_TOKENS",
-                default_max_input_tokens(provider),
+            max_input_tokens=env_int(
+                "YUYUTSAVA_CONTEXT_MAX_INPUT_TOKENS", role, default_max_input_tokens(provider)
             ),
-            compact_fraction=_float("YUYUTSAVA_CONTEXT_COMPACT_FRACTION", 0.7),
-            keep_messages=_int("YUYUTSAVA_CONTEXT_KEEP_MESSAGES", 20),
-            offload_threshold_chars=_int("YUYUTSAVA_CONTEXT_OFFLOAD_THRESHOLD_CHARS", 20_000),
+            compact_fraction=env_float("YUYUTSAVA_CONTEXT_COMPACT_FRACTION", role, 0.7),
+            keep_messages=env_int("YUYUTSAVA_CONTEXT_KEEP_MESSAGES", role, 20),
+            offload_threshold_chars=env_int(
+                "YUYUTSAVA_CONTEXT_OFFLOAD_THRESHOLD_CHARS", role, 20_000
+            ),
             always_offload_prefixes=_csv("YUYUTSAVA_CONTEXT_ALWAYS_OFFLOAD_PREFIXES", ("ws_",)),
             semantic_recall=_bool("YUYUTSAVA_CONTEXT_SEMANTIC_RECALL", True),
-            pin_first_messages=_int("YUYUTSAVA_CONTEXT_PIN_FIRST_MESSAGES", 2),
-            summarizer_input_tokens=_int("YUYUTSAVA_CONTEXT_SUMMARIZER_INPUT_TOKENS", 12_000),
+            pin_first_messages=env_int("YUYUTSAVA_CONTEXT_PIN_FIRST_MESSAGES", role, 2),
+            summarizer_input_tokens=env_int(
+                "YUYUTSAVA_CONTEXT_SUMMARIZER_INPUT_TOKENS", role, 12_000
+            ),
         )
 
     @property
