@@ -45,7 +45,8 @@ _SUBAGENT_INLINE_CHARS = 4000
 
 class RichChatRenderer(ChatRenderer):
     def __init__(
-        self, *, verbose: bool, workspace: Path | None, console: Console
+        self, *, verbose: bool, workspace: Path | None, console: Console,
+        live: bool = True,
     ) -> None:
         super().__init__(verbose=verbose, workspace=workspace)
         # The Live region paces output; the smoother would double-buffer.
@@ -57,6 +58,17 @@ class RichChatRenderer(ChatRenderer):
         self._opened_prose = False
         self._sub_activity = ""  # last line of nested subagent prose
         self._retry_note = ""  # provider-busy banner while a 429 is retried
+        #: False under the chat dashboard, which draws the status itself: a
+        #: transient Live region inside a full-screen application would fight
+        #: its renderer for the cursor.
+        self._use_live = live
+        #: Called whenever the status changes, so a host that draws its own
+        #: status can repaint. Set by ChatDashboard.attach_renderer.
+        self.on_change: Any = None
+        #: Whether a turn is in progress. The spinner's existence used to carry
+        #: this; the dashboard has no spinner and still needs to know whether
+        #: "nothing is happening" means idle or waiting on the model.
+        self._in_turn = False
 
     # ------------------------------------------------------------------
     # Turn / Live lifecycle
@@ -85,6 +97,10 @@ class RichChatRenderer(ChatRenderer):
         self._sub_activity = ""
         self._retry_note = ""
         self._in_flight.clear()
+        self._in_turn = True
+        if not self._use_live:
+            self._notify()
+            return
         self._live = Live(
             self._status_renderable(),
             console=self._console,
@@ -99,10 +115,16 @@ class RichChatRenderer(ChatRenderer):
         self._in_flight.clear()
         self._sub_activity = ""
         self._retry_note = ""
+        self._in_turn = False
+        self._notify()
 
     @contextlib.contextmanager
     def pause(self):
-        """Stop the Live region around blocking input (ask cards)."""
+        """Stop the Live region around blocking input (ask cards).
+
+        A no-op under the dashboard: ask cards render into the transcript pane,
+        so there is no repainting region to get out of the way of.
+        """
         had_live = self._live is not None
         self._stop_live()
         try:
@@ -123,9 +145,46 @@ class RichChatRenderer(ChatRenderer):
                 self._live.stop()
             self._live = None
 
+    def _notify(self) -> None:
+        if self.on_change is not None:
+            with contextlib.suppress(Exception):
+                self.on_change()
+
     def _refresh(self) -> None:
         if self._live is not None:
             self._live.update(self._status_renderable())
+        self._notify()
+
+    # ------------------------------------------------------------------
+    # Status (one source, two presentations)
+    # ------------------------------------------------------------------
+
+    def status_text(self) -> str:
+        """The status line as plain text.
+
+        Same state the spinner shows, for a host that draws its own status bar
+        (the dashboard). Kept beside ``_status_renderable`` deliberately: two
+        independent descriptions of "what is the agent doing" would drift, and
+        this one appears in a pane that is always on screen.
+        """
+        if self._retry_note:
+            return self._retry_note
+        if self._in_flight:
+            name = self._in_flight[-1]
+            if name in _SUBAGENT_TOOLS:
+                extra = (
+                    f" ({len(self._in_flight)} in flight)"
+                    if len(self._in_flight) > 1 else ""
+                )
+                return f"Subagent working…{extra}"
+            return f"Running {name}…"
+        if self._md.started:
+            return "Writing…"
+        return "Thinking…" if self._in_turn else ""
+
+    def tool_in_flight(self) -> str:
+        """Name of the most recent unfinished tool call, or ``""``."""
+        return self._in_flight[-1] if self._in_flight else ""
 
     def _status_renderable(self) -> RenderableType:
         if self._retry_note:
@@ -223,6 +282,19 @@ class RichChatRenderer(ChatRenderer):
             text = ev.data.get("text", "")
             if text:
                 self._console.print(Text(text, style="warn"))
+            return
+
+        if ev.kind == "notice":
+            # Never silently dropped: a notice is what says "the model
+            # returned nothing", and that must not look like a hang.
+            text = ev.data.get("text", "")
+            if text:
+                level = ev.data.get("level", "info")
+                style = {"error": "err", "warning": "warn"}.get(level, "chrome")
+                mark = {"error": "✗", "warning": "⚠"}.get(level, "·")
+                self._md.flush()
+                self._console.print()
+                self._console.print(Text(f"  {mark} {text}", style=style))
             return
 
         if ev.kind == "image":

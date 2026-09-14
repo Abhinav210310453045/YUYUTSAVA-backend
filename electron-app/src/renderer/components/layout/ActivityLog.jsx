@@ -8,10 +8,29 @@ const KIND_STYLE = {
   tool_call:      { color: 'var(--neon-amber)', prefix: '→ ' },
   tool_result:    { color: 'var(--text-secondary)', prefix: '← ' },
   timeline:       { color: 'var(--text-primary)', borderLeft: '2px solid var(--neon-purple)', paddingLeft: 6 },
-  http_log:       { color: 'var(--neon-amber)', prefix: 'HTTP ' },
+  http_log:       { color: 'var(--text-dim)', prefix: 'HTTP ' },
+  app_log:        { color: 'var(--text-secondary)' },
   bg_task:        { color: 'var(--neon-cyan)' },
   system_metrics: { color: 'var(--text-dim)', prefix: '◴ ' },
   default:        { color: 'var(--text-muted)' },
+}
+
+// Severity carried on the wire and, until now, thrown away. A log list without
+// levels is a wall of identical grey text.
+const LEVEL_STYLE = {
+  DEBUG:    { color: 'var(--text-dim)', tag: 'DBG' },
+  INFO:     { color: 'var(--text-secondary)', tag: 'INF' },
+  WARNING:  { color: 'var(--neon-amber)', tag: 'WRN' },
+  ERROR:    { color: 'var(--neon-red)', tag: 'ERR' },
+  CRITICAL: { color: 'var(--neon-red)', tag: 'CRT' },
+}
+
+const LEVEL_ORDER = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
+
+// `yuyutsava.context.compaction` -> `context.compaction`: the prefix is on
+// every line and the column is 20 characters wide.
+function shortLogger(name) {
+  return String(name || '').replace(/^yuyutsava\./, '')
 }
 
 function EventRow({ line, isLast }) {
@@ -49,7 +68,34 @@ function EventRow({ line, isLast }) {
       <span style={{ color: 'var(--text-dim)', flexShrink: 0, fontSize: 9 }}>
         {fmtTime(line.ts || Date.now() / 1000)}
       </span>
-      <span className="selectable" style={{ wordBreak: 'break-all', flex: 1 }}>
+      {line.level && (
+        <span
+          title={line.level}
+          style={{
+            flexShrink: 0, fontSize: 9, fontWeight: 600,
+            color: (LEVEL_STYLE[line.level] || LEVEL_STYLE.INFO).color,
+          }}
+        >{(LEVEL_STYLE[line.level] || LEVEL_STYLE.INFO).tag}</span>
+      )}
+      {line.logger && (
+        <span
+          title={line.logger}
+          style={{
+            flexShrink: 0, width: 108, overflow: 'hidden',
+            textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 9,
+            color: 'var(--text-dim)',
+          }}
+        >{shortLogger(line.logger)}</span>
+      )}
+      <span
+        className="selectable"
+        style={{
+          wordBreak: 'break-word', flex: 1,
+          color: line.level
+            ? (LEVEL_STYLE[line.level] || LEVEL_STYLE.INFO).color
+            : undefined,
+        }}
+      >
         {prefix}{line.text}
       </span>
       <button
@@ -99,7 +145,27 @@ export default function ActivityLog({ events = [], logs = [], bgTasks = EMPTY_MA
   const [detailId, setDetailId] = useState(null)
   // Tasks render as rows, not log lines — keep `lines` empty for that tab so the
   // auto-scroll effect below is a no-op there.
-  const lines = tab === 'logs' ? logs : tab === 'events' ? events : []
+  // Filters, for the Logs tab. A 2,000-line flat list with no way to narrow it
+  // is not a log viewer, whatever it contains.
+  const [query, setQuery] = useState('')
+  const [minLevel, setMinLevel] = useState('INFO')
+  const [showHttp, setShowHttp] = useState(false)
+
+  const rawLines = tab === 'logs' ? logs : tab === 'events' ? events : []
+  const lines = useMemo(() => {
+    if (tab !== 'logs') return rawLines
+    const floor = LEVEL_ORDER.indexOf(minLevel)
+    const q = query.trim().toLowerCase()
+    return rawLines.filter((l) => {
+      if (l.kind === 'http_log' && !showHttp) return false
+      if (l.level && LEVEL_ORDER.indexOf(l.level) < floor) return false
+      if (!q) return true
+      return (
+        String(l.text || '').toLowerCase().includes(q)
+        || String(l.logger || '').toLowerCase().includes(q)
+      )
+    })
+  }, [tab, rawLines, query, minLevel, showHttp])
   const bottomRef = useRef(null)
   const containerRef = useRef(null)
   const [autoScroll, setAutoScroll] = useState(true)
@@ -200,6 +266,55 @@ export default function ActivityLog({ events = [], logs = [], bgTasks = EMPTY_MA
           )
         })}
       </div>
+
+      {/* Filter bar — Logs tab only. The level select is a floor, so INFO
+          hides DEBUG chatter; HTTP access lines are off by default because
+          they are the UI's own polling and used to be the ENTIRE tab. */}
+      {tab === 'logs' && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0,
+          padding: '6px 10px', borderBottom: '1px solid var(--border-subtle)',
+          background: 'var(--bg-bar)',
+        }}>
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="filter…"
+            style={{
+              flex: 1, minWidth: 0, background: 'var(--bg-card)',
+              border: '1px solid var(--border-subtle)',
+              borderRadius: 'var(--radius-btn)', padding: '2px 6px',
+              color: 'var(--text-primary)', fontFamily: 'var(--font-mono)',
+              fontSize: 10, outline: 'none',
+            }}
+          />
+          <select
+            value={minLevel}
+            onChange={(e) => setMinLevel(e.target.value)}
+            title="Minimum level"
+            style={{
+              background: 'var(--bg-card)', border: '1px solid var(--border-subtle)',
+              borderRadius: 'var(--radius-btn)', color: 'var(--text-secondary)',
+              fontFamily: 'var(--font-mono)', fontSize: 10, padding: '2px 4px',
+            }}
+          >
+            {LEVEL_ORDER.map((lv) => (
+              <option key={lv} value={lv}>{lv}</option>
+            ))}
+          </select>
+          <button
+            onClick={() => setShowHttp((v) => !v)}
+            title="Show HTTP access lines"
+            style={{
+              background: showHttp ? 'rgba(var(--accent-rgb), 0.12)' : 'transparent',
+              border: `1px solid ${showHttp ? 'rgba(var(--accent-rgb), 0.3)' : 'var(--border-subtle)'}`,
+              borderRadius: 'var(--radius-btn)', cursor: 'pointer',
+              color: showHttp ? 'var(--neon-green)' : 'var(--text-dim)',
+              fontFamily: 'var(--font-mono)', fontSize: 9, padding: '2px 6px',
+            }}
+          >HTTP</button>
+        </div>
+      )}
 
       <div
         ref={containerRef}

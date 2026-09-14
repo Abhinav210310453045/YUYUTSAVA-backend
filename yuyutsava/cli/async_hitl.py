@@ -243,12 +243,14 @@ class CliHitlBridge:
         elif options:
             print(f"  options: {' / '.join(options)}", file=sys.stderr, flush=True)
 
+        # Through the seam, not input(): a background task's approval was
+        # unanswerable under the split-view dashboard, which owns stdin for the
+        # whole session (cli/line_reader.py).
+        from yuyutsava.cli.line_reader import read_line
+
         prompt = "approve/reject> " if is_permission else "> "
-        try:
-            line = await asyncio.get_running_loop().run_in_executor(
-                None, lambda: input(prompt).strip()
-            )
-        except (EOFError, KeyboardInterrupt):
+        line = await read_line(prompt)
+        if line is None:
             return "reject"
         if is_permission:
             return decision_token(line) or "reject"

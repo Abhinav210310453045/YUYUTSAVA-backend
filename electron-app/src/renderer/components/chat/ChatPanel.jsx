@@ -1,6 +1,17 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useConverse } from '../../hooks/useConverse'
+import { useViewState } from '../../nav/useViewState'
 import NewSessionButton from '../common/NewSessionButton'
+import ResizeHandle from '../common/ResizeHandle'
+import ContextAside, { ContextMeter } from './ContextAside'
+
+// How close to the bottom still counts as "following the output".
+const NEAR_BOTTOM_PX = 80
+
+// Context column bounds, matching the card view's tinker aside.
+const CTX_MIN_W = 200
+const CTX_MAX_W = 420
+const CTX_DEFAULT_W = 260
 import Markdown from './Markdown'
 import MessageImages from './MessageImages'
 import MessageArtifacts from './MessageArtifacts'
@@ -56,7 +67,30 @@ function PlayPauseIcon({ playing }) {
   )
 }
 
+// A standalone row for something the system needs to say — the model returned
+// nothing, a history was repaired. Not a bubble: it is not something the agent
+// said, and styling it as speech would misattribute it.
+function NoticeRow({ m }) {
+  const tone = {
+    error: { fg: 'var(--neon-red)', bd: 'var(--border-red)', mark: '✗' },
+    warning: { fg: 'var(--neon-amber)', bd: 'var(--border-amber)', mark: '⚠' },
+    info: { fg: 'var(--text-muted)', bd: 'var(--border-subtle)', mark: '·' },
+  }[m.level || 'info']
+  return (
+    <div style={{
+      display: 'flex', gap: 8, alignItems: 'flex-start', flexShrink: 0,
+      padding: '8px 12px', borderRadius: 'var(--radius-card)',
+      border: `1px solid ${tone.bd}`, background: 'rgba(255,255,255,0.03)',
+      fontSize: 12, lineHeight: 1.6, color: tone.fg,
+    }}>
+      <span style={{ fontFamily: 'var(--font-mono)' }}>{tone.mark}</span>
+      <span style={{ color: 'var(--text-secondary)' }}>{m.text}</span>
+    </div>
+  )
+}
+
 function Bubble({ m, userText, sessionId, onRegenerate, onFeedback, playing, paused, onReplay, onTogglePause }) {
+  if (m.role === 'notice') return <NoticeRow m={m} />
   const isUser = m.role === 'user'
   const [hover, setHover] = useState(false)
   const empty = !m.text && (!m.images || m.images.length === 0) && (!m.artifacts || m.artifacts.length === 0)
@@ -183,20 +217,64 @@ export default function ChatPanel({
   // the same coordinates (the TODO card view's "New chat", which has no
   // resumeId yet) must pass its own so they don't collide.
   sessionKey = null,
+  // Show the live context/spend column. Off where the chat is already a
+  // sidebar itself (the TODO card view's tinker aside) — a panel inside a
+  // panel has no room to be read.
+  showContext = false,
 }) {
   const {
-    messages, connected, busy, pendingAsk, hello, listening, speaking, playingId, paused,
+    messages, connected, busy, pendingAsk, pendingAsks, hello, listening, speaking,
+    playingId, paused, usage, queued,
     send, answerAsk, interrupt, startVoice, stopVoice, replay, togglePause, newSession,
+    sendNow, discardQueued,
   } = useConverse({ origin, resumeId, agent, card, sessionKey, active })
   const [draft, setDraft] = useState('')
   const [fb, setFb] = useState({}) // messageId -> 'up' | 'down' (local selection)
   const scrollRef = useRef(null)
   const wasBusyRef = useRef(false)
 
+  // Context column: open/closed and width both survive a tab switch, the same
+  // way the card view's tinker aside does.
+  const [ctxOpen, setCtxOpen] = useViewState(`ctx:open:${origin}`, false)
+  const [ctxW, setCtxW] = useViewState(`ctx:w:${origin}`, CTX_DEFAULT_W)
+  const [ctxDragging, setCtxDragging] = useState(false)
+  const startCtxDrag = useCallback((e) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const startW = ctxW
+    setCtxDragging(true)
+    const onMove = (ev) => {
+      setCtxW(Math.min(CTX_MAX_W, Math.max(CTX_MIN_W, startW - (ev.clientX - startX))))
+    }
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      setCtxDragging(false)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+  }, [ctxW, setCtxW])
+
+  // Follow the output only when the user is already at the bottom. This used
+  // to pin scrollTop unconditionally, and `messages` gets a new identity on
+  // every smoother tick (~60 Hz), so scrolling up during a reply was
+  // impossible — the next frame yanked it back.
+  const [atBottom, setAtBottom] = useState(true)
+  const onScroll = useCallback(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const slack = el.scrollHeight - el.scrollTop - el.clientHeight
+    setAtBottom(slack <= NEAR_BOTTOM_PX)
+  }, [])
+
   useEffect(() => {
     const el = scrollRef.current
-    if (el) el.scrollTop = el.scrollHeight
-  }, [messages, pendingAsk])
+    if (el && atBottom) el.scrollTop = el.scrollHeight
+  }, [messages, pendingAsks, atBottom])
 
   // Notify the host view when a turn finishes (busy true → false).
   useEffect(() => {
@@ -244,7 +322,8 @@ export default function ChatPanel({
   }
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
+    <div style={{ flex: 1, display: 'flex', minWidth: 0, overflow: 'hidden' }}>
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden', position: 'relative' }}>
       {/* header */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8,
@@ -259,8 +338,15 @@ export default function ChatPanel({
           fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.1em',
           textTransform: 'uppercase', color: 'var(--text-primary)', fontWeight: 'var(--fw-semibold)',
         }}>{title}</span>
-        {(headerActions || showNewSession) && (
+        {(headerActions || showNewSession || showContext) && (
           <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            {showContext && (
+              <ContextMeter
+                usage={usage}
+                open={ctxOpen}
+                onClick={() => setCtxOpen(!ctxOpen)}
+              />
+            )}
             {headerActions}
             {showNewSession && <NewSessionButton onClick={newSession} label="New chat" />}
           </span>
@@ -275,7 +361,7 @@ export default function ChatPanel({
       }} />
 
       {/* messages */}
-      <div ref={scrollRef} style={{
+      <div ref={scrollRef} onScroll={onScroll} style={{
         flex: 1, overflowY: 'auto', padding: '20px 24px', position: 'relative', zIndex: 1,
         display: 'flex', flexDirection: 'column', gap: 12,
       }}>
@@ -314,12 +400,45 @@ export default function ChatPanel({
             the Inbox and the overlay instead, never through someone's open
             chat. Same card as those surfaces, so the option set (including the
             approve/session/project consent scopes) is identical everywhere. */}
-        {pendingAsk && (
-          <AskCard
-            ask={pendingAsk}
-            onAnswer={(_ask, response) => answerAsk(response)}
-          />
+        {/* Every pending question, oldest first.
+            The wrapper is load-bearing: AskCard sets `overflow: hidden`, which
+            per CSS flexbox makes its automatic minimum size 0, so in a long
+            thread flexbox took all the negative free space out of the card and
+            crushed it to an invisible sliver — the reason a question could
+            only be answered from the Inbox. Its bubble siblings have visible
+            overflow and refuse to shrink, so the card was the only victim.
+            overflow: visible + flexShrink: 0 is exactly what ProposalsPanel
+            does, which is why the same card behaves there. */}
+        {/* jump back to live, when the user has scrolled away */}
+        {!atBottom && (
+          <button
+            onClick={() => {
+              const el = scrollRef.current
+              if (el) el.scrollTop = el.scrollHeight
+              setAtBottom(true)
+            }}
+            style={{
+              position: 'sticky', bottom: 4, alignSelf: 'center', zIndex: 3,
+              padding: '3px 12px', borderRadius: 12, cursor: 'pointer',
+              fontFamily: 'var(--font-mono)', fontSize: 10,
+              background: 'var(--bg-elevated)',
+              border: '1px solid var(--border-subtle)',
+              color: 'var(--text-secondary)',
+            }}
+          >↓ latest</button>
         )}
+
+        {pendingAsks.map((ask) => (
+          <div
+            key={ask.ask_id || 'ask'}
+            style={{ display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0 }}
+          >
+            <AskCard
+              ask={ask}
+              onAnswer={(_ask, response) => answerAsk(response, ask.ask_id)}
+            />
+          </div>
+        ))}
       </div>
 
       {/* selection-context chips — what the next message will be scoped to */}
@@ -375,6 +494,47 @@ export default function ChatPanel({
         </div>
       )}
 
+      {/* A message typed mid-turn is held, not dropped and not allowed to kill
+          the running tool call. Both choices are offered explicitly, because
+          silently doing either is what made the agent look broken. */}
+      {queued && (
+        <div style={{
+          margin: '0 24px 8px', padding: '8px 12px', position: 'relative', zIndex: 1,
+          borderRadius: 'var(--radius-card)', flexShrink: 0,
+          border: '1px solid var(--border-amber)',
+          background: 'rgba(255,255,255,0.03)',
+          display: 'flex', alignItems: 'center', gap: 10, fontSize: 12,
+        }}>
+          <span style={{ color: 'var(--neon-amber)', fontFamily: 'var(--font-mono)' }}>⏸</span>
+          <span style={{
+            flex: 1, color: 'var(--text-secondary)', overflow: 'hidden',
+            textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>
+            queued — sends when this turn ends: “{queued.text}”
+          </span>
+          <button
+            onClick={() => sendNow()}
+            title="Interrupt the turn and send now"
+            style={{
+              padding: '3px 10px', borderRadius: 'var(--radius-btn)', cursor: 'pointer',
+              fontFamily: 'var(--font-mono)', fontSize: 10,
+              background: 'rgba(var(--accent-rgb), 0.12)',
+              border: '1px solid rgba(var(--accent-rgb), 0.3)',
+              color: 'var(--neon-green)',
+            }}
+          >send now</button>
+          <button
+            onClick={discardQueued}
+            title="Discard the queued message"
+            style={{
+              padding: '3px 8px', borderRadius: 'var(--radius-btn)', cursor: 'pointer',
+              background: 'transparent', border: '1px solid var(--border-subtle)',
+              color: 'var(--text-muted)', fontSize: 11,
+            }}
+          >✕</button>
+        </div>
+      )}
+
       {/* composer */}
       <div style={{
         display: 'flex', gap: 8, padding: '12px 24px 18px', position: 'relative', zIndex: 1,
@@ -385,7 +545,7 @@ export default function ChatPanel({
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={onKeyDown}
           rows={1}
-          placeholder={busy ? 'agent is working…' : placeholder}
+          placeholder={busy ? 'agent is working — your message will be queued' : placeholder}
           style={{
             flex: 1, resize: 'none', background: 'var(--glass-bg)', color: 'var(--text-primary)',
             border: '1px solid var(--glass-border)', borderRadius: 22, padding: '11px 16px',
@@ -417,6 +577,19 @@ export default function ChatPanel({
           {speaking ? '▸ agent speaking…' : '● listening — speak, then pause (or stop the mic)'}
         </div>
       )}
+    </div>
+    {showContext && ctxOpen && (
+      <>
+        <ResizeHandle onMouseDown={startCtxDrag} side="right" />
+        <div style={{
+          width: ctxW, minWidth: CTX_MIN_W, maxWidth: CTX_MAX_W, flexShrink: 0,
+          borderLeft: '1px solid var(--border-subtle)', overflow: 'hidden',
+          transition: ctxDragging ? 'none' : 'width 0.15s ease',
+        }}>
+          <ContextAside usage={usage} />
+        </div>
+      </>
+    )}
     </div>
   )
 }

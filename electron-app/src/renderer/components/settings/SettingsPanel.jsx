@@ -4,6 +4,7 @@ import SettingsField from './SettingsField'
 import WatchedDirsEditor from './WatchedDirsEditor'
 import WakeWordsEditor from './WakeWordsEditor'
 import { VoiceModeSettings, SubagentSettings } from './RuntimeToggles'
+import UsageSettings from './UsageSettings'
 import { getConfigSchema } from '../../api/client'
 import { useViewState, useScrollRestore } from '../../nav/useViewState'
 
@@ -375,6 +376,12 @@ export default function SettingsPanel() {
 
       <SettingsSection title="Watched Directories" defaultOpen={true}>
         <WatchedDirsEditor />
+      </SettingsSection>
+
+      {/* Token/cost analytics across every session. Closed by default — it
+          fetches on open and is a report, not a setting. */}
+      <SettingsSection title="Usage" defaultOpen={false}>
+        <UsageSettings />
       </SettingsSection>
 
       {/* Schema-driven config groups (served by the daemon). */}

@@ -110,6 +110,16 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument(
+        "--classic",
+        action="store_true",
+        help=(
+            "Chat in the single-pane transcript instead of the split view with "
+            "the live context panel. The split view takes over the screen, "
+            "which costs the terminal's own scrollback and mouse selection; "
+            "this keeps them. Also honoured via YUYUTSAVA_REPL_DASHBOARD=0."
+        ),
+    )
+    p.add_argument(
         "--list-sessions",
         action="store_true",
         help="List persisted sessions across all workspaces (id, workspace, timestamps, message count) and exit.",
@@ -391,6 +401,7 @@ async def _async_main(argv: list[str] | None = None, *, force_chat: bool = False
                 continue_latest=args.continue_,
                 verbose=args.verbose,
                 debug_plumbing=args.debug_plumbing,
+                classic=args.classic,
             )
 
     return await run_chat(

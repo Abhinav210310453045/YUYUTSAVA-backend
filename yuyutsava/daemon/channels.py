@@ -98,6 +98,29 @@ class HttpLogPayload:
 
 
 @dataclass(frozen=True)
+class AppLogPayload:
+    """One Python log record from the daemon, structured.
+
+    The Logs panel used to contain *only* HTTP access lines — method, path,
+    status, milliseconds — because ``http_log`` was the single kind routed to
+    it. Meanwhile the daemon makes ~500 ``logger.*`` calls across ~150 loggers
+    (model calls, retries, compactions, offloads, storage failover, MCP loads,
+    caught exceptions) and every one of them went to stderr, where no user can
+    see it. This is the kind that carries them.
+
+    Structured rather than a formatted string so the panel can colour by
+    level, show which subsystem is talking, and filter — none of which is
+    possible once it has been flattened into prose.
+    """
+
+    level: str          # "DEBUG" | "INFO" | "WARNING" | "ERROR" | "CRITICAL"
+    logger: str         # e.g. "yuyutsava.context.compaction"
+    message: str
+    ts: float
+    kind: Literal["app_log"] = "app_log"
+
+
+@dataclass(frozen=True)
 class SystemMetricsPayload:
     """System load reading (Phase 5 ResourceMonitor).
 
@@ -182,6 +205,7 @@ ChannelPayload = (
     | ToolResultPayload
     | TimelinePayload
     | HttpLogPayload
+    | AppLogPayload
     | SystemMetricsPayload
     | AsyncTaskStartedPayload
     | AsyncTaskProgressPayload

@@ -41,6 +41,7 @@ from langchain_core.messages import (
 from langgraph.graph.message import REMOVE_ALL_MESSAGES
 
 from yuyutsava.context.config import ContextSettings
+from yuyutsava.context.meter import note_compaction
 from yuyutsava.context.summary_store import ThreadSummaryStore
 
 logger = logging.getLogger("yuyutsava.context.compaction")
@@ -224,6 +225,11 @@ class YuyutsavaCompactionMiddleware(SummarizationMiddleware):
             "%s: compacted %d msgs (~%d tokens) → summary + %d pinned + %d kept",
             self._role, len(to_summarize), total_tokens, len(pinned), len(preserved),
         )
+        # Compaction is the only step that removes messages from state, so
+        # "how many times has this conversation been compacted" is the number
+        # that says whether its window is under pressure. Counted here, on the
+        # path that actually rewrites state — not where the trigger is tested.
+        note_compaction(thread_id)
         await self._persist_summary(summary)
 
         return {

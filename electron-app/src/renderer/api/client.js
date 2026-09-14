@@ -229,3 +229,12 @@ export const patchRuntimeSettings = (patch) => _json('PATCH', '/settings/runtime
 // The dedicated subagent roster (name/description/enabled), built from the
 // agents the daemon actually booted with — a new subagent needs no UI change.
 export const getSubagentRoster = () => _json('GET', '/settings/subagents')
+
+// Token/cost telemetry. `/usage/summary` is one range in one call (totals,
+// per-model, per-day) so the three views can never disagree; `/usage/sessions`
+// is per-conversation spend, most recently active first. `since` is
+// epoch-SECONDS, not millis.
+export const getUsageSummary = (since = null) =>
+  _json('GET', `/usage/summary${since ? `?since=${since}` : ''}`)
+export const getUsageSessions = (since = null, limit = 50) =>
+  _json('GET', `/usage/sessions?limit=${limit}${since ? `&since=${since}` : ''}`)

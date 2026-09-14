@@ -95,7 +95,12 @@ class PromptInspectorPolicy(Policy):
             preview = preview[:80].replace("\n", " ")
             lines.append(f"    [{i:>2}] {label:<22} {size:>7,}c{tag}  {preview!r}")
 
-        approx_tokens = total // 4  # rough 4 chars/token
+        # One counter for every number this codebase reports (context/tokens.py):
+        # this used to be `total // 4`, which disagreed with both the compaction
+        # trigger and the context meter — three estimators, no two alike.
+        from yuyutsava.context.tokens import approx_tokens as _approx
+
+        approx_tokens = _approx(messages)
         header = (
             f"\n┌─ PROMPT INSPECT [{self._role}] call#{self._call} ─ "
             f"{len(messages)} msgs · {total:,} chars · ~{approx_tokens:,} tok · "

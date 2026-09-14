@@ -36,6 +36,7 @@ from typing import Any
 from yuyutsava.context.artifacts import ArtifactStore, thread_id_from_runtime
 from yuyutsava.context.config import ContextSettings
 from yuyutsava.context.digests import build_digest
+from yuyutsava.context.meter import note_offload
 from yuyutsava.policy.base import Policy
 from yuyutsava.policy.types import ToolCall
 
@@ -125,10 +126,9 @@ class ToolResultOffloadPolicy(Policy):
         if not self._should_offload(tool_name, content):
             return result
 
+        thread_id = thread_id_from_runtime()
         try:
-            artifact_id = await self._store.put(
-                thread_id_from_runtime(), tool_name, content
-            )
+            artifact_id = await self._store.put(thread_id, tool_name, content)
         except Exception:
             # Storage failure must not fail the agent turn; the display-side
             # guard_tool_result backstop still caps truly pathological sizes.
@@ -141,6 +141,10 @@ class ToolResultOffloadPolicy(Policy):
             "offload: %s result %d chars → %s (%d-char digest)",
             tool_name, len(content), artifact_id, len(digest),
         )
+        # How much this conversation kept OUT of the window is the counterpart
+        # to how full the window is; one without the other reads as if the
+        # offload machinery were doing nothing.
+        note_offload(thread_id)
         return ToolMessage(
             content=digest,
             tool_call_id=result.tool_call_id,

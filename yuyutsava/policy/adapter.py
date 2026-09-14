@@ -406,9 +406,29 @@ def _latest_usage(messages: Any) -> Usage | None:
              else getattr(metadata, name, 0))
         return int(v or 0)
 
+    def detail(group: str, name: str) -> int:
+        """One key out of ``input_token_details``/``output_token_details``.
+
+        Nested one level deeper than the totals, and absent entirely on
+        providers that report no breakdown — so every step is optional and a
+        missing group reads as zero rather than raising.
+        """
+        outer = (metadata.get(group) if isinstance(metadata, dict)
+                 else getattr(metadata, group, None))
+        if not outer:
+            return 0
+        v = (outer.get(name) if isinstance(outer, dict)
+             else getattr(outer, name, 0))
+        try:
+            return int(v or 0)
+        except (TypeError, ValueError):
+            return 0
+
     return Usage(
         input_tokens=field("input_tokens"),
         output_tokens=field("output_tokens"),
+        cache_read_tokens=detail("input_token_details", "cache_read"),
+        cache_creation_tokens=detail("input_token_details", "cache_creation"),
         model=str((getattr(msg, "response_metadata", None) or {}).get("model_name", "")),
     )
 

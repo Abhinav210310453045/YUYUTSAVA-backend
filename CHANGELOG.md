@@ -8,7 +8,139 @@ While the version stays `0.x`, minor bumps may contain breaking changes.
 
 ## [Unreleased]
 
+### Fixed
+- **A permission prompt in the split terminal view could not be answered at
+  all.** The card rendered, `approve/reject>` appeared in the pane, and typing
+  did nothing: the prompt was a blocking `input()` while the full-screen
+  prompt_toolkit application held stdin in raw mode, so every keystroke went to
+  the application and the read never completed. The turn sat waiting on an
+  answer that could never arrive. Reading a line is now a seam
+  (`cli/line_reader.py`) that the front owning the terminal installs once —
+  the same shape as the retry listener and the meter bus — and all four CLI
+  prompts go through it, including the background-subagent bridge and
+  `yuyutsava attach`, which had the same latent bug. Ctrl+C, Ctrl+D and
+  shutdown refuse an open question rather than hanging it, because a question
+  that cannot be answered is never consent. An AST tripwire (with a negative
+  control) fails the build if a new prompt calls `input()` directly.
+- **The context meter's total did not add up, and could fall while the
+  conversation grew.** One chat read `26.9k / 1.0M` on its first call and
+  `23.5k / 1.0M` seven calls later, with the provider reporting 13.4k and then
+  27.6k for those same two prompts — and the panel printed `in 27.6k` four rows
+  under `23.5k`. Two causes. The total was a pure sum of character estimates
+  that never consulted `usage_metadata`, and one global correction factor
+  multiplied *every* row on *every* publish, so when the factor moved the whole
+  conversation changed size. The estimate was also ~2x high for a structural
+  reason (≈20k characters of JSON tool schema reach Gemini as
+  `FunctionDeclaration` protos) and the old `[0.5, 2.0]` clamp pinned the real
+  0.499 at its floor, hiding the error. Now the headline is **anchored on the
+  provider's reported input tokens** and only growth since is estimated — right
+  after a call it is `input + output`, both measured, and it can only fall when
+  content actually leaves the window. The static prefix and the messages get
+  **separate** correction factors, fitted from a conversation's first call
+  (which carries almost no message tokens and so measures the prefix exactly)
+  and thereafter by subtraction; factors are remembered per model, so a second
+  chat starts calibrated. Rows are reconciled to sum to the total exactly, and
+  both fronts now drop the `≈` from a measured total.
+- **The graceful interrupt left the assistant's turn hanging open.** `Ctrl+S`
+  cancelled the run and appended the user's message straight after a tool
+  result, so history read `ai(tool_calls) → tool(success) → human` with the
+  model's turn never closed — and in Gemini's content model a
+  `functionResponse` is itself a user-role part, making that two consecutive
+  user turns. Two replies came back empty at 60,813 and 60,978 input tokens,
+  logged `repaired=0` because neither previously-known shape was present. The
+  repair now diagnoses four things rather than matching one string: the
+  fabricated cancellation, a tool call with **no result at all** (which the
+  function was named for but could not see), an empty assistant message (no
+  text, no calls — removed via `RemoveMessage`, since it is self-perpetuating),
+  and an unfinished turn, closed with a short assistant message that also tells
+  the model where it left off. A resume does not close the turn it is resuming.
+- **An empty turn was not retried unless something was repairable.** The
+  recovery fired only when the marker check had found something, so a turn that
+  came back empty for any other reason got no retry at all — the log read
+  `(repaired=0) — surfaced to the user` twice in a row, and the next message
+  the user sent went through untouched. The retry is now unconditional and
+  still capped at exactly one.
+- **A conversation could go permanently silent.** Sending a message while a
+  tool call was running made LangGraph cancel the call and fabricate a
+  `status="success"` result saying "cancelled"; from then on every model call
+  returned `finish_reason: STOP` with zero output tokens and the prompt cache
+  dropped to nothing. Four messages, ~70,000 input tokens each, no reply and no
+  error. The repair for this existed but ran only on CLI `--resume`; it now
+  lives in `conversation/repair.py` and every turn — CLI, app, voice, and
+  subagents, whose cancelled `task` calls land in the parent's history — runs
+  it before sending. A turn that still produces nothing repairs, retries once,
+  and then *says so*: `log` events may be dropped by a renderer with nowhere to
+  put them (which is exactly what swallowed four warnings), so there is a new
+  `notice` kind that may not be.
+- **Typing during a turn no longer kills the tool call.** The message is
+  queued and sent when the turn ends, with an explicit *send now* that
+  interrupts — safe, because the next turn repairs the interrupted history.
+  `Ctrl+S` in the CLI.
+- **The chat showed only the final reply.** The renderer kept one bubble per
+  turn and then let `final` replace everything in it, so prose → tool → prose
+  collapsed into a blob and the reasoning between steps was lost. A tool call
+  now closes the block, as the CLI has always done.
+- **A question could not be answered from the chat.** `AskCard` sets
+  `overflow: hidden`, which makes its flex minimum size 0, so in a long thread
+  it was crushed to an invisible sliver and the only way to answer was the
+  Inbox. Also, a second question silently replaced the first and left it
+  blocking its agent — asks are a queue now.
+- **Scrolling during a reply was impossible**: auto-scroll pinned to the bottom
+  on every streaming frame. It now follows only when you are already there.
+- **The split terminal view painted outside itself.** Long lines from
+  `warnings.warn` and from `logging` bled through the context column, the
+  banner was wiped by the alternate screen, log records landed on top of the
+  prompt, PgUp/PgDn did nothing, and the panel truncated. Wrapping is now
+  ANSI- and width-aware at render time, every writer is captured (not just the
+  root logger), and the panel fits its height by priority.
+- **The context meter reported `system prompt ≈0`** on every call, because it
+  looked for a `SystemMessage` in state and the framework passes the prompt as
+  `request.system_message`.
+
 ### Added
+- **The Logs panel shows what the daemon is doing.** It used to contain only
+  HTTP access lines — the UI's own polling — while ~500 log records across
+  ~150 loggers went to stderr. A log bridge now forwards them as structured
+  `app_log` events with level and subsystem, and the panel gained a filter, a
+  minimum-level select and an HTTP toggle. The titlebar log-level dropdown
+  finally affects what you can see.
+- Transient asides (provider retries, an unpriced model) appear in the CLI's
+  context column instead of printing over the transcript or the prompt.
+- `docs/design/computer-use.md` — the accessibility-tree-first design for GUI
+  control, with what is already installed and permitted, and the two genuine
+  gaps. Design only; nothing is implemented.
+- Context and cost telemetry, in both fronts. A context meter measures every
+  model call — how full the input window is and what it is made of (system
+  prompt, tool schemas, memory, skills, messages), plus the call's reported
+  tokens and the conversation's running spend — and publishes it to whoever is
+  displaying it. Previously a session filling its window looked exactly like
+  one that was fine, and the numbers could only be reconstructed from the
+  database afterwards.
+  - **CLI:** `yuyutsava chat` opens a split view on a TTY 90+ columns wide —
+    transcript left, a context column right that never scrolls away. It takes
+    the alternate screen, so `--classic` (or `YUYUTSAVA_REPL_DASHBOARD=0`)
+    keeps the single-pane transcript and a narrower terminal falls back
+    automatically. PgUp/PgDn or the wheel scrolls, `End` follows, `Ctrl+G`
+    hides the panel, `Ctrl+L` clears. `/context` prints the full breakdown.
+  - **App:** a collapsible context column on the chat and voice screens (a
+    one-line meter in the header, resizable panel behind it), and a new
+    **Settings → Usage** section with totals, per-model bars, a per-day series
+    and a per-session table across every session.
+  - Segment sizes are estimates and are marked `≈` — a provider reports one
+    total per prompt, not a figure per region — calibrated against each
+    conversation's reported input tokens. Last-call figures are the provider's
+    own numbers.
+- `llm_usage` records `cache_read_tokens` and `cache_creation_tokens`. Cache
+  reads are the dominant cost lever on a long conversation and nothing stored
+  them, so a cheap session and an expensive one were indistinguishable in the
+  ledger. Both are subsets of `input_tokens`, not additions to it.
+- `GET /usage/summary` (totals, per-model and a per-day series for one range,
+  in one call) and `GET /usage/sessions` (per-conversation spend, joined to
+  session titles). `GET /usage` rows gained the cache columns, and
+  `WS /ws/converse` carries `usage` frames while a turn runs.
+- A model with no entry in `model_prices.json` now reads *unpriced* everywhere
+  instead of `$0.00`; `/usage/summary` names which models those are, so a
+  total that is an undercount says so.
 - `ctx_history`, `ctx_history_message` and `ctx_history_grep`: page, read and
   search this conversation's verbatim messages. Compaction is the only step
   that removes messages from the live context, and until now the summary it
@@ -45,6 +177,15 @@ While the version stays `0.x`, minor bumps may contain breaking changes.
   container; before, the container was started but every tool ran on the host.
 
 ### Changed
+- One approximate token counter (`context/tokens.py`), shared by the context
+  meter, `/context` and the prompt inspector, deferring to the same langchain
+  function and per-model tuning the compactor uses. There were three
+  estimators and no two agreed — and the compactor's is the one that decides
+  when history is summarised away, so a panel disagreeing with it could have
+  shown "7 % used" while turns were being dropped.
+- `UsageStore.list` takes a `thread_id` filter. The CLI was fetching 2,000 rows
+  by time and filtering in Python, which silently under-reported a session's
+  own cost on a busy machine.
 - Vertex/Gemini declares its real 1,000,000-token input window, so compaction
   triggers at 700k instead of the 89.6k the 128k fallback produced.
 - `sk_search_skill` is always visible instead of sitting behind `tool_search`,

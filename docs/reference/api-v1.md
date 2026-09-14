@@ -250,14 +250,89 @@ Returns a **bare array**, newest first:
 ```
 
 #### `GET /v1/usage?since=&group_by=` — LLM spend aggregates
-`since` epoch-seconds lower bound; `group_by` ∈ `task` | `model` | `day`
-(omit ⇒ one `key:"all"` totals row). `422` bad group_by, `503` store unwired.
+`since` epoch-seconds lower bound; `group_by` ∈ `task` | `model` | `day` |
+`thread` (omit ⇒ one `key:"all"` totals row). `422` bad group_by, `503` store
+unwired.
 ```json
 {"since": null, "group_by": "model",
  "rows": [{"key": "claude-haiku-4-5", "calls": 12, "input_tokens": 84000,
-           "output_tokens": 9100, "est_cost_usd": 0.1034}]}
+           "output_tokens": 9100, "est_cost_usd": 0.1034,
+           "cache_read_tokens": 61000, "cache_creation_tokens": 1200}]}
 ```
 Rows are ordered most-expensive first.
+
+`cache_read_tokens` / `cache_creation_tokens` are **subsets of
+`input_tokens`**, not additions to it: what the provider served from its prompt
+cache, and what it charged to write that cache. `0` means the provider reported
+no cache detail, which is not the same claim as a 0 % hit rate. `est_cost_usd`
+still prices every input token identically — cached input is cheaper in
+reality, so treat the figure as an upper bound on a well-cached conversation.
+A model with no entry in `~/.yuyutsava/model_prices.json` contributes `0.0`;
+that is "unpriced", not "free".
+
+Use `group_by=thread` for per-conversation cost. It is the only grouping that
+works for chat and tinker spend: `task_id` is FK-constrained to `tasks` on
+Postgres, so a tag naming something that is not an orchestrator task is nulled
+on insert, while `thread_id` carries the same identity on both backends.
+
+#### `GET /v1/usage/summary?since=` — one range, three groupings
+Totals, per-model rows and a per-day series in one call, so a dashboard cannot
+show three views that disagree. `by_day` is ordered **oldest first** (a series
+to plot); every other aggregate is most-expensive first.
+```json
+{"since": null,
+ "totals": {"key": "all", "calls": 97, "input_tokens": 4008039,
+            "output_tokens": 13705, "est_cost_usd": 0.0,
+            "cache_read_tokens": 2932000, "cache_creation_tokens": 0},
+ "by_model": [{"key": "gemini-3.5-flash", "calls": 97, "…": 0}],
+ "by_day": [{"key": "2026-09-12", "calls": 97, "…": 0}],
+ "unpriced_models": ["gemini-3.5-flash"]}
+```
+`unpriced_models` names models whose `est_cost_usd` is 0 because no price entry
+matched. Show those as *unpriced*; the totals are an undercount, not a low bill.
+
+#### `GET /v1/usage/sessions?since=&limit=` — per-conversation spend
+Most recently active first. `limit` 1–500 (default 50); not paginated — the row
+count is bounded by the number of conversations that have made a model call.
+```json
+{"since": null,
+ "rows": [{"thread_id": "cli-1789211258-…", "title": "open whatsapp and…",
+           "origin": "cli", "calls": 97, "input_tokens": 4008039,
+           "output_tokens": 13705, "cache_read_tokens": 2932000,
+           "est_cost_usd": 0.0, "priced": false,
+           "models": ["gemini-3.5-flash"],
+           "first_ts": 1789211258.0, "last_ts": 1789213121.0}]}
+```
+The title/origin join happens in the service, not in SQL: on SQLite `sessions`
+lives in a different database file from `llm_usage`, so a joined query would
+work on Postgres only. A row with no matching session keeps its thread id and
+an empty title; calls made outside any conversation appear once under
+`thread_id: ""` with the title `unattributed`.
+
+### Live context telemetry (`WS /ws/converse`)
+
+While a turn runs, the socket also carries `usage` frames — the context meter's
+reading of the window and the spend so far:
+
+```json
+{"type": "usage", "seq": 43, "thread_id": "…", "model": "gemini-3.5-flash",
+ "max_input_tokens": 1000000, "used_tokens": 64600, "free_tokens": 935400,
+ "used_fraction": 0.0646, "calibrated": true,
+ "segments": [{"key": "system", "label": "system prompt", "tokens": 4000}, "…"],
+ "message_count": 62, "offloaded_digests": 27,
+ "call": {"n": 12, "input_tokens": 41087, "output_tokens": 64,
+          "cache_read_tokens": 38000, "cache_hit_fraction": 0.925,
+          "est_cost_usd": 0.0, "priced": false},
+ "session": {"calls": 12, "input_tokens": 412000, "compactions": 0,
+             "offloads": 27, "…": 0}}
+```
+
+`segments` are **estimates**, pre-ordered so every front shows the same rows in
+the same order; `call` figures are the provider's own numbers. The frame is
+*ephemeral* — it is fanned out to viewers but never kept in the replay ring, so
+a long turn's snapshots cannot evict the reply a reattaching client needs. The
+`hello` frame carries the last known reading as `usage` (or `null`), so a panel
+opened between turns has something real to show.
 
 ### Channels (Settings screen)
 

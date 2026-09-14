@@ -408,6 +408,15 @@ def _build_tool_registry_and_tools(
     # ToolFilterPolicy hides all tr_* / ws_* / sk_* from the LLM; only
     # tool_search is visible, driving the lazy-discovery pattern.
     startup_tools = [tool_search] + all_custom_tools
+
+    # Let the context meter price the prompt's tool schemas. Measured here
+    # because the middleware is assembled before this function runs, and from
+    # `startup_tools` rather than the registry because tool_search — the one
+    # tool the model always sees — is built by the registry, not registered in
+    # it, and would otherwise be counted as free.
+    from yuyutsava.context.meter import note_bound_tools
+
+    note_bound_tools(agent_name or "agent", registry, startup_tools)
     return startup_tools, registry
 
 
@@ -523,6 +532,7 @@ def _context_middleware(
     transcript_index: Any | None = None,
     compaction_model: BaseChatModel | None = None,
     role: str = "agent",
+    meter_window: bool = True,
 ) -> list:
     """Build the context-controller middleware for one agent.
 
@@ -561,12 +571,33 @@ def _context_middleware(
         out.append(LangChainPolicyAdapter(
             [TranscriptRecorderPolicy(transcript_store, index=transcript_index)]))
 
-    # Observability (no-op unless YUYUTSAVA_DEBUG_PROMPT). Last in the list so
-    # its before_model hook reports the message list AFTER offload + compaction
-    # — i.e. exactly what the model receives. Never mutates state.
+    # Observability, last in the list so these before_model hooks report the
+    # message list AFTER offload + compaction — i.e. exactly what the model
+    # receives. Neither mutates state.
+    #
+    # The inspector is a debugging dump (no-op unless YUYUTSAVA_DEBUG_PROMPT);
+    # the meter is always on, because the thing it measures — how full the
+    # window is — is what a user needs *before* a session gets into trouble,
+    # not after. It publishes onto a process-global bus that the CLI dashboard
+    # and the daemon's websocket subscribe to; with no subscriber it is a
+    # dataclass built and dropped.
     from yuyutsava.context.prompt_inspector import PromptInspectorPolicy
 
-    out.append(LangChainPolicyAdapter([PromptInspectorPolicy(role=role)]))
+    observers: list[Any] = [PromptInspectorPolicy(role=role)]
+    if context_settings is not None:
+        from yuyutsava.context.meter import ContextMeterPolicy
+        from yuyutsava.llm import model_name_of
+
+        observers.append(ContextMeterPolicy(
+            settings=context_settings,
+            role=role,
+            model=model,
+            model_name=model_name_of(model),
+            # A subagent's message list is its own, not the conversation's
+            # window; it reports spend but must not redraw the panel.
+            window=meter_window,
+        ))
+    out.append(LangChainPolicyAdapter(observers))
     return out
 
 
@@ -851,6 +882,7 @@ def _sync_subagent_specs(
                 transcript_store=None,
                 compaction_model=compaction_model,
                 role=sa.name,
+                meter_window=False,
             ),
         ])
         if artifact_store is not None:
@@ -1243,11 +1275,24 @@ def build_orchestrator(
     _master_registry = ToolRegistry()
     _master_registry.register_many(master_tools)
     master_tools = [_master_registry.make_tool_search_tool(), *master_tools]
+    # This builder assembles its registry by hand rather than through the
+    # shared helper, so the meter has to be told here too or the
+    # orchestrator's "tool schemas" row reads zero.
+    #
+    # (Do not name that helper here: test_agent_profiles derives a builder's
+    # "effective source" by substring-matching its name and splicing the
+    # helper's body in, so a mention in a comment makes this builder appear to
+    # wire tool families it does not have.)
+    from yuyutsava.context.meter import note_bound_tools
+
+    note_bound_tools("orchestrator", _master_registry, master_tools)
     _catalog = _master_registry.catalog_block()
     if _catalog:
         system_prompt = f"{system_prompt}\n\n## AVAILABLE TOOLS (load a schema with tool_search before calling)\n{_catalog}"
 
-    def _ctx_mw(agent_model: BaseChatModel, role: str) -> list:
+    def _ctx_mw(
+        agent_model: BaseChatModel, role: str, *, meter_window: bool = True
+    ) -> list:
         return _context_middleware(
             model=agent_model,
             artifact_store=deps.artifact_store,
@@ -1257,6 +1302,7 @@ def build_orchestrator(
             transcript_store=getattr(deps, "transcript_store", None),
             compaction_model=deps.compaction_model,
             role=role,
+            meter_window=meter_window,
         )
 
     def _usage_mw(agent_model: BaseChatModel, role: str) -> list:
@@ -1282,7 +1328,7 @@ def build_orchestrator(
         spec["model"] = deps.subagent_model
         spec["middleware"] = collapse_policy_adapters([
             LangChainPolicyAdapter([ToolFilterPolicy()]),
-            *_ctx_mw(deps.subagent_model, sa.name),
+            *_ctx_mw(deps.subagent_model, sa.name, meter_window=False),
             LangChainPolicyAdapter([BudgetPolicy(
                 max_input_tokens=deps.subagent_token_budget, role=sa.name)]),
             *_usage_mw(deps.subagent_model, sa.name),

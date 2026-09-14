@@ -51,7 +51,10 @@ FINISHED_RETENTION_SEC = 300.0
 # Frame types that are fanned out live but never stored in the ring: streamed
 # TTS PCM is megabytes per turn, and the persisted WAV (`_persist_voice_message`
 # → `audio_url`) is already the replay path for spoken replies.
-EPHEMERAL_TYPES = frozenset({"audio_chunk"})
+# Frames that must never displace prose in the replay ring. Both are streams of
+# now: audio that arrives late is stale, and a usage snapshot is superseded by
+# the next one — while a client reattaching mid-turn needs the reply.
+EPHEMERAL_TYPES = frozenset({"audio_chunk", "usage"})
 # …and a viewer whose socket is this far behind on audio stops being sent more
 # of it. Prose is never dropped; real-time audio that late is already stale.
 EPHEMERAL_BACKLOG = 48

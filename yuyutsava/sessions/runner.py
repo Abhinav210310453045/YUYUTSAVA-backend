@@ -17,7 +17,6 @@ import sys
 import time
 from pathlib import Path
 
-from langchain_core.messages import ToolMessage
 from langgraph.graph.state import CompiledStateGraph
 
 from yuyutsava.core.streaming import astream_agent
@@ -42,57 +41,20 @@ class ResumeFailed(Exception):
     """
 
 
-_CANCELLED_TOOL_MARKER = "was cancelled - another message came in"
-_DENIED_REPLACEMENT = (
-    "DENIED: the user did not approve this action — the previous session was "
-    "interrupted (Ctrl+C, terminal close, crash) before the permission prompt "
-    "could be answered. If this action is still required, re-propose it "
-    "explicitly so the user can decide. Do NOT assume it succeeded."
-)
-
-
 async def _patch_orphan_cancellations(agent: CompiledStateGraph, thread_id: str) -> int:
-    """Rewrite ``cancelled`` ToolMessages left over from a killed permission prompt.
+    """Repair cancellation results left by a killed permission prompt.
 
-    LangGraph fabricates a ToolMessage with ``status='success'`` and content
-    "Tool call ... was cancelled - another message came in before it could be
-    completed." whenever a tool task is cancelled mid-flight. That wording +
-    success status causes the model on resume to believe the call succeeded,
-    leading to hallucinations like "I wrote the file" when nothing was written.
+    Thin wrapper kept for this call site's readability; the logic and the
+    reasoning now live in :mod:`yuyutsava.conversation.repair`, because the
+    daemon needs exactly the same repair and previously had none — which is
+    how an app thread could stay wedged forever.
 
-    Rewrite those messages (preserving id so the LangGraph ``add_messages``
-    reducer merges them in place) with ``status='error'`` and an explicit
-    denial — the model already handles denials correctly today.
-
-    Returns the number of messages patched.
+    ``SESSION_ENDED`` because this runs on resume: the prompt died with the
+    previous process, so consent was never given.
     """
-    config = {"configurable": {"thread_id": thread_id}}
-    try:
-        state = await agent.aget_state(config)
-    except Exception:
-        logger.exception("orphan-cancellation patch failed for thread=%s", thread_id)
-        return 0
-    msgs = state.values.get("messages", []) if state and state.values else []
-    patched: list = []
-    for m in msgs:
-        content = m.content if isinstance(m.content, str) else ""
-        if isinstance(m, ToolMessage) and _CANCELLED_TOOL_MARKER in content:
-            patched.append(ToolMessage(
-                id=m.id,
-                tool_call_id=m.tool_call_id,
-                name=getattr(m, "name", "tool") or "tool",
-                status="error",
-                content=_DENIED_REPLACEMENT,
-            ))
-    if not patched:
-        return 0
-    try:
-        await agent.aupdate_state(config, {"messages": patched})
-    except Exception as exc:
-        print(f"\033[33msessions:\033[0m could not patch orphan tool calls: {exc}",
-              file=sys.stderr)
-        return 0
-    return len(patched)
+    from yuyutsava.conversation.repair import Cause, repair_orphan_tool_calls
+
+    return await repair_orphan_tool_calls(agent, thread_id, cause=Cause.SESSION_ENDED)
 
 
 def _count_memory_files(workspace: Path) -> int:

@@ -19,6 +19,21 @@ from yuyutsava.retrieval.store import VectorStore
 
 logger = logging.getLogger("yuyutsava.retrieval.injector")
 
+# Chars of the block each injector most recently rendered, keyed by its prefix.
+# These blocks are appended to the system prompt at *model-call* time, after
+# every ``before_model`` hook has already seen the message list — so an
+# observer counting what is in the window cannot see them and would under-report
+# the prompt by however much was recalled. This is the same process-global,
+# purely-diagnostic shape as ``skills.injector._last_recalled``: nothing
+# branches on it, and in a daemon serving concurrent threads it can be one turn
+# stale for a given conversation.
+_last_blocks: dict[str, int] = {}
+
+
+def last_block_chars() -> dict[str, int]:
+    """``prefix -> chars`` for the most recent block each injector rendered."""
+    return dict(_last_blocks)
+
 
 class RetrievalInjector:
     """Renders top-k relevant hits for a task into a prompt block."""
@@ -45,6 +60,13 @@ class RetrievalInjector:
 
     async def build_block(self, task_text: str) -> str:
         """Return the rendered block, or empty string. Never raises."""
+        block = await self._render_block(task_text)
+        # Recorded on every path, empty included: "nothing was recalled this
+        # turn" is the answer a meter needs, not a missing key from last turn.
+        _last_blocks[self._prefix] = len(block)
+        return block
+
+    async def _render_block(self, task_text: str) -> str:
         if not task_text.strip():
             return ""
         try:

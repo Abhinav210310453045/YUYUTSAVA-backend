@@ -22,10 +22,15 @@ from yuyutsava.skills.store import SkillStore
 
 logger = logging.getLogger("yuyutsava.skills.injector")
 
-_PREFIX = (
+#: First line of the rendered block. Public because the context meter attributes
+#: prompt bytes to a "skills" segment by matching it, and a second spelling of
+#: this string somewhere else would silently mis-attribute them.
+SKILLS_BLOCK_PREFIX = (
     "RELEVANT SKILLS (matched to this task; read the full body with "
     "sk_read_skill before using):"
 )
+
+_PREFIX = SKILLS_BLOCK_PREFIX
 
 
 def _render(h: Hit) -> str:

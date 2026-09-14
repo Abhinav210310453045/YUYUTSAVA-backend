@@ -1006,6 +1006,32 @@ MIGRATIONS: list[tuple[int, str]] = [
         END $$;
         """,
     ),
+    (
+        21,
+        """
+        -- Cache-token accounting, and the index the per-session view needs.
+        --
+        -- Cache reads are the dominant cost lever on a long conversation (one
+        -- real session ran ~93 % cache-read on its last call) and nothing
+        -- recorded them, so a cheap session and an expensive one were
+        -- indistinguishable in the ledger. Both columns are subsets of
+        -- input_tokens, not additions to it.
+        --
+        -- Additive: pre-v21 rows keep 0, which reads the same as a provider
+        -- reporting no cache detail. Nothing may infer "caching is off" from a
+        -- zero.
+        ALTER TABLE llm_usage
+            ADD COLUMN IF NOT EXISTS cache_read_tokens     INTEGER NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS cache_creation_tokens INTEGER NOT NULL DEFAULT 0;
+
+        -- "What did this conversation cost" had only llm_usage_ts_idx to work
+        -- with, so it scanned by time and filtered. thread_id is the join key
+        -- for GET /usage/sessions and the only grouping that works for
+        -- chat/tinker spend (task_id is FK-constrained to `tasks`).
+        CREATE INDEX IF NOT EXISTS llm_usage_thread_ts_idx
+            ON llm_usage (thread_id, ts DESC);
+        """,
+    ),
 ]
 
 
