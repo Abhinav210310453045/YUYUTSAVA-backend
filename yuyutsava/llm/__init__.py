@@ -43,7 +43,7 @@ from yuyutsava.llm.factory import (
     supports,
 )
 from yuyutsava.llm.handle import Capability, ModelHandle
-from yuyutsava.llm.providers import provider_for
+from yuyutsava.llm.providers.registry import provider_for
 
 __all__ = [
     "Capability",

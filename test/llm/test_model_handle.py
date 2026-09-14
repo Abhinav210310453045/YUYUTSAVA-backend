@@ -158,7 +158,7 @@ class HandleCarriesTheProvider(unittest.TestCase):
 
     def test_every_provider_declares_a_key(self) -> None:
         """Ratchet — a new provider with no key would report ``""`` forever."""
-        from yuyutsava.llm.providers import _FALLBACK, _PROVIDERS
+        from yuyutsava.llm.providers.registry import _FALLBACK, _PROVIDERS
 
         for provider in (*_PROVIDERS, _FALLBACK):
             with self.subTest(provider=type(provider).__name__):

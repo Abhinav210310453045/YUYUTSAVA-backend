@@ -24,7 +24,7 @@ from langchain_core.language_models import BaseChatModel
 
 from yuyutsava.core.config import LlmSettings
 from yuyutsava.llm.handle import Capability, ModelHandle
-from yuyutsava.llm.providers import provider_for
+from yuyutsava.llm.providers.registry import provider_for
 
 
 class _Identity(NamedTuple):
