@@ -269,3 +269,33 @@ end in silence, where the REPL would recover.
 
 **Fix.** Run one-shot turns through `ConversationService`; add a test with an
 interrupted checkpoint.
+
+---
+
+## R-BUG-07 — A daemon started from the app serves no API the app can reach
+
+**Severity** P1 · **Wave** W5 (`fix:` commit) · **Status** Open (found during W2)
+
+**Evidence.**
+- `electron-app/src/main/daemon.js:186` spawns `yuyutsava daemon --no-ui`.
+  `--no-ui` sets `headless`, and a headless daemon builds no web hub, so it also
+  builds no HTTP/WebSocket server (`daemon/bootstrap.py:1238`; the server is
+  built only when `web_hub` exists).
+- Observed on 2026-09-15: started exactly that way, the daemon logged "ready",
+  and `--status` advertised `http://127.0.0.1:7654/`, but nothing listened on
+  port 7654.
+- `daemon.js` has passed the flag since `d1a33e6` (2026-05-14).
+- Callers: Settings → Start/Restart Daemon, the tray menu, and the launch prompt
+  shown when no daemon is running (`index.js:178`).
+
+**Consequence.** A daemon the app starts or restarts serves nothing the app can
+connect to. Starting it from a terminal (`yuyutsava daemon`, which opens the app
+itself) works, and that hides the problem. `daemon.json` also advertises a URL
+nothing serves.
+
+**Fix.** Separate "don't open a window" from "no API": a flag that keeps the API
+but skips launching Electron, used by `daemon.js`. Publish no `web_url` when no
+server runs.
+
+**Verification.** Start the daemon the way `daemon.js` does and get `200` from
+`/health`, then drive it from the Electron app.

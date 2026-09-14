@@ -285,7 +285,8 @@ Characterization tests first, for every unit that is split.
   - `R-BUG-03` plain renderer visuals;
   - `R-BUG-04` attach port;
   - `R-BUG-05` `/clear` in the dashboard, reproduced first;
-  - `R-BUG-06` one-shot turns through `ConversationService`.
+  - `R-BUG-06` one-shot turns through `ConversationService`;
+  - `R-BUG-07` a daemon started from the app serves its API.
 
 **Exit.**
 - `silent_broad_excepts` 0; `prints_outside_cli` 0.
