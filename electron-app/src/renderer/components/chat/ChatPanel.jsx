@@ -90,9 +90,11 @@ function NoticeRow({ m }) {
 }
 
 function Bubble({ m, userText, sessionId, onRegenerate, onFeedback, playing, paused, onReplay, onTogglePause }) {
+  // Hooks first: an early return above a hook changes the hook count between
+  // renders, which React rejects if a bubble's role ever changes.
+  const [hover, setHover] = useState(false)
   if (m.role === 'notice') return <NoticeRow m={m} />
   const isUser = m.role === 'user'
-  const [hover, setHover] = useState(false)
   const empty = !m.text && (!m.images || m.images.length === 0) && (!m.artifacts || m.artifacts.length === 0)
   // Spoken replies carry in-session PCM chunks (live turn) or a persisted
   // audio_url (resumed thread) — either makes the bubble playable.
