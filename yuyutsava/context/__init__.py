@@ -1,34 +1,14 @@
-"""Context controller: bounded, self-compacting agent context.
+"""Context control: keeps an agent's context bounded without losing what was said.
 
-Three cooperating layers, wired in :mod:`yuyutsava.core.engine`. Since Phase 4
-the first is a plain :class:`~yuyutsava.policy.base.Policy` behind
-``LangChainPolicyAdapter`` rather than an ``AgentMiddleware`` subclass; the other
-two are still middleware.
+Two mechanisms, both wired by :mod:`yuyutsava.core.engine`:
 
-1. :class:`~yuyutsava.context.offload_policy.ToolResultOffloadPolicy` — large
-   tool results never enter
-   graph state (and therefore never reach the checkpointer); the full
-   content goes to the :class:`ArtifactStore` and a small structured digest
-   takes its place. The agent reads more on demand via ``ctx_fetch_artifact``
-   / ``ctx_grep_artifact``.
-2. :class:`YuyutsavaCompactionMiddleware` — when the conversation nears the
-   model's input budget, older turns are summarized (cheap model), the
-   original task message stays pinned, and the rewritten state — summary +
-   recent tail — is what the checkpointer persists. Each summary is also
-   stored in ``thread_summaries`` (and embedded into semantic memory when
-   enabled) so continuity survives sweeps and restarts.
-3. :class:`yuyutsava.daemon.budget_policy.BudgetPolicy` (existing) remains the
-   absolute cumulative-spend ceiling above both.
+- :class:`~yuyutsava.context.offload_policy.ToolResultOffloadPolicy` keeps large
+  tool results out of graph state. The full content goes to the artifact store and
+  a small digest takes its place; the agent reads more with the ``ctx_*`` tools.
+- :class:`~yuyutsava.context.compaction.YuyutsavaCompactionMiddleware` summarises
+  older turns when the conversation nears the model's input budget, keeps the
+  original task pinned, and persists each summary so continuity survives restarts.
+
+:class:`~yuyutsava.daemon.budget_policy.BudgetPolicy` caps cumulative spend above
+both. This package re-exports nothing: import a name from the module that owns it.
 """
-
-from yuyutsava.context.config import ContextSettings
-from yuyutsava.context.offload_policy import ToolResultOffloadPolicy
-from yuyutsava.context.compaction import YuyutsavaCompactionMiddleware
-from yuyutsava.context.tools import make_context_tools
-
-__all__ = [
-    "ContextSettings",
-    "ToolResultOffloadPolicy",
-    "YuyutsavaCompactionMiddleware",
-    "make_context_tools",
-]

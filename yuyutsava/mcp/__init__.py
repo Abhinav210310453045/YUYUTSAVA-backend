@@ -1,15 +1,14 @@
-"""MCP (Model Context Protocol) integration for YUYUTSAVA.
+"""MCP (Model Context Protocol) client integration.
 
-:class:`MCPConfig` loads and merges the global ``~/.yuyutsava/mcp_config.json``
-with a trusted workspace's ``<ws>/.yuyutsava/mcp_config.json``;
-:class:`MCPClientManager` owns the lifecycle of every configured server. Tools
-discovered from each server are adapted to ``langchain_core.tools.BaseTool``
-(``<server>__<tool>``) and scoped per agent via the config's ``scopes`` map.
-The daemon starts one manager at boot (and hot-reloads it on SIGHUP); the
-standalone CLI starts its own via :func:`~yuyutsava.mcp.loader.start_manager_for_workspace`.
+:class:`~yuyutsava.mcp.config.MCPConfig` loads and merges the global
+``~/.yuyutsava/mcp_config.json`` with a trusted workspace's
+``<ws>/.yuyutsava/mcp_config.json``; :class:`~yuyutsava.mcp.loader.MCPClientManager`
+owns the lifecycle of every configured server. Tools discovered from each server
+become LangChain tools named ``<server>__<tool>``, scoped per agent by the config's
+``scopes`` map. The daemon starts one manager at boot and reloads it on SIGHUP; the
+standalone CLI starts its own via
+:func:`~yuyutsava.mcp.loader.start_manager_for_workspace`.
+
+This package re-exports nothing, so reading MCP configuration does not load the MCP
+SDK: import a name from the module that owns it.
 """
-
-from yuyutsava.mcp.config import MCPConfig, MCPServerSpec
-from yuyutsava.mcp.loader import MCPClientManager
-
-__all__ = ["MCPConfig", "MCPServerSpec", "MCPClientManager"]
