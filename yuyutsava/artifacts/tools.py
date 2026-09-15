@@ -30,7 +30,7 @@ _GENERATIVE = {"audio": "audio"}
 
 def _thread_id() -> str | None:
     try:
-        from yuyutsava.context.artifacts import thread_id_from_runtime
+        from yuyutsava.context.artifacts import thread_id_from_runtime  # noqa: PLC0415 — upward (artifacts -> context); moves with W3
 
         return thread_id_from_runtime()
     except Exception:  # noqa: BLE001 — best-effort tagging, never fail the tool

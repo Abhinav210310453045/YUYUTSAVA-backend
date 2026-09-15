@@ -42,6 +42,7 @@ from pathlib import Path
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from yuyutsava.storage.events import Store
 from yuyutsava.storage.events.roles import EventPayloadSweeper
@@ -308,8 +309,6 @@ class UnifiedSweeper:
                 async for tid, latest in cur:
                     out.append((tid, latest))
             return out
-
-        from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
         if isinstance(self._saver, AsyncPostgresSaver):
             # _cursor() is the saver's own pool-vs-connection abstraction;

@@ -48,8 +48,9 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from yuyutsava.storage.base import BaseSqliteStore
-from yuyutsava.storage.dialect import Dialect
+from yuyutsava.storage.dialect import Dialect, PostgresDialect, SqliteDialect
 from yuyutsava.storage.interrupts import InterruptRecord, InterruptsStore
+from yuyutsava.storage.paths import interrupts_db_path
 
 logger = logging.getLogger("yuyutsava.storage.interrupts_unified")
 
@@ -314,8 +315,6 @@ def sqlite_interrupts_store(
 ) -> UnifiedInterruptsStore:
     """``busy_timeout_ms`` is carried through: the sessions runner tunes it,
     because a permission prompt blocking on SQLITE_BUSY stalls the user."""
-    from yuyutsava.storage.dialect import SqliteDialect
-    from yuyutsava.storage.paths import interrupts_db_path
 
     return UnifiedInterruptsStore(
         SqliteDialect(
@@ -325,8 +324,6 @@ def sqlite_interrupts_store(
 
 
 def pg_interrupts_store(pool) -> UnifiedInterruptsStore:
-    from yuyutsava.storage.dialect import PostgresDialect
-
     return UnifiedInterruptsStore(PostgresDialect(pool))
 
 

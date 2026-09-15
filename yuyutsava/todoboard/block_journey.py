@@ -22,6 +22,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from ulid import ULID
+
 from yuyutsava.todoboard.artifacts import ArtifactBlock, _file_validator
 from yuyutsava.todoboard.exchange import TodoValidationError
 
@@ -121,7 +123,6 @@ def _note_html(n: dict[str, Any]) -> str:
 
 def _generate_journey(spec: dict[str, Any], out_dir: Path) -> tuple[Path, str]:
     """Compile the injected card + events into ``journey_<ULID>.html``."""
-    from ulid import ULID
 
     card = spec.get("card")
     if not isinstance(card, dict):

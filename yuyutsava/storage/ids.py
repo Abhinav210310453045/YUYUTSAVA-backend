@@ -15,6 +15,8 @@ from __future__ import annotations
 import time
 import uuid
 
+from ulid import ULID
+
 
 THREAD_ID_TEMPLATE = "{role}-{ts}-{uuid}"
 """Canonical format string. ``role`` is a short tag (``cli``, ``orch``, …);
@@ -40,7 +42,6 @@ def mint_tinker_thread_id(card_id: str) -> str:
     :func:`parse_thread_id_ts` returns None and the TTL sweeper leaves
     tinker threads alone.
     """
-    from ulid import ULID
 
     return f"{tinker_thread_base(card_id)}:{ULID()}"
 

@@ -121,7 +121,7 @@ def set_default_feedback_store(store: FeedbackStore) -> None:
 def get_default_feedback_store() -> FeedbackStore:
     global _default_store
     if _default_store is None:
-        from yuyutsava.storage.feedback_store_unified import sqlite_feedback_store
+        from yuyutsava.storage.feedback_store_unified import sqlite_feedback_store  # noqa: PLC0415 — import cycle: yuyutsava.storage.feedback_store_unified imports this module
 
         _default_store = sqlite_feedback_store()
     return _default_store

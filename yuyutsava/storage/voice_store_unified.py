@@ -24,13 +24,14 @@ from pathlib import Path
 from typing import ClassVar
 
 from yuyutsava.storage.base import BaseSqliteStore
-from yuyutsava.storage.dialect import Dialect
+from yuyutsava.storage.dialect import Dialect, PostgresDialect, SqliteDialect
 from .voice_store import (
     DEFAULT_LIST_LIMIT,
     VoiceMessage,
     VoiceMessageStore,
     _validate,
 )
+from yuyutsava.storage.paths import state_db_path
 
 logger = logging.getLogger("yuyutsava.storage.voice_store_unified")
 
@@ -158,15 +159,10 @@ class UnifiedVoiceMessageStore(VoiceMessageStore):
 
 
 def sqlite_voice_store(db_path: Path | None = None) -> UnifiedVoiceMessageStore:
-    from yuyutsava.storage.dialect import SqliteDialect
-    from yuyutsava.storage.paths import state_db_path
-
     return UnifiedVoiceMessageStore(SqliteDialect(VoiceSchema(db_path or state_db_path())))
 
 
 def pg_voice_store(pool) -> UnifiedVoiceMessageStore:
-    from yuyutsava.storage.dialect import PostgresDialect
-
     return UnifiedVoiceMessageStore(PostgresDialect(pool))
 
 

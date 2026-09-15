@@ -51,7 +51,8 @@ from yuyutsava.retrieval.pg import PgVectorSearch, PgVectorTable
 from yuyutsava.retrieval.vector import vector_literal
 from yuyutsava.skills.store import SkillStore
 from yuyutsava.storage.base import BaseSqliteStore
-from yuyutsava.storage.dialect import Dialect
+from yuyutsava.storage.dialect import Dialect, PostgresDialect, SqliteDialect
+from yuyutsava.storage.paths import state_db_path
 
 if TYPE_CHECKING:  # `skills.registry` pulls in the agent stack, which imports
     # back into skills — a cycle that only bites when this module is imported
@@ -275,15 +276,10 @@ class UnifiedSkillStore(SkillStore):
 
 
 def sqlite_skill_store(db_path: Path | None = None) -> UnifiedSkillStore:
-    from yuyutsava.storage.dialect import SqliteDialect
-    from yuyutsava.storage.paths import state_db_path
-
     return UnifiedSkillStore(SqliteDialect(SkillSchema(db_path or state_db_path())))
 
 
 def pg_skill_store(pool, embedder, *, min_score: float = 0.0) -> UnifiedSkillStore:
-    from yuyutsava.storage.dialect import PostgresDialect
-
     return UnifiedSkillStore(
         PostgresDialect(pool), embedder=embedder, pool=pool, min_score=min_score
     )

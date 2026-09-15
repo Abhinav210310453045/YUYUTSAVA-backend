@@ -50,6 +50,7 @@ from yuyutsava.todoboard.store import (
     TodoStore,
     get_default_todo_store,
 )
+from yuyutsava.todoboard.recall import get_default_note_index
 
 logger = logging.getLogger("yuyutsava.todoboard.exchange")
 
@@ -471,7 +472,6 @@ class TodoExchange:
         query = (query or "").strip()
         _require(bool(query), "search query must be non-empty")
         _require(1 <= k <= 50, "k must be between 1 and 50")
-        from yuyutsava.todoboard.recall import get_default_note_index
 
         index = get_default_note_index()
         if index is None or not index.enabled:
@@ -503,7 +503,7 @@ class TodoExchange:
         The block may also infer a missing mime from the file suffix."""
         # Lazy import — artifacts.py imports our exception types at module
         # level, so the cycle must break on this side.
-        from yuyutsava.todoboard.artifacts import resolve_block
+        from yuyutsava.todoboard.artifacts import resolve_block  # noqa: PLC0415 — import cycle: yuyutsava.todoboard.artifacts imports this module
 
         _require(kind in ATTACHMENT_KINDS, f"kind must be one of {ATTACHMENT_KINDS}")
         block = resolve_block(kind, mime)
@@ -551,7 +551,7 @@ class TodoExchange:
         with ``needs_context`` get the hydrated card + timeline injected into
         their spec HERE, on the event loop — generators run in a thread and
         must never call back into the loop-bound store."""
-        from yuyutsava.todoboard.artifacts import blocks
+        from yuyutsava.todoboard.artifacts import blocks  # noqa: PLC0415 — import cycle: yuyutsava.todoboard.artifacts imports this module
 
         _require(isinstance(spec, dict) or spec is None, "spec must be a JSON object")
         gen = next((b for b in blocks() if b.name == block), None)
@@ -698,8 +698,6 @@ class TodoExchange:
         sync repairs the gap. Lazy import keeps recall.py off the import path
         for consumers that never touch it."""
         try:
-            from yuyutsava.todoboard.recall import get_default_note_index
-
             index = get_default_note_index()
             if index is not None:
                 index.schedule(note, replace=replace)

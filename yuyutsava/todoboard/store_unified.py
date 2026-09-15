@@ -40,7 +40,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from yuyutsava.storage.base import BaseSqliteStore
-from yuyutsava.storage.dialect import Dialect
+from yuyutsava.storage.dialect import Dialect, PostgresDialect, SqliteDialect
 from yuyutsava.todoboard.models import (
     TodoAttachmentV1,
     TodoCardSummaryV1,
@@ -56,6 +56,7 @@ from yuyutsava.todoboard.store import (
     TodoStore,
     _tags_json,
 )
+from yuyutsava.storage.paths import state_db_path
 
 logger = logging.getLogger("yuyutsava.todoboard.store_unified")
 
@@ -781,15 +782,10 @@ class UnifiedTodoStore(TodoStore):
 
 
 def sqlite_todo_store(db_path: Path | None = None) -> UnifiedTodoStore:
-    from yuyutsava.storage.dialect import SqliteDialect
-    from yuyutsava.storage.paths import state_db_path
-
     return UnifiedTodoStore(SqliteDialect(TodoSchema(db_path or state_db_path())))
 
 
 def pg_todo_store(pool) -> UnifiedTodoStore:
-    from yuyutsava.storage.dialect import PostgresDialect
-
     return UnifiedTodoStore(PostgresDialect(pool))
 
 

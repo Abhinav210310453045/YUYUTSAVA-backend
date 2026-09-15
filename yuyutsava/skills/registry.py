@@ -22,6 +22,7 @@ import yaml
 
 from yuyutsava.core.config import LIMITS
 from yuyutsava.storage.paths import WorkspaceLayout, state_dir
+from yuyutsava.platform import host_profile
 
 logger = logging.getLogger("yuyutsava.skills")
 
@@ -155,8 +156,6 @@ class SkillRegistry:
 
         # Drop skills tagged for other OS families — a Windows triage playbook
         # must never surface (index, recall, or get_body) on macOS/Linux.
-        from yuyutsava.platform import host_profile
-
         fam = host_profile().os_family
         self._cache = [s for s in seen.values() if not s.platforms or fam in s.platforms]
         return self._cache

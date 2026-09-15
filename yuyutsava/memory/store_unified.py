@@ -54,7 +54,8 @@ from yuyutsava.memory.store import (
 from yuyutsava.retrieval.pg import PgVectorSearch, PgVectorTable
 from yuyutsava.retrieval.vector import vector_literal
 from yuyutsava.storage.base import BaseSqliteStore
-from yuyutsava.storage.dialect import Dialect
+from yuyutsava.storage.dialect import Dialect, PostgresDialect, SqliteDialect
+from yuyutsava.storage.paths import state_db_path
 
 logger = logging.getLogger("yuyutsava.memory.store_unified")
 
@@ -283,17 +284,12 @@ class UnifiedMemoryStore(MemoryStore):
 
 
 def sqlite_memory_store(db_path: Path | None = None) -> UnifiedMemoryStore:
-    from yuyutsava.storage.dialect import SqliteDialect
-    from yuyutsava.storage.paths import state_db_path
-
     return UnifiedMemoryStore(SqliteDialect(MemorySchema(db_path or state_db_path())))
 
 
 def pg_memory_store(
     pool, embedder, *, min_score: float = 0.0, dedup_threshold: float = 1.1
 ) -> UnifiedMemoryStore:
-    from yuyutsava.storage.dialect import PostgresDialect
-
     return UnifiedMemoryStore(
         PostgresDialect(pool),
         embedder=embedder,

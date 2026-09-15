@@ -41,6 +41,8 @@ from yuyutsava.storage.events.sqlite_backend import (
     SqlitePrefsBackend,
 )
 from yuyutsava.storage.models import ConsentRule, Decision, EventRecord, Proposal
+from yuyutsava.storage.events.pg_stores import PgPrefsBackend
+from yuyutsava.storage.routing.facade import RoutedStore
 
 if TYPE_CHECKING:
     from yuyutsava.consent.models import Grant
@@ -89,9 +91,6 @@ class Store:
         """
         self = cls()
         if pg_pool is not None and storage.is_postgres() and health is not None:
-            from yuyutsava.storage.events.pg_stores import PgPrefsBackend
-            from yuyutsava.storage.routing.facade import RoutedStore
-
             b = self._backend
             _pg_dialect = PostgresDialect(pg_pool)
             _sq_dialect = EventsSqliteDialect(b)

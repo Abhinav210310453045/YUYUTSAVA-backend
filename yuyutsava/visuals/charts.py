@@ -95,7 +95,7 @@ def _bar(ax, spec) -> None:
     labels = [str(x) for x in spec.get("labels", [])]
     series = _series(spec)
     n = len(series)
-    import numpy as np  # local: numpy ships with matplotlib
+    import numpy as np  # local: numpy ships with matplotlib  # noqa: PLC0415 — heavy: +84 modules, ~40 ms
 
     idx = np.arange(len(labels) or len(series[0]["data"]))
     width = 0.8 / max(n, 1)
@@ -122,7 +122,7 @@ def _barh(ax, spec) -> None:
     labels = [str(x) for x in spec.get("labels", [])]
     series = _series(spec)
     n = len(series)
-    import numpy as np
+    import numpy as np  # noqa: PLC0415 — heavy: +84 modules, ~40 ms
 
     idx = np.arange(len(labels) or len(series[0]["data"]))
     height = 0.8 / max(n, 1)
@@ -184,7 +184,7 @@ def _heatmap(fig, ax, spec) -> None:
     matrix = spec.get("matrix")
     if not matrix:
         raise VisualError("heatmap requires a 'matrix'")
-    import seaborn as sns
+    import seaborn as sns  # noqa: PLC0415 — heavy: +1194 modules, ~1233 ms
 
     sns.heatmap(
         matrix,

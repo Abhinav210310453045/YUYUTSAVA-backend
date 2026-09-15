@@ -13,6 +13,7 @@ from contextlib import asynccontextmanager
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from yuyutsava.storage.backend import StorageSettings
 from yuyutsava.storage.sessions.config import SessionsSettings
@@ -34,8 +35,6 @@ async def build_checkpointer(
     storage = storage or StorageSettings.from_env()
 
     if storage.is_postgres() or settings.backend == "postgres":
-        from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-
         async with AsyncPostgresSaver.from_conn_string(storage.pg_dsn) as saver:
             await saver.setup()
             yield saver

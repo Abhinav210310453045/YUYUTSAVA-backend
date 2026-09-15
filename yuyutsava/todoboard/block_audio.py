@@ -20,8 +20,12 @@ import wave
 from pathlib import Path
 from typing import Any
 
+from ulid import ULID
+
 from yuyutsava.todoboard.artifacts import ArtifactBlock, _file_validator
 from yuyutsava.todoboard.exchange import TodoValidationError
+from yuyutsava.audio_io.synth import synthesize_pcm
+from yuyutsava.io.tts import tts_from_env
 
 # What the multipart endpoint accepts. Rendering is broader — the frontend
 # block claims any audio/* mime and plays it through Web Audio decoding.
@@ -45,10 +49,6 @@ def _generate_audio(spec: dict[str, Any], out_dir: Path) -> tuple[Path, str]:
     loop, mirroring how validators are dispatched); the async synth path is
     driven with ``asyncio.run``.
     """
-    from ulid import ULID
-
-    from yuyutsava.audio_io.synth import synthesize_pcm
-    from yuyutsava.io.tts import tts_from_env
 
     text = str(spec.get("text") or "").strip()
     if not text:

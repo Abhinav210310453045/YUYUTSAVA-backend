@@ -33,6 +33,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from yuyutsava.storage.events import Store
+from yuyutsava.storage.feedback_store import get_default_feedback_store
+from yuyutsava.storage.sessions import get_default_session_store
+from yuyutsava.visuals.store import get_default_visual_store
+
 
 @dataclass(frozen=True)
 class AppContext:
@@ -59,28 +64,25 @@ class AppContext:
     def sessions(self) -> Any:
         if self.session_store is not None:
             return self.session_store
-        from yuyutsava.storage.sessions import get_default_session_store
 
         return get_default_session_store()
 
     def visuals(self) -> Any:
         if self.visual_store is not None:
             return self.visual_store
-        from yuyutsava.visuals.store import get_default_visual_store
 
         return get_default_visual_store()
 
     def feedback(self) -> Any:
         if self.feedback_store is not None:
             return self.feedback_store
-        from yuyutsava.storage.feedback_store import get_default_feedback_store
 
         return get_default_feedback_store()
 
     def todos(self) -> Any:
         if self.todo_store is not None:
             return self.todo_store
-        from yuyutsava.todoboard.store import get_default_todo_store
+        from yuyutsava.todoboard.store import get_default_todo_store  # noqa: PLC0415 — upward (storage -> todoboard); moves with W3
 
         return get_default_todo_store()
 
@@ -104,7 +106,6 @@ class AppContext:
         """
         if self.events_store is not None:
             return self.events_store, False
-        from yuyutsava.storage.events import Store
 
         return Store.for_backend(settings, pg_pool=pg_pool), True
 

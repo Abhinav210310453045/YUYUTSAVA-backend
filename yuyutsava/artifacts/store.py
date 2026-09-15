@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
+from ulid import ULID
 
 from yuyutsava.storage.paths import blobs_dir
 
@@ -82,8 +83,6 @@ def _url(artifact_id: str) -> str:
 
 
 def _new_id() -> str:
-    from ulid import ULID
-
     return str(ULID())
 
 
@@ -166,7 +165,7 @@ def generate(
     thread_id: str | None = None,
 ) -> ArtifactRecordV1:
     """Run a generative block (e.g. ``audio``) into a fresh artifact dir."""
-    from yuyutsava.todoboard.artifacts import blocks
+    from yuyutsava.todoboard.artifacts import blocks  # noqa: PLC0415 — upward (artifacts -> todoboard); moves with W3
 
     gen = next((b for b in blocks() if b.name == block_name), None)
     if gen is None or gen.generate is None:

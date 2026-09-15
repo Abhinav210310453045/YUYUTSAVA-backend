@@ -44,13 +44,14 @@ from typing import Any, ClassVar
 from ulid import ULID
 
 from yuyutsava.storage.base import BaseSqliteStore
-from yuyutsava.storage.dialect import Dialect
+from yuyutsava.storage.dialect import Dialect, PostgresDialect, SqliteDialect
 from yuyutsava.storage.feedback_store import (
     DEFAULT_LIST_LIMIT,
     FeedbackStore,
     MessageFeedback,
     _validate,
 )
+from yuyutsava.storage.paths import state_db_path
 
 logger = logging.getLogger("yuyutsava.storage.feedback_store_unified")
 
@@ -219,15 +220,10 @@ class UnifiedFeedbackStore(FeedbackStore):
 
 
 def sqlite_feedback_store(db_path: Path | None = None) -> UnifiedFeedbackStore:
-    from yuyutsava.storage.dialect import SqliteDialect
-    from yuyutsava.storage.paths import state_db_path
-
     return UnifiedFeedbackStore(SqliteDialect(FeedbackSchema(db_path or state_db_path())))
 
 
 def pg_feedback_store(pool) -> UnifiedFeedbackStore:
-    from yuyutsava.storage.dialect import PostgresDialect
-
     return UnifiedFeedbackStore(PostgresDialect(pool))
 
 

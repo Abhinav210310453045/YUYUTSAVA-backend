@@ -45,6 +45,9 @@ from __future__ import annotations
 import json
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Awaitable, Callable, Protocol, TypeVar
+import sqlite3
+
+from psycopg.rows import dict_row
 
 T = TypeVar("T")
 
@@ -212,8 +215,6 @@ class SqliteDialect:
         return None  # SQLite has no thread-hub FK
 
     def is_unique_violation(self, exc: BaseException) -> bool:
-        import sqlite3
-
         return isinstance(exc, sqlite3.IntegrityError) and "unique" in str(exc).lower()
 
 
@@ -324,7 +325,6 @@ class PostgresDialect:
         first. Every test missed it because each opens its own pool and usually
         exercises one kind of consumer, so the connection was never handed on.
         """
-        from psycopg.rows import dict_row
 
         previous = conn.row_factory
         conn.row_factory = dict_row
@@ -348,13 +348,13 @@ class PostgresDialect:
                 return await fn(c)
 
     async def ensure_parent(self, conn: Any, thread_id: str | None, **attrs: Any) -> None:
-        from yuyutsava.storage.pg.threads import ensure_thread
+        from yuyutsava.storage.pg.threads import ensure_thread  # noqa: PLC0415 — upward (storage.dialect -> storage); moves with W3
 
         await ensure_thread(conn, thread_id, **attrs)
 
     def is_unique_violation(self, exc: BaseException) -> bool:
         try:
-            from psycopg import errors
+            from psycopg import errors  # noqa: PLC0415 — optional dependency
         except ImportError:  # pragma: no cover
             return False
         return isinstance(exc, errors.UniqueViolation)

@@ -27,6 +27,7 @@ from yuyutsava.storage.ids import mint_thread_id
 from yuyutsava.storage.models import SESSION_STATUSES, Session
 from yuyutsava.storage.sessions.config import SessionsSettings
 from yuyutsava.storage.sessions.store import SessionNotFound
+from yuyutsava.storage.sessions.pg_impl import PgSessionStore
 
 
 _TASK_PREVIEW_MAX = 200
@@ -398,8 +399,6 @@ def get_default_session_store() -> SessionStore:
         s = SessionsSettings.from_env()
         storage = StorageSettings.from_env()
         if storage.is_postgres() or s.backend == "postgres":
-            from yuyutsava.storage.sessions.pg_impl import PgSessionStore
-
             _DEFAULT_STORE = PgSessionStore(storage)
         else:
             _DEFAULT_STORE = SqliteSessionStore(s.db_path, busy_timeout_ms=s.busy_timeout_ms)

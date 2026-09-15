@@ -41,7 +41,7 @@ from typing import ClassVar
 from ulid import ULID
 
 from yuyutsava.storage.base import BaseSqliteStore
-from yuyutsava.storage.dialect import Dialect
+from yuyutsava.storage.dialect import Dialect, PostgresDialect, SqliteDialect
 from .store import (
     DEFAULT_LIST_LIMIT,
     _EXT,
@@ -52,6 +52,7 @@ from .store import (
     _write_file,
 )
 from .types import RenderResult
+from yuyutsava.storage.paths import state_db_path
 
 logger = logging.getLogger("yuyutsava.visuals.store_unified")
 
@@ -120,15 +121,12 @@ class VisualSchema(BaseSqliteStore):
 
 def sqlite_visual_store(db_path: Path | None = None) -> "UnifiedVisualStore":
     """SQLite-backed visual store, schema included."""
-    from yuyutsava.storage.dialect import SqliteDialect
-    from yuyutsava.storage.paths import state_db_path
 
     return UnifiedVisualStore(SqliteDialect(VisualSchema(db_path or state_db_path())))
 
 
 def pg_visual_store(pool) -> "UnifiedVisualStore":
     """Postgres-backed visual store (schema owned by pg/migrations v14)."""
-    from yuyutsava.storage.dialect import PostgresDialect
 
     return UnifiedVisualStore(PostgresDialect(pool))
 

@@ -23,7 +23,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from ulid import ULID
+
 from yuyutsava.todoboard.exchange import TodoAttachmentError, TodoValidationError
+from yuyutsava.visuals.render import render
 
 # Python < 3.13 doesn't map .md — agent-side attaches (no browser mime) need
 # the inference so the frontend text block can claim markdown files.
@@ -116,9 +119,6 @@ def _generate_visual(spec: dict[str, Any], out_dir: Path) -> tuple[Path, str]:
     """Render a visual spec (``{"kind": "diagram"|"chart"|..., ...}``) into
     *out_dir* via the shared visuals dispatcher. Lazy import — the renderers
     pull matplotlib and friends only when actually used."""
-    from ulid import ULID
-
-    from yuyutsava.visuals.render import render
 
     vis_kind = str(spec.get("kind", "diagram"))
     result = render(vis_kind, {k: v for k, v in spec.items() if k != "kind"})

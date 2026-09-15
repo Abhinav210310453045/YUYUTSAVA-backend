@@ -22,10 +22,10 @@ def render_code(spec: dict[str, Any]) -> RenderResult:
         raise VisualError("code image requires 'source'")
 
     try:
-        from pygments import highlight
-        from pygments.formatters import ImageFormatter
-        from pygments.lexers import get_lexer_by_name, guess_lexer
-        from pygments.util import ClassNotFound
+        from pygments import highlight  # noqa: PLC0415 — optional dependency
+        from pygments.formatters import ImageFormatter  # noqa: PLC0415 — optional dependency
+        from pygments.lexers import get_lexer_by_name, guess_lexer  # noqa: PLC0415 — optional dependency
+        from pygments.util import ClassNotFound  # noqa: PLC0415 — optional dependency
     except ImportError as exc:  # pragma: no cover - install guard
         raise VisualError(
             "code rendering needs pygments + pillow (install the 'visuals' extra)"
@@ -35,7 +35,7 @@ def render_code(spec: dict[str, Any]) -> RenderResult:
     try:
         lexer = get_lexer_by_name(language) if language else guess_lexer(source)
     except ClassNotFound:
-        from pygments.lexers.special import TextLexer
+        from pygments.lexers.special import TextLexer  # noqa: PLC0415 — optional dependency
 
         lexer = TextLexer()
 

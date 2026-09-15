@@ -41,6 +41,13 @@ from typing import Any
 from yuyutsava.storage.backend import StorageSettings
 from yuyutsava.storage.domains import BY_TABLE, Failover
 from yuyutsava.storage.paths import state_db_path
+from yuyutsava.memory.store_unified import pg_memory_store, sqlite_memory_store
+from yuyutsava.skills.store_unified import pg_skill_store, sqlite_skill_store
+from yuyutsava.storage.events import Store
+from yuyutsava.storage.feedback_store_unified import pg_feedback_store, sqlite_feedback_store
+from yuyutsava.storage.routing.facade import RoutedStore
+from yuyutsava.storage.voice_store_unified import pg_voice_store, sqlite_voice_store
+from yuyutsava.visuals.store_unified import pg_visual_store, sqlite_visual_store
 
 logger = logging.getLogger("yuyutsava.storage.factory")
 
@@ -132,14 +139,12 @@ class StoreFactory:
             )
             return pg_store
 
-        from yuyutsava.storage.routing.facade import RoutedStore
-
         return RoutedStore(pg_store, sqlite_store, self._health, name=name)
 
     # -- context controller ------------------------------------------------
 
     def artifacts(self, *, semantic_recall: bool = True) -> Any:
-        from yuyutsava.context.artifacts_unified import (
+        from yuyutsava.context.artifacts_unified import (  # noqa: PLC0415 — upward (storage -> context); moves with W3
             pg_artifact_store,
             sqlite_artifact_store,
         )
@@ -154,7 +159,7 @@ class StoreFactory:
         return sqlite_artifact_store(self._db())
 
     def summaries(self) -> Any:
-        from yuyutsava.context.summary_store_unified import (
+        from yuyutsava.context.summary_store_unified import (  # noqa: PLC0415 — upward (storage -> context); moves with W3
             pg_summary_store,
             sqlite_summary_store,
         )
@@ -162,7 +167,7 @@ class StoreFactory:
         return pg_summary_store(self._pg) if self.is_postgres else sqlite_summary_store(self._db())
 
     def transcripts(self) -> Any:
-        from yuyutsava.context.transcript_store_unified import (
+        from yuyutsava.context.transcript_store_unified import (  # noqa: PLC0415 — upward (storage -> context); moves with W3
             pg_transcript_store,
             sqlite_transcript_store,
         )
@@ -184,7 +189,7 @@ class StoreFactory:
         """
         if self._pg is None or self._embedder is None:
             return None
-        from yuyutsava.context.transcript_index import PgTranscriptIndex
+        from yuyutsava.context.transcript_index import PgTranscriptIndex  # noqa: PLC0415 — upward (storage -> context); moves with W3
 
         return PgTranscriptIndex(self._pg, embedder=self._embedder)
 
@@ -211,19 +216,17 @@ class StoreFactory:
         )
 
     def voice(self) -> Any:
-        from yuyutsava.storage.voice_store_unified import pg_voice_store, sqlite_voice_store
-
         return pg_voice_store(self._pg) if self.is_postgres else sqlite_voice_store(self._db())
 
     # -- daemon bookkeeping -------------------------------------------------
 
     def tasks(self) -> Any:
-        from yuyutsava.daemon.task_store_unified import pg_task_store, sqlite_task_store
+        from yuyutsava.daemon.task_store_unified import pg_task_store, sqlite_task_store  # noqa: PLC0415 — upward (storage -> daemon); moves with W3
 
         return pg_task_store(self._pg) if self.is_postgres else sqlite_task_store(self._db())
 
     def usage(self) -> Any:
-        from yuyutsava.daemon.usage import PgUsageStore, SqliteUsageStore
+        from yuyutsava.daemon.usage import PgUsageStore, SqliteUsageStore  # noqa: PLC0415 — upward (storage -> daemon); moves with W3
 
         return PgUsageStore(self._pg) if self.is_postgres else SqliteUsageStore(self._db())
 
@@ -231,7 +234,6 @@ class StoreFactory:
 
     def memory(self, settings: Any) -> Any | None:
         """``None`` when memory is disabled; SQLite keyword fallback without pgvector."""
-        from yuyutsava.memory.store_unified import pg_memory_store, sqlite_memory_store
 
         if not settings.enabled:
             return None
@@ -247,8 +249,6 @@ class StoreFactory:
         return sqlite_memory_store(self._db())
 
     def skills(self, settings: Any) -> Any:
-        from yuyutsava.skills.store_unified import pg_skill_store, sqlite_skill_store
-
         if self.is_postgres and self._embedder is not None:
             return pg_skill_store(self._pg, self._embedder, min_score=settings.min_score)
         return sqlite_skill_store(self._db())
@@ -256,8 +256,6 @@ class StoreFactory:
     # -- REST-path stores (spillover candidates) ---------------------------
 
     def visuals(self) -> Any:
-        from yuyutsava.visuals.store_unified import pg_visual_store, sqlite_visual_store
-
         return self._wrap(
             "visual_artifacts",
             pg_visual_store(self._pg) if self.is_postgres else None,
@@ -266,11 +264,6 @@ class StoreFactory:
         )
 
     def feedback(self) -> Any:
-        from yuyutsava.storage.feedback_store_unified import (
-            pg_feedback_store,
-            sqlite_feedback_store,
-        )
-
         return self._wrap(
             "message_feedback",
             pg_feedback_store(self._pg) if self.is_postgres else None,
@@ -279,7 +272,7 @@ class StoreFactory:
         )
 
     def todos(self) -> Any:
-        from yuyutsava.todoboard.store_unified import pg_todo_store, sqlite_todo_store
+        from yuyutsava.todoboard.store_unified import pg_todo_store, sqlite_todo_store  # noqa: PLC0415 — upward (storage -> todoboard); moves with W3
 
         return self._wrap(
             "todo_cards",
@@ -292,7 +285,6 @@ class StoreFactory:
 
     def events(self) -> Any:
         """The events ``Store`` facade; owns its own SQLite spillover buffer."""
-        from yuyutsava.storage.events import Store
 
         return Store.for_backend(self._storage, self._pg, self._health)
 

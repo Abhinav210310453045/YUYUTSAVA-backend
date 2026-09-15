@@ -51,6 +51,8 @@ from yuyutsava.storage.sessions import (
     build_checkpointer,
     get_default_session_store,
 )
+from yuyutsava.audio_io.blobs import delete_thread_voice_blobs
+from yuyutsava.storage.pg.pool import PgPool
 
 logger = logging.getLogger("yuyutsava.storage.purge")
 
@@ -124,8 +126,6 @@ async def purge_session(
 
     owns_pool = False
     if settings.is_postgres() and pg_pool is None:
-        from yuyutsava.storage.pg.pool import PgPool
-
         pg_pool = PgPool(settings)
         await pg_pool.open()
         owns_pool = True
@@ -144,8 +144,6 @@ async def purge_session(
             await _purge_sqlite(thread_id, session_id, report)
 
         # 3. On-disk voice audio clips.
-        from yuyutsava.audio_io.blobs import delete_thread_voice_blobs
-
         report.voice_blobs_deleted = delete_thread_voice_blobs(thread_id)
 
         # 3b. Rendered visuals — rows + on-disk image files (the DB row holds an
