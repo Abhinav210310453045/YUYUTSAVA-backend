@@ -14,12 +14,7 @@ live in :mod:`yuyutsava.core.streaming`; the CLI system prompts live in
 
 from __future__ import annotations
 
-import json
 import logging
-import re
-import shutil
-import sys
-import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -44,7 +39,6 @@ from yuyutsava.async_subagents.cap_policy import BackgroundTaskCapPolicy
 from yuyutsava.async_subagents.check_guard_policy import CheckAsyncTaskGuardPolicy
 from yuyutsava.async_subagents.host_lock import release_host_lock
 from yuyutsava.async_subagents.interrupt_patch_policy import AsyncTaskInterruptPatchPolicy
-from yuyutsava.config.env import env_flag
 from yuyutsava.config.execution import DockerSettings, LocalSettings
 from yuyutsava.config.search import SearchConfig
 from yuyutsava.context.compaction import YuyutsavaCompactionMiddleware
@@ -106,138 +100,6 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 
 logger = logging.getLogger("yuyutsava")
-
-
-# Loggers raised to WARNING by silence_plumbing_loggers — these emit chatty
-# HTTP / runtime traffic (langgraph dev server, uvicorn access lines,
-# httpx client logs) that pollute interactive output. Real problems still
-# surface at WARNING/ERROR.
-_PLUMBING_WARN_LOGGERS = (
-    "langgraph_api",
-    "langgraph_runtime_inmem",
-    "langgraph_runtime",
-    "langgraph_api.auth.custom",
-    "langgraph_api.auth.middleware",
-    "langgraph_api.timing.timer",
-    "langgraph_api.cron_scheduler",
-    "langgraph_api.metadata",
-    "langgraph_api.lifespan",
-    "langgraph_api.queue",
-    "langgraph_runtime_inmem.queue",
-    "langgraph_runtime_inmem.lifespan",
-    "langgraph_runtime_inmem._persistence",
-    "httpx",
-    "httpcore",
-    "uvicorn",
-    "uvicorn.access",
-    "uvicorn.error",
-)
-
-# Loggers raised to ERROR — these emit chatty WARNING-level lines that
-# aren't actionable for interactive users (langfuse handshake, warnings hook).
-_PLUMBING_ERROR_LOGGERS = (
-    "langfuse",
-    # OTEL exporter retry spam when Langfuse drops mid-session (the whole
-    # opentelemetry.* tree, incl. exporter.otlp.proto.http.trace_exporter).
-    "opentelemetry",
-    "py.warnings",
-    # Vertex re-converts every tool schema on each bind and warns once per
-    # `additionalProperties` key Pydantic emitted — pure noise, N× per turn.
-    "langchain_google_vertexai.functions_utils",
-)
-
-
-def _ensure_null_handler(lg: logging.Logger) -> None:
-    """Give a silenced logger a handler so its *children* stay silent too.
-
-    ``propagate = False`` on a parent stops records reaching the root handlers,
-    and ``disabled = True`` only applies to records emitted on that exact
-    logger. A child (``opentelemetry.exporter.otlp.proto.http.trace_exporter``
-    logging at ERROR) walks up to the parent, finds *no* handler anywhere, and
-    Python then falls back to ``logging.lastResort`` — a bare stderr print. That
-    is how "Failed to export span batch code: 404" reached the terminal despite
-    the silencing. A ``NullHandler`` makes the search succeed and swallow.
-    """
-    if not any(isinstance(h, logging.NullHandler) for h in lg.handlers):
-        lg.addHandler(logging.NullHandler())
-
-
-def silence_plumbing_loggers() -> None:
-    """Raise plumbing loggers above the chatter floor.
-
-    The ``yuyutsava`` namespace is left untouched — application warnings
-    still surface. Cross-call idempotent; ``langgraph_api`` re-imports
-    ``logging`` inside its server thread, so callers that build a LangGraph
-    host should call this *after* the build to re-silence handlers that
-    were just installed.
-    """
-
-    for name in _PLUMBING_WARN_LOGGERS:
-        lg = logging.getLogger(name)
-        lg.setLevel(logging.WARNING)
-        lg.propagate = False
-        _ensure_null_handler(lg)
-    for name in _PLUMBING_ERROR_LOGGERS:
-        lg = logging.getLogger(name)
-        lg.setLevel(logging.ERROR)
-        lg.propagate = False
-        lg.disabled = True
-        _ensure_null_handler(lg)
-    warnings.filterwarnings("ignore", category=DeprecationWarning)
-    warnings.filterwarnings("ignore", category=PendingDeprecationWarning)
-
-
-def setup_logging(verbose: bool = False, *, debug_plumbing: bool = False) -> None:
-    """Configure the ``yuyutsava`` logger for the CLI to print to stderr.
-
-    Root logger is kept at WARNING; only the ``yuyutsava`` namespace is
-    flipped to DEBUG (verbose) or INFO (default). Plumbing loggers
-    (uvicorn / langgraph_api / httpx / …) are silenced regardless of
-    verbose so the chat REPL stays uncluttered. Pass
-    ``debug_plumbing=True`` (or set ``YUYUTSAVA_DEBUG_PLUMBING=1``) to
-    see those — useful only when debugging the runtime itself.
-    """
-    if not debug_plumbing:
-        debug_plumbing = env_flag("YUYUTSAVA_DEBUG_PLUMBING", true=("1", "true", "yes"))
-
-    level = logging.DEBUG if verbose else logging.INFO
-    handler = logging.StreamHandler(sys.stderr)
-    handler.setLevel(level)
-
-    class _Fmt(logging.Formatter):
-        _COLOURS = {
-            logging.DEBUG: "\033[2m",  # dim
-            logging.INFO: "\033[0m",  # normal
-            logging.WARNING: "\033[33m",  # yellow
-            logging.ERROR: "\033[31m",  # red
-            logging.CRITICAL: "\033[1;31m",  # bold red
-        }
-        _RESET = "\033[0m"
-
-        def format(self, record: logging.LogRecord) -> str:
-            colour = self._COLOURS.get(record.levelno, "")
-            msg = super().format(record)
-            return f"{colour}{msg}{self._RESET}"
-
-    # Verbose: prefix with timestamp + logger name so the user can tell which
-    # subsystem is talking. Plain ``%(message)s`` otherwise to keep
-    # non-verbose output uncluttered.
-    fmt = "%(asctime)s %(name)s | %(message)s" if verbose else "%(message)s"
-    handler.setFormatter(_Fmt(fmt, datefmt="%H:%M:%S"))
-
-    # Root stays at WARNING so unrelated libraries don't flood stderr.
-    root = logging.getLogger()
-    if root.level == logging.NOTSET or root.level < logging.WARNING:
-        root.setLevel(logging.WARNING)
-
-    log = logging.getLogger("yuyutsava")
-    log.setLevel(level)
-    log.handlers.clear()
-    log.addHandler(handler)
-    log.propagate = False
-
-    if not debug_plumbing:
-        silence_plumbing_loggers()
 
 
 # ---------------------------------------------------------------------------
@@ -313,29 +175,6 @@ class AgentBundle:
                 self.async_host.shutdown()
             except Exception:
                 logger.exception("AgentBundle: async_host.shutdown failed")
-
-
-def builtin_tools_reference_json() -> str:
-    """Static reference for ``yuyutsava --print-tools`` (names match Deep Agents middleware)."""
-    doc = [
-        {
-            "tool": "read_file",
-            "note": "Read text/binary via FilesystemBackend; use virtual paths under workspace (e.g. /yuyutsava/foo.txt).",
-        },
-        {
-            "tool": "write_file",
-            "note": "Create/overwrite files under the same virtual root.",
-        },
-        {
-            "tool": "execute",
-            "note": "Shell on the local machine (LocalShellBackend); prefer over ad-hoc bash wrappers. Timeout matches CLI --bash-timeout.",
-        },
-        {
-            "tool": "ls, glob, grep, edit_file, write_todos, task, …",
-            "note": "Other built-in Deep Agents tools; see https://docs.langchain.com/oss/python/deepagents/overview",
-        },
-    ]
-    return json.dumps(doc, indent=2)
 
 
 # ---------------------------------------------------------------------------
@@ -1673,73 +1512,6 @@ def build_tinker_agent(
 # ---------------------------------------------------------------------------
 
 
-_STATE_GRAPH_PNG_PATTERN = re.compile(r"^State_Graph_v(\d+)\.png$", re.IGNORECASE)
-
-
-def next_state_graph_version(output_dir: Path) -> int:
-    """Next integer for ``State_Graph_v{n}.png`` in ``output_dir`` (starts at 1 if none)."""
-    output_dir = output_dir.resolve()
-    if not output_dir.is_dir():
-        return 1
-    best = 0
-    for p in output_dir.iterdir():
-        if not p.is_file():
-            continue
-        m = _STATE_GRAPH_PNG_PATTERN.match(p.name)
-        if m:
-            best = max(best, int(m.group(1)))
-    return best + 1
-
-
-def export_agent_state_graph_png(
-    agent: CompiledStateGraph,
-    output_dir: Path,
-    *,
-    xray: bool = True,
-) -> Path:
-    """Render the compiled LangGraph to PNG via Mermaid (default: Mermaid.Ink API).
-
-    Requires network access unless you switch ``draw_mermaid_png`` to a non-API method.
-    """
-    out = output_dir.resolve()
-    out.mkdir(parents=True, exist_ok=True)
-    n = next_state_graph_version(out)
-    path = out / f"State_Graph_v{n}.png"
-    agent.get_graph(xray=xray).draw_mermaid_png(output_file_path=str(path))
-    return path
-
-
 # ---------------------------------------------------------------------------
 # Post-task cleanup (local mode only)
 # ---------------------------------------------------------------------------
-
-
-def cleanup_local_sandbox(layout: WorkspaceLayout) -> None:
-    """Delete the sandbox + deepagents scratch after a CLI task completes.
-
-    - ``layout.sandbox``: deleted entirely (temp work; deliverables live in
-      ``outputs/``, reusable scripts in ``scripts/`` — both untouched)
-    - ``layout.tmp/*``: deepagents' eviction cache (``large_tool_results``) and
-      summarization dumps (``conversation_history``); the durable copies are in
-      the artifacts / transcript_messages DB tables.
-
-    Runs in local AND docker mode — the sandbox is a host dir under
-    ``.yuyutsava`` either way. Callers invoke it after ``AgentBundle.aclose()``
-    so no container still has the directory as its cwd. The daemon cleans the
-    same scratch via the UnifiedSweeper's TTL targets instead, since its
-    workspace is long-lived and shared across tasks.
-    """
-    targets: list[Path] = [layout.sandbox]
-    if layout.tmp.is_dir():
-        targets.extend(layout.tmp.iterdir())
-    for target in targets:
-        if not target.exists():
-            continue
-        try:
-            if target.is_dir():
-                shutil.rmtree(target)
-            else:
-                target.unlink()
-            logger.debug("Cleaned up %s", target)
-        except Exception as exc:
-            logger.warning("Could not remove %s: %s", target, exc)

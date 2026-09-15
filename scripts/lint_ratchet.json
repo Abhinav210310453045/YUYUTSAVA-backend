@@ -94,6 +94,9 @@
   "yuyutsava/cli/stream_smoother.py": {
     "S110": 1
   },
+  "yuyutsava/cli/tooling.py": {
+    "BLE001": 1
+  },
   "yuyutsava/consent/registry.py": {
     "PLR0913": 1
   },
@@ -121,7 +124,6 @@
     "PLR0913": 1
   },
   "yuyutsava/core/engine.py": {
-    "BLE001": 1,
     "PLR0913": 6
   },
   "yuyutsava/core/model_router.py": {

@@ -40,7 +40,7 @@ from yuyutsava import platform as yplatform
 from yuyutsava.aio import run as aio_run
 from yuyutsava.async_subagents.host_lock import release_host_lock
 from yuyutsava.config.env import env_flag
-from yuyutsava.core.engine import silence_plumbing_loggers
+from yuyutsava.config.logs import silence_plumbing_loggers
 from yuyutsava.daemon.bootstrap import DaemonOptions, DaemonSubsystems, build_daemon
 from yuyutsava.daemon.lifecycle import install_reload_handler, install_signal_handlers
 from yuyutsava.daemon.orchestrator_loop import resume_interrupted_tasks

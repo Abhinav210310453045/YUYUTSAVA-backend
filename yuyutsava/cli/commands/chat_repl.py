@@ -64,14 +64,15 @@ from yuyutsava.cli.render.plain import (
     ChatRenderer,
 )
 from yuyutsava.cli.render.renderer import RichChatRenderer
+from yuyutsava.cli.tooling import cleanup_local_sandbox
 from yuyutsava.config.env import env_flag
 from yuyutsava.config.execution import DockerSettings, LocalSettings
+from yuyutsava.config.logs import silence_plumbing_loggers
 from yuyutsava.config.search import SearchConfig
 from yuyutsava.consent import decision_token as _decision_token
 from yuyutsava.context.meter import bus
 from yuyutsava.conversation import ConversationService
 from yuyutsava.core.agent_stack import build_agent_stack
-from yuyutsava.core.engine import cleanup_local_sandbox, silence_plumbing_loggers
 from yuyutsava.daemon.singleton import read_daemon_discovery
 from yuyutsava.llm import tracing as _tracing
 from yuyutsava.llm.quirks.first_chunk_retry import set_retry_listener
@@ -298,7 +299,7 @@ def _print_help() -> None:
 # ---------------------------------------------------------------------------
 #
 # The plumbing-logger floor + the warnings filter live in
-# ``yuyutsava.core.engine.silence_plumbing_loggers`` so the same rules apply
+# ``yuyutsava.config.logs.silence_plumbing_loggers`` so the same rules apply
 # to the daemon. The REPL just calls it.
 
 

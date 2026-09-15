@@ -83,7 +83,7 @@ class _Env:
 
 class SilencerTests(unittest.TestCase):
     def test_child_of_silenced_logger_does_not_fall_through_to_lastresort(self):
-        from yuyutsava.core.engine import silence_plumbing_loggers
+        from yuyutsava.config.logs import silence_plumbing_loggers
 
         silence_plumbing_loggers()
         child = logging.getLogger("opentelemetry.exporter.otlp.proto.http.trace_exporter")
@@ -97,7 +97,7 @@ class SilencerTests(unittest.TestCase):
         self.assertEqual(captured.getvalue(), "")
 
     def test_silencer_is_idempotent_on_handlers(self):
-        from yuyutsava.core.engine import silence_plumbing_loggers
+        from yuyutsava.config.logs import silence_plumbing_loggers
 
         silence_plumbing_loggers()
         silence_plumbing_loggers()
@@ -111,7 +111,7 @@ class DeadSwitchTests(unittest.TestCase):
     def setUpClass(cls):
         # Mirror the real entrypoints (CLI + daemon), which install the silencer
         # at start-up; without it the exporter's own ERROR line is visible here.
-        from yuyutsava.core.engine import silence_plumbing_loggers
+        from yuyutsava.config.logs import silence_plumbing_loggers
 
         silence_plumbing_loggers()
 

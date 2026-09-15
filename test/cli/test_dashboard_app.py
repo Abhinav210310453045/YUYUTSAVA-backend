@@ -328,7 +328,7 @@ class PaneIntegrity(_DashboardCase):
         self.assertTrue(any("credentials warning" in ln for ln in self.dash.buffer.lines()))
 
     async def test_a_logger_with_its_own_handler_is_captured(self):
-        # core.engine.setup_logging attaches the CLI handler to the
+        # cli.tooling.setup_logging attaches the CLI handler to the
         # `yuyutsava` logger with propagate=False. Retargeting only root left
         # every warning in the tree painting on top of the prompt.
         log = logging.getLogger("yuyutsava.test.pane")

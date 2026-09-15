@@ -792,7 +792,7 @@ class ChatDashboard:
         1. ``sys.stdout`` / ``sys.stderr`` — swapped.
         2. **``logging``.** ``StreamHandler`` binds its stream at construction,
            so existing handlers must be retargeted. The first version of this
-           walked only the ROOT logger, and ``core.engine.setup_logging``
+           walked only the ROOT logger, and ``cli.tooling.setup_logging``
            attaches the CLI's handler to the ``yuyutsava`` logger with
            ``propagate=False`` — so every warning in the tree kept writing to
            the real stderr, landing on top of the prompt in yellow. Walk every
