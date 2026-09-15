@@ -32,11 +32,11 @@ from yuyutsava.config.search import SearchConfig
 from yuyutsava.context.config import ContextSettings
 from yuyutsava.context.tools import make_context_tools
 from yuyutsava.core.engine import AgentBundle, build_tinker_agent, context_middleware
+from yuyutsava.core.stores import StoreFactory, build_retrieval_stores
 from yuyutsava.llm.factory import chat_model
 from yuyutsava.llm.settings import LlmSettings, llm_settings_from_env
 from yuyutsava.skills.registry import SkillRegistry
 from yuyutsava.storage.backend import StorageSettings
-from yuyutsava.storage.factory import StoreFactory, build_retrieval_stores
 from yuyutsava.storage.paths import WorkspaceLayout
 from yuyutsava.todoboard.recall import get_default_note_index
 

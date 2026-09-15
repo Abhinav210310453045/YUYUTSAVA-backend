@@ -21,9 +21,9 @@ import tempfile
 import unittest
 from urllib.parse import urlparse
 
+from yuyutsava.core.stores import StoreFactory
 from yuyutsava.storage.backend import DEFAULT_PG_DSN, StorageSettings
 from yuyutsava.storage.domains import DOMAINS, Failover
-from yuyutsava.storage.factory import StoreFactory
 
 
 def _pg_dsn() -> str:

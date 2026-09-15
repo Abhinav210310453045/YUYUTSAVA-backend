@@ -72,9 +72,9 @@ class RetrievalOnSqlite(_Base):
     """No pgvector: skills fall back to the keyword twin, no note index."""
 
     async def test_builds_without_postgres(self) -> None:
+        from yuyutsava.core.stores import StoreFactory
         from yuyutsava.daemon.bootstrap import build_retrieval
         from yuyutsava.memory.config import MemorySettings
-        from yuyutsava.storage.factory import StoreFactory
 
         stores = StoreFactory(StorageSettings(backend="sqlite"))
         rtv = await build_retrieval(
@@ -100,9 +100,9 @@ class RetrievalOnSqlite(_Base):
         )
 
     async def test_skill_registry_sees_bundled_skills(self) -> None:
+        from yuyutsava.core.stores import StoreFactory
         from yuyutsava.daemon.bootstrap import build_retrieval
         from yuyutsava.memory.config import MemorySettings
-        from yuyutsava.storage.factory import StoreFactory
 
         rtv = await build_retrieval(
             home=self.home,
@@ -137,8 +137,8 @@ class RetrievalOnPostgres(_Base):
 
     async def test_postgres_branch_executes(self) -> None:
         """Runs the exact block that carried an unbound name for three commits."""
+        from yuyutsava.core.stores import StoreFactory
         from yuyutsava.daemon.bootstrap import build_retrieval
-        from yuyutsava.storage.factory import StoreFactory
 
         stores = StoreFactory(
             self.settings,
@@ -165,8 +165,8 @@ class RetrievalOnPostgres(_Base):
 
     async def test_note_index_is_installed_as_the_default(self) -> None:
         """The exchange's embed-on-write hooks resolve this singleton."""
+        from yuyutsava.core.stores import StoreFactory
         from yuyutsava.daemon.bootstrap import build_retrieval
-        from yuyutsava.storage.factory import StoreFactory
         from yuyutsava.todoboard.recall import get_default_note_index
 
         await build_retrieval(

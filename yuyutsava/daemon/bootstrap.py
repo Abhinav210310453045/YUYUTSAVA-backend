@@ -50,6 +50,7 @@ from yuyutsava.context.tools import make_context_tools
 from yuyutsava.core.engine import context_middleware
 from yuyutsava.core.model_router import ComplexityScorer, ModelRouter
 from yuyutsava.core.policy import PermissionsPolicy, StorePolicyCapEnforcer
+from yuyutsava.core.stores import StoreFactory
 from yuyutsava.core.tracing import warm_reachability_cache
 from yuyutsava.daemon.ask_registry import AskRegistry
 from yuyutsava.daemon.ask_resume import AskResumeService
@@ -85,7 +86,6 @@ from yuyutsava.skills.registry import SkillRegistry
 from yuyutsava.skills.store import SkillIndexer
 from yuyutsava.storage.backend import StorageSettings
 from yuyutsava.storage.events import Store
-from yuyutsava.storage.factory import StoreFactory
 from yuyutsava.storage.feedback_store import set_default_feedback_store
 from yuyutsava.storage.paths import (
     WorkspaceLayout,
@@ -417,7 +417,7 @@ async def build_storage(opts: DaemonOptions) -> StorageSubsystem:
     # This block used to re-decide it inline for every store — thirteen separate
     # `if pg_pool is not None` branches — and separately wrapped three of them
     # in RoutedStore with nothing recording why. Both now live in
-    # yuyutsava/storage/factory.py, with failover declared per domain in
+    # yuyutsava/core/stores.py, with failover declared per domain in
     # storage/domains.py.
     #
     # storage_health is built below (it needs pg_pool), so the factory is

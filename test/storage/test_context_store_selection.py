@@ -36,8 +36,8 @@ import socket
 import unittest
 from urllib.parse import urlparse
 
+from yuyutsava.core.stores import ContextStores, StoreFactory
 from yuyutsava.storage.backend import DEFAULT_PG_DSN, StorageSettings
-from yuyutsava.storage.factory import ContextStores, StoreFactory
 
 
 def _pg_dsn() -> str:

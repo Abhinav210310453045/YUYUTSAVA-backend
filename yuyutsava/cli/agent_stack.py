@@ -35,13 +35,13 @@ from yuyutsava.consent import ConsentRegistry
 from yuyutsava.context.config import ContextSettings
 from yuyutsava.context.tools import make_context_tools
 from yuyutsava.core.engine import AgentBundle, build_cli_deepagent, context_middleware
+from yuyutsava.core.stores import StoreFactory, build_retrieval_stores
 from yuyutsava.llm.factory import chat_model
 from yuyutsava.llm.pricing import refresh_price_cache
 from yuyutsava.llm.settings import LlmSettings, llm_settings_from_env
 from yuyutsava.mcp.loader import start_manager_for_workspace
 from yuyutsava.skills.registry import SkillRegistry
 from yuyutsava.storage.backend import StorageSettings
-from yuyutsava.storage.factory import StoreFactory, build_retrieval_stores
 from yuyutsava.storage.paths import WorkspaceLayout
 from yuyutsava.todoboard.recall import TodoNoteIndex, set_default_note_index
 from yuyutsava.todoboard.store import set_default_todo_store

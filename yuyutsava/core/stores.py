@@ -26,6 +26,10 @@ policy** read from :mod:`yuyutsava.storage.domains` rather than a wiring
 accident. Adding a domain is a method here plus a registry entry — no edit to
 the composition root.
 
+It lives in ``core``, beside the stack builders that call it, because it builds
+stores from ``context``, ``todoboard`` and the domain packages as well as from
+``storage``; a factory inside ``storage`` made the storage layer import all of them.
+
 Deliberately NOT a DI container. It is a plain object with one obvious method
 per store, so the wiring stays greppable and reads top to bottom. ADR-003
 rejects an implicit container for the same reason.
@@ -37,6 +41,10 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from yuyutsava.context.artifacts_unified import pg_artifact_store, sqlite_artifact_store
+from yuyutsava.context.summary_store_unified import pg_summary_store, sqlite_summary_store
+from yuyutsava.context.transcript_index import PgTranscriptIndex
+from yuyutsava.context.transcript_store_unified import pg_transcript_store, sqlite_transcript_store
 from yuyutsava.memory.config import MemorySettings
 from yuyutsava.memory.embedder import Embedder
 from yuyutsava.memory.store_unified import pg_memory_store, sqlite_memory_store
@@ -53,12 +61,13 @@ from yuyutsava.storage.routing.facade import RoutedStore
 from yuyutsava.storage.task_store_unified import pg_task_store, sqlite_task_store
 from yuyutsava.storage.usage import PgUsageStore, SqliteUsageStore
 from yuyutsava.storage.voice_store_unified import pg_voice_store, sqlite_voice_store
+from yuyutsava.todoboard.store_unified import pg_todo_store, sqlite_todo_store
 from yuyutsava.visuals.store_unified import pg_visual_store, sqlite_visual_store
 
 if TYPE_CHECKING:
     from yuyutsava.skills.registry import SkillRegistry
 
-logger = logging.getLogger("yuyutsava.storage.factory")
+logger = logging.getLogger("yuyutsava.core.stores")
 
 
 @dataclass(frozen=True)
@@ -153,11 +162,6 @@ class StoreFactory:
     # -- context controller ------------------------------------------------
 
     def artifacts(self, *, semantic_recall: bool = True) -> Any:
-        from yuyutsava.context.artifacts_unified import (  # noqa: PLC0415 — upward (storage -> context); moves with W3
-            pg_artifact_store,
-            sqlite_artifact_store,
-        )
-
         if self.is_postgres:
             store = pg_artifact_store(
                 self._pg, embedder=self._embedder, semantic_recall=semantic_recall
@@ -168,19 +172,9 @@ class StoreFactory:
         return sqlite_artifact_store(self._db())
 
     def summaries(self) -> Any:
-        from yuyutsava.context.summary_store_unified import (  # noqa: PLC0415 — upward (storage -> context); moves with W3
-            pg_summary_store,
-            sqlite_summary_store,
-        )
-
         return pg_summary_store(self._pg) if self.is_postgres else sqlite_summary_store(self._db())
 
     def transcripts(self) -> Any:
-        from yuyutsava.context.transcript_store_unified import (  # noqa: PLC0415 — upward (storage -> context); moves with W3
-            pg_transcript_store,
-            sqlite_transcript_store,
-        )
-
         return (
             pg_transcript_store(self._pg)
             if self.is_postgres
@@ -198,9 +192,6 @@ class StoreFactory:
         """
         if self._pg is None or self._embedder is None:
             return None
-        # Upward (storage -> context); moves with W3.
-        from yuyutsava.context.transcript_index import PgTranscriptIndex  # noqa: PLC0415
-
         return PgTranscriptIndex(self._pg, embedder=self._embedder)
 
     def context_stores(self, *, semantic_recall: bool = True) -> "ContextStores":
@@ -278,11 +269,6 @@ class StoreFactory:
         )
 
     def todos(self) -> Any:
-        from yuyutsava.todoboard.store_unified import (  # noqa: PLC0415 — upward (storage -> todoboard); moves with W3
-            pg_todo_store,
-            sqlite_todo_store,
-        )
-
         return self._wrap(
             "todo_cards",
             pg_todo_store(self._pg) if self.is_postgres else None,

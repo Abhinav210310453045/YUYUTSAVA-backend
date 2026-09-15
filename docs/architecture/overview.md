@@ -1475,7 +1475,7 @@ suite written *first* and run against **both old twins** before the rewrite —
 which is how six real cross-backend divergences were found rather than carried
 forward.
 
-`StoreFactory` (`storage/factory.py`) makes the backend decision **once** for the
+`StoreFactory` (`core/stores.py`) makes the backend decision **once** for the
 CLI, tinker and daemon stacks (it was written out by hand in all three), and
 `storage/domains.py` is a registry from which the purge and sweep table lists are
 **derived** — so a new thread-scoped domain cannot be forgotten by purge.
