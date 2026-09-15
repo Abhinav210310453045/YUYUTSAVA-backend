@@ -21,11 +21,6 @@ import logging
 from abc import abstractmethod
 from typing import Any, Callable
 
-# Re-exported so plugins can catch decision conflicts without importing
-# daemon web internals — the sink is their whole world.
-from yuyutsava.daemon.web.services.decision_service import (  # noqa: F401
-    DecisionConflictError,
-)
 from yuyutsava.ports.channels import ProposalDecision, UserChannel
 
 logger = logging.getLogger("yuyutsava.channels.plugin")

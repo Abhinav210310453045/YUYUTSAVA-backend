@@ -38,7 +38,6 @@ from yuyutsava.channels.plugin import (
     CAP_NOTIFY,
     CAP_PROPOSAL,
     ChannelPlugin,
-    DecisionConflictError,
     InboundSink,
 )
 from yuyutsava.channels.telegram.client import TelegramClient
@@ -46,6 +45,7 @@ from yuyutsava.ports.channels import (
     AskPrompt,
     AsyncTaskCompletedPayload,
     ChannelEvent,
+    DecisionConflictError,
     HttpLogPayload,
     LogPayload,
     ProposalDecision,

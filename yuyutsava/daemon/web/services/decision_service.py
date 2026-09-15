@@ -20,7 +20,7 @@ import logging
 from dataclasses import dataclass
 from typing import MutableMapping
 
-from yuyutsava.ports.channels import ProposalDecision
+from yuyutsava.ports.channels import DecisionConflictError, ProposalDecision
 
 # Narrowed from `object` in Phase 2 step 2.7: this service approves and skips
 # proposals, which is two methods of the events Store, not the whole surface.
@@ -33,10 +33,6 @@ logger = logging.getLogger("yuyutsava.daemon.web.services.decision_service")
 RESPONDABLE_DECISIONS = frozenset(
     {"approve", "approve_remember", "modify", "skip", "skip_remember"}
 )
-
-
-class DecisionConflictError(Exception):
-    """The proposal/ask is gone: expired, already answered, or unknown."""
 
 
 @dataclass(frozen=True)

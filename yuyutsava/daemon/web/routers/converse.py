@@ -87,14 +87,13 @@ from yuyutsava.core.streaming import StreamEvent
 from yuyutsava.daemon.turn_registry import TurnRun
 from yuyutsava.daemon.web.exceptions import ConflictError, ServiceUnavailableError
 from yuyutsava.daemon.web.schemas.proposal import OkOut
-from yuyutsava.daemon.web.services.decision_service import DecisionConflictError
 from yuyutsava.daemon.web.voice_pipeline import VoicePipeline
 from yuyutsava.policy.interrupt_format import (
     body_for_interrupt,
     options_for_interrupt,
     title_for_interrupt,
 )
-from yuyutsava.ports.channels import AskPrompt
+from yuyutsava.ports.channels import AskPrompt, DecisionConflictError
 from yuyutsava.storage.voice_blobs import write_voice_wav
 
 logger = logging.getLogger("yuyutsava.daemon.web.routers.converse")

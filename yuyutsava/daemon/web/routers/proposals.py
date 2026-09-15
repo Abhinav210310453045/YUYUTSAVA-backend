@@ -18,7 +18,7 @@ from yuyutsava.daemon.web.schemas.proposal import (
     OkOut,
     ProposalRespondIn,
 )
-from yuyutsava.daemon.web.services.decision_service import DecisionConflictError
+from yuyutsava.ports.channels import DecisionConflictError
 
 router = APIRouter(tags=["decisions"])
 

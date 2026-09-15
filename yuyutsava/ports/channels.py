@@ -352,6 +352,10 @@ class UserChannel(ABC):
         """Optional cleanup hook."""
 
 
+class DecisionConflictError(Exception):
+    """The proposal/ask is gone: expired, already answered, or unknown."""
+
+
 class AskRouter(Protocol):
     """What an agent needs from the channel router: post an ask, wait for the answer."""
 
