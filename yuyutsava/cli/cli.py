@@ -16,14 +16,6 @@ import sys
 from pathlib import Path
 from typing import Literal
 
-# Before anything can import grpc (the Gemini/Vertex SDKs do, transitively).
-# gRPC's C core logs at INFO by default, and its fork handlers fire on every
-# subprocess we spawn — so each tr_run_python / tr_execute printed
-# "fork_posix.cc … Other threads are currently calling into gRPC" and
-# "ev_poll_posix.cc … FD from fork parent still in poll list" straight over
-# the renderer. setdefault, so an operator debugging gRPC can still override.
-os.environ.setdefault("GRPC_VERBOSITY", "ERROR")
-
 try:
     from dotenv import load_dotenv
 except ImportError:
@@ -43,6 +35,16 @@ from yuyutsava.core.engine import (
 )
 from yuyutsava.storage.paths import ensure_state_dirs
 from yuyutsava.cli.commands.attach import run_attach
+
+# gRPC's C core logs at INFO by default, and its fork handlers fire on every
+# subprocess we spawn — so each tr_run_python / tr_execute printed
+# "fork_posix.cc … Other threads are currently calling into gRPC" and
+# "ev_poll_posix.cc … FD from fork parent still in poll list" straight over
+# the renderer. gRPC reads this when it is first imported, which the
+# Gemini/Vertex SDKs do when a model is built — never while the imports above
+# load (test/cli/test_grpc_env_order.py checks). setdefault, so an operator
+# debugging gRPC can still override it.
+os.environ.setdefault("GRPC_VERBOSITY", "ERROR")
 
 
 def _build_parser() -> argparse.ArgumentParser:

@@ -30,6 +30,11 @@ from yuyutsava.daemon.channels import (
     ToolCallPayload,
     ToolResultPayload,
 )
+from yuyutsava.daemon.interrupt_format import (
+    body_for_interrupt,
+    options_for_interrupt,
+    title_for_interrupt,
+)
 from yuyutsava.llm import model_name_of
 from yuyutsava.memory.agent_memory import AgentMemoryStore
 from yuyutsava.daemon.usage import UsageContext
@@ -41,16 +46,6 @@ from langchain_core.language_models import BaseChatModel
 from langgraph.checkpoint.base import BaseCheckpointSaver
 
 logger = logging.getLogger("yuyutsava.daemon.orchestrator_loop")
-
-
-# Interrupt formatting now lives in a shared, dependency-free module so the
-# background AsyncTaskHealthWatcher can reuse the exact same logic (no raw-JSON
-# blobs in background asks). Aliased here for backward compatibility.
-from yuyutsava.daemon.interrupt_format import (  # noqa: E402
-    body_for_interrupt as _body_for_interrupt,
-    options_for_interrupt as _options_for_interrupt,
-    title_for_interrupt as _title_for_interrupt,
-)
 
 
 def make_ask_handler(
@@ -79,9 +74,9 @@ def make_ask_handler(
         session_id = iv.get("session_id") or default_session_id
         ask = AskPrompt(
             ask_id=str(uuid.uuid4()),
-            title=_title_for_interrupt(interrupt_value),
-            body=_body_for_interrupt(interrupt_value),
-            options=_options_for_interrupt(interrupt_value),
+            title=title_for_interrupt(interrupt_value),
+            body=body_for_interrupt(interrupt_value),
+            options=options_for_interrupt(interrupt_value),
             interrupt_value=dict(iv),
             session_id=session_id,
             agent_path=iv.get("agent_path") or default_agent_path,

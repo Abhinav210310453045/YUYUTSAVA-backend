@@ -29,12 +29,6 @@ import sys
 from pathlib import Path
 import time as _time
 
-# Before anything can import grpc (the Gemini/Vertex SDKs do, transitively).
-# Its C core logs at INFO and its fork handlers fire on every subprocess the
-# task runner spawns, filling the daemon log with fork_posix.cc /
-# ev_poll_posix.cc noise. setdefault, so it stays overridable.
-os.environ.setdefault("GRPC_VERBOSITY", "ERROR")
-
 import uvicorn
 
 try:
@@ -62,6 +56,13 @@ from yuyutsava.mcp.config import MCPConfig
 from yuyutsava.storage.paths import ensure_state_dirs, state_dir
 from yuyutsava.async_subagents.host_lock import release_host_lock
 from yuyutsava.daemon.wake_bridge import run_wake_bridge
+
+# gRPC's C core logs at INFO and its fork handlers fire on every subprocess the
+# task runner spawns, filling the daemon log with fork_posix.cc /
+# ev_poll_posix.cc noise. gRPC reads this when it is first imported, which
+# happens when a model is built — never while the imports above load
+# (test/cli/test_grpc_env_order.py checks). setdefault, so it stays overridable.
+os.environ.setdefault("GRPC_VERBOSITY", "ERROR")
 
 logger = logging.getLogger("yuyutsava.daemon")
 

@@ -32,10 +32,6 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Literal
 
-from yuyutsava.storage.paths import CONTAINER_STATE_MOUNT, CONTAINER_WORKSPACE_MOUNT
-
-_slog = logging.getLogger("yuyutsava.sandbox")
-
 from deepagents.backends.protocol import (
     EditResult,
     ExecuteResponse,
@@ -47,6 +43,9 @@ from deepagents.backends.protocol import (
 from deepagents.backends.sandbox import BaseSandbox
 
 from yuyutsava.core.config import LIMITS, TIMING
+from yuyutsava.storage.paths import CONTAINER_STATE_MOUNT, CONTAINER_WORKSPACE_MOUNT
+
+_slog = logging.getLogger("yuyutsava.sandbox")
 
 DEFAULT_DOCKER_TIMEOUT = TIMING.bash_default_timeout_sec
 DEFAULT_MAX_OUTPUT_BYTES = LIMITS.docker_max_output_bytes
