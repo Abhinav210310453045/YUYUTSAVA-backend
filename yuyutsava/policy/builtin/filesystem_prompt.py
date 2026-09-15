@@ -38,7 +38,7 @@ except Exception:  # pragma: no cover - import guard for future library moves
 
 _ANCHOR = "## Filesystem Tools"  # stable fallback marker
 
-logger = logging.getLogger("yuyutsava.core.filesystem_prompt_policy")
+logger = logging.getLogger("yuyutsava.policy.builtin.filesystem_prompt")
 
 
 def is_filesystem_block(text: str) -> bool:

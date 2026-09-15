@@ -30,7 +30,7 @@ from typing import Any
 from yuyutsava.policy.base import Policy
 from yuyutsava.policy.types import Denied, ModelCall, ToolCall, ToolDecision
 
-logger = logging.getLogger("yuyutsava.core.subagent_gate_policy")
+logger = logging.getLogger("yuyutsava.policy.builtin.subagent_gate")
 
 # The two ways a master hands work to a subagent.
 _DELEGATION_TOOLS = frozenset({"task", "start_async_task"})

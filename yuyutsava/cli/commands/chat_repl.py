@@ -981,7 +981,7 @@ async def run_chat_repl(
             "yuyutsava.task_runner",
             "yuyutsava.agents.task_runner.tools",
             "yuyutsava.discovery.tool_registry",
-            "yuyutsava.core.permission_middleware",
+            "yuyutsava.policy.builtin.command_safety",
             # Startup chatter folded into the banner status line instead:
             # "pg pool: open", "pg migrations: at vN", "Langfuse not active".
             # REPL-scoped on purpose — the daemon keeps these lines.

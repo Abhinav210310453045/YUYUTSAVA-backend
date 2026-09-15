@@ -28,9 +28,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from yuyutsava.core.permission_middleware import classify_command, scope_check
 from yuyutsava.models.interrupts import PermissionRequestInterrupt
 from yuyutsava.policy.base import Policy
+from yuyutsava.policy.builtin.command_safety import classify_command, scope_check
 from yuyutsava.policy.types import Denied, ToolCall, ToolDecision
 
 

@@ -52,10 +52,10 @@ import unittest
 from pathlib import Path
 from typing import Any
 
-from yuyutsava.core.permission_policy import PermissionPolicy
 from yuyutsava.platform import host_profile
 from yuyutsava.policy.adapter import LangChainPolicyAdapter
 from yuyutsava.policy.ask import ScriptedAskUser
+from yuyutsava.policy.builtin.permission import PermissionPolicy
 from yuyutsava.policy.types import Denied
 
 # ---------------------------------------------------------------------------

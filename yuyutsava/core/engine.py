@@ -64,12 +64,6 @@ from yuyutsava.core.agent_profiles import (
     ToolFamily,
 )
 from yuyutsava.core.docker_sandbox_backend import DockerSandboxBackend
-from yuyutsava.core.filesystem_prompt_policy import FilesystemPromptPolicy
-from yuyutsava.core.permission_policy import PermissionPolicy
-from yuyutsava.core.retrieval_injection_policy import RetrievalInjectionPolicy
-from yuyutsava.core.subagent_gate_policy import SubagentGatePolicy
-from yuyutsava.core.tool_filter_policy import ToolFilterPolicy
-from yuyutsava.core.voice_style_policy import VoiceStylePolicy
 from yuyutsava.discovery.tool_registry import ToolRegistry
 from yuyutsava.events.tools import make_recall_tool
 from yuyutsava.llm.factory import chat_model, model_name_of
@@ -82,7 +76,13 @@ from yuyutsava.policy.adapter import (
     collapse_policy_adapters,
 )
 from yuyutsava.policy.builtin.budget import BudgetPolicy
+from yuyutsava.policy.builtin.filesystem_prompt import FilesystemPromptPolicy
+from yuyutsava.policy.builtin.permission import PermissionPolicy
+from yuyutsava.policy.builtin.retrieval_injection import RetrievalInjectionPolicy
+from yuyutsava.policy.builtin.subagent_gate import SubagentGatePolicy
+from yuyutsava.policy.builtin.tool_filter import ToolFilterPolicy
 from yuyutsava.policy.builtin.usage import UsagePolicy
+from yuyutsava.policy.builtin.voice_style import VoiceStylePolicy
 from yuyutsava.prefs.injector import PrefsInjector
 from yuyutsava.skills.injector import SkillInjector
 from yuyutsava.skills.registry import SkillRegistry

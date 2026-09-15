@@ -68,11 +68,11 @@ def _model_request() -> Any:
 
 def _real_policies() -> list[Any]:
     """The policies a CLI agent actually attaches, built the way the engine builds them."""
-    from yuyutsava.core.filesystem_prompt_policy import FilesystemPromptPolicy
-    from yuyutsava.core.permission_policy import PermissionPolicy
-    from yuyutsava.core.subagent_gate_policy import SubagentGatePolicy
-    from yuyutsava.core.tool_filter_policy import ToolFilterPolicy
-    from yuyutsava.core.voice_style_policy import VoiceStylePolicy
+    from yuyutsava.policy.builtin.filesystem_prompt import FilesystemPromptPolicy
+    from yuyutsava.policy.builtin.permission import PermissionPolicy
+    from yuyutsava.policy.builtin.subagent_gate import SubagentGatePolicy
+    from yuyutsava.policy.builtin.tool_filter import ToolFilterPolicy
+    from yuyutsava.policy.builtin.voice_style import VoiceStylePolicy
 
     return [
         ToolFilterPolicy(),
@@ -100,7 +100,7 @@ async def main() -> int:
 
     # The benchmark prompt has no deepagents filesystem block, so the policy's
     # warn-once fires. That is correct behaviour, and noise here.
-    logging.getLogger("yuyutsava.core.filesystem_prompt_policy").setLevel(logging.ERROR)
+    logging.getLogger("yuyutsava.policy.builtin.filesystem_prompt").setLevel(logging.ERROR)
 
     policies = _real_policies()
     collapsed = LangChainPolicyAdapter(policies)

@@ -127,13 +127,7 @@
     "BLE001": 1,
     "PLR0913": 6
   },
-  "yuyutsava/core/filesystem_prompt_policy.py": {
-    "BLE001": 1
-  },
   "yuyutsava/core/model_router.py": {
-    "BLE001": 1
-  },
-  "yuyutsava/core/retrieval_injection_policy.py": {
     "BLE001": 1
   },
   "yuyutsava/core/streaming.py": {
@@ -256,6 +250,12 @@
     "BLE001": 1
   },
   "yuyutsava/platform/process.py": {
+    "BLE001": 1
+  },
+  "yuyutsava/policy/builtin/filesystem_prompt.py": {
+    "BLE001": 1
+  },
+  "yuyutsava/policy/builtin/retrieval_injection.py": {
     "BLE001": 1
   },
   "yuyutsava/run_context.py": {

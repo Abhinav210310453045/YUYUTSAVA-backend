@@ -15,7 +15,7 @@ Two independent checks classify a shell command:
 
 Everything here is a pure function over a command string: no framework, no I/O,
 no user interaction. Applying these rules — asking the user, refusing the call —
-is :class:`~yuyutsava.core.permission_policy.PermissionPolicy`.
+is :class:`~yuyutsava.policy.builtin.permission.PermissionPolicy`.
 
 That split arrived with Phase 4 (ADR-004). Before it, ``PermissionMiddleware``
 lived at the bottom of this file, subclassed ``AgentMiddleware`` and called

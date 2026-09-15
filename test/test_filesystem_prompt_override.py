@@ -145,7 +145,7 @@ def test_lazy_discovery_invariant_holds():
     that says nothing about whether lazy discovery still works. What actually
     matters is that ToolFilterPolicy is still hiding what it claims to hide.
     """
-    from yuyutsava.core.tool_filter_policy import _SUPPRESS_NAMES, _SUPPRESS_PREFIXES
+    from yuyutsava.policy.builtin.tool_filter import _SUPPRESS_NAMES, _SUPPRESS_PREFIXES
 
     bound = set(_render_prompt()["bound_tools"])
 

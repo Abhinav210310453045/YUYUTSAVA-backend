@@ -119,11 +119,11 @@ GOLDEN = json.loads(
 
 def _pairs() -> list[tuple[str, Any]]:
     """(label, policy) for every migrated model-call policy."""
-    from yuyutsava.core.filesystem_prompt_policy import FilesystemPromptPolicy
-    from yuyutsava.core.retrieval_injection_policy import RetrievalInjectionPolicy
-    from yuyutsava.core.subagent_gate_policy import SubagentGatePolicy
-    from yuyutsava.core.tool_filter_policy import ToolFilterPolicy
-    from yuyutsava.core.voice_style_policy import VoiceStylePolicy
+    from yuyutsava.policy.builtin.filesystem_prompt import FilesystemPromptPolicy
+    from yuyutsava.policy.builtin.retrieval_injection import RetrievalInjectionPolicy
+    from yuyutsava.policy.builtin.subagent_gate import SubagentGatePolicy
+    from yuyutsava.policy.builtin.tool_filter import ToolFilterPolicy
+    from yuyutsava.policy.builtin.voice_style import VoiceStylePolicy
 
     injectors = [_Injector("## MEMORY\nrecalled"), _Injector("## SKILLS\nmatched")]
     return [
@@ -242,7 +242,7 @@ class TheWholePoint(unittest.IsolatedAsyncioTestCase):
     """
 
     async def test_tool_filter_suppresses_by_prefix_and_name(self) -> None:
-        from yuyutsava.core.tool_filter_policy import ToolFilterPolicy
+        from yuyutsava.policy.builtin.tool_filter import ToolFilterPolicy
         from yuyutsava.policy.types import ModelCall
 
         call = ModelCall(tool_names=("tr_grep", "ctx_recall", "execute", "tool_search"))
@@ -250,7 +250,7 @@ class TheWholePoint(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(call.suppressed_tools, {"tr_grep", "execute"})
 
     async def test_the_filesystem_block_is_found_by_index(self) -> None:
-        from yuyutsava.core.filesystem_prompt_policy import FilesystemPromptPolicy
+        from yuyutsava.policy.builtin.filesystem_prompt import FilesystemPromptPolicy
         from yuyutsava.policy.types import ModelCall
 
         call = ModelCall(system_texts=("base", FS_BLOCK, "tail"))
@@ -258,7 +258,7 @@ class TheWholePoint(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(call.rewritten, {1: None}, "wrong block targeted")
 
     async def test_a_replacement_swaps_rather_than_drops(self) -> None:
-        from yuyutsava.core.filesystem_prompt_policy import FilesystemPromptPolicy
+        from yuyutsava.policy.builtin.filesystem_prompt import FilesystemPromptPolicy
         from yuyutsava.policy.types import ModelCall
 
         call = ModelCall(system_texts=("base", FS_BLOCK))
@@ -267,11 +267,11 @@ class TheWholePoint(unittest.IsolatedAsyncioTestCase):
 
     async def test_no_filesystem_block_warns_exactly_once(self) -> None:
         """The Phase 0 silent-failure seam, without a graph."""
-        from yuyutsava.core.filesystem_prompt_policy import FilesystemPromptPolicy
+        from yuyutsava.policy.builtin.filesystem_prompt import FilesystemPromptPolicy
         from yuyutsava.policy.types import ModelCall
 
         policy = FilesystemPromptPolicy()
-        with self.assertLogs("yuyutsava.core.filesystem_prompt_policy", level="WARNING") as cm:
+        with self.assertLogs("yuyutsava.policy.builtin.filesystem_prompt", level="WARNING") as cm:
             await policy.revise_model_call(ModelCall(system_texts=("base",)))
             await policy.revise_model_call(ModelCall(system_texts=("base",)))
         self.assertEqual(len(cm.output), 1, "the warning repeats every turn")
@@ -279,16 +279,16 @@ class TheWholePoint(unittest.IsolatedAsyncioTestCase):
     async def test_a_healthy_run_is_silent(self) -> None:
         import logging
 
-        from yuyutsava.core.filesystem_prompt_policy import FilesystemPromptPolicy
+        from yuyutsava.policy.builtin.filesystem_prompt import FilesystemPromptPolicy
         from yuyutsava.policy.types import ModelCall
 
         policy = FilesystemPromptPolicy()
-        logger = logging.getLogger("yuyutsava.core.filesystem_prompt_policy")
+        logger = logging.getLogger("yuyutsava.policy.builtin.filesystem_prompt")
         with self.assertNoLogs(logger, level="WARNING"):
             await policy.revise_model_call(ModelCall(system_texts=("base", FS_BLOCK)))
 
     async def test_a_broken_injector_is_skipped_not_fatal(self) -> None:
-        from yuyutsava.core.retrieval_injection_policy import RetrievalInjectionPolicy
+        from yuyutsava.policy.builtin.retrieval_injection import RetrievalInjectionPolicy
         from yuyutsava.policy.types import ModelCall
 
         policy = RetrievalInjectionPolicy([_BrokenInjector(), _Injector("## OK\nx")])
@@ -298,7 +298,7 @@ class TheWholePoint(unittest.IsolatedAsyncioTestCase):
         self.assertIn("## OK", call.appended[0])
 
     async def test_retrieval_does_nothing_without_a_human_turn(self) -> None:
-        from yuyutsava.core.retrieval_injection_policy import RetrievalInjectionPolicy
+        from yuyutsava.policy.builtin.retrieval_injection import RetrievalInjectionPolicy
         from yuyutsava.policy.types import ModelCall
 
         call = ModelCall(latest_human_text="")
@@ -306,7 +306,7 @@ class TheWholePoint(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(call.changed)
 
     async def test_the_gate_says_which_subagents_are_off(self) -> None:
-        from yuyutsava.core.subagent_gate_policy import SubagentGatePolicy
+        from yuyutsava.policy.builtin.subagent_gate import SubagentGatePolicy
         from yuyutsava.policy.types import ModelCall
 
         call = ModelCall(system_texts=("base",))
@@ -315,7 +315,7 @@ class TheWholePoint(unittest.IsolatedAsyncioTestCase):
         self.assertIn("coder, researcher", call.appended[0])
 
     async def test_the_gate_is_quiet_when_nothing_is_off(self) -> None:
-        from yuyutsava.core.subagent_gate_policy import SubagentGatePolicy
+        from yuyutsava.policy.builtin.subagent_gate import SubagentGatePolicy
         from yuyutsava.policy.types import ModelCall
 
         call = ModelCall(system_texts=("base",))
@@ -327,7 +327,7 @@ class NonTextBlocksSurvive(unittest.IsolatedAsyncioTestCase):
     """Flattening the prompt to ``list[str]`` would drop them silently."""
 
     async def test_an_image_block_is_carried_across(self) -> None:
-        from yuyutsava.core.voice_style_policy import VoiceStylePolicy
+        from yuyutsava.policy.builtin.voice_style import VoiceStylePolicy
 
         image = {"type": "image", "url": "data:image/png;base64,AAA"}
         request = _request(extra_blocks=[image])
