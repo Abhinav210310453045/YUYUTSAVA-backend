@@ -80,7 +80,6 @@ import uuid
 
 from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
 
-from yuyutsava.audio_io.blobs import write_voice_wav
 from yuyutsava.audio_io.sentence import SentenceChunker
 from yuyutsava.config.env import env_flag, env_float
 from yuyutsava.context.meter import bus
@@ -96,6 +95,7 @@ from yuyutsava.policy.interrupt_format import (
     title_for_interrupt,
 )
 from yuyutsava.ports.channels import AskPrompt
+from yuyutsava.storage.voice_blobs import write_voice_wav
 
 logger = logging.getLogger("yuyutsava.daemon.web.routers.converse")
 

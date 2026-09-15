@@ -2,7 +2,7 @@
 
 Phase 2 step 2.5b. Chosen third because, like visuals, it has an on-disk side
 effect (``audio_blob_path``) — but unlike visuals the blobs are **not** owned by
-this store: they are written and removed by :mod:`yuyutsava.audio_io.blobs`, and
+this store: they are written and removed by :mod:`yuyutsava.storage.voice_blobs`, and
 ``purge_session`` deletes them in its own step. The store holds only the path.
 
 That difference is worth stating, because "row references a file" looked like it
@@ -153,7 +153,7 @@ class UnifiedVoiceMessageStore(VoiceMessageStore):
             )
             return cur.rowcount or 0
 
-        # Audio blobs are NOT unlinked here — audio_io.blobs owns them and
+        # Audio blobs are NOT unlinked here — storage.voice_blobs owns them and
         # purge_session removes them in its own step. Unlinking here too would
         # be a double delete.
         return await d.write(_do)

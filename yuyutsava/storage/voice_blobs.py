@@ -20,7 +20,7 @@ from pathlib import Path
 
 from yuyutsava.storage.paths import blobs_dir
 
-logger = logging.getLogger("yuyutsava.audio_io.blobs")
+logger = logging.getLogger("yuyutsava.storage.voice_blobs")
 
 
 def voice_blobs_dir() -> Path:

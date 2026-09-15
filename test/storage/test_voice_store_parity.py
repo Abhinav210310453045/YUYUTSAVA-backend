@@ -12,7 +12,7 @@ previous migrations each turned up a wrong assumption:
   backends, so unlike ``ThreadSummaryStore`` there is no ``MAX()+1`` race. That
   is a claim about the schema, so it gets a test.
 * ``test_delete_does_not_touch_audio_blobs`` — the row holds
-  ``audio_blob_path`` but does **not** own the file; ``audio_io.blobs`` does,
+  ``audio_blob_path`` but does **not** own the file; ``storage.voice_blobs`` does,
   and ``purge_session`` removes it separately. Copying the visuals pattern
   (which *does* unlink) would double-delete.
 
@@ -148,7 +148,7 @@ class _VoiceContract:
         self.assertEqual(len(set(results)), 5, f"duplicate seq allocated: {results}")
 
     async def test_delete_does_not_touch_audio_blobs(self) -> None:
-        """The store holds the path; ``audio_io.blobs`` owns the file."""
+        """The store holds the path; ``storage.voice_blobs`` owns the file."""
         blob = Path(tempfile.mkdtemp()) / "clip.wav"
         blob.write_bytes(b"RIFF-fake-audio")
         await self.store.put_message(
