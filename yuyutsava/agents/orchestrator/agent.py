@@ -21,7 +21,6 @@ from langchain_core.tools import BaseTool, tool
 
 from yuyutsava.agents.base_sub_agent import BaseSubAgent
 from yuyutsava.config.search import SearchConfig
-from yuyutsava.core.agent_context import current_context
 from yuyutsava.mcp.loader import MCPClientManager
 from yuyutsava.ports import (
     ArtifactStore,
@@ -35,6 +34,7 @@ from yuyutsava.ports import (
 )
 from yuyutsava.ports.channels import AskPrompt, AskRouter
 from yuyutsava.ports.policy import ContextTuning, RemoteSubagentSpec, TaskMirror
+from yuyutsava.run_context import current_context
 from yuyutsava.skills.registry import SkillRegistry
 from yuyutsava.storage.events import Store
 

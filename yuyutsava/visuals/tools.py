@@ -18,6 +18,8 @@ from typing import Any
 
 from langchain_core.tools import BaseTool, tool
 
+from yuyutsava.run_context import thread_id_from_runtime
+
 from .render import render
 from .store import VisualStore, get_default_visual_store
 from .types import VisualError
@@ -43,10 +45,6 @@ def make_visual_tools(
     store = store or get_default_visual_store()
 
     async def _finish(kind: str, spec: dict[str, Any]) -> str:
-        # Local import to avoid a hard dependency on the agent runtime at import.
-        # Upward (visuals -> context); moves with W3.
-        from yuyutsava.context.artifacts import thread_id_from_runtime  # noqa: PLC0415
-
         try:
             result = render(kind, spec)
         except VisualError as exc:
@@ -141,9 +139,6 @@ def make_visual_tools(
         before, e.g. to show it again. Returns JSON:
         {"status":"ok","artifacts":[{visual_id, kind, title, created_ts}, ...]}.
         """
-        # Upward (visuals -> context); moves with W3.
-        from yuyutsava.context.artifacts import thread_id_from_runtime  # noqa: PLC0415
-
         records = await store.list_for_thread(thread_id_from_runtime())
         return json.dumps(
             {

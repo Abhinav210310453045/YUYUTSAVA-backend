@@ -7,7 +7,6 @@ The rule table is the single source of truth for all zone/operation decisions.
 
 from __future__ import annotations
 
-from yuyutsava.core.agent_context import current_context
 from yuyutsava.models.interrupts import TaskRunnerPermissionInterrupt
 from yuyutsava.models.operations import (
     FilesystemZone,
@@ -15,6 +14,7 @@ from yuyutsava.models.operations import (
     OperationType,
     PermissionAction,
 )
+from yuyutsava.run_context import current_context
 
 # ---------------------------------------------------------------------------
 # Rule table: (zone, operation) → action

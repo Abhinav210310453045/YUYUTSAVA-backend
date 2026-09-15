@@ -35,12 +35,13 @@ from typing import Any
 
 from langchain_core.messages import ToolMessage
 
-from yuyutsava.context.artifacts import ArtifactStore, thread_id_from_runtime
+from yuyutsava.context.artifacts import ArtifactStore
 from yuyutsava.context.config import ContextSettings
 from yuyutsava.context.digests import build_digest
 from yuyutsava.context.meter import note_offload
 from yuyutsava.policy.base import Policy
 from yuyutsava.policy.types import ToolCall
+from yuyutsava.run_context import thread_id_from_runtime
 
 logger = logging.getLogger("yuyutsava.context.offload")
 

@@ -18,10 +18,10 @@ from __future__ import annotations
 
 import logging
 
-from yuyutsava.context.artifacts import thread_id_from_runtime
 from yuyutsava.context.transcript_index import PgTranscriptIndex
 from yuyutsava.retrieval.hit import Hit
 from yuyutsava.retrieval.injector import RetrievalInjector
+from yuyutsava.run_context import thread_id_from_runtime
 
 logger = logging.getLogger("yuyutsava.context.conversation_injector")
 

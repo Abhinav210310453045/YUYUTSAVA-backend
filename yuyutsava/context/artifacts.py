@@ -25,7 +25,6 @@ import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-from langgraph.config import get_config
 from ulid import ULID
 
 from yuyutsava.retrieval.pg import PgVectorTable
@@ -72,15 +71,6 @@ _ARTIFACT_CHUNKS_TABLE = PgVectorTable(
     text_col="text",
     extra_cols=("artifact_id", "char_offset"),
 )
-
-
-def thread_id_from_runtime() -> str:
-    """Best-effort thread id from the active LangGraph run config."""
-    try:
-        cfg = get_config() or {}
-        return str(cfg.get("configurable", {}).get("thread_id", "") or "unknown")
-    except Exception:
-        return "unknown"
 
 
 def mint_artifact_id() -> str:

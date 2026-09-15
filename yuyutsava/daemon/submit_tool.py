@@ -19,7 +19,7 @@ import logging
 
 from langchain_core.tools import BaseTool, tool
 
-from yuyutsava.context.artifacts import thread_id_from_runtime
+from yuyutsava.run_context import thread_id_from_runtime
 
 logger = logging.getLogger("yuyutsava.daemon.submit_tool")
 

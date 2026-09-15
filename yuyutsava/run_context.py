@@ -1,4 +1,7 @@
-"""Reads the LangGraph `RunnableConfig` to surface session_id + agent_path.
+"""What the active LangGraph run is: its thread, and which agent in the call tree.
+
+``current_context()`` reads the `RunnableConfig` to surface session_id + agent_path;
+``thread_id_from_runtime()`` reads the thread id alone.
 
 Every tool/middleware that emits an `interrupt(...)` payload merges
 `current_context()` into the dict, so the daemon's channel router can attribute
@@ -15,6 +18,7 @@ from __future__ import annotations
 from typing import TypedDict
 
 from langchain_core.runnables.config import var_child_runnable_config
+from langgraph.config import get_config
 
 
 class AgentContext(TypedDict, total=False):
@@ -34,3 +38,12 @@ def current_context() -> AgentContext:
         "session_id": conf.get("thread_id"),
         "agent_path": conf.get("agent_path") or "orchestrator",
     }
+
+
+def thread_id_from_runtime() -> str:
+    """Best-effort thread id from the active LangGraph run config."""
+    try:
+        cfg = get_config() or {}
+        return str(cfg.get("configurable", {}).get("thread_id", "") or "unknown")
+    except Exception:
+        return "unknown"

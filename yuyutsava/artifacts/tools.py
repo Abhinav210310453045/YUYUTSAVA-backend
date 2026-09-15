@@ -21,6 +21,7 @@ from typing import Any
 from langchain_core.tools import BaseTool, tool
 
 from yuyutsava.artifacts import store
+from yuyutsava.run_context import thread_id_from_runtime
 
 logger = logging.getLogger("yuyutsava.artifacts.tools")
 
@@ -30,9 +31,6 @@ _GENERATIVE = {"audio": "audio"}
 
 def _thread_id() -> str | None:
     try:
-        # Upward (artifacts -> context); moves with W3.
-        from yuyutsava.context.artifacts import thread_id_from_runtime  # noqa: PLC0415
-
         return thread_id_from_runtime()
     except Exception:  # noqa: BLE001 — best-effort tagging, never fail the tool
         return None

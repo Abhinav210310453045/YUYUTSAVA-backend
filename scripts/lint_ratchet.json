@@ -103,9 +103,6 @@
   "yuyutsava/consent/registry.py": {
     "PLR0913": 1
   },
-  "yuyutsava/context/artifacts.py": {
-    "BLE001": 1
-  },
   "yuyutsava/context/compaction.py": {
     "BLE001": 2,
     "S110": 1
@@ -259,6 +256,9 @@
     "BLE001": 1
   },
   "yuyutsava/platform/process.py": {
+    "BLE001": 1
+  },
+  "yuyutsava/run_context.py": {
     "BLE001": 1
   },
   "yuyutsava/sessions/runner.py": {

@@ -47,6 +47,7 @@ LAYERS: dict[str, int] = {
     "storage.ids": 1,
     "storage.dialect": 1,
     "llm": 1,
+    "run_context": 1,
     # L2 — domains and stores
     "storage": 2,
     "retrieval": 2,
@@ -81,7 +82,6 @@ LAYERS: dict[str, int] = {
 #: Upward imports that exist today, as (importer unit, imported unit). Shrinks only.
 ALLOWED_UPWARD: frozenset[tuple[str, str]] = frozenset(
     {
-        ("artifacts", "context"),
         ("artifacts", "todoboard"),
         ("skills", "discovery"),
         ("storage", "consent"),
@@ -89,7 +89,6 @@ ALLOWED_UPWARD: frozenset[tuple[str, str]] = frozenset(
         ("storage", "daemon"),
         ("storage", "todoboard"),
         ("storage.dialect", "storage"),
-        ("visuals", "context"),
     }
 )
 

@@ -46,9 +46,9 @@ from yuyutsava.context.artifacts import (
     MAX_SLICE_CHARS,
     ArtifactStore,
     clamp_slice_length,
-    thread_id_from_runtime,
 )
 from yuyutsava.context.compaction import request_compaction
+from yuyutsava.run_context import thread_id_from_runtime
 from yuyutsava.text import flatten_content
 
 logger = logging.getLogger("yuyutsava.context.tools")
