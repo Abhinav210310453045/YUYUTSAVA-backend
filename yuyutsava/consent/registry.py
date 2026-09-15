@@ -18,14 +18,9 @@ import time
 import uuid
 
 from yuyutsava.consent.domains import ConsentDomain, ToolPermissionDomain
-from yuyutsava.consent.models import (
-    ConsentDecision,
-    ConsentRequest,
-    ConsentScope,
-    Grant,
-    Verdict,
-)
+from yuyutsava.consent.models import ConsentDecision, ConsentRequest, ConsentScope, Verdict
 from yuyutsava.consent.store import ConsentStore
+from yuyutsava.storage.models import Grant
 
 logger = logging.getLogger("yuyutsava.consent")
 

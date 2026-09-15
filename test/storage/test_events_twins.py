@@ -13,10 +13,9 @@ import time
 import unittest
 from pathlib import Path
 
-from yuyutsava.consent.models import Grant
 from yuyutsava.consent.store import ConsentStore
 from yuyutsava.storage.events import Store
-from yuyutsava.storage.models import ConsentRule, Proposal
+from yuyutsava.storage.models import ConsentRule, Grant, Proposal
 
 
 def _proposal(pid: str, *, event_id: str = "e1", status: str = "pending") -> Proposal:

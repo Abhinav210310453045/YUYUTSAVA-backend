@@ -57,7 +57,7 @@ from yuyutsava.storage.events.ask_wire import (
     ask_record_to_params,
     ask_row_to_record,
 )
-from yuyutsava.storage.models import ConsentRule, Decision, EventRecord, Proposal
+from yuyutsava.storage.models import ConsentRule, Decision, EventRecord, Grant, Proposal
 
 logger = logging.getLogger("yuyutsava.storage.events.unified")
 
@@ -348,7 +348,7 @@ class UnifiedConsentGrantStore(ConsentGrantStore):
     def __init__(self, dialect: Dialect) -> None:
         self._d = dialect
 
-    async def put(self, grant: "Grant") -> None:  # noqa: F821
+    async def put(self, grant: Grant) -> None:
         d = self._d
 
         async def _do(conn):
@@ -385,10 +385,7 @@ class UnifiedConsentGrantStore(ConsentGrantStore):
 
         await d.write(_do)
 
-    async def load(self) -> list["Grant"]:  # noqa: F821
-        # Upward (storage -> consent); moves with W3.
-        from yuyutsava.consent.models import Grant  # noqa: PLC0415
-
+    async def load(self) -> list[Grant]:
         d = self._d
         async with d.reading() as conn:
             cur = await conn.execute(

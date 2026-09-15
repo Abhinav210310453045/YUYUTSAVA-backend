@@ -45,8 +45,8 @@ from yuyutsava.storage.models import ConsentRule, Decision, EventRecord, Proposa
 from yuyutsava.storage.routing.facade import RoutedStore
 
 if TYPE_CHECKING:
-    from yuyutsava.consent.models import Grant
     from yuyutsava.storage.backend import StorageSettings
+    from yuyutsava.storage.models import Grant
     from yuyutsava.storage.pg.pool import PgPool
     from yuyutsava.storage.routing.health import StorageHealth
 

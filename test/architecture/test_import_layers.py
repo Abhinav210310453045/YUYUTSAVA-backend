@@ -84,7 +84,6 @@ ALLOWED_UPWARD: frozenset[tuple[str, str]] = frozenset(
     {
         ("artifacts", "todoboard"),
         ("skills", "discovery"),
-        ("storage", "consent"),
         ("storage", "context"),
         ("storage", "daemon"),
         ("storage", "todoboard"),

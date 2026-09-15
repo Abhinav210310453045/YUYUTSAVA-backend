@@ -238,3 +238,21 @@ class InterruptRecord:
             reason=payload.get("reason"),
             question=payload.get("question"),
         )
+
+
+@dataclass(frozen=True)
+class Grant:
+    """A remembered consent decision for a subject within a scope."""
+
+    grant_id: str
+    domain: str  # "tool_permission" | "event" | …
+    subject_key: str  # domain-built normalized key (what is being allowed)
+    decision: str  # Verdict.ALLOW / Verdict.DENY value
+    scope: str  # ConsentScope value
+    scope_ref: str  # session_id / workspace root / "*" (persistent)
+    created_ts: float
+    expires_ts: float | None = None
+
+    def is_active(self, now: float | None = None) -> bool:
+        now = now if now is not None else time.time()
+        return self.expires_ts is None or self.expires_ts > now

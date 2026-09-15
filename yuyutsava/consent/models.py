@@ -1,15 +1,17 @@
-"""Dependency-free consent value types + decision parsing.
+"""Consent value types + decision parsing.
 
-Kept import-light (stdlib only) so any layer — the TaskRunner gateway, the
-storage Store, the daemon channels, the CLI — can use these without pulling in
+Kept import-light — the standard library, plus the stored
+:class:`~yuyutsava.storage.models.Grant` record — so any layer above storage (the
+TaskRunner gateway, the daemon channels, the CLI) can use these without pulling in
 the rest of the stack.
 """
 
 from __future__ import annotations
 
-import time
 from dataclasses import dataclass, field
 from enum import Enum
+
+from yuyutsava.storage.models import Grant
 
 
 class ConsentScope(str, Enum):
@@ -25,24 +27,6 @@ class Verdict(str, Enum):
     ALLOW = "allow"
     DENY = "deny"
     PROMPT = "prompt"
-
-
-@dataclass(frozen=True)
-class Grant:
-    """A remembered consent decision for a subject within a scope."""
-
-    grant_id: str
-    domain: str  # "tool_permission" | "event" | …
-    subject_key: str  # domain-built normalized key (what is being allowed)
-    decision: str  # Verdict.ALLOW / Verdict.DENY value
-    scope: str  # ConsentScope value
-    scope_ref: str  # session_id / workspace root / "*" (persistent)
-    created_ts: float
-    expires_ts: float | None = None
-
-    def is_active(self, now: float | None = None) -> bool:
-        now = now if now is not None else time.time()
-        return self.expires_ts is None or self.expires_ts > now
 
 
 @dataclass(frozen=True)

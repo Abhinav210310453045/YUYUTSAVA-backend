@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from yuyutsava.consent.models import Grant
+from yuyutsava.storage.models import Grant
 
 
 @runtime_checkable

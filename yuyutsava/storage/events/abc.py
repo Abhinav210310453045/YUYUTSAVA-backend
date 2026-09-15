@@ -27,7 +27,7 @@ from yuyutsava.storage.models import (
 )
 
 if TYPE_CHECKING:
-    from yuyutsava.consent.models import Grant
+    from yuyutsava.storage.models import Grant
 
 
 class EventStore(ABC):

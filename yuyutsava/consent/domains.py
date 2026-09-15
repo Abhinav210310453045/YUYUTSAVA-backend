@@ -12,7 +12,8 @@ import os
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
-from yuyutsava.consent.models import ConsentRequest, Grant
+from yuyutsava.consent.models import ConsentRequest
+from yuyutsava.storage.models import Grant
 
 
 @runtime_checkable

@@ -18,13 +18,13 @@ if _ROOT not in sys.path:
 from yuyutsava.consent import (
     ConsentRegistry,
     ConsentScope,
-    Grant,
     Verdict,
     is_permission_ask,
     parse_consent_decision,
 )
 from yuyutsava.consent.domains import ToolPermissionDomain
 from yuyutsava.policy.interrupt_format import options_for_interrupt
+from yuyutsava.storage.models import Grant
 
 FOLDER = "/Users/x/Desktop/yuyu-test-organize"
 

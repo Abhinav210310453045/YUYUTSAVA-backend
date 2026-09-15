@@ -16,7 +16,6 @@ from __future__ import annotations
 
 from yuyutsava.consent.models import (
     ConsentScope,
-    Grant,
     Verdict,
     decision_token,
     is_permission_ask,
@@ -27,7 +26,6 @@ from yuyutsava.consent.registry import ConsentRegistry
 __all__ = [
     "ConsentRegistry",
     "ConsentScope",
-    "Grant",
     "Verdict",
     "decision_token",
     "is_permission_ask",

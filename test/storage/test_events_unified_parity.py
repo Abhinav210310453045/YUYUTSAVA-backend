@@ -404,7 +404,7 @@ class _ConsentGrantContract:
     """``consent_grants`` — the durable allowlist read at boot."""
 
     def _grant(self, gid: str, decision: str = "allow", scope: str = "session"):
-        from yuyutsava.consent.models import Grant
+        from yuyutsava.storage.models import Grant
 
         return Grant(
             grant_id=gid,
@@ -465,7 +465,7 @@ class _ConsentGrantContract:
 
     async def test_expires_ts_may_be_null(self) -> None:
         """A ``project``-scope grant never expires; the column is nullable."""
-        from yuyutsava.consent.models import Grant
+        from yuyutsava.storage.models import Grant
 
         gid = self.rid("g-null")
         await self.grants.put(
