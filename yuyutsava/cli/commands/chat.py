@@ -14,8 +14,8 @@ from typing import Literal
 from yuyutsava.config.execution import DockerSettings, LocalSettings
 from yuyutsava.config.search import SearchConfig
 from yuyutsava.core.agent_stack import build_agent_stack
-from yuyutsava.core.docker_sandbox_backend import pull_virtual_paths_to_host
 from yuyutsava.core.engine import cleanup_local_sandbox
+from yuyutsava.docker_sandbox.backend import pull_virtual_paths_to_host
 from yuyutsava.llm.settings import LlmSettings
 from yuyutsava.sessions import ResumeFailed, run_session
 from yuyutsava.storage.paths import WorkspaceLayout

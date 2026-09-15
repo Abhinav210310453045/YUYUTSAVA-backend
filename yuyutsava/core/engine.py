@@ -63,8 +63,8 @@ from yuyutsava.core.agent_profiles import (
     Policy,
     ToolFamily,
 )
-from yuyutsava.core.docker_sandbox_backend import DockerSandboxBackend
 from yuyutsava.discovery.tool_registry import ToolRegistry
+from yuyutsava.docker_sandbox.backend import DockerSandboxBackend
 from yuyutsava.events.tools import make_recall_tool
 from yuyutsava.llm.factory import chat_model, model_name_of
 from yuyutsava.llm.settings import LlmSettings

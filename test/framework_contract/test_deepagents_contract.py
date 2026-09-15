@@ -96,7 +96,7 @@ def test_docker_backend_satisfies_protocol() -> None:
     surfaces as an ``AttributeError`` deep inside a tool call — at agent runtime,
     on a user's turn, rather than at construction.
     """
-    from yuyutsava.core.docker_sandbox_backend import DockerSandboxBackend
+    from yuyutsava.docker_sandbox.backend import DockerSandboxBackend
 
     # Check ``__abstractmethods__``, NOT ``hasattr``. DockerSandboxBackend
     # inherits from the protocol itself (MRO: DockerSandboxBackend ->
@@ -115,7 +115,7 @@ def test_docker_backend_satisfies_protocol() -> None:
         f"member(s) have no implementation: {sorted(unimplemented)}. deepagents "
         f"added these to the backend protocol and neither BaseSandbox nor we "
         f"implement them. Docker execution mode is broken. Implement them in "
-        f"yuyutsava/core/docker_sandbox_backend.py."
+        f"yuyutsava/docker_sandbox/backend.py."
     )
 
 

@@ -1,5 +1,10 @@
 Build the sandbox image from the repo root:
 
-  docker build -t deepagent-sandbox:local -f tutorials/docker_sandbox/Dockerfile .
+  docker build -t deepagent-sandbox:local -f yuyutsava/docker_sandbox/Dockerfile .
 
-Then run goog with --execution docker --docker-image deepagent-sandbox:local (see tutorials/README.md).
+deepagent-sandbox:local is the image `--execution docker` uses by default
+(override with --docker-image or YUYUTSAVA_DOCKER_IMAGE):
+
+  yuyutsava --execution docker "your task"
+
+The backend that runs tools inside the container is backend.py in this package.

@@ -65,6 +65,7 @@ LAYERS: dict[str, int] = {
     "policy": 3,
     "context": 3,
     "mcp": 3,
+    "docker_sandbox": 3,
     "consent": 3,
     "tools": 3,
     # L4 — agent assembly

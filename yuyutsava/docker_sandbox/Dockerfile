@@ -1,5 +1,6 @@
-# Deep Agents tutorial: local Docker sandbox (python3 required for BaseSandbox file tools).
-# Build: docker build -t deepagent-sandbox:local -f tutorials/docker_sandbox/Dockerfile .
+# The sandbox image for `yuyutsava --execution docker` (python3 is required by the
+# deepagents BaseSandbox file tools).
+# Build from the repo root: docker build -t deepagent-sandbox:local -f yuyutsava/docker_sandbox/Dockerfile .
 FROM python:3.12-slim-bookworm
 
 RUN apt-get update \
