@@ -43,7 +43,8 @@ from yuyutsava.daemon.task_registry import (
     _check_fields,
 )
 from yuyutsava.storage.base import BaseSqliteStore
-from yuyutsava.storage.dialect import Dialect
+from yuyutsava.storage.dialect import Dialect, PostgresDialect, SqliteDialect
+from yuyutsava.storage.paths import state_db_path
 
 logger = logging.getLogger("yuyutsava.daemon.task_store_unified")
 
@@ -226,15 +227,10 @@ class UnifiedTaskStore(TaskStore):
 
 
 def sqlite_task_store(db_path: Path | None = None) -> UnifiedTaskStore:
-    from yuyutsava.storage.dialect import SqliteDialect
-    from yuyutsava.storage.paths import state_db_path
-
     return UnifiedTaskStore(SqliteDialect(TaskSchema(db_path or state_db_path())))
 
 
 def pg_task_store(pool) -> UnifiedTaskStore:
-    from yuyutsava.storage.dialect import PostgresDialect
-
     return UnifiedTaskStore(PostgresDialect(pool))
 
 

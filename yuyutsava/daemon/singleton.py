@@ -26,6 +26,7 @@ import os
 import time
 from pathlib import Path
 from typing import Any
+import atexit
 
 from yuyutsava.platform import FileLock, pid_alive
 from yuyutsava.storage.paths import state_dir
@@ -146,6 +147,5 @@ def release_daemon_lock(lock: FileLock | None) -> None:
 
 def register_daemon_cleanup(lock: FileLock) -> None:
     """Register an ``atexit`` cleanup so SIGTERM / crashes also unlink files."""
-    import atexit
 
     atexit.register(release_daemon_lock, lock)

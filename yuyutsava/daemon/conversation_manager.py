@@ -48,6 +48,11 @@ from yuyutsava.storage.ids import (
     tinker_thread_base,
 )
 from yuyutsava.storage.sessions import SessionStore, get_default_session_store
+from yuyutsava.agents.tinker.agent import build_tinker_stack
+from yuyutsava.async_subagents.launch_index import parse_async_task_id
+from yuyutsava.cli.agent_stack import build_agent_stack
+from yuyutsava.daemon.submit_tool import make_orch_submit_tool
+from yuyutsava.todoboard.exchange import get_default_exchange
 
 logger = logging.getLogger("yuyutsava.daemon.conversation_manager")
 
@@ -192,13 +197,10 @@ class ConversationManager:
         conversation masters' sanctioned path to that side of the system."""
         if self._task_submission is None:
             return []
-        from yuyutsava.daemon.submit_tool import make_orch_submit_tool
 
         return [make_orch_submit_tool(self._task_submission, origin=origin)]
 
     async def _build_master_bundle(self) -> AgentBundle:
-        from yuyutsava.cli.agent_stack import build_agent_stack
-
         logger.info("conversation: building shared master bundle (lazy, first use)")
         return await build_agent_stack(
             self._workspace,
@@ -220,9 +222,6 @@ class ConversationManager:
         )
 
     async def _build_tinker_bundle(self, card_id: str) -> AgentBundle:
-        from yuyutsava.agents.tinker.agent import build_tinker_stack
-        from yuyutsava.todoboard.exchange import get_default_exchange
-
         # Board access only via the exchange — also 404s a bogus card before
         # the (expensive) stack build starts.
         card = await get_default_exchange().get_card(card_id)
@@ -265,7 +264,6 @@ class ConversationManager:
             return
         if ev.data.get("name") != "start_async_task":
             return
-        from yuyutsava.async_subagents.launch_index import parse_async_task_id
 
         tid = parse_async_task_id(ev.data.get("full") or ev.data.get("preview") or "")
         if tid:
@@ -334,8 +332,6 @@ class ConversationManager:
         resume_id: str | None = None,
         continue_latest: bool = False,
     ) -> tuple[ConversationService, bool]:
-        from yuyutsava.todoboard.exchange import get_default_exchange
-
         # Validate the card up-front so a stale/bogus id fails the handshake
         # (typed TodoNotFoundError) instead of the first turn.
         card = await get_default_exchange().get_card(card_id)

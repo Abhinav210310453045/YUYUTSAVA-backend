@@ -26,6 +26,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from yuyutsava.daemon.orchestrator_loop import make_ask_handler
+
 logger = logging.getLogger("yuyutsava.daemon.ask_resume")
 
 # Surfaces whose owner is a conversation thread the daemon can re-enter itself.
@@ -116,8 +118,6 @@ class AskResumeService:
         # durable ask too, so it goes back through the same hub path.
         ask_handler = None
         if self._channels is not None:
-            from yuyutsava.daemon.orchestrator_loop import make_ask_handler
-
             ask_handler = make_ask_handler(
                 self._channels,
                 default_session_id=thread_id,

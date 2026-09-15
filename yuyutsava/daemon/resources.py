@@ -26,7 +26,7 @@ import json
 import logging
 import time
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Literal
 
@@ -183,9 +183,7 @@ class ResourceMonitor:
         if self._settings.docker_stats:
             stats = await self._docker_stats()
             if stats:
-                import dataclasses as _dc
-
-                snap = _dc.replace(snap, per_container=stats)
+                snap = replace(snap, per_container=stats)
         self._ring.append(snap)
         return snap
 

@@ -43,6 +43,9 @@ import time
 from collections import deque
 from typing import Any
 
+from yuyutsava.daemon.channels import AppLogPayload
+from yuyutsava.daemon.web.services.stream_service import StreamEventItem
+
 logger = logging.getLogger("yuyutsava.daemon.log_bridge")
 
 #: Records held while the drain task catches up. A debug flood costs this much
@@ -128,9 +131,6 @@ class LogBridge:
             self._task = None
 
     async def _drain(self) -> None:
-        from yuyutsava.daemon.channels import AppLogPayload
-        from yuyutsava.daemon.web.services.stream_service import StreamEventItem
-
         while True:
             try:
                 if not self._queue:

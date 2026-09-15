@@ -41,7 +41,8 @@ from yuyutsava.daemon.channels import (
 )
 from yuyutsava.storage.events import Proposal
 from yuyutsava.io.audio import AudioUnavailableError, capture_wav
-from yuyutsava.io.stt import STT
+from yuyutsava.io.stt import STT, stt_from_env
+from yuyutsava.io.tts import tts_from_env
 
 logger = logging.getLogger("yuyutsava.daemon.voice_channel")
 
@@ -175,8 +176,6 @@ def voice_channel_from_env() -> VoiceChannel:
     Raises RuntimeError if required env vars (e.g. PIPER_MODEL) are absent — so a
     misconfigured voice channel fails fast at startup rather than going silent.
     """
-    from yuyutsava.io.stt import stt_from_env
-    from yuyutsava.io.tts import tts_from_env
 
     # Build TTS eagerly to validate config, then hand it to the Announcer.
     tts = tts_from_env()

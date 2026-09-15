@@ -26,6 +26,7 @@ from yuyutsava.daemon.channels import (
     UserChannel,
 )
 from yuyutsava.storage.events import Proposal
+from yuyutsava.consent import decision_token, is_permission_ask
 
 _SEP = "━" * 60
 
@@ -92,8 +93,6 @@ class TerminalChannel(UserChannel):
         # An ask is a permission prompt when its options include the
         # approve/reject pair (plus optional session/project scopes); anything
         # else (free-text / custom options) is a user_question passed through.
-        from yuyutsava.consent import decision_token, is_permission_ask
-
         options = a.options or []
         is_permission = is_permission_ask(options)
 

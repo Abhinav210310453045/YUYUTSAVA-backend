@@ -94,6 +94,8 @@ from yuyutsava.daemon.turn_registry import TurnRun
 from yuyutsava.daemon.web.exceptions import ConflictError, ServiceUnavailableError
 from yuyutsava.daemon.web.schemas.proposal import OkOut
 from yuyutsava.daemon.web.voice_pipeline import VoicePipeline
+from yuyutsava.context.meter import bus
+from yuyutsava.daemon.web.services.decision_service import DecisionConflictError
 
 logger = logging.getLogger("yuyutsava.daemon.web.routers.converse")
 
@@ -105,8 +107,6 @@ def _latest_usage_snapshot(thread_id: str) -> dict | None:
     "no numbers yet" — which is also what a fresh conversation looks like.
     """
     try:
-        from yuyutsava.context.meter import bus
-
         snap = bus().latest(thread_id)
         return snap.as_dict() if snap is not None else None
     except Exception:  # noqa: BLE001
@@ -535,7 +535,6 @@ async def converse(ws: WebSocket) -> None:
         teaching core/streaming, both CLI renderers, the SSE payload union and
         the static web UI about a frame only this handler can use.
         """
-        from yuyutsava.context.meter import bus
 
         def _forward(snap) -> None:
             # emit() is a put_nowait fan-out; safe to call from the model step.
@@ -983,10 +982,6 @@ async def converse(ws: WebSocket) -> None:
                 # overlay: same record, same resolution, same ask_resolved
                 # broadcast clearing every other surface.
                 if ask_id and decisions is not None:
-                    from yuyutsava.daemon.web.services.decision_service import (
-                        DecisionConflictError,
-                    )
-
                     try:
                         await decisions.respond_ask(str(ask_id), text)
                     except DecisionConflictError:

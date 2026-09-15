@@ -17,7 +17,7 @@ import asyncio
 import logging
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace as _dc_replace
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
@@ -93,6 +93,22 @@ from yuyutsava.storage.routing.reconcile import CONTENT_TABLE_SPECS, Reconciler
 from yuyutsava.storage.prefs import PrefsStore
 from yuyutsava.storage.sessions import PgSessionStore, set_default_session_store
 from yuyutsava.storage.sweeper import BlobSweepTarget, SweeperConfig, UnifiedSweeper
+from yuyutsava.agents.tinker.subagent import make_tinker_subagent
+from yuyutsava.async_subagents.host import AsyncSubagentHost, resolve_allow_blocking
+from yuyutsava.async_subagents.host_lock import acquire_or_attach_host, register_host_cleanup
+from yuyutsava.async_subagents.mirror import AsyncTaskMirror, MirroredTask
+from yuyutsava.async_subagents.watcher import AsyncTaskHealthWatcher
+from yuyutsava.context.tools import make_context_tools
+from yuyutsava.core.engine import context_middleware
+from yuyutsava.core.tracing import warm_reachability_cache
+from yuyutsava.daemon.conversation_manager import ConversationManager
+from yuyutsava.daemon.log_bridge import LogBridge
+from yuyutsava.daemon.voice_channel import voice_channel_from_env
+from yuyutsava.storage.feedback_store import set_default_feedback_store
+from yuyutsava.todoboard.exchange import get_default_exchange
+from yuyutsava.todoboard.recall import TodoNoteIndex, set_default_note_index
+from yuyutsava.todoboard.store import set_default_todo_store
+from yuyutsava.visuals.store import set_default_visual_store
 
 logger = logging.getLogger("yuyutsava.daemon.bootstrap")
 
@@ -384,7 +400,6 @@ async def build_storage(opts: DaemonOptions) -> StorageSubsystem:
             if pg_pool is not None:
                 await pg_pool.close()
             pg_pool = None
-            from dataclasses import replace as _dc_replace
 
             storage = _dc_replace(storage, backend="sqlite")
     else:
@@ -460,10 +475,6 @@ async def build_storage(opts: DaemonOptions) -> StorageSubsystem:
     # so an outage buffers to SQLite and the Reconciler (below) drains it back on
     # recovery. On the SQLite backend the getters fall back to the twins lazily.
     if pg_pool is not None and storage_health is not None:
-        from yuyutsava.storage.feedback_store import set_default_feedback_store
-        from yuyutsava.todoboard.store import set_default_todo_store
-        from yuyutsava.visuals.store import set_default_visual_store
-
         # Spillover is now a DECLARED policy (storage/domains.py: Failover),
         # not a wiring accident. The factory wraps exactly the domains that ask
         # for it; these three are the REST-path stores written OUTSIDE a
@@ -591,8 +602,6 @@ async def build_retention(
     checkpointer_saver = CheckpointerSaver(db_path=checkpoints_db_path(), storage=storage)
     checkpointer = await checkpointer_saver.start()
 
-    from yuyutsava.todoboard.exchange import get_default_exchange
-
     # ── unified TTL sweeper (checkpoints + on-disk blobs + event rows) ---
     # Webcam frames pile up fast (potentially one every few seconds for
     # hours). Keep ~1h of history then delete files + matching
@@ -711,14 +720,6 @@ async def build_retrieval(
     # spillover-drained note has no chunks until this catches it). SQLite-only
     # deployments leave the singleton unset and every hook no-ops.
     if pg_pool is not None and embedder is not None:
-        # Imported here, not inherited from an enclosing block: the
-        # build_retention extraction (Phase 3 step 3.3) moved the previous
-        # import into that function's scope, leaving this use unbound. It only
-        # fires on the Postgres path, so no SQLite test caught it — the static
-        # unbound-name check did.
-        from yuyutsava.todoboard.exchange import get_default_exchange
-        from yuyutsava.todoboard.recall import TodoNoteIndex, set_default_note_index
-
         note_index = TodoNoteIndex(pg_pool, embedder=embedder, min_score=mem_settings.min_score)
         set_default_note_index(note_index)
         try:
@@ -867,17 +868,6 @@ async def build_async_subagents(
     async_host_attachment = None
     enabled = env_flag("YUYUTSAVA_ASYNC_SUBAGENTS", true=("1", "true", "yes"))
     if enabled:
-        from yuyutsava.async_subagents.host import (
-            AsyncSubagentHost,
-            resolve_allow_blocking,
-        )
-        from yuyutsava.async_subagents.host_lock import (
-            acquire_or_attach_host,
-            register_host_cleanup,
-        )
-        from yuyutsava.async_subagents.mirror import AsyncTaskMirror, MirroredTask
-        from yuyutsava.async_subagents.watcher import AsyncTaskHealthWatcher
-
         logger.info("  async subs: enabled (YUYUTSAVA_ASYNC_SUBAGENTS=1)")
 
         # First-come-wins shared host. If another process (typically a CLI
@@ -897,9 +887,6 @@ async def build_async_subagents(
             # Background graphs get the same context controllers as the
             # masters (tool-result offload + compaction + ctx_* readback) —
             # bg runs are the longest and were the only agents without them.
-            from yuyutsava.context.tools import make_context_tools
-            from yuyutsava.core.engine import context_middleware
-
             # Host-only model instances — the host graphs run on the uvicorn
             # loop in the async-subagent-host thread, and Gemini SDK clients
             # bind to the first loop that uses them, so the main loop's
@@ -1100,8 +1087,6 @@ def build_subagents(
     # in the sync roster: interactive tinkering has its own per-card bundle
     # (ConversationManager), so the master delegates long jobs rather than
     # running them inline.
-    from yuyutsava.agents.tinker.subagent import make_tinker_subagent
-
     tinker = make_tinker_subagent(
         skill_registry=skill_registry,
         search_config=search_config,
@@ -1242,8 +1227,6 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         # Attached to the `yuyutsava` logger with no level of its own, so
         # PUT /logs/level (the titlebar dropdown) controls the panel — which
         # until now changed stderr only and looked like it did nothing.
-        from yuyutsava.daemon.log_bridge import LogBridge
-
         log_bridge = LogBridge(web_hub)
         log_bridge.install()
 
@@ -1255,8 +1238,6 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     # Voice channel — optional, disabled by default (privacy).
     if opts.voice:
         try:
-            from yuyutsava.daemon.voice_channel import voice_channel_from_env
-
             vc = voice_channel_from_env()
             channels.channels.append(vc)
             logger.info(
@@ -1315,8 +1296,6 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
 
     # Warm the Langfuse reachability probe now — before the async host installs
     # blockbuster — so the runtime path never does urllib on the event loop.
-    from yuyutsava.core.tracing import warm_reachability_cache
-
     await asyncio.to_thread(warm_reachability_cache)
 
     # Compaction model: role "compaction" so a cheap/local model can own
@@ -1563,8 +1542,6 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         # Lazy host for interactive text/voice conversations (Electron/mobile).
         # Builds its shared deepagent bundle on first /ws/converse use and
         # attaches to this daemon's async-subagent host (no second host).
-        from yuyutsava.daemon.conversation_manager import ConversationManager
-
         # Fresh subagent instances for the chat master's sync roster — the
         # orchestrator's own instances stay on its graph (specs must not
         # share tool/middleware objects across graphs). GeneralPurposeAgent

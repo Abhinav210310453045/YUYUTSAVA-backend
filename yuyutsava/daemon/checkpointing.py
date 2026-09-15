@@ -30,6 +30,7 @@ from pathlib import Path
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from yuyutsava.storage.backend import StorageSettings
 
@@ -82,8 +83,6 @@ class CheckpointerSaver:
         return saver
 
     async def _start_postgres(self) -> BaseCheckpointSaver:
-        from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-
         saver = await self._stack.enter_async_context(
             AsyncPostgresSaver.from_conn_string(self._storage.pg_dsn),
         )

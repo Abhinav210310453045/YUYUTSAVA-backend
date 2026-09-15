@@ -31,6 +31,7 @@ from yuyutsava.daemon.channels import (
     ToolResultPayload,
 )
 from yuyutsava.llm import model_name_of
+from yuyutsava.memory.agent_memory import AgentMemoryStore
 from yuyutsava.daemon.usage import UsageContext
 from yuyutsava.storage.ids import mint_thread_id as _mint_thread_id
 from yuyutsava.daemon.triage_loop import OrchestratorTask
@@ -321,8 +322,6 @@ class OrchestratorLoop:
         # Per-agent user-behavior memory: the MEMORY.md index of what this
         # orchestrator has learned about the user (um_note). Unconditional
         # (not similarity-gated) — the whole point is standing awareness.
-        from yuyutsava.memory.agent_memory import AgentMemoryStore
-
         agent_mem_block = await asyncio.to_thread(AgentMemoryStore("orchestrator").read_index_block)
         blocks = "\n\n".join(b for b in (prefs_block, agent_mem_block) if b)
         graph = build_orchestrator(

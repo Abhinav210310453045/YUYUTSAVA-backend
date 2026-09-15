@@ -198,53 +198,34 @@
   "yuyutsava/core/voice_style_policy.py": {
     "PLC0415": 1
   },
-  "yuyutsava/daemon/ask_resume.py": {
-    "PLC0415": 1
-  },
   "yuyutsava/daemon/bootstrap.py": {
     "C901": 1,
-    "PLC0415": 18,
     "PLR0913": 2
   },
   "yuyutsava/daemon/checkpointing.py": {
     "BLE001": 1,
-    "PLC0415": 1,
     "S110": 1
   },
   "yuyutsava/daemon/consent.py": {
     "BLE001": 1
   },
   "yuyutsava/daemon/conversation_manager.py": {
-    "PLC0415": 6,
     "PLR0913": 1
-  },
-  "yuyutsava/daemon/log_bridge.py": {
-    "PLC0415": 2
   },
   "yuyutsava/daemon/main.py": {
     "BLE001": 2,
     "C901": 1,
-    "PLC0415": 4,
     "S110": 1,
     "T201": 13
   },
   "yuyutsava/daemon/orchestrator_loop.py": {
     "BLE001": 1,
-    "PLC0415": 1,
     "PLR0913": 1
   },
   "yuyutsava/daemon/resources.py": {
-    "BLE001": 1,
-    "PLC0415": 1
-  },
-  "yuyutsava/daemon/singleton.py": {
-    "PLC0415": 1
-  },
-  "yuyutsava/daemon/task_store_unified.py": {
-    "PLC0415": 3
+    "BLE001": 1
   },
   "yuyutsava/daemon/terminal_channel.py": {
-    "PLC0415": 1,
     "T201": 22
   },
   "yuyutsava/daemon/triage_loop.py": {
@@ -255,7 +236,6 @@
   },
   "yuyutsava/daemon/voice_channel.py": {
     "BLE001": 2,
-    "PLC0415": 2,
     "S110": 2
   },
   "yuyutsava/daemon/web/app.py": {
@@ -265,23 +245,15 @@
   },
   "yuyutsava/daemon/web/routers/converse.py": {
     "C901": 3,
-    "PLC0415": 3,
     "S110": 3
   },
   "yuyutsava/daemon/web/routers/sessions.py": {
     "C901": 1
   },
-  "yuyutsava/daemon/web/routers/todos.py": {
-    "PLC0415": 1
-  },
-  "yuyutsava/daemon/web/routers/usage.py": {
-    "PLC0415": 3
-  },
   "yuyutsava/daemon/web/server.py": {
     "PLR0913": 1
   },
   "yuyutsava/daemon/web/voice_pipeline.py": {
-    "PLC0415": 1,
     "S110": 1
   },
   "yuyutsava/events/bus.py": {

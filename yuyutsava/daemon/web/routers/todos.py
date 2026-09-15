@@ -73,6 +73,7 @@ from yuyutsava.todoboard.models import (
     TodoNoteV1,
     TodoObjectiveV1,
 )
+from yuyutsava.storage.paths import blobs_dir
 
 logger = logging.getLogger("yuyutsava.daemon.web.routers.todos")
 
@@ -508,8 +509,6 @@ async def upload_attachment(
     if not artifacts.upload_mime_allowed(mime):
         raise HTTPException(status_code=415, detail=f"unsupported upload mime {mime!r}")
     kind = kind or artifacts.kind_for_upload(mime) or "file"
-
-    from yuyutsava.storage.paths import blobs_dir
 
     workspace = (
         Path(card.workspace_path) if card.workspace_path else blobs_dir() / "todoboard" / card_id

@@ -22,6 +22,7 @@ import tempfile
 import wave
 from pathlib import Path
 from typing import Callable
+import shutil
 
 from yuyutsava.audio_io.synth import synthesize_pcm
 from yuyutsava.audio_io.vad import VadResult, VadSegmenter
@@ -129,8 +130,6 @@ class VoicePipeline:
 
     def close(self) -> None:
         try:
-            import shutil
-
             shutil.rmtree(self._tmp, ignore_errors=True)
         except Exception:  # noqa: BLE001
             pass

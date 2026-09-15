@@ -27,6 +27,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+import time as _time
 
 # Before anything can import grpc (the Gemini/Vertex SDKs do, transitively).
 # Its C core logs at INFO and its fork handlers fire on every subprocess the
@@ -50,6 +51,8 @@ from yuyutsava.daemon.lifecycle import install_reload_handler, install_signal_ha
 from yuyutsava.daemon.orchestrator_loop import resume_interrupted_tasks
 from yuyutsava.daemon.singleton import (
     acquire_daemon_lock,
+    daemon_discovery_path,
+    daemon_lock_path,
     read_daemon_discovery,
     register_daemon_cleanup,
     release_daemon_lock,
@@ -57,6 +60,8 @@ from yuyutsava.daemon.singleton import (
 )
 from yuyutsava.mcp.config import MCPConfig
 from yuyutsava.storage.paths import ensure_state_dirs, state_dir
+from yuyutsava.async_subagents.host_lock import release_host_lock
+from yuyutsava.daemon.wake_bridge import run_wake_bridge
 
 logger = logging.getLogger("yuyutsava.daemon")
 
@@ -175,8 +180,6 @@ def _cmd_status() -> int:
     started_at = disco.get("started_at")
     uptime_str = "(unknown)"
     if isinstance(started_at, (int, float)):
-        import time as _time
-
         secs = max(0, int(_time.time() - started_at))
         h, rem = divmod(secs, 3600)
         m, s = divmod(rem, 60)
@@ -191,7 +194,6 @@ def _cmd_status() -> int:
 
 def _cmd_stop() -> int:
     """Stop the running daemon (graceful terminate, escalate to kill) — cross-platform."""
-    from yuyutsava.daemon.singleton import daemon_lock_path, daemon_discovery_path
 
     def _cleanup_files() -> None:
         for p in (daemon_lock_path(), daemon_discovery_path()):
@@ -480,8 +482,6 @@ async def _async_main(argv: list[str] | None = None) -> int:
         )
     if subs.web_hub is not None:
         # Relay wake-word detections to the UI so it can open the voice overlay.
-        from yuyutsava.daemon.wake_bridge import run_wake_bridge
-
         tasks.append(
             asyncio.create_task(
                 run_wake_bridge(
@@ -548,8 +548,6 @@ async def _async_main(argv: list[str] | None = None) -> int:
                 logger.exception("async_task_watcher.shutdown failed")
         if subs.async_host_attachment is not None:
             try:
-                from yuyutsava.async_subagents.host_lock import release_host_lock
-
                 release_host_lock(subs.async_host_attachment)
             except Exception:
                 logger.exception("release_host_lock failed")

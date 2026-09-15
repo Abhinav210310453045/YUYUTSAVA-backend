@@ -28,6 +28,8 @@ from yuyutsava.daemon.web.schemas.usage import (
     UsageSessionsOut,
     UsageSummaryOut,
 )
+from yuyutsava.core.model_router import is_priced, load_price_table
+from yuyutsava.storage.sessions import get_default_session_store
 
 logger = logging.getLogger("yuyutsava.daemon.web.usage")
 
@@ -95,8 +97,6 @@ async def get_usage_summary(
     by_model = await usage_store.aggregate(since=since, group_by="model")
     by_day = await usage_store.aggregate(since=since, group_by="day")
 
-    from yuyutsava.core.model_router import is_priced, load_price_table
-
     prices = load_price_table()
     unpriced = sorted({a.key for a in by_model if a.key and not is_priced(a.key, prices)})
 
@@ -138,8 +138,6 @@ async def get_usage_sessions(
     """
     totals = await usage_store.thread_totals(since=since, limit=limit)
 
-    from yuyutsava.core.model_router import is_priced, load_price_table
-
     prices = load_price_table()
     titles = await _session_titles([t.thread_id for t in totals])
 
@@ -178,8 +176,6 @@ async def _session_titles(thread_ids: list[str]) -> dict[str, tuple[str, str]]:
     if not wanted:
         return out
     try:
-        from yuyutsava.storage.sessions import get_default_session_store
-
         store = get_default_session_store()
         for row in await store.list(limit=500):
             thread_id = getattr(row, "thread_id", "") or ""
