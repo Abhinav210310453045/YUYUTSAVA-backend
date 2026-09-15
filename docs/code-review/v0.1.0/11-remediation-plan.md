@@ -48,7 +48,7 @@ W0 safety net ─► W1 guardrails ─► W2 __init__ + imports ─► W3 layeri
 |---|---|---|
 | W0 | Safety net: `verify_imports.py`, `measure_code_health.py`, baselines | Done with this review |
 | W1 | Guardrails | Done — see the outcome under W1 |
-| W2 | `__init__.py` and import hygiene | In progress — steps 1–3 done; see the outcome under W2 |
+| W2 | `__init__.py` and import hygiene | Done — see the outcome under W2 |
 | W3 | Layering and placement | Planned |
 | W4 | Readability, SOLID, DRY | Planned |
 | W5 | Errors, logging, state, defects | Planned |
@@ -152,7 +152,7 @@ on that order (`R-IMP-01`); it is safe only after W2.1 empties `core/__init__.py
 - `inits_*` metrics 0.
 - Fingerprint byte-identical.
 
-**Outcome so far — steps 1–3 done.** On `code-improvement`:
+**Outcome — done.** On `code-improvement`:
 
 | Step | Commit | What landed |
 |---|---|---|
@@ -167,17 +167,25 @@ on that order (`R-IMP-01`); it is safe only after W2.1 empties `core/__init__.py
 | 3 | `b239429` | 42 numeric settings in 12 modules use `env_int` / `env_float` |
 | 3 | `fc7dbde` | 12 flags that already stripped their value use `env_flag` |
 | 3 | `dbd8e30` | **fix:** 8 flags that did not strip now do, so a padded `"1 "` counts. A behaviour change, so it is its own commit (`R-DRY-01`) |
+| 4 | `4b2e046`, `7e45d68`, `832d2d5`, `6593905`, `31910a7`, `536c0ec`, `600a16e` | Function-body imports move to the top, one package group per commit: engine, context and policy, cli, agents, daemon, storage and domains, the rest. What stays carries `noqa: PLC0415` with a measured reason (optional extra, heavy, platform-specific, upward until W3, import cycle until W3, subprocess entry) (`R-IMP-02`) |
+| 5 | `890e28d` | The TODO board's registry core moves to `todoboard/block_registry.py`; `artifacts.py` imports the block modules at its top. The three `todoboard.block_*` modules import on their own (`R-IMP-03`, `R-IMP-01`) |
+| 5 | `2a76e1e` | No imports after code: the session-store imports and the interrupt formatters join their headers; the gRPC setting moves below the entry points' imports, guarded by `test/cli/test_grpc_env_order.py` (`R-IMP-03`) |
+| 6 | `72427f9` | The eight private cross-package names become public; the private-import allowlist is empty (`R-IMP-07`) |
+| 6 | `1e62c6c` | The langgraph-api version notice uses public APIs; its support rule agrees with langgraph-api's in 2,880 cases (`R-IMP-08`) |
+| 7 | `85363f6` | The last function-level imports without a reason get one; `platform/elevation.py`'s stdlib imports move to the top |
+| 7 | `e09c27c` | 133 unused imports removed; `F401` gated (`R-IMP-06`) |
+| 7 | `1cc5223`, `e643344` | Every import block sorted; `I001` gated; blame-ignored (`R-IMP-06`) |
+| 7 | `ae7af6f`, `e307480` | A `noqa` with a false reason removed; `llm` stops re-exporting `ModelHandle`, which nothing imports from the root any more (`R-INIT-03`) |
 
-**Measured at `8863a0f`, against the `f4ec45c` baseline.**
-- Init metrics:
-  - `inits_without_docstring` 5 → 0;
-  - `inits_with_logic` 1 → 0;
-  - `inits_with_unused_exports` 24 → 0, with the corrected metric.
-- `private_cross_package_imports` 14 → 8.
-- `history_narration_phrases` 176 → 166.
-- `in_function_imports` 415, unchanged. Moving these imports is step 4.
-- `deferred_internal_import_ratio` 0.246 → 0.251. Step 4 is the step that lowers it.
-- `mid_file_imports` 5, unchanged (step 5).
+**Measured at `e307480`, against the `f4ec45c` baseline.**
+- `verify_imports.py`: 6 failures → 0 (392 modules).
+- `in_function_imports` 415 → 96; `deferred_internal_import_ratio` 0.246 → 0.046 (target < 0.08).
+- `mid_file_imports` 5 → 0; `imports_after_code` 31 → 2, both documented.
+- `private_cross_package_imports` 14 → 0.
+- `inits_without_docstring`, `inits_with_logic`, `inits_with_unused_exports`: 0.
+- ruff: `F401` 134 → 0 and `I001` 147 → 0, both now in the gate; `PLC0415` ratchet 432 → 22, all 22 in `scripts/` (W6).
+- `history_narration_phrases` 176 → 164.
+- Agent fingerprint byte-identical; `yuyutsava --print-tools` unchanged throughout.
 
 **How the migrations were proven.**
 - **Behaviour probes.** Each probe compared the tree before and after, in fresh interpreters confirmed to import their own tree:
@@ -198,11 +206,29 @@ on that order (`R-IMP-01`); it is safe only after W2.1 empties `core/__init__.py
 - `R-TST-08`, `R-TST-09`, `R-TST-10`.
 - New `R-TST-01` evidence: pytest is not declared, so the two pytest files cannot be imported.
 
-**Still open in W2.** Steps 4–7, and every exit criterion except the init metrics:
-- `verify_imports.py` still fails the three `todoboard.block_*` modules (step 5);
-- the deferred ratio;
-- mid-file imports;
-- private imports.
+**How steps 4–7 were proven.** After every commit: the gates, `verify_imports.py`,
+`--print-tools`, a sweep of the test files that import what changed (every failure
+re-run at `f4ec45c`), and the REPL and daemon smoke tests; per-file syntax-tree
+proofs for the moves and the sort; before/after probes for the block registry and
+the version notice. The sort was checked against the whole suite, and the 29
+Postgres-backed files were run with Postgres up and no case skipped.
+
+**Caught before committing.**
+- The import-moving script's cycle check missed `from pkg import submodule` and
+  edges through a package `__init__`; its first run on the last group broke 13
+  modules. It was reverted, and the script now also imports each module and its
+  moved targets in a fresh interpreter before keeping a move.
+- The unused-import fix removed a re-export that `memory/store_unified.py` read
+  through a multi-line import; `verify_imports.py` reported 10 broken modules.
+- During the full-suite sweep another project's Postgres held port 5435 and
+  rejected our login, so 21 storage files errored instead of skipping. Not a
+  code change; the files were re-run once YUYUTSAVA's own database was back.
+
+**Carried out of W2.**
+- 47 first-party function-body imports that would be upward or close a cycle today;
+  W3 removes their cause.
+- The 22 unmarked `PLC0415` imports in `scripts/`, and the `E402` exemptions for
+  tests that edit `sys.path` (W6, `R-TST-02`).
 
 ## W3 — Layering and placement
 

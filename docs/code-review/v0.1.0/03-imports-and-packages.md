@@ -12,7 +12,7 @@ function bodies, most without a reason. Their real cause is one eager
 
 ## R-IMP-01 — Six modules crash when imported first
 
-**Severity** P0 · **Wave** W2 · **Status** Open
+**Severity** P0 · **Wave** W2 · **Status** Done (`2ce0c1c`, `b0b73e3`, `890e28d`): `verify_imports.py` reports 0 failures across 392 modules
 
 **Claim.** `yuyutsava.skills.registry`, `yuyutsava.skills.tools`,
 `yuyutsava.tools.search`, `yuyutsava.todoboard.block_audio`, `…block_journey` and
@@ -44,7 +44,7 @@ zero after every later wave.
 
 ## R-IMP-02 — Imports inside function bodies, mostly without a reason
 
-**Severity** P1 · **Wave** W2 · **Status** Open
+**Severity** P1 · **Wave** W2 · **Status** Done (`4b2e046`…`600a16e`, `85363f6`): 415 → 96 function-body imports, each with its reason; deferred first-party ratio 0.246 → 0.046
 
 **Claim.** 415 import statements sit inside function bodies across 115 files. The
 internal ones are the tell: 24.6% of all first-party imports are deferred.
@@ -100,7 +100,7 @@ commit. Agent fingerprint byte-identical.
 
 ## R-IMP-03 — Module-level imports after code and in the middle of files
 
-**Severity** P1 · **Wave** W2 · **Status** Open
+**Severity** P1 · **Wave** W2 · **Status** Done (`890e28d`, `2a76e1e`): `mid_file_imports` 0; `imports_after_code` 31 → 2, both documented (`platform/filelock.py`'s import fallback, `visuals/_mpl.py`'s Agg backend)
 
 **Claim.** Five module-level imports sit below the first `def`/`class` of their
 file, and 31 sit below executable statements.
@@ -183,7 +183,7 @@ in `__all__`; both classes were deleted (ruff `F822`).
 
 ## R-IMP-06 — Unused and unsorted imports
 
-**Severity** P2 · **Wave** W1–W2 · **Status** Open
+**Severity** P2 · **Wave** W1–W2 · **Status** Done (`e09c27c` unused, `1cc5223` sorted, `ae7af6f` the wrong `noqa`): `F401` and `I001` both at 0 and gated
 
 **Evidence.** ruff 0.16.5 over `yuyutsava test scripts`: `F401` unused imports 134,
 `I001` unsorted import blocks 123. One `noqa` is wrong:
@@ -197,7 +197,7 @@ commit; both rules gated afterwards.
 
 ## R-IMP-07 — Private names imported across package boundaries
 
-**Severity** P1 · **Wave** W2 · **Status** In progress: 14 → 8 (`2eff394` removed the six `core.config._env` imports)
+**Severity** P1 · **Wave** W2 · **Status** Done (`2eff394`, `72427f9`): 14 → 0; the private-import allowlist in `test_import_layers.py` is empty
 
 **Claim.** 14 imports take an underscore-prefixed name from another sub-package.
 
@@ -230,7 +230,7 @@ documents the coupling.
 
 ## R-IMP-08 — Private third-party APIs
 
-**Severity** P2 · **Wave** W2 · **Status** Open
+**Severity** P2 · **Wave** W2 · **Status** Done (`1e62c6c`): the version notice asks PyPI through public APIs; `core.tracing.langfuse_reachable` is public
 
 **Evidence.** `cli/commands/chat_repl.py:99` imports
 `langgraph_api.cli._check_newer_version`; `chat_repl.py:203` calls
