@@ -26,7 +26,7 @@ TODO(future): authorized-user presence gating.
       - New event source ``yuyutsava/events/sources/presence_check.py`` that
         fires ``face.frame`` on a schedule (e.g. every 60s), independent of
         the motion-triggered ``webcam`` source.
-      - New consent-rule category in ``core/policy.py``:
+      - New consent-rule category in ``policy/builtin/tool_permissions.py``:
         ``presence.authorised_identities = [...]``.
       - New "lockout" channel state in ``ChannelRouter`` that drops
         non-confirmation asks while gated.

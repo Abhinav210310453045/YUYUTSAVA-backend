@@ -4,9 +4,8 @@ The MVP shows a Tier-2 prompt every time a subagent's ``tr_*`` tool hits a
 PROMPT zone. This file lets the user pre-categorise tools so trusted
 operations skip the prompt.
 
-Lives in :mod:`yuyutsava.core` (not ``daemon/``) because the same policy
-model is consumable by the CLI permission middleware as well as the
-daemon. No daemon-runtime imports.
+The daemon is its only user today. It lives with the other built-in policies and
+imports only storage, so the CLI could apply the same rules without the daemon.
 
 Supported policies (Phase 2, step 1)
 ------------------------------------
@@ -56,7 +55,7 @@ from pathlib import Path
 from yuyutsava.storage.events.roles import ToolCallCounter
 from yuyutsava.storage.paths import state_dir
 
-logger = logging.getLogger("yuyutsava.core.policy")
+logger = logging.getLogger("yuyutsava.policy.builtin.tool_permissions")
 
 
 # Policies we understand. Anything else is treated as "propose" and a

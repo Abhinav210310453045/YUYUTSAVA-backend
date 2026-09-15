@@ -88,7 +88,7 @@ class StoreSatisfiesEveryRole(unittest.TestCase):
             "PendingAskRegistry",  # daemon/ask_registry.py — untyped
             "ProposalWriter",  # web/services/decision_service.py — untyped
             "RecallReader",  # events/tools.py, context/tools.py — closures
-            "ToolCallCounter",  # core/policy.py — untyped, avoids a cycle
+            "ToolCallCounter",  # policy/builtin/tool_permissions.py — untyped, avoids a cycle
         }
         orphans = sorted(set(roles.__all__) - declared - awaiting)
         self.assertEqual(

@@ -49,7 +49,6 @@ from yuyutsava.context.config import ContextSettings
 from yuyutsava.context.tools import make_context_tools
 from yuyutsava.core.engine import context_middleware
 from yuyutsava.core.model_router import ComplexityScorer, ModelRouter
-from yuyutsava.core.policy import PermissionsPolicy, StorePolicyCapEnforcer
 from yuyutsava.core.stores import StoreFactory
 from yuyutsava.daemon.ask_registry import AskRegistry
 from yuyutsava.daemon.ask_resume import AskResumeService
@@ -78,6 +77,7 @@ from yuyutsava.mcp.loader import MCPClientManager
 from yuyutsava.memory.config import MemorySettings
 from yuyutsava.memory.embedder import Embedder
 from yuyutsava.memory.store import MemoryStore
+from yuyutsava.policy.builtin.tool_permissions import PermissionsPolicy, StorePolicyCapEnforcer
 from yuyutsava.ports import CapEnforcer
 from yuyutsava.ports.channels import ChannelEvent, TimelinePayload
 from yuyutsava.prefs.injector import PrefsInjector

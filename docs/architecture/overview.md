@@ -188,24 +188,27 @@ which is SQLite by default and Postgres+pgvector when durable mode is on.
 yuyutsava/
 ├── cli/                 CLI entry, chat REPL, session/prefs commands, attach
 │   └── commands/        chat, chat_repl, sessions, prefs, scenarios, attach
-├── core/                the shared engine
+├── core/                agent assembly: the engine and the stack builders
 │   ├── engine.py          build_cli_deepagent / build_orchestrator / build_tinker_agent
 │   ├── agent_profiles.py  the master capability matrix, as data (ADR-001)
+│   ├── agent_stack.py     the chat stack (CLI REPL; daemon chat and voice)
+│   ├── tinker_stack.py    the TODO-card tinker stack
+│   ├── stores.py          StoreFactory — every store, backend chosen once
+│   ├── app_context.py     store handles; purge.py deletes a session everywhere
 │   ├── streaming.py       _drive_graph + two sinks (astream_agent / _iter)
-│   ├── config.py          all env settings (LLM providers, daemon, docker, search)
-│   ├── model_router.py    complexity → tier model + price table
-│   ├── tool_registry.py   progressive tool discovery (tool_search gateway)
-│   ├── *_policy.py        tool filter · filesystem prompt · voice style ·
-│   │                      subagent gate · permission · retrieval injection
-│   ├── policy.py          permissions.json (auto_approve, ws_* daily caps)
-│   │                      ⚠ unrelated to yuyutsava/policy/ — see section 13
-│   ├── pricing.py         live price fetch + cache
-│   └── docker_sandbox_backend.py
+│   ├── model_router.py    complexity → tier model
+│   └── tool_result.py     size guard for tool results
+├── config/              dependency-free settings: env helpers, limits, execution, search
 ├── policy/              OUR cross-cutting-concern layer (ADR-004) — see section 13
 │   ├── types.py           ToolCall · ModelCall · Turn · Denied · Raw · Directive
 │   ├── base.py            the Policy contract (no framework import)
 │   ├── adapter.py         LangChainPolicyAdapter — the ONE AgentMiddleware subclass
-│   └── ask.py             LangGraphAskUser / ScriptedAskUser
+│   ├── ask.py             LangGraphAskUser / ScriptedAskUser
+│   ├── interrupt_format.py  interrupt value → title / body / options
+│   └── builtin/           the policies: budget · usage · permission (+ command_safety) ·
+│                          tool_permissions (permissions.json, ws_* caps) · tool filter ·
+│                          filesystem prompt · subagent gate · retrieval injection · voice style
+├── docker_sandbox/      DockerSandboxBackend (backend.py) + the image it runs
 ├── ports/               dependency-free Protocols (ADR-003); imports nothing internal
 │   ├── agent.py           Agent (astream/aget_state) — the driver's contract
 │   ├── ask.py             AskUser — HITL delivery, decoupled from interrupt()

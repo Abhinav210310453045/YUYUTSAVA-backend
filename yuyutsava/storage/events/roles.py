@@ -14,7 +14,7 @@ Consumer                                         Store methods used
 ``daemon/ask_registry.py``                       3
 ``daemon/triage_loop.py``                        3
 ``daemon/consent.py``                            1
-``core/policy.py``                               1
+``policy/builtin/tool_permissions.py``                               1
 ``agents/orchestrator/spawn.py``                 1
 ``daemon/orchestrator_loop.py``                  1
 …18 more                                         1–2 each
