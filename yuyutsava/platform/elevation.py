@@ -26,8 +26,10 @@ time, never cached) — this module only performs the mechanics.
 
 from __future__ import annotations
 
+import base64
 import logging
 import os
+import shutil
 import sys
 import tempfile
 from dataclasses import dataclass
@@ -91,7 +93,7 @@ class WindowsUACProvider:
 
     def is_elevated(self) -> bool:
         try:
-            import ctypes  # noqa: PLC0415 - win-only, imported lazily
+            import ctypes  # noqa: PLC0415 — platform-specific: windll exists only on Windows
 
             return bool(ctypes.windll.shell32.IsUserAnAdmin())
         except Exception:
@@ -135,15 +137,11 @@ class WindowsUACProvider:
 
 
 def _powershell_exe() -> str:
-    import shutil  # noqa: PLC0415
-
     return shutil.which("pwsh") or shutil.which("powershell") or "powershell.exe"
 
 
 def _encode_powershell(command: str) -> str:
     """PowerShell -EncodedCommand wants base64 of UTF-16LE — dodges all quoting."""
-    import base64  # noqa: PLC0415
-
     return base64.b64encode(command.encode("utf-16-le")).decode("ascii")
 
 
@@ -155,8 +153,6 @@ def _read_text(path: Path) -> str:
 
 
 def _cleanup(tmp: Path) -> None:
-    import shutil  # noqa: PLC0415
-
     shutil.rmtree(tmp, ignore_errors=True)
 
 
@@ -195,8 +191,6 @@ def _applescript_quote(command: str) -> str:
 
 class LinuxSudoProvider:
     def __init__(self) -> None:
-        import shutil  # noqa: PLC0415
-
         self._pkexec = shutil.which("pkexec")
         self._sudo = shutil.which("sudo")
         self.mechanism_name = "pkexec" if self._pkexec else "sudo"

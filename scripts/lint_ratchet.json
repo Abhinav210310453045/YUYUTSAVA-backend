@@ -295,8 +295,5 @@
   },
   "yuyutsava/todoboard/tools.py": {
     "C901": 1
-  },
-  "yuyutsava/visuals/render.py": {
-    "PLC0415": 6
   }
 }

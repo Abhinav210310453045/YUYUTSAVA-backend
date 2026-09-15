@@ -20,27 +20,27 @@ def _load(kind: str):
     at call time instead of breaking agent startup.
     """
     if kind == "chart":
-        from .charts import render_chart
+        from .charts import render_chart  # noqa: PLC0415 — needs the visuals extra
 
         return render_chart
     if kind == "diagram":
-        from .diagrams import render_diagram
+        from .diagrams import render_diagram  # noqa: PLC0415 — needs the visuals extra
 
         return render_diagram
     if kind == "table":
-        from .tables import render_table
+        from .tables import render_table  # noqa: PLC0415 — needs the visuals extra
 
         return render_table
     if kind == "code":
-        from .code import render_code
+        from .code import render_code  # noqa: PLC0415 — needs the visuals extra
 
         return render_code
     if kind == "math":
-        from .math import render_math
+        from .math import render_math  # noqa: PLC0415 — needs the visuals extra
 
         return render_math
     if kind == "timeline":
-        from .timeline import render_timeline
+        from .timeline import render_timeline  # noqa: PLC0415 — needs the visuals extra
 
         return render_timeline
     return None

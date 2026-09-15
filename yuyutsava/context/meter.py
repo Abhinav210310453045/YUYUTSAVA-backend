@@ -940,6 +940,7 @@ class ContextMeterPolicy(Policy):
         }
 
     def _record_call(self, thread_id: str, usage: Any) -> None:
+        # Upward (context -> core); pricing moves to llm/ in W3.
         from yuyutsava.core.model_router import estimate_cost_usd, is_priced  # noqa: PLC0415
 
         state = self._state(thread_id)
