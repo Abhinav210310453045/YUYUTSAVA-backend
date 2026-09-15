@@ -28,8 +28,9 @@ from yuyutsava.cli.commands.chat_repl import (
     _usage_rows,
 )
 from yuyutsava.core.engine import AgentBundle
-from yuyutsava.daemon.usage import UsagePolicy, UsageRow
+from yuyutsava.policy.builtin.usage import UsagePolicy
 from yuyutsava.policy.types import Turn, Usage
+from yuyutsava.storage.usage import UsageRow
 
 
 class FakeUsageStore:

@@ -102,7 +102,9 @@ class ConversationManager:
         self._recursion_limit = recursion_limit
         self._store = store
         self.voice_store = voice_store  # storage.voice_store.VoiceMessageStore | None
-        self._usage_store = usage_store  # daemon.usage.UsageStore | None (chat + tinker accounting)
+        self._usage_store = (
+            usage_store  # storage.usage.UsageStore | None (chat + tinker accounting)
+        )
         self._mcp_manager = (
             mcp_manager  # mcp.loader.MCPClientManager | None (chat + tinker MCP tools)
         )

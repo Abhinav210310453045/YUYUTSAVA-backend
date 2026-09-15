@@ -3,7 +3,7 @@
 **The table.** ``PRICES`` holds USD per **1M** input/output tokens, keyed by
 model-name prefix (longest prefix wins). :func:`load_price_table` merges it with
 ``~/.yuyutsava/model_prices.json``, and :func:`estimate_cost_usd` prices a call
-from the result for the cost ledger (:class:`yuyutsava.daemon.usage.UsagePolicy`)
+from the result for the cost ledger (:class:`yuyutsava.policy.builtin.usage.UsagePolicy`)
 and the context meter. Extend it through the JSON file::
 
     {"my-model-prefix": [0.50, 1.50]}

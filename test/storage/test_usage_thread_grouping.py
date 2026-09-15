@@ -30,8 +30,8 @@ import unittest
 from pathlib import Path
 from urllib.parse import urlparse
 
-from yuyutsava.daemon.usage import UsageRow
 from yuyutsava.storage.backend import DEFAULT_PG_DSN
+from yuyutsava.storage.usage import UsageRow
 
 
 def _pg_dsn() -> str:
@@ -96,7 +96,7 @@ class _ThreadGroupingContract:
 
 class SqliteThreadGrouping(_ThreadGroupingContract, unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
-        from yuyutsava.daemon.usage import SqliteUsageStore
+        from yuyutsava.storage.usage import SqliteUsageStore
 
         self._tmp = tempfile.TemporaryDirectory()
         self.store = SqliteUsageStore(Path(self._tmp.name) / "state.db")
@@ -119,9 +119,9 @@ class SqliteThreadGrouping(_ThreadGroupingContract, unittest.IsolatedAsyncioTest
 @unittest.skipUnless(PG_UP, f"no Postgres reachable at {_pg_dsn()}")
 class PostgresThreadGrouping(_ThreadGroupingContract, unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
-        from yuyutsava.daemon.usage import PgUsageStore
         from yuyutsava.storage.backend import StorageSettings
         from yuyutsava.storage.pg.pool import PgPool
+        from yuyutsava.storage.usage import PgUsageStore
 
         self.pool = PgPool(StorageSettings(backend="postgres", pg_dsn=_pg_dsn()))
         await self.pool.open()
@@ -160,8 +160,8 @@ class ApiSurface(unittest.TestCase):
     def test_endpoint_and_schema_allow_thread(self) -> None:
         import typing
 
-        from yuyutsava.daemon.usage import GroupBy
         from yuyutsava.daemon.web.schemas.usage import UsageOut
+        from yuyutsava.storage.usage import GroupBy
 
         self.assertIn("thread", typing.get_args(GroupBy))
         schema_arg = typing.get_args(UsageOut.model_fields["group_by"].annotation)[0]

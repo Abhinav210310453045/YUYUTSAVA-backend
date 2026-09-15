@@ -64,7 +64,6 @@ from yuyutsava.daemon.task_registry import TaskRegistry
 from yuyutsava.daemon.task_submission import TaskSubmissionService
 from yuyutsava.daemon.terminal_channel import TerminalChannel
 from yuyutsava.daemon.triage_loop import OrchestratorTask, TriageLoop
-from yuyutsava.daemon.usage import UsageStore
 from yuyutsava.daemon.voice_channel import voice_channel_from_env
 from yuyutsava.daemon.web.auth import AuthSettings
 from yuyutsava.daemon.web.server import WebChannel, WebHub, make_app
@@ -102,6 +101,7 @@ from yuyutsava.storage.routing.health import StorageHealth
 from yuyutsava.storage.routing.reconcile import CONTENT_TABLE_SPECS, Reconciler
 from yuyutsava.storage.sessions import PgSessionStore, set_default_session_store
 from yuyutsava.storage.sweeper import BlobSweepTarget, SweeperConfig, UnifiedSweeper
+from yuyutsava.storage.usage import UsageStore
 from yuyutsava.todoboard.exchange import get_default_exchange
 from yuyutsava.todoboard.recall import TodoNoteIndex, set_default_note_index
 from yuyutsava.todoboard.store import set_default_todo_store

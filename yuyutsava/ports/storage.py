@@ -47,9 +47,10 @@ __all__ = ["ArtifactStore", "MemoryStore", "SummaryStore", "TranscriptStore", "U
 class UsageStore(Protocol):
     """Per-LLM-call cost accounting.
 
-    ``daemon/usage.py`` imports ``core.model_router`` for the price table, and
-    ``core`` builds the agents that carry this store — a real cycle, so this
-    port is load-bearing rather than cosmetic.
+    Implemented in :mod:`yuyutsava.storage.usage`. Agents carry the store and
+    :class:`~yuyutsava.policy.builtin.usage.UsagePolicy` writes through it;
+    typing both against this port keeps ``agents`` independent of the store
+    implementations.
     """
 
     async def add(self, row: Any) -> None: ...

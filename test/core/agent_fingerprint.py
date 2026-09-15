@@ -382,9 +382,9 @@ def wired_stores(tmp: Path) -> dict[str, Any]:
     from yuyutsava.context.config import ContextSettings
     from yuyutsava.context.summary_store_unified import sqlite_summary_store
     from yuyutsava.context.transcript_store_unified import sqlite_transcript_store
-    from yuyutsava.daemon.usage import SqliteUsageStore
     from yuyutsava.memory.store_unified import sqlite_memory_store
     from yuyutsava.skills.store_unified import sqlite_skill_store
+    from yuyutsava.storage.usage import SqliteUsageStore
 
     class _Opaque:
         """Stand-in for a dependency the builders only null-check and pass on.

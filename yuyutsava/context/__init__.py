@@ -9,6 +9,6 @@ Two mechanisms, both wired by :mod:`yuyutsava.core.engine`:
   older turns when the conversation nears the model's input budget, keeps the
   original task pinned, and persists each summary so continuity survives restarts.
 
-:class:`~yuyutsava.daemon.budget_policy.BudgetPolicy` caps cumulative spend above
+:class:`~yuyutsava.policy.builtin.budget.BudgetPolicy` caps cumulative spend above
 both. This package re-exports nothing: import a name from the module that owns it.
 """

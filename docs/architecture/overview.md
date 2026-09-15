@@ -1399,7 +1399,7 @@ event loop that drives them — see `quirks/loop_affinity.py`).
 ### 17.5 Cost accounting
 
 A `UsagePolicy` (section 13) rides every model call and writes one `llm_usage` row
-(`daemon/usage.py`). `estimate_cost_usd` uses the `PRICES` table (USD per 1M
+(`policy/builtin/usage.py`; the stores are in `storage/usage.py`). `estimate_cost_usd` uses the `PRICES` table (USD per 1M
 input/output tokens, **longest-prefix wins**), overridable via
 `~/.yuyutsava/model_prices.json`; both live in `llm/pricing.py`, which also best-effort fetches live prices
 and caches them.

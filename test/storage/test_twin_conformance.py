@@ -30,7 +30,7 @@ import unittest
 #: (module, interface, sqlite impl, pg impl) for every domain with two backends.
 #: Derived from docs/architecture/review/01-evidence-and-metrics.md § M3.
 TWINS: tuple[tuple[str, str, str, str], ...] = (
-    ("yuyutsava.daemon.usage", "UsageStore", "SqliteUsageStore", "PgUsageStore"),
+    ("yuyutsava.storage.usage", "UsageStore", "SqliteUsageStore", "PgUsageStore"),
 )
 
 #: Events-package twins share one module pair rather than one module per domain.

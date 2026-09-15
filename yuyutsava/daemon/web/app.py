@@ -129,7 +129,7 @@ def create_app(
     ask_registry: "object | None" = None,  # daemon.ask_registry.AskRegistry; duck-typed
     ask_resume: "object | None" = None,  # daemon.ask_resume.AskResumeService; duck-typed
     channel_plugins: "object | None" = None,  # ChannelPluginRegistry; duck-typed
-    usage_store: "object | None" = None,  # daemon.usage.UsageStore; duck-typed
+    usage_store: "object | None" = None,  # storage.usage.UsageStore; duck-typed
     resource_monitor: "object | None" = None,  # daemon.resources.ResourceMonitor; duck-typed
     admission_controller: "object | None" = None,  # daemon.resources.AdmissionController; duck-typed
     model_router: "object | None" = None,  # core.model_router.ModelRouter; duck-typed

@@ -29,9 +29,9 @@ from typing import Any
 import httpx
 
 from yuyutsava.context.meter import ContextSnapshot
-from yuyutsava.daemon.usage import SqliteUsageStore, UsageRow, mint_usage_id
 from yuyutsava.daemon.web.app import create_app
 from yuyutsava.daemon.web.services.stream_service import WebHub
+from yuyutsava.storage.usage import SqliteUsageStore, UsageRow, mint_usage_id
 
 # --- what the components read ---------------------------------------------
 

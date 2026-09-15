@@ -17,9 +17,9 @@ from pathlib import Path
 
 import httpx
 
-from yuyutsava.daemon.usage import SqliteUsageStore, UsageRow, mint_usage_id
 from yuyutsava.daemon.web.app import create_app
 from yuyutsava.daemon.web.services.stream_service import WebHub
+from yuyutsava.storage.usage import SqliteUsageStore, UsageRow, mint_usage_id
 
 
 class _RecordingStore:

@@ -32,6 +32,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.state import CompiledStateGraph
 
+from yuyutsava.agents.orchestrator.agent import make_ask_user_tool
 from yuyutsava.agents.orchestrator.capabilities import render_capabilities_block
 from yuyutsava.agents.orchestrator.prompts import render_system_prompt
 from yuyutsava.agents.task_runner.exec_backend import DockerExecBackend
@@ -80,6 +81,8 @@ from yuyutsava.policy.adapter import (
     LangChainPolicyAdapter,
     collapse_policy_adapters,
 )
+from yuyutsava.policy.builtin.budget import BudgetPolicy
+from yuyutsava.policy.builtin.usage import UsagePolicy
 from yuyutsava.prefs.injector import PrefsInjector
 from yuyutsava.skills.injector import SkillInjector
 from yuyutsava.skills.registry import SkillRegistry
@@ -529,16 +532,10 @@ def _policy_middleware(
             # caught by the fingerprint gate when this was first written that way.
             out.append(LangChainPolicyAdapter([SubagentGatePolicy(runtime_settings)]))
         elif policy is Policy.BUDGET and budget_tokens is not None:
-            # Upward import (core -> daemon); it leaves the function when W3 moves
-            # the budget and usage policies into policy/.
-            from yuyutsava.daemon.budget_policy import BudgetPolicy  # noqa: PLC0415
-
             out.append(
                 LangChainPolicyAdapter([BudgetPolicy(max_input_tokens=budget_tokens, role=role)])
             )
         elif policy is Policy.USAGE and usage_store is not None:
-            from yuyutsava.daemon.usage import UsagePolicy  # noqa: PLC0415 — upward, as above
-
             # task_id/thread_id are pinned only where the bundle IS one
             # conversation — the tinker graph is per-card. The chat bundle is
             # shared across threads, so its rows land task-less/thread-less,
@@ -1240,17 +1237,11 @@ def build_orchestrator(
     ``make_ask_user_tool`` helper still live in that module — they are agent
     *definition*, not build mechanics.
 
-    ``usage_context`` (``yuyutsava.daemon.usage.UsageContext``) carries the
+    ``usage_context`` (``yuyutsava.storage.usage.UsageContext``) carries the
     task's join keys; when ``deps.usage_store`` is set, a ``UsagePolicy``
     rides every agent in the graph and writes one ``llm_usage`` row per
     model call.
     """
-    # Both load the daemon, which the CLI never needs: orchestrator.agent imports
-    # daemon.channels, and core -> daemon is an upward import. They leave the
-    # function when W3 moves AskPrompt to ports and the budget policy to policy/.
-    from yuyutsava.agents.orchestrator.agent import make_ask_user_tool  # noqa: PLC0415
-    from yuyutsava.daemon.budget_policy import BudgetPolicy  # noqa: PLC0415
-
     # Dedicated subagents the user switched off. A fresh orchestrator graph is
     # built per task, so reading the toggle here is both free and complete: a
     # disabled subagent is absent from the prompt AND from the roster below.
@@ -1350,8 +1341,6 @@ def build_orchestrator(
         usage_store = getattr(deps, "usage_store", None)
         if usage_store is None:
             return []
-        from yuyutsava.daemon.usage import UsagePolicy  # noqa: PLC0415 — upward (core -> daemon)
-
         return [
             LangChainPolicyAdapter(
                 [

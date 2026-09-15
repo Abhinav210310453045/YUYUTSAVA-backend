@@ -153,7 +153,7 @@ class Transcript(unittest.IsolatedAsyncioTestCase):
 
 class Budget(unittest.IsolatedAsyncioTestCase):
     def _policy(self, cap: int = 100):
-        from yuyutsava.daemon.budget_policy import BudgetPolicy
+        from yuyutsava.policy.builtin.budget import BudgetPolicy
 
         return BudgetPolicy(max_input_tokens=cap, role="cli")
 
@@ -224,7 +224,7 @@ class Usage(unittest.IsolatedAsyncioTestCase):
             self.rows.append(row)
 
     def _policy(self, store: Any, **kw: Any):
-        from yuyutsava.daemon.usage import UsagePolicy
+        from yuyutsava.policy.builtin.usage import UsagePolicy
 
         kw.setdefault("prices", {"m1": (1.0, 2.0)})
         return UsagePolicy(store, role="cli", **kw)
@@ -286,7 +286,7 @@ class Usage(unittest.IsolatedAsyncioTestCase):
             async def add(self, row: Any) -> None:
                 raise RuntimeError("db down")
 
-        with self.assertLogs("yuyutsava.daemon.usage", level="ERROR"):
+        with self.assertLogs("yuyutsava.policy.builtin.usage", level="ERROR"):
             result = await _observe(
                 self._policy(_Broken(), model_name="m1"), "after_model", [_ai("x", input_tokens=10)]
             )

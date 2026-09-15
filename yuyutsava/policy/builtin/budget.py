@@ -19,7 +19,7 @@ import logging
 from yuyutsava.policy.base import Policy
 from yuyutsava.policy.types import Directive, Turn
 
-logger = logging.getLogger("yuyutsava.daemon.budget_policy")
+logger = logging.getLogger("yuyutsava.policy.builtin.budget")
 
 
 class BudgetPolicy(Policy):

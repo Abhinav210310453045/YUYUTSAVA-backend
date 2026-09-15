@@ -24,7 +24,6 @@ from yuyutsava.core.engine import build_orchestrator
 from yuyutsava.core.streaming import StreamEvent, astream_agent_iter
 from yuyutsava.daemon.channels import ChannelRouter
 from yuyutsava.daemon.triage_loop import OrchestratorTask
-from yuyutsava.daemon.usage import UsageContext
 from yuyutsava.llm.factory import model_name_of
 from yuyutsava.memory.agent_memory import AgentMemoryStore
 from yuyutsava.policy.interrupt_format import (
@@ -43,6 +42,7 @@ from yuyutsava.ports.channels import (
 )
 from yuyutsava.storage.events.roles import DecisionWriter
 from yuyutsava.storage.ids import mint_thread_id as _mint_thread_id
+from yuyutsava.storage.usage import UsageContext
 
 logger = logging.getLogger("yuyutsava.daemon.orchestrator_loop")
 

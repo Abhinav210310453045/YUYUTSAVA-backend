@@ -109,7 +109,7 @@ class OrchestratorDeps:
     context_settings: ContextTuning | None = None
     compaction_model: BaseChatModel | None = None
 
-    # Phase 4 cost tracking: daemon.usage.UsageStore — when set, every
+    # Phase 4 cost tracking: storage.usage.UsageStore — when set, every
     # master/subagent model call writes one llm_usage row (UsagePolicy).
     usage_store: UsageStore | None = None
 

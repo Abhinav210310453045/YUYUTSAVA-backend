@@ -31,8 +31,8 @@ import unittest
 from pathlib import Path
 from urllib.parse import urlparse
 
-from yuyutsava.daemon.usage import UsageRow
 from yuyutsava.storage.backend import DEFAULT_PG_DSN
+from yuyutsava.storage.usage import UsageRow
 
 
 def _pg_dsn() -> str:
@@ -127,7 +127,7 @@ class _CacheTokenContract:
 
 class SqliteCacheTokens(_CacheTokenContract, unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
-        from yuyutsava.daemon.usage import SqliteUsageStore
+        from yuyutsava.storage.usage import SqliteUsageStore
 
         self._tmp = tempfile.TemporaryDirectory()
         self.store = SqliteUsageStore(Path(self._tmp.name) / "state.db")
@@ -142,7 +142,7 @@ class SqliteCacheTokens(_CacheTokenContract, unittest.IsolatedAsyncioTestCase):
         or rebuilding the table to add two defaulted columns — would be a far
         worse outcome than the reporting gap this closes.
         """
-        from yuyutsava.daemon.usage import SqliteUsageStore
+        from yuyutsava.storage.usage import SqliteUsageStore
 
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -197,10 +197,10 @@ class SqliteCacheTokens(_CacheTokenContract, unittest.IsolatedAsyncioTestCase):
 @unittest.skipUnless(PG_UP, f"no Postgres at {_pg_dsn()}")
 class PgCacheTokens(_CacheTokenContract, unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
-        from yuyutsava.daemon.usage import PgUsageStore
         from yuyutsava.storage.backend import StorageSettings
         from yuyutsava.storage.pg import migrations
         from yuyutsava.storage.pg.pool import PgPool
+        from yuyutsava.storage.usage import PgUsageStore
 
         self.pool = PgPool(StorageSettings(backend="postgres", pg_dsn=_pg_dsn()))
         await self.pool.open()
