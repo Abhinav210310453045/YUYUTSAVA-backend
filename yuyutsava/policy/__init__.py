@@ -5,8 +5,10 @@
 - :mod:`~yuyutsava.policy.adapter` — ``LangChainPolicyAdapter``, which runs policies as
   LangChain agent middleware
 - :mod:`~yuyutsava.policy.ask` — how a policy's question reaches the user
+- :mod:`~yuyutsava.policy.interrupt_format` — an interrupt value as a title, body and
+  options for whichever surface shows the ask
 
-``types`` and ``base`` import no agent framework; ``adapter`` and ``ask`` are where the
+``types``, ``base`` and ``interrupt_format`` import no agent framework; ``adapter`` and ``ask`` are where the
 framework comes in. This package re-exports nothing: import a name from the module
 that owns it.
 """

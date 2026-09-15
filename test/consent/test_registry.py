@@ -24,7 +24,7 @@ from yuyutsava.consent import (
     parse_consent_decision,
 )
 from yuyutsava.consent.domains import ToolPermissionDomain
-from yuyutsava.daemon.interrupt_format import options_for_interrupt
+from yuyutsava.policy.interrupt_format import options_for_interrupt
 
 FOLDER = "/Users/x/Desktop/yuyu-test-organize"
 

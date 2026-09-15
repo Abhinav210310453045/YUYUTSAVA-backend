@@ -7,7 +7,8 @@ subagent question, raw-execute permission, …) into a clean ``title`` / ``body`
 ``AsyncTaskHealthWatcher`` so foreground and background asks render identically —
 no raw-JSON blobs leaking into the CLI prompt or the UI ``AskCard``.
 
-Kept dependency-free (stdlib only) so the watcher can import it without a cycle.
+It lives beside :mod:`yuyutsava.policy.ask`, which raises these interrupts, and
+imports only the standard library, so every layer that shows an ask can use it.
 """
 
 from __future__ import annotations

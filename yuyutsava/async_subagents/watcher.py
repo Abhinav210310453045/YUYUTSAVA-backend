@@ -45,7 +45,7 @@ from yuyutsava.async_subagents.mirror import (
     AsyncTaskMirror,
     MirroredTask,
 )
-from yuyutsava.daemon.interrupt_format import (
+from yuyutsava.policy.interrupt_format import (
     body_for_interrupt,
     options_for_interrupt,
     title_for_interrupt,
