@@ -445,7 +445,7 @@ retired (ADR-003):
 
 **Module-level singletons.** `get_default_store()` / `set_default_*` pairs let
 any module reach any store, so a function's signature said nothing about what it
-touched — and one process could only ever have one of each. `storage/context.py`
+touched — and one process could only ever have one of each. `core/app_context.py`
 holds an `AppContext` that resolves the stores explicitly; `purge_session(ctx,
 session_id)` is barely less convenient than `purge_session(session_id)` and is
 honest about the four stores it deletes from. The seam is **additive**: it reads
@@ -1556,7 +1556,7 @@ timeline notice so a Postgres outage is **never silent**.
 kinds of target: stale LangGraph checkpoints, on-disk blobs (webcam frames at ~1h;
 deepagents scratch dirs at 24h), and artifact rows (7 days). Only registered scratch
 directories are swept — user data is never a target. Session deletion has its own shared `purge_session`
-(`storage/purge.py`) called by both the CLI and `DELETE /sessions/{id}`.
+(`core/purge.py`) called by both the CLI and `DELETE /sessions/{id}`.
 
 ---
 

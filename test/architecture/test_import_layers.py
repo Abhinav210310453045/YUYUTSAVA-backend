@@ -84,7 +84,6 @@ LAYERS: dict[str, int] = {
 ALLOWED_UPWARD: frozenset[tuple[str, str]] = frozenset(
     {
         ("artifacts", "todoboard"),
-        ("storage", "todoboard"),
     }
 )
 

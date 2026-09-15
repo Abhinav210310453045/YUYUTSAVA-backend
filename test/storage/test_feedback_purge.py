@@ -104,8 +104,8 @@ class PurgeWiring(unittest.IsolatedAsyncioTestCase):
         self._tmp.cleanup()
 
     async def test_purge_session_deletes_feedback(self) -> None:
-        from yuyutsava.storage.context import AppContext
-        from yuyutsava.storage.purge import purge_session
+        from yuyutsava.core.app_context import AppContext
+        from yuyutsava.core.purge import purge_session
         from yuyutsava.storage.sessions import get_default_session_store
 
         seen: list[str] = []

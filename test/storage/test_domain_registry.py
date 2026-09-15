@@ -94,7 +94,7 @@ class PurgeDerivation(unittest.TestCase):
     """The derived lists must still be what purge actually uses."""
 
     def test_purge_uses_the_registry(self) -> None:
-        from yuyutsava.storage import purge
+        from yuyutsava.core import purge
 
         self.assertEqual(tuple(purge._STATE_TABLES), purge_tables(Backend.SQLITE))
         self.assertEqual(tuple(purge._PG_CHILD_TABLES), purge_tables(Backend.POSTGRES))
@@ -138,7 +138,7 @@ class PurgeDerivation(unittest.TestCase):
         declaring the domain is not enough, ``purge_session`` has to invoke its
         store.
         """
-        from yuyutsava.storage import purge
+        from yuyutsava.core import purge
 
         src = inspect.getsource(purge.purge_session)
         for d in DOMAINS:

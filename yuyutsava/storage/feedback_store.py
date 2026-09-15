@@ -9,7 +9,7 @@ works and to tune prompts. Two consequences shape the schema:
     so a feedback record is self-contained and stays meaningful even after the
     session — and its transcript — are deleted;
   * feedback is therefore **retained across session deletion** (it is NOT listed
-    in ``storage/purge.py``'s ``_STATE_TABLES``), the same way durable
+    in ``core/purge.py``'s ``_STATE_TABLES``), the same way durable
     fact/preference memories survive a purge.
 
 Keyed by ``(thread_id, message_ref)`` with an upsert so re-rating a message

@@ -9,14 +9,18 @@
 - Building stores: :class:`~yuyutsava.core.stores.StoreFactory` resolves the
   backend once and builds every store, including those that live in ``context``,
   ``memory``, ``skills``, ``visuals`` and ``todoboard`` (so it lives in ``core``,
-  above them all); :class:`~yuyutsava.storage.context.AppContext` holds the handles;
-  :mod:`~yuyutsava.storage.base` is the SQLite store base class and
-  :mod:`~yuyutsava.storage.models` the typed records
+  above them all). :mod:`~yuyutsava.storage.base` is the SQLite store base class
+  and :mod:`~yuyutsava.storage.models` the typed records.
 - Stores kept here: ``sessions/``; ``events/`` (payloads, proposals, decisions,
   consent rules, quotas); ``interrupts``; ``prefs``; message feedback; voice
-  messages; LLM usage (``usage``); tasks (``task_registry``, ``task_store_unified``). A ``*_unified`` module is the single implementation over both backends.
-- Housekeeping: ``sweeper`` (TTL expiry), ``purge`` (delete everything for a
-  session), ``introspect`` (read-only SQL for the ``/db`` API)
+  messages and their clips (``voice_blobs``); LLM usage (``usage``); tasks
+  (``task_registry``, ``task_store_unified``). A ``*_unified`` module is the single
+  implementation over both backends.
+- Housekeeping: ``sweeper`` (TTL expiry), ``introspect`` (read-only SQL for the
+  ``/db`` API). Deleting a whole session across every store is
+  :mod:`yuyutsava.core.purge`, which reads the handles in
+  :class:`~yuyutsava.core.app_context.AppContext`; both live in ``core`` because
+  they span packages above ``storage``.
 
 This package re-exports nothing: import a name from the module that owns it.
 """

@@ -42,8 +42,8 @@ from dataclasses import dataclass, field
 
 import aiosqlite
 
+from yuyutsava.core.app_context import GLOBAL_CONTEXT, AppContext
 from yuyutsava.storage.backend import StorageSettings
-from yuyutsava.storage.context import GLOBAL_CONTEXT, AppContext
 from yuyutsava.storage.domains import Backend, purge_tables
 from yuyutsava.storage.paths import interrupts_db_path, state_db_path
 from yuyutsava.storage.pg.pool import PgPool
@@ -53,7 +53,7 @@ from yuyutsava.storage.sessions import (
 )
 from yuyutsava.storage.voice_blobs import delete_thread_voice_blobs
 
-logger = logging.getLogger("yuyutsava.storage.purge")
+logger = logging.getLogger("yuyutsava.core.purge")
 
 # Durable user knowledge survives a session delete; ephemeral per-run memory
 # (task outcomes, compaction summaries) is purged with the session.

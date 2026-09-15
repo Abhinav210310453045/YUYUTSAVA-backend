@@ -11,7 +11,7 @@ import sys
 import time
 from pathlib import Path
 
-from yuyutsava.storage.purge import purge_session
+from yuyutsava.core.purge import purge_session
 from yuyutsava.storage.sessions import (
     SessionNotFound,
     get_default_session_store,
@@ -115,7 +115,7 @@ async def delete_session(session_id: str) -> int:
     """``--delete-session`` handler. Purges the session and everything tied to
     its thread (checkpoints, transcript, artifacts, summaries, voice history +
     audio clips, tasks, usage, proposals/decisions, interrupts, and ephemeral
-    memories) via the shared :func:`yuyutsava.storage.purge.purge_session`, so
+    memories) via the shared :func:`yuyutsava.core.purge.purge_session`, so
     the CLI and the daemon delete identically. Prints a one-line summary.
     """
     store = get_default_session_store()

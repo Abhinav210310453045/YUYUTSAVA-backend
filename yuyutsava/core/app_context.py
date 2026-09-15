@@ -36,6 +36,7 @@ from typing import Any
 from yuyutsava.storage.events import Store
 from yuyutsava.storage.feedback_store import get_default_feedback_store
 from yuyutsava.storage.sessions import get_default_session_store
+from yuyutsava.todoboard.store import get_default_todo_store
 from yuyutsava.visuals.store import get_default_visual_store
 
 
@@ -82,9 +83,6 @@ class AppContext:
     def todos(self) -> Any:
         if self.todo_store is not None:
             return self.todo_store
-        # Upward (storage -> todoboard); moves with W3.
-        from yuyutsava.todoboard.store import get_default_todo_store  # noqa: PLC0415
-
         return get_default_todo_store()
 
     # -- lifecycle-carrying resolution --------------------------------------

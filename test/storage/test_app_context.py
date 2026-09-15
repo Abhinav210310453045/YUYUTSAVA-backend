@@ -28,7 +28,7 @@ import os
 import tempfile
 import unittest
 
-from yuyutsava.storage.context import GLOBAL_CONTEXT, AppContext
+from yuyutsava.core.app_context import GLOBAL_CONTEXT, AppContext
 
 
 class _Recorder:
@@ -109,7 +109,7 @@ class PurgeSessionAcceptsContext(unittest.TestCase):
     def test_signature_exposes_the_seam(self) -> None:
         import inspect
 
-        from yuyutsava.storage.purge import purge_session
+        from yuyutsava.core.purge import purge_session
 
         params = inspect.signature(purge_session).parameters
         self.assertIn(
@@ -127,7 +127,7 @@ class PurgeSessionAcceptsContext(unittest.TestCase):
         """The body must go through ``ctx``, not call ``get_default_*`` directly."""
         import inspect
 
-        from yuyutsava.storage import purge
+        from yuyutsava.core import purge
 
         src = inspect.getsource(purge.purge_session)
         for direct in (
@@ -190,7 +190,7 @@ class PurgeRunsWithoutGlobals(unittest.IsolatedAsyncioTestCase):
     async def test_full_purge_never_consults_a_global(self) -> None:
         from pathlib import Path
 
-        from yuyutsava.storage.purge import purge_session
+        from yuyutsava.core.purge import purge_session
         from yuyutsava.storage.sessions import get_default_session_store
 
         store = get_default_session_store()
