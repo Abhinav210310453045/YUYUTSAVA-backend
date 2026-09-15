@@ -51,7 +51,6 @@ from yuyutsava.core.engine import context_middleware
 from yuyutsava.core.model_router import ComplexityScorer, ModelRouter
 from yuyutsava.core.policy import PermissionsPolicy, StorePolicyCapEnforcer
 from yuyutsava.core.stores import StoreFactory
-from yuyutsava.core.tracing import warm_reachability_cache
 from yuyutsava.daemon.ask_registry import AskRegistry
 from yuyutsava.daemon.ask_resume import AskResumeService
 from yuyutsava.daemon.channels import ChannelRouter
@@ -73,6 +72,7 @@ from yuyutsava.events.config import EventsConfig, SourceConfig
 from yuyutsava.events.registry import SourceRegistry
 from yuyutsava.llm.factory import chat_model
 from yuyutsava.llm.settings import LlmSettings, llm_settings_from_env
+from yuyutsava.llm.tracing import warm_reachability_cache
 from yuyutsava.mcp.config import MCPConfig
 from yuyutsava.mcp.loader import MCPClientManager
 from yuyutsava.memory.config import MemorySettings

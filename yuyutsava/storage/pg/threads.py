@@ -11,7 +11,7 @@ first. It lives in :mod:`yuyutsava.storage.dialect`, beside
 package; this module adds the pool-level convenience.
 
 ``langfuse_session_id`` is seeded to the ``thread_id`` itself: tracing wires
-Langfuse ``session_id = thread_id`` (see :mod:`yuyutsava.core.tracing`), so the
+Langfuse ``session_id = thread_id`` (see :mod:`yuyutsava.llm.tracing`), so the
 cost-ledger ↔ observability bridge is an identity, not extra plumbing.
 
 This lives only on the Postgres path; the zero-config SQLite backend keeps its

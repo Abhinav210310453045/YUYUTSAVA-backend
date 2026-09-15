@@ -19,7 +19,7 @@ LangChain ``CallbackHandler`` reads them off the root run's ``metadata`` under t
 
 Usage::
 
-    from yuyutsava.core.tracing import get_callback, trace_metadata
+    from yuyutsava.llm.tracing import get_callback, trace_metadata
 
     cb = get_callback()
     if cb:
@@ -43,7 +43,7 @@ from opentelemetry.sdk.trace.export import SpanExportResult
 
 from yuyutsava.config.env import env_int
 
-logger = logging.getLogger("yuyutsava.core.tracing")
+logger = logging.getLogger("yuyutsava.llm.tracing")
 
 # Process-wide cache for the reachability probe. ``None`` = not yet probed.
 _reachable: bool | None = None

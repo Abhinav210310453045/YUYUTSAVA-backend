@@ -24,7 +24,7 @@ import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-from yuyutsava.core import tracing
+from yuyutsava.llm import tracing
 
 
 class _Count404(BaseHTTPRequestHandler):
@@ -126,7 +126,7 @@ class DeadSwitchTests(unittest.TestCase):
             exporter = tracing._build_exporter()
             from opentelemetry.sdk.trace.export import SpanExportResult
 
-            with self.assertLogs("yuyutsava.core.tracing", level="INFO") as logs:
+            with self.assertLogs("yuyutsava.llm.tracing", level="INFO") as logs:
                 self.assertIs(exporter.export([]), SpanExportResult.SUCCESS)
             self.assertTrue(tracing.is_dead())
             self.assertFalse(tracing._reachable)
@@ -135,7 +135,7 @@ class DeadSwitchTests(unittest.TestCase):
             self.assertGreaterEqual(hits_after_first, 1)
 
             # Second batch: dropped locally, no request, no log line.
-            with self.assertNoLogs("yuyutsava.core.tracing", level="INFO"):
+            with self.assertNoLogs("yuyutsava.llm.tracing", level="INFO"):
                 self.assertIs(exporter.export([]), SpanExportResult.SUCCESS)
             self.assertEqual(_Count404.hits, hits_after_first)
             self.assertIsNone(tracing.get_callback())
@@ -154,7 +154,7 @@ class DeadSwitchTests(unittest.TestCase):
                 client = tracing._client
                 self.assertIsNotNone(client)
                 client.start_observation(name="probe", as_type="span").end()
-                with self.assertLogs("yuyutsava.core.tracing", level="INFO"):
+                with self.assertLogs("yuyutsava.llm.tracing", level="INFO"):
                     client.flush()
                 self.assertTrue(tracing.is_dead())
                 self.assertIsNone(tracing.get_callback())

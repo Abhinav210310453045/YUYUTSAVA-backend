@@ -31,7 +31,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command
 
 from yuyutsava.core.tool_result import guard_tool_result, is_tool_error
-from yuyutsava.core.tracing import get_callback, trace_metadata
+from yuyutsava.llm.tracing import get_callback, trace_metadata
 from yuyutsava.models.interrupts import (
     PermissionRequestInterrupt,
     TaskRunnerPermissionInterrupt,

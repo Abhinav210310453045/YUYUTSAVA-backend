@@ -140,7 +140,7 @@ MIGRATIONS: list[tuple[int, str]] = [
         # the previously FK-less islands (tasks/llm_usage/artifacts/
         # thread_summaries/memories, joined only by a loose thread_id TEXT) and
         # anchors the bridge to Langfuse — langfuse_session_id == thread_id ==
-        # Langfuse session_id (see yuyutsava/core/tracing.py). This migration
+        # Langfuse session_id (see yuyutsava/llm/tracing.py). This migration
         # only creates + backfills the hub and normalizes sentinels; v5 wires
         # the foreign keys once every referenced id is guaranteed to exist.
         """

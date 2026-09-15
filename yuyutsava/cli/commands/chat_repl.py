@@ -71,9 +71,9 @@ from yuyutsava.config.search import SearchConfig
 from yuyutsava.consent import decision_token as _decision_token
 from yuyutsava.context.meter import bus
 from yuyutsava.conversation import ConversationService
-from yuyutsava.core import tracing as _tracing
 from yuyutsava.core.engine import cleanup_local_sandbox, silence_plumbing_loggers
 from yuyutsava.daemon.singleton import read_daemon_discovery
+from yuyutsava.llm import tracing as _tracing
 from yuyutsava.llm.quirks.first_chunk_retry import set_retry_listener
 from yuyutsava.llm.settings import LlmSettings
 from yuyutsava.prefs.runtime import UNDISABLEABLE, RuntimeSettings
@@ -987,7 +987,7 @@ async def run_chat_repl(
             # REPL-scoped on purpose — the daemon keeps these lines.
             "yuyutsava.storage.pg.pool",
             "yuyutsava.storage.pg.migrations",
-            "yuyutsava.core.tracing",
+            "yuyutsava.llm.tracing",
         ):
             logging.getLogger(_name).setLevel(logging.WARNING)
 

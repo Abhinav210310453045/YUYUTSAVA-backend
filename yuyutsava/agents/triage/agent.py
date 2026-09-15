@@ -21,8 +21,8 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from yuyutsava.agents.triage.prompts import TRIAGE_SYSTEM_PROMPT, render_event_message
-from yuyutsava.core.tracing import get_callback, trace_metadata
 from yuyutsava.events.bus import EventEnvelope
+from yuyutsava.llm.tracing import get_callback, trace_metadata
 
 logger = logging.getLogger("yuyutsava.agents.triage")
 
