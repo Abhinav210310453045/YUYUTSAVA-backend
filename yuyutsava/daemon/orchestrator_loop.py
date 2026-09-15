@@ -39,7 +39,7 @@ from yuyutsava.daemon.interrupt_format import (
 )
 from yuyutsava.daemon.triage_loop import OrchestratorTask
 from yuyutsava.daemon.usage import UsageContext
-from yuyutsava.llm import model_name_of
+from yuyutsava.llm.factory import model_name_of
 from yuyutsava.memory.agent_memory import AgentMemoryStore
 from yuyutsava.storage.events.roles import DecisionWriter
 from yuyutsava.storage.ids import mint_thread_id as _mint_thread_id

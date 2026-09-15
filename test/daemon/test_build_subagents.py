@@ -27,7 +27,7 @@ from pathlib import Path
 
 
 def _build(**over):
-    from yuyutsava.core.config import SearchConfig
+    from yuyutsava.config.search import SearchConfig
     from yuyutsava.daemon.bootstrap import build_subagents
 
     kw = dict(
@@ -103,7 +103,7 @@ class SharedDependencies(unittest.TestCase):
     """
 
     def test_search_config_is_shared(self) -> None:
-        from yuyutsava.core.config import SearchConfig
+        from yuyutsava.config.search import SearchConfig
 
         cfg = SearchConfig()
         subs = _build(search_config=cfg)

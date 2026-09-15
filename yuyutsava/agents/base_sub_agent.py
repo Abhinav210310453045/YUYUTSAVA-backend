@@ -39,7 +39,7 @@ from langgraph.prebuilt import create_react_agent
 
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
 from yuyutsava.agents.task_runner.tools import bind_tools
-from yuyutsava.core.config import SearchConfig
+from yuyutsava.config.search import SearchConfig
 from yuyutsava.core.prompts import workspace_state_block
 from yuyutsava.core.tool_registry import ToolRegistry
 from yuyutsava.mcp.loader import MCPClientManager

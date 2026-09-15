@@ -21,7 +21,6 @@ import inspect
 import time
 import unittest
 
-import yuyutsava.core.config  # noqa: F401 — import first (core/__init__ cycle)
 from yuyutsava.cli import agent_stack
 from yuyutsava.cli.commands.chat_repl import (
     _fmt_usage,

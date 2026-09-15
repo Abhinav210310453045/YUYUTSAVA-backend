@@ -32,10 +32,12 @@ from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 
 import yuyutsava.core.engine as engine
-import yuyutsava.llm as llm
+import yuyutsava.llm.factory as llm_factory
 from yuyutsava.agents.general_purpose.agent import GeneralPurposeAgent
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
-from yuyutsava.core.config import AnthropicSettings, LocalSettings, SearchConfig
+from yuyutsava.config.execution import LocalSettings
+from yuyutsava.config.search import SearchConfig
+from yuyutsava.llm.settings import AnthropicSettings
 from yuyutsava.skills.registry import SkillRegistry
 
 REPO = Path(__file__).resolve().parent.parent
@@ -63,12 +65,12 @@ def _render_prompt() -> dict[str, Any]:
 
     # Patch the factory where the builders look it up. ``core/engine.py`` imports
     # ``chat_model`` at module level, so ``engine.chat_model`` is the name
-    # ``build_cli_deepagent`` calls; ``yuyutsava.llm.chat_model`` is patched too,
-    # for any other caller. Patching only the source module once let a real
-    # provider model through: with this fake key it failed with a 401, and with a
-    # real key it would have been a billable call.
-    orig_llm, orig_engine = llm.chat_model, engine.chat_model
-    llm.chat_model = engine.chat_model = lambda settings, **kwargs: CapturingModel(
+    # ``build_cli_deepagent`` calls; ``yuyutsava.llm.factory.chat_model`` is patched
+    # too, for callers that look it up on the factory module. Patching only the
+    # source module once let a real provider model through: with this fake key it
+    # failed with a 401, and with a real key it would have been a billable call.
+    orig_llm, orig_engine = llm_factory.chat_model, engine.chat_model
+    llm_factory.chat_model = engine.chat_model = lambda settings, **kwargs: CapturingModel(
         messages=itertools.cycle([AIMessage(content="done")])
     )
     try:
@@ -105,7 +107,7 @@ def _render_prompt() -> dict[str, Any]:
             )
         )
     finally:
-        llm.chat_model, engine.chat_model = orig_llm, orig_engine
+        llm_factory.chat_model, engine.chat_model = orig_llm, orig_engine
 
     msgs = captured.get("messages") or []
     system = msgs[0] if msgs else None

@@ -38,8 +38,8 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
 
 from yuyutsava.config.env import env, env_flag
-from yuyutsava.core.config import llm_settings_from_env
-from yuyutsava.llm import chat_model
+from yuyutsava.llm.factory import chat_model
+from yuyutsava.llm.settings import llm_settings_from_env
 from yuyutsava.storage.paths import state_dir
 
 logger = logging.getLogger("yuyutsava.core.model_router")

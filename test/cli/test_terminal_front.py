@@ -30,7 +30,6 @@ from unittest import mock
 
 os.environ["YUYUTSAVA_BLOBS_DIR"] = tempfile.mkdtemp(prefix="artifact-view-")
 
-import yuyutsava.core.config  # noqa: F401,E402 — import first (core/__init__ cycle)
 from yuyutsava.artifacts import store  # noqa: E402
 from yuyutsava.cli.render import artifact_view as av  # noqa: E402
 from yuyutsava.cli.render.console import make_console  # noqa: E402

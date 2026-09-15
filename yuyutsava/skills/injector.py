@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 import re
 
-from yuyutsava.core.config import LIMITS
+from yuyutsava.config.limits import LIMITS
 from yuyutsava.retrieval.hit import Hit
 from yuyutsava.retrieval.injector import RetrievalInjector
 from yuyutsava.skills.store import SkillStore

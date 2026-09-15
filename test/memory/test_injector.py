@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import unittest
 
+from yuyutsava.config.limits import LIMITS
 from yuyutsava.context.injector import MemoryInjector
-from yuyutsava.core.config import LIMITS
 from yuyutsava.memory.store import MemoryHit, MemoryStore
 
 _BUDGET = LIMITS.max_memory_chars

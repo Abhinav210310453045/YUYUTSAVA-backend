@@ -16,7 +16,7 @@ from typing import Any
 
 from langchain_core.messages import ToolMessage
 
-from yuyutsava.core.config import LIMITS
+from yuyutsava.config.limits import LIMITS
 from yuyutsava.models.tool_messages import (
     RecoveryHint,
     SuppressedContentNotice,

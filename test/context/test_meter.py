@@ -23,7 +23,6 @@ import unittest
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
-import yuyutsava.core.config  # noqa: F401 — import first (core/__init__ cycle)
 from yuyutsava.context.config import ContextSettings
 from yuyutsava.context.injector import MEMORY_BLOCK_PREFIX
 from yuyutsava.context.meter import (

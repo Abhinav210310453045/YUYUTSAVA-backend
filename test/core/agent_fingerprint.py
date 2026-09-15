@@ -81,10 +81,10 @@ def _fake_chat_model():
     """
     from langchain_core.language_models.fake_chat_models import FakeListChatModel
 
-    import yuyutsava.llm as llm
     from yuyutsava.core import engine
+    from yuyutsava.llm import factory
 
-    original = (llm.chat_model, engine.chat_model)
+    original = (factory.chat_model, engine.chat_model)
 
     def _fake(settings: Any, **_kw: Any) -> Any:
         m = FakeListChatModel(responses=["ok"])
@@ -93,11 +93,11 @@ def _fake_chat_model():
         object.__setattr__(m, "model_name", "fingerprint-fake")
         return m
 
-    llm.chat_model = engine.chat_model = _fake  # type: ignore[assignment]
+    factory.chat_model = engine.chat_model = _fake  # type: ignore[assignment]
     try:
         yield
     finally:
-        llm.chat_model, engine.chat_model = original  # type: ignore[assignment]
+        factory.chat_model, engine.chat_model = original  # type: ignore[assignment]
 
 
 # ---------------------------------------------------------------------------
@@ -414,8 +414,10 @@ def wired_stores(tmp: Path) -> dict[str, Any]:
 def fingerprint_cli(**overrides: Any) -> dict[str, Any]:
     from yuyutsava.agents.general_purpose.agent import GeneralPurposeAgent
     from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
+    from yuyutsava.config.execution import LocalSettings
+    from yuyutsava.config.search import SearchConfig
     from yuyutsava.core import engine
-    from yuyutsava.core.config import AnthropicSettings, LocalSettings, SearchConfig
+    from yuyutsava.llm.settings import AnthropicSettings
     from yuyutsava.skills.registry import SkillRegistry
 
     ws = _workspace()
@@ -442,8 +444,9 @@ def fingerprint_cli(**overrides: Any) -> dict[str, Any]:
 
 
 def fingerprint_tinker(**overrides: Any) -> dict[str, Any]:
+    from yuyutsava.config.search import SearchConfig
     from yuyutsava.core import engine
-    from yuyutsava.core.config import AnthropicSettings, SearchConfig
+    from yuyutsava.llm.settings import AnthropicSettings
 
     card_ws = _workspace() / "_fingerprint_card"
     card_ws.mkdir(parents=True, exist_ok=True)
@@ -506,7 +509,7 @@ def fingerprint_orchestrator(**overrides: Any) -> dict[str, Any]:
     if unknown:
         raise TypeError(f"OrchestratorDeps has no field(s): {sorted(unknown)}")
 
-    from yuyutsava.core.config import SearchConfig
+    from yuyutsava.config.search import SearchConfig
 
     # search_config and skill_registry must be supplied or the orchestrator binds
     # no ws_* / sk_* tools at all — its profile declares both families, and a

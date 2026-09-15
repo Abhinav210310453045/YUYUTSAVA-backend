@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from langchain_core.language_models import BaseChatModel
 
-from yuyutsava.core.config import BedrockSettings
 from yuyutsava.llm.base import Provider, require
+from yuyutsava.llm.settings import BedrockSettings
 
 
 class BedrockProvider(Provider):

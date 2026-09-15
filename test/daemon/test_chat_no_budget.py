@@ -21,7 +21,6 @@ from __future__ import annotations
 import inspect
 import unittest
 
-import yuyutsava.core.config  # noqa: F401 — import first (core/__init__ cycle)
 from yuyutsava.core.agent_profiles import CLI_PROFILE, ORCHESTRATOR_PROFILE, Policy
 from yuyutsava.daemon import conversation_manager as cm
 

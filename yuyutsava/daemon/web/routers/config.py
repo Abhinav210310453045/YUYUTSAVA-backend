@@ -12,7 +12,6 @@ import dataclasses
 
 from fastapi import APIRouter, Depends, Query, Request
 
-from yuyutsava.core.config import EventsConfig, SourceConfig
 from yuyutsava.daemon.web.deps import get_config_reload
 from yuyutsava.daemon.web.schemas.config import (
     AddRootIn,
@@ -26,6 +25,7 @@ from yuyutsava.daemon.web.schemas.config import (
 )
 from yuyutsava.daemon.web.services.config_schema import config_groups
 from yuyutsava.daemon.web.services.config_service import ConfigService
+from yuyutsava.events.config import EventsConfig, SourceConfig
 
 router = APIRouter(prefix="/config", tags=["config"])
 

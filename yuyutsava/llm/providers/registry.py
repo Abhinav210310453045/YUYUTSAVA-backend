@@ -8,7 +8,6 @@ dataclasses, so the order of ``_PROVIDERS`` carries no meaning.
 
 from __future__ import annotations
 
-from yuyutsava.core.config import LlmSettings
 from yuyutsava.llm.base import Provider
 from yuyutsava.llm.providers.anthropic import AnthropicProvider
 from yuyutsava.llm.providers.azure import AzureOpenAIProvider
@@ -18,6 +17,7 @@ from yuyutsava.llm.providers.google import GoogleProvider
 from yuyutsava.llm.providers.mistral import MistralProvider
 from yuyutsava.llm.providers.openai_compat import OpenAICompatibleProvider
 from yuyutsava.llm.providers.vertex import VertexProvider
+from yuyutsava.llm.settings import LlmSettings
 
 # Providers selected by settings type. Instantiated once — they are stateless.
 _PROVIDERS: tuple[Provider, ...] = (

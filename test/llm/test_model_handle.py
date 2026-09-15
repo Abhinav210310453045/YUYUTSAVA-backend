@@ -30,16 +30,10 @@ from __future__ import annotations
 import gc
 import unittest
 
-from yuyutsava.core import config as C
-from yuyutsava.llm import (
-    Capability,
-    chat_model,
-    handle_for,
-    model_handle,
-    model_name_of,
-    provider_for,
-    supports,
-)
+from yuyutsava.llm import settings as C
+from yuyutsava.llm.factory import chat_model, handle_for, model_handle, model_name_of, supports
+from yuyutsava.llm.handle import Capability
+from yuyutsava.llm.providers.registry import provider_for
 
 # Recorded from the pre-change code. `azure` is deliberately absent — it had no
 # correct value to preserve; see `AzureIdentityWasBroken`.

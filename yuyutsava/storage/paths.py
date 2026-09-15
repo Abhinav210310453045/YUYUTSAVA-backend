@@ -32,7 +32,7 @@ Env overrides
 - ``YUYUTSAVA_BLOBS_DIR``      override blobs/ root (webcam frames, audio clips)
 - ``YUYUTSAVA_SANDBOX_DIR`` / ``YUYUTSAVA_OUTPUT_DIR`` — per-workspace sandbox /
   deliverables overrides, applied by the caller through ``WorkspaceLayout``
-  (see ``core.config.LocalSettings``)
+  (see ``config.execution.LocalSettings``)
 """
 
 from __future__ import annotations

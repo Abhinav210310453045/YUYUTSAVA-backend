@@ -1,7 +1,7 @@
 """Agent assembly: the builders that turn settings, stores and policies into a runnable graph.
 
 Import a name from the module that owns it — ``yuyutsava.core.engine``,
-``yuyutsava.core.streaming``, ``yuyutsava.core.config`` — never from this package.
+``yuyutsava.core.streaming`` — never from this package.
 
 This file deliberately imports nothing. Python runs a package's ``__init__.py``
 before any module inside it, so every import placed here is paid by every

@@ -33,8 +33,8 @@ try:
 except ImportError:  # pragma: no cover
     load_dotenv = None
 
-from yuyutsava.core.config import llm_settings_from_env
 from yuyutsava.core.pricing import resolve_model_price
+from yuyutsava.llm.settings import llm_settings_from_env
 
 _PER_MILLION = 1_000_000
 

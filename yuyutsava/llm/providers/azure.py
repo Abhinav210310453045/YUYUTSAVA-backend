@@ -10,8 +10,8 @@ from langchain_core.language_models import BaseChatModel
 from langchain_openai import AzureChatOpenAI
 from pydantic import SecretStr
 
-from yuyutsava.core.config import AzureOpenAISettings
 from yuyutsava.llm.base import Provider
+from yuyutsava.llm.settings import AzureOpenAISettings
 
 
 class AzureOpenAIProvider(Provider):

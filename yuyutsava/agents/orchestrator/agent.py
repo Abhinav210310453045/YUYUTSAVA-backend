@@ -19,8 +19,8 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.tools import BaseTool, tool
 
 from yuyutsava.agents.base_sub_agent import BaseSubAgent
+from yuyutsava.config.search import SearchConfig
 from yuyutsava.core.agent_context import current_context
-from yuyutsava.core.config import SearchConfig
 from yuyutsava.daemon.channels import AskPrompt, ChannelRouter
 from yuyutsava.mcp.loader import MCPClientManager
 from yuyutsava.ports import (

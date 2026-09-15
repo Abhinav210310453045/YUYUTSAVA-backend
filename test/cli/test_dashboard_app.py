@@ -30,7 +30,6 @@ import warnings
 from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 
-import yuyutsava.core.config  # noqa: F401 — import first (core/__init__ cycle)
 from yuyutsava.cli.render.ansi_wrap import visible_width
 from yuyutsava.cli.render.dashboard import ChatDashboard
 from yuyutsava.context.meter import ContextSnapshot, bus

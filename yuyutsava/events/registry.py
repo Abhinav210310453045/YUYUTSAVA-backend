@@ -18,8 +18,8 @@ import asyncio
 import logging
 from typing import Callable
 
-from yuyutsava.core.config import EventsConfig, SourceConfig
 from yuyutsava.events.bus import EventBus
+from yuyutsava.events.config import EventsConfig, SourceConfig
 from yuyutsava.events.source import EventSource, SourceContext
 from yuyutsava.storage.events import Store
 

@@ -4,13 +4,13 @@ A :class:`Provider` owns everything about ONE LLM provider that is not pure
 config: which optional package to import, how to name its constructor kwargs, and
 which wire-format quirks its SDK needs corrected.
 
-That split matters. ``yuyutsava.core.config`` describes how to *reach* a provider
-(``VertexSettings.project``/``location``) — frozen data, a leaf that ~31 modules
-import. This layer describes how to *build and correct* it. They change for
-different reasons: config changes when you switch project or region, a provider
-module changes when an SDK ships (or fixes) a quirk. Keeping them apart is also
-what keeps the dependency one-way — ``yuyutsava.llm -> yuyutsava.core.config``,
-never back.
+That split matters. :mod:`yuyutsava.llm.settings` describes how to *reach* a
+provider (``VertexSettings.project``/``location``) — frozen data that imports only
+``yuyutsava.config``, so any layer can read it without loading an SDK. This module
+describes how to *build and correct* it. They change for different reasons:
+settings change when you switch project or region, a provider module changes when
+an SDK ships (or fixes) a quirk. Keeping them apart keeps the dependency one-way —
+providers import settings, never the reverse.
 
 Adding a provider = one module here + one line in ``providers/__init__.py``.
 Adding a new per-provider *concern* (prompt-caching support, a model-name
@@ -29,8 +29,8 @@ from typing import ClassVar
 
 from langchain_core.language_models import BaseChatModel
 
-from yuyutsava.core.config import LlmSettings
 from yuyutsava.llm.handle import Capability
+from yuyutsava.llm.settings import LlmSettings
 
 
 def require(module: str, *, provider: str, install: str) -> ModuleType:

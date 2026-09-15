@@ -8,7 +8,7 @@ JSON whenever the model changed — and a model the table doesn't know (e.g. a
 freshly switched OpenRouter model) silently costs ``$0``.
 
 This module removes the hand-editing: given the active provider
-:class:`~yuyutsava.core.config.LlmSettings`, it fetches the exact input/output
+:class:`~yuyutsava.llm.settings.LlmSettings`, it fetches the exact input/output
 price for ``settings.model`` *from the provider selected in env* and caches it
 into ``model_prices.json`` so the existing ledger picks it up unchanged. A
 model/provider swap is reflected automatically on the next refresh.

@@ -15,7 +15,6 @@ import unittest
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-import yuyutsava.core.config  # noqa: F401 — import first (core/__init__ cycle)
 from yuyutsava.context.tokens import (
     ANTHROPIC_CHARS_PER_TOKEN,
     DEFAULT_CHARS_PER_TOKEN,

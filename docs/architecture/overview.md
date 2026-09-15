@@ -1330,7 +1330,7 @@ user's latest message.
 
 ### 17.1 Providers
 
-`core/config.py` (how to *reach* a provider) + `llm/` (how to *build and correct*
+`llm/settings.py` (how to *reach* a provider) + `llm/` (how to *build and correct*
 it) support **twelve** providers behind a structural `LlmSettings` protocol.
 OpenAI-compatible ones share the `ChatOpenAI` path; native SDK ones are
 lazy-imported (install the matching extra):

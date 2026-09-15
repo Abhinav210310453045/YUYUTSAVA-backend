@@ -5,6 +5,7 @@ Owns everything about talking to a model provider that is not pure config: which
 optional SDK to import, how to construct its chat model, and which wire-format
 quirks that SDK needs corrected.
 
+    settings   how to reach each provider: settings from the environment
     factory    chat_model() — the single seam every model is built through
     handle     ModelHandle — a model plus its identity and capabilities
     base       the Provider contract + require() for optional SDKs
@@ -27,30 +28,13 @@ Native SDKs (lazy-imported; install the matching extra):
     mistral   → ChatMistralAI            [yuyutsava[mistral]]
     cohere    → ChatCohere               [yuyutsava[cohere]]
 
-Layering: this package imports ``yuyutsava.core.config`` (provider DATA — how to
-reach a provider) and never the reverse. Config is a leaf much of the codebase
-depends on; a quirk hook hanging off a Settings class would invert that.
+Layering: ``settings`` (provider DATA — how to reach a provider) imports only
+``yuyutsava.config``, and the provider modules build on it, never the reverse.
+Much of the codebase reads settings; a quirk hook hanging off a Settings class
+would drag SDK code into all of it.
 
-The names below are re-exported because other modules import them from here;
-import anything else from the module that owns it.
+This file deliberately imports nothing: import a name from the module that owns
+it (``factory``, ``handle``, ``settings``, ``providers.registry``). Python runs a
+package's ``__init__.py`` before any module inside it, so re-exporting the factory
+here made reading a provider setting load LangChain.
 """
-
-from yuyutsava.llm.factory import (
-    chat_model,
-    handle_for,
-    model_handle,
-    model_name_of,
-    supports,
-)
-from yuyutsava.llm.handle import Capability
-from yuyutsava.llm.providers.registry import provider_for
-
-__all__ = [
-    "Capability",
-    "chat_model",
-    "handle_for",
-    "model_handle",
-    "model_name_of",
-    "provider_for",
-    "supports",
-]

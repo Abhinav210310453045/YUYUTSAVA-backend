@@ -18,7 +18,7 @@ from pathlib import Path
 
 from yuyutsava.agents.general_purpose.agent import GeneralPurposeAgent
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
-from yuyutsava.core.config import SearchConfig
+from yuyutsava.config.search import SearchConfig
 from yuyutsava.skills.registry import SkillRegistry
 
 REPO = Path(__file__).resolve().parent.parent

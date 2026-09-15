@@ -19,7 +19,7 @@ import json
 import logging
 from typing import TYPE_CHECKING, Any
 
-from yuyutsava.core.config import LIMITS
+from yuyutsava.config.limits import LIMITS
 
 if TYPE_CHECKING:
     from yuyutsava.storage.prefs import PrefsStore

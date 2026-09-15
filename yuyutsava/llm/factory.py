@@ -22,9 +22,9 @@ from typing import NamedTuple
 
 from langchain_core.language_models import BaseChatModel
 
-from yuyutsava.core.config import LlmSettings
 from yuyutsava.llm.handle import Capability, ModelHandle
 from yuyutsava.llm.providers.registry import provider_for
+from yuyutsava.llm.settings import LlmSettings
 
 
 class _Identity(NamedTuple):

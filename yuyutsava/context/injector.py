@@ -8,7 +8,7 @@ task already knowing the relevant history instead of having to ask.
 
 from __future__ import annotations
 
-from yuyutsava.core.config import LIMITS
+from yuyutsava.config.limits import LIMITS
 from yuyutsava.memory.store import MemoryHit, MemoryStore
 from yuyutsava.retrieval.injector import RetrievalInjector
 

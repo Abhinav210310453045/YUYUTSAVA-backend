@@ -381,8 +381,10 @@ class WiredIntoTheRealBuild(unittest.IsolatedAsyncioTestCase):
 
         from yuyutsava.agents.general_purpose.agent import GeneralPurposeAgent
         from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
+        from yuyutsava.config.execution import LocalSettings
+        from yuyutsava.config.search import SearchConfig
         from yuyutsava.core import engine
-        from yuyutsava.core.config import AnthropicSettings, LocalSettings, SearchConfig
+        from yuyutsava.llm.settings import AnthropicSettings
         from yuyutsava.skills.registry import SkillRegistry
 
         ws = _workspace()

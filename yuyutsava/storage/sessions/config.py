@@ -10,7 +10,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from yuyutsava.core.config import TIMING
+from yuyutsava.config.limits import TIMING
 from yuyutsava.storage.paths import interrupts_db_path, sessions_db_path
 
 

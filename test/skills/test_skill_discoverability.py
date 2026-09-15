@@ -20,7 +20,6 @@ from __future__ import annotations
 import asyncio
 import unittest
 
-import yuyutsava.core.config  # noqa: F401 — import first (core/__init__ cycle)
 from yuyutsava.core.prompts import tool_discovery_section
 from yuyutsava.core.tool_filter_policy import should_suppress
 from yuyutsava.retrieval.hit import Hit

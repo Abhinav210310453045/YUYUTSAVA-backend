@@ -23,7 +23,6 @@ from __future__ import annotations
 import io
 import unittest
 
-import yuyutsava.core.config  # noqa: F401 — import first (core/__init__ cycle)
 from yuyutsava.cli.render.console import make_console
 from yuyutsava.cli.render.context_panel import (
     MAX_PANEL_WIDTH,

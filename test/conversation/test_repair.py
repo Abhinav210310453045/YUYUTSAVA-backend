@@ -28,7 +28,6 @@ import unittest
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
-import yuyutsava.core.config  # noqa: F401 — import first (core/__init__ cycle)
 from yuyutsava.conversation.repair import (
     CANCELLED_TOOL_MARKER,
     Cause,

@@ -20,7 +20,7 @@ from pathlib import Path
 
 import yaml
 
-from yuyutsava.core.config import LIMITS
+from yuyutsava.config.limits import LIMITS
 from yuyutsava.platform import host_profile
 from yuyutsava.storage.paths import WorkspaceLayout, state_dir
 

@@ -33,9 +33,9 @@ from dotenv import load_dotenv
 
 load_dotenv(REPO_ROOT / ".env")
 
-from yuyutsava.core.config import llm_settings_from_env
 from yuyutsava.core.engine import build_cli_deepagent
 from yuyutsava.core.streaming import astream_agent
+from yuyutsava.llm.settings import llm_settings_from_env
 
 
 async def main():

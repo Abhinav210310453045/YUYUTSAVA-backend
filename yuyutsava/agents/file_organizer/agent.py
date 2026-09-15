@@ -7,7 +7,7 @@ from langchain_core.tools import BaseTool
 from yuyutsava.agents.base_sub_agent import BaseSubAgent
 from yuyutsava.agents.file_organizer.prompts import make_file_organizer_prompt
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
-from yuyutsava.core.config import SearchConfig
+from yuyutsava.config.search import SearchConfig
 from yuyutsava.events.tools import make_fetch_event_tool
 from yuyutsava.mcp.loader import MCPClientManager
 from yuyutsava.skills.registry import SkillRegistry

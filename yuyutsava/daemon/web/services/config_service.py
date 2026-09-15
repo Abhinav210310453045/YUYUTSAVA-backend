@@ -15,8 +15,8 @@ import logging
 from pathlib import Path
 from typing import Awaitable, Callable
 
-from yuyutsava.core.config import EventsConfig
 from yuyutsava.daemon.web.exceptions import ValidationError
+from yuyutsava.events.config import EventsConfig
 
 logger = logging.getLogger("yuyutsava.daemon.web.config_service")
 

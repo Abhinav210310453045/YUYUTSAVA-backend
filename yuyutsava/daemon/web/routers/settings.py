@@ -23,7 +23,6 @@ import time
 
 from fastapi import APIRouter, Depends, Request
 
-from yuyutsava.core.config import EventsConfig, SourceConfig
 from yuyutsava.daemon.web.deps import (
     get_config_reload,
     get_hub,
@@ -39,6 +38,7 @@ from yuyutsava.daemon.web.schemas.settings import (
 )
 from yuyutsava.daemon.web.services.config_service import ConfigService
 from yuyutsava.daemon.web.services.stream_service import StreamSettingsItem
+from yuyutsava.events.config import EventsConfig, SourceConfig
 from yuyutsava.prefs.runtime import UNDISABLEABLE
 
 logger = logging.getLogger("yuyutsava.daemon.web.routers.settings")

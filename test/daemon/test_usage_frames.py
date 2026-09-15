@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import unittest
 
-import yuyutsava.core.config  # noqa: F401 — import first (core/__init__ cycle)
 from yuyutsava.context.meter import ContextSnapshot, bus
 from yuyutsava.daemon.turn_registry import EPHEMERAL_TYPES, TURN_RING_SIZE
 

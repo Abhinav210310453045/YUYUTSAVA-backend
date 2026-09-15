@@ -17,7 +17,7 @@ import os
 from dataclasses import dataclass
 
 from yuyutsava.config.env import env, env_flag, env_float, env_int
-from yuyutsava.core.config import OLLAMA_BASE_URL
+from yuyutsava.llm.settings import OLLAMA_BASE_URL
 
 # Must match the vector(768) column in storage/pg/migrations.py.
 EMBEDDING_DIM = 768

@@ -9,8 +9,8 @@ from __future__ import annotations
 from langchain_core.language_models import BaseChatModel
 from pydantic import SecretStr
 
-from yuyutsava.core.config import AnthropicSettings
 from yuyutsava.llm.base import Provider, require
+from yuyutsava.llm.settings import AnthropicSettings
 
 
 class AnthropicProvider(Provider):

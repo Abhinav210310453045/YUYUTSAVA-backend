@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from langchain_core.language_models import BaseChatModel
 
-from yuyutsava.core.config import VertexSettings
 from yuyutsava.llm.base import Provider, require
 from yuyutsava.llm.handle import Capability
 from yuyutsava.llm.quirks.first_chunk_retry import first_chunk_retry
 from yuyutsava.llm.quirks.gemini_parts import parts_safe
 from yuyutsava.llm.quirks.loop_affinity import loop_pinned
 from yuyutsava.llm.quirks.vertex_tool_schema import tool_schema_safe
+from yuyutsava.llm.settings import VertexSettings
 
 
 class VertexProvider(Provider):

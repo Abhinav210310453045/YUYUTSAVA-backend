@@ -26,7 +26,6 @@ import asyncio
 import logging
 import unittest
 
-import yuyutsava.core.config  # noqa: F401 — import first (core/__init__ cycle)
 from yuyutsava.daemon.channels import AppLogPayload
 from yuyutsava.daemon.log_bridge import MAX_QUEUE, LogBridge
 

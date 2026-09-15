@@ -5,11 +5,11 @@ from __future__ import annotations
 from langchain_core.language_models import BaseChatModel
 from pydantic import SecretStr
 
-from yuyutsava.core.config import GoogleSettings
 from yuyutsava.llm.base import Provider, require
 from yuyutsava.llm.handle import Capability
 from yuyutsava.llm.quirks.gemini_parts import parts_safe
 from yuyutsava.llm.quirks.loop_affinity import loop_pinned
+from yuyutsava.llm.settings import GoogleSettings
 
 
 class GoogleProvider(Provider):

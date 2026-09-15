@@ -66,14 +66,16 @@ from yuyutsava.cli.render.plain import (
 )
 from yuyutsava.cli.render.renderer import RichChatRenderer
 from yuyutsava.config.env import env_flag
+from yuyutsava.config.execution import DockerSettings, LocalSettings
+from yuyutsava.config.search import SearchConfig
 from yuyutsava.consent import decision_token as _decision_token
 from yuyutsava.context.meter import bus
 from yuyutsava.conversation import ConversationService
 from yuyutsava.core import tracing as _tracing
-from yuyutsava.core.config import DockerSettings, LlmSettings, LocalSettings, SearchConfig
 from yuyutsava.core.engine import cleanup_local_sandbox, silence_plumbing_loggers
 from yuyutsava.daemon.singleton import read_daemon_discovery
 from yuyutsava.llm.quirks.first_chunk_retry import set_retry_listener
+from yuyutsava.llm.settings import LlmSettings
 from yuyutsava.prefs.runtime import UNDISABLEABLE, RuntimeSettings
 from yuyutsava.skills.injector import last_recalled
 from yuyutsava.skills.registry import SkillRegistry

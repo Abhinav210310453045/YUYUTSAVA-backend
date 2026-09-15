@@ -25,7 +25,7 @@ from typing import Any, Protocol
 
 from langchain_core.tools import BaseTool, StructuredTool, tool
 
-from yuyutsava.core.config import SearchConfig
+from yuyutsava.config.search import SearchConfig
 from yuyutsava.core.exceptions import ExaSearchError, TavilySearchError
 
 logger = logging.getLogger("yuyutsava.tools.search")

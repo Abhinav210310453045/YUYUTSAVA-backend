@@ -28,7 +28,7 @@ from unittest import mock
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
-import yuyutsava.core.config  # noqa: F401 — import first (core/__init__ cycle)
+from yuyutsava.config.limits import LIMITS
 from yuyutsava.context.artifacts import (
     MAX_SLICE_CHARS,
     ArtifactSlice,
@@ -37,7 +37,6 @@ from yuyutsava.context.artifacts import (
 from yuyutsava.context.config import ContextSettings
 from yuyutsava.context.offload_policy import ToolResultOffloadPolicy
 from yuyutsava.context.tools import make_context_tools
-from yuyutsava.core.config import LIMITS
 from yuyutsava.core.tool_result import guard_tool_result
 from yuyutsava.policy.types import ToolCall
 

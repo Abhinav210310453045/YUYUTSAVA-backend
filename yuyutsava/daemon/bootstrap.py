@@ -43,17 +43,10 @@ from yuyutsava.channels.config import ChannelsConfig
 from yuyutsava.channels.plugin import InboundSink
 from yuyutsava.channels.registry import ChannelPluginRegistry
 from yuyutsava.config.env import env, env_flag
+from yuyutsava.config.search import SearchConfig
 from yuyutsava.consent import ConsentRegistry
 from yuyutsava.context.config import ContextSettings
 from yuyutsava.context.tools import make_context_tools
-from yuyutsava.core.config import (
-    DaemonConfig,
-    EventsConfig,
-    LlmSettings,
-    SearchConfig,
-    SourceConfig,
-    llm_settings_from_env,
-)
 from yuyutsava.core.engine import context_middleware
 from yuyutsava.core.model_router import ComplexityScorer, ModelRouter
 from yuyutsava.core.policy import PermissionsPolicy, StorePolicyCapEnforcer
@@ -62,6 +55,7 @@ from yuyutsava.daemon.ask_registry import AskRegistry
 from yuyutsava.daemon.ask_resume import AskResumeService
 from yuyutsava.daemon.channels import ChannelEvent, ChannelRouter, TimelinePayload
 from yuyutsava.daemon.checkpointing import CheckpointerSaver
+from yuyutsava.daemon.config import DaemonConfig
 from yuyutsava.daemon.conversation_manager import ConversationManager
 from yuyutsava.daemon.log_bridge import LogBridge
 from yuyutsava.daemon.orchestrator_loop import OrchestratorLoop
@@ -76,8 +70,10 @@ from yuyutsava.daemon.web.auth import AuthSettings
 from yuyutsava.daemon.web.server import WebChannel, WebHub, make_app
 from yuyutsava.daemon.web.services.decision_service import DecisionService
 from yuyutsava.events.bus import EventBus
+from yuyutsava.events.config import EventsConfig, SourceConfig
 from yuyutsava.events.registry import SourceRegistry
-from yuyutsava.llm import chat_model
+from yuyutsava.llm.factory import chat_model
+from yuyutsava.llm.settings import LlmSettings, llm_settings_from_env
 from yuyutsava.mcp.config import MCPConfig
 from yuyutsava.mcp.loader import MCPClientManager
 from yuyutsava.memory.config import MemorySettings
