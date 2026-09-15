@@ -78,9 +78,8 @@ def main(argv: list[str] | None = None) -> None:
 
     # Cross-platform: registers SIGINT + (SIGTERM on POSIX / SIGBREAK on Windows).
     # Bare signal.signal(SIGTERM, …) raises ValueError on Windows.
-    from yuyutsava.platform import (
-        install_terminate_handler,  # noqa: PLC0415 — subprocess entry module
-    )
+    # Subprocess entry module.
+    from yuyutsava.platform import install_terminate_handler  # noqa: PLC0415
 
     install_terminate_handler(_stop)
 

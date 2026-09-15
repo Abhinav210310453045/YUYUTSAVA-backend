@@ -44,9 +44,8 @@ def make_visual_tools(
 
     async def _finish(kind: str, spec: dict[str, Any]) -> str:
         # Local import to avoid a hard dependency on the agent runtime at import.
-        from yuyutsava.context.artifacts import (
-            thread_id_from_runtime,  # noqa: PLC0415 — upward (visuals -> context); moves with W3
-        )
+        # Upward (visuals -> context); moves with W3.
+        from yuyutsava.context.artifacts import thread_id_from_runtime  # noqa: PLC0415
 
         try:
             result = render(kind, spec)
@@ -142,9 +141,8 @@ def make_visual_tools(
         before, e.g. to show it again. Returns JSON:
         {"status":"ok","artifacts":[{visual_id, kind, title, created_ts}, ...]}.
         """
-        from yuyutsava.context.artifacts import (
-            thread_id_from_runtime,  # noqa: PLC0415 — upward (visuals -> context); moves with W3
-        )
+        # Upward (visuals -> context); moves with W3.
+        from yuyutsava.context.artifacts import thread_id_from_runtime  # noqa: PLC0415
 
         records = await store.list_for_thread(thread_id_from_runtime())
         return json.dumps(

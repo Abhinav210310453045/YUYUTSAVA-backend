@@ -503,9 +503,8 @@ class TodoExchange:
         The block may also infer a missing mime from the file suffix."""
         # Lazy import — artifacts.py imports our exception types at module
         # level, so the cycle must break on this side.
-        from yuyutsava.todoboard.artifacts import (
-            resolve_block,  # noqa: PLC0415 — import cycle: yuyutsava.todoboard.artifacts imports this module
-        )
+        # Import cycle: yuyutsava.todoboard.artifacts imports this module.
+        from yuyutsava.todoboard.artifacts import resolve_block  # noqa: PLC0415
 
         _require(kind in ATTACHMENT_KINDS, f"kind must be one of {ATTACHMENT_KINDS}")
         block = resolve_block(kind, mime)
@@ -553,9 +552,8 @@ class TodoExchange:
         with ``needs_context`` get the hydrated card + timeline injected into
         their spec HERE, on the event loop — generators run in a thread and
         must never call back into the loop-bound store."""
-        from yuyutsava.todoboard.artifacts import (
-            blocks,  # noqa: PLC0415 — import cycle: yuyutsava.todoboard.artifacts imports this module
-        )
+        # Import cycle: yuyutsava.todoboard.artifacts imports this module.
+        from yuyutsava.todoboard.artifacts import blocks  # noqa: PLC0415
 
         _require(isinstance(spec, dict) or spec is None, "spec must be a JSON object")
         gen = next((b for b in blocks() if b.name == block), None)

@@ -348,9 +348,8 @@ class PostgresDialect:
                 return await fn(c)
 
     async def ensure_parent(self, conn: Any, thread_id: str | None, **attrs: Any) -> None:
-        from yuyutsava.storage.pg.threads import (
-            ensure_thread,  # noqa: PLC0415 — upward (storage.dialect -> storage); moves with W3
-        )
+        # Upward (storage.dialect -> storage); moves with W3.
+        from yuyutsava.storage.pg.threads import ensure_thread  # noqa: PLC0415
 
         await ensure_thread(conn, thread_id, **attrs)
 

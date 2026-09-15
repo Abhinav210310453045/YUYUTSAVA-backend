@@ -186,9 +186,8 @@ def set_default_todo_store(store: TodoStore) -> None:
 def get_default_todo_store() -> TodoStore:
     global _default_store
     if _default_store is None:
-        from yuyutsava.todoboard.store_unified import (
-            sqlite_todo_store,  # noqa: PLC0415 — import cycle: yuyutsava.todoboard.store_unified imports this module
-        )
+        # Import cycle: yuyutsava.todoboard.store_unified imports this module.
+        from yuyutsava.todoboard.store_unified import sqlite_todo_store  # noqa: PLC0415
 
         _default_store = sqlite_todo_store()
     return _default_store

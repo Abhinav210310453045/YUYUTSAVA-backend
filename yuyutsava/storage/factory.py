@@ -188,9 +188,8 @@ class StoreFactory:
         """
         if self._pg is None or self._embedder is None:
             return None
-        from yuyutsava.context.transcript_index import (
-            PgTranscriptIndex,  # noqa: PLC0415 — upward (storage -> context); moves with W3
-        )
+        # Upward (storage -> context); moves with W3.
+        from yuyutsava.context.transcript_index import PgTranscriptIndex  # noqa: PLC0415
 
         return PgTranscriptIndex(self._pg, embedder=self._embedder)
 

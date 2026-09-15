@@ -121,8 +121,8 @@ def _dead_switch_exporter_class():
     if _ExporterClass is not None:
         return _ExporterClass
 
-    from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
-        OTLPSpanExporter,  # noqa: PLC0415 — heavy: +64 modules, ~22 ms
+    from opentelemetry.exporter.otlp.proto.http.trace_exporter import (  # noqa: PLC0415 — heavy: +64 modules, ~22 ms
+        OTLPSpanExporter,
     )
 
     class _DeadSwitchExporter(OTLPSpanExporter):
@@ -249,9 +249,8 @@ def get_callback():
     if _dead or not langfuse_reachable():
         return None
     try:
-        from langfuse.langchain import (
-            CallbackHandler,  # noqa: PLC0415 — heavy: +269 modules, ~90 ms
-        )
+        # Heavy: +269 modules, ~90 ms.
+        from langfuse.langchain import CallbackHandler  # noqa: PLC0415
 
         _ensure_client()
         return CallbackHandler()

@@ -386,9 +386,8 @@ class UnifiedConsentGrantStore(ConsentGrantStore):
         await d.write(_do)
 
     async def load(self) -> list["Grant"]:  # noqa: F821
-        from yuyutsava.consent.models import (
-            Grant,  # noqa: PLC0415 — upward (storage -> consent); moves with W3
-        )
+        # Upward (storage -> consent); moves with W3.
+        from yuyutsava.consent.models import Grant  # noqa: PLC0415
 
         d = self._d
         async with d.reading() as conn:

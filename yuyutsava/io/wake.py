@@ -106,13 +106,10 @@ class OpenWakeWordDetector(WakeWordDetector):
     def _load(self):
         if self._model is None:
             try:
-                import openwakeword  # type: ignore  # noqa: PLC0415 — optional dependency
-                from openwakeword import (
-                    utils as oww_utils,  # type: ignore  # noqa: PLC0415 — optional dependency
-                )
-                from openwakeword.model import (
-                    Model,  # type: ignore  # noqa: PLC0415 — optional dependency
-                )
+                # Optional dependency (the voice extra).
+                import openwakeword  # type: ignore  # noqa: PLC0415
+                from openwakeword import utils as oww_utils  # type: ignore  # noqa: PLC0415
+                from openwakeword.model import Model  # type: ignore  # noqa: PLC0415
             except ImportError as exc:
                 raise RuntimeError(
                     "openwakeword not installed — run: uv pip install 'yuyutsava[voice]'"
