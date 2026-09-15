@@ -33,6 +33,8 @@ import uuid
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from langgraph_sdk import get_client
+
 from yuyutsava.daemon.channels import (
     AskPrompt,
     AsyncTaskAwaitingUserPayload,
@@ -426,7 +428,6 @@ class AsyncTaskHealthWatcher:
     async def start(self) -> None:
         if self._loop_task is not None:
             return
-        from langgraph_sdk import get_client
 
         self._client = get_client(url=self._host_url, headers=self._headers)
         self._stop.clear()

@@ -62,7 +62,7 @@ class WebcamSource(EventSource):
         # Lazy import-existence check so machines without cv2 don't crash —
         # they just see one log line and the source idles.
         try:
-            import cv2  # type: ignore  # noqa: F401
+            import cv2  # type: ignore  # noqa: F401, PLC0415 — optional dependency
         except ImportError:
             logger.error(
                 "opencv-python not installed; webcam source disabled. "

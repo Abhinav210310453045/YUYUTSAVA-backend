@@ -95,7 +95,7 @@ class FasterWhisperSTT(STT):
     def _load(self):
         if self._model is None:
             try:
-                from faster_whisper import WhisperModel  # type: ignore
+                from faster_whisper import WhisperModel  # type: ignore  # noqa: PLC0415 — optional dependency
             except ImportError as exc:
                 raise RuntimeError(
                     "faster-whisper not installed — run: uv pip install 'yuyutsava[voice]'"
@@ -177,7 +177,7 @@ class GroqWhisperSTT(STT):
 
     async def transcribe(self, wav_path: Path) -> str:
         try:
-            from groq import Groq  # type: ignore
+            from groq import Groq  # type: ignore  # noqa: PLC0415 — optional dependency
         except ImportError as exc:
             raise RuntimeError("groq package not installed — run: uv pip install groq") from exc
 

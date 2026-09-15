@@ -88,6 +88,10 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
+from langchain_core.messages import AIMessage, RemoveMessage, ToolMessage
+
+from yuyutsava.core.streaming import flatten_content
+
 logger = logging.getLogger("yuyutsava.conversation.repair")
 
 #: The text LangGraph puts in the result it fabricates for a cancelled tool
@@ -148,8 +152,6 @@ def _text_of(msg: Any) -> str:
     if isinstance(content, str):
         return content
     try:
-        from yuyutsava.core.streaming import flatten_content
-
         return flatten_content(content) or ""
     except Exception:  # noqa: BLE001 — detection must never raise
         return ""
@@ -188,7 +190,6 @@ class Findings:
 
 def diagnose(messages: Any) -> Findings:
     """Everything wrong with *messages*, in one read. Never raises."""
-    from langchain_core.messages import AIMessage, ToolMessage
 
     msgs = list(messages or ())
     answered = {getattr(m, "tool_call_id", None) for m in msgs if isinstance(m, ToolMessage)}
@@ -252,7 +253,6 @@ def rewrite(messages: Any, cause: Cause, *, close_turn: bool = True) -> list[Any
     starting one (answering a permission interrupt): that turn is still the
     model's to finish, and declaring it interrupted would be a lie.
     """
-    from langchain_core.messages import AIMessage, RemoveMessage, ToolMessage
 
     found = diagnose(messages)
     body = _REPLACEMENT[cause]

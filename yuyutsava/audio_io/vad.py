@@ -21,6 +21,7 @@ from __future__ import annotations
 import collections
 import logging
 from dataclasses import dataclass
+import array
 
 from yuyutsava.config.env import env_float, env_int
 
@@ -149,7 +150,7 @@ class VadSegmenter:
     @staticmethod
     def _make_vad(aggressiveness: int):
         try:
-            import webrtcvad  # type: ignore
+            import webrtcvad  # type: ignore  # noqa: PLC0415 — optional dependency
 
             return webrtcvad.Vad(aggressiveness)
         except Exception:  # noqa: BLE001 — optional dep / build issues
@@ -180,8 +181,6 @@ class VadSegmenter:
 
     def _rms(self, frame: bytes) -> float:
         # RMS over int16 samples without numpy (keeps fallback dependency-free).
-        import array
-
         samples = array.array("h")
         samples.frombytes(frame)
         if not samples:

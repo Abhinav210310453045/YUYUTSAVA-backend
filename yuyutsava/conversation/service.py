@@ -42,6 +42,7 @@ from yuyutsava.sessions.runner import (
 )
 from yuyutsava.storage.models import Session
 from yuyutsava.storage.sessions import SessionStore
+from yuyutsava.conversation.repair import Cause, diagnose, repair_orphan_tool_calls
 
 logger = logging.getLogger("yuyutsava.conversation.service")
 
@@ -354,11 +355,6 @@ class ConversationService:
         cancelled something — is how the app path ended up with no repair at
         all while the CLI resume path had one.
         """
-        from yuyutsava.conversation.repair import (
-            Cause,
-            diagnose,
-            repair_orphan_tool_calls,
-        )
 
         try:
             state = await bundle.agent.aget_state({"configurable": {"thread_id": self.thread_id}})
@@ -428,7 +424,6 @@ class ConversationService:
         worth making; it stays at exactly one so an unrecoverable thread cannot
         spend in a loop.
         """
-        from yuyutsava.conversation.repair import Cause, diagnose, repair_orphan_tool_calls
 
         steps = 0
         repaired = 0

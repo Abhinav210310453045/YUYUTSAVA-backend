@@ -42,6 +42,7 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
+import atexit
 
 from yuyutsava.platform import FileLock, pid_alive
 from yuyutsava.storage.paths import state_dir
@@ -206,6 +207,5 @@ def release_host_lock(attachment: HostAttachment) -> None:
 
 def register_host_cleanup(attachment: HostAttachment) -> None:
     """Register an ``atexit`` cleanup for the host attachment."""
-    import atexit
 
     atexit.register(release_host_lock, attachment)

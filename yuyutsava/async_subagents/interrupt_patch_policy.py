@@ -41,6 +41,7 @@ from typing import Iterable
 
 from yuyutsava.policy.base import Policy
 from yuyutsava.policy.types import ToolCall, ToolDecision
+from yuyutsava.async_subagents.interrupt_middleware import RemoteThreadPatcher
 
 logger = logging.getLogger("yuyutsava.async_subagents.interrupt_middleware")
 
@@ -62,7 +63,6 @@ class AsyncTaskInterruptPatchPolicy(Policy):
 
     def __init__(self, agent_specs: Iterable[dict]) -> None:
         super().__init__()
-        from yuyutsava.async_subagents.interrupt_middleware import RemoteThreadPatcher
 
         # The SDK plumbing is unchanged and still lives beside the helpers the
         # watcher shares. Holding it rather than reimplementing it keeps one

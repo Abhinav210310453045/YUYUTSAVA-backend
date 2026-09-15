@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from typing import TypedDict
 
+from langchain_core.runnables.config import var_child_runnable_config
+
 
 class AgentContext(TypedDict, total=False):
     session_id: str | None
@@ -24,10 +26,6 @@ def current_context() -> AgentContext:
     """Return {"session_id": <thread_id>, "agent_path": <path>} from the active
     LangGraph RunnableConfig. Returns empty dict if called outside a graph run.
     """
-    try:
-        from langchain_core.runnables.config import var_child_runnable_config
-    except ImportError:
-        return {}
     cfg = var_child_runnable_config.get() or {}
     if not isinstance(cfg, dict):
         return {}

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from langchain_core.language_models import BaseChatModel
 from pydantic import SecretStr
+from langchain_openai import AzureChatOpenAI
 
 from yuyutsava.core.config import AzureOpenAISettings
 from yuyutsava.llm.base import Provider
@@ -37,8 +38,6 @@ class AzureOpenAIProvider(Provider):
     def build(
         self, settings: AzureOpenAISettings, *, temperature: float, disable_reasoning: bool
     ) -> BaseChatModel:
-        from langchain_openai import AzureChatOpenAI
-
         return AzureChatOpenAI(
             api_key=SecretStr(settings.api_key),
             azure_endpoint=settings.azure_endpoint,

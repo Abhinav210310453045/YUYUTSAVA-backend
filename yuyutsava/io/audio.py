@@ -26,7 +26,7 @@ class AudioUnavailableError(RuntimeError):
 
 def _require_sd():
     try:
-        import sounddevice as sd  # type: ignore
+        import sounddevice as sd  # type: ignore  # noqa: PLC0415 — optional dependency
 
         return sd
     except ImportError as exc:
@@ -37,7 +37,7 @@ def _require_sd():
 
 def _require_np():
     try:
-        import numpy as np  # type: ignore
+        import numpy as np  # type: ignore  # noqa: PLC0415 — optional dependency
 
         return np
     except ImportError as exc:
@@ -46,7 +46,7 @@ def _require_np():
 
 def _require_sf():
     try:
-        import soundfile as sf  # type: ignore
+        import soundfile as sf  # type: ignore  # noqa: PLC0415 — optional dependency
 
         return sf
     except ImportError as exc:

@@ -20,6 +20,7 @@ from typing import Any, Callable
 
 from yuyutsava.channels.config import ChannelConfig, ChannelsConfig
 from yuyutsava.channels.plugin import ChannelPlugin, InboundSink
+from yuyutsava.channels.telegram.channel import TelegramChannelPlugin
 
 logger = logging.getLogger("yuyutsava.channels.registry")
 
@@ -27,9 +28,7 @@ PluginFactory = Callable[[dict[str, Any]], ChannelPlugin]
 
 
 def _builtin_factories() -> dict[str, PluginFactory]:
-    """Static plugin map (v1). Local import keeps httpx off the cold path."""
-    from yuyutsava.channels.telegram.channel import TelegramChannelPlugin
-
+    """Static plugin map."""
     return {"telegram": TelegramChannelPlugin.from_config}
 
 

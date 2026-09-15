@@ -36,6 +36,10 @@ import logging
 import os
 import urllib.error
 import urllib.request
+import base64
+from importlib.metadata import PackageNotFoundError, version
+
+from opentelemetry.sdk.trace.export import SpanExportResult
 
 from yuyutsava.config.env import env_int
 
@@ -117,8 +121,7 @@ def _dead_switch_exporter_class():
     if _ExporterClass is not None:
         return _ExporterClass
 
-    from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-    from opentelemetry.sdk.trace.export import SpanExportResult
+    from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter  # noqa: PLC0415 — heavy: +64 modules, ~22 ms
 
     class _DeadSwitchExporter(OTLPSpanExporter):
         """OTLP exporter that gives up for good on the first failed batch.
@@ -153,8 +156,6 @@ _ExporterClass = None
 def _build_exporter():
     """Our exporter, wired exactly as langfuse's ``LangfuseSpanProcessor`` would
     wire its default one (endpoint, Basic auth, SDK headers, timeout)."""
-    import base64
-    from importlib.metadata import PackageNotFoundError, version
 
     host = (os.getenv("LANGFUSE_HOST") or "").rstrip("/")
     public_key = os.getenv("LANGFUSE_PUBLIC_KEY") or ""
@@ -188,7 +189,7 @@ def _ensure_client():
     global _client
     if _client is not None:
         return _client
-    from langfuse import Langfuse
+    from langfuse import Langfuse  # noqa: PLC0415 — heavy: +267 modules, ~104 ms
 
     _client = Langfuse(span_exporter=_build_exporter())
     return _client
@@ -246,7 +247,7 @@ def get_callback():
     if _dead or not _langfuse_reachable():
         return None
     try:
-        from langfuse.langchain import CallbackHandler
+        from langfuse.langchain import CallbackHandler  # noqa: PLC0415 — heavy: +269 modules, ~90 ms
 
         _ensure_client()
         return CallbackHandler()

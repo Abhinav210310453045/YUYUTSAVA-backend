@@ -21,6 +21,8 @@ import sys
 from abc import ABC, abstractmethod
 from pathlib import Path
 
+import httpx
+
 logger = logging.getLogger("yuyutsava.io.tts")
 
 
@@ -88,11 +90,6 @@ class ElevenLabsTTS(TTS):
         self._voice_id = voice_id
 
     async def synthesize(self, text: str, output_path: Path) -> None:
-        try:
-            import httpx
-        except ImportError as exc:
-            raise RuntimeError("httpx not installed") from exc
-
         output_path.parent.mkdir(parents=True, exist_ok=True)
         url = f"https://api.elevenlabs.io/v1/text-to-speech/{self._voice_id}"
         headers = {
@@ -180,7 +177,7 @@ class Pyttsx3TTS(TTS):
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         def _run() -> None:
-            import pyttsx3  # lazy: optional dep, only imported for this backend
+            import pyttsx3  # noqa: PLC0415 — optional dependency (voice extra, not on macOS)
 
             engine = pyttsx3.init()
             try:

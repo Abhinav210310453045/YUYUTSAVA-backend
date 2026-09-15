@@ -61,8 +61,8 @@ def main(argv: list[str] | None = None) -> None:
     logging.basicConfig(level=logging.INFO, stream=sys.stderr, format="webcam: %(message)s")
 
     try:
-        import cv2  # type: ignore
-        import numpy as np  # type: ignore
+        import cv2  # type: ignore  # noqa: PLC0415 — optional dependency
+        import numpy as np  # type: ignore  # noqa: PLC0415 — optional dependency
     except ImportError:
         _fatal("opencv-python / numpy missing; install yuyutsava[vision]")
         return
@@ -78,7 +78,7 @@ def main(argv: list[str] | None = None) -> None:
 
     # Cross-platform: registers SIGINT + (SIGTERM on POSIX / SIGBREAK on Windows).
     # Bare signal.signal(SIGTERM, …) raises ValueError on Windows.
-    from yuyutsava.platform import install_terminate_handler
+    from yuyutsava.platform import install_terminate_handler  # noqa: PLC0415 — subprocess entry module
 
     install_terminate_handler(_stop)
 

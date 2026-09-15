@@ -10,6 +10,8 @@ be cached with.
 
 from __future__ import annotations
 
+from langgraph.config import get_config
+
 from yuyutsava.policy.base import Policy
 from yuyutsava.policy.types import ModelCall
 
@@ -40,8 +42,6 @@ def is_voice_turn() -> bool:
     not-voice (a no-op) rather than raising — styling never breaks a turn.
     """
     try:
-        from langgraph.config import get_config
-
         cfg = get_config() or {}
         conf = cfg.get("configurable", {}) or {}
         return conf.get("modality") == "voice"

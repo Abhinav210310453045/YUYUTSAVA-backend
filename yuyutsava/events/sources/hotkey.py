@@ -44,7 +44,7 @@ class HotkeySource(EventSource):
 
     async def start(self, ctx: SourceContext) -> None:
         try:
-            from pynput import keyboard
+            from pynput import keyboard  # noqa: PLC0415 — heavy (~100 ms); needs a display on Linux
         except ImportError:
             logger.error("pynput is not installed; hotkey source disabled")
             await ctx.cancelled.wait()

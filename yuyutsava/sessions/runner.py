@@ -52,7 +52,7 @@ async def _patch_orphan_cancellations(agent: CompiledStateGraph, thread_id: str)
     ``SESSION_ENDED`` because this runs on resume: the prompt died with the
     previous process, so consent was never given.
     """
-    from yuyutsava.conversation.repair import Cause, repair_orphan_tool_calls
+    from yuyutsava.conversation.repair import Cause, repair_orphan_tool_calls  # noqa: PLC0415 — import cycle: conversation imports runner
 
     return await repair_orphan_tool_calls(agent, thread_id, cause=Cause.SESSION_ENDED)
 

@@ -16,6 +16,7 @@ import logging
 import tempfile
 import wave
 from pathlib import Path
+import array
 
 from yuyutsava.io.tts import TTS
 
@@ -53,8 +54,8 @@ def _decode_to_pcm(path: Path) -> tuple[bytes, int]:
         pass  # not a PCM WAV — try soundfile (mp3/flac/ogg)
 
     try:
-        import numpy as np  # type: ignore
-        import soundfile as sf  # type: ignore
+        import numpy as np  # type: ignore  # noqa: PLC0415 — optional dependency
+        import soundfile as sf  # type: ignore  # noqa: PLC0415 — optional dependency
     except ImportError as exc:  # pragma: no cover - depends on optional extra
         raise RuntimeError(
             "non-WAV TTS output needs soundfile — run: uv pip install 'yuyutsava[voice]'"
@@ -69,7 +70,7 @@ def _decode_to_pcm(path: Path) -> tuple[bytes, int]:
 def _to_mono16(raw: bytes, channels: int, width: int) -> bytes:
     """Best-effort downmix/normalize odd WAV formats to mono int16."""
     try:
-        import audioop  # stdlib — REMOVED in Python 3.13+
+        import audioop  # noqa: PLC0415 — stdlib only before Python 3.13
     except ImportError:
         return _to_mono16_fallback(raw, channels, width)
 
@@ -88,8 +89,6 @@ def _to_mono16_fallback(raw: bytes, channels: int, width: int) -> bytes:
     sample widths defer to numpy (present with the voice extra).
     """
     if width == 2:
-        import array
-
         samples = array.array("h")
         samples.frombytes(raw)
         if channels > 1:
@@ -102,7 +101,7 @@ def _to_mono16_fallback(raw: bytes, channels: int, width: int) -> bytes:
         return samples.tobytes()
 
     try:
-        import numpy as np  # type: ignore
+        import numpy as np  # type: ignore  # noqa: PLC0415 — optional dependency
     except ImportError as exc:  # pragma: no cover - depends on optional extra
         raise RuntimeError(
             f"cannot decode {width * 8}-bit audio without `audioop` (Python <3.13) "

@@ -53,8 +53,7 @@ class AppFocusSource(EventSource):
             return
 
         try:
-            # Imported lazily so non-macOS users don't pay the pyobjc cost.
-            from AppKit import NSWorkspace
+            from AppKit import NSWorkspace  # noqa: PLC0415 — macOS only; heavy (~30 ms)
         except ImportError:
             logger.error("pyobjc-framework-Cocoa not installed; appfocus source disabled")
             await ctx.cancelled.wait()

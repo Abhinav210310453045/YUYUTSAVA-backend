@@ -39,8 +39,12 @@ import json
 import logging
 from typing import Any
 
+from langchain_core.messages import ToolMessage
+from langgraph.types import Command
+
 from yuyutsava.policy.base import Policy
 from yuyutsava.policy.types import Raw, ToolCall, ToolDecision
+from yuyutsava.async_subagents.watcher import compact_error
 
 logger = logging.getLogger("yuyutsava.async_subagents.check_guard_policy")
 
@@ -70,7 +74,6 @@ class CheckAsyncTaskGuardPolicy(Policy):
 
     async def after_tool(self, call: ToolCall, result: Any) -> Any:
         """Compact errors and remember terminal statuses."""
-        from langgraph.types import Command
 
         task_id = self._task_id(call)
         if task_id is None or not isinstance(result, Command):
@@ -94,8 +97,6 @@ class CheckAsyncTaskGuardPolicy(Policy):
             return result
         # Compact the error so it never bloats context.
         if status == "error" and data.get("error"):
-            from yuyutsava.async_subagents.watcher import compact_error
-
             data["error"] = compact_error(data.get("error"))
         self._terminal[task_id] = data
         # Re-serialize the (possibly compacted) terminal result in place.
@@ -123,9 +124,6 @@ class CheckAsyncTaskGuardPolicy(Policy):
         return tid or None
 
     def _cached_command(self, call: ToolCall, task_id: str) -> Any:
-        from langchain_core.messages import ToolMessage
-        from langgraph.types import Command
-
         payload = dict(self._terminal[task_id])
         payload["note"] = (
             "This task already finished — returning the cached terminal result. "

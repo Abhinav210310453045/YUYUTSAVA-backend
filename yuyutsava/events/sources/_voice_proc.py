@@ -91,14 +91,14 @@ def main(argv: list[str] | None = None) -> None:
 
     # Check deps before anything else.
     try:
-        import sounddevice as sd  # type: ignore
-        import numpy as np  # type: ignore
+        import sounddevice as sd  # type: ignore  # noqa: PLC0415 — optional dependency
+        import numpy as np  # type: ignore  # noqa: PLC0415 — optional dependency
     except ImportError:
         _fatal("sounddevice / numpy missing — run: uv pip install 'yuyutsava[voice]'")
         return
 
     try:
-        from yuyutsava.io.wake import wake_from_env
+        from yuyutsava.io.wake import wake_from_env  # noqa: PLC0415 — subprocess entry module
     except Exception as exc:
         _fatal(f"Failed to import wake module: {exc}")
         return
@@ -127,7 +127,7 @@ def main(argv: list[str] | None = None) -> None:
 
     # Cross-platform: registers SIGINT + (SIGTERM on POSIX / SIGBREAK on Windows).
     # Bare signal.signal(SIGTERM, …) raises ValueError on Windows.
-    from yuyutsava.platform import install_terminate_handler
+    from yuyutsava.platform import install_terminate_handler  # noqa: PLC0415 — subprocess entry module
 
     install_terminate_handler(_stop)
 

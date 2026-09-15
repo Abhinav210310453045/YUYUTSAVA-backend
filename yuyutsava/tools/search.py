@@ -143,7 +143,7 @@ def _make_tavily_search(api_key: str) -> BaseTool:
             JSON string: {answer: str|null, results: [{title, url, content, score}]}
         """
         try:
-            from tavily import AsyncTavilyClient
+            from tavily import AsyncTavilyClient  # noqa: PLC0415 — heavy (~40 ms), first search only
         except ImportError as exc:
             raise TavilySearchError(
                 "tavily-python is not installed. Run: pip install tavily-python"
@@ -299,13 +299,13 @@ def _make_exa_tools(api_key: str) -> list[BaseTool]:
 def _get_exa_client(api_key: str) -> Any:
     """Return an Exa client instance (AsyncExa if available, else Exa)."""
     try:
-        from exa_py import AsyncExa
+        from exa_py import AsyncExa  # noqa: PLC0415 — heavy (~45 ms), first search only
 
         return AsyncExa(api_key=api_key)
     except ImportError:
         pass
     try:
-        from exa_py import Exa
+        from exa_py import Exa  # noqa: PLC0415 — heavy (~45 ms), first search only
 
         return Exa(api_key=api_key)
     except ImportError as exc:

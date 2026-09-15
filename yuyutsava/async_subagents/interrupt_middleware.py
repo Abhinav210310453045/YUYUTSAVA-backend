@@ -30,6 +30,9 @@ from __future__ import annotations
 import logging
 import time
 from typing import Any, Iterable
+import asyncio
+
+from langgraph_sdk import get_client, get_sync_client
 
 logger = logging.getLogger("yuyutsava.async_subagents.interrupt_middleware")
 
@@ -89,8 +92,6 @@ class RemoteThreadPatcher:
 
     def _get_sync_client(self, agent_name: str):
         if agent_name not in self._sync_clients:
-            from langgraph_sdk import get_sync_client
-
             self._sync_clients[agent_name] = get_sync_client(
                 url=self._url_by_name.get(agent_name),
                 headers=self._resolve_headers(agent_name),
@@ -99,8 +100,6 @@ class RemoteThreadPatcher:
 
     def _get_async_client(self, agent_name: str):
         if agent_name not in self._async_clients:
-            from langgraph_sdk import get_client
-
             self._async_clients[agent_name] = get_client(
                 url=self._url_by_name.get(agent_name),
                 headers=self._resolve_headers(agent_name),
@@ -142,8 +141,6 @@ class RemoteThreadPatcher:
                 break
 
     async def _settle_active_run_async(self, client: Any, thread_id: str) -> None:
-        import asyncio
-
         try:
             runs = await client.runs.list(thread_id=thread_id, limit=1)
         except Exception:  # noqa: BLE001

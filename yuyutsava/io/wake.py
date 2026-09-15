@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import os
 from abc import ABC, abstractmethod
+import time
 
 from yuyutsava.config.env import env_flag
 
@@ -105,9 +106,9 @@ class OpenWakeWordDetector(WakeWordDetector):
     def _load(self):
         if self._model is None:
             try:
-                import openwakeword  # type: ignore
-                from openwakeword.model import Model  # type: ignore
-                from openwakeword import utils as oww_utils  # type: ignore
+                import openwakeword  # type: ignore  # noqa: PLC0415 — optional dependency
+                from openwakeword.model import Model  # type: ignore  # noqa: PLC0415 — optional dependency
+                from openwakeword import utils as oww_utils  # type: ignore  # noqa: PLC0415 — optional dependency
             except ImportError as exc:
                 raise RuntimeError(
                     "openwakeword not installed — run: uv pip install 'yuyutsava[voice]'"
@@ -136,9 +137,7 @@ class OpenWakeWordDetector(WakeWordDetector):
         return self._model
 
     def process(self, chunk: bytes) -> str | None:
-        import time
-
-        import numpy as np  # type: ignore
+        import numpy as np  # type: ignore  # noqa: PLC0415 — optional dependency (voice extra)
 
         model = self._load()
         # openwakeword expects int16 numpy arrays at 16kHz.

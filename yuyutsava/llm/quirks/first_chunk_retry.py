@@ -85,7 +85,7 @@ def _is_transient(exc: BaseException) -> bool:
     the quirk must never be the thing that breaks a provider.
     """
     try:
-        from google.api_core import exceptions as gexc
+        from google.api_core import exceptions as gexc  # noqa: PLC0415 — optional dependency
     except ImportError:  # pragma: no cover — provider extra not installed
         gexc = None
     if gexc is not None and isinstance(
@@ -98,7 +98,7 @@ def _is_transient(exc: BaseException) -> bool:
     code = getattr(exc, "code", None)
     if callable(code):
         try:
-            import grpc
+            import grpc  # noqa: PLC0415 — optional dependency
 
             return code() in (grpc.StatusCode.RESOURCE_EXHAUSTED, grpc.StatusCode.UNAVAILABLE)
         except Exception:  # noqa: BLE001

@@ -23,6 +23,8 @@ import time
 from dataclasses import dataclass, field
 from typing import AsyncIterator
 
+from ulid import ULID
+
 logger = logging.getLogger("yuyutsava.events.bus")
 
 
@@ -138,7 +140,6 @@ def make_envelope(
     ts: float | None = None,
 ) -> EventEnvelope:
     """Build an envelope. ``event_id`` defaults to a fresh ULID."""
-    from ulid import ULID  # local import keeps optional dep out of cold paths
 
     return EventEnvelope(
         event_id=event_id or str(ULID()),

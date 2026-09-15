@@ -32,6 +32,8 @@ import logging
 import re
 from pathlib import Path
 
+import pyperclip
+
 from yuyutsava.events.registry import register_source
 from yuyutsava.events.source import EventSource, SourceContext
 
@@ -66,13 +68,6 @@ class ClipboardSource(EventSource):
         self._last_hash: str | None = None
 
     async def start(self, ctx: SourceContext) -> None:
-        try:
-            import pyperclip  # local — heavy on first import, cheap thereafter
-        except ImportError:
-            logger.error("pyperclip is not installed; clipboard source disabled")
-            await ctx.cancelled.wait()
-            return
-
         poll_ms = int(ctx.params.get("poll_ms", 500))
         ignore_empty = bool(ctx.params.get("ignore_empty", True))
         max_chars = int(ctx.params.get("max_chars", 16384))
