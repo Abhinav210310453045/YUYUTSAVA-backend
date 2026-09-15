@@ -26,9 +26,20 @@ from typing import Any, Protocol
 from langchain_core.tools import BaseTool, StructuredTool, tool
 
 from yuyutsava.config.search import SearchConfig
-from yuyutsava.core.exceptions import ExaSearchError, TavilySearchError
 
 logger = logging.getLogger("yuyutsava.tools.search")
+
+
+class SearchError(Exception):
+    """A web search tool hit an error it cannot recover from."""
+
+
+class TavilySearchError(SearchError):
+    """The Tavily API call failed or is misconfigured."""
+
+
+class ExaSearchError(SearchError):
+    """The Exa API call failed or is misconfigured."""
 
 
 class _CapEnforcer(Protocol):
