@@ -10,7 +10,8 @@ import unittest
 from yuyutsava.channels.config import ChannelConfig, ChannelsConfig
 from yuyutsava.channels.plugin import ChannelPlugin, InboundSink
 from yuyutsava.channels.registry import ChannelPluginRegistry
-from yuyutsava.daemon.channels import ChannelEvent, ChannelRouter, LogPayload
+from yuyutsava.daemon.channels import ChannelRouter
+from yuyutsava.ports.channels import ChannelEvent, LogPayload
 
 
 class FakeChannelPlugin(ChannelPlugin):

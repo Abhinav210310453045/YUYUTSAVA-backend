@@ -5,7 +5,7 @@ Two cooperating pieces:
 - :class:`ResourceMonitor` — an asyncio loop (lifecycle like
   ``UnifiedSweeper.run(stop_event)``) that samples CPU / memory / disk via
   psutil every few seconds into a ring buffer, and — while any task is
-  running — debounces a :class:`~yuyutsava.daemon.channels.SystemMetricsPayload`
+  running — debounces a :class:`~yuyutsava.ports.channels.SystemMetricsPayload`
   onto the user channels so clients see live load without polling.
 - :class:`AdmissionController` — estimates a task's weight from its Phase-4
   complexity score (and an env-configured set of heavy ``subagent_hint``s)
@@ -33,8 +33,8 @@ from typing import Any, Awaitable, Callable, Literal
 import psutil
 
 from yuyutsava.config.env import env, env_flag, env_float
-from yuyutsava.daemon.channels import ChannelEvent, SystemMetricsPayload, TimelinePayload
 from yuyutsava.platform.process import run_capture
+from yuyutsava.ports.channels import ChannelEvent, SystemMetricsPayload, TimelinePayload
 
 logger = logging.getLogger("yuyutsava.daemon.resources")
 

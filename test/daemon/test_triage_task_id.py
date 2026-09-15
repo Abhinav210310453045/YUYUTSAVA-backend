@@ -9,9 +9,9 @@ import asyncio
 import time
 import unittest
 
-from yuyutsava.daemon.channels import ProposalDecision
 from yuyutsava.daemon.triage_loop import TriageLoop
 from yuyutsava.events.bus import EventEnvelope
+from yuyutsava.ports.channels import ProposalDecision
 from yuyutsava.storage.events import Proposal
 
 

@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import unittest
 
-from yuyutsava.daemon.channels import LogPayload
 from yuyutsava.daemon.web.routers.stream import item_matches
 from yuyutsava.daemon.web.services.stream_service import (
     MAX_TRACKED_TASKS,
@@ -17,6 +16,7 @@ from yuyutsava.daemon.web.services.stream_service import (
     StreamProposalItem,
     WebHub,
 )
+from yuyutsava.ports.channels import LogPayload
 from yuyutsava.storage.events import Proposal
 
 

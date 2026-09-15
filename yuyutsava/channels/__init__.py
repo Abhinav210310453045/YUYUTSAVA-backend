@@ -1,7 +1,7 @@
 """Channel plugins: chat surfaces the daemon can enable and disable at runtime.
 
 A plugin sends outbound messages through the
-:class:`~yuyutsava.daemon.channels.UserChannel` contract and handles inbound ones —
+:class:`~yuyutsava.ports.channels.UserChannel` contract and handles inbound ones —
 submitting tasks, answering proposals and asks — through
 :class:`~yuyutsava.channels.plugin.InboundSink`, the only daemon surface it sees.
 :class:`~yuyutsava.channels.registry.ChannelPluginRegistry` enables, disables and

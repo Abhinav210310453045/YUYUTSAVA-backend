@@ -10,13 +10,13 @@ import unittest
 
 import httpx
 
-from yuyutsava.daemon.channels import ProposalDecision
 from yuyutsava.daemon.web.app import create_app
 from yuyutsava.daemon.web.services.decision_service import (
     DecisionConflictError,
     DecisionService,
 )
 from yuyutsava.daemon.web.services.stream_service import WebHub
+from yuyutsava.ports.channels import ProposalDecision
 
 
 class _FakeStore:

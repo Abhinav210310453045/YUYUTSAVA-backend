@@ -45,18 +45,18 @@ from yuyutsava.async_subagents.mirror import (
     AsyncTaskMirror,
     MirroredTask,
 )
-from yuyutsava.daemon.channels import (
+from yuyutsava.daemon.interrupt_format import (
+    body_for_interrupt,
+    options_for_interrupt,
+    title_for_interrupt,
+)
+from yuyutsava.ports.channels import (
     AskPrompt,
     AsyncTaskAwaitingUserPayload,
     AsyncTaskCompletedPayload,
     AsyncTaskProgressPayload,
     AsyncTaskStartedPayload,
     ChannelEvent,
-)
-from yuyutsava.daemon.interrupt_format import (
-    body_for_interrupt,
-    options_for_interrupt,
-    title_for_interrupt,
 )
 
 logger = logging.getLogger("yuyutsava.async_subagents.watcher")

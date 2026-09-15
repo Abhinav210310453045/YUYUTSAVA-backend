@@ -25,10 +25,10 @@ from yuyutsava.async_subagents.mirror import (
 )
 from yuyutsava.async_subagents.remote import RemoteAsyncSubagentSpec
 from yuyutsava.async_subagents.session_origin import SessionOriginMap
-from yuyutsava.daemon.channels import (
+from yuyutsava.daemon.channels import ChannelRouter
+from yuyutsava.ports.channels import (
     AskPrompt,
     ChannelEvent,
-    ChannelRouter,
     LogPayload,
     ProposalDecision,
     UserChannel,

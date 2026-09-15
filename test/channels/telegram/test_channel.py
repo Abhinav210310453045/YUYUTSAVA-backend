@@ -14,7 +14,8 @@ from yuyutsava.channels.telegram.channel import (
     OFFSET_STATE_KEY,
     TelegramChannelPlugin,
 )
-from yuyutsava.daemon.channels import (
+from yuyutsava.daemon.web.services.decision_service import DecisionService
+from yuyutsava.ports.channels import (
     AskPrompt,
     ChannelEvent,
     HttpLogPayload,
@@ -22,7 +23,6 @@ from yuyutsava.daemon.channels import (
     TimelinePayload,
     TokenPayload,
 )
-from yuyutsava.daemon.web.services.decision_service import DecisionService
 from yuyutsava.storage.events import Proposal
 
 ALLOWED_CHAT = 111

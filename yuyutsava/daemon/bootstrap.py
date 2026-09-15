@@ -53,7 +53,7 @@ from yuyutsava.core.policy import PermissionsPolicy, StorePolicyCapEnforcer
 from yuyutsava.core.tracing import warm_reachability_cache
 from yuyutsava.daemon.ask_registry import AskRegistry
 from yuyutsava.daemon.ask_resume import AskResumeService
-from yuyutsava.daemon.channels import ChannelEvent, ChannelRouter, TimelinePayload
+from yuyutsava.daemon.channels import ChannelRouter
 from yuyutsava.daemon.checkpointing import CheckpointerSaver
 from yuyutsava.daemon.config import DaemonConfig
 from yuyutsava.daemon.conversation_manager import ConversationManager
@@ -80,6 +80,7 @@ from yuyutsava.memory.config import MemorySettings
 from yuyutsava.memory.embedder import Embedder
 from yuyutsava.memory.store import MemoryStore
 from yuyutsava.ports import CapEnforcer
+from yuyutsava.ports.channels import ChannelEvent, TimelinePayload
 from yuyutsava.prefs.injector import PrefsInjector
 from yuyutsava.prefs.runtime import RuntimeSettings
 from yuyutsava.skills.registry import SkillRegistry

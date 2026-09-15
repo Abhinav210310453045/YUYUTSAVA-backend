@@ -28,7 +28,7 @@ from typing import Any, Deque
 
 from yuyutsava.cli.line_reader import read_line
 from yuyutsava.consent import decision_token, is_permission_ask
-from yuyutsava.daemon.channels import (
+from yuyutsava.ports.channels import (
     AskPrompt,
     AsyncTaskAwaitingUserPayload,
     AsyncTaskCompletedPayload,

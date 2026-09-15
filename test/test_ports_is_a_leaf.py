@@ -71,7 +71,8 @@ class PortsIsALeaf(unittest.TestCase):
         into every module that touches a port — reintroducing ``F-T02``-style
         coupling through the layer meant to remove it.
         """
-        allowed = {"__future__", "typing", "abc", "dataclasses", "enum", "collections"}
+        # Standard-library modules a port may need. ``time`` supplies event timestamps.
+        allowed = {"__future__", "typing", "abc", "dataclasses", "enum", "collections", "time"}
         offenders: list[str] = []
         for path in sorted(PORTS.rglob("*.py")):
             tree = ast.parse(path.read_text(encoding="utf-8"))

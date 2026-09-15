@@ -20,18 +20,13 @@ import asyncio
 import logging
 import time
 
-from yuyutsava.daemon.channels import (
-    AskPrompt,
-    ChannelEvent,
-    ProposalDecision,
-    UserChannel,
-)
 from yuyutsava.daemon.web.services.stream_service import (
     StreamAskItem,
     StreamEventItem,
     StreamProposalItem,
     WebHub,
 )
+from yuyutsava.ports.channels import AskPrompt, ChannelEvent, ProposalDecision, UserChannel
 from yuyutsava.storage.events import Proposal
 
 logger = logging.getLogger("yuyutsava.daemon.cli_remote_channel")

@@ -14,7 +14,7 @@ from collections import OrderedDict, deque
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Literal
 
-from yuyutsava.daemon.channels import (
+from yuyutsava.ports.channels import (
     AskPrompt,
     ChannelEvent,
     ChannelPayload,

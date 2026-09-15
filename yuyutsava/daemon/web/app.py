@@ -21,7 +21,6 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from yuyutsava.config.env import env_flag
-from yuyutsava.daemon.channels import HttpLogPayload
 from yuyutsava.daemon.web.auth import (
     AuthSettings,
     install_auth_middleware,
@@ -99,6 +98,7 @@ from yuyutsava.daemon.web.routers import (
 )
 from yuyutsava.daemon.web.services.decision_service import DecisionService
 from yuyutsava.daemon.web.services.stream_service import StreamEventItem, WebHub
+from yuyutsava.ports.channels import HttpLogPayload
 from yuyutsava.skills.registry import SkillRegistry
 
 ReloadCallback = Callable[[], Awaitable[None]] | None

@@ -1,6 +1,6 @@
 """ChannelPlugin contract + InboundSink facade.
 
-A channel plugin is a :class:`~yuyutsava.daemon.channels.UserChannel`
+A channel plugin is a :class:`~yuyutsava.ports.channels.UserChannel`
 (outbound: ``post_event`` / ``post_proposal`` / ``post_ask``) that
 additionally runs an inbound loop (e.g. Telegram ``getUpdates`` long-poll)
 through which the user can *invoke* the daemon: submit tasks, answer
@@ -21,13 +21,12 @@ import logging
 from abc import abstractmethod
 from typing import Any, Callable
 
-from yuyutsava.daemon.channels import ProposalDecision, UserChannel
-
 # Re-exported so plugins can catch decision conflicts without importing
 # daemon web internals — the sink is their whole world.
 from yuyutsava.daemon.web.services.decision_service import (  # noqa: F401
     DecisionConflictError,
 )
+from yuyutsava.ports.channels import ProposalDecision, UserChannel
 
 logger = logging.getLogger("yuyutsava.channels.plugin")
 

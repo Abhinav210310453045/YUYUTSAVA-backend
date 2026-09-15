@@ -29,7 +29,7 @@ import asyncio
 import logging
 from typing import Any
 
-from yuyutsava.daemon.channels import AskPrompt
+from yuyutsava.ports.channels import AskPrompt
 from yuyutsava.storage.events.roles import PendingAskRegistry
 
 logger = logging.getLogger("yuyutsava.daemon.ask_registry")

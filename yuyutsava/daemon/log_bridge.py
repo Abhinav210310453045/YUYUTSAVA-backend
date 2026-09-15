@@ -15,7 +15,7 @@ switching it to DEBUG appeared to do nothing at all.
 
 A ``logging.Handler`` on the ``yuyutsava`` logger puts records on a bounded
 queue; an async task drains it and broadcasts each as an
-:class:`~yuyutsava.daemon.channels.AppLogPayload` over the existing SSE hub.
+:class:`~yuyutsava.ports.channels.AppLogPayload` over the existing SSE hub.
 
 Three properties this has to have:
 
@@ -43,8 +43,8 @@ import time
 from collections import deque
 from typing import Any
 
-from yuyutsava.daemon.channels import AppLogPayload
 from yuyutsava.daemon.web.services.stream_service import StreamEventItem
+from yuyutsava.ports.channels import AppLogPayload
 
 logger = logging.getLogger("yuyutsava.daemon.log_bridge")
 

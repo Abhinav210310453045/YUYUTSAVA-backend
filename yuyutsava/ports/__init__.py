@@ -8,6 +8,8 @@ The decision is ADR-003.
 - :mod:`~yuyutsava.ports.agent` — ``Agent``, what the driver needs from a compiled agent
 - :mod:`~yuyutsava.ports.ask` — ``AskUser``, asking the user without knowing how the
   answer arrives
+- :mod:`~yuyutsava.ports.channels` — the event payloads, ``AskPrompt``, ``UserChannel``
+  and ``AskRouter``: what the daemon sends to the user and how
 - :mod:`~yuyutsava.ports.policy` — ``CapEnforcer``, ``RuntimeToggles``, ``ContextTuning``,
   ``TaskMirror``, ``RemoteSubagentSpec``
 - :mod:`~yuyutsava.ports.retrieval` — ``ConversationIndex``, ``VectorSearcher``

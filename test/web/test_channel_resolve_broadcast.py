@@ -15,7 +15,6 @@ import asyncio
 import time
 import unittest
 
-from yuyutsava.daemon.channels import AskPrompt
 from yuyutsava.daemon.cli_remote_channel import CliRemoteChannel
 from yuyutsava.daemon.web.services.stream_service import (
     StreamAskItem,
@@ -25,6 +24,7 @@ from yuyutsava.daemon.web.services.stream_service import (
     WebChannel,
     WebHub,
 )
+from yuyutsava.ports.channels import AskPrompt
 
 
 class _FakeStore:
@@ -103,7 +103,7 @@ class ResolveBroadcastTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("ask_x", self.hub.pending_asks)
 
     async def _assert_proposal_flow(self, channel) -> None:
-        from yuyutsava.daemon.channels import ProposalDecision
+        from yuyutsava.ports.channels import ProposalDecision
 
         p = _FakeProposal("prop_x", session_id="s2")
         post = asyncio.create_task(channel.post_proposal(p))

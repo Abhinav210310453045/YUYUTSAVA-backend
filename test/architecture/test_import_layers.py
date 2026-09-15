@@ -80,7 +80,6 @@ LAYERS: dict[str, int] = {
 #: Upward imports that exist today, as (importer unit, imported unit). Shrinks only.
 ALLOWED_UPWARD: frozenset[tuple[str, str]] = frozenset(
     {
-        ("agents", "daemon"),
         ("artifacts", "context"),
         ("artifacts", "todoboard"),
         ("async_subagents", "daemon"),

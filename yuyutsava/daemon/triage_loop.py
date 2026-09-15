@@ -23,14 +23,10 @@ from typing import Callable
 from ulid import ULID
 
 from yuyutsava.agents.triage.agent import TriageAgent, TriageDecision
-from yuyutsava.daemon.channels import (
-    ChannelEvent,
-    ChannelRouter,
-    ProposalDecision,
-    TimelinePayload,
-)
+from yuyutsava.daemon.channels import ChannelRouter
 from yuyutsava.daemon.consent import ConsentEvaluator
 from yuyutsava.events.bus import EventBus, EventEnvelope
+from yuyutsava.ports.channels import ChannelEvent, ProposalDecision, TimelinePayload
 from yuyutsava.skills.registry import SkillRegistry
 from yuyutsava.storage.events import ConsentRule, Proposal
 from yuyutsava.storage.events.roles import TriageStore

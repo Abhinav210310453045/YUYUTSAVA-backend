@@ -42,7 +42,7 @@ from yuyutsava.channels.plugin import (
     InboundSink,
 )
 from yuyutsava.channels.telegram.client import TelegramClient
-from yuyutsava.daemon.channels import (
+from yuyutsava.ports.channels import (
     AskPrompt,
     AsyncTaskCompletedPayload,
     ChannelEvent,

@@ -15,7 +15,7 @@ import sys
 import time
 
 from yuyutsava.consent import decision_token, is_permission_ask
-from yuyutsava.daemon.channels import (
+from yuyutsava.ports.channels import (
     AskPrompt,
     ChannelEvent,
     LogPayload,

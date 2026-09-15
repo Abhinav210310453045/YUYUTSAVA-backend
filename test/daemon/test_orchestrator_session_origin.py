@@ -10,8 +10,9 @@ import unittest
 from dataclasses import dataclass
 
 from yuyutsava.async_subagents.session_origin import SessionOriginMap
-from yuyutsava.daemon.channels import ChannelEvent, ChannelRouter, UserChannel
+from yuyutsava.daemon.channels import ChannelRouter
 from yuyutsava.daemon.orchestrator_loop import OrchestratorLoop
+from yuyutsava.ports.channels import ChannelEvent, UserChannel
 
 
 @dataclass

@@ -12,9 +12,9 @@ import unittest
 import pydantic
 
 from yuyutsava.agents.triage.agent import TriageDecision
-from yuyutsava.daemon.channels import ProposalDecision
 from yuyutsava.daemon.triage_loop import OrchestratorTask, TriageLoop
 from yuyutsava.events.bus import EventEnvelope
+from yuyutsava.ports.channels import ProposalDecision
 from yuyutsava.storage.events import Proposal
 
 

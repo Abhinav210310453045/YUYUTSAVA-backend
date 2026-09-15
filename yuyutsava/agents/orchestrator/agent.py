@@ -5,7 +5,8 @@ deepagent + daemon orchestrator) are constructed from the shared engine.
 
 This module keeps the orchestrator-specific *definitions* — ``OrchestratorDeps``
 (dep-injection bag) and ``make_ask_user_tool`` (the orchestrator's master
-ask tool wired to the daemon ChannelRouter).
+ask tool, which posts through any :class:`~yuyutsava.ports.channels.AskRouter`,
+in practice the daemon's ChannelRouter).
 """
 
 from __future__ import annotations
@@ -21,7 +22,6 @@ from langchain_core.tools import BaseTool, tool
 from yuyutsava.agents.base_sub_agent import BaseSubAgent
 from yuyutsava.config.search import SearchConfig
 from yuyutsava.core.agent_context import current_context
-from yuyutsava.daemon.channels import AskPrompt, ChannelRouter
 from yuyutsava.mcp.loader import MCPClientManager
 from yuyutsava.ports import (
     ArtifactStore,
@@ -33,6 +33,7 @@ from yuyutsava.ports import (
     TranscriptStore,
     UsageStore,
 )
+from yuyutsava.ports.channels import AskPrompt, AskRouter
 from yuyutsava.ports.policy import ContextTuning, RemoteSubagentSpec, TaskMirror
 from yuyutsava.skills.registry import SkillRegistry
 from yuyutsava.storage.events import Store
@@ -68,7 +69,7 @@ class OrchestratorDeps:
 
     subagents: dict[str, BaseSubAgent]
     subagent_model: BaseChatModel
-    channels: ChannelRouter
+    channels: AskRouter
     store: Store
     subagent_token_budget: int
     skill_registry: SkillRegistry | None = None
@@ -124,7 +125,7 @@ class OrchestratorDeps:
 # ---------------------------------------------------------------------------
 
 
-def make_ask_user_tool(channels: ChannelRouter) -> BaseTool:
+def make_ask_user_tool(channels: AskRouter) -> BaseTool:
     @tool
     async def ask_user(question: str, options: list[str] | None = None) -> str:
         """Ask the user a clarifying question and wait for the response.

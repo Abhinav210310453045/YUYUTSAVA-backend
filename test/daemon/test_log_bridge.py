@@ -26,8 +26,8 @@ import asyncio
 import logging
 import unittest
 
-from yuyutsava.daemon.channels import AppLogPayload
 from yuyutsava.daemon.log_bridge import MAX_QUEUE, LogBridge
+from yuyutsava.ports.channels import AppLogPayload
 
 
 class _Hub:
@@ -198,7 +198,7 @@ class PanelRouting(unittest.TestCase):
     def test_the_payload_is_in_the_channel_union(self):
         import inspect
 
-        from yuyutsava.daemon import channels
+        from yuyutsava.ports import channels
 
         src = inspect.getsource(channels)
         self.assertIn("| AppLogPayload", src)
