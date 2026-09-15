@@ -11,9 +11,9 @@ import sys
 from pathlib import Path
 from typing import Literal
 
-from yuyutsava.cli.agent_stack import build_cli_agent_stack
 from yuyutsava.config.execution import DockerSettings, LocalSettings
 from yuyutsava.config.search import SearchConfig
+from yuyutsava.core.agent_stack import build_agent_stack
 from yuyutsava.core.docker_sandbox_backend import pull_virtual_paths_to_host
 from yuyutsava.core.engine import cleanup_local_sandbox
 from yuyutsava.llm.settings import LlmSettings
@@ -52,7 +52,7 @@ async def run_chat(
     sessions_settings = SessionsSettings.from_env()
 
     async with build_checkpointer(sessions_settings) as checkpointer:
-        bundle = await build_cli_agent_stack(
+        bundle = await build_agent_stack(
             workspace,
             settings,
             bash_timeout_sec=bash_timeout_sec,

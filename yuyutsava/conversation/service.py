@@ -17,7 +17,7 @@ the caller via two hooks:
 
 The service deliberately does **not** build the agent. The caller constructs an
 :class:`~yuyutsava.core.engine.AgentBundle` (via
-:func:`yuyutsava.cli.agent_stack.build_agent_stack`) with its own settings and
+:func:`yuyutsava.core.agent_stack.build_agent_stack`) with its own settings and
 execution mode, then hands it in. That keeps this module free of CLI/daemon
 config concerns and lets the daemon reuse its already-running async-subagent
 host — so a voice or text conversation delegates background work to the

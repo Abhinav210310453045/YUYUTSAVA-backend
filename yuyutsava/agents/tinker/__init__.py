@@ -6,6 +6,6 @@ decomposes goals into small objectives, asks clarifying questions before
 committing to a direction, and persists everything worth keeping onto the
 card via the ``todo_*`` tools.
 
-``prompts.py`` renders its system prompt; ``agent.py`` builds the full daemon
-stack around :func:`yuyutsava.core.engine.build_tinker_agent`.
+``prompts.py`` renders its system prompt; :mod:`yuyutsava.core.tinker_stack`
+builds the full daemon stack around :func:`yuyutsava.core.engine.build_tinker_agent`.
 """

@@ -38,9 +38,6 @@
   "yuyutsava/agents/task_runner/tools.py": {
     "C901": 1
   },
-  "yuyutsava/agents/tinker/agent.py": {
-    "PLR0913": 1
-  },
   "yuyutsava/agents/tinker/subagent.py": {
     "PLR0913": 1
   },
@@ -63,9 +60,6 @@
   },
   "yuyutsava/channels/telegram/channel.py": {
     "S110": 1
-  },
-  "yuyutsava/cli/agent_stack.py": {
-    "PLR0913": 1
   },
   "yuyutsava/cli/cli.py": {
     "BLE001": 1
@@ -123,6 +117,9 @@
   "yuyutsava/core/agent_profiles.py": {
     "T201": 5
   },
+  "yuyutsava/core/agent_stack.py": {
+    "PLR0913": 1
+  },
   "yuyutsava/core/docker_sandbox_backend.py": {
     "PLR0913": 1
   },
@@ -143,6 +140,9 @@
     "C901": 3,
     "PLR0913": 2,
     "T201": 34
+  },
+  "yuyutsava/core/tinker_stack.py": {
+    "PLR0913": 1
   },
   "yuyutsava/core/tool_result.py": {
     "BLE001": 1

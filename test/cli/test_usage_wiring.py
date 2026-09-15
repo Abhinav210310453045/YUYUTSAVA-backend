@@ -21,12 +21,12 @@ import inspect
 import time
 import unittest
 
-from yuyutsava.cli import agent_stack
 from yuyutsava.cli.commands.chat_repl import (
     _fmt_usage,
     _print_usage_summary,
     _usage_rows,
 )
+from yuyutsava.core import agent_stack
 from yuyutsava.core.engine import AgentBundle
 from yuyutsava.policy.builtin.usage import UsagePolicy
 from yuyutsava.policy.types import Turn, Usage

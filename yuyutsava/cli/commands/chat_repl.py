@@ -42,7 +42,6 @@ from prompt_toolkit.history import FileHistory
 from prompt_toolkit.patch_stdout import patch_stdout
 
 from yuyutsava.async_subagents.watcher import AsyncTaskHealthWatcher
-from yuyutsava.cli.agent_stack import build_cli_agent_stack
 from yuyutsava.cli.async_hitl import CliHitlBridge, CliRemoteHitl
 from yuyutsava.cli.line_reader import read_line
 from yuyutsava.cli.remote_attach import CliAttachClient
@@ -71,6 +70,7 @@ from yuyutsava.config.search import SearchConfig
 from yuyutsava.consent import decision_token as _decision_token
 from yuyutsava.context.meter import bus
 from yuyutsava.conversation import ConversationService
+from yuyutsava.core.agent_stack import build_agent_stack
 from yuyutsava.core.engine import cleanup_local_sandbox, silence_plumbing_loggers
 from yuyutsava.daemon.singleton import read_daemon_discovery
 from yuyutsava.llm import tracing as _tracing
@@ -306,7 +306,7 @@ def _print_help() -> None:
 def _suppress_stdio():
     """Temporarily route fd 1 / fd 2 to /dev/null.
 
-    Used around ``build_cli_agent_stack()`` to catch the LangGraph server
+    Used around ``build_agent_stack()`` to catch the LangGraph server
     banner — that text is written from a daemon thread spawned by
     ``langgraph_api.cli.run_server`` and bypasses Python's logging, so
     fd-level redirection is the only reliable mute.
@@ -1005,7 +1005,7 @@ async def run_chat_repl(
     async with build_checkpointer(sessions_settings) as checkpointer:
         # Build the agent stack ONCE. Swallow the LangGraph host's startup
         # banner unless the user asked for the firehose.
-        builder = build_cli_agent_stack(
+        builder = build_agent_stack(
             workspace,
             settings,
             bash_timeout_sec=bash_timeout_sec,
@@ -1019,7 +1019,7 @@ async def run_chat_repl(
             # Artifacts tab, no card to click, HTML unreadable.
             front="terminal",
         )
-        # Always wrap build_cli_agent_stack in fd-level stdio suppression —
+        # Always wrap build_agent_stack in fd-level stdio suppression —
         # the LangGraph host writes its startup banner from a daemon thread
         # using direct fd writes that bypass Python logging. Skip only when
         # the user explicitly asked to see plumbing.

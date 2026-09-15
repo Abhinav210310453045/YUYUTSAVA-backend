@@ -1,6 +1,6 @@
 """Factory for a card-bound TinkerAgent stack.
 
-The tinker sibling of :func:`yuyutsava.cli.agent_stack.build_agent_stack`: one
+The tinker sibling of :func:`yuyutsava.core.agent_stack.build_agent_stack`: one
 call assembles the retrieval stores, context-controller wiring, subagents, and
 the compiled bundle for ONE TODO card. The daemon's
 :class:`~yuyutsava.daemon.conversation_manager.ConversationManager` caches the

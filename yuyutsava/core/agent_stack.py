@@ -1,10 +1,9 @@
-"""Factory for the CLI's agent stack.
+"""Factory for the chat agent stack.
 
-A single function builds everything the chat REPL needs: skill registry,
-task runner, general-purpose subagent, and the compiled deepagent bundle.
-
-Pulled out of cli.py so tests, scripts, and any future second entry-point
-can share one construction path instead of copy-pasting 30 lines of wiring.
+A single function builds everything a chat conversation needs: skill registry,
+task runner, general-purpose subagent, and the compiled deepagent bundle. The
+CLI REPL and the daemon's text and voice conversations build the same stack
+through it, so it lives in ``core`` rather than in either front end.
 
 Async (background) subagents are env-gated for v1: set ``YUYUTSAVA_ASYNC_SUBAGENTS=1``
 to wire up an in-process ``AsyncSubagentHost`` + watcher + ``CliHitlBridge``.
@@ -49,7 +48,7 @@ from yuyutsava.todoboard.store_unified import pg_todo_store
 from yuyutsava.visuals.store import set_default_visual_store
 from yuyutsava.visuals.store_unified import pg_visual_store
 
-logger = logging.getLogger("yuyutsava.cli.agent_stack")
+logger = logging.getLogger("yuyutsava.core.agent_stack")
 
 
 def _async_enabled() -> bool:
@@ -96,10 +95,8 @@ async def build_agent_stack(
     general-purpose; ``extra_tools`` are one-off
     daemon tools (e.g. orch_submit).
 
-    Not CLI-specific despite the historical name: this is the same stack the
-    daemon-hosted text/voice conversations build (see
-    :class:`yuyutsava.conversation.ConversationService`). The legacy alias
-    ``build_cli_agent_stack`` is kept below for existing callers.
+    The CLI REPL and the daemon-hosted text/voice conversations build this same
+    stack (see :class:`yuyutsava.conversation.ConversationService`).
 
     The current sync subagent list is just ``GeneralPurposeAgent`` — passing
     it causes deepagents to name-match-override its built-in default with our
@@ -341,4 +338,3 @@ async def build_agent_stack(
 
 # Back-compat alias: the stack is no longer CLI-only (the daemon hosts text +
 # voice conversations on the same builder), but existing imports keep working.
-build_cli_agent_stack = build_agent_stack

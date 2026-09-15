@@ -996,7 +996,7 @@ def build_cli_deepagent(
             DB (durable beyond checkpoint sweeps); see
             ``yuyutsava.context.transcript_store``.
             CLI chat threads are the longest-lived in the system, so the
-            stack factory (``cli/agent_stack.py``) wires these by default.
+            stack factory (``core/agent_stack.py``) wires these by default.
     """
     model = chat_model(settings)
     checkpointer = checkpointer or MemorySaver()

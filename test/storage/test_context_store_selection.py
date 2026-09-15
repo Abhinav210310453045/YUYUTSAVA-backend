@@ -254,8 +254,8 @@ class NoStackAssemblerHandRollsTheBranch(unittest.TestCase):
     """The three call sites must go through the factory, not rebuild the branch."""
 
     _ASSEMBLERS = (
-        ("yuyutsava/cli/agent_stack.py", "build_agent_stack"),
-        ("yuyutsava/agents/tinker/agent.py", "build_tinker_stack"),
+        ("yuyutsava/core/agent_stack.py", "build_agent_stack"),
+        ("yuyutsava/core/tinker_stack.py", "build_tinker_stack"),
         ("yuyutsava/daemon/bootstrap.py", "build_daemon"),
     )
 

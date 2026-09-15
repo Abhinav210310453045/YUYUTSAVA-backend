@@ -314,7 +314,7 @@ graph all return before `build_agent`.
 
 ### 5.2 The CLI agent stack
 
-`cli/agent_stack.py :: build_agent_stack()` is the single construction path for the
+`core/agent_stack.py :: build_agent_stack()` is the single construction path for the
 conversational deepagent (it is *not* CLI-only — the daemon's `/ws/converse` reuses
 it). It assembles:
 
