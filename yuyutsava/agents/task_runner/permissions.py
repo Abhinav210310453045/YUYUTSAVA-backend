@@ -14,6 +14,7 @@ from yuyutsava.models.operations import (
     OperationType,
     PermissionAction,
 )
+from yuyutsava.core.agent_context import current_context
 
 # ---------------------------------------------------------------------------
 # Rule table: (zone, operation) → action
@@ -153,7 +154,6 @@ def build_interrupt_payload(
     zone: FilesystemZone,
 ) -> TaskRunnerPermissionInterrupt:
     """Build the typed interrupt payload passed to LangGraph's ``interrupt()``."""
-    from yuyutsava.core.agent_context import current_context
 
     ctx = current_context()
     parent_path = ctx.get("agent_path") or "orchestrator"

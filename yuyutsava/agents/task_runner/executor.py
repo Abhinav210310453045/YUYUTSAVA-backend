@@ -19,6 +19,8 @@ import httpx
 
 from yuyutsava.platform.process import run_capture
 from yuyutsava.storage.paths import WORKSPACE_STATE_DIRNAME
+from yuyutsava.platform import host_profile
+from yuyutsava.platform.elevation import get_elevation_provider
 
 
 async def execute_read(
@@ -109,12 +111,8 @@ async def execute_run(
     cwd.mkdir(parents=True, exist_ok=True)
 
     if elevated:
-        from yuyutsava.platform.elevation import get_elevation_provider
-
         res = await get_elevation_provider().run_elevated(command, timeout=timeout)
         return {"stdout": res.stdout, "stderr": res.stderr, "exit_code": res.exit_code}
-
-    from yuyutsava.platform import host_profile
 
     argv = host_profile().shell_command(command)
     # run_capture is loop-agnostic: on Windows the daemon runs on a Selector

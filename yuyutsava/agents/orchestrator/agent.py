@@ -36,6 +36,7 @@ from yuyutsava.storage.events import Store
 from yuyutsava.core.config import SearchConfig
 from yuyutsava.mcp.loader import MCPClientManager
 from yuyutsava.skills.registry import SkillRegistry
+from yuyutsava.core.agent_context import current_context
 
 logger = logging.getLogger("yuyutsava.agents.orchestrator")
 
@@ -132,7 +133,6 @@ def _make_ask_user_tool(channels: ChannelRouter) -> BaseTool:
         ``options`` is an optional list of one-word choices; if empty, the user
         responds with free text. Returns the user's response string.
         """
-        from yuyutsava.core.agent_context import current_context
 
         ctx = current_context()
         ask = AskPrompt(

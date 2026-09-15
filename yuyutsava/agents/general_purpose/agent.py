@@ -15,6 +15,7 @@ from __future__ import annotations
 from langchain_core.tools import BaseTool
 
 from yuyutsava.agents.base_sub_agent import BaseSubAgent
+from yuyutsava.tools.search import make_search_tools
 
 
 _SYSTEM_PROMPT = """\
@@ -109,7 +110,6 @@ class GeneralPurposeAgent(BaseSubAgent):
         """
         if self._search_config is None:
             return []
-        from yuyutsava.tools.search import make_search_tools
 
         tools = make_search_tools(self._search_config, cap_enforcer=self._cap_enforcer)
         by_name = {t.name: t for t in tools}

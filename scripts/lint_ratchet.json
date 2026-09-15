@@ -21,7 +21,6 @@
     "PLC0415": 7
   },
   "yuyutsava/agents/base_sub_agent.py": {
-    "PLC0415": 6,
     "PLR0913": 1
   },
   "yuyutsava/agents/face_watcher/agent.py": {
@@ -30,38 +29,19 @@
   "yuyutsava/agents/file_organizer/agent.py": {
     "PLR0913": 1
   },
-  "yuyutsava/agents/general_purpose/agent.py": {
-    "PLC0415": 1
-  },
-  "yuyutsava/agents/orchestrator/agent.py": {
-    "PLC0415": 1
-  },
-  "yuyutsava/agents/orchestrator/prompts.py": {
-    "PLC0415": 1
-  },
   "yuyutsava/agents/orchestrator/spawn.py": {
     "PLR0913": 1
   },
   "yuyutsava/agents/task_runner/agent.py": {
-    "BLE001": 1,
-    "PLC0415": 2
-  },
-  "yuyutsava/agents/task_runner/executor.py": {
-    "PLC0415": 2
-  },
-  "yuyutsava/agents/task_runner/permissions.py": {
-    "PLC0415": 1
+    "BLE001": 1
   },
   "yuyutsava/agents/task_runner/tools.py": {
-    "C901": 1,
-    "PLC0415": 2
+    "C901": 1
   },
   "yuyutsava/agents/tinker/agent.py": {
-    "PLC0415": 9,
     "PLR0913": 1
   },
   "yuyutsava/agents/tinker/subagent.py": {
-    "PLC0415": 5,
     "PLR0913": 1
   },
   "yuyutsava/agents/triage/agent.py": {

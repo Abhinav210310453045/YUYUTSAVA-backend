@@ -28,10 +28,17 @@ from yuyutsava.cli.agent_stack import _build_retrieval_stores
 from yuyutsava.context.config import ContextSettings
 from yuyutsava.config.env import env, env_flag
 from yuyutsava.core.config import LlmSettings, SearchConfig, llm_settings_from_env
-from yuyutsava.core.engine import AgentBundle, build_tinker_agent
+from yuyutsava.core.engine import AgentBundle, build_tinker_agent, context_middleware
 from yuyutsava.llm import chat_model
 from yuyutsava.skills.registry import SkillRegistry
 from yuyutsava.storage.paths import WorkspaceLayout, state_db_path
+from yuyutsava.async_subagents.host import AsyncSubagentHost, resolve_allow_blocking
+from yuyutsava.async_subagents.host_lock import acquire_or_attach_host
+from yuyutsava.async_subagents.mirror import AsyncTaskMirror
+from yuyutsava.context.tools import make_context_tools
+from yuyutsava.storage.backend import StorageSettings
+from yuyutsava.storage.factory import StoreFactory
+from yuyutsava.todoboard.recall import get_default_note_index
 
 logger = logging.getLogger("yuyutsava.agents.tinker")
 
@@ -79,12 +86,9 @@ async def build_tinker_stack(
     memory_store, skill_store, pg_pool, embedder = await _build_retrieval_stores(skill_registry)
 
     # One selection, shared with the CLI and the daemon (Phase 3 step 3.5).
-    from yuyutsava.storage.backend import StorageSettings as _SS
-    from yuyutsava.storage.factory import StoreFactory as _SF
-
-    _ctx = _SF(_SS.from_env(), pg_pool=pg_pool, embedder=embedder).context_stores(
-        semantic_recall=context_settings.semantic_recall
-    )
+    _ctx = StoreFactory(
+        StorageSettings.from_env(), pg_pool=pg_pool, embedder=embedder
+    ).context_stores(semantic_recall=context_settings.semantic_recall)
     artifact_store = _ctx.artifacts
     summary_store = _ctx.summaries
     transcript_store = _ctx.transcripts
@@ -117,15 +121,6 @@ async def build_tinker_stack(
     async_mirror = None
 
     if _async_enabled():
-        import asyncio
-
-        from yuyutsava.async_subagents.host import (
-            AsyncSubagentHost,
-            resolve_allow_blocking,
-        )
-        from yuyutsava.async_subagents.host_lock import acquire_or_attach_host
-        from yuyutsava.async_subagents.mirror import AsyncTaskMirror
-
         model = chat_model(settings)
         async_subagents = [general_purpose]
         allow_blocking = resolve_allow_blocking(default=True)
@@ -135,9 +130,6 @@ async def build_tinker_stack(
         def _build_host() -> AsyncSubagentHost:
             # Background graphs get the same context controllers as the
             # masters (tool-result offload + compaction + ctx_* readback).
-            from yuyutsava.context.tools import make_context_tools
-            from yuyutsava.core.engine import context_middleware
-
             # Host-only compaction model: host graphs run on the uvicorn loop,
             # and the bundle's compaction model belongs to this loop — Gemini
             # SDK clients bind to their first loop (see
@@ -186,7 +178,6 @@ async def build_tinker_stack(
     # resolve to None/[] gracefully: no MCP manager outside the daemon, no
     # note index on SQLite-only deployments.
     mcp_tools = mcp_manager.tools_for("tinker") if mcp_manager is not None else []
-    from yuyutsava.todoboard.recall import get_default_note_index
 
     note_index = get_default_note_index()
 

@@ -34,6 +34,7 @@ from langchain_core.tools import BaseTool
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import create_react_agent
+from langchain.agents import create_agent
 
 import fnmatch
 
@@ -46,7 +47,11 @@ from yuyutsava.core.prompts import workspace_state_block
 from yuyutsava.mcp.loader import MCPClientManager
 from yuyutsava.storage.paths import WorkspaceLayout
 from yuyutsava.skills.registry import SkillRegistry
-from yuyutsava.skills.tools import make_read_skill_tool
+from yuyutsava.skills.tools import make_read_skill_tool, make_skill_tools
+from yuyutsava.memory.tools import make_memory_tools
+from yuyutsava.platform import host_profile
+from yuyutsava.tools.search import make_search_tools
+from yuyutsava.visuals.tools import make_visual_tools
 
 
 class BaseSubAgent(ABC):
@@ -150,7 +155,6 @@ class BaseSubAgent(ABC):
 
     def rendered_system_prompt(self) -> str:
         """``system_prompt`` with the workspace-context block + host passport appended."""
-        from yuyutsava.platform import host_profile
 
         base = self.system_prompt.rstrip()
         return f"{base}\n\n{self.workspace_context_block()}\n\n{host_profile().prompt_block()}"
@@ -180,8 +184,6 @@ class BaseSubAgent(ABC):
         if self._skill_registry is None:
             return []
         if self._can_write_skills:
-            from yuyutsava.skills.tools import make_skill_tools
-
             # Pass the store so sk_write_skill dual-writes (disk + semantic
             # index), making a skill learned this run recallable immediately.
             # agent_name lets scope="own" writes tag the skill with this
@@ -197,7 +199,6 @@ class BaseSubAgent(ABC):
         """
         if self._memory_store is None:
             return []
-        from yuyutsava.memory.tools import make_memory_tools
 
         return make_memory_tools(self._memory_store)
 
@@ -218,7 +219,6 @@ class BaseSubAgent(ABC):
                 wanted.add(pat)
         if not wanted:
             return []
-        from yuyutsava.tools.search import make_search_tools
 
         all_tools = make_search_tools(self._search_config, cap_enforcer=self._cap_enforcer)
         return [t for t in all_tools if any(fnmatch.fnmatchcase(t.name, p) for p in wanted)]
@@ -240,7 +240,6 @@ class BaseSubAgent(ABC):
         indexed in the shared SQLite store, so a chart made by a subagent shows
         up in the UI Artifacts panel exactly like one made by the master.
         """
-        from yuyutsava.visuals.tools import make_visual_tools
 
         layout = WorkspaceLayout.for_workspace(
             self._task_runner.workspace_root,
@@ -394,7 +393,6 @@ class BaseSubAgent(ABC):
         """
         if middleware is None and not extra_tools:
             return self.build_react_agent(model, None)
-        from langchain.agents import create_agent
 
         registry = self.build_tool_registry()
         tools = [

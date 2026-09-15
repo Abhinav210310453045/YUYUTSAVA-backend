@@ -34,6 +34,11 @@ from langchain_core.tools import BaseTool
 
 from yuyutsava.agents.base_sub_agent import BaseSubAgent
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
+from yuyutsava.artifacts.tools import make_artifact_tools
+from yuyutsava.storage.paths import blobs_dir
+from yuyutsava.todoboard.exchange import board_workspace_root
+from yuyutsava.todoboard.tools import make_todo_tools
+from yuyutsava.tools.search import make_search_tools
 
 
 _SYSTEM_PROMPT = """\
@@ -150,9 +155,6 @@ class TinkerSubAgent(BaseSubAgent):
         # inline-artifact maker, so a delegated artifact task returns a real
         # artifact the master can re-show in the user's reply (see the ARTIFACTS
         # trailer in the system prompt + artifact_show on the master).
-        from yuyutsava.artifacts.tools import make_artifact_tools
-        from yuyutsava.todoboard.tools import make_todo_tools
-
         return [*make_todo_tools(scope="full", author="tinker"), *make_artifact_tools()]
 
     def search_tools(self) -> list[BaseTool]:
@@ -161,7 +163,6 @@ class TinkerSubAgent(BaseSubAgent):
         skill-declared tools from the base implementation."""
         if self._search_config is None:
             return []
-        from yuyutsava.tools.search import make_search_tools
 
         tools = make_search_tools(self._search_config, cap_enforcer=self._cap_enforcer)
         by_name = {t.name: t for t in tools}
@@ -189,8 +190,6 @@ def make_tinker_subagent(
     ``blobs/todoboard/<dir>`` without a card row, so a sandbox in there would
     be swept mid-task.
     """
-    from yuyutsava.storage.paths import blobs_dir
-    from yuyutsava.todoboard.exchange import board_workspace_root
 
     task_runner = TaskRunnerAgent(
         workspace_root=board_workspace_root(),

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from yuyutsava.platform import host_profile
+
 
 # Designed to be ≈300 tokens. The {capabilities} block is filled at build time.
 ORCHESTRATOR_SYSTEM_PROMPT = """\
@@ -128,8 +130,6 @@ def render_system_prompt(
     )
     # Host OS passport — the model always knows which system it administers and
     # which shell dialect tr_execute expects (host-side, always accurate).
-    from yuyutsava.platform import host_profile
-
     prompt = f"{prompt}\n\n{host_profile().prompt_block()}"
     if prefs_block:
         prompt = prefs_block + "\n\n" + prompt

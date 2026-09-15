@@ -26,6 +26,8 @@ from langgraph.types import interrupt
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
 from yuyutsava.models.operations import OperationRequest, OperationType
 from yuyutsava.storage.paths import WorkspaceLayout
+from yuyutsava.core.agent_context import current_context
+from yuyutsava.platform import host_profile
 
 _log = logging.getLogger("yuyutsava.agents.task_runner.tools")
 
@@ -540,7 +542,6 @@ def bind_tools(
         Returns:
             JSON: {status, result: {response: <user's answer>}}
         """
-        from yuyutsava.core.agent_context import current_context
 
         ctx = current_context()
         parent_path = ctx.get("agent_path") or "orchestrator"
@@ -800,7 +801,6 @@ def bind_tools(
         Args:
             reason: Why you need the host info (shown in the activity log).
         """
-        from yuyutsava.platform import host_profile
 
         hp = host_profile()
         return json.dumps(

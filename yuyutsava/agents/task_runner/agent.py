@@ -49,6 +49,7 @@ from yuyutsava.models.results import (
 )
 from yuyutsava.models.tool_messages import SuppressedContentNotice
 from yuyutsava.storage.paths import WorkspaceLayout
+from yuyutsava.core.agent_context import current_context
 
 logger = logging.getLogger("yuyutsava.task_runner")
 
@@ -118,7 +119,6 @@ class TaskRunnerAgent:
 
     def _consent_verdict(self, request: OperationRequest, zone: FilesystemZone) -> str:
         """Return 'allow' / 'deny' / 'prompt' from the consent registry."""
-        from yuyutsava.core.agent_context import current_context
 
         session_id = current_context().get("session_id")
         try:
@@ -143,7 +143,6 @@ class TaskRunnerAgent:
         (no per-subfolder re-asks). External paths (e.g. the ``/host`` sentinel
         used by bash/``tr_execute``) keep their auto-derived directory.
         """
-        from yuyutsava.core.agent_context import current_context
 
         session_id = current_context().get("session_id")
         directory = str(self.workspace_root) if zone == FilesystemZone.WORKSPACE else None
