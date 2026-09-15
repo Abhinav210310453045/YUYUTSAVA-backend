@@ -22,7 +22,7 @@ from typing import Any
 
 from ulid import ULID
 
-from yuyutsava.todoboard.artifacts import ArtifactBlock, _file_validator
+from yuyutsava.todoboard.block_registry import ArtifactBlock, file_validator
 from yuyutsava.todoboard.exchange import TodoValidationError
 from yuyutsava.audio_io.synth import synthesize_pcm
 from yuyutsava.io.tts import tts_from_env
@@ -70,7 +70,7 @@ def _generate_audio(spec: dict[str, Any], out_dir: Path) -> tuple[Path, str]:
 AUDIO_BLOCK = ArtifactBlock(
     name="audio",
     kind="file",  # closed V1 vocabulary: audio rides "file" by mime
-    validate=_file_validator("file", family="audio"),
+    validate=file_validator("file", family="audio"),
     mimes=("audio/*",),
     upload_mimes=_UPLOAD_MIMES,
     generate=_generate_audio,

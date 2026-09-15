@@ -24,7 +24,7 @@ from typing import Any
 
 from ulid import ULID
 
-from yuyutsava.todoboard.artifacts import ArtifactBlock, _file_validator
+from yuyutsava.todoboard.block_registry import ArtifactBlock, file_validator
 from yuyutsava.todoboard.exchange import TodoValidationError
 
 REFLECTION_MARKER = "## Reflection"
@@ -243,7 +243,7 @@ def _generate_journey(spec: dict[str, Any], out_dir: Path) -> tuple[Path, str]:
 JOURNEY_BLOCK = ArtifactBlock(
     name="journey",
     kind="artifact",  # closed V1 vocabulary: rides "artifact" by mime
-    validate=_file_validator("artifact"),
+    validate=file_validator("artifact"),
     mimes=("text/html",),
     generate=_generate_journey,
     needs_context=True,

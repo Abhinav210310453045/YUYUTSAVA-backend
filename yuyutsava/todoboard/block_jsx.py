@@ -14,17 +14,17 @@ from __future__ import annotations
 
 import mimetypes
 
-from yuyutsava.todoboard.artifacts import ArtifactBlock, _file_validator
+from yuyutsava.todoboard.block_registry import ArtifactBlock, file_validator
 
 # Python's mimetypes has no .jsx mapping on any version — same gap (and same
-# fix) as .md in artifacts.py. Agent-side attaches and the upload endpoint's
-# filename-based inference both rely on it.
+# fix) as .md in block_registry.py. Agent-side attaches and the upload
+# endpoint's filename-based inference both rely on it.
 mimetypes.add_type("text/jsx", ".jsx")
 
 JSX_BLOCK = ArtifactBlock(
     name="jsx",
     kind="artifact",  # closed V1 vocabulary: JSX rides "artifact" by mime
-    validate=_file_validator("artifact"),
+    validate=file_validator("artifact"),
     mimes=("text/jsx",),
     upload_mimes=("text/jsx",),
 )
