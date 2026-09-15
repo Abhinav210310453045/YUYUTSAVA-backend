@@ -7,3 +7,6 @@ a309b8a4403aaa7c3ef97f034e786e8260d413bb
 
 # style(ui): format the Electron app with Prettier
 994ee6c0db45c5b2f0f54ddd293482d3df8bebd3
+
+# style(imports): sort every import block (ruff I001)
+1cc52231045c2d0b5d5f1ba50f8a40e9c97566c0
