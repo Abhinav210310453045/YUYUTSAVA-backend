@@ -30,7 +30,7 @@ from typing import Any, Literal
 
 from ulid import ULID
 
-logger = logging.getLogger("yuyutsava.daemon.task_registry")
+logger = logging.getLogger("yuyutsava.storage.task_registry")
 
 TASK_STATUSES = ("queued", "running", "done", "failed", "cancelled")
 TERMINAL_STATUSES = frozenset({"done", "failed", "cancelled"})
@@ -144,13 +144,13 @@ def _row_to_record(row: Any) -> TaskRecord:
 
 
 # NOTE: SqliteTaskStore was replaced on 2026-08-09 by UnifiedTaskStore in
-# daemon/task_store_unified.py (ADR-002 step 2.5b) — one implementation over the
+# storage/task_store_unified.py (ADR-002 step 2.5b) — one implementation over the
 # dialect adapter. Parity verified on both live backends in
 # test/storage/test_task_store_parity.py.
 
 
 # NOTE: PgTaskStore was replaced on 2026-08-09 by UnifiedTaskStore in
-# daemon/task_store_unified.py (ADR-002 step 2.5b) — one implementation over the
+# storage/task_store_unified.py (ADR-002 step 2.5b) — one implementation over the
 # dialect adapter. Parity verified on both live backends in
 # test/storage/test_task_store_parity.py.
 

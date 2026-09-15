@@ -7,7 +7,7 @@ from the :mod:`yuyutsava.llm.pricing` price table. The join
 ``llm_usage × tasks`` is the audit surface for triage complexity noise
 ("complexity-1 tasks that burned 50k tokens") and feeds ``GET /usage``.
 
-Same two-backend shape as :mod:`yuyutsava.daemon.task_registry`:
+Same two-backend shape as :mod:`yuyutsava.storage.task_registry`:
 
 - :class:`SqliteUsageStore` — ``llm_usage`` table in ``state.db`` (own meta
   table; coexists with the events store via WAL).

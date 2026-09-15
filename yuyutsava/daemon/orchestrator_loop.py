@@ -103,7 +103,7 @@ class OrchestratorLoop:
         checkpointer: BaseCheckpointSaver | None = None,
         prefs_injector: object | None = None,  # yuyutsava.prefs.injector.PrefsInjector
         skill_store: object | None = None,  # yuyutsava.skills.store.SkillStore (dual-write)
-        task_registry: object | None = None,  # yuyutsava.daemon.task_registry.TaskRegistry
+        task_registry: object | None = None,  # yuyutsava.storage.task_registry.TaskRegistry
         model_router: object | None = None,  # yuyutsava.core.model_router.ModelRouter
         admission: object | None = None,  # yuyutsava.daemon.resources.AdmissionController
         launch_index: object | None = None,  # yuyutsava.async_subagents.launch_index.LaunchIndex

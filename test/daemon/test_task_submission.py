@@ -10,9 +10,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from yuyutsava.daemon.task_registry import TaskRegistry
-from yuyutsava.daemon.task_store_unified import sqlite_task_store
 from yuyutsava.daemon.task_submission import SUBMITTED_TOPIC, TaskSubmissionService
+from yuyutsava.storage.task_registry import TaskRegistry
+from yuyutsava.storage.task_store_unified import sqlite_task_store
 
 
 class _RecordingStore:

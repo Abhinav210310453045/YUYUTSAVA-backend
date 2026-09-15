@@ -37,16 +37,16 @@ import logging
 from pathlib import Path
 from typing import Any, ClassVar
 
-from yuyutsava.daemon.task_registry import (
+from yuyutsava.storage.base import BaseSqliteStore
+from yuyutsava.storage.dialect import Dialect, PostgresDialect, SqliteDialect
+from yuyutsava.storage.paths import state_db_path
+from yuyutsava.storage.task_registry import (
     TaskRecord,
     TaskStore,
     _check_fields,
 )
-from yuyutsava.storage.base import BaseSqliteStore
-from yuyutsava.storage.dialect import Dialect, PostgresDialect, SqliteDialect
-from yuyutsava.storage.paths import state_db_path
 
-logger = logging.getLogger("yuyutsava.daemon.task_store_unified")
+logger = logging.getLogger("yuyutsava.storage.task_store_unified")
 
 #: Fixed read order. Named access below means this is the source of truth for
 #: *which* columns are fetched, not for their positions.

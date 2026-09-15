@@ -28,11 +28,11 @@ import time
 
 from ulid import ULID
 
-from yuyutsava.daemon.task_registry import TaskRegistry
 from yuyutsava.daemon.triage_loop import OrchestratorTask
 from yuyutsava.events.bus import EventBus, EventEnvelope
 from yuyutsava.storage.events import Proposal
 from yuyutsava.storage.events.roles import TriageStore
+from yuyutsava.storage.task_registry import TaskRegistry
 
 logger = logging.getLogger("yuyutsava.daemon.task_submission")
 

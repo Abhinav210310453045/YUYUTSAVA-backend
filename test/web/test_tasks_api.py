@@ -12,12 +12,12 @@ from pathlib import Path
 
 import httpx
 
-from yuyutsava.daemon.task_registry import TaskRegistry
-from yuyutsava.daemon.task_store_unified import sqlite_task_store
 from yuyutsava.daemon.task_submission import SUBMITTED_TOPIC, TaskSubmissionService
 from yuyutsava.daemon.web.app import create_app
 from yuyutsava.daemon.web.services.stream_service import WebChannel, WebHub
 from yuyutsava.ports.channels import ChannelEvent, LogPayload
+from yuyutsava.storage.task_registry import TaskRegistry
+from yuyutsava.storage.task_store_unified import sqlite_task_store
 
 
 class _RecordingStore:

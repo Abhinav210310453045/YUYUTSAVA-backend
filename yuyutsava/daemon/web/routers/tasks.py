@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
 
-from yuyutsava.daemon.task_registry import TASK_STATUSES
 from yuyutsava.daemon.web.deps import (
     get_async_watcher,
     get_hub,
@@ -29,6 +28,7 @@ from yuyutsava.daemon.web.schemas.task import (
     TaskSubmitIn,
     TaskSubmitOut,
 )
+from yuyutsava.storage.task_registry import TASK_STATUSES
 
 router = APIRouter(tags=["tasks"])
 

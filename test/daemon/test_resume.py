@@ -23,10 +23,10 @@ from unittest import mock
 from yuyutsava.core.streaming import StreamEvent, astream_agent_iter
 from yuyutsava.daemon.channels import ChannelRouter
 from yuyutsava.daemon.orchestrator_loop import OrchestratorLoop, resume_interrupted_tasks
-from yuyutsava.daemon.task_registry import TaskRegistry
-from yuyutsava.daemon.task_store_unified import sqlite_task_store
 from yuyutsava.daemon.triage_loop import OrchestratorTask
 from yuyutsava.ports.channels import UserChannel
+from yuyutsava.storage.task_registry import TaskRegistry
+from yuyutsava.storage.task_store_unified import sqlite_task_store
 
 
 class _RecordingChannel(UserChannel):

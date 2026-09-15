@@ -16,14 +16,14 @@ from unittest import mock
 import httpx
 
 from yuyutsava.daemon.resources import ResourceSnapshot
-from yuyutsava.daemon.task_registry import TaskRegistry
-from yuyutsava.daemon.task_store_unified import sqlite_task_store
 from yuyutsava.daemon.task_submission import TaskSubmissionService
 from yuyutsava.daemon.web.app import create_app
 from yuyutsava.daemon.web.auth import AuthSettings, check_request
 from yuyutsava.daemon.web.services.stream_service import WebHub
 from yuyutsava.storage.models import ConsentRule, Decision
 from yuyutsava.storage.sessions.sqlite_impl import SqliteSessionStore
+from yuyutsava.storage.task_registry import TaskRegistry
+from yuyutsava.storage.task_store_unified import sqlite_task_store
 
 # --------------------------------------------------------------------------
 # Fakes — duck-typed singletons create_app attaches to app.state

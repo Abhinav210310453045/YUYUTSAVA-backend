@@ -60,7 +60,7 @@ class _TaskContract:
     """Behaviour both backends must agree on."""
 
     def _rec(self, task_id: str, **over):
-        from yuyutsava.daemon.task_registry import TaskRecord
+        from yuyutsava.storage.task_registry import TaskRecord
 
         base = dict(
             task_id=task_id,
@@ -216,7 +216,7 @@ class _TaskContract:
 
 class SqliteUnifiedTasks(_TaskContract, unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
-        from yuyutsava.daemon.task_store_unified import sqlite_task_store
+        from yuyutsava.storage.task_store_unified import sqlite_task_store
 
         self._tmp = tempfile.TemporaryDirectory()
         self.store = sqlite_task_store(Path(self._tmp.name) / "state.db")
@@ -242,9 +242,9 @@ class SqliteUnifiedTasks(_TaskContract, unittest.IsolatedAsyncioTestCase):
 @unittest.skipUnless(PG_UP, f"no Postgres reachable at {_pg_dsn()}")
 class PostgresUnifiedTasks(_TaskContract, unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
-        from yuyutsava.daemon.task_store_unified import pg_task_store
         from yuyutsava.storage.backend import StorageSettings
         from yuyutsava.storage.pg.pool import PgPool
+        from yuyutsava.storage.task_store_unified import pg_task_store
 
         self._suffix = f"{os.getpid()}-{id(self)}"
         self.pool = PgPool(StorageSettings(backend="postgres", pg_dsn=_pg_dsn()))

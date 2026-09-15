@@ -287,7 +287,7 @@ class AdmissionController:
         monitor: ResourceMonitor,
         settings: ResourceSettings | None = None,
         *,
-        registry: object | None = None,  # daemon.task_registry.TaskRegistry
+        registry: object | None = None,  # storage.task_registry.TaskRegistry
         event_sink: Callable[[ChannelEvent], Awaitable[None]] | None = None,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         clock: Callable[[], float] = time.monotonic,

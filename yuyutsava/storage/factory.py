@@ -50,6 +50,7 @@ from yuyutsava.storage.paths import state_db_path
 from yuyutsava.storage.pg import migrations as pg_migrations
 from yuyutsava.storage.pg.pool import PgPool
 from yuyutsava.storage.routing.facade import RoutedStore
+from yuyutsava.storage.task_store_unified import pg_task_store, sqlite_task_store
 from yuyutsava.storage.usage import PgUsageStore, SqliteUsageStore
 from yuyutsava.storage.voice_store_unified import pg_voice_store, sqlite_voice_store
 from yuyutsava.visuals.store_unified import pg_visual_store, sqlite_visual_store
@@ -230,11 +231,6 @@ class StoreFactory:
     # -- daemon bookkeeping -------------------------------------------------
 
     def tasks(self) -> Any:
-        from yuyutsava.daemon.task_store_unified import (  # noqa: PLC0415 — upward (storage -> daemon); moves with W3
-            pg_task_store,
-            sqlite_task_store,
-        )
-
         return pg_task_store(self._pg) if self.is_postgres else sqlite_task_store(self._db())
 
     def usage(self) -> Any:

@@ -60,7 +60,6 @@ from yuyutsava.daemon.conversation_manager import ConversationManager
 from yuyutsava.daemon.log_bridge import LogBridge
 from yuyutsava.daemon.orchestrator_loop import OrchestratorLoop
 from yuyutsava.daemon.resources import AdmissionController, ResourceMonitor, ResourceSettings
-from yuyutsava.daemon.task_registry import TaskRegistry
 from yuyutsava.daemon.task_submission import TaskSubmissionService
 from yuyutsava.daemon.terminal_channel import TerminalChannel
 from yuyutsava.daemon.triage_loop import OrchestratorTask, TriageLoop
@@ -101,6 +100,7 @@ from yuyutsava.storage.routing.health import StorageHealth
 from yuyutsava.storage.routing.reconcile import CONTENT_TABLE_SPECS, Reconciler
 from yuyutsava.storage.sessions import PgSessionStore, set_default_session_store
 from yuyutsava.storage.sweeper import BlobSweepTarget, SweeperConfig, UnifiedSweeper
+from yuyutsava.storage.task_registry import TaskRegistry
 from yuyutsava.storage.usage import UsageStore
 from yuyutsava.todoboard.exchange import get_default_exchange
 from yuyutsava.todoboard.recall import TodoNoteIndex, set_default_note_index
