@@ -231,7 +231,6 @@
   },
   "yuyutsava/core/engine.py": {
     "BLE001": 1,
-    "PLC0415": 45,
     "PLR0913": 6
   },
   "yuyutsava/core/filesystem_prompt_policy.py": {

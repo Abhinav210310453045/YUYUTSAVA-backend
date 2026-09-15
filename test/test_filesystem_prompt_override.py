@@ -61,14 +61,14 @@ def _render_prompt() -> dict[str, Any]:
             captured.setdefault("bound_tools", names)
             return self
 
-    # Patch the factory at its *source* module, not on ``engine``. Builders
-    # import it lazily inside the function body (``core/engine.py`` — from
-    # yuyutsava.llm import chat_model), so ``from X import Y`` resolves
-    # ``yuyutsava.llm.chat_model`` at call time. Patching ``engine.chat_model``
-    # silently no-ops: the attribute has not existed since the llm/ refactor,
-    # which is how this tripwire went dead without anyone noticing.
-    orig = llm.chat_model
-    llm.chat_model = lambda settings, **kwargs: CapturingModel(
+    # Patch the factory where the builders look it up. ``core/engine.py`` imports
+    # ``chat_model`` at module level, so ``engine.chat_model`` is the name
+    # ``build_cli_deepagent`` calls; ``yuyutsava.llm.chat_model`` is patched too,
+    # for any other caller. Patching only the source module once let a real
+    # provider model through: with this fake key it failed with a 401, and with a
+    # real key it would have been a billable call.
+    orig_llm, orig_engine = llm.chat_model, engine.chat_model
+    llm.chat_model = engine.chat_model = lambda settings, **kwargs: CapturingModel(
         messages=itertools.cycle([AIMessage(content="done")])
     )
     try:
@@ -105,7 +105,7 @@ def _render_prompt() -> dict[str, Any]:
             )
         )
     finally:
-        llm.chat_model = orig
+        llm.chat_model, engine.chat_model = orig_llm, orig_engine
 
     msgs = captured.get("messages") or []
     system = msgs[0] if msgs else None

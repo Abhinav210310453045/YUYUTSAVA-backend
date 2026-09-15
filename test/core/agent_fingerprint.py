@@ -74,11 +74,17 @@ def _capture_deep_agent_kwargs(record: dict[str, Any]):
 
 @contextlib.contextmanager
 def _fake_chat_model():
-    """Keep model construction offline — no provider SDK, no credentials, no calls."""
+    """Keep model construction offline — no provider SDK, no credentials, no calls.
+
+    Patched on ``engine`` as well as ``yuyutsava.llm``: the engine imports
+    ``chat_model`` at module level, so the builders call ``engine.chat_model``.
+    """
     import yuyutsava.llm as llm
     from langchain_core.language_models.fake_chat_models import FakeListChatModel
 
-    original = llm.chat_model
+    from yuyutsava.core import engine
+
+    original = (llm.chat_model, engine.chat_model)
 
     def _fake(settings: Any, **_kw: Any) -> Any:
         m = FakeListChatModel(responses=["ok"])
@@ -87,11 +93,11 @@ def _fake_chat_model():
         object.__setattr__(m, "model_name", "fingerprint-fake")
         return m
 
-    llm.chat_model = _fake  # type: ignore[assignment]
+    llm.chat_model = engine.chat_model = _fake  # type: ignore[assignment]
     try:
         yield
     finally:
-        llm.chat_model = original  # type: ignore[assignment]
+        llm.chat_model, engine.chat_model = original  # type: ignore[assignment]
 
 
 # ---------------------------------------------------------------------------

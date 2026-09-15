@@ -19,6 +19,7 @@ import logging
 import re
 import shutil
 import sys
+import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -50,13 +51,47 @@ from yuyutsava.core.agent_profiles import (
     TINKER_PROFILE,
     AgentProfile,
     Policy,
+    ToolFamily,
 )
 from yuyutsava.core.tool_registry import ToolRegistry
 from yuyutsava.agents.task_runner.tools import bind_tools as _bind_task_runner_tools
 from yuyutsava.skills.registry import SkillRegistry
 from yuyutsava.skills.tools import make_skill_tools
-from yuyutsava.storage.paths import WORKSPACE_STATE_DIRNAME, WorkspaceLayout
+from yuyutsava.storage.paths import (
+    CONTAINER_STATE_MOUNT,
+    CONTAINER_WORKSPACE_MOUNT,
+    WORKSPACE_STATE_DIRNAME,
+    WorkspaceLayout,
+)
 from yuyutsava.tools.search import make_search_tools
+from yuyutsava.agents.orchestrator.capabilities import render_capabilities_block
+from yuyutsava.agents.orchestrator.prompts import render_system_prompt
+from yuyutsava.agents.task_runner.exec_backend import DockerExecBackend
+from yuyutsava.agents.tinker.prompts import render_tinker_system_prompt
+from yuyutsava.artifacts.tools import make_artifact_tools
+from yuyutsava.async_subagents.cap_policy import BackgroundTaskCapPolicy
+from yuyutsava.async_subagents.check_guard_policy import CheckAsyncTaskGuardPolicy
+from yuyutsava.async_subagents.host_lock import release_host_lock
+from yuyutsava.async_subagents.interrupt_patch_policy import AsyncTaskInterruptPatchPolicy
+from yuyutsava.context.compaction import YuyutsavaCompactionMiddleware
+from yuyutsava.context.conversation_injector import ConversationInjector
+from yuyutsava.context.injector import MemoryInjector
+from yuyutsava.context.meter import ContextMeterPolicy, note_bound_tools
+from yuyutsava.context.offload_policy import ToolResultOffloadPolicy
+from yuyutsava.context.prompt_inspector import PromptInspectorPolicy
+from yuyutsava.context.tools import make_context_tools
+from yuyutsava.context.transcript_policy import TranscriptRecorderPolicy
+from yuyutsava.core.retrieval_injection_policy import RetrievalInjectionPolicy
+from yuyutsava.events.tools import make_recall_tool
+from yuyutsava.llm import chat_model, model_name_of
+from yuyutsava.memory.agent_memory import AgentMemoryStore
+from yuyutsava.memory.agent_memory_tools import make_agent_memory_tools
+from yuyutsava.memory.tools import make_memory_tools
+from yuyutsava.prefs.injector import PrefsInjector
+from yuyutsava.skills.injector import SkillInjector
+from yuyutsava.todoboard.recall import TodoNoteInjector
+from yuyutsava.todoboard.tools import make_todo_tools
+from yuyutsava.visuals.tools import make_visual_tools
 
 if TYPE_CHECKING:
     from yuyutsava.agents.orchestrator.agent import OrchestratorDeps
@@ -131,7 +166,6 @@ def silence_plumbing_loggers() -> None:
     host should call this *after* the build to re-silence handlers that
     were just installed.
     """
-    import warnings
 
     for name in _PLUMBING_WARN_LOGGERS:
         lg = logging.getLogger(name)
@@ -264,8 +298,6 @@ class AgentBundle:
             self.docker_backend.stop()
         if self.async_host_attachment is not None:
             try:
-                from yuyutsava.async_subagents.host_lock import release_host_lock
-
                 release_host_lock(self.async_host_attachment)
             except Exception:
                 logger.exception("AgentBundle: release_host_lock failed")
@@ -390,7 +422,9 @@ def _build_tool_registry_and_tools(
     ws_* searches (daemon policy); None (standalone CLI, no events store)
     leaves them uncapped.
     """
-    from yuyutsava.agents.db_tools import make_db_tools
+    # Deferred: db_tools needs sqlglot, which adds ~45 ms to every CLI start,
+    # including commands that never build an agent.
+    from yuyutsava.agents.db_tools import make_db_tools  # noqa: PLC0415
 
     search_tools = (
         make_search_tools(search_config, cap_enforcer=cap_enforcer) if search_config else []
@@ -419,8 +453,6 @@ def _build_tool_registry_and_tools(
     # `startup_tools` rather than the registry because tool_search — the one
     # tool the model always sees — is built by the registry, not registered in
     # it, and would otherwise be counted as free.
-    from yuyutsava.context.meter import note_bound_tools
-
     note_bound_tools(agent_name or "agent", registry, startup_tools)
     return startup_tools, registry
 
@@ -495,14 +527,15 @@ def _policy_middleware(
             # caught by the fingerprint gate when this was first written that way.
             out.append(LangChainPolicyAdapter([SubagentGatePolicy(runtime_settings)]))
         elif policy is Policy.BUDGET and budget_tokens is not None:
-            from yuyutsava.daemon.budget_policy import BudgetPolicy
+            # Upward import (core -> daemon); it leaves the function when W3 moves
+            # the budget and usage policies into policy/.
+            from yuyutsava.daemon.budget_policy import BudgetPolicy  # noqa: PLC0415
 
             out.append(
                 LangChainPolicyAdapter([BudgetPolicy(max_input_tokens=budget_tokens, role=role)])
             )
         elif policy is Policy.USAGE and usage_store is not None:
-            from yuyutsava.daemon.usage import UsagePolicy
-            from yuyutsava.llm import model_name_of
+            from yuyutsava.daemon.usage import UsagePolicy  # noqa: PLC0415 — upward, as above
 
             # task_id/thread_id are pinned only where the bundle IS one
             # conversation — the tinker graph is per-card. The chat bundle is
@@ -558,8 +591,6 @@ def _context_middleware(
     controller is not wired (stores absent), preserving the
     pre-context-controller behaviour exactly.
     """
-    from yuyutsava.context.compaction import YuyutsavaCompactionMiddleware
-    from yuyutsava.context.offload_policy import ToolResultOffloadPolicy
 
     out: list = []
     if artifact_store is not None and context_settings is not None:
@@ -581,8 +612,6 @@ def _context_middleware(
             )
         )
     if transcript_store is not None:
-        from yuyutsava.context.transcript_policy import TranscriptRecorderPolicy
-
         out.append(
             LangChainPolicyAdapter(
                 [TranscriptRecorderPolicy(transcript_store, index=transcript_index)]
@@ -599,13 +628,8 @@ def _context_middleware(
     # not after. It publishes onto a process-global bus that the CLI dashboard
     # and the daemon's websocket subscribe to; with no subscriber it is a
     # dataclass built and dropped.
-    from yuyutsava.context.prompt_inspector import PromptInspectorPolicy
-
     observers: list[Any] = [PromptInspectorPolicy(role=role)]
     if context_settings is not None:
-        from yuyutsava.context.meter import ContextMeterPolicy
-        from yuyutsava.llm import model_name_of
-
         observers.append(
             ContextMeterPolicy(
                 settings=context_settings,
@@ -660,7 +684,6 @@ def _shared_master_tools(
     within each group (``discovery/keyword_provider.catalog_block``), so the two
     builders' historically different orderings produced identical prompts.
     """
-    from yuyutsava.core.agent_profiles import ToolFamily
 
     tools: list = []
     fams = profile.tools
@@ -669,13 +692,9 @@ def _shared_master_tools(
         # transcript_store adds the ctx_history* trio — the read-back path for
         # turns compaction evicted. Absent it (no transcript wiring) the
         # offload readers are still offered; only the history readers drop.
-        from yuyutsava.context.tools import make_context_tools
-
         tools.extend(make_context_tools(artifact_store, transcript_store))
 
     if ToolFamily.MEMORY in fams and memory_store is not None:
-        from yuyutsava.memory.tools import make_memory_tools
-
         tools.extend(make_memory_tools(memory_store))
 
     if ToolFamily.VISUALS in fams:
@@ -684,13 +703,10 @@ def _shared_master_tools(
                 f"{profile.role}: profile declares the vis_* family but no output_dir "
                 "was supplied for rendered visuals to land in."
             )
-        from yuyutsava.visuals.tools import make_visual_tools
 
         tools.extend(make_visual_tools(output_dir=output_dir))
 
     if ToolFamily.TODO in fams:
-        from yuyutsava.todoboard.tools import make_todo_tools
-
         kwargs = {"scope": profile.todo_scope}
         if todo_author:
             kwargs["author"] = todo_author
@@ -700,9 +716,6 @@ def _shared_master_tools(
     # sharing one would cross-contaminate learned behaviours.
     agent_memory_block = ""
     if ToolFamily.AGENT_MEMORY in fams:
-        from yuyutsava.memory.agent_memory import AgentMemoryStore
-        from yuyutsava.memory.agent_memory_tools import make_agent_memory_tools
-
         store = AgentMemoryStore(profile.agent_memory_namespace)
         tools.extend(make_agent_memory_tools(store))
         agent_memory_block = store.read_index_block()
@@ -710,8 +723,6 @@ def _shared_master_tools(
     if ToolFamily.ARTIFACTS in fams:
         # Inline artifacts (interactive HTML/JSX, docs, audio) rendered in the
         # reply itself — the richer, non-card twin of the vis_* visuals.
-        from yuyutsava.artifacts.tools import make_artifact_tools
-
         tools.extend(make_artifact_tools())
 
     if ToolFamily.MCP in fams and mcp_tools:
@@ -785,22 +796,12 @@ def _async_subagent_wiring(
     if not (local or remote):
         return specs, middleware
 
-    # Local imports: keep engine.py importable where langgraph_api is absent
-    # (minimal CLI scripts that never touch background tasks).
-
     if async_task_mirror is not None:
-        from yuyutsava.async_subagents.cap_policy import BackgroundTaskCapPolicy
-
         middleware.append(
             LangChainPolicyAdapter(
                 [BackgroundTaskCapPolicy(async_task_mirror, max_concurrent=async_max_concurrent)]
             )
         )
-
-    from yuyutsava.async_subagents.check_guard_policy import CheckAsyncTaskGuardPolicy
-    from yuyutsava.async_subagents.interrupt_patch_policy import (
-        AsyncTaskInterruptPatchPolicy,
-    )
 
     # One adapter per policy, each at the position its middleware held. Phase 4
     # step 4.4 migrates the policies; collapsing the adapters into one is a
@@ -847,38 +848,26 @@ def _retrieval_injection_middleware(
     injectors: list = []
 
     if memory_store is not None:
-        from yuyutsava.context.injector import MemoryInjector
-
         injectors.append(MemoryInjector(memory_store))
 
     if skill_store is not None:
-        from yuyutsava.skills.injector import SkillInjector
-
         injectors.append(SkillInjector(skill_store, agent=skill_scope))
 
     if transcript_index is not None:
         # Recall this conversation's own earlier turns; survives the checkpoint sweep.
-        from yuyutsava.context.conversation_injector import ConversationInjector
-
         injectors.append(ConversationInjector(transcript_index))
 
     if note_index is not None:
         # Board-wide: a related decision often lives on a DIFFERENT card than
         # the one this bundle is pinned to.
-        from yuyutsava.todoboard.recall import TodoNoteInjector
-
         injectors.append(TodoNoteInjector(note_index))
 
     if prefs_store is not None:
         # Whitelisted user preferences, refreshed per turn.
-        from yuyutsava.prefs.injector import PrefsInjector
-
         injectors.append(PrefsInjector(prefs_store))
 
     if not injectors:
         return []
-
-    from yuyutsava.core.retrieval_injection_policy import RetrievalInjectionPolicy
 
     return [LangChainPolicyAdapter([RetrievalInjectionPolicy(injectors)])]
 
@@ -924,8 +913,6 @@ def _sync_subagent_specs(
         )
         if artifact_store is not None:
             # Fresh ctx_* instances per spec — never shared across graphs.
-            from yuyutsava.context.tools import make_context_tools
-
             spec["tools"] = list(spec.get("tools") or []) + make_context_tools(artifact_store)
         specs.append(spec)
     return specs
@@ -1012,11 +999,6 @@ def build_cli_deepagent(
             CLI chat threads are the longest-lived in the system, so the
             stack factory (``cli/agent_stack.py``) wires these by default.
     """
-    # Imported here, not at module scope: `yuyutsava.llm` imports core.config,
-    # whose package __init__ re-exports this module — a module-level import would
-    # close that loop. Same reason model_name_of is imported lazily below.
-    from yuyutsava.llm import chat_model
-
     model = chat_model(settings)
     checkpointer = checkpointer or MemorySaver()
     # FilesystemPromptPolicy strips the deepagents "## Filesystem Tools"
@@ -1128,9 +1110,6 @@ def build_cli_deepagent(
     final_subagent_specs = subagent_specs or None
 
     if execution_mode == "docker":
-        from yuyutsava.agents.task_runner.exec_backend import DockerExecBackend
-        from yuyutsava.storage.paths import CONTAINER_STATE_MOUNT, CONTAINER_WORKSPACE_MOUNT
-
         docker_cfg = docker_settings or DockerSettings()
         export = docker_cfg.export_dir.resolve() if docker_cfg.export_dir else None
         # The container's read-write mount is the workspace's .yuyutsava
@@ -1264,14 +1243,11 @@ def build_orchestrator(
     rides every agent in the graph and writes one ``llm_usage`` row per
     model call.
     """
-    # Lazy imports: this function is in engine.py but pulls daemon-only modules.
-    # Keeping these imports inside the function avoids loading the daemon stack
-    # when the CLI imports the engine.
-    from yuyutsava.agents.orchestrator.agent import _make_ask_user_tool
-    from yuyutsava.agents.orchestrator.capabilities import render_capabilities_block
-    from yuyutsava.agents.orchestrator.prompts import render_system_prompt
-    from yuyutsava.daemon.budget_policy import BudgetPolicy
-    from yuyutsava.events.tools import make_recall_tool
+    # Both load the daemon, which the CLI never needs: orchestrator.agent imports
+    # daemon.channels, and core -> daemon is an upward import. They leave the
+    # function when W3 moves AskPrompt to ports and the budget policy to policy/.
+    from yuyutsava.agents.orchestrator.agent import _make_ask_user_tool  # noqa: PLC0415
+    from yuyutsava.daemon.budget_policy import BudgetPolicy  # noqa: PLC0415
 
     # Dedicated subagents the user switched off. A fresh orchestrator graph is
     # built per task, so reading the toggle here is both free and complete: a
@@ -1349,8 +1325,6 @@ def build_orchestrator(
     # "effective source" by substring-matching its name and splicing the
     # helper's body in, so a mention in a comment makes this builder appear to
     # wire tool families it does not have.)
-    from yuyutsava.context.meter import note_bound_tools
-
     note_bound_tools("orchestrator", _master_registry, master_tools)
     _catalog = _master_registry.catalog_block()
     if _catalog:
@@ -1374,8 +1348,7 @@ def build_orchestrator(
         usage_store = getattr(deps, "usage_store", None)
         if usage_store is None:
             return []
-        from yuyutsava.llm import model_name_of
-        from yuyutsava.daemon.usage import UsagePolicy
+        from yuyutsava.daemon.usage import UsagePolicy  # noqa: PLC0415 — upward (core -> daemon)
 
         return [
             LangChainPolicyAdapter(
@@ -1410,8 +1383,6 @@ def build_orchestrator(
         if deps.artifact_store is not None:
             # Subagents read their own offloaded results, so the ctx_* pair
             # must exist in their graphs too (fresh instances per spec).
-            from yuyutsava.context.tools import make_context_tools
-
             spec["tools"] = list(spec.get("tools") or []) + make_context_tools(deps.artifact_store)
         subagent_specs.append(spec)
 
@@ -1560,7 +1531,6 @@ def build_tinker_agent(
     tinker skills namespace. ``subagents``/``async_subagents`` ride along
     exactly like the CLI factory — no spawn-subagent tool.
     """
-    from yuyutsava.llm import chat_model  # lazy: see build_cli_deepagent
 
     model = chat_model(settings)
     checkpointer = checkpointer or MemorySaver()
@@ -1677,8 +1647,6 @@ def build_tinker_agent(
 
     # Semantic store present → SkillInjector surfaces the relevant modes per
     # turn; static index only as the keyword-less fallback (orchestrator rule).
-    from yuyutsava.agents.tinker.prompts import render_tinker_system_prompt
-
     skills_index = "" if skill_store is not None else skill_registry.index_block(agent="tinker")
     graph = create_deep_agent(
         model=model,
