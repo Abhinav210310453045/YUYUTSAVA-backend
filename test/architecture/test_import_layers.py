@@ -41,6 +41,7 @@ LAYERS: dict[str, int] = {
     "aio": 0,
     "platform": 0,
     "config": 0,
+    "text": 0,
     # L1 — foundations
     "storage.paths": 1,
     "storage.ids": 1,
@@ -82,7 +83,6 @@ ALLOWED_UPWARD: frozenset[tuple[str, str]] = frozenset(
     {
         ("artifacts", "context"),
         ("artifacts", "todoboard"),
-        ("context", "core"),
         ("skills", "discovery"),
         ("storage", "consent"),
         ("storage", "context"),

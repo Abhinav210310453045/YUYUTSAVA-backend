@@ -30,7 +30,6 @@ from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, Too
 from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command
 
-from yuyutsava.core.text_utils import sanitize_message_metadata
 from yuyutsava.core.tool_result import guard_tool_result, is_tool_error
 from yuyutsava.core.tracing import get_callback, trace_metadata
 from yuyutsava.models.interrupts import (
@@ -41,6 +40,7 @@ from yuyutsava.models.interrupts import (
 from yuyutsava.ports.agent import Agent
 from yuyutsava.storage.interrupts import InterruptsStore
 from yuyutsava.storage.models import InterruptRecord
+from yuyutsava.text import flatten_content, sanitize_message_metadata
 
 logger = logging.getLogger("yuyutsava")
 
@@ -50,27 +50,6 @@ _SEP = "━" * 60
 # ---------------------------------------------------------------------------
 # Message helpers
 # ---------------------------------------------------------------------------
-
-
-def flatten_content(content: object) -> str:
-    """Flatten LangChain message content (str or block list) to text.
-
-    List content may mix plain-string blocks with {"type":"text"} dicts —
-    merge_content appends str chunks to a list-content message as raw strings,
-    so both shapes carry prose and must be kept. Dropping the str blocks is
-    what truncated the ``final`` event to the first chunk of a reply.
-    """
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        parts: list[str] = []
-        for block in content:
-            if isinstance(block, str):
-                parts.append(block)
-            elif isinstance(block, dict) and block.get("type") == "text":
-                parts.append(str(block.get("text", "")))
-        return "".join(parts)
-    return ""
 
 
 def _ai_message_text(msg: AIMessage) -> str:

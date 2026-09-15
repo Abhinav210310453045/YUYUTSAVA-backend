@@ -92,7 +92,7 @@ root injects the implementation.
 
 | Layer | Packages |
 |---|---|
-| **L0** — leaves | `ports`, `models`, `aio`, `platform`, `config` (environment helpers) |
+| **L0** — leaves | `ports`, `models`, `aio`, `platform`, `config` (environment helpers and dependency-free settings), `text` (text helpers) |
 | **L1** — foundations | `storage.paths`, `storage.ids`, `storage.dialect`, `llm` |
 | **L2** — domains and stores | `storage`, `retrieval`, `memory`, `skills`, `prefs`, `visuals`, `artifacts`, `events` |
 | **L3** — agent capabilities | `policy`, `context`, `discovery`, `mcp`, `consent` |

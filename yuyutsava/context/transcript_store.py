@@ -36,7 +36,7 @@ from dataclasses import dataclass
 
 from langchain_core.messages import BaseMessage, message_to_dict
 
-from yuyutsava.core.text_utils import sanitize_message_metadata
+from yuyutsava.text import sanitize_message_metadata
 
 logger = logging.getLogger("yuyutsava.context.transcript_store")
 

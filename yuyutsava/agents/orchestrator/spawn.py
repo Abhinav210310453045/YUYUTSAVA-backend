@@ -70,11 +70,11 @@ from yuyutsava.agents.db_tools import make_db_tools
 from yuyutsava.agents.task_runner.tools import bind_tools
 from yuyutsava.config.search import SearchConfig
 from yuyutsava.core.agent_context import current_context
-from yuyutsava.core.streaming import flatten_content
 from yuyutsava.core.tool_registry import ToolRegistry
 from yuyutsava.skills.registry import SkillRegistry
 from yuyutsava.skills.tools import make_read_skill_tool
 from yuyutsava.storage.events.roles import DecisionWriter
+from yuyutsava.text import flatten_content
 from yuyutsava.tools.search import make_search_tools
 
 logger = logging.getLogger("yuyutsava.agents.orchestrator.spawn")

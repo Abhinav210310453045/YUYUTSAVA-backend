@@ -1,8 +1,9 @@
-"""Small, dependency-light text helpers shared across the codebase.
+"""Small text helpers shared across the codebase.
 
-Kept provider- and domain-agnostic on purpose: anything here should be safe to
-import from any layer (no langchain/db imports at module top level except the
-optional message helper, which only touches duck-typed attributes).
+Provider- and domain-agnostic on purpose, and importing only the standard
+library, so every layer may use them. The message helpers
+(:func:`sanitize_message_metadata`, :func:`flatten_content`) read LangChain
+message content by duck typing rather than importing LangChain.
 """
 
 from __future__ import annotations
@@ -75,3 +76,24 @@ def sanitize_message_metadata(
                 if collapsed != val:
                     meta[key] = collapsed
     return message
+
+
+def flatten_content(content: object) -> str:
+    """Flatten LangChain message content (str or block list) to text.
+
+    List content may mix plain-string blocks with {"type":"text"} dicts —
+    merge_content appends str chunks to a list-content message as raw strings,
+    so both shapes carry prose and must be kept. Dropping the str blocks is
+    what truncated the ``final`` event to the first chunk of a reply.
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict) and block.get("type") == "text":
+                parts.append(str(block.get("text", "")))
+        return "".join(parts)
+    return ""

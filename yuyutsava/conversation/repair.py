@@ -90,7 +90,7 @@ from typing import Any
 
 from langchain_core.messages import AIMessage, RemoveMessage, ToolMessage
 
-from yuyutsava.core.streaming import flatten_content
+from yuyutsava.text import flatten_content
 
 logger = logging.getLogger("yuyutsava.conversation.repair")
 
@@ -142,7 +142,7 @@ _TURN_CLOSER = {
 def _text_of(msg: Any) -> str:
     """Message text, whether content is a string or a block list.
 
-    Defers to ``core.streaming.flatten_content``, which is the canonical
+    Defers to ``yuyutsava.text.flatten_content``, which is the canonical
     flattener — a second implementation here would drift from it and start
     disagreeing about what "empty" means. Imported lazily and defensively:
     ``core.__init__`` pulls in ``engine``, and this module must stay cheap to

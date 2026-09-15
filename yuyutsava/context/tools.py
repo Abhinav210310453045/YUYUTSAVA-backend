@@ -49,6 +49,7 @@ from yuyutsava.context.artifacts import (
     thread_id_from_runtime,
 )
 from yuyutsava.context.compaction import request_compaction
+from yuyutsava.text import flatten_content
 
 logger = logging.getLogger("yuyutsava.context.tools")
 
@@ -352,10 +353,6 @@ def _msg_data(rec: Any) -> dict:
 
 def _msg_text(data: dict) -> str:
     """Prose of a recorded message, flattened from str or block-list content."""
-    # Upward (context -> core), and core.streaming loads the graph/interrupt
-    # stack; flatten_content moves to a leaf module in W3.
-    from yuyutsava.core.streaming import flatten_content  # noqa: PLC0415
-
     return flatten_content(data.get("content")).strip()
 
 
