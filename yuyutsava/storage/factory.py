@@ -35,18 +35,26 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+from yuyutsava.memory.config import MemorySettings
+from yuyutsava.memory.embedder import Embedder
 from yuyutsava.memory.store_unified import pg_memory_store, sqlite_memory_store
+from yuyutsava.skills.store import SkillIndexer
 from yuyutsava.skills.store_unified import pg_skill_store, sqlite_skill_store
 from yuyutsava.storage.backend import StorageSettings
 from yuyutsava.storage.domains import BY_TABLE, Failover
 from yuyutsava.storage.events import Store
 from yuyutsava.storage.feedback_store_unified import pg_feedback_store, sqlite_feedback_store
 from yuyutsava.storage.paths import state_db_path
+from yuyutsava.storage.pg import migrations as pg_migrations
+from yuyutsava.storage.pg.pool import PgPool
 from yuyutsava.storage.routing.facade import RoutedStore
 from yuyutsava.storage.voice_store_unified import pg_voice_store, sqlite_voice_store
 from yuyutsava.visuals.store_unified import pg_visual_store, sqlite_visual_store
+
+if TYPE_CHECKING:
+    from yuyutsava.skills.registry import SkillRegistry
 
 logger = logging.getLogger("yuyutsava.storage.factory")
 
@@ -299,3 +307,82 @@ class StoreFactory:
 
 
 __all__ = ["StoreFactory"]
+
+
+async def build_retrieval_stores(skill_registry: SkillRegistry):
+    """Construct the memory + skill stores for a process without a daemon.
+
+    Used by the CLI's agent stack and by the tinker agent. Returns
+    ``(memory_store, skill_store, pg_pool, embedder)``. On the Postgres backend
+    the caller gets its own pool (returned for teardown) and builds the
+    pgvector stores for true semantic recall; on any failure (or the SQLite
+    backend) it falls back to the keyword twins in ``state.db``. After the
+    stores exist, on-disk skills are indexed so a skill saved in a previous
+    session is retrievable now, and NULL-embedding rows are backfilled.
+    """
+
+    storage = StorageSettings.from_env()
+    mem_settings = MemorySettings.from_env(default_enabled=True)
+
+    memory_store = None
+    skill_store = None
+    pg_pool = None
+    embedder = None
+
+    if storage.is_postgres():
+        try:
+            pg_pool = PgPool(storage)
+            await pg_pool.open()
+            await pg_migrations.apply(pg_pool)
+            embedder = Embedder(mem_settings)
+            if not await embedder.healthcheck():
+                logger.warning(
+                    "CLI: embedder unreachable — memory/skills degrade to "
+                    "keyword search until it recovers"
+                )
+            skill_store = pg_skill_store(pg_pool, embedder, min_score=mem_settings.min_score)
+            if mem_settings.enabled:
+                memory_store = pg_memory_store(
+                    pg_pool,
+                    embedder,
+                    min_score=mem_settings.min_score,
+                    dedup_threshold=mem_settings.dedup_threshold,
+                )
+        except Exception:
+            logger.warning(
+                "CLI: Postgres unavailable — falling back to SQLite stores",
+                exc_info=True,
+            )
+            if embedder is not None:
+                await embedder.aclose()
+            if pg_pool is not None:
+                await pg_pool.close()
+            memory_store = skill_store = pg_pool = embedder = None
+
+    if skill_store is None:
+        skill_store = sqlite_skill_store(state_db_path())
+    if memory_store is None and mem_settings.enabled:
+        memory_store = sqlite_memory_store(state_db_path())
+
+    # Catch the store up to on-disk skills (previous sessions, bundled,
+    # workspace) so they're retrievable this session — best-effort.
+    try:
+        await SkillIndexer.sync(skill_registry, skill_store)
+    except Exception:
+        logger.warning("CLI: skill index sync failed", exc_info=True)
+
+    # Re-embed any rows that landed without a vector. Both stores declare
+    # backfill_embeddings unconditionally since ADR-002 step 2.5b — it returns 0
+    # on a backend with no vectors — so this no longer probes with getattr. That
+    # form was duck-typed, and a call site that forgot the guard raised
+    # AttributeError on SQLite only, in production only.
+    if pg_pool is not None and embedder is not None:
+        for store in (memory_store, skill_store):
+            if store is None:
+                continue  # memory can be disabled entirely
+            try:
+                await store.backfill_embeddings()
+            except Exception:
+                logger.warning("CLI: embedding backfill failed", exc_info=True)
+
+    return memory_store, skill_store, pg_pool, embedder

@@ -27,7 +27,6 @@ from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
 from yuyutsava.async_subagents.host import AsyncSubagentHost, resolve_allow_blocking
 from yuyutsava.async_subagents.host_lock import acquire_or_attach_host
 from yuyutsava.async_subagents.mirror import AsyncTaskMirror
-from yuyutsava.cli.agent_stack import build_retrieval_stores
 from yuyutsava.config.env import env, env_flag
 from yuyutsava.config.search import SearchConfig
 from yuyutsava.context.config import ContextSettings
@@ -37,7 +36,7 @@ from yuyutsava.llm.factory import chat_model
 from yuyutsava.llm.settings import LlmSettings, llm_settings_from_env
 from yuyutsava.skills.registry import SkillRegistry
 from yuyutsava.storage.backend import StorageSettings
-from yuyutsava.storage.factory import StoreFactory
+from yuyutsava.storage.factory import StoreFactory, build_retrieval_stores
 from yuyutsava.storage.paths import WorkspaceLayout
 from yuyutsava.todoboard.recall import get_default_note_index
 
