@@ -19,9 +19,8 @@ from yuyutsava.core.model_router import (
     ComplexityScorer,
     ModelRouter,
     RoutingSettings,
-    estimate_cost_usd,
-    load_price_table,
 )
+from yuyutsava.llm.pricing import estimate_cost_usd, load_price_table
 
 
 class RoutingSettingsTests(unittest.TestCase):
@@ -110,7 +109,7 @@ class PriceTableTests(unittest.TestCase):
             (Path(tmp) / "model_prices.json").write_text(
                 json.dumps({"claude-opus-4": [9.0, 99.0], "my-model": [1.0, 2.0]})
             )
-            with mock.patch("yuyutsava.core.model_router.state_dir", return_value=Path(tmp)):
+            with mock.patch("yuyutsava.llm.pricing.state_dir", return_value=Path(tmp)):
                 table = load_price_table()
         self.assertEqual(table["claude-opus-4"], (9.0, 99.0))  # file wins
         self.assertEqual(table["my-model"], (1.0, 2.0))  # file extends
@@ -119,7 +118,7 @@ class PriceTableTests(unittest.TestCase):
     def test_malformed_override_file_ignored(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             (Path(tmp) / "model_prices.json").write_text("{not json")
-            with mock.patch("yuyutsava.core.model_router.state_dir", return_value=Path(tmp)):
+            with mock.patch("yuyutsava.llm.pricing.state_dir", return_value=Path(tmp)):
                 table = load_price_table()
         self.assertIn("gpt-4o-mini", table)
 

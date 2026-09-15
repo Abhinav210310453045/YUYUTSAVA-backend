@@ -1401,7 +1401,7 @@ event loop that drives them — see `quirks/loop_affinity.py`).
 A `UsagePolicy` (section 13) rides every model call and writes one `llm_usage` row
 (`daemon/usage.py`). `estimate_cost_usd` uses the `PRICES` table (USD per 1M
 input/output tokens, **longest-prefix wins**), overridable via
-`~/.yuyutsava/model_prices.json`; `core/pricing.py` best-effort fetches live prices
+`~/.yuyutsava/model_prices.json`; both live in `llm/pricing.py`, which also best-effort fetches live prices
 and caches them.
 
 > **An unpriced model costs $0.00 — loudly.** Prefix matching means

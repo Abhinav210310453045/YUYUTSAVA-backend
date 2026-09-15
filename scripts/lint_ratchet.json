@@ -139,9 +139,6 @@
   "yuyutsava/core/model_router.py": {
     "BLE001": 1
   },
-  "yuyutsava/core/pricing.py": {
-    "BLE001": 1
-  },
   "yuyutsava/core/retrieval_injection_policy.py": {
     "BLE001": 1
   },
@@ -248,6 +245,9 @@
   "yuyutsava/events/sources/webcam.py": {
     "BLE001": 1,
     "S110": 1
+  },
+  "yuyutsava/llm/pricing.py": {
+    "BLE001": 1
   },
   "yuyutsava/llm/quirks/loop_affinity.py": {
     "S110": 1

@@ -1,4 +1,4 @@
-"""Complexity-based model routing + the static price table (Phase 4).
+"""Complexity-based model routing.
 
 Tasks carry a complexity score 1–5 (triage self-scores organic events; a
 cheap light-tier call scores direct API submissions). The router maps the
@@ -18,17 +18,11 @@ existing orchestrator/subagent role models — byte-identical behaviour.
 Thresholds come from ``YUYUTSAVA_ROUTING_THRESHOLDS="2,3"``:
 complexity ≤ 2 → light, ≤ 3 → standard, else heavy.
 
-The ``PRICES`` table (USD per **1M** input/output tokens, keyed by
-model-name prefix, longest prefix wins) feeds
-:class:`yuyutsava.daemon.usage.UsagePolicy` cost estimates. Override or
-extend it via ``~/.yuyutsava/model_prices.json``::
-
-    {"my-model-prefix": [0.50, 1.50]}
+Prices live in :mod:`yuyutsava.llm.pricing`.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 from dataclasses import dataclass
@@ -40,7 +34,6 @@ from langchain_core.messages import HumanMessage
 from yuyutsava.config.env import env, env_flag
 from yuyutsava.llm.factory import chat_model
 from yuyutsava.llm.settings import llm_settings_from_env
-from yuyutsava.storage.paths import state_dir
 
 logger = logging.getLogger("yuyutsava.core.model_router")
 
@@ -48,138 +41,6 @@ ModelTier = Literal["light", "standard", "heavy"]
 
 _DEFAULT_THRESHOLDS = (2, 3)
 DEFAULT_COMPLEXITY = 3
-
-# USD per 1M input/output tokens, keyed by model-name prefix. Local models
-# (Ollama) cost nothing; unknown models estimate to 0.0 — an unknown row in
-# llm_usage with est_cost_usd=0 is a prompt to extend model_prices.json,
-# not a billing claim.
-PRICES: dict[str, tuple[float, float]] = {
-    "claude-haiku-4-5": (1.00, 5.00),
-    "claude-sonnet-4": (3.00, 15.00),
-    "claude-opus-4": (5.00, 25.00),
-    "gpt-4o-mini": (0.15, 0.60),
-    "gpt-4o": (2.50, 10.00),
-    "gpt-4.1-mini": (0.40, 1.60),
-    "gpt-4.1": (2.00, 8.00),
-    "llama-3.3-70b": (0.59, 0.79),
-    "llama-3.1-8b": (0.05, 0.08),
-    # Cloud models reachable via the new providers (approximate list prices —
-    # longest-prefix wins, so these override the generic local-Ollama zeros
-    # below, e.g. "mistral-large-latest" → mistral-large, not mistral).
-    "gemini-2.5-flash": (0.30, 2.50),
-    "gemini-2.5-pro": (1.25, 10.00),
-    "mistral-large": (2.00, 6.00),
-    "command-r-plus": (2.50, 10.00),
-    "command-r": (0.15, 0.60),
-    # Common local-Ollama families — explicit zeros so a price-table reader
-    # can tell "known free" from "unknown".
-    "llama3": (0.0, 0.0),
-    "gemma": (0.0, 0.0),
-    "qwen": (0.0, 0.0),
-    "mistral": (0.0, 0.0),
-    "nomic-embed": (0.0, 0.0),
-}
-
-
-def load_price_table() -> dict[str, tuple[float, float]]:
-    """``PRICES`` merged with ``~/.yuyutsava/model_prices.json`` (file wins).
-
-    A malformed file is logged and ignored — pricing must never break a run.
-    """
-    table = dict(PRICES)
-    path = state_dir() / "model_prices.json"
-    if not path.exists():
-        return table
-    try:
-        raw = json.loads(path.read_text())
-        for prefix, pair in raw.items():
-            in_usd, out_usd = float(pair[0]), float(pair[1])
-            table[str(prefix)] = (in_usd, out_usd)
-    except Exception:
-        logger.exception("model_prices.json unreadable — using built-in PRICES")
-    return table
-
-
-def estimate_cost_usd(
-    model: str,
-    input_tokens: int,
-    output_tokens: int,
-    prices: dict[str, tuple[float, float]] | None = None,
-) -> float:
-    """Estimated spend for one call. Longest matching prefix wins; 0.0 unknown.
-
-    An unpriced model returns ``0.0`` — we genuinely do not know, and inventing
-    a number would be worse than admitting it. But ``0.0`` is indistinguishable
-    from a free call once the ledger sums it, so :func:`_warn_unpriced_once`
-    says so rather than letting the cost column quietly read zero forever.
-
-    Found by running the daemon: the price table ships ``gemini-2.5-flash`` and
-    the configured model was ``gemini-3.5-flash``, which prefix-matches nothing.
-    Every call was being costed at $0.00 with no indication anywhere.
-    """
-    best = _best_price(model, prices)
-    if best is None:
-        _warn_unpriced_once(model)
-        return 0.0
-    return (input_tokens * best[0] + output_tokens * best[1]) / 1_000_000
-
-
-def _best_price(
-    model: str, prices: dict[str, tuple[float, float]] | None = None
-) -> tuple[float, float] | None:
-    """Longest matching prefix's ``($/1M in, $/1M out)``, or ``None``."""
-    table = prices if prices is not None else PRICES
-    best: tuple[float, float] | None = None
-    best_len = -1
-    for prefix, pair in table.items():
-        if model.startswith(prefix) and len(prefix) > best_len:
-            best, best_len = pair, len(prefix)
-    return best
-
-
-def is_priced(model: str, prices: dict[str, tuple[float, float]] | None = None) -> bool:
-    """Whether a cost figure for *model* means anything.
-
-    A caller that only has ``est_cost_usd`` cannot tell "this call was free"
-    from "we have no price for this model", and the difference matters as soon
-    as the number is put in front of someone. Ask this first and label the
-    figure ``unpriced`` when it is False; unlike :func:`estimate_cost_usd` this
-    never warns, so a display can call it per render.
-    """
-    return _best_price(model, prices) is not None
-
-
-#: Models already reported as unpriced. Per-call warning would be one line per
-#: model call — noise an operator learns to scroll past, which is the same
-#: failure as saying nothing.
-_UNPRICED_SEEN: set[str] = set()
-
-
-def _warn_unpriced_once(model: str) -> None:
-    """Say, once, that this model's spend is not being counted."""
-    if not model or model in _UNPRICED_SEEN:
-        return
-    _UNPRICED_SEEN.add(model)
-    # DEBUG, not WARNING. Every surface now reports this where it belongs — the
-    # CLI panel and the app aside show "unpriced" on the cost row,
-    # GET /usage/summary lists `unpriced_models`, and the dashboard says what
-    # to do about it in its notices column. As a WARNING it was a yellow line
-    # landing on top of the user's prompt, restating what the screen already
-    # said. Kept for operators running with DEBUG.
-    logger.debug(
-        "no price entry for model %r — its llm_usage rows will record "
-        "est_cost_usd=0.00 and the usage totals will under-report. Add it to "
-        '~/.yuyutsava/model_prices.json as {"%s": [<$/1M in>, <$/1M out>]} '
-        '(prefixes match, so "%s" would cover variants).',
-        model,
-        model,
-        model.rsplit("-", 1)[0] if "-" in model else model,
-    )
-
-
-def unpriced_models() -> frozenset[str]:
-    """Models seen this process with no price entry. For diagnostics/tests."""
-    return frozenset(_UNPRICED_SEEN)
 
 
 def _parse_thresholds(raw: str) -> tuple[int, int]:

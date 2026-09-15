@@ -20,7 +20,6 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Query
 
-from yuyutsava.core.model_router import is_priced, load_price_table
 from yuyutsava.daemon.web.deps import get_usage_store
 from yuyutsava.daemon.web.schemas.usage import (
     UsageOut,
@@ -29,6 +28,7 @@ from yuyutsava.daemon.web.schemas.usage import (
     UsageSessionsOut,
     UsageSummaryOut,
 )
+from yuyutsava.llm.pricing import is_priced, load_price_table
 from yuyutsava.storage.sessions import get_default_session_store
 
 logger = logging.getLogger("yuyutsava.daemon.web.usage")

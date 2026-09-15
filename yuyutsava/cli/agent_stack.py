@@ -35,8 +35,8 @@ from yuyutsava.consent import ConsentRegistry
 from yuyutsava.context.config import ContextSettings
 from yuyutsava.context.tools import make_context_tools
 from yuyutsava.core.engine import AgentBundle, build_cli_deepagent, context_middleware
-from yuyutsava.core.pricing import refresh_price_cache
 from yuyutsava.llm.factory import chat_model
+from yuyutsava.llm.pricing import refresh_price_cache
 from yuyutsava.llm.settings import LlmSettings, llm_settings_from_env
 from yuyutsava.mcp.loader import start_manager_for_workspace
 from yuyutsava.skills.registry import SkillRegistry

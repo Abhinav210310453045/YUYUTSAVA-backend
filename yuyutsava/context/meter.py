@@ -61,6 +61,7 @@ from typing import Any
 
 from yuyutsava.context.injector import MEMORY_BLOCK_PREFIX
 from yuyutsava.context.tokens import approx_tokens, approx_tokens_chars
+from yuyutsava.llm.pricing import estimate_cost_usd, is_priced, load_price_table
 from yuyutsava.memory.agent_memory import INDEX_BLOCK_HEADER
 from yuyutsava.policy.base import Policy
 from yuyutsava.policy.types import Directive, ModelCall, Turn
@@ -806,9 +807,6 @@ class ContextMeterPolicy(Policy):
 
     def _price_table(self) -> dict[str, tuple[float, float]]:
         if self._prices is None:
-            # Upward (context -> core); pricing moves to llm/ in W3.
-            from yuyutsava.core.model_router import load_price_table  # noqa: PLC0415
-
             self._prices = load_price_table()
         return self._prices
 
@@ -940,9 +938,6 @@ class ContextMeterPolicy(Policy):
         }
 
     def _record_call(self, thread_id: str, usage: Any) -> None:
-        # Upward (context -> core); pricing moves to llm/ in W3.
-        from yuyutsava.core.model_router import estimate_cost_usd, is_priced  # noqa: PLC0415
-
         state = self._state(thread_id)
         model = self._model_name or getattr(usage, "model", "") or ""
         prices = self._price_table()
