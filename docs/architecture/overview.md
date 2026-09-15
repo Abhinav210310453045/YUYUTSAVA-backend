@@ -1417,7 +1417,7 @@ and caches them.
 ## 19. Tool System & Progressive Discovery
 
 Injecting every tool's full JSON schema into the prompt is expensive and confusing. The
-`ToolRegistry` (`core/tool_registry.py`) implements **three-tier progressive
+`ToolRegistry` (`discovery/tool_registry.py`) implements **three-tier progressive
 discovery**:
 
 ```

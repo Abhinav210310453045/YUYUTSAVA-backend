@@ -41,7 +41,7 @@ from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
 from yuyutsava.agents.task_runner.tools import bind_tools
 from yuyutsava.config.search import SearchConfig
 from yuyutsava.core.prompts import workspace_state_block
-from yuyutsava.core.tool_registry import ToolRegistry
+from yuyutsava.discovery.tool_registry import ToolRegistry
 from yuyutsava.mcp.loader import MCPClientManager
 from yuyutsava.memory.tools import make_memory_tools
 from yuyutsava.platform import host_profile

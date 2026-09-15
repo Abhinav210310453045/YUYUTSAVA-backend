@@ -43,7 +43,7 @@ from yuyutsava.discovery import (
     make_discovery_search_tool,
 )
 
-logger = logging.getLogger("yuyutsava.core.tool_registry")
+logger = logging.getLogger("yuyutsava.discovery.tool_registry")
 
 _BLURB_CHARS = 80
 

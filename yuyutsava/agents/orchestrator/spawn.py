@@ -69,7 +69,7 @@ from langgraph.prebuilt import create_react_agent
 from yuyutsava.agents.db_tools import make_db_tools
 from yuyutsava.agents.task_runner.tools import bind_tools
 from yuyutsava.config.search import SearchConfig
-from yuyutsava.core.tool_registry import ToolRegistry
+from yuyutsava.discovery.tool_registry import ToolRegistry
 from yuyutsava.run_context import current_context
 from yuyutsava.skills.registry import SkillRegistry
 from yuyutsava.skills.tools import make_read_skill_tool

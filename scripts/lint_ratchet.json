@@ -144,9 +144,6 @@
     "PLR0913": 2,
     "T201": 34
   },
-  "yuyutsava/core/tool_registry.py": {
-    "BLE001": 1
-  },
   "yuyutsava/core/tool_result.py": {
     "BLE001": 1
   },
@@ -210,6 +207,9 @@
   },
   "yuyutsava/daemon/web/voice_pipeline.py": {
     "S110": 1
+  },
+  "yuyutsava/discovery/tool_registry.py": {
+    "BLE001": 1
   },
   "yuyutsava/events/bus.py": {
     "BLE001": 2,

@@ -980,7 +980,7 @@ async def run_chat_repl(
         for _name in (
             "yuyutsava.task_runner",
             "yuyutsava.agents.task_runner.tools",
-            "yuyutsava.core.tool_registry",
+            "yuyutsava.discovery.tool_registry",
             "yuyutsava.core.permission_middleware",
             # Startup chatter folded into the banner status line instead:
             # "pg pool: open", "pg migrations: at vN", "Langfuse not active".

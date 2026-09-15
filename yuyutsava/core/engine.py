@@ -69,8 +69,8 @@ from yuyutsava.core.prompts import docker_system_prompt, local_system_prompt
 from yuyutsava.core.retrieval_injection_policy import RetrievalInjectionPolicy
 from yuyutsava.core.subagent_gate_policy import SubagentGatePolicy
 from yuyutsava.core.tool_filter_policy import ToolFilterPolicy
-from yuyutsava.core.tool_registry import ToolRegistry
 from yuyutsava.core.voice_style_policy import VoiceStylePolicy
+from yuyutsava.discovery.tool_registry import ToolRegistry
 from yuyutsava.events.tools import make_recall_tool
 from yuyutsava.llm.factory import chat_model, model_name_of
 from yuyutsava.llm.settings import LlmSettings
