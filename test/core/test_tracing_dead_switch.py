@@ -118,7 +118,7 @@ class DeadSwitchTests(unittest.TestCase):
     def test_startup_probe_404_means_off_and_no_client(self):
         with _Server() as host, _Env(host):
             self.assertIsNone(tracing.get_callback())
-            self.assertFalse(tracing._langfuse_reachable())
+            self.assertFalse(tracing.langfuse_reachable())
             self.assertIsNone(tracing._client)
 
     def test_first_failed_export_flips_the_switch_and_stops_requests(self):

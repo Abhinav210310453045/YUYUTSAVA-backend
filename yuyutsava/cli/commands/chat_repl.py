@@ -22,15 +22,19 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import importlib.metadata
+import json
 import os
-import re
 import sys
 import time
 import traceback
+import urllib.request
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 import logging
 
+from packaging.version import InvalidVersion, Version
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.formatted_text import ANSI
@@ -96,75 +100,61 @@ _BANNER_LINES = [
 ]
 
 
+_LANGGRAPH_API = "langgraph-api"
+
+
 def _print_version_notice(*, full: bool = False) -> None:
-    """Render langgraph-api upgrade/support notices once, above the banner.
+    """Say once, above the banner, when langgraph-api has a newer release.
 
-    langgraph_api normally emits these from a background daemon thread that
-    lands mid-chat (disabled via ``LANGGRAPH_NO_VERSION_CHECK`` in
-    ``AsyncSubagentHost.start``). Here we run the *same* check synchronously so
-    any notice appears cleanly before the YUYUTSAVA graphic instead of
-    interleaving with the conversation. Best-effort — never breaks startup.
+    langgraph_api has its own check, but it logs from a background thread that
+    lands mid-chat (``AsyncSubagentHost.start`` turns it off with
+    ``LANGGRAPH_NO_VERSION_CHECK``), and calling it directly means private API.
+    This asks PyPI itself, with the same half-second timeout and the same
+    end-of-life rule (:func:`_langgraph_api_is_eol`). A pre-release install is
+    not checked. Best-effort — never breaks start-up.
 
-    The multi-line upgrade/EOL text is condensed to one dim line; ``full=True``
-    (debug plumbing) keeps the verbatim notice.
+    ``full=True`` (debug plumbing) also shows the installed version.
     """
-
-    log = logging.getLogger("version_check")
-    lines: list[str] = []
-
-    class _Capture(logging.Handler):
-        def emit(self, record: logging.LogRecord) -> None:
-            lines.append(record.getMessage())
-
-    handler = _Capture()
-    saved = (log.level, log.propagate, log.disabled, list(log.handlers))
-    saved_env = os.environ.get("LANGGRAPH_NO_VERSION_CHECK")
     try:
-        # Optional: langgraph_api is not a declared dependency, and this probe
-        # must not break start-up without it.
-        from langgraph_api import __version__ as _lg_version  # noqa: PLC0415
-        from langgraph_api.cli import _check_newer_version  # noqa: PLC0415
-
-        # The check early-returns when this is set, and attaches its own stderr
-        # handler when the logger has none — clear the flag and pre-install our
-        # capture handler (propagate off) so it neither skips nor prints itself.
-        os.environ["LANGGRAPH_NO_VERSION_CHECK"] = ""
-        log.handlers = [handler]
-        log.propagate = False
-        log.disabled = False
-        log.setLevel(logging.INFO)
-        _check_newer_version("langgraph-api", _lg_version)
-    except Exception:
+        current = Version(importlib.metadata.version(_LANGGRAPH_API))
+        url = f"https://pypi.org/pypi/{_LANGGRAPH_API}/json"
+        with urllib.request.urlopen(url, timeout=0.5) as resp:
+            payload = json.load(resp)
+        latest = Version(payload["info"]["version"])
+        releases = payload.get("releases") or {}
+    except Exception:  # noqa: BLE001 — not installed, offline, or an odd reply: no notice
         return
-    finally:
-        log.setLevel(saved[0])
-        log.propagate = saved[1]
-        log.disabled = saved[2]
-        log.handlers = saved[3]
-        if saved_env is None:
-            os.environ.pop("LANGGRAPH_NO_VERSION_CHECK", None)
-        else:
-            os.environ["LANGGRAPH_NO_VERSION_CHECK"] = saved_env
-
-    if not lines:
+    if current.is_prerelease or latest <= current:
         return
+    parts = [f"{_LANGGRAPH_API} update available → {latest}"]
     if full:
-        for msg in lines:
-            for line in msg.splitlines():
-                print(f"{_DIM}{_YELLOW}{line}{_RESET}", file=sys.stderr)
-        return
-    # Condense the whole notice into one dim line: latest version + EOL flag.
-    joined = "\n".join(lines)
-    m = re.search(r"→\s*([0-9][0-9A-Za-z._-]*)", joined)
-    latest = m.group(1) if m else None
-    eol = "End of Life" in joined or "end of life" in joined.lower()
-    parts = ["langgraph-api update available"]
-    if latest:
-        parts[0] += f" → {latest}"
-    if eol:
+        parts[0] = f"{_LANGGRAPH_API} {current} → {latest} available"
+    if _langgraph_api_is_eol(current, latest, releases):
         parts.append("current version is EOL")
-    parts.append("pip install -U langgraph-api")
+    parts.append(f"pip install -U {_LANGGRAPH_API}")
     print(f"  {_DIM}{_YELLOW}⚠ {' · '.join(parts)}{_RESET}", file=sys.stderr)
+
+
+def _langgraph_api_is_eol(current: Version, latest: Version, releases: Iterable[str]) -> bool:
+    """langgraph-api's published support rule, applied to an installed version.
+
+    End of life is two or more minor versions behind on the latest major, or
+    an older major, except that while a new major is still at X.0 the last
+    minor of the previous major is supported.
+    """
+    if current.major == latest.major:
+        return current.minor <= latest.minor - 2
+    if current.major == latest.major - 1 and latest.minor == 0:
+        previous = []
+        for raw in releases:
+            try:
+                version = Version(raw)
+            except InvalidVersion:
+                continue
+            if version.major == current.major and not version.is_prerelease:
+                previous.append(version)
+        return not previous or current.minor != max(previous).minor
+    return current.major < latest.major
 
 
 def _print_banner(
@@ -225,13 +215,13 @@ def _startup_status_line(sessions_settings: SessionsSettings) -> str:
     summary. Best-effort — every probe degrades to a placeholder.
     """
     try:
-        tracing_on = _tracing.is_configured() and _tracing._langfuse_reachable()
+        tracing_on = _tracing.is_configured() and _tracing.langfuse_reachable()
     except Exception:
         tracing_on = False
     try:
-        from langgraph_api import __version__ as _lg_version  # noqa: PLC0415 — optional
-    except Exception:
-        _lg_version = "?"
+        lg_version = importlib.metadata.version(_LANGGRAPH_API)
+    except importlib.metadata.PackageNotFoundError:
+        lg_version = "?"
     # The EFFECTIVE backend, not SessionsSettings.backend. That field reads
     # YUYUTSAVA_SESSIONS_BACKEND, which only selects the checkpointer's own
     # default and is almost never set — so the banner announced "sqlite" while
@@ -246,7 +236,7 @@ def _startup_status_line(sessions_settings: SessionsSettings) -> str:
     return (
         f"storage: {storage} · "
         f"tracing: {'on' if tracing_on else 'off'} · "
-        f"langgraph-api {_lg_version}"
+        f"langgraph-api {lg_version}"
     )
 
 

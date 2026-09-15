@@ -198,17 +198,17 @@ def _ensure_client():
 def warm_reachability_cache() -> None:
     """Probe Langfuse once at startup so the runtime path never blocks.
 
-    ``_langfuse_reachable`` does a synchronous ``urllib`` call. Calling it once
+    ``langfuse_reachable`` does a synchronous ``urllib`` call. Calling it once
     during boot (before the LangGraph runtime installs blockbuster) populates the
     process-wide cache, so the later on-loop ``get_callback`` calls reuse it
     instead of doing socket I/O on the event loop. No-op unless Langfuse is
     configured (otherwise the probe is never reached).
     """
     if is_configured():
-        _langfuse_reachable()
+        langfuse_reachable()
 
 
-def _langfuse_reachable() -> bool:
+def langfuse_reachable() -> bool:
     """Return whether Langfuse is actually up, probing once per process.
 
     Without this, langfuse v4 happily installs a global OTEL ``BatchSpanProcessor``
@@ -244,7 +244,7 @@ def get_callback():
     """
     if not is_configured():
         return None
-    if _dead or not _langfuse_reachable():
+    if _dead or not langfuse_reachable():
         return None
     try:
         from langfuse.langchain import CallbackHandler  # noqa: PLC0415 — heavy: +269 modules, ~90 ms
