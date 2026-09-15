@@ -28,13 +28,32 @@ from yuyutsava.consent import ConsentRegistry
 from yuyutsava.context.config import ContextSettings
 from yuyutsava.config.env import env, env_flag
 from yuyutsava.core.config import DockerSettings, LlmSettings, LocalSettings, SearchConfig
-from yuyutsava.core.engine import AgentBundle, build_cli_deepagent
+from yuyutsava.core.engine import AgentBundle, build_cli_deepagent, context_middleware
 from yuyutsava.llm import chat_model
 from yuyutsava.core.config import llm_settings_from_env
 from yuyutsava.mcp.loader import start_manager_for_workspace
 from yuyutsava.memory.config import MemorySettings
 from yuyutsava.skills.registry import SkillRegistry
 from yuyutsava.storage.paths import WorkspaceLayout, state_db_path
+from yuyutsava.agents.tinker.subagent import make_tinker_subagent
+from yuyutsava.async_subagents.host import AsyncSubagentHost, resolve_allow_blocking
+from yuyutsava.async_subagents.host_lock import acquire_or_attach_host
+from yuyutsava.async_subagents.mirror import AsyncTaskMirror
+from yuyutsava.context.tools import make_context_tools
+from yuyutsava.core.pricing import refresh_price_cache
+from yuyutsava.memory.embedder import Embedder
+from yuyutsava.memory.store_unified import pg_memory_store, sqlite_memory_store
+from yuyutsava.skills.store import SkillIndexer
+from yuyutsava.skills.store_unified import pg_skill_store, sqlite_skill_store
+from yuyutsava.storage.backend import StorageSettings
+from yuyutsava.storage.factory import StoreFactory
+from yuyutsava.storage.pg import migrations as pg_migrations
+from yuyutsava.storage.pg.pool import PgPool
+from yuyutsava.todoboard.recall import TodoNoteIndex, set_default_note_index
+from yuyutsava.todoboard.store import set_default_todo_store
+from yuyutsava.todoboard.store_unified import pg_todo_store
+from yuyutsava.visuals.store import set_default_visual_store
+from yuyutsava.visuals.store_unified import pg_visual_store
 
 logger = logging.getLogger("yuyutsava.cli.agent_stack")
 
@@ -53,8 +72,6 @@ async def _build_retrieval_stores(skill_registry: SkillRegistry):
     stores exist, on-disk skills are indexed so a skill saved in a previous
     session is retrievable now, and NULL-embedding rows are backfilled.
     """
-    from yuyutsava.skills.store import SkillIndexer
-    from yuyutsava.storage.backend import StorageSettings
 
     storage = StorageSettings.from_env()
     mem_settings = MemorySettings.from_env(default_enabled=True)
@@ -65,12 +82,6 @@ async def _build_retrieval_stores(skill_registry: SkillRegistry):
     embedder = None
 
     if storage.is_postgres():
-        from yuyutsava.memory.embedder import Embedder
-        from yuyutsava.memory.store_unified import pg_memory_store
-        from yuyutsava.skills.store_unified import pg_skill_store
-        from yuyutsava.storage.pg import migrations as pg_migrations
-        from yuyutsava.storage.pg.pool import PgPool
-
         try:
             pg_pool = PgPool(storage)
             await pg_pool.open()
@@ -101,12 +112,8 @@ async def _build_retrieval_stores(skill_registry: SkillRegistry):
             memory_store = skill_store = pg_pool = embedder = None
 
     if skill_store is None:
-        from yuyutsava.skills.store_unified import sqlite_skill_store
-
         skill_store = sqlite_skill_store(state_db_path())
     if memory_store is None and mem_settings.enabled:
-        from yuyutsava.memory.store_unified import sqlite_memory_store
-
         memory_store = sqlite_memory_store(state_db_path())
 
     # Catch the store up to on-disk skills (previous sessions, bundled,
@@ -218,10 +225,7 @@ async def build_agent_stack(
     # `if pg_pool is not None:` branch out in full; the factory owns it now, so
     # they cannot drift. See StoreFactory.context_stores for why these stay
     # PG-primary / SQLite-fallback rather than RoutedStore.
-    from yuyutsava.storage.backend import StorageSettings as _SS
-    from yuyutsava.storage.factory import StoreFactory as _SF
-
-    _factory = _SF(_SS.from_env(), pg_pool=pg_pool, embedder=embedder)
+    _factory = StoreFactory(StorageSettings.from_env(), pg_pool=pg_pool, embedder=embedder)
     _ctx = _factory.context_stores(semantic_recall=context_settings.semantic_recall)
     artifact_store = _ctx.artifacts
     summary_store = _ctx.summaries
@@ -241,24 +245,16 @@ async def build_agent_stack(
     # would otherwise lazily fall back to the SQLite twin and split the board);
     # without one the lazy SQLite fallback is correct, so leave it unset.
     if pg_pool is not None:
-        from yuyutsava.todoboard.store import set_default_todo_store
-        from yuyutsava.todoboard.store_unified import pg_todo_store
-
         set_default_todo_store(pg_todo_store(pg_pool))
         # Same split, same fix, for vis_* images: without this the lazy getter
         # falls back to the SQLite twin, so a chart made in the CLI lands in
         # state.db while the daemon and the app read visual_artifacts in
         # Postgres — and vis_list_artifacts shows two different worlds.
-        from yuyutsava.visuals.store import set_default_visual_store
-        from yuyutsava.visuals.store_unified import pg_visual_store
-
         set_default_visual_store(pg_visual_store(pg_pool))
         # Board-note recall: embed-on-write for notes authored through this
         # stack + todo_recall searches. Boot backfill is the daemon's job —
         # a CLI start stays light.
         if embedder is not None:
-            from yuyutsava.todoboard.recall import TodoNoteIndex, set_default_note_index
-
             set_default_note_index(TodoNoteIndex(pg_pool, embedder=embedder))
 
     # Best-effort: fetch the active model's live price from its provider and cache
@@ -266,8 +262,6 @@ async def build_agent_stack(
     # price this model correctly instead of falling to $0. Off the loop, TTL-cached,
     # never fatal.
     try:
-        from yuyutsava.core.pricing import refresh_price_cache
-
         await asyncio.to_thread(refresh_price_cache, settings)
     except Exception:  # noqa: BLE001 — pricing must never block a stack build
         logger.debug("price cache refresh failed", exc_info=True)
@@ -314,14 +308,6 @@ async def build_agent_stack(
     async_mirror = None
 
     if _async_enabled():
-        # Local imports keep langgraph_api off the import path when async is off.
-        from yuyutsava.async_subagents.host import (
-            AsyncSubagentHost,
-            resolve_allow_blocking,
-        )
-        from yuyutsava.async_subagents.host_lock import acquire_or_attach_host
-        from yuyutsava.async_subagents.mirror import AsyncTaskMirror
-
         model = chat_model(settings)
         # The background TinkerAgent rides along as an async-only peer so the
         # conversational master can delegate "tinker on card X in the
@@ -329,8 +315,6 @@ async def build_agent_stack(
         # bundle. It gets the same MCP manager as the master (scope "tinker");
         # its graph runs on the host's loop, and mcp/tool_adapter marshals
         # calls back to the manager's loop.
-        from yuyutsava.agents.tinker.subagent import make_tinker_subagent
-
         tinker_sub = make_tinker_subagent(
             skill_registry=skill_registry,
             search_config=search_config,
@@ -352,9 +336,6 @@ async def build_agent_stack(
             # Background graphs get the same context controllers as the
             # masters (tool-result offload + compaction + ctx_* readback) —
             # bg runs are the longest and were the only agents without them.
-            from yuyutsava.context.tools import make_context_tools
-            from yuyutsava.core.engine import context_middleware
-
             # Host-only compaction model: host graphs run on the uvicorn loop,
             # and the master bundle's compaction model belongs to this loop —
             # Gemini SDK clients bind to their first loop (see

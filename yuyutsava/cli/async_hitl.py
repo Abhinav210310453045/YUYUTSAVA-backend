@@ -34,6 +34,8 @@ from yuyutsava.daemon.channels import (
     AsyncTaskStartedPayload,
     ChannelEvent,
 )
+from yuyutsava.cli.line_reader import read_line
+from yuyutsava.consent import decision_token, is_permission_ask
 
 
 logger = logging.getLogger("yuyutsava.cli.async_hitl")
@@ -119,8 +121,6 @@ class CliRemoteHitl:
         # "event"/"hello" frames are ignored: the REPL renders its own turn stream.
 
     def _render_ask(self, a: dict) -> None:
-        from yuyutsava.consent import is_permission_ask
-
         title = a.get("title") or "Permission request"
         agent = a.get("agent_path") or ""
         tag = " [background]" if agent.endswith("#bg") else ""
@@ -221,7 +221,6 @@ class CliHitlBridge:
         Asks for background subagents flush queued events first so context
         about which task is asking is visible right above the prompt.
         """
-        from yuyutsava.consent import decision_token, is_permission_ask
 
         # Flush queued events into stderr so the user sees recent context.
         await self._flush_to_stderr()
@@ -248,8 +247,6 @@ class CliHitlBridge:
         # Through the seam, not input(): a background task's approval was
         # unanswerable under the split-view dashboard, which owns stdin for the
         # whole session (cli/line_reader.py).
-        from yuyutsava.cli.line_reader import read_line
-
         prompt = "approve/reject> " if is_permission else "> "
         line = await read_line(prompt)
         if line is None:

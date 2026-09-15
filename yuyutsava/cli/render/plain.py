@@ -21,6 +21,8 @@ from typing import Any
 from yuyutsava.cli.stream_smoother import TokenSmoother
 from yuyutsava.config.env import env_flag, env_float, env_int
 from yuyutsava.core.streaming import StreamEvent
+from yuyutsava.cli.render import artifact_view as av
+from yuyutsava.platform import host_profile
 
 _CYAN = "\033[36m"
 _DIM = "\033[2m"
@@ -191,8 +193,6 @@ class ChatRenderer:
             # Was dropped entirely here, so an artifact the agent built (a
             # table, a document) left no trace in a piped transcript. Read
             # from disk, printed only — never fed back into the context.
-            from yuyutsava.cli.render import artifact_view as av
-
             info = av.load_artifact(ev.data)
             if info is None:
                 title, kind = av.artifact_summary(ev.data)
@@ -480,8 +480,6 @@ class ChatRenderer:
         return f"  {colour}[{zone}]{_RESET}"
 
     def _classify_zone(self, path: str) -> str:
-        from yuyutsava.platform import host_profile
-
         if self._workspace is not None and path.startswith(str(self._workspace)):
             return "workspace"
         if path.startswith(host_profile().temp_zone_prefixes()):

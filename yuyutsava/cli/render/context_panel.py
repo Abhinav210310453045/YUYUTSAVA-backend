@@ -28,6 +28,12 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
+import textwrap
+
+from rich.console import Group
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
 
 if TYPE_CHECKING:  # pragma: no cover — typing only
     from rich.console import RenderableType
@@ -262,7 +268,6 @@ def _wrap_plain(text: str, width: int) -> list[str]:
     "no price entry" across two rows mid-word makes a 34-column column
     genuinely hard to read. Over-long single words still hard-break.
     """
-    import textwrap
 
     if not text:
         return [""]
@@ -303,10 +308,6 @@ def _fit(
 
 def context_report(snap: Any | None, *, width: int = 72) -> RenderableType:
     """The ``/context`` breakdown: the same numbers, room to explain them."""
-    from rich.console import Group
-    from rich.panel import Panel
-    from rich.table import Table
-    from rich.text import Text
 
     if snap is None:
         return Text(

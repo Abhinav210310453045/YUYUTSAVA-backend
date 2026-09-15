@@ -68,8 +68,10 @@ async def run_chat(
         cli_bridge = None
         cli_watcher = None
         if bundle.async_host_url is not None and bundle.async_task_mirror is not None:
-            from yuyutsava.async_subagents.watcher import AsyncTaskHealthWatcher
-            from yuyutsava.cli.async_hitl import CliHitlBridge
+            # Deferred: ~10 ms on every CLI start, needed only when background
+            # subagents run.
+            from yuyutsava.async_subagents.watcher import AsyncTaskHealthWatcher  # noqa: PLC0415
+            from yuyutsava.cli.async_hitl import CliHitlBridge  # noqa: PLC0415
 
             cli_bridge = CliHitlBridge()
             cli_watcher = AsyncTaskHealthWatcher(

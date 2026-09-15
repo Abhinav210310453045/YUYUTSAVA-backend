@@ -113,55 +113,33 @@
     "S110": 1
   },
   "yuyutsava/cli/agent_stack.py": {
-    "PLC0415": 23,
     "PLR0913": 1
   },
-  "yuyutsava/cli/async_hitl.py": {
-    "PLC0415": 3
-  },
   "yuyutsava/cli/cli.py": {
-    "BLE001": 1,
-    "PLC0415": 3
+    "BLE001": 1
   },
   "yuyutsava/cli/commands/attach.py": {
     "BLE001": 1,
-    "PLC0415": 1,
     "S110": 1
   },
   "yuyutsava/cli/commands/chat.py": {
     "BLE001": 1,
-    "PLC0415": 2,
     "PLR0913": 1,
     "S110": 1
   },
   "yuyutsava/cli/commands/chat_repl.py": {
     "BLE001": 8,
     "C901": 1,
-    "PLC0415": 29,
     "PLR0913": 1,
     "S110": 5
-  },
-  "yuyutsava/cli/remote_attach.py": {
-    "PLC0415": 2
-  },
-  "yuyutsava/cli/render/artifact_view.py": {
-    "PLC0415": 6
-  },
-  "yuyutsava/cli/render/context_panel.py": {
-    "PLC0415": 5
-  },
-  "yuyutsava/cli/render/dashboard.py": {
-    "PLC0415": 19
   },
   "yuyutsava/cli/render/plain.py": {
     "BLE001": 7,
     "C901": 1,
-    "PLC0415": 2,
     "S110": 5
   },
   "yuyutsava/cli/render/renderer.py": {
     "C901": 1,
-    "PLC0415": 1,
     "S110": 1
   },
   "yuyutsava/cli/render/tool_format.py": {

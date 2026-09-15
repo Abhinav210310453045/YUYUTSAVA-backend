@@ -68,7 +68,27 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from prompt_toolkit.layout.controls import FormattedTextControl
+from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
+from prompt_toolkit.application import Application
+from prompt_toolkit.buffer import Buffer
+from prompt_toolkit.filters import Condition
+from prompt_toolkit.formatted_text import ANSI, to_formatted_text
+from prompt_toolkit.history import FileHistory, InMemoryHistory
+from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.keys import Keys
+from prompt_toolkit.layout import Layout
+from prompt_toolkit.layout.containers import (
+    ConditionalContainer,
+    Float,
+    FloatContainer,
+    HSplit,
+    VSplit,
+    Window,
+)
+from prompt_toolkit.layout.menus import CompletionsMenu
+from prompt_toolkit.mouse_events import MouseEventType
+from prompt_toolkit.output import create_output
+from prompt_toolkit.styles import Style
 
 from yuyutsava.cli.render.ansi_wrap import visible_width, wrap_ansi
 from yuyutsava.cli.render.context_panel import (
@@ -77,6 +97,9 @@ from yuyutsava.cli.render.context_panel import (
     panel_width_for,
 )
 from yuyutsava.config.env import env_flag
+from yuyutsava.cli.line_reader import clear_line_reader, set_line_reader
+from yuyutsava.cli.render.console import make_console
+from yuyutsava.context.meter import bus
 
 logger = logging.getLogger("yuyutsava.cli.dashboard")
 
@@ -229,7 +252,6 @@ class _ScrollableTextControl(FormattedTextControl):
         self._on_scroll = on_scroll
 
     def mouse_handler(self, mouse_event):  # noqa: ANN001, ANN201
-        from prompt_toolkit.mouse_events import MouseEventType
 
         if mouse_event.event_type == MouseEventType.SCROLL_UP:
             self._on_scroll(3)
@@ -252,8 +274,6 @@ class ChatDashboard:
         output: Any | None = None,
         input: Any | None = None,  # noqa: A002 — prompt_toolkit's own name
     ) -> None:
-        from prompt_toolkit.output import create_output
-
         self._cols = max(MIN_DASHBOARD_COLS, terminal_cols() or MIN_DASHBOARD_COLS)
         self._panel_width = panel_width_for(self._cols)
         self._panel_visible = True
@@ -295,8 +315,6 @@ class ChatDashboard:
     # -- construction -------------------------------------------------------
 
     def _make_console(self):
-        from yuyutsava.cli.render.console import make_console
-
         return make_console(file=self.buffer, width=self.left_width, force_terminal=True)
 
     @property
@@ -306,23 +324,6 @@ class ChatDashboard:
         return max(20, self._cols - self._panel_width - 1)
 
     def _build_app(self, history_path: Path | None, completer: Any | None) -> None:
-        from prompt_toolkit.application import Application
-        from prompt_toolkit.buffer import Buffer
-        from prompt_toolkit.filters import Condition
-        from prompt_toolkit.history import FileHistory, InMemoryHistory
-        from prompt_toolkit.layout import Layout
-        from prompt_toolkit.layout.containers import (
-            ConditionalContainer,
-            Float,
-            FloatContainer,
-            HSplit,
-            VSplit,
-            Window,
-        )
-        from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
-        from prompt_toolkit.layout.menus import CompletionsMenu
-        from prompt_toolkit.styles import Style
-
         history = FileHistory(str(history_path)) if history_path is not None else InMemoryHistory()
         self._buf = Buffer(
             history=history,
@@ -508,9 +509,6 @@ class ChatDashboard:
         self._invalidate()
 
     def _key_bindings(self):
-        from prompt_toolkit.key_binding import KeyBindings
-        from prompt_toolkit.keys import Keys
-
         kb = KeyBindings()
 
         def bind(key: Any, action: Callable[[], None]) -> None:
@@ -570,7 +568,6 @@ class ChatDashboard:
 
     def _visible_transcript(self):
         """The visible rows, wrapped to the pane and converted to fragments."""
-        from prompt_toolkit.formatted_text import ANSI, to_formatted_text
 
         self._sync_width()
         width = self.left_width
@@ -674,10 +671,7 @@ class ChatDashboard:
         # Claim stdin for the application's lifetime. Every CLI prompt reads
         # through this seam, because a blocking input() cannot win a keystroke
         # against a full-screen application (see cli/line_reader.py).
-        from yuyutsava.cli.line_reader import set_line_reader
-
         set_line_reader(self.ask)
-        from yuyutsava.context.meter import bus
 
         self._install_streams()
         self._meter_token = bus().subscribe("", self._on_snapshot)
@@ -761,9 +755,6 @@ class ChatDashboard:
         return [("class:prompt", self._prompt)]
 
     async def stop(self) -> None:
-        from yuyutsava.cli.line_reader import clear_line_reader
-        from yuyutsava.context.meter import bus
-
         # Release stdin before refusing the open question, so nothing new can
         # arrive in between.
         clear_line_reader(self.ask)

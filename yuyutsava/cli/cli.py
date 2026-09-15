@@ -42,6 +42,7 @@ from yuyutsava.core.engine import (
     setup_logging,
 )
 from yuyutsava.storage.paths import ensure_state_dirs
+from yuyutsava.cli.commands.attach import run_attach
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -291,14 +292,13 @@ def main(argv: list[str] | None = None) -> int:
     raw = list(argv) if argv is not None else sys.argv[1:]
     if raw and raw[0] == "daemon":
         # Hand off to the always-on daemon. The rest of argv is the daemon's own.
-        from yuyutsava.daemon.main import main as daemon_main
+        # Deferred: the daemon adds ~195 modules (~120 ms) no other command needs.
+        from yuyutsava.daemon.main import main as daemon_main  # noqa: PLC0415
 
         return daemon_main(raw[1:])
     if raw and raw[0] == "prefs":
         return run_prefs(raw[1:])
     if raw and raw[0] == "attach":
-        from yuyutsava.cli.commands.attach import run_attach
-
         return run_attach(raw[1:])
     # Ctrl+C anywhere outside a turn (during the stack build, at a prompt, in
     # teardown) reaches here as KeyboardInterrupt. Exit 130 quietly — the
@@ -387,7 +387,9 @@ async def _async_main(argv: list[str] | None = None, *, force_chat: bool = False
         # No task + no scenario → drop into the interactive chat REPL.
         # Also when invoked explicitly via `yuyutsava chat`.
         if force_chat or not task:
-            from yuyutsava.cli.commands.chat_repl import run_chat_repl
+            # Deferred: the REPL's prompt_toolkit and Rich stack (~160 modules) is only
+            # needed for chatting, not for --list-sessions, --print-tools or prefs.
+            from yuyutsava.cli.commands.chat_repl import run_chat_repl  # noqa: PLC0415
 
             return await run_chat_repl(
                 workspace=args.workspace.resolve(),

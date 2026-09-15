@@ -23,6 +23,7 @@ from yuyutsava.cli.remote_attach import (
     prompt_user_for_ask,
     render_event_frame,
 )
+from yuyutsava.daemon.singleton import read_daemon_discovery
 
 logger = logging.getLogger("yuyutsava.cli.commands.attach")
 
@@ -39,8 +40,6 @@ def _default_daemon_url() -> str:
     if env:
         return env
     try:
-        from yuyutsava.daemon.singleton import read_daemon_discovery
-
         disco = read_daemon_discovery()
         if disco and isinstance(disco.get("web_url"), str):
             url = str(disco["web_url"]).rstrip("/")

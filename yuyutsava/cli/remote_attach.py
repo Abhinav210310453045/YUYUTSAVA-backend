@@ -25,6 +25,9 @@ from typing import Any, AsyncIterator
 
 import httpx
 
+from yuyutsava.cli.line_reader import read_line
+from yuyutsava.consent import decision_token, is_permission_ask
+
 logger = logging.getLogger("yuyutsava.cli.remote_attach")
 
 
@@ -126,7 +129,6 @@ class CliAttachClient:
 
 async def prompt_user_for_ask(frame_data: dict) -> str:
     """Print the ask + options to stderr, read a reply from stdin."""
-    from yuyutsava.consent import decision_token, is_permission_ask
 
     ask_id = frame_data.get("ask_id") or ""
     title = frame_data.get("title") or "Question"
@@ -147,7 +149,6 @@ async def prompt_user_for_ask(frame_data: dict) -> str:
     elif options:
         print(f"  options: {' / '.join(options)}", file=sys.stderr)
     sys.stderr.flush()
-    from yuyutsava.cli.line_reader import read_line
 
     prompt = "approve/reject> " if is_permission else "> "
     line = await read_line(prompt)

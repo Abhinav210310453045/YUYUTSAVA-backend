@@ -29,6 +29,7 @@ import time
 import traceback
 from pathlib import Path
 from typing import Any
+import logging
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import Completer, Completion
@@ -50,13 +51,38 @@ from yuyutsava.config.env import env_flag
 from yuyutsava.consent import decision_token as _decision_token
 from yuyutsava.core.config import DockerSettings, LlmSettings, LocalSettings, SearchConfig
 from yuyutsava.core.engine import cleanup_local_sandbox, silence_plumbing_loggers
-from yuyutsava.prefs.runtime import UNDISABLEABLE
+from yuyutsava.prefs.runtime import UNDISABLEABLE, RuntimeSettings
 from yuyutsava.storage.paths import state_dir
 from yuyutsava.storage.sessions import (
     SessionsSettings,
     build_checkpointer,
     get_default_session_store,
 )
+from yuyutsava.async_subagents.watcher import AsyncTaskHealthWatcher
+from yuyutsava.cli.async_hitl import CliHitlBridge, CliRemoteHitl
+from yuyutsava.cli.line_reader import read_line
+from yuyutsava.cli.remote_attach import CliAttachClient
+from yuyutsava.cli.render import panels
+from yuyutsava.cli.render.console import make_console, rich_capable
+from yuyutsava.cli.render.context_panel import context_report, fmt_cost, fmt_pct, fmt_tokens
+from yuyutsava.cli.render.dashboard import (
+    ChatDashboard,
+    dashboard_enabled,
+    display_mode,
+    terminal_cols,
+    wide_enough,
+)
+from yuyutsava.cli.render.renderer import RichChatRenderer
+from yuyutsava.context.meter import bus
+from yuyutsava.conversation import ConversationService
+from yuyutsava.core import tracing as _tracing
+from yuyutsava.daemon.singleton import read_daemon_discovery
+from yuyutsava.llm.quirks.first_chunk_retry import set_retry_listener
+from yuyutsava.skills.injector import last_recalled
+from yuyutsava.skills.registry import SkillRegistry
+from yuyutsava.storage.backend import StorageSettings
+from yuyutsava.storage.events import Store
+from yuyutsava.storage.prefs import PrefsStore
 
 
 # ---------------------------------------------------------------------------
@@ -82,21 +108,22 @@ def _print_version_notice(*, full: bool = False) -> None:
     The multi-line upgrade/EOL text is condensed to one dim line; ``full=True``
     (debug plumbing) keeps the verbatim notice.
     """
-    import logging as _logging
 
-    log = _logging.getLogger("version_check")
+    log = logging.getLogger("version_check")
     lines: list[str] = []
 
-    class _Capture(_logging.Handler):
-        def emit(self, record: _logging.LogRecord) -> None:
+    class _Capture(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
             lines.append(record.getMessage())
 
     handler = _Capture()
     saved = (log.level, log.propagate, log.disabled, list(log.handlers))
     saved_env = os.environ.get("LANGGRAPH_NO_VERSION_CHECK")
     try:
-        from langgraph_api import __version__ as _lg_version
-        from langgraph_api.cli import _check_newer_version
+        # Optional: langgraph_api is not a declared dependency, and this probe
+        # must not break start-up without it.
+        from langgraph_api import __version__ as _lg_version  # noqa: PLC0415
+        from langgraph_api.cli import _check_newer_version  # noqa: PLC0415
 
         # The check early-returns when this is set, and attaches its own stderr
         # handler when the logger has none — clear the flag and pre-install our
@@ -105,7 +132,7 @@ def _print_version_notice(*, full: bool = False) -> None:
         log.handlers = [handler]
         log.propagate = False
         log.disabled = False
-        log.setLevel(_logging.INFO)
+        log.setLevel(logging.INFO)
         _check_newer_version("langgraph-api", _lg_version)
     except Exception:
         return
@@ -198,13 +225,11 @@ def _startup_status_line(sessions_settings: SessionsSettings) -> str:
     summary. Best-effort — every probe degrades to a placeholder.
     """
     try:
-        from yuyutsava.core import tracing as _tracing
-
         tracing_on = _tracing.is_configured() and _tracing._langfuse_reachable()
     except Exception:
         tracing_on = False
     try:
-        from langgraph_api import __version__ as _lg_version
+        from langgraph_api import __version__ as _lg_version  # noqa: PLC0415 — optional
     except Exception:
         _lg_version = "?"
     # The EFFECTIVE backend, not SessionsSettings.backend. That field reads
@@ -213,8 +238,6 @@ def _startup_status_line(sessions_settings: SessionsSettings) -> str:
     # every store and the checkpointer were on Postgres, and a whole session's
     # analysis started from the wrong assumption about where its data was.
     try:
-        from yuyutsava.storage.backend import StorageSettings
-
         storage = (
             "postgres" if StorageSettings.from_env().is_postgres() else sessions_settings.backend
         )
@@ -433,7 +456,6 @@ def make_ask_handler(renderer: "ChatRenderer", console: Any = None):
     pane, and every key went to the application instead — the prompt could not
     be answered at all.
     """
-    from yuyutsava.cli.line_reader import read_line
 
     async def _ask_handler(interrupt_value: Any) -> str:
         """Render a permission/question interrupt and read the user's reply."""
@@ -441,8 +463,6 @@ def make_ask_handler(renderer: "ChatRenderer", console: Any = None):
             interrupt_value if isinstance(interrupt_value, dict) else {"text": str(interrupt_value)}
         )
         itype = payload.get("type", "")
-
-        from yuyutsava.cli.render import panels
 
         with renderer.pause():
             print(file=sys.stderr)
@@ -562,10 +582,6 @@ class _LazyRuntimeSettings:
 
     async def get(self) -> Any:
         if self._settings is None:
-            from yuyutsava.prefs.runtime import RuntimeSettings
-            from yuyutsava.storage.events import Store
-            from yuyutsava.storage.prefs import PrefsStore
-
             self._store = Store()
             await self._store.start()
             self._settings = await RuntimeSettings(PrefsStore(self._store)).load()
@@ -603,9 +619,7 @@ async def _usage_rows(store: Any, thread_id: str, since: float) -> list[Any]:
     try:
         return await store.list(thread_id=thread_id, since=since, limit=2_000)
     except Exception:  # noqa: BLE001 — reporting must never break the REPL
-        import logging as _logging
-
-        _logging.getLogger("yuyutsava.cli.usage").debug("usage read failed", exc_info=True)
+        logging.getLogger("yuyutsava.cli.usage").debug("usage read failed", exc_info=True)
         return []
 
 
@@ -662,8 +676,6 @@ def _print_skills(layout: Any) -> None:
     whether a skill reached the prompt — which matters, because a skill the
     agent never sees is indistinguishable from one that does not exist.
     """
-    from yuyutsava.skills.injector import last_recalled
-    from yuyutsava.skills.registry import SkillRegistry
 
     recalled = last_recalled()
     if recalled:
@@ -700,8 +712,6 @@ def _print_context(thread_id: str, console: Any = None) -> None:
     dashboard shows a condensed version of the same numbers continuously; this
     is the view with room to say which of them are estimates and why.
     """
-    from yuyutsava.cli.render.context_panel import context_report
-    from yuyutsava.context.meter import bus
 
     snap = bus().latest(thread_id)
     if console is not None:
@@ -717,7 +727,6 @@ def _print_context(thread_id: str, console: Any = None) -> None:
             file=sys.stderr,
         )
         return
-    from yuyutsava.cli.render.context_panel import fmt_cost, fmt_pct, fmt_tokens
 
     print(
         f"  {_DIM}window:{_RESET} {snap.used_tokens:,} / "
@@ -922,15 +931,6 @@ async def run_chat_repl(
     #
     # Rich renders the transcript in all three; the dashboard only changes
     # where it lands and who draws the status line.
-    from yuyutsava.cli.render.console import make_console, rich_capable
-    from yuyutsava.cli.render.dashboard import (
-        ChatDashboard,
-        dashboard_enabled,
-        display_mode,
-        terminal_cols,
-        wide_enough,
-    )
-
     console = None
     dashboard: ChatDashboard | None = None
     mode = display_mode(
@@ -941,8 +941,6 @@ async def run_chat_repl(
         wide=wide_enough(),
     )
     if mode == "dashboard":
-        from yuyutsava.cli.render.renderer import RichChatRenderer
-
         dashboard = ChatDashboard(history_path=history_path, completer=_SlashCompleter())
         console = dashboard.console
         renderer: ChatRenderer = RichChatRenderer(
@@ -950,8 +948,6 @@ async def run_chat_repl(
         )
         dashboard.attach_renderer(renderer)
     elif mode == "rich":
-        from yuyutsava.cli.render.renderer import RichChatRenderer
-
         console = make_console()
         renderer = RichChatRenderer(verbose=verbose, workspace=workspace, console=console)
     else:
@@ -973,8 +969,6 @@ async def run_chat_repl(
     # SDK's own retry logger emits several structlog lines per attempt, which
     # printed straight through the Live region and still left the user unable
     # to tell whether the turn was alive. Cleared in the finally block below.
-    from yuyutsava.llm.quirks.first_chunk_retry import set_retry_listener
-
     def _on_retry(model, attempt, retries, delay, exc):
         """Retries speak on the status line AND in the panel's notices.
 
@@ -993,8 +987,6 @@ async def run_chat_repl(
     # INFO lines interleave with renderer output and look like duplicate
     # noise. Plumbing debugging keeps its escape hatch via the env var.
     if not debug_plumbing:
-        import logging as _logging
-
         for _name in (
             "yuyutsava.task_runner",
             "yuyutsava.agents.task_runner.tools",
@@ -1007,7 +999,7 @@ async def run_chat_repl(
             "yuyutsava.storage.pg.migrations",
             "yuyutsava.core.tracing",
         ):
-            _logging.getLogger(_name).setLevel(_logging.WARNING)
+            logging.getLogger(_name).setLevel(logging.WARNING)
 
         # Retry chatter is rendered on the spinner instead (note_retry above).
         # These two emit at WARNING, so the level filter above cannot reach
@@ -1018,7 +1010,7 @@ async def run_chat_repl(
                 "langchain_google_vertexai._retry",
                 "yuyutsava.llm.retry",
             ):
-                _logging.getLogger(_name).setLevel(_logging.ERROR)
+                logging.getLogger(_name).setLevel(logging.ERROR)
 
     async with build_checkpointer(sessions_settings) as checkpointer:
         # Build the agent stack ONCE. Swallow the LangGraph host's startup
@@ -1064,22 +1056,14 @@ async def run_chat_repl(
         # /voice + /subagents backing store — opened on first use, not here.
         runtime_toggles = _LazyRuntimeSettings()
         if bundle.async_host_url is not None:
-            from yuyutsava.daemon.singleton import read_daemon_discovery
-
             disco = read_daemon_discovery()
             daemon_web = disco.get("web_url") if isinstance(disco, dict) else None
             if daemon_web:
-                from yuyutsava.cli.async_hitl import CliRemoteHitl
-                from yuyutsava.cli.remote_attach import CliAttachClient
-
                 cli_remote = CliRemoteHitl(
                     CliAttachClient(base_url=_loopback_url(str(daemon_web)), label="yuyutsava-chat")
                 )
                 await cli_remote.start()
             elif bundle.async_task_mirror is not None:
-                from yuyutsava.async_subagents.watcher import AsyncTaskHealthWatcher
-                from yuyutsava.cli.async_hitl import CliHitlBridge
-
                 cli_bridge = CliHitlBridge()
                 cli_watcher = AsyncTaskHealthWatcher(
                     mirror=bundle.async_task_mirror,
@@ -1096,8 +1080,6 @@ async def run_chat_repl(
             # adapter over ConversationService — the daemon's text/voice chats
             # are others. ``ChatRenderer`` + ``_ask_handler`` below are this
             # adapter's output + HITL bridge.
-            from yuyutsava.conversation import ConversationService
-
             convo, resuming = await ConversationService.resolve(
                 store=store,
                 bundle=bundle,

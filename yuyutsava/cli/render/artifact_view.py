@@ -24,6 +24,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from yuyutsava.artifacts import store
+
 # One artifact's inline budget. Beyond this the box shows a head and points at
 # the file: a 200k-char document should not scroll the transcript away.
 INLINE_CHARS = 4_000
@@ -61,8 +63,6 @@ def load_artifact(data: dict) -> dict[str, Any] | None:
     if not artifact_id:
         return None
     try:
-        from yuyutsava.artifacts import store
-
         rec = store.load_record(artifact_id)
     except Exception:  # noqa: BLE001 — rendering must never break a turn
         return None
@@ -103,14 +103,15 @@ def load_artifact(data: dict) -> dict[str, Any] | None:
 def artifact_renderable(info: dict[str, Any]) -> Any:
     """A bounded, titled Rich panel for one artifact.
 
-    Imported lazily by the rich renderer only — the plain renderer must not
-    pull Rich in.
+    Rich is imported inside this function, so importing this module does not
+    load it. (The plain renderer still gets Rich through ``core.streaming``,
+    whose terminal half moves to ``cli/render`` in W3.)
     """
-    from rich.console import Group
-    from rich.markdown import Markdown
-    from rich.panel import Panel
-    from rich.syntax import Syntax
-    from rich.text import Text
+    from rich.console import Group  # noqa: PLC0415
+    from rich.markdown import Markdown  # noqa: PLC0415
+    from rich.panel import Panel  # noqa: PLC0415
+    from rich.syntax import Syntax  # noqa: PLC0415
+    from rich.text import Text  # noqa: PLC0415
 
     kind = info["kind"]
     body: Any

@@ -32,7 +32,7 @@ from rich.padding import Padding
 from rich.spinner import Spinner
 from rich.text import Text
 
-from yuyutsava.cli.render import tool_format as tf
+from yuyutsava.cli.render import artifact_view as av, tool_format as tf
 from yuyutsava.cli.render.markdown_stream import MarkdownStream
 from yuyutsava.cli.render.plain import ChatRenderer
 from yuyutsava.core.streaming import StreamEvent
@@ -383,7 +383,6 @@ class RichChatRenderer(ChatRenderer):
         ``cli/render/artifact_view``). On any failure this degrades to the
         one-line announcement it replaced.
         """
-        from yuyutsava.cli.render import artifact_view as av
 
         info = av.load_artifact(data)
         if info is not None:
