@@ -36,8 +36,9 @@ from pathlib import Path
 from typing import ClassVar
 
 from yuyutsava.storage.base import BaseSqliteStore
-from yuyutsava.storage.dialect import Dialect
+from yuyutsava.storage.dialect import Dialect, PostgresDialect, SqliteDialect
 from .summary_store import ThreadSummary, ThreadSummaryStore
+from yuyutsava.storage.paths import state_db_path
 
 logger = logging.getLogger("yuyutsava.context.summary_store_unified")
 
@@ -143,15 +144,10 @@ class UnifiedThreadSummaryStore(ThreadSummaryStore):
 
 
 def sqlite_summary_store(db_path: Path | None = None) -> UnifiedThreadSummaryStore:
-    from yuyutsava.storage.dialect import SqliteDialect
-    from yuyutsava.storage.paths import state_db_path
-
     return UnifiedThreadSummaryStore(SqliteDialect(SummarySchema(db_path or state_db_path())))
 
 
 def pg_summary_store(pool) -> UnifiedThreadSummaryStore:
-    from yuyutsava.storage.dialect import PostgresDialect
-
     return UnifiedThreadSummaryStore(PostgresDialect(pool))
 
 

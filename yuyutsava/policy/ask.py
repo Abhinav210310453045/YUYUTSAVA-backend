@@ -29,7 +29,7 @@ class LangGraphAskUser:
     """
 
     async def ask(self, prompt: Mapping[str, Any]) -> str:
-        from langgraph.types import interrupt
+        from langgraph.types import interrupt  # noqa: PLC0415 — see the docstring
 
         return interrupt(dict(prompt))
 

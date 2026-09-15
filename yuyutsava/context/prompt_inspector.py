@@ -35,6 +35,7 @@ import time
 from typing import Any
 
 from yuyutsava.config.env import env_flag
+from yuyutsava.context.tokens import approx_tokens
 from yuyutsava.policy.base import Policy
 from yuyutsava.policy.types import Directive, Turn
 
@@ -97,12 +98,10 @@ class PromptInspectorPolicy(Policy):
         # One counter for every number this codebase reports (context/tokens.py):
         # this used to be `total // 4`, which disagreed with both the compaction
         # trigger and the context meter — three estimators, no two alike.
-        from yuyutsava.context.tokens import approx_tokens as _approx
-
-        approx_tokens = _approx(messages)
+        approx = approx_tokens(messages)
         header = (
             f"\n┌─ PROMPT INSPECT [{self._role}] call#{self._call} ─ "
-            f"{len(messages)} msgs · {total:,} chars · ~{approx_tokens:,} tok · "
+            f"{len(messages)} msgs · {total:,} chars · ~{approx:,} tok · "
             f"{offloaded} offloaded digest(s) in-context"
         )
         logger.info("%s\n%s\n└─", header, "\n".join(lines))

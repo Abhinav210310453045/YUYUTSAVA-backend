@@ -39,6 +39,7 @@ from langchain_core.messages import (
     SystemMessage,
 )
 from langgraph.graph.message import REMOVE_ALL_MESSAGES
+from langgraph.config import get_config
 
 from yuyutsava.context.config import ContextSettings
 from yuyutsava.context.meter import note_compaction
@@ -457,8 +458,6 @@ class YuyutsavaCompactionMiddleware(SummarizationMiddleware):
 def _current_thread_id() -> str:
     """Thread id from the active LangGraph run config, or empty string."""
     try:
-        from langgraph.config import get_config
-
         cfg = get_config() or {}
         return str(cfg.get("configurable", {}).get("thread_id", "") or "")
     except Exception:

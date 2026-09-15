@@ -48,6 +48,7 @@ from yuyutsava.context.artifacts import (
     clamp_slice_length,
     thread_id_from_runtime,
 )
+from yuyutsava.context.compaction import request_compaction
 
 logger = logging.getLogger("yuyutsava.context.tools")
 
@@ -157,9 +158,6 @@ def make_context_tools(store: ArtifactStore, transcript_store: Any | None = None
         stay verbatim. Compaction runs automatically near the token budget,
         so only call this to compact EARLIER than that.
         """
-        # Lazy import: keeps this module free of the middleware stack.
-        from yuyutsava.context.compaction import request_compaction
-
         thread_id = thread_id_from_runtime()
         if not thread_id:
             return "[error] no active thread — compaction not scheduled"
@@ -354,9 +352,9 @@ def _msg_data(rec: Any) -> dict:
 
 def _msg_text(data: dict) -> str:
     """Prose of a recorded message, flattened from str or block-list content."""
-    # Lazy: core.streaming pulls in the graph/interrupt stack, and this module
-    # is imported while the tool registry is being built.
-    from yuyutsava.core.streaming import flatten_content
+    # Upward (context -> core), and core.streaming loads the graph/interrupt
+    # stack; flatten_content moves to a leaf module in W3.
+    from yuyutsava.core.streaming import flatten_content  # noqa: PLC0415
 
     return flatten_content(data.get("content")).strip()
 

@@ -33,6 +33,8 @@ import json
 import logging
 from typing import Any
 
+from langchain_core.messages import ToolMessage
+
 from yuyutsava.context.artifacts import ArtifactStore, thread_id_from_runtime
 from yuyutsava.context.config import ContextSettings
 from yuyutsava.context.digests import build_digest
@@ -117,8 +119,6 @@ class ToolResultOffloadPolicy(Policy):
         return any(tool_name.startswith(p) for p in self._always_prefixes)
 
     async def after_tool(self, call: ToolCall, result: Any) -> Any:
-        from langchain_core.messages import ToolMessage
-
         if not isinstance(result, ToolMessage):
             return result  # Command and friends pass through untouched
         content = result.content

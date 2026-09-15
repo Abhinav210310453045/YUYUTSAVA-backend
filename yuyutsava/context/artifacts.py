@@ -29,6 +29,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ulid import ULID
+from langgraph.config import get_config
 
 from yuyutsava.retrieval.chunking import chunk_text
 from yuyutsava.retrieval.pg import PgVectorSearch, PgVectorTable
@@ -84,8 +85,6 @@ _ARTIFACT_CHUNKS_TABLE = PgVectorTable(
 def thread_id_from_runtime() -> str:
     """Best-effort thread id from the active LangGraph run config."""
     try:
-        from langgraph.config import get_config
-
         cfg = get_config() or {}
         return str(cfg.get("configurable", {}).get("thread_id", "") or "unknown")
     except Exception:

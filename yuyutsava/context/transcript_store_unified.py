@@ -54,7 +54,8 @@ from yuyutsava.context.transcript_store import (
     _encode,
 )
 from yuyutsava.storage.base import BaseSqliteStore
-from yuyutsava.storage.dialect import Dialect
+from yuyutsava.storage.dialect import Dialect, PostgresDialect, SqliteDialect
+from yuyutsava.storage.paths import state_db_path
 
 logger = logging.getLogger("yuyutsava.context.transcript_store_unified")
 
@@ -179,15 +180,10 @@ class UnifiedTranscriptStore(TranscriptStore):
 
 
 def sqlite_transcript_store(db_path: Path | None = None) -> UnifiedTranscriptStore:
-    from yuyutsava.storage.dialect import SqliteDialect
-    from yuyutsava.storage.paths import state_db_path
-
     return UnifiedTranscriptStore(SqliteDialect(TranscriptSchema(db_path or state_db_path())))
 
 
 def pg_transcript_store(pool) -> UnifiedTranscriptStore:
-    from yuyutsava.storage.dialect import PostgresDialect
-
     return UnifiedTranscriptStore(PostgresDialect(pool))
 
 

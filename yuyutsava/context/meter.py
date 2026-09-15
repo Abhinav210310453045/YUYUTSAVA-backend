@@ -59,9 +59,13 @@ from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from typing import Any
 
+from yuyutsava.context.injector import MEMORY_BLOCK_PREFIX
 from yuyutsava.context.tokens import approx_tokens, approx_tokens_chars
+from yuyutsava.memory.agent_memory import INDEX_BLOCK_HEADER
 from yuyutsava.policy.base import Policy
 from yuyutsava.policy.types import Directive, ModelCall, Turn
+from yuyutsava.retrieval.injector import last_block_chars
+from yuyutsava.skills.injector import SKILLS_BLOCK_PREFIX
 
 logger = logging.getLogger("yuyutsava.context.meter")
 
@@ -480,41 +484,18 @@ def reset_sizing_caches() -> None:
 # Segment attribution
 # ----------------------------------------------------------------------
 
-_MARKERS_CACHE: tuple[tuple[str, str], ...] | None = None
-
 
 def _markers() -> tuple[tuple[str, str], ...]:
     """``(segment, marker)`` for the blocks we can find inside a system prompt.
 
     Imported from the modules that own the strings, never re-spelled here — a
-    second copy would drift and silently mis-attribute prompt bytes. Imported
-    lazily: ``core.prompts`` pulls in ``core.__init__``, which imports
-    ``engine``, and this module is imported *from* engine's middleware.
+    second copy would drift and silently mis-attribute prompt bytes.
     """
-    global _MARKERS_CACHE
-    if _MARKERS_CACHE is not None:
-        return _MARKERS_CACHE
-    markers: list[tuple[str, str]] = []
-    try:
-        from yuyutsava.memory.agent_memory import INDEX_BLOCK_HEADER
-
-        markers.append(("memory", INDEX_BLOCK_HEADER.strip()))
-    except Exception:  # noqa: BLE001
-        pass
-    try:
-        from yuyutsava.context.injector import MEMORY_BLOCK_PREFIX
-
-        markers.append(("memory", MEMORY_BLOCK_PREFIX))
-    except Exception:  # noqa: BLE001
-        pass
-    try:
-        from yuyutsava.skills.injector import SKILLS_BLOCK_PREFIX
-
-        markers.append(("skills", SKILLS_BLOCK_PREFIX))
-    except Exception:  # noqa: BLE001
-        pass
-    _MARKERS_CACHE = tuple(markers)
-    return _MARKERS_CACHE
+    return (
+        ("memory", INDEX_BLOCK_HEADER.strip()),
+        ("memory", MEMORY_BLOCK_PREFIX),
+        ("skills", SKILLS_BLOCK_PREFIX),
+    )
 
 
 def split_system_chars(text: str) -> dict[str, int]:
@@ -547,14 +528,8 @@ def split_system_chars(text: str) -> dict[str, int]:
 
 
 def _injected_block_chars() -> dict[str, int]:
-    """Sizes of the blocks the retrieval injectors last rendered.
-
-    Lazy import: ``retrieval.injector`` is cheap but this module is imported
-    from engine's middleware assembly, and the fewer edges there the better.
-    """
+    """Sizes of the blocks the retrieval injectors last rendered."""
     try:
-        from yuyutsava.retrieval.injector import last_block_chars
-
         return last_block_chars()
     except Exception:  # noqa: BLE001
         return {}
@@ -831,7 +806,8 @@ class ContextMeterPolicy(Policy):
 
     def _price_table(self) -> dict[str, tuple[float, float]]:
         if self._prices is None:
-            from yuyutsava.core.model_router import load_price_table
+            # Upward (context -> core); pricing moves to llm/ in W3.
+            from yuyutsava.core.model_router import load_price_table  # noqa: PLC0415
 
             self._prices = load_price_table()
         return self._prices
@@ -964,7 +940,7 @@ class ContextMeterPolicy(Policy):
         }
 
     def _record_call(self, thread_id: str, usage: Any) -> None:
-        from yuyutsava.core.model_router import estimate_cost_usd, is_priced
+        from yuyutsava.core.model_router import estimate_cost_usd, is_priced  # noqa: PLC0415
 
         state = self._state(thread_id)
         model = self._model_name or getattr(usage, "model", "") or ""

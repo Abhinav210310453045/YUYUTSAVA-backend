@@ -51,7 +51,9 @@ from yuyutsava.context.artifacts import (
 from yuyutsava.retrieval.pg import PgVectorSearch, PgVectorTable
 from yuyutsava.retrieval.vector import vector_literal
 from yuyutsava.storage.base import BaseSqliteStore
-from yuyutsava.storage.dialect import Dialect
+from yuyutsava.storage.dialect import Dialect, PostgresDialect, SqliteDialect
+from yuyutsava.retrieval.chunking import chunk_text
+from yuyutsava.storage.paths import state_db_path
 
 logger = logging.getLogger("yuyutsava.context.artifacts_unified")
 
@@ -153,7 +155,6 @@ class UnifiedArtifactStore(ArtifactStore):
         Postgres-only by construction (``_recall_enabled`` requires vectors), so
         it uses the pool directly rather than the dialect.
         """
-        from yuyutsava.retrieval.chunking import chunk_text
 
         try:
             chunks = chunk_text(content, target_chars=self._chunk_chars)
@@ -258,9 +259,6 @@ def _to_recall_hit(hit: Any) -> RecallHit:
 
 
 def sqlite_artifact_store(db_path: Path | None = None) -> UnifiedArtifactStore:
-    from yuyutsava.storage.dialect import SqliteDialect
-    from yuyutsava.storage.paths import state_db_path
-
     return UnifiedArtifactStore(SqliteDialect(ArtifactSchema(db_path or state_db_path())))
 
 
@@ -271,8 +269,6 @@ def pg_artifact_store(
     semantic_recall: bool = False,
     chunk_chars: int = 1_200,
 ) -> UnifiedArtifactStore:
-    from yuyutsava.storage.dialect import PostgresDialect
-
     return UnifiedArtifactStore(
         PostgresDialect(pool),
         embedder=embedder,

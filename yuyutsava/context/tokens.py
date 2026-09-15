@@ -23,6 +23,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from langchain_core.messages.utils import count_tokens_approximately
+
 #: langchain's default. One token ≈ 4 characters of common English text.
 DEFAULT_CHARS_PER_TOKEN = 4.0
 
@@ -49,8 +51,6 @@ def approx_tokens(messages: Any, *, model: Any | None = None) -> int:
     rather than raising — a telemetry number is never worth a failed turn.
     """
     try:
-        from langchain_core.messages.utils import count_tokens_approximately
-
         return int(
             count_tokens_approximately(
                 messages or [],

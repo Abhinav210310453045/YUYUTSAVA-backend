@@ -32,10 +32,13 @@ import logging
 from typing import Any, Awaitable, Callable, Sequence
 
 from langchain.agents.middleware import AgentMiddleware
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langgraph.config import get_config
 
 from yuyutsava.policy.base import Policy
 from yuyutsava.policy.types import Denied, ModelCall, Raw, ToolCall, Turn, Usage
 from yuyutsava.ports.ask import AskUser
+from yuyutsava.policy.ask import LangGraphAskUser
 
 logger = logging.getLogger("yuyutsava.policy.adapter")
 
@@ -117,8 +120,6 @@ class LangChainPolicyAdapter(AgentMiddleware):  # type: ignore[misc]
         )
 
     def _denial(self, call: ToolCall, decision: Denied) -> Any:
-        from langchain_core.messages import ToolMessage
-
         return ToolMessage(
             content=decision.message,
             tool_call_id=call.id,
@@ -154,7 +155,6 @@ class LangChainPolicyAdapter(AgentMiddleware):  # type: ignore[misc]
         ``RetrievalInjectionMiddleware`` and (in a variant)
         ``FilesystemPromptOverrideMiddleware``. Once, here.
         """
-        from langchain_core.messages import SystemMessage
 
         if not call.changed:
             return request
@@ -245,7 +245,6 @@ class LangChainPolicyAdapter(AgentMiddleware):  # type: ignore[misc]
         directives = [d for d in [await getattr(p, phase)(turn) for p in policies] if d is not None]
         if not directives:
             return None
-        from langchain_core.messages import SystemMessage
 
         return {"messages": [SystemMessage(content=d.text) for d in directives]}
 
@@ -357,8 +356,6 @@ def collapse_policy_adapters(middleware: list[Any]) -> list[Any]:
 
 
 def _default_ask() -> AskUser:
-    from yuyutsava.policy.ask import LangGraphAskUser
-
     return LangGraphAskUser()
 
 
@@ -380,8 +377,6 @@ def _current_thread_id() -> str:
     resolving it in the adapter means none of them reaches for the run config.
     """
     try:
-        from langgraph.config import get_config
-
         cfg = get_config() or {}
         return str(cfg.get("configurable", {}).get("thread_id", "") or "")
     except Exception:  # noqa: BLE001 — outside a graph run, or shape changed
@@ -395,7 +390,6 @@ def _latest_usage(messages: Any) -> Usage | None:
     each did separately. ``usage_metadata`` is a dict on some providers and an
     object on others, hence the two-way read.
     """
-    from langchain_core.messages import AIMessage
 
     msg = next((m for m in reversed(list(messages or [])) if isinstance(m, AIMessage)), None)
     if msg is None:
@@ -442,7 +436,6 @@ def _latest_human_text(messages: Any) -> str:
     retrieve *for*. Resolving it here keeps the message-content flattening — str
     vs. block-list — out of the policy.
     """
-    from langchain_core.messages import HumanMessage
 
     msgs = list(messages or [])
     if not msgs or not isinstance(msgs[-1], HumanMessage):
