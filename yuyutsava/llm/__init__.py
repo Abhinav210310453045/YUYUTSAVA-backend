@@ -42,12 +42,11 @@ from yuyutsava.llm.factory import (
     model_name_of,
     supports,
 )
-from yuyutsava.llm.handle import Capability, ModelHandle
+from yuyutsava.llm.handle import Capability
 from yuyutsava.llm.providers.registry import provider_for
 
 __all__ = [
     "Capability",
-    "ModelHandle",
     "chat_model",
     "handle_for",
     "model_handle",
