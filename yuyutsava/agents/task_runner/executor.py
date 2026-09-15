@@ -12,7 +12,6 @@ import os
 import re
 import shutil
 import sys
-import zipfile
 from pathlib import Path
 
 import httpx

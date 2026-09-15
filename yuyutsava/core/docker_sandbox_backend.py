@@ -43,7 +43,7 @@ from deepagents.backends.protocol import (
 from deepagents.backends.sandbox import BaseSandbox
 
 from yuyutsava.core.config import LIMITS, TIMING
-from yuyutsava.storage.paths import CONTAINER_STATE_MOUNT, CONTAINER_WORKSPACE_MOUNT
+from yuyutsava.storage.paths import CONTAINER_WORKSPACE_MOUNT
 
 _slog = logging.getLogger("yuyutsava.sandbox")
 

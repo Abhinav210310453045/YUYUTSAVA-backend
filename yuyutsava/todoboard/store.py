@@ -21,10 +21,8 @@ from __future__ import annotations
 import json
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, ClassVar
+from typing import Any
 
-from yuyutsava.storage.base import BaseSqliteStore
-from yuyutsava.storage.pg.pool import PgPool
 from yuyutsava.todoboard.models import (
     TodoAttachmentV1,
     TodoCardSummaryV1,
@@ -33,7 +31,6 @@ from yuyutsava.todoboard.models import (
     TodoNoteV1,
     TodoObjectiveV1,
 )
-from yuyutsava.storage.paths import state_db_path
 
 logger = logging.getLogger("yuyutsava.todoboard.store")
 

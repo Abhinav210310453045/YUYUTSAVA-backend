@@ -13,7 +13,6 @@ validators and how ``todo_generate_artifact`` runs generators off-loop).
 
 from __future__ import annotations
 
-import json
 import mimetypes
 import shutil
 import time

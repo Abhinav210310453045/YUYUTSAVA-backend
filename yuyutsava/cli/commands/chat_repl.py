@@ -45,7 +45,6 @@ from yuyutsava.cli.agent_stack import build_cli_agent_stack
 from yuyutsava.cli.render.plain import (
     _CYAN,
     _DIM,
-    _GREEN,
     _RED,
     _RESET,
     _YELLOW,

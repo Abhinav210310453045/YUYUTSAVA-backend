@@ -9,8 +9,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from yuyutsava.memory.store import _keyword_tokens
 from yuyutsava.memory.store_unified import sqlite_memory_store
+from yuyutsava.retrieval.keyword import keyword_tokens
 
 
 class SqliteMemoryStoreTests(unittest.IsolatedAsyncioTestCase):
@@ -52,15 +52,15 @@ class KeywordTokenTests(unittest.TestCase):
     """The shared tokenizer that both backends' keyword paths now rank on."""
 
     def test_filters_short_words(self) -> None:
-        toks = _keyword_tokens("the organize downloads folder by type")
+        toks = keyword_tokens("the organize downloads folder by type")
         self.assertIn("organize", toks)
         self.assertNotIn("by", toks)  # < 3 chars dropped
 
     def test_fallback_when_all_short(self) -> None:
-        self.assertEqual(_keyword_tokens("a b"), ["a b"])
+        self.assertEqual(keyword_tokens("a b"), ["a b"])
 
     def test_caps_at_eight(self) -> None:
-        toks = _keyword_tokens(" ".join(f"word{i}" for i in range(20)))
+        toks = keyword_tokens(" ".join(f"word{i}" for i in range(20)))
         self.assertEqual(len(toks), 8)
 
 

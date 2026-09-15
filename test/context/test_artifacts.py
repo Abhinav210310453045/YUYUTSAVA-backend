@@ -11,7 +11,6 @@ import unittest
 from pathlib import Path
 
 from yuyutsava.context.artifacts_unified import (
-    UnifiedArtifactStore,
     sqlite_artifact_store,
 )
 

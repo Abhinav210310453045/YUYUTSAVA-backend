@@ -11,20 +11,15 @@ events DB is a copy-table away.
 
 from __future__ import annotations
 
-import json
 import logging
-import time
-import uuid
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING
 
-import aiosqlite
 
-from yuyutsava.storage.base import BaseSqliteStore
 from yuyutsava.storage.models import InterruptRecord
 
 if TYPE_CHECKING:
-    from yuyutsava.storage.pg.pool import PgPool
+    pass
 
 logger = logging.getLogger("yuyutsava.storage.interrupts")
 

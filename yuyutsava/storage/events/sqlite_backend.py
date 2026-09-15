@@ -14,7 +14,6 @@ writes while Postgres is down (see :mod:`yuyutsava.storage.routing`).
 from __future__ import annotations
 
 import asyncio
-import fnmatch
 import json
 import logging
 import time
@@ -23,7 +22,6 @@ from pathlib import Path
 from typing import Any, AsyncIterator, Sequence
 
 import aiosqlite
-from ulid import ULID
 
 from yuyutsava.storage.base import amigration_lock
 
@@ -35,17 +33,10 @@ from yuyutsava.storage.events.ask_wire import (  # noqa: F401
     ask_row_to_record,
 )
 from yuyutsava.storage.events.abc import (
-    ConsentGrantStore,
-    ConsentRuleStore,
-    DecisionStore,
-    EventStore,
-    PendingAskStore,
     PrefsBackend,
-    ProposalStore,
-    ToolCounterStore,
 )
 from yuyutsava.storage.events.schema import SCHEMA_SQL, migrate
-from yuyutsava.storage.models import ConsentRule, Decision, EventRecord, Proposal
+from yuyutsava.storage.models import ConsentRule, Decision, Proposal
 from yuyutsava.storage.paths import state_db_path
 
 logger = logging.getLogger("yuyutsava.storage.events.sqlite")

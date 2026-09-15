@@ -32,14 +32,9 @@ Two interchangeable backends behind :class:`VoiceMessageStore`, same shape as
 from __future__ import annotations
 
 import logging
-import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import ClassVar
 
-from yuyutsava.storage.base import BaseSqliteStore
-from yuyutsava.storage.pg.pool import PgPool
-from yuyutsava.storage.pg.threads import ensure_thread
 
 logger = logging.getLogger("yuyutsava.storage.voice_store")
 

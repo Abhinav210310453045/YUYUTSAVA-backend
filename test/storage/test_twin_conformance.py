@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import importlib
 import inspect
-import re
 import unittest
 
 #: (module, interface, sqlite impl, pg impl) for every domain with two backends.

@@ -179,8 +179,9 @@ line-length = 100
 
 [tool.ruff.lint]
 # The gate — CI fails on any of these. They find real defects (names that do not
-# exist, dead exports, unused locals) or break the import-placement standard.
-select = ["E402", "E741", "F541", "F821", "F822", "F841"]
+# exist, dead exports, unused locals and imports) or break the import-placement
+# standard.
+select = ["E402", "E741", "F401", "F541", "F821", "F822", "F841"]
 # Rules with too many existing violations to gate at zero (PLC0415, C901,
 # PLR0913, BLE001, S110, T201) are not selected here: scripts/check_lint_ratchet.py
 # counts them per file against scripts/lint_ratchet.json, and no count may grow.
@@ -204,5 +205,3 @@ max-args = 7
 "test/test_ask_handler.py" = ["E402"]
 "test/test_async.py" = ["E402"]
 "test/test_fetch_verify.py" = ["E402"]
-# An import after module code — fixed with the other misplaced imports (R-IMP-03, W2).
-"yuyutsava/core/docker_sandbox_backend.py" = ["E402"]

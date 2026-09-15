@@ -14,20 +14,12 @@ backfill re-embeds on recovery), and the disk file is authoritative regardless.
 
 from __future__ import annotations
 
-import json
 import logging
-import time
 from abc import ABC, abstractmethod
-from typing import Any
 
-from yuyutsava.memory.embedder import Embedder
 from yuyutsava.retrieval.hit import Hit
-from yuyutsava.retrieval.keyword import keyword_tokens
-from yuyutsava.retrieval.pg import PgVectorSearch, PgVectorTable
-from yuyutsava.retrieval.vector import vector_literal
+from yuyutsava.retrieval.pg import PgVectorTable
 from yuyutsava.skills.registry import SkillMeta
-from yuyutsava.storage.base import BaseSqliteStore
-from yuyutsava.storage.pg.pool import PgPool
 
 logger = logging.getLogger("yuyutsava.skills.store")
 

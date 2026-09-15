@@ -11,13 +11,9 @@ Same two-backend shape as :mod:`yuyutsava.context.artifacts`.
 from __future__ import annotations
 
 import logging
-import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-from yuyutsava.storage.base import BaseSqliteStore
-from yuyutsava.storage.pg.pool import PgPool
-from yuyutsava.storage.pg.threads import ensure_thread
 
 logger = logging.getLogger("yuyutsava.context.summary_store")
 

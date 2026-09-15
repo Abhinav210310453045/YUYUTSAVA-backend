@@ -24,7 +24,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from yuyutsava.events.bus import EventBus, make_envelope
-from yuyutsava.storage.events import Store
 
 logger = logging.getLogger("yuyutsava.events.source")
 

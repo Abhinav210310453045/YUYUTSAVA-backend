@@ -21,7 +21,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from yuyutsava.storage.events.store import Store
 from yuyutsava.storage.events.roles import PrefsBackend
 
 logger = logging.getLogger("yuyutsava.storage.prefs")

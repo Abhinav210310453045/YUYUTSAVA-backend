@@ -83,7 +83,6 @@ from yuyutsava.storage.paths import (
     WorkspaceLayout,
     blobs_dir,
     checkpoints_db_path,
-    state_db_path,
     state_dir,
 )
 from yuyutsava.storage.pg import migrations as pg_migrations

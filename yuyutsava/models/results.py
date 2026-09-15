@@ -18,7 +18,7 @@ consistent, actionable response — never a silent truncation.
 
 from __future__ import annotations
 
-from typing import Literal, Union
+from typing import Literal
 
 from pydantic import BaseModel
 

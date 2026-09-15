@@ -33,7 +33,6 @@ import unittest
 from yuyutsava.core import config as C
 from yuyutsava.llm import (
     Capability,
-    ModelHandle,
     chat_model,
     handle_for,
     model_handle,

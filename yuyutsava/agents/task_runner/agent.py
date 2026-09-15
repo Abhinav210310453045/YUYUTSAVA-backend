@@ -28,7 +28,6 @@ from yuyutsava.agents.task_runner.permissions import (
     build_interrupt_payload,
     decide,
     get_alternatives,
-    get_risk_level,
 )
 from yuyutsava.agents.task_runner.zones import classify_zone
 from yuyutsava.consent.models import parse_consent_decision as _parse_consent_decision

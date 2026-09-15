@@ -377,7 +377,6 @@ def wired_stores(tmp: Path) -> dict[str, Any]:
     stays fast and touches no database.
     """
     from yuyutsava.context.artifacts_unified import (
-        UnifiedArtifactStore,
         sqlite_artifact_store,
     )
     from yuyutsava.context.config import ContextSettings

@@ -13,11 +13,8 @@ from __future__ import annotations
 from yuyutsava.storage.events.roles import EventPayloadReader, RecallReader
 
 import json
-from typing import Any
 
 from langchain_core.tools import BaseTool, tool
-
-from yuyutsava.storage.events import Store
 
 
 def make_fetch_event_tool(store: EventPayloadReader) -> BaseTool:

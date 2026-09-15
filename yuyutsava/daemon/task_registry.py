@@ -30,9 +30,6 @@ from typing import Any, Literal
 
 from ulid import ULID
 
-from yuyutsava.storage.base import BaseSqliteStore
-from yuyutsava.storage.pg.pool import PgPool
-from yuyutsava.storage.pg.threads import ensure_thread
 
 logger = logging.getLogger("yuyutsava.daemon.task_registry")
 

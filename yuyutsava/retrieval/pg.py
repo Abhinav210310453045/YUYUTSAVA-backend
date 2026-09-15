@@ -18,7 +18,7 @@ per-word ``ILIKE`` hit-count ranking, and the dedup ``LIMIT 1`` probe.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from yuyutsava.retrieval.hit import Hit

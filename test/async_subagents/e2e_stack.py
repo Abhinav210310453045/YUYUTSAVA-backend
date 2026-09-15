@@ -36,7 +36,6 @@ import os
 import socket
 import sys
 import time
-import uuid
 from contextlib import closing
 
 import httpx

@@ -90,7 +90,7 @@ from prompt_toolkit.mouse_events import MouseEventType
 from prompt_toolkit.output import create_output
 from prompt_toolkit.styles import Style
 
-from yuyutsava.cli.render.ansi_wrap import visible_width, wrap_ansi
+from yuyutsava.cli.render.ansi_wrap import wrap_ansi
 from yuyutsava.cli.render.context_panel import (
     MIN_DASHBOARD_COLS,
     panel_fragments,

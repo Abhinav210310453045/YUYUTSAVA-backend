@@ -48,9 +48,9 @@ from yuyutsava.memory.store import (
     VALID_KINDS,
     MemoryHit,
     MemoryStore,
-    _keyword_tokens,
     mint_memory_id,
 )
+from yuyutsava.retrieval.keyword import keyword_tokens as _keyword_tokens
 from yuyutsava.retrieval.pg import PgVectorSearch, PgVectorTable
 from yuyutsava.retrieval.vector import vector_literal
 from yuyutsava.storage.base import BaseSqliteStore

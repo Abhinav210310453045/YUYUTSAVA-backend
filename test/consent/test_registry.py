@@ -6,7 +6,6 @@ persistence + load-on-init. Runnable as a script or via pytest.
 
 from __future__ import annotations
 
-import asyncio
 import os
 import sys
 import time

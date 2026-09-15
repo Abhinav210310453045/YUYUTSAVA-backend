@@ -49,7 +49,6 @@ from yuyutsava.storage.paths import interrupts_db_path, state_db_path
 from yuyutsava.storage.sessions import (
     SessionsSettings,
     build_checkpointer,
-    get_default_session_store,
 )
 from yuyutsava.audio_io.blobs import delete_thread_voice_blobs
 from yuyutsava.storage.pg.pool import PgPool

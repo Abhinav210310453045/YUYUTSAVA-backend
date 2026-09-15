@@ -16,7 +16,6 @@ subscriber** and the loss is logged — slow consumers can't stall sources.
 from __future__ import annotations
 
 import asyncio
-import dataclasses
 import fnmatch
 import logging
 import time

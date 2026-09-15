@@ -31,7 +31,7 @@ from yuyutsava.core.config import LlmSettings, SearchConfig, llm_settings_from_e
 from yuyutsava.core.engine import AgentBundle, build_tinker_agent, context_middleware
 from yuyutsava.llm import chat_model
 from yuyutsava.skills.registry import SkillRegistry
-from yuyutsava.storage.paths import WorkspaceLayout, state_db_path
+from yuyutsava.storage.paths import WorkspaceLayout
 from yuyutsava.async_subagents.host import AsyncSubagentHost, resolve_allow_blocking
 from yuyutsava.async_subagents.host_lock import acquire_or_attach_host
 from yuyutsava.async_subagents.mirror import AsyncTaskMirror

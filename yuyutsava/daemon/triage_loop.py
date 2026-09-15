@@ -31,7 +31,7 @@ from yuyutsava.daemon.channels import (
 )
 from yuyutsava.daemon.consent import ConsentEvaluator
 from yuyutsava.events.bus import EventBus, EventEnvelope
-from yuyutsava.storage.events import ConsentRule, Proposal, Store
+from yuyutsava.storage.events import ConsentRule, Proposal
 from yuyutsava.storage.events.roles import TriageStore
 from yuyutsava.skills.registry import SkillRegistry
 

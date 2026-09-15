@@ -43,7 +43,7 @@ import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Callable
 
 from yuyutsava.storage.paths import WorkspaceLayout, state_dir
 

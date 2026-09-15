@@ -369,7 +369,6 @@ class EmptyAssistantMessages(unittest.TestCase):
         self.assertEqual(list(diagnose(msgs).empty_assistant), ["a1"])
 
     def test_removals_come_before_anything_appended(self):
-        from langchain_core.messages import RemoveMessage
 
         msgs = wedged_history() + [
             AIMessage(content="", id="ai-empty"),

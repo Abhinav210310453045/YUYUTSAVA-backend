@@ -15,21 +15,14 @@ session delete; ``delete_older_than`` lets the TTL sweeper age out orphans.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
-import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import ClassVar
 
-from ulid import ULID
 
-from yuyutsava.storage.base import BaseSqliteStore
 from yuyutsava.storage.paths import blobs_dir, state_db_path
-from yuyutsava.storage.pg.pool import PgPool
-from yuyutsava.storage.pg.threads import ensure_thread
 from .types import RenderResult
 
 logger = logging.getLogger("yuyutsava.visuals.store")

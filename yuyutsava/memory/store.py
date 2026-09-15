@@ -17,22 +17,14 @@ per-connection type registration is needed through the pool.
 
 from __future__ import annotations
 
-import json
 import logging
-import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
 
 from ulid import ULID
 
-from yuyutsava.memory.embedder import Embedder
-from yuyutsava.retrieval.keyword import keyword_tokens as _keyword_tokens
-from yuyutsava.retrieval.pg import PgVectorSearch, PgVectorTable
-from yuyutsava.retrieval.vector import vector_literal as _vector_literal
-from yuyutsava.storage.base import BaseSqliteStore
-from yuyutsava.storage.pg.pool import PgPool
-from yuyutsava.storage.pg.threads import ensure_thread
+from yuyutsava.retrieval.pg import PgVectorTable
 
 logger = logging.getLogger("yuyutsava.memory.store")
 

@@ -12,33 +12,18 @@ Mirror the SQLite twins method-for-method. Differences from SQLite:
 
 from __future__ import annotations
 
-import fnmatch
 import json
 import logging
 import time
 from typing import Any
 
-from ulid import ULID
 
 from yuyutsava.storage.events.abc import (
-    ConsentGrantStore,
-    ConsentRuleStore,
-    DecisionStore,
-    EventStore,
-    PendingAskStore,
     PrefsBackend,
-    ProposalStore,
-    ToolCounterStore,
 )
 
 # The pending_asks row<->record codecs are backend-agnostic (plain JSON text
 # columns), so both twins share one implementation rather than drifting.
-from yuyutsava.storage.events.sqlite_backend import (
-    _ASK_COLS,
-    ask_record_to_params,
-    ask_row_to_record,
-)
-from yuyutsava.storage.models import ConsentRule, Decision, EventRecord, Proposal
 from yuyutsava.storage.pg.pool import PgPool
 
 logger = logging.getLogger("yuyutsava.storage.events.pg")

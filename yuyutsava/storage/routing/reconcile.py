@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Awaitable, Callable, Sequence
+from typing import Awaitable, Callable
 
 from yuyutsava.storage.events.sqlite_backend import SqliteEventsBackend
 from yuyutsava.storage.pg.pool import PgPool

@@ -6,7 +6,6 @@ or via pytest. Exits non-zero on first failure.
 
 from __future__ import annotations
 
-import asyncio
 import os
 import sys
 import time

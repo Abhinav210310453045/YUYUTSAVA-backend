@@ -18,7 +18,6 @@ Run:  .venv/bin/python test/storage/test_feedback_purge.py
 
 from __future__ import annotations
 
-import asyncio
 import os
 import tempfile
 import unittest

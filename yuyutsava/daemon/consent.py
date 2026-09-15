@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from yuyutsava.events.bus import EventEnvelope
-from yuyutsava.storage.events import ConsentRule, Store
+from yuyutsava.storage.events import ConsentRule
 from yuyutsava.storage.events.roles import ConsentRuleReader
 
 logger = logging.getLogger("yuyutsava.daemon.consent")

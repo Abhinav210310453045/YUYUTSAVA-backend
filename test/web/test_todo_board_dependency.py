@@ -26,7 +26,6 @@ Run:  .venv/bin/python test/web/test_todo_board_dependency.py
 
 from __future__ import annotations
 
-import inspect
 import unittest
 
 from fastapi import FastAPI

@@ -20,23 +20,15 @@ cadence (default TTL 7 days, ``SweeperConfig.artifact_ttl_sec``).
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
-import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any
 
 from ulid import ULID
 from langgraph.config import get_config
 
-from yuyutsava.retrieval.chunking import chunk_text
-from yuyutsava.retrieval.pg import PgVectorSearch, PgVectorTable
-from yuyutsava.retrieval.vector import vector_literal
-from yuyutsava.storage.base import BaseSqliteStore
-from yuyutsava.storage.pg.pool import PgPool
-from yuyutsava.storage.pg.threads import ensure_thread
+from yuyutsava.retrieval.pg import PgVectorTable
 
 logger = logging.getLogger("yuyutsava.context.artifacts")
 
