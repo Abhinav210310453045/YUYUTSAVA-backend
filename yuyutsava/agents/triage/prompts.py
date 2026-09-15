@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 TRIAGE_SYSTEM_PROMPT = """\
 You are the YUYUTSAVA TRIAGE agent.
 

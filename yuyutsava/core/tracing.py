@@ -32,11 +32,11 @@ Usage::
 
 from __future__ import annotations
 
+import base64
 import logging
 import os
 import urllib.error
 import urllib.request
-import base64
 from importlib.metadata import PackageNotFoundError, version
 
 from opentelemetry.sdk.trace.export import SpanExportResult
@@ -121,7 +121,9 @@ def _dead_switch_exporter_class():
     if _ExporterClass is not None:
         return _ExporterClass
 
-    from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter  # noqa: PLC0415 — heavy: +64 modules, ~22 ms
+    from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
+        OTLPSpanExporter,  # noqa: PLC0415 — heavy: +64 modules, ~22 ms
+    )
 
     class _DeadSwitchExporter(OTLPSpanExporter):
         """OTLP exporter that gives up for good on the first failed batch.
@@ -247,7 +249,9 @@ def get_callback():
     if _dead or not langfuse_reachable():
         return None
     try:
-        from langfuse.langchain import CallbackHandler  # noqa: PLC0415 — heavy: +269 modules, ~90 ms
+        from langfuse.langchain import (
+            CallbackHandler,  # noqa: PLC0415 — heavy: +269 modules, ~90 ms
+        )
 
         _ensure_client()
         return CallbackHandler()

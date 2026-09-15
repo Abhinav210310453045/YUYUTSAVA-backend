@@ -15,7 +15,6 @@ import logging
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
-
 from yuyutsava.storage.models import InterruptRecord
 
 if TYPE_CHECKING:

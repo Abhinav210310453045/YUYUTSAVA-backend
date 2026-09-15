@@ -26,9 +26,9 @@ for this" is not "this was free".
 
 from __future__ import annotations
 
+import textwrap
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
-import textwrap
 
 from rich.console import Group
 from rich.panel import Panel

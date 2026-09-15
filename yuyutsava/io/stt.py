@@ -95,7 +95,9 @@ class FasterWhisperSTT(STT):
     def _load(self):
         if self._model is None:
             try:
-                from faster_whisper import WhisperModel  # type: ignore  # noqa: PLC0415 — optional dependency
+                from faster_whisper import (
+                    WhisperModel,  # type: ignore  # noqa: PLC0415 — optional dependency
+                )
             except ImportError as exc:
                 raise RuntimeError(
                     "faster-whisper not installed — run: uv pip install 'yuyutsava[voice]'"

@@ -17,7 +17,8 @@ import asyncio
 import logging
 import os
 import re
-from dataclasses import dataclass, replace as _dc_replace
+from dataclasses import dataclass
+from dataclasses import replace as _dc_replace
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
@@ -30,15 +31,21 @@ from yuyutsava.agents.orchestrator.agent import OrchestratorDeps
 from yuyutsava.agents.orchestrator.capabilities import render_capabilities_block
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
 from yuyutsava.agents.task_runner.tools import set_default_consent, set_default_policy
-from yuyutsava.config.env import env, env_flag
-from yuyutsava.consent import ConsentRegistry
+from yuyutsava.agents.tinker.subagent import make_tinker_subagent
 from yuyutsava.agents.triage.agent import TriageAgent
+from yuyutsava.async_subagents.host import AsyncSubagentHost, resolve_allow_blocking
+from yuyutsava.async_subagents.host_lock import acquire_or_attach_host, register_host_cleanup
 from yuyutsava.async_subagents.launch_index import LaunchIndex
+from yuyutsava.async_subagents.mirror import AsyncTaskMirror, MirroredTask
 from yuyutsava.async_subagents.session_origin import SessionOriginMap
+from yuyutsava.async_subagents.watcher import AsyncTaskHealthWatcher
 from yuyutsava.channels.config import ChannelsConfig
 from yuyutsava.channels.plugin import InboundSink
 from yuyutsava.channels.registry import ChannelPluginRegistry
+from yuyutsava.config.env import env, env_flag
+from yuyutsava.consent import ConsentRegistry
 from yuyutsava.context.config import ContextSettings
+from yuyutsava.context.tools import make_context_tools
 from yuyutsava.core.config import (
     DaemonConfig,
     EventsConfig,
@@ -47,13 +54,16 @@ from yuyutsava.core.config import (
     SourceConfig,
     llm_settings_from_env,
 )
-from yuyutsava.llm import chat_model
+from yuyutsava.core.engine import context_middleware
 from yuyutsava.core.model_router import ComplexityScorer, ModelRouter
 from yuyutsava.core.policy import PermissionsPolicy, StorePolicyCapEnforcer
+from yuyutsava.core.tracing import warm_reachability_cache
 from yuyutsava.daemon.ask_registry import AskRegistry
 from yuyutsava.daemon.ask_resume import AskResumeService
 from yuyutsava.daemon.channels import ChannelEvent, ChannelRouter, TimelinePayload
 from yuyutsava.daemon.checkpointing import CheckpointerSaver
+from yuyutsava.daemon.conversation_manager import ConversationManager
+from yuyutsava.daemon.log_bridge import LogBridge
 from yuyutsava.daemon.orchestrator_loop import OrchestratorLoop
 from yuyutsava.daemon.resources import AdmissionController, ResourceMonitor, ResourceSettings
 from yuyutsava.daemon.task_registry import TaskRegistry
@@ -61,24 +71,27 @@ from yuyutsava.daemon.task_submission import TaskSubmissionService
 from yuyutsava.daemon.terminal_channel import TerminalChannel
 from yuyutsava.daemon.triage_loop import OrchestratorTask, TriageLoop
 from yuyutsava.daemon.usage import UsageStore
+from yuyutsava.daemon.voice_channel import voice_channel_from_env
 from yuyutsava.daemon.web.auth import AuthSettings
 from yuyutsava.daemon.web.server import WebChannel, WebHub, make_app
 from yuyutsava.daemon.web.services.decision_service import DecisionService
 from yuyutsava.events.bus import EventBus
 from yuyutsava.events.registry import SourceRegistry
+from yuyutsava.llm import chat_model
 from yuyutsava.mcp.config import MCPConfig
 from yuyutsava.mcp.loader import MCPClientManager
 from yuyutsava.memory.config import MemorySettings
 from yuyutsava.memory.embedder import Embedder
+from yuyutsava.memory.store import MemoryStore
 from yuyutsava.ports import CapEnforcer
 from yuyutsava.prefs.injector import PrefsInjector
 from yuyutsava.prefs.runtime import RuntimeSettings
 from yuyutsava.skills.registry import SkillRegistry
 from yuyutsava.skills.store import SkillIndexer
 from yuyutsava.storage.backend import StorageSettings
-from yuyutsava.memory.store import MemoryStore
-from yuyutsava.storage.factory import StoreFactory
 from yuyutsava.storage.events import Store
+from yuyutsava.storage.factory import StoreFactory
+from yuyutsava.storage.feedback_store import set_default_feedback_store
 from yuyutsava.storage.paths import (
     WorkspaceLayout,
     blobs_dir,
@@ -87,23 +100,11 @@ from yuyutsava.storage.paths import (
 )
 from yuyutsava.storage.pg import migrations as pg_migrations
 from yuyutsava.storage.pg.pool import PgPool
+from yuyutsava.storage.prefs import PrefsStore
 from yuyutsava.storage.routing.health import StorageHealth
 from yuyutsava.storage.routing.reconcile import CONTENT_TABLE_SPECS, Reconciler
-from yuyutsava.storage.prefs import PrefsStore
 from yuyutsava.storage.sessions import PgSessionStore, set_default_session_store
 from yuyutsava.storage.sweeper import BlobSweepTarget, SweeperConfig, UnifiedSweeper
-from yuyutsava.agents.tinker.subagent import make_tinker_subagent
-from yuyutsava.async_subagents.host import AsyncSubagentHost, resolve_allow_blocking
-from yuyutsava.async_subagents.host_lock import acquire_or_attach_host, register_host_cleanup
-from yuyutsava.async_subagents.mirror import AsyncTaskMirror, MirroredTask
-from yuyutsava.async_subagents.watcher import AsyncTaskHealthWatcher
-from yuyutsava.context.tools import make_context_tools
-from yuyutsava.core.engine import context_middleware
-from yuyutsava.core.tracing import warm_reachability_cache
-from yuyutsava.daemon.conversation_manager import ConversationManager
-from yuyutsava.daemon.log_bridge import LogBridge
-from yuyutsava.daemon.voice_channel import voice_channel_from_env
-from yuyutsava.storage.feedback_store import set_default_feedback_store
 from yuyutsava.todoboard.exchange import get_default_exchange
 from yuyutsava.todoboard.recall import TodoNoteIndex, set_default_note_index
 from yuyutsava.todoboard.store import set_default_todo_store

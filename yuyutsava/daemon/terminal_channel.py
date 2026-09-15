@@ -14,6 +14,7 @@ import json
 import sys
 import time
 
+from yuyutsava.consent import decision_token, is_permission_ask
 from yuyutsava.daemon.channels import (
     AskPrompt,
     ChannelEvent,
@@ -26,7 +27,6 @@ from yuyutsava.daemon.channels import (
     UserChannel,
 )
 from yuyutsava.storage.events import Proposal
-from yuyutsava.consent import decision_token, is_permission_ask
 
 _SEP = "━" * 60
 

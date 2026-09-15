@@ -42,9 +42,9 @@ from typing import Any
 from langchain_core.messages import ToolMessage
 from langgraph.types import Command
 
+from yuyutsava.async_subagents.watcher import compact_error
 from yuyutsava.policy.base import Policy
 from yuyutsava.policy.types import Raw, ToolCall, ToolDecision
-from yuyutsava.async_subagents.watcher import compact_error
 
 logger = logging.getLogger("yuyutsava.async_subagents.check_guard_policy")
 

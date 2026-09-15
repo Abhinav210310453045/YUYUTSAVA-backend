@@ -18,7 +18,6 @@ from yuyutsava.core.prompts import rules_section, tool_discovery_section
 from yuyutsava.platform import host_profile
 from yuyutsava.storage.paths import WorkspaceLayout
 
-
 _IDENTITY = """\
 ## WHO YOU ARE — TinkerAgent
 

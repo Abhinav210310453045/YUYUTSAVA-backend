@@ -7,8 +7,8 @@ ships with ``langchain-openai``, which is already a core dependency.
 from __future__ import annotations
 
 from langchain_core.language_models import BaseChatModel
-from pydantic import SecretStr
 from langchain_openai import AzureChatOpenAI
+from pydantic import SecretStr
 
 from yuyutsava.core.config import AzureOpenAISettings
 from yuyutsava.llm.base import Provider

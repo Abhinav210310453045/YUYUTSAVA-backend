@@ -25,7 +25,6 @@ from yuyutsava.daemon.web.services.stream_service import WebHub
 from yuyutsava.storage.models import ConsentRule, Decision
 from yuyutsava.storage.sessions.sqlite_impl import SqliteSessionStore
 
-
 # --------------------------------------------------------------------------
 # Fakes — duck-typed singletons create_app attaches to app.state
 # --------------------------------------------------------------------------

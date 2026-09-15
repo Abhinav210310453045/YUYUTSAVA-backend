@@ -17,7 +17,6 @@ from yuyutsava.storage.sessions import (
     get_default_session_store,
 )
 
-
 _STATUS_COLOR_CODES = {
     "running": "\033[32m",
     "done": "\033[2m",

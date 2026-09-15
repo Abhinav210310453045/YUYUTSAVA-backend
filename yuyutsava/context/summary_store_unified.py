@@ -37,8 +37,9 @@ from typing import ClassVar
 
 from yuyutsava.storage.base import BaseSqliteStore
 from yuyutsava.storage.dialect import Dialect, PostgresDialect, SqliteDialect
-from .summary_store import ThreadSummary, ThreadSummaryStore
 from yuyutsava.storage.paths import state_db_path
+
+from .summary_store import ThreadSummary, ThreadSummaryStore
 
 logger = logging.getLogger("yuyutsava.context.summary_store_unified")
 

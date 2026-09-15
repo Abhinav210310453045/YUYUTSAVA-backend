@@ -41,6 +41,7 @@ from typing import Any, ClassVar
 
 from yuyutsava.storage.base import BaseSqliteStore
 from yuyutsava.storage.dialect import Dialect, PostgresDialect, SqliteDialect
+from yuyutsava.storage.paths import state_db_path
 from yuyutsava.todoboard.models import (
     TodoAttachmentV1,
     TodoCardSummaryV1,
@@ -50,13 +51,12 @@ from yuyutsava.todoboard.models import (
     TodoObjectiveV1,
 )
 from yuyutsava.todoboard.store import (
-    DEFAULT_LIST_LIMIT,
     _CARD_UPDATE_FIELDS,
     _OBJECTIVE_UPDATE_FIELDS,
+    DEFAULT_LIST_LIMIT,
     TodoStore,
     _tags_json,
 )
-from yuyutsava.storage.paths import state_db_path
 
 logger = logging.getLogger("yuyutsava.todoboard.store_unified")
 

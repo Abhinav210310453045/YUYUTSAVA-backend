@@ -39,9 +39,9 @@ from __future__ import annotations
 import logging
 from typing import Iterable
 
+from yuyutsava.async_subagents.interrupt_middleware import RemoteThreadPatcher
 from yuyutsava.policy.base import Policy
 from yuyutsava.policy.types import ToolCall, ToolDecision
-from yuyutsava.async_subagents.interrupt_middleware import RemoteThreadPatcher
 
 logger = logging.getLogger("yuyutsava.async_subagents.interrupt_middleware")
 

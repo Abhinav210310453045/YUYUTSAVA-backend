@@ -12,11 +12,11 @@ other backends (e.g. ElevenLabs MP3) are decoded via ``soundfile`` when present.
 
 from __future__ import annotations
 
+import array
 import logging
 import tempfile
 import wave
 from pathlib import Path
-import array
 
 from yuyutsava.io.tts import TTS
 

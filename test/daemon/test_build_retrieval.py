@@ -121,8 +121,8 @@ class RetrievalOnPostgres(_Base):
 
     async def asyncSetUp(self) -> None:
         await super().asyncSetUp()
-        from yuyutsava.memory.embedder import Embedder
         from yuyutsava.memory.config import MemorySettings
+        from yuyutsava.memory.embedder import Embedder
         from yuyutsava.storage.pg.pool import PgPool
 
         self.settings = StorageSettings(backend="postgres", pg_dsn=_pg_dsn())

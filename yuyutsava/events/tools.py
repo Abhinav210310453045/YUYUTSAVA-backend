@@ -9,12 +9,12 @@ the orchestrator's context bounded — events are referenced by id, not embedded
 
 from __future__ import annotations
 
-# Each tool declares only what it reads (Phase 2 step 2.7).
-from yuyutsava.storage.events.roles import EventPayloadReader, RecallReader
-
 import json
 
 from langchain_core.tools import BaseTool, tool
+
+# Each tool declares only what it reads (Phase 2 step 2.7).
+from yuyutsava.storage.events.roles import EventPayloadReader, RecallReader
 
 
 def make_fetch_event_tool(store: EventPayloadReader) -> BaseTool:

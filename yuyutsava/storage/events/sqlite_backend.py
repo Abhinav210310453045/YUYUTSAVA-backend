@@ -24,6 +24,9 @@ from typing import Any, AsyncIterator, Sequence
 import aiosqlite
 
 from yuyutsava.storage.base import amigration_lock
+from yuyutsava.storage.events.abc import (
+    PrefsBackend,
+)
 
 # The pending_asks wire helpers moved to events/ask_wire.py (ADR-002 step
 # 2.5b) — they are backend-independent and the unified store needed them.
@@ -31,9 +34,6 @@ from yuyutsava.storage.events.ask_wire import (  # noqa: F401
     _ASK_COLS,
     ask_record_to_params,
     ask_row_to_record,
-)
-from yuyutsava.storage.events.abc import (
-    PrefsBackend,
 )
 from yuyutsava.storage.events.schema import SCHEMA_SQL, migrate
 from yuyutsava.storage.models import ConsentRule, Decision, Proposal

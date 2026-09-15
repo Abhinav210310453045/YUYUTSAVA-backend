@@ -31,9 +31,9 @@ from yuyutsava.daemon.channels import (
 )
 from yuyutsava.daemon.consent import ConsentEvaluator
 from yuyutsava.events.bus import EventBus, EventEnvelope
+from yuyutsava.skills.registry import SkillRegistry
 from yuyutsava.storage.events import ConsentRule, Proposal
 from yuyutsava.storage.events.roles import TriageStore
-from yuyutsava.skills.registry import SkillRegistry
 
 logger = logging.getLogger("yuyutsava.daemon.triage_loop")
 

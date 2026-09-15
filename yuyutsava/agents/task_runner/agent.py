@@ -31,6 +31,7 @@ from yuyutsava.agents.task_runner.permissions import (
 )
 from yuyutsava.agents.task_runner.zones import classify_zone
 from yuyutsava.consent.models import parse_consent_decision as _parse_consent_decision
+from yuyutsava.core.agent_context import current_context
 from yuyutsava.models.operations import (
     FilesystemZone,
     OperationRequest,
@@ -48,7 +49,6 @@ from yuyutsava.models.results import (
 )
 from yuyutsava.models.tool_messages import SuppressedContentNotice
 from yuyutsava.storage.paths import WorkspaceLayout
-from yuyutsava.core.agent_context import current_context
 
 logger = logging.getLogger("yuyutsava.task_runner")
 

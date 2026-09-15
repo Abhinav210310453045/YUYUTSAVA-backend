@@ -24,7 +24,7 @@ from yuyutsava.storage.interrupts import InterruptsStore
 from yuyutsava.storage.interrupts_unified import sqlite_interrupts_store
 from yuyutsava.storage.models import Session
 from yuyutsava.storage.paths import WorkspaceLayout
-from yuyutsava.storage.sessions import SessionNotFound, SessionStore, SessionsSettings
+from yuyutsava.storage.sessions import SessionNotFound, SessionsSettings, SessionStore
 
 logger = logging.getLogger("yuyutsava.sessions.runner")
 
@@ -52,7 +52,10 @@ async def _patch_orphan_cancellations(agent: CompiledStateGraph, thread_id: str)
     ``SESSION_ENDED`` because this runs on resume: the prompt died with the
     previous process, so consent was never given.
     """
-    from yuyutsava.conversation.repair import Cause, repair_orphan_tool_calls  # noqa: PLC0415 — import cycle: conversation imports runner
+    from yuyutsava.conversation.repair import (  # noqa: PLC0415 — import cycle: conversation imports runner
+        Cause,
+        repair_orphan_tool_calls,
+    )
 
     return await repair_orphan_tool_calls(agent, thread_id, cause=Cause.SESSION_ENDED)
 

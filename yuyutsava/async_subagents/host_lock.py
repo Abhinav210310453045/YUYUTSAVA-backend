@@ -33,6 +33,7 @@ Cross-platform: the lock is a :class:`yuyutsava.platform.FileLock`
 
 from __future__ import annotations
 
+import atexit
 import json
 import logging
 import os
@@ -42,7 +43,6 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
-import atexit
 
 from yuyutsava.platform import FileLock, pid_alive
 from yuyutsava.storage.paths import state_dir

@@ -33,18 +33,17 @@ rejects an implicit container for the same reason.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 import logging
+from dataclasses import dataclass
 from typing import Any
 
-from yuyutsava.storage.backend import StorageSettings
-from yuyutsava.storage.domains import BY_TABLE, Failover
-from yuyutsava.storage.paths import state_db_path
 from yuyutsava.memory.store_unified import pg_memory_store, sqlite_memory_store
 from yuyutsava.skills.store_unified import pg_skill_store, sqlite_skill_store
+from yuyutsava.storage.backend import StorageSettings
+from yuyutsava.storage.domains import BY_TABLE, Failover
 from yuyutsava.storage.events import Store
 from yuyutsava.storage.feedback_store_unified import pg_feedback_store, sqlite_feedback_store
+from yuyutsava.storage.paths import state_db_path
 from yuyutsava.storage.routing.facade import RoutedStore
 from yuyutsava.storage.voice_store_unified import pg_voice_store, sqlite_voice_store
 from yuyutsava.visuals.store_unified import pg_visual_store, sqlite_visual_store
@@ -189,7 +188,9 @@ class StoreFactory:
         """
         if self._pg is None or self._embedder is None:
             return None
-        from yuyutsava.context.transcript_index import PgTranscriptIndex  # noqa: PLC0415 — upward (storage -> context); moves with W3
+        from yuyutsava.context.transcript_index import (
+            PgTranscriptIndex,  # noqa: PLC0415 — upward (storage -> context); moves with W3
+        )
 
         return PgTranscriptIndex(self._pg, embedder=self._embedder)
 
@@ -221,12 +222,18 @@ class StoreFactory:
     # -- daemon bookkeeping -------------------------------------------------
 
     def tasks(self) -> Any:
-        from yuyutsava.daemon.task_store_unified import pg_task_store, sqlite_task_store  # noqa: PLC0415 — upward (storage -> daemon); moves with W3
+        from yuyutsava.daemon.task_store_unified import (  # noqa: PLC0415 — upward (storage -> daemon); moves with W3
+            pg_task_store,
+            sqlite_task_store,
+        )
 
         return pg_task_store(self._pg) if self.is_postgres else sqlite_task_store(self._db())
 
     def usage(self) -> Any:
-        from yuyutsava.daemon.usage import PgUsageStore, SqliteUsageStore  # noqa: PLC0415 — upward (storage -> daemon); moves with W3
+        from yuyutsava.daemon.usage import (  # noqa: PLC0415 — upward (storage -> daemon); moves with W3
+            PgUsageStore,
+            SqliteUsageStore,
+        )
 
         return PgUsageStore(self._pg) if self.is_postgres else SqliteUsageStore(self._db())
 
@@ -272,7 +279,10 @@ class StoreFactory:
         )
 
     def todos(self) -> Any:
-        from yuyutsava.todoboard.store_unified import pg_todo_store, sqlite_todo_store  # noqa: PLC0415 — upward (storage -> todoboard); moves with W3
+        from yuyutsava.todoboard.store_unified import (  # noqa: PLC0415 — upward (storage -> todoboard); moves with W3
+            pg_todo_store,
+            sqlite_todo_store,
+        )
 
         return self._wrap(
             "todo_cards",

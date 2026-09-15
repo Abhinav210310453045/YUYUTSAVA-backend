@@ -25,13 +25,12 @@ lookup rather than a query on the HITL hot path.
 
 from __future__ import annotations
 
-from yuyutsava.storage.events.roles import PendingAskRegistry
-
 import asyncio
 import logging
 from typing import Any
 
 from yuyutsava.daemon.channels import AskPrompt
+from yuyutsava.storage.events.roles import PendingAskRegistry
 
 logger = logging.getLogger("yuyutsava.daemon.ask_registry")
 

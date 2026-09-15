@@ -21,8 +21,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
 
-
 from yuyutsava.storage.paths import blobs_dir, state_db_path
+
 from .types import RenderResult
 
 logger = logging.getLogger("yuyutsava.visuals.store")
@@ -112,7 +112,9 @@ def set_default_visual_store(store: VisualStore) -> None:
 def get_default_visual_store() -> VisualStore:
     global _default_store
     if _default_store is None:
-        from yuyutsava.visuals.store_unified import sqlite_visual_store  # noqa: PLC0415 — import cycle: yuyutsava.visuals.store_unified imports this module
+        from yuyutsava.visuals.store_unified import (
+            sqlite_visual_store,  # noqa: PLC0415 — import cycle: yuyutsava.visuals.store_unified imports this module
+        )
 
         # Migrated to the dialect-backed store (ADR-002 step 2.3). The daemon
         # installs a RoutedStore over the same implementation; this is the

@@ -9,11 +9,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from yuyutsava.daemon.task_store_unified import sqlite_task_store
 from yuyutsava.daemon.task_registry import (
     TaskRegistry,
     mint_task_id,
 )
+from yuyutsava.daemon.task_store_unified import sqlite_task_store
 
 
 class TaskRegistryTests(unittest.IsolatedAsyncioTestCase):

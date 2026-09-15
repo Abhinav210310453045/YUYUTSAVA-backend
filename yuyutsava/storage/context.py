@@ -82,7 +82,9 @@ class AppContext:
     def todos(self) -> Any:
         if self.todo_store is not None:
             return self.todo_store
-        from yuyutsava.todoboard.store import get_default_todo_store  # noqa: PLC0415 — upward (storage -> todoboard); moves with W3
+        from yuyutsava.todoboard.store import (
+            get_default_todo_store,  # noqa: PLC0415 — upward (storage -> todoboard); moves with W3
+        )
 
         return get_default_todo_store()
 

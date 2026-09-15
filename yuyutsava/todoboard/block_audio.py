@@ -22,10 +22,10 @@ from typing import Any
 
 from ulid import ULID
 
-from yuyutsava.todoboard.block_registry import ArtifactBlock, file_validator
-from yuyutsava.todoboard.exchange import TodoValidationError
 from yuyutsava.audio_io.synth import synthesize_pcm
 from yuyutsava.io.tts import tts_from_env
+from yuyutsava.todoboard.block_registry import ArtifactBlock, file_validator
+from yuyutsava.todoboard.exchange import TodoValidationError
 
 # What the multipart endpoint accepts. Rendering is broader — the frontend
 # block claims any audio/* mime and plays it through Web Audio decoding.

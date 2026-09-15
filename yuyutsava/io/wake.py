@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import logging
 import os
-from abc import ABC, abstractmethod
 import time
+from abc import ABC, abstractmethod
 
 from yuyutsava.config.env import env_flag
 
@@ -107,8 +107,12 @@ class OpenWakeWordDetector(WakeWordDetector):
         if self._model is None:
             try:
                 import openwakeword  # type: ignore  # noqa: PLC0415 — optional dependency
-                from openwakeword.model import Model  # type: ignore  # noqa: PLC0415 — optional dependency
-                from openwakeword import utils as oww_utils  # type: ignore  # noqa: PLC0415 — optional dependency
+                from openwakeword import (
+                    utils as oww_utils,  # type: ignore  # noqa: PLC0415 — optional dependency
+                )
+                from openwakeword.model import (
+                    Model,  # type: ignore  # noqa: PLC0415 — optional dependency
+                )
             except ImportError as exc:
                 raise RuntimeError(
                     "openwakeword not installed — run: uv pip install 'yuyutsava[voice]'"

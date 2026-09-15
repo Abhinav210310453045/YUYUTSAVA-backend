@@ -42,9 +42,11 @@ from ulid import ULID
 
 from yuyutsava.storage.base import BaseSqliteStore
 from yuyutsava.storage.dialect import Dialect, PostgresDialect, SqliteDialect
+from yuyutsava.storage.paths import state_db_path
+
 from .store import (
-    DEFAULT_LIST_LIMIT,
     _EXT,
+    DEFAULT_LIST_LIMIT,
     VisualRecord,
     VisualStore,
     _blob_dir,
@@ -52,7 +54,6 @@ from .store import (
     _write_file,
 )
 from .types import RenderResult
-from yuyutsava.storage.paths import state_db_path
 
 logger = logging.getLogger("yuyutsava.visuals.store_unified")
 

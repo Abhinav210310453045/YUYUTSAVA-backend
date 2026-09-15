@@ -17,8 +17,8 @@ from pathlib import Path
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from yuyutsava.context.transcript_policy import TranscriptRecorderPolicy
-from yuyutsava.policy import adapter as tmw
 from yuyutsava.context.transcript_store_unified import sqlite_transcript_store
+from yuyutsava.policy import adapter as tmw
 
 
 class TranscriptStoreTests(unittest.IsolatedAsyncioTestCase):

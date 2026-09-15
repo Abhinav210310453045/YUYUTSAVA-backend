@@ -9,12 +9,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from yuyutsava.skills.registry import SkillMeta
+
 # Import the store first: it pulls in the memory.embedder→core chain, so core
 # is fully initialized before skills.registry loads (avoids an import-order cycle
 # when this module is imported standalone, before core).
 from yuyutsava.skills.store import SkillIndexer
 from yuyutsava.skills.store_unified import sqlite_skill_store
-from yuyutsava.skills.registry import SkillMeta
 
 
 def _meta(name: str, desc: str, *, scope: str = "personal", agent: str | None = None) -> SkillMeta:

@@ -24,7 +24,10 @@ def render_code(spec: dict[str, Any]) -> RenderResult:
     try:
         from pygments import highlight  # noqa: PLC0415 — optional dependency
         from pygments.formatters import ImageFormatter  # noqa: PLC0415 — optional dependency
-        from pygments.lexers import get_lexer_by_name, guess_lexer  # noqa: PLC0415 — optional dependency
+        from pygments.lexers import (  # noqa: PLC0415 — optional dependency
+            get_lexer_by_name,
+            guess_lexer,
+        )
         from pygments.util import ClassNotFound  # noqa: PLC0415 — optional dependency
     except ImportError as exc:  # pragma: no cover - install guard
         raise VisualError(

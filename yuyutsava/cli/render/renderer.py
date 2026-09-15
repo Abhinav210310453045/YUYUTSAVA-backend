@@ -32,7 +32,8 @@ from rich.padding import Padding
 from rich.spinner import Spinner
 from rich.text import Text
 
-from yuyutsava.cli.render import artifact_view as av, tool_format as tf
+from yuyutsava.cli.render import artifact_view as av
+from yuyutsava.cli.render import tool_format as tf
 from yuyutsava.cli.render.markdown_stream import MarkdownStream
 from yuyutsava.cli.render.plain import ChatRenderer
 from yuyutsava.core.streaming import StreamEvent

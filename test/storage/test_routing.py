@@ -17,12 +17,12 @@ from pathlib import Path
 import psycopg
 
 from yuyutsava.storage.backend import StorageSettings
-from yuyutsava.storage.events import Store
 from yuyutsava.storage.dialect import EventsSqliteDialect
-from yuyutsava.storage.events.unified import UnifiedEventStore, UnifiedProposalStore
+from yuyutsava.storage.events import Store
 from yuyutsava.storage.events.sqlite_backend import (
     SqliteEventsBackend,
 )
+from yuyutsava.storage.events.unified import UnifiedEventStore, UnifiedProposalStore
 from yuyutsava.storage.models import Proposal
 from yuyutsava.storage.routing.facade import RoutedStore
 from yuyutsava.storage.routing.health import StorageHealth

@@ -209,9 +209,8 @@ class SqliteUnifiedSkills(_SkillContract, _KeywordSearchContract, unittest.Isola
 
     async def test_an_embedder_on_sqlite_is_ignored_not_fatal(self) -> None:
         """Misconfiguration degrades to keyword search rather than crashing."""
-        from yuyutsava.skills.store_unified import UnifiedSkillStore
+        from yuyutsava.skills.store_unified import SkillSchema, UnifiedSkillStore
         from yuyutsava.storage.dialect import SqliteDialect
-        from yuyutsava.skills.store_unified import SkillSchema
 
         class _Exploding:
             async def embed_one(self, *a, **k):

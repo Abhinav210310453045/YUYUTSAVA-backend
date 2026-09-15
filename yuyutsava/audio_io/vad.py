@@ -18,10 +18,10 @@ the first phoneme.
 
 from __future__ import annotations
 
+import array
 import collections
 import logging
 from dataclasses import dataclass
-import array
 
 from yuyutsava.config.env import env_float, env_int
 

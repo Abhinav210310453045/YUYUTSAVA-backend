@@ -74,6 +74,7 @@ def test_no_duplicate_tool_names() -> None:
 
 if __name__ == "__main__":
     import sys
+
     import pytest
 
     sys.exit(pytest.main([__file__, "-v"]))

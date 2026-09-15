@@ -110,6 +110,8 @@ class _Result:
 
 
 async def _main() -> int:
+    import uvicorn
+
     from yuyutsava.async_subagents.host import AsyncSubagentHost
     from yuyutsava.async_subagents.mirror import AsyncTaskMirror, MirroredTask
     from yuyutsava.async_subagents.session_origin import SessionOriginMap
@@ -120,8 +122,6 @@ async def _main() -> int:
     from yuyutsava.daemon.web.app import create_app
     from yuyutsava.daemon.web.services.stream_service import WebChannel, WebHub
     from yuyutsava.storage.events import Store
-
-    import uvicorn
 
     r = _Result()
     print("\n== E2E async-subagent stack validation ==\n")

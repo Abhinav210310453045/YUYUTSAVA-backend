@@ -79,9 +79,9 @@ def _fake_chat_model():
     Patched on ``engine`` as well as ``yuyutsava.llm``: the engine imports
     ``chat_model`` at module level, so the builders call ``engine.chat_model``.
     """
-    import yuyutsava.llm as llm
     from langchain_core.language_models.fake_chat_models import FakeListChatModel
 
+    import yuyutsava.llm as llm
     from yuyutsava.core import engine
 
     original = (llm.chat_model, engine.chat_model)

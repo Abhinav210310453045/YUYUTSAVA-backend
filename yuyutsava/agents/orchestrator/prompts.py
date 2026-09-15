@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from yuyutsava.platform import host_profile
 
-
 # Designed to be ≈300 tokens. The {capabilities} block is filled at build time.
 ORCHESTRATOR_SYSTEM_PROMPT = """\
 You are the YUYUTSAVA ORCHESTRATOR.

@@ -48,11 +48,11 @@ from yuyutsava.context.artifacts import (
     mint_artifact_id,
     mint_chunk_id,
 )
+from yuyutsava.retrieval.chunking import chunk_text
 from yuyutsava.retrieval.pg import PgVectorSearch, PgVectorTable
 from yuyutsava.retrieval.vector import vector_literal
 from yuyutsava.storage.base import BaseSqliteStore
 from yuyutsava.storage.dialect import Dialect, PostgresDialect, SqliteDialect
-from yuyutsava.retrieval.chunking import chunk_text
 from yuyutsava.storage.paths import state_db_path
 
 logger = logging.getLogger("yuyutsava.context.artifacts_unified")

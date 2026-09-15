@@ -68,7 +68,6 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
 from prompt_toolkit.application import Application
 from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.filters import Condition
@@ -85,20 +84,21 @@ from prompt_toolkit.layout.containers import (
     VSplit,
     Window,
 )
+from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
 from prompt_toolkit.layout.menus import CompletionsMenu
 from prompt_toolkit.mouse_events import MouseEventType
 from prompt_toolkit.output import create_output
 from prompt_toolkit.styles import Style
 
+from yuyutsava.cli.line_reader import clear_line_reader, set_line_reader
 from yuyutsava.cli.render.ansi_wrap import wrap_ansi
+from yuyutsava.cli.render.console import make_console
 from yuyutsava.cli.render.context_panel import (
     MIN_DASHBOARD_COLS,
     panel_fragments,
     panel_width_for,
 )
 from yuyutsava.config.env import env_flag
-from yuyutsava.cli.line_reader import clear_line_reader, set_line_reader
-from yuyutsava.cli.render.console import make_console
 from yuyutsava.context.meter import bus
 
 logger = logging.getLogger("yuyutsava.cli.dashboard")

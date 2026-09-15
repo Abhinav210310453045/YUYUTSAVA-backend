@@ -30,7 +30,6 @@ from typing import Any, Literal
 
 from ulid import ULID
 
-
 logger = logging.getLogger("yuyutsava.daemon.task_registry")
 
 TASK_STATUSES = ("queued", "running", "done", "failed", "cancelled")

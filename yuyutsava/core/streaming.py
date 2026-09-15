@@ -31,7 +31,6 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command
 
 from yuyutsava.core.text_utils import sanitize_message_metadata
-from yuyutsava.ports.agent import Agent
 from yuyutsava.core.tool_result import guard_tool_result, is_tool_error
 from yuyutsava.core.tracing import get_callback, trace_metadata
 from yuyutsava.models.interrupts import (
@@ -39,6 +38,7 @@ from yuyutsava.models.interrupts import (
     TaskRunnerPermissionInterrupt,
     UserQuestionInterrupt,
 )
+from yuyutsava.ports.agent import Agent
 from yuyutsava.storage.interrupts import InterruptsStore
 from yuyutsava.storage.models import InterruptRecord
 

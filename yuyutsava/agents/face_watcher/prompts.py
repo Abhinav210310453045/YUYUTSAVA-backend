@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 FACE_WATCHER_PROMPT = """\
 You are the YUYUTSAVA FACE WATCHER subagent.
 

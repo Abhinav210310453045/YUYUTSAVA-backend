@@ -18,7 +18,6 @@ import json
 import time
 from typing import Any
 
-
 # Column order shared by the INSERT and the row→dict reader below.
 _ASK_COLS = (
     "ask_id",

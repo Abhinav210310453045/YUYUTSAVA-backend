@@ -43,9 +43,9 @@ hand-written for good reason. This is a thin seam; raw SQL stays readable.
 from __future__ import annotations
 
 import json
+import sqlite3
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Awaitable, Callable, Protocol, TypeVar
-import sqlite3
 
 from psycopg.rows import dict_row
 
@@ -348,7 +348,9 @@ class PostgresDialect:
                 return await fn(c)
 
     async def ensure_parent(self, conn: Any, thread_id: str | None, **attrs: Any) -> None:
-        from yuyutsava.storage.pg.threads import ensure_thread  # noqa: PLC0415 — upward (storage.dialect -> storage); moves with W3
+        from yuyutsava.storage.pg.threads import (
+            ensure_thread,  # noqa: PLC0415 — upward (storage.dialect -> storage); moves with W3
+        )
 
         await ensure_thread(conn, thread_id, **attrs)
 

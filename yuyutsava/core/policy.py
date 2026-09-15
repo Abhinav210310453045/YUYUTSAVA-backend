@@ -46,8 +46,6 @@ before broad ones.
 
 from __future__ import annotations
 
-from yuyutsava.storage.events.roles import ToolCallCounter
-
 import datetime as _dt
 import fnmatch
 import json
@@ -55,6 +53,7 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from yuyutsava.storage.events.roles import ToolCallCounter
 from yuyutsava.storage.paths import state_dir
 
 logger = logging.getLogger("yuyutsava.core.policy")

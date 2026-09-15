@@ -24,6 +24,7 @@ import asyncio
 import contextlib
 import importlib.metadata
 import json
+import logging
 import os
 import sys
 import time
@@ -32,7 +33,6 @@ import urllib.request
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
-import logging
 
 from packaging.version import InvalidVersion, Version
 from prompt_toolkit import PromptSession
@@ -41,27 +41,8 @@ from prompt_toolkit.formatted_text import ANSI
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.patch_stdout import patch_stdout
 
-from yuyutsava.cli.agent_stack import build_cli_agent_stack
-from yuyutsava.cli.render.plain import (
-    _CYAN,
-    _DIM,
-    _RED,
-    _RESET,
-    _YELLOW,
-    ChatRenderer,
-)
-from yuyutsava.config.env import env_flag
-from yuyutsava.consent import decision_token as _decision_token
-from yuyutsava.core.config import DockerSettings, LlmSettings, LocalSettings, SearchConfig
-from yuyutsava.core.engine import cleanup_local_sandbox, silence_plumbing_loggers
-from yuyutsava.prefs.runtime import UNDISABLEABLE, RuntimeSettings
-from yuyutsava.storage.paths import state_dir
-from yuyutsava.storage.sessions import (
-    SessionsSettings,
-    build_checkpointer,
-    get_default_session_store,
-)
 from yuyutsava.async_subagents.watcher import AsyncTaskHealthWatcher
+from yuyutsava.cli.agent_stack import build_cli_agent_stack
 from yuyutsava.cli.async_hitl import CliHitlBridge, CliRemoteHitl
 from yuyutsava.cli.line_reader import read_line
 from yuyutsava.cli.remote_attach import CliAttachClient
@@ -75,18 +56,36 @@ from yuyutsava.cli.render.dashboard import (
     terminal_cols,
     wide_enough,
 )
+from yuyutsava.cli.render.plain import (
+    _CYAN,
+    _DIM,
+    _RED,
+    _RESET,
+    _YELLOW,
+    ChatRenderer,
+)
 from yuyutsava.cli.render.renderer import RichChatRenderer
+from yuyutsava.config.env import env_flag
+from yuyutsava.consent import decision_token as _decision_token
 from yuyutsava.context.meter import bus
 from yuyutsava.conversation import ConversationService
 from yuyutsava.core import tracing as _tracing
+from yuyutsava.core.config import DockerSettings, LlmSettings, LocalSettings, SearchConfig
+from yuyutsava.core.engine import cleanup_local_sandbox, silence_plumbing_loggers
 from yuyutsava.daemon.singleton import read_daemon_discovery
 from yuyutsava.llm.quirks.first_chunk_retry import set_retry_listener
+from yuyutsava.prefs.runtime import UNDISABLEABLE, RuntimeSettings
 from yuyutsava.skills.injector import last_recalled
 from yuyutsava.skills.registry import SkillRegistry
 from yuyutsava.storage.backend import StorageSettings
 from yuyutsava.storage.events import Store
+from yuyutsava.storage.paths import state_dir
 from yuyutsava.storage.prefs import PrefsStore
-
+from yuyutsava.storage.sessions import (
+    SessionsSettings,
+    build_checkpointer,
+    get_default_session_store,
+)
 
 # ---------------------------------------------------------------------------
 # Banner

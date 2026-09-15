@@ -22,7 +22,6 @@ from __future__ import annotations
 # NOTE: helpers below use the raw pool connection, which yields TUPLES.
 # They read positionally on purpose — reading by name only worked while the
 # dialect was leaking `dict_row` onto pooled connections (finding AT).
-
 import os
 import socket
 import tempfile
@@ -269,11 +268,11 @@ class BestEffortWrites(unittest.IsolatedAsyncioTestCase):
         self._tmp.cleanup()
 
     def _exploding_store(self):
+        from yuyutsava.storage.dialect import SqliteDialect
         from yuyutsava.storage.interrupts_unified import (
             InterruptsSchema,
             UnifiedInterruptsStore,
         )
-        from yuyutsava.storage.dialect import SqliteDialect
 
         class _Boom(SqliteDialect):
             async def write(self, fn):

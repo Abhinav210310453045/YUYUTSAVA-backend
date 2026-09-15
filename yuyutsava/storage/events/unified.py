@@ -43,11 +43,6 @@ from typing import Any
 from ulid import ULID
 
 from yuyutsava.storage.dialect import Dialect
-from yuyutsava.storage.events.ask_wire import (
-    _ASK_COLS,
-    ask_record_to_params,
-    ask_row_to_record,
-)
 from yuyutsava.storage.events.abc import (
     ConsentGrantStore,
     ConsentRuleStore,
@@ -56,6 +51,11 @@ from yuyutsava.storage.events.abc import (
     PendingAskStore,
     ProposalStore,
     ToolCounterStore,
+)
+from yuyutsava.storage.events.ask_wire import (
+    _ASK_COLS,
+    ask_record_to_params,
+    ask_row_to_record,
 )
 from yuyutsava.storage.models import ConsentRule, Decision, EventRecord, Proposal
 
@@ -386,7 +386,9 @@ class UnifiedConsentGrantStore(ConsentGrantStore):
         await d.write(_do)
 
     async def load(self) -> list["Grant"]:  # noqa: F821
-        from yuyutsava.consent.models import Grant  # noqa: PLC0415 — upward (storage -> consent); moves with W3
+        from yuyutsava.consent.models import (
+            Grant,  # noqa: PLC0415 — upward (storage -> consent); moves with W3
+        )
 
         d = self._d
         async with d.reading() as conn:

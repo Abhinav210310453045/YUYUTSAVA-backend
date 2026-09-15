@@ -22,11 +22,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import shutil
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
-import shutil
 
 from yuyutsava.audio_io.earcons import earcon_path
 from yuyutsava.io.audio import AudioUnavailableError, play_wav, stop_playback

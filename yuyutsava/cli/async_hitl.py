@@ -26,6 +26,8 @@ import time
 from collections import deque
 from typing import Any, Deque
 
+from yuyutsava.cli.line_reader import read_line
+from yuyutsava.consent import decision_token, is_permission_ask
 from yuyutsava.daemon.channels import (
     AskPrompt,
     AsyncTaskAwaitingUserPayload,
@@ -34,9 +36,6 @@ from yuyutsava.daemon.channels import (
     AsyncTaskStartedPayload,
     ChannelEvent,
 )
-from yuyutsava.cli.line_reader import read_line
-from yuyutsava.consent import decision_token, is_permission_ask
-
 
 logger = logging.getLogger("yuyutsava.cli.async_hitl")
 

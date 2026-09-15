@@ -14,8 +14,6 @@ isolation: a unit test passes a fake ``ctx`` that captures emits.
 
 from __future__ import annotations
 
-from yuyutsava.storage.events.roles import EventPayloadWriter
-
 import asyncio
 import dataclasses
 import logging
@@ -24,6 +22,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from yuyutsava.events.bus import EventBus, make_envelope
+from yuyutsava.storage.events.roles import EventPayloadWriter
 
 logger = logging.getLogger("yuyutsava.events.source")
 

@@ -143,7 +143,9 @@ def _make_tavily_search(api_key: str) -> BaseTool:
             JSON string: {answer: str|null, results: [{title, url, content, score}]}
         """
         try:
-            from tavily import AsyncTavilyClient  # noqa: PLC0415 — heavy (~40 ms), first search only
+            from tavily import (
+                AsyncTavilyClient,  # noqa: PLC0415 — heavy (~40 ms), first search only
+            )
         except ImportError as exc:
             raise TavilySearchError(
                 "tavily-python is not installed. Run: pip install tavily-python"

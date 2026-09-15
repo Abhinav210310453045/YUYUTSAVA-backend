@@ -25,8 +25,13 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from yuyutsava.storage.events.schema import SCHEMA_SQL, SCHEMA_VERSION, migrate  # noqa: F401
 from yuyutsava.storage.dialect import EventsSqliteDialect, PostgresDialect
+from yuyutsava.storage.events.pg_stores import PgPrefsBackend
+from yuyutsava.storage.events.schema import SCHEMA_SQL, SCHEMA_VERSION, migrate  # noqa: F401
+from yuyutsava.storage.events.sqlite_backend import (
+    SqliteEventsBackend,
+    SqlitePrefsBackend,
+)
 from yuyutsava.storage.events.unified import (
     UnifiedConsentGrantStore,
     UnifiedConsentRuleStore,
@@ -36,12 +41,7 @@ from yuyutsava.storage.events.unified import (
     UnifiedProposalStore,
     UnifiedToolCounterStore,
 )
-from yuyutsava.storage.events.sqlite_backend import (
-    SqliteEventsBackend,
-    SqlitePrefsBackend,
-)
 from yuyutsava.storage.models import ConsentRule, Decision, EventRecord, Proposal
-from yuyutsava.storage.events.pg_stores import PgPrefsBackend
 from yuyutsava.storage.routing.facade import RoutedStore
 
 if TYPE_CHECKING:

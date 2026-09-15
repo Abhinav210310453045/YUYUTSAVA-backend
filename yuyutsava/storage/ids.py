@@ -17,7 +17,6 @@ import uuid
 
 from ulid import ULID
 
-
 THREAD_ID_TEMPLATE = "{role}-{ts}-{uuid}"
 """Canonical format string. ``role`` is a short tag (``cli``, ``orch``, …);
 ``ts`` is unix-seconds; ``uuid`` is a uuid4 hex with dashes."""

@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import inspect
 
-
 # ---------------------------------------------------------------------------
 # Seam 2 — the general-purpose name-match override
 # ---------------------------------------------------------------------------

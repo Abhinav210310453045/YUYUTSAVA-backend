@@ -213,7 +213,9 @@ class AsyncSubagentHost:
 
         def _serve() -> None:
             try:
-                from langgraph_api.cli import run_server  # noqa: PLC0415 — its import calls logging.basicConfig
+                from langgraph_api.cli import (
+                    run_server,  # noqa: PLC0415 — its import calls logging.basicConfig
+                )
 
                 run_server(
                     host=self._host,

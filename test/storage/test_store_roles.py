@@ -24,8 +24,7 @@ from __future__ import annotations
 import inspect
 import unittest
 
-from yuyutsava.storage.events import Store
-from yuyutsava.storage.events import roles
+from yuyutsava.storage.events import Store, roles
 
 #: Modules narrowed in step 2.7, with the role each now declares. A regression
 #: here means a signature widened back to the god object.

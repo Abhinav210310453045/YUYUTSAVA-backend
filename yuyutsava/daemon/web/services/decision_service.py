@@ -15,16 +15,16 @@ showing the prompt.
 
 from __future__ import annotations
 
-# Narrowed from `object` in Phase 2 step 2.7: this service approves and skips
-# proposals, which is two methods of the events Store, not the whole surface.
-from yuyutsava.storage.events.roles import ProposalWriter
-
 import asyncio
 import logging
 from dataclasses import dataclass
 from typing import MutableMapping
 
 from yuyutsava.daemon.channels import ProposalDecision
+
+# Narrowed from `object` in Phase 2 step 2.7: this service approves and skips
+# proposals, which is two methods of the events Store, not the whole surface.
+from yuyutsava.storage.events.roles import ProposalWriter
 
 logger = logging.getLogger("yuyutsava.daemon.web.services.decision_service")
 

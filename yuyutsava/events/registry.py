@@ -41,12 +41,12 @@ def _import_builtin_sources() -> None:
 
     Inside a function because every source module imports this one.
     """
-    from yuyutsava.events.sources import fs as _fs  # noqa: F401, PLC0415 — import cycle
-    from yuyutsava.events.sources import clipboard as _clip  # noqa: F401, PLC0415 — import cycle
-    from yuyutsava.events.sources import hotkey as _hk  # noqa: F401, PLC0415 — import cycle
     from yuyutsava.events.sources import appfocus as _af  # noqa: F401, PLC0415 — import cycle
-    from yuyutsava.events.sources import webcam as _wc  # noqa: F401, PLC0415 — import cycle
+    from yuyutsava.events.sources import clipboard as _clip  # noqa: F401, PLC0415 — import cycle
+    from yuyutsava.events.sources import fs as _fs  # noqa: F401, PLC0415 — import cycle
+    from yuyutsava.events.sources import hotkey as _hk  # noqa: F401, PLC0415 — import cycle
     from yuyutsava.events.sources import voice as _voice  # noqa: F401, PLC0415 — import cycle
+    from yuyutsava.events.sources import webcam as _wc  # noqa: F401, PLC0415 — import cycle
 
 
 class SourceRegistry:

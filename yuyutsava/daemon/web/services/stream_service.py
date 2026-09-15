@@ -23,7 +23,6 @@ from yuyutsava.daemon.channels import (
 )
 from yuyutsava.storage.events import Proposal, Store
 
-
 # ---------------------------------------------------------------------------
 # Typed stream items (broadcast queue payloads → SSE wire format)
 # ---------------------------------------------------------------------------

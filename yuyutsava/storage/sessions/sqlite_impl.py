@@ -27,9 +27,8 @@ from yuyutsava.storage.base import BaseSqliteStore
 from yuyutsava.storage.ids import mint_thread_id
 from yuyutsava.storage.models import SESSION_STATUSES, Session
 from yuyutsava.storage.sessions.config import SessionsSettings
-from yuyutsava.storage.sessions.store import SessionNotFound, SessionStore
 from yuyutsava.storage.sessions.pg_impl import PgSessionStore
-
+from yuyutsava.storage.sessions.store import SessionNotFound, SessionStore
 
 _TASK_PREVIEW_MAX = 200
 _TITLE_MAX = 80

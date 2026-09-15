@@ -38,7 +38,6 @@ from langchain_core.messages import BaseMessage, message_to_dict
 
 from yuyutsava.core.text_utils import sanitize_message_metadata
 
-
 logger = logging.getLogger("yuyutsava.context.transcript_store")
 
 DEFAULT_LIST_LIMIT = 1_000

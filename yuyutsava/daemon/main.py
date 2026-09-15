@@ -26,8 +26,8 @@ import logging
 import os
 import subprocess
 import sys
-from pathlib import Path
 import time as _time
+from pathlib import Path
 
 import uvicorn
 
@@ -38,6 +38,7 @@ except ImportError:  # pragma: no cover
 
 from yuyutsava import platform as yplatform
 from yuyutsava.aio import run as aio_run
+from yuyutsava.async_subagents.host_lock import release_host_lock
 from yuyutsava.config.env import env_flag
 from yuyutsava.core.engine import silence_plumbing_loggers
 from yuyutsava.daemon.bootstrap import DaemonOptions, DaemonSubsystems, build_daemon
@@ -52,10 +53,9 @@ from yuyutsava.daemon.singleton import (
     release_daemon_lock,
     write_daemon_discovery,
 )
+from yuyutsava.daemon.wake_bridge import run_wake_bridge
 from yuyutsava.mcp.config import MCPConfig
 from yuyutsava.storage.paths import ensure_state_dirs, state_dir
-from yuyutsava.async_subagents.host_lock import release_host_lock
-from yuyutsava.daemon.wake_bridge import run_wake_bridge
 
 # gRPC's C core logs at INFO and its fork handlers fire on every subprocess the
 # task runner spawns, filling the daemon log with fork_posix.cc /

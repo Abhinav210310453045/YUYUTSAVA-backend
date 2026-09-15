@@ -32,47 +32,17 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.state import CompiledStateGraph
 
-from yuyutsava.config.env import env_flag
-from yuyutsava.core.config import DockerSettings, LocalSettings, LlmSettings, SearchConfig
-from yuyutsava.core.docker_sandbox_backend import DockerSandboxBackend
-from yuyutsava.core.filesystem_prompt_policy import FilesystemPromptPolicy
-from yuyutsava.core.voice_style_policy import VoiceStylePolicy
-from yuyutsava.core.permission_policy import PermissionPolicy
-from yuyutsava.core.prompts import docker_system_prompt, local_system_prompt
-from yuyutsava.core.subagent_gate_policy import SubagentGatePolicy
-from yuyutsava.core.tool_filter_policy import ToolFilterPolicy
-from yuyutsava.policy.adapter import (
-    LangChainPolicyAdapter,
-    collapse_policy_adapters,
-)
-from yuyutsava.core.agent_profiles import (
-    CLI_PROFILE,
-    ORCHESTRATOR_PROFILE,
-    TINKER_PROFILE,
-    AgentProfile,
-    Policy,
-    ToolFamily,
-)
-from yuyutsava.core.tool_registry import ToolRegistry
-from yuyutsava.agents.task_runner.tools import bind_tools as _bind_task_runner_tools
-from yuyutsava.skills.registry import SkillRegistry
-from yuyutsava.skills.tools import make_skill_tools
-from yuyutsava.storage.paths import (
-    CONTAINER_STATE_MOUNT,
-    CONTAINER_WORKSPACE_MOUNT,
-    WORKSPACE_STATE_DIRNAME,
-    WorkspaceLayout,
-)
-from yuyutsava.tools.search import make_search_tools
 from yuyutsava.agents.orchestrator.capabilities import render_capabilities_block
 from yuyutsava.agents.orchestrator.prompts import render_system_prompt
 from yuyutsava.agents.task_runner.exec_backend import DockerExecBackend
+from yuyutsava.agents.task_runner.tools import bind_tools as _bind_task_runner_tools
 from yuyutsava.agents.tinker.prompts import render_tinker_system_prompt
 from yuyutsava.artifacts.tools import make_artifact_tools
 from yuyutsava.async_subagents.cap_policy import BackgroundTaskCapPolicy
 from yuyutsava.async_subagents.check_guard_policy import CheckAsyncTaskGuardPolicy
 from yuyutsava.async_subagents.host_lock import release_host_lock
 from yuyutsava.async_subagents.interrupt_patch_policy import AsyncTaskInterruptPatchPolicy
+from yuyutsava.config.env import env_flag
 from yuyutsava.context.compaction import YuyutsavaCompactionMiddleware
 from yuyutsava.context.conversation_injector import ConversationInjector
 from yuyutsava.context.injector import MemoryInjector
@@ -81,16 +51,46 @@ from yuyutsava.context.offload_policy import ToolResultOffloadPolicy
 from yuyutsava.context.prompt_inspector import PromptInspectorPolicy
 from yuyutsava.context.tools import make_context_tools
 from yuyutsava.context.transcript_policy import TranscriptRecorderPolicy
+from yuyutsava.core.agent_profiles import (
+    CLI_PROFILE,
+    ORCHESTRATOR_PROFILE,
+    TINKER_PROFILE,
+    AgentProfile,
+    Policy,
+    ToolFamily,
+)
+from yuyutsava.core.config import DockerSettings, LlmSettings, LocalSettings, SearchConfig
+from yuyutsava.core.docker_sandbox_backend import DockerSandboxBackend
+from yuyutsava.core.filesystem_prompt_policy import FilesystemPromptPolicy
+from yuyutsava.core.permission_policy import PermissionPolicy
+from yuyutsava.core.prompts import docker_system_prompt, local_system_prompt
 from yuyutsava.core.retrieval_injection_policy import RetrievalInjectionPolicy
+from yuyutsava.core.subagent_gate_policy import SubagentGatePolicy
+from yuyutsava.core.tool_filter_policy import ToolFilterPolicy
+from yuyutsava.core.tool_registry import ToolRegistry
+from yuyutsava.core.voice_style_policy import VoiceStylePolicy
 from yuyutsava.events.tools import make_recall_tool
 from yuyutsava.llm import chat_model, model_name_of
 from yuyutsava.memory.agent_memory import AgentMemoryStore
 from yuyutsava.memory.agent_memory_tools import make_agent_memory_tools
 from yuyutsava.memory.tools import make_memory_tools
+from yuyutsava.policy.adapter import (
+    LangChainPolicyAdapter,
+    collapse_policy_adapters,
+)
 from yuyutsava.prefs.injector import PrefsInjector
 from yuyutsava.skills.injector import SkillInjector
+from yuyutsava.skills.registry import SkillRegistry
+from yuyutsava.skills.tools import make_skill_tools
+from yuyutsava.storage.paths import (
+    CONTAINER_STATE_MOUNT,
+    CONTAINER_WORKSPACE_MOUNT,
+    WORKSPACE_STATE_DIRNAME,
+    WorkspaceLayout,
+)
 from yuyutsava.todoboard.recall import TodoNoteInjector
 from yuyutsava.todoboard.tools import make_todo_tools
+from yuyutsava.tools.search import make_search_tools
 from yuyutsava.visuals.tools import make_visual_tools
 
 if TYPE_CHECKING:

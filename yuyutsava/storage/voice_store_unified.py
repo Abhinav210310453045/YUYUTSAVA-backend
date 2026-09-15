@@ -25,13 +25,14 @@ from typing import ClassVar
 
 from yuyutsava.storage.base import BaseSqliteStore
 from yuyutsava.storage.dialect import Dialect, PostgresDialect, SqliteDialect
+from yuyutsava.storage.paths import state_db_path
+
 from .voice_store import (
     DEFAULT_LIST_LIMIT,
     VoiceMessage,
     VoiceMessageStore,
     _validate,
 )
-from yuyutsava.storage.paths import state_db_path
 
 logger = logging.getLogger("yuyutsava.storage.voice_store_unified")
 

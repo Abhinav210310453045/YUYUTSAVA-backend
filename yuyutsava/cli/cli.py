@@ -22,6 +22,7 @@ except ImportError:
     load_dotenv = None  # type: ignore[assignment, misc]
 
 from yuyutsava.aio import run as aio_run
+from yuyutsava.cli.commands.attach import run_attach
 from yuyutsava.cli.commands.chat import run_chat
 from yuyutsava.cli.commands.prefs import run_prefs
 from yuyutsava.cli.commands.scenarios import format_scenario_list, get_scenario
@@ -34,7 +35,6 @@ from yuyutsava.core.engine import (
     setup_logging,
 )
 from yuyutsava.storage.paths import ensure_state_dirs
-from yuyutsava.cli.commands.attach import run_attach
 
 # gRPC's C core logs at INFO by default, and its fork handlers fire on every
 # subprocess we spawn — so each tr_run_python / tr_execute printed

@@ -40,7 +40,6 @@ from yuyutsava.todoboard.exchange import board_workspace_root
 from yuyutsava.todoboard.tools import make_todo_tools
 from yuyutsava.tools.search import make_search_tools
 
-
 _SYSTEM_PROMPT = """\
 You are the **background TinkerAgent** of YUYUTSAVA. The master agent has
 delegated a tinkering job on ONE card of the user's TODO board: refine a rough

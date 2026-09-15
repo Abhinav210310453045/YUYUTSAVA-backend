@@ -39,8 +39,6 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse
 
-from yuyutsava.todoboard import artifacts
-
 from yuyutsava.daemon.web.bundle import bundle_asset_response
 from yuyutsava.daemon.web.schemas.session import SessionOut
 from yuyutsava.daemon.web.schemas.todo import (
@@ -53,6 +51,10 @@ from yuyutsava.daemon.web.schemas.todo import (
     TodoCreateIn,
     TodoPatchIn,
 )
+from yuyutsava.storage.ids import tinker_thread_base
+from yuyutsava.storage.paths import blobs_dir
+from yuyutsava.storage.sessions import get_default_session_store
+from yuyutsava.todoboard import artifacts
 from yuyutsava.todoboard.exchange import (
     TodoAttachmentError,
     TodoError,
@@ -61,8 +63,6 @@ from yuyutsava.todoboard.exchange import (
     TodoValidationError,
     get_default_exchange,
 )
-from yuyutsava.storage.ids import tinker_thread_base
-from yuyutsava.storage.sessions import get_default_session_store
 from yuyutsava.todoboard.models import (
     BoardSnapshotV1,
     CardStatus,
@@ -73,7 +73,6 @@ from yuyutsava.todoboard.models import (
     TodoNoteV1,
     TodoObjectiveV1,
 )
-from yuyutsava.storage.paths import blobs_dir
 
 logger = logging.getLogger("yuyutsava.daemon.web.routers.todos")
 

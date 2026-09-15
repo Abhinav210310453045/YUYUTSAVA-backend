@@ -17,7 +17,6 @@ import logging
 import time
 from typing import Any
 
-
 from yuyutsava.storage.events.abc import (
     PrefsBackend,
 )

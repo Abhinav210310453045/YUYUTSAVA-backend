@@ -91,8 +91,8 @@ def main(argv: list[str] | None = None) -> None:
 
     # Check deps before anything else.
     try:
-        import sounddevice as sd  # type: ignore  # noqa: PLC0415 — optional dependency
         import numpy as np  # type: ignore  # noqa: F401, PLC0415 — optional dependency, checked here
+        import sounddevice as sd  # type: ignore  # noqa: PLC0415 — optional dependency
     except ImportError:
         _fatal("sounddevice / numpy missing — run: uv pip install 'yuyutsava[voice]'")
         return
@@ -127,7 +127,9 @@ def main(argv: list[str] | None = None) -> None:
 
     # Cross-platform: registers SIGINT + (SIGTERM on POSIX / SIGBREAK on Windows).
     # Bare signal.signal(SIGTERM, …) raises ValueError on Windows.
-    from yuyutsava.platform import install_terminate_handler  # noqa: PLC0415 — subprocess entry module
+    from yuyutsava.platform import (
+        install_terminate_handler,  # noqa: PLC0415 — subprocess entry module
+    )
 
     install_terminate_handler(_stop)
 

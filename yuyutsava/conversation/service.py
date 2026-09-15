@@ -32,6 +32,7 @@ import time
 from pathlib import Path
 from typing import Any, Awaitable, Callable  # noqa: F401 — Callable used in type strings
 
+from yuyutsava.conversation.repair import Cause, diagnose, repair_orphan_tool_calls
 from yuyutsava.conversation.titles import derive_session_title
 from yuyutsava.core.engine import AgentBundle
 from yuyutsava.core.streaming import StreamEvent, astream_agent_iter
@@ -42,7 +43,6 @@ from yuyutsava.sessions.runner import (
 )
 from yuyutsava.storage.models import Session
 from yuyutsava.storage.sessions import SessionStore
-from yuyutsava.conversation.repair import Cause, diagnose, repair_orphan_tool_calls
 
 logger = logging.getLogger("yuyutsava.conversation.service")
 

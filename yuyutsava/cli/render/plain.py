@@ -18,10 +18,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from yuyutsava.cli.render import artifact_view as av
 from yuyutsava.cli.stream_smoother import TokenSmoother
 from yuyutsava.config.env import env_flag, env_float, env_int
 from yuyutsava.core.streaming import StreamEvent
-from yuyutsava.cli.render import artifact_view as av
 from yuyutsava.platform import host_profile
 
 _CYAN = "\033[36m"

@@ -21,6 +21,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from yuyutsava.config.env import env_flag
+from yuyutsava.daemon.channels import HttpLogPayload
 from yuyutsava.daemon.web.auth import (
     AuthSettings,
     install_auth_middleware,
@@ -29,34 +30,76 @@ from yuyutsava.daemon.web.auth import (
 from yuyutsava.daemon.web.exceptions import register_exception_handlers
 from yuyutsava.daemon.web.routers import (
     artifacts as artifacts_router,
+)
+from yuyutsava.daemon.web.routers import (
     channels as channels_router,
+)
+from yuyutsava.daemon.web.routers import (
     cli_attach as cli_attach_router,
+)
+from yuyutsava.daemon.web.routers import (
     config as config_router,
+)
+from yuyutsava.daemon.web.routers import (
     converse as converse_router,
+)
+from yuyutsava.daemon.web.routers import (
     db as db_router,
+)
+from yuyutsava.daemon.web.routers import (
     decisions as decisions_router,
+)
+from yuyutsava.daemon.web.routers import (
     feedback as feedback_router,
+)
+from yuyutsava.daemon.web.routers import (
     health as health_router,
+)
+from yuyutsava.daemon.web.routers import (
     logs as logs_router,
+)
+from yuyutsava.daemon.web.routers import (
     proposals as proposals_router,
+)
+from yuyutsava.daemon.web.routers import (
     rules as rules_router,
+)
+from yuyutsava.daemon.web.routers import (
     server_info as server_info_router,
+)
+from yuyutsava.daemon.web.routers import (
     sessions as sessions_router,
+)
+from yuyutsava.daemon.web.routers import (
     settings as settings_router,
+)
+from yuyutsava.daemon.web.routers import (
     skills as skills_router,
+)
+from yuyutsava.daemon.web.routers import (
     static_files as static_router,
+)
+from yuyutsava.daemon.web.routers import (
     stream as stream_router,
+)
+from yuyutsava.daemon.web.routers import (
     system as system_router,
+)
+from yuyutsava.daemon.web.routers import (
     tasks as tasks_router,
+)
+from yuyutsava.daemon.web.routers import (
     todos as todos_router,
+)
+from yuyutsava.daemon.web.routers import (
     usage as usage_router,
+)
+from yuyutsava.daemon.web.routers import (
     visuals as visuals_router,
 )
-from yuyutsava.daemon.channels import HttpLogPayload
 from yuyutsava.daemon.web.services.decision_service import DecisionService
 from yuyutsava.daemon.web.services.stream_service import StreamEventItem, WebHub
 from yuyutsava.skills.registry import SkillRegistry
-
 
 ReloadCallback = Callable[[], Awaitable[None]] | None
 

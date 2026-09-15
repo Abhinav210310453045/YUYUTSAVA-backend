@@ -18,11 +18,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import shutil
 import tempfile
 import wave
 from pathlib import Path
 from typing import Callable
-import shutil
 
 from yuyutsava.audio_io.synth import synthesize_pcm
 from yuyutsava.audio_io.vad import VadResult, VadSegmenter

@@ -164,7 +164,9 @@ def generate(
     thread_id: str | None = None,
 ) -> ArtifactRecordV1:
     """Run a generative block (e.g. ``audio``) into a fresh artifact dir."""
-    from yuyutsava.todoboard.artifacts import blocks  # noqa: PLC0415 — upward (artifacts -> todoboard); moves with W3
+    from yuyutsava.todoboard.artifacts import (
+        blocks,  # noqa: PLC0415 — upward (artifacts -> todoboard); moves with W3
+    )
 
     gen = next((b for b in blocks() if b.name == block_name), None)
     if gen is None or gen.generate is None:

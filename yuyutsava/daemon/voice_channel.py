@@ -39,10 +39,10 @@ from yuyutsava.daemon.channels import (
     ProposalDecision,
     UserChannel,
 )
-from yuyutsava.storage.events import Proposal
 from yuyutsava.io.audio import AudioUnavailableError, capture_wav
 from yuyutsava.io.stt import STT, stt_from_env
 from yuyutsava.io.tts import tts_from_env
+from yuyutsava.storage.events import Proposal
 
 logger = logging.getLogger("yuyutsava.daemon.voice_channel")
 

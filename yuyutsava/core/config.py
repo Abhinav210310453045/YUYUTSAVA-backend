@@ -46,7 +46,6 @@ from typing import Any, Literal, Protocol
 from yuyutsava.config.env import env, env_flag, env_int
 from yuyutsava.storage.paths import events_config_path
 
-
 GROQ_OPENAI_BASE_URL = "https://api.groq.com/openai/v1"
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 OLLAMA_BASE_URL = "http://localhost:11434/v1"
