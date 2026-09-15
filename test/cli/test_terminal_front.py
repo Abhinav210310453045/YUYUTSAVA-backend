@@ -30,16 +30,16 @@ from unittest import mock
 
 os.environ["YUYUTSAVA_BLOBS_DIR"] = tempfile.mkdtemp(prefix="artifact-view-")
 
+from yuyutsava.agents.prompts import (  # noqa: E402
+    docker_system_prompt,
+    front_block,
+    local_system_prompt,
+)
 from yuyutsava.artifacts import store  # noqa: E402
 from yuyutsava.cli.render import artifact_view as av  # noqa: E402
 from yuyutsava.cli.render.console import make_console  # noqa: E402
 from yuyutsava.cli.render.plain import ChatRenderer  # noqa: E402
 from yuyutsava.cli.render.renderer import RichChatRenderer  # noqa: E402
-from yuyutsava.core.prompts import (  # noqa: E402
-    docker_system_prompt,
-    front_block,
-    local_system_prompt,
-)
 from yuyutsava.core.streaming import StreamEvent  # noqa: E402
 from yuyutsava.storage.paths import WorkspaceLayout  # noqa: E402
 

@@ -8,7 +8,7 @@ on the host per deepagents (see ``deepagents.backends.LocalShellBackend``).
 This module is intentionally narrow: it owns the *build* side of the agent
 graphs (CLI deepagent + daemon orchestrator). Streaming + interrupt handling
 live in :mod:`yuyutsava.core.streaming`; the CLI system prompts live in
-:mod:`yuyutsava.core.prompts`; the tool-result size guard lives in
+:mod:`yuyutsava.agents.prompts`; the tool-result size guard lives in
 :mod:`yuyutsava.core.tool_result`.
 """
 
@@ -35,6 +35,7 @@ from langgraph.graph.state import CompiledStateGraph
 from yuyutsava.agents.orchestrator.agent import make_ask_user_tool
 from yuyutsava.agents.orchestrator.capabilities import render_capabilities_block
 from yuyutsava.agents.orchestrator.prompts import render_system_prompt
+from yuyutsava.agents.prompts import docker_system_prompt, local_system_prompt
 from yuyutsava.agents.task_runner.exec_backend import DockerExecBackend
 from yuyutsava.agents.task_runner.tools import bind_tools as _bind_task_runner_tools
 from yuyutsava.agents.tinker.prompts import render_tinker_system_prompt
@@ -65,7 +66,6 @@ from yuyutsava.core.agent_profiles import (
 from yuyutsava.core.docker_sandbox_backend import DockerSandboxBackend
 from yuyutsava.core.filesystem_prompt_policy import FilesystemPromptPolicy
 from yuyutsava.core.permission_policy import PermissionPolicy
-from yuyutsava.core.prompts import docker_system_prompt, local_system_prompt
 from yuyutsava.core.retrieval_injection_policy import RetrievalInjectionPolicy
 from yuyutsava.core.subagent_gate_policy import SubagentGatePolicy
 from yuyutsava.core.tool_filter_policy import ToolFilterPolicy

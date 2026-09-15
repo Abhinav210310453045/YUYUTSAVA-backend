@@ -37,10 +37,10 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import create_react_agent
 
+from yuyutsava.agents.prompts import workspace_state_block
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
 from yuyutsava.agents.task_runner.tools import bind_tools
 from yuyutsava.config.search import SearchConfig
-from yuyutsava.core.prompts import workspace_state_block
 from yuyutsava.discovery.tool_registry import ToolRegistry
 from yuyutsava.mcp.loader import MCPClientManager
 from yuyutsava.memory.tools import make_memory_tools

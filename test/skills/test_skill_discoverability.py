@@ -20,7 +20,7 @@ from __future__ import annotations
 import asyncio
 import unittest
 
-from yuyutsava.core.prompts import tool_discovery_section
+from yuyutsava.agents.prompts import tool_discovery_section
 from yuyutsava.core.tool_filter_policy import should_suppress
 from yuyutsava.retrieval.hit import Hit
 from yuyutsava.skills import injector as skill_injector

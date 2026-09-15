@@ -7,14 +7,14 @@ input — sharpen a crumbled idea, split a goal into small objectives, surface
 the questions that matter — rather than rush a finished answer.
 
 The tool-discovery and zone/visuals rule sections are shared with the CLI
-prompt (:mod:`yuyutsava.core.prompts`): the TinkerAgent runs the same tr_*/
+prompt (:mod:`yuyutsava.agents.prompts`): the TinkerAgent runs the same tr_*/
 vis_*/ws_* families under the same lazy-discovery and permission rules, so
 duplicating those blocks would only let them drift.
 """
 
 from __future__ import annotations
 
-from yuyutsava.core.prompts import rules_section, tool_discovery_section
+from yuyutsava.agents.prompts import rules_section, tool_discovery_section
 from yuyutsava.platform import host_profile
 from yuyutsava.storage.paths import WorkspaceLayout
 

@@ -1,6 +1,10 @@
-"""System-prompt assembly for the CLI deepagent.
+"""System-prompt sections shared by the master agents.
 
-Two flavours:
+The CLI deepagent's whole prompt is assembled here; the tinker prompt reuses its
+TOOL DISCOVERY and RULES sections (:func:`tool_discovery_section`,
+:func:`rules_section`), and sub-agents reuse :func:`workspace_state_block`.
+
+Two flavours of the CLI prompt:
   * :func:`local_system_prompt` — host shell + real-disk workspace.
   * :func:`docker_system_prompt` — Docker sandbox with bind-mounted workspace.
 
@@ -8,8 +12,8 @@ Both share the same TOOL DISCOVERY + RULES sections; only the WORKSPACE CONTEXT
 block differs. Every path in the rules comes from one
 :class:`~yuyutsava.storage.paths.WorkspaceLayout` — nothing is joined by hand.
 
-The orchestrator's system prompt is composed elsewhere
-(:mod:`yuyutsava.agents.orchestrator.prompts`) — this module is CLI-only.
+The orchestrator's system prompt is composed in
+:mod:`yuyutsava.agents.orchestrator.prompts`.
 """
 
 from __future__ import annotations
