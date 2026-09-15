@@ -30,7 +30,7 @@ import dataclasses
 import logging
 import time
 from pathlib import Path
-from typing import Any, Awaitable, Callable  # noqa: F401 — Callable used in type strings
+from typing import Any, Awaitable, Callable
 
 from yuyutsava.conversation.repair import Cause, diagnose, repair_orphan_tool_calls
 from yuyutsava.conversation.titles import derive_session_title
