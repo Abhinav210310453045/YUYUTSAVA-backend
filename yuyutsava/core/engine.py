@@ -1235,7 +1235,7 @@ def build_orchestrator(
 
     Moved here from ``yuyutsava/agents/orchestrator/agent.py`` so all master
     agents are built from the shared engine. ``OrchestratorDeps`` and the
-    ``_make_ask_user_tool`` helper still live in that module — they are agent
+    ``make_ask_user_tool`` helper still live in that module — they are agent
     *definition*, not build mechanics.
 
     ``usage_context`` (``yuyutsava.daemon.usage.UsageContext``) carries the
@@ -1246,7 +1246,7 @@ def build_orchestrator(
     # Both load the daemon, which the CLI never needs: orchestrator.agent imports
     # daemon.channels, and core -> daemon is an upward import. They leave the
     # function when W3 moves AskPrompt to ports and the budget policy to policy/.
-    from yuyutsava.agents.orchestrator.agent import _make_ask_user_tool  # noqa: PLC0415
+    from yuyutsava.agents.orchestrator.agent import make_ask_user_tool  # noqa: PLC0415
     from yuyutsava.daemon.budget_policy import BudgetPolicy  # noqa: PLC0415
 
     # Dedicated subagents the user switched off. A fresh orchestrator graph is
@@ -1280,7 +1280,7 @@ def build_orchestrator(
     )
 
     master_tools: list = [
-        _make_ask_user_tool(deps.channels),
+        make_ask_user_tool(deps.channels),
         make_recall_tool(deps.store),
         # spawn_subagent is intentionally NOT registered. The orchestrator
         # delegates dynamic tasks to the `general-purpose` subagent instead.

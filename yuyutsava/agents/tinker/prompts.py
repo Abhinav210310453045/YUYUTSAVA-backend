@@ -14,7 +14,7 @@ duplicating those blocks would only let them drift.
 
 from __future__ import annotations
 
-from yuyutsava.core.prompts import _rules_section, _tool_discovery_section
+from yuyutsava.core.prompts import rules_section, tool_discovery_section
 from yuyutsava.platform import host_profile
 from yuyutsava.storage.paths import WorkspaceLayout
 
@@ -132,8 +132,8 @@ def render_tinker_system_prompt(
 {_IDENTITY}
 {_CARD_CONTEXT.format(card_id=card_id, card_workspace=layout.root)}
 {_WAYS_OF_WORKING.format(skills_index=skills_index)}{memory_section}
-{_tool_discovery_section(tool_catalog)}
-{_rules_section(layout)}
+{tool_discovery_section(tool_catalog)}
+{rules_section(layout)}
 
 {host_profile().prompt_block()}
 

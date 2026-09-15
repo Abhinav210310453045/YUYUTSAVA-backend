@@ -322,7 +322,7 @@ it). It assembles:
 flowchart TD
     A["build_agent_stack(workspace, settings, …)"] --> B["ContextSettings.from_env('cli')"]
     A --> C["SkillRegistry(workspace)"]
-    A --> D["_build_retrieval_stores()"]
+    A --> D["build_retrieval_stores()"]
     D --> D1{"Postgres backend?"}
     D1 -- yes --> D2["PgPool + Embedder<br/>PgMemoryStore · PgSkillStore<br/>Pg artifact/summary/transcript stores<br/>PgTranscriptIndex"]
     D1 -- no --> D3["SQLite twins<br/>(keyword fallback)"]

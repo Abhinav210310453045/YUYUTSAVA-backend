@@ -48,7 +48,7 @@ TERMINAL_MARK = "THIS CONVERSATION IS A TERMINAL"
 
 
 def event_for(rec) -> StreamEvent:
-    """The exact payload ``_artifact_event_from_result`` builds."""
+    """The exact payload ``artifact_event_from_result`` builds."""
     return StreamEvent(
         "artifact",
         {
@@ -142,7 +142,7 @@ class RenderingNeverFeedsBackIntoContext(unittest.TestCase):
         self.assertEqual(json.dumps(ev.data, sort_keys=True), json.dumps(before, sort_keys=True))
 
     def test_the_payload_never_carries_the_body(self):
-        # Guards the upstream shape too: if _artifact_event_from_result ever
+        # Guards the upstream shape too: if artifact_event_from_result ever
         # started including content, every later model call would re-send it.
         rec = store.create_from_content("markdown", "SENTINEL-BODY-TEXT", title="Doc")
         ev = event_for(rec)

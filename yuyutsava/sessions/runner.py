@@ -57,7 +57,7 @@ async def _patch_orphan_cancellations(agent: CompiledStateGraph, thread_id: str)
     return await repair_orphan_tool_calls(agent, thread_id, cause=Cause.SESSION_ENDED)
 
 
-def _count_memory_files(workspace: Path) -> int:
+def count_memory_files(workspace: Path) -> int:
     """Count workspace-scoped skill files. Cheap, defensive against missing dirs.
 
     Matches the convention used by ``SkillRegistry`` — workspace skills live in
@@ -83,7 +83,7 @@ def _print_start_banner(session: Session, *, resuming: bool) -> None:
     print(f"\033[36m{_BANNER}\033[0m\n", file=sys.stderr)
 
 
-class _CoalescedTicker:
+class CoalescedTicker:
     """Batch ``store.touch`` calls so a chatty agent doesn't thrash WAL."""
 
     def __init__(self, store: SessionStore, session_id: str) -> None:
@@ -120,7 +120,7 @@ class _CoalescedTicker:
         await self._store.touch(self._session_id, message_delta=delta)
 
 
-async def _resolve_session(
+async def resolve_session(
     store: SessionStore,
     *,
     workspace: Path,
@@ -180,7 +180,7 @@ async def run_session(
     Returns the final assistant text (or ``""`` if the agent produced none).
     Re-raises whatever ``astream_agent`` raised after marking the row crashed.
     """
-    session, resuming = await _resolve_session(
+    session, resuming = await resolve_session(
         store,
         workspace=workspace,
         task=task,
@@ -230,7 +230,7 @@ async def run_session(
         if new_preview:
             await store.touch(session.id, task_preview=new_preview)
 
-    ticker = _CoalescedTicker(store, session.id)
+    ticker = CoalescedTicker(store, session.id)
 
     async def _on_tick(steps: int) -> None:
         await ticker.tick(steps)
@@ -252,7 +252,7 @@ async def run_session(
         return final
     finally:
         try:
-            await ticker.flush_final(memory_files_count=_count_memory_files(workspace))
+            await ticker.flush_final(memory_files_count=count_memory_files(workspace))
             await store.update_status(
                 session.id,
                 "done" if completed else "crashed",

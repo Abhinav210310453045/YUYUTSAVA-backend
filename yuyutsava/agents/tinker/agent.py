@@ -24,7 +24,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 
 from yuyutsava.agents.general_purpose.agent import GeneralPurposeAgent
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
-from yuyutsava.cli.agent_stack import _build_retrieval_stores
+from yuyutsava.cli.agent_stack import build_retrieval_stores
 from yuyutsava.context.config import ContextSettings
 from yuyutsava.config.env import env, env_flag
 from yuyutsava.core.config import LlmSettings, SearchConfig, llm_settings_from_env
@@ -83,7 +83,7 @@ async def build_tinker_stack(
     # Postgres is up (the sync inside also indexes the bundled tinker skills,
     # agent-tagged by their bundled/tinker/ dir), SQLite keyword twins
     # otherwise. The bundle owns the pool/embedder and closes them in aclose.
-    memory_store, skill_store, pg_pool, embedder = await _build_retrieval_stores(skill_registry)
+    memory_store, skill_store, pg_pool, embedder = await build_retrieval_stores(skill_registry)
 
     # One selection, shared with the CLI and the daemon (Phase 3 step 3.5).
     _ctx = StoreFactory(

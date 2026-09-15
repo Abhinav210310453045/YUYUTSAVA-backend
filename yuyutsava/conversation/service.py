@@ -36,9 +36,9 @@ from yuyutsava.conversation.titles import derive_session_title
 from yuyutsava.core.engine import AgentBundle
 from yuyutsava.core.streaming import StreamEvent, astream_agent_iter
 from yuyutsava.sessions.runner import (
-    _CoalescedTicker,
-    _count_memory_files,
-    _resolve_session,
+    CoalescedTicker,
+    count_memory_files,
+    resolve_session,
 )
 from yuyutsava.storage.models import Session
 from yuyutsava.storage.sessions import SessionStore
@@ -102,7 +102,7 @@ class ConversationService:
         self.workspace = workspace
         self.agent_path = agent_path
         self.recursion_limit = recursion_limit
-        self._ticker = _CoalescedTicker(store, session.id) if bookkeep else None
+        self._ticker = CoalescedTicker(store, session.id) if bookkeep else None
         # How many user turns actually ran on this service. Used to discard a
         # freshly-created session that was opened but never used (e.g. the user
         # opened the Chat/Voice tab or the overlay and said nothing) so the
@@ -170,11 +170,11 @@ class ConversationService:
 
         Returns ``(service, resuming)`` — ``resuming`` is True when an existing
         session was continued (``--resume`` / ``--continue``), mirroring
-        :func:`yuyutsava.sessions.runner._resolve_session`. Pass ``bundle`` for
+        :func:`yuyutsava.sessions.runner.resolve_session`. Pass ``bundle`` for
         an already-built stack (CLI) or ``bundle_factory`` to defer the build to
         the first turn (daemon, so the WS handshake stays instant).
         """
-        session, resuming = await _resolve_session(
+        session, resuming = await resolve_session(
             store,
             workspace=workspace,
             task=task,
@@ -519,7 +519,7 @@ class ConversationService:
         if self._ticker is not None:
             try:
                 await self._ticker.flush_final(
-                    memory_files_count=_count_memory_files(self.workspace)
+                    memory_files_count=count_memory_files(self.workspace)
                 )
             except Exception:  # noqa: BLE001
                 logger.debug("final bookkeeping flush failed", exc_info=True)
@@ -534,7 +534,7 @@ class ConversationService:
             await self.store.update_status(self.session.id, "done")
         except Exception:  # noqa: BLE001
             pass
-        session, _ = await _resolve_session(
+        session, _ = await resolve_session(
             self.store,
             workspace=self.workspace,
             task=task,
@@ -544,5 +544,5 @@ class ConversationService:
         )
         self.session = session
         if self._ticker is not None:
-            self._ticker = _CoalescedTicker(self.store, session.id)
+            self._ticker = CoalescedTicker(self.store, session.id)
         return session

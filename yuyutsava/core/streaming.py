@@ -343,7 +343,7 @@ def _image_event_from_result(body: str) -> dict | None:
     }
 
 
-def _artifact_event_from_result(body: str) -> dict | None:
+def artifact_event_from_result(body: str) -> dict | None:
     """Extract an ``artifact`` event payload from an ``artifact_create`` result.
 
     Turns the tool's record JSON into a typed ``artifact`` frame so the UI can
@@ -682,7 +682,7 @@ async def astream_agent_iter(
                     if img is not None:
                         yield StreamEvent("image", img)
                 elif tn in ("artifact_create", "artifact_show"):
-                    art = _artifact_event_from_result(safe_body)
+                    art = artifact_event_from_result(safe_body)
                     if art is not None:
                         yield StreamEvent("artifact", art)
 

@@ -4,7 +4,7 @@ factory lives in :mod:`yuyutsava.core.engine` so all master agents (CLI
 deepagent + daemon orchestrator) are constructed from the shared engine.
 
 This module keeps the orchestrator-specific *definitions* — ``OrchestratorDeps``
-(dep-injection bag) and ``_make_ask_user_tool`` (the orchestrator's master
+(dep-injection bag) and ``make_ask_user_tool`` (the orchestrator's master
 ask tool wired to the daemon ChannelRouter).
 """
 
@@ -125,7 +125,7 @@ class OrchestratorDeps:
 # ---------------------------------------------------------------------------
 
 
-def _make_ask_user_tool(channels: ChannelRouter) -> BaseTool:
+def make_ask_user_tool(channels: ChannelRouter) -> BaseTool:
     @tool
     async def ask_user(question: str, options: list[str] | None = None) -> str:
         """Ask the user a clarifying question and wait for the response.

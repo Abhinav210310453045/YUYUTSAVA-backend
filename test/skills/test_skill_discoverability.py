@@ -21,7 +21,7 @@ import asyncio
 import unittest
 
 import yuyutsava.core.config  # noqa: F401 — import first (core/__init__ cycle)
-from yuyutsava.core.prompts import _tool_discovery_section
+from yuyutsava.core.prompts import tool_discovery_section
 from yuyutsava.core.tool_filter_policy import should_suppress
 from yuyutsava.retrieval.hit import Hit
 from yuyutsava.skills import injector as skill_injector
@@ -56,7 +56,7 @@ class SearchIsReachableInOneMove(unittest.TestCase):
 class PromptTellsItToLook(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.rules = _tool_discovery_section()
+        cls.rules = tool_discovery_section()
 
     def test_rules_name_the_tool_and_the_trigger(self):
         self.assertIn("sk_search_skill", self.rules)

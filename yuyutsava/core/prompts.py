@@ -24,7 +24,7 @@ from yuyutsava.storage.paths import (
 )
 
 
-def _tool_discovery_section(tool_catalog: str = "") -> str:
+def tool_discovery_section(tool_catalog: str = "") -> str:
     catalog = (
         f"\nAvailable tools (names only — load a schema before calling it):\n{tool_catalog}\n"
         if tool_catalog.strip()
@@ -148,7 +148,7 @@ When you learn a durable fact about this workspace, append ONE tagged bullet to 
 (skip facts already there):  - <YYYY-MM-DD> [layout|conventions|gotchas|decisions] <fact>"""
 
 
-def _rules_section(layout: WorkspaceLayout) -> str:
+def rules_section(layout: WorkspaceLayout) -> str:
     """Operational rules every CLI agent always needs. No per-tool examples."""
     return f"""\
 ## ZONES
@@ -270,8 +270,8 @@ def local_system_prompt(
     """
     extra = front_block(front)
     return f"""\
-{_tool_discovery_section(tool_catalog)}
-{_rules_section(layout)}
+{tool_discovery_section(tool_catalog)}
+{rules_section(layout)}
 
 ## WORKSPACE CONTEXT
 Root: {layout.root} | Mode: real disk + local shell. Output dir: {layout.outputs}.
@@ -339,8 +339,8 @@ def docker_system_prompt(
         extra = f"\nLegacy export mount: host {export_host.resolve()} → /output in the container."
     fb = front_block(front)
     return f"""\
-{_tool_discovery_section(tool_catalog)}
-{_rules_section(layout)}
+{tool_discovery_section(tool_catalog)}
+{rules_section(layout)}
 
 ## WORKSPACE CONTEXT
 Root: {layout.root} | Mode: Docker sandbox.

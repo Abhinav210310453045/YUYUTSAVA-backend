@@ -62,7 +62,7 @@ def _async_enabled() -> bool:
     return env_flag("YUYUTSAVA_ASYNC_SUBAGENTS", true=("1", "true", "yes"))
 
 
-async def _build_retrieval_stores(skill_registry: SkillRegistry):
+async def build_retrieval_stores(skill_registry: SkillRegistry):
     """Construct the memory + skill stores for the CLI.
 
     Returns ``(memory_store, skill_store, pg_pool, embedder)``. On the Postgres
@@ -218,7 +218,7 @@ async def build_agent_stack(
     # SQLite keyword twins. Memory defaults ON in the CLI — these are the
     # longest-lived threads in the system — but an explicit
     # YUYUTSAVA_MEMORY_ENABLED=0 still disables it.
-    memory_store, skill_store, pg_pool, embedder = await _build_retrieval_stores(skill_registry)
+    memory_store, skill_store, pg_pool, embedder = await build_retrieval_stores(skill_registry)
 
     # Context-controller stores, selected ONCE by StoreFactory (Phase 3 step
     # 3.5). The CLI, the tinker bundle and the daemon each used to write this
