@@ -59,10 +59,11 @@ LAYERS: dict[str, int] = {
     "events": 2,
     "io": 2,
     "audio_io": 2,
+    # Imports nothing else from the package; skills builds on it.
+    "discovery": 2,
     # L3 — agent capabilities
     "policy": 3,
     "context": 3,
-    "discovery": 3,
     "mcp": 3,
     "consent": 3,
     "tools": 3,
@@ -83,7 +84,6 @@ LAYERS: dict[str, int] = {
 ALLOWED_UPWARD: frozenset[tuple[str, str]] = frozenset(
     {
         ("artifacts", "todoboard"),
-        ("skills", "discovery"),
         ("storage", "context"),
         ("storage", "daemon"),
         ("storage", "todoboard"),

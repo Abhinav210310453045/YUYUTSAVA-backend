@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 
 from langchain_core.tools import BaseTool, tool
 
+from yuyutsava.discovery import VectorStoreProvider, make_discovery_search_tool
 from yuyutsava.skills.registry import SkillRegistry
 
 if TYPE_CHECKING:
@@ -99,11 +100,6 @@ def make_skill_tools(
     tools: list[BaseTool] = [sk_read_skill, sk_write_skill]
 
     if store is not None:
-        from yuyutsava.discovery import (  # noqa: PLC0415 — upward (skills -> discovery); moves with W3
-            VectorStoreProvider,
-            make_discovery_search_tool,
-        )
-
         provider = VectorStoreProvider(store, loader=registry.get_body, group="skill")
         tools.append(
             make_discovery_search_tool(

@@ -94,8 +94,8 @@ root injects the implementation.
 |---|---|
 | **L0** — leaves | `ports`, `models`, `aio`, `platform`, `config` (environment helpers and dependency-free settings), `text` (text helpers) |
 | **L1** — foundations | `storage.paths`, `storage.ids`, `storage.dialect`, `llm`, `run_context` (the active run's thread and agent path) |
-| **L2** — domains and stores | `storage`, `retrieval`, `memory`, `skills`, `prefs`, `visuals`, `artifacts`, `events` |
-| **L3** — agent capabilities | `policy`, `context`, `discovery`, `mcp`, `consent` |
+| **L2** — domains and stores | `storage`, `retrieval`, `memory`, `skills`, `prefs`, `visuals`, `artifacts`, `events`, `discovery` (imports nothing else from the package; `skills` builds on it) |
+| **L3** — agent capabilities | `policy`, `context`, `mcp`, `consent` |
 | **L4** — agent assembly | `core`, `agents`, `conversation`, `todoboard`, `async_subagents` |
 | **L5** — composition roots | `cli`, `daemon`, `channels` |
 
