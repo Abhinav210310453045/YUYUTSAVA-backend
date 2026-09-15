@@ -26,8 +26,8 @@ from typing import Any, Literal
 from ulid import ULID
 
 from yuyutsava.storage.base import BaseSqliteStore
+from yuyutsava.storage.dialect import ensure_thread
 from yuyutsava.storage.pg.pool import PgPool
-from yuyutsava.storage.pg.threads import ensure_thread
 
 logger = logging.getLogger("yuyutsava.storage.usage")
 

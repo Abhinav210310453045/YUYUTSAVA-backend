@@ -16,9 +16,9 @@ from __future__ import annotations
 import asyncio
 
 from yuyutsava.storage.backend import StorageSettings
+from yuyutsava.storage.dialect import ensure_thread
 from yuyutsava.storage.pg import migrations as pg_migrations
 from yuyutsava.storage.pg.pool import PgPool
-from yuyutsava.storage.pg.threads import ensure_thread
 from yuyutsava.storage.sessions.config import SessionsSettings
 from yuyutsava.storage.sessions.sqlite_impl import SqliteSessionStore
 

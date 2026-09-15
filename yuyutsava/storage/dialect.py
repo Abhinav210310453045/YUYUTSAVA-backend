@@ -47,6 +47,7 @@ import sqlite3
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Awaitable, Callable, Protocol, TypeVar
 
+import psycopg
 from psycopg.rows import dict_row
 
 T = TypeVar("T")
@@ -258,6 +259,38 @@ class EventsSqliteDialect(SqliteDialect):
 # ---------------------------------------------------------------------------
 
 
+_UPSERT_SQL = """
+INSERT INTO threads
+    (thread_id, origin, workspace, status, title, langfuse_session_id)
+VALUES (%s, %s, %s, %s, %s, %s)
+ON CONFLICT (thread_id) DO NOTHING
+"""
+
+
+async def ensure_thread(
+    conn: psycopg.AsyncConnection,
+    thread_id: str | None,
+    *,
+    origin: str | None = None,
+    workspace: str | None = None,
+    status: str | None = None,
+    title: str | None = None,
+) -> None:
+    """Upsert the parent ``threads`` row on ``conn``. No-op for falsy ids.
+
+    Cheap and idempotent (``ON CONFLICT DO NOTHING``); the optional attributes
+    are recorded only when the row is first created. Run it on the *same*
+    pooled connection as the child write so the parent exists before the FK is
+    checked.
+    """
+    if not thread_id:
+        return
+    await conn.execute(
+        _UPSERT_SQL,
+        (thread_id, origin, workspace, status, title, thread_id),
+    )
+
+
 class PostgresDialect:
     """Backed by a :class:`~yuyutsava.storage.pg.pool.PgPool`.
 
@@ -348,9 +381,6 @@ class PostgresDialect:
                 return await fn(c)
 
     async def ensure_parent(self, conn: Any, thread_id: str | None, **attrs: Any) -> None:
-        # Upward (storage.dialect -> storage); moves with W3.
-        from yuyutsava.storage.pg.threads import ensure_thread  # noqa: PLC0415
-
         await ensure_thread(conn, thread_id, **attrs)
 
     def is_unique_violation(self, exc: BaseException) -> bool:
@@ -361,4 +391,4 @@ class PostgresDialect:
         return isinstance(exc, errors.UniqueViolation)
 
 
-__all__ = ["Dialect", "EventsSqliteDialect", "PostgresDialect", "SqliteDialect"]
+__all__ = ["Dialect", "EventsSqliteDialect", "PostgresDialect", "SqliteDialect", "ensure_thread"]

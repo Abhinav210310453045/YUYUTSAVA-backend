@@ -39,8 +39,8 @@ from yuyutsava.retrieval.hit import Hit
 from yuyutsava.retrieval.pg import PgVectorSearch, PgVectorTable
 from yuyutsava.retrieval.store import VectorStore
 from yuyutsava.retrieval.vector import vector_literal
+from yuyutsava.storage.dialect import ensure_thread
 from yuyutsava.storage.pg.pool import PgPool
-from yuyutsava.storage.pg.threads import ensure_thread
 
 logger = logging.getLogger("yuyutsava.context.transcript_index")
 

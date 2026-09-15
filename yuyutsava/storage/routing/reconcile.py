@@ -16,9 +16,9 @@ import logging
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable
 
+from yuyutsava.storage.dialect import ensure_thread
 from yuyutsava.storage.events.sqlite_backend import SqliteEventsBackend
 from yuyutsava.storage.pg.pool import PgPool
-from yuyutsava.storage.pg.threads import ensure_thread
 
 logger = logging.getLogger("yuyutsava.storage.routing.reconcile")
 

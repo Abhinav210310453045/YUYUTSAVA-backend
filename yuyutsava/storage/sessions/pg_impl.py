@@ -27,11 +27,11 @@ from typing import Any
 import psycopg
 
 from yuyutsava.storage.backend import StorageSettings
+from yuyutsava.storage.dialect import ensure_thread
 from yuyutsava.storage.ids import mint_thread_id
 from yuyutsava.storage.models import SESSION_STATUSES, Session
 from yuyutsava.storage.pg import migrations as pg_migrations
 from yuyutsava.storage.pg.pool import PgPool
-from yuyutsava.storage.pg.threads import ensure_thread
 from yuyutsava.storage.sessions.store import SessionNotFound
 
 _TASK_PREVIEW_MAX = 200
