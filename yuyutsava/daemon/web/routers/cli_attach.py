@@ -19,7 +19,6 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
 
 from yuyutsava.daemon.cli_remote_channel import CliRemoteChannel
 from yuyutsava.daemon.web.deps import (
@@ -28,6 +27,12 @@ from yuyutsava.daemon.web.deps import (
     get_session_origin,
 )
 from yuyutsava.daemon.web.exceptions import ServiceUnavailableError
+from yuyutsava.daemon.web.schemas.cli_attach import (
+    CliAttachIn,
+    CliAttachOut,
+    CliDetachIn,
+    CliDetachOut,
+)
 
 logger = logging.getLogger("yuyutsava.daemon.web.routers.cli_attach")
 
@@ -35,25 +40,6 @@ router = APIRouter(tags=["cli"])
 
 # Module-level state — single shared CliRemoteChannel for v1.
 _CLI_CHANNEL_NAME = "cli-remote"
-
-
-class CliAttachIn(BaseModel):
-    session_id: str | None = None
-    label: str | None = None  # purely informational; logged for triage
-
-
-class CliAttachOut(BaseModel):
-    ok: bool
-    channel_name: str
-    attached: bool  # True if newly registered, False if already present
-
-
-class CliDetachIn(BaseModel):
-    session_id: str | None = None
-
-
-class OkOut(BaseModel):
-    ok: bool
 
 
 def _find_cli_channel(channels) -> CliRemoteChannel | None:
@@ -84,18 +70,18 @@ async def attach(
 
 @router.post(
     "/cli/detach",
-    response_model=OkOut,
+    response_model=CliDetachOut,
     summary="Unregister the CLI HITL channel",
 )
 async def detach(
     body: CliDetachIn,
     channels=Depends(get_channels),
     session_origin=Depends(get_session_origin),
-) -> OkOut:
+) -> CliDetachOut:
     if channels is None:
         raise ServiceUnavailableError("ChannelRouter not initialized")
     if body.session_id and session_origin is not None:
         session_origin.clear(body.session_id)
     if channels.unregister(_CLI_CHANNEL_NAME) is not None:
         logger.info("CLI detached")
-    return OkOut(ok=True)
+    return CliDetachOut(ok=True)

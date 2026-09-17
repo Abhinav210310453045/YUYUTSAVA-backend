@@ -12,33 +12,18 @@ import asyncio
 import logging
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
 
 from yuyutsava.daemon.web.deps import get_channel_plugins
 from yuyutsava.daemon.web.exceptions import NotFoundError, ValidationError
+from yuyutsava.daemon.web.schemas.channel import (
+    ChannelListOut,
+    ChannelOut,
+    ChannelToggleOut,
+)
 
 logger = logging.getLogger("yuyutsava.daemon.web.routers.channels")
 
 router = APIRouter(tags=["channels"])
-
-
-class ChannelOut(BaseModel):
-    name: str
-    available: bool  # a plugin factory exists for this name
-    enabled: bool  # config flag (survives restart)
-    running: bool  # live right now
-    capabilities: list[str]
-
-
-class ChannelListOut(BaseModel):
-    channels: list[ChannelOut]
-
-
-class ChannelToggleOut(BaseModel):
-    ok: bool
-    name: str
-    running: bool
-    changed: bool  # False when the call was a no-op (idempotent)
 
 
 @router.get(

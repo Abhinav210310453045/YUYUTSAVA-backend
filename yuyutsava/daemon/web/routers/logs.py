@@ -11,23 +11,15 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
 
 from yuyutsava.daemon.web.deps import get_store
+from yuyutsava.daemon.web.schemas.log import LogLevelIn, LogLevelOut
 from yuyutsava.storage.prefs import PrefsStore
 
 router = APIRouter(tags=["logs"])
 
 _ALLOWED = ("DEBUG", "INFO", "WARNING")
 _PREF_KEY = "daemon.log_level"
-
-
-class LogLevelOut(BaseModel):
-    level: str
-
-
-class LogLevelIn(BaseModel):
-    level: str = Field(..., description="One of DEBUG, INFO, WARNING")
 
 
 def _current_level_name() -> str:

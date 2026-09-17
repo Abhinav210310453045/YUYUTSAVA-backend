@@ -20,44 +20,16 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field
 
+from yuyutsava.daemon.web.schemas.visual import RenderIn, VisualOut
 from yuyutsava.storage.sessions import SessionNotFound, get_default_session_store
 from yuyutsava.visuals.render import render
-from yuyutsava.visuals.store import VisualRecord, get_default_visual_store
+from yuyutsava.visuals.store import get_default_visual_store
 from yuyutsava.visuals.types import VisualError
 
 logger = logging.getLogger("yuyutsava.daemon.web.routers.visuals")
 
 router = APIRouter(tags=["visuals"])
-
-
-class VisualOut(BaseModel):
-    visual_id: str
-    kind: str
-    title: str | None
-    mime: str
-    url: str
-    created_ts: float
-
-    @classmethod
-    def from_record(cls, r: VisualRecord) -> "VisualOut":
-        return cls(
-            visual_id=r.visual_id,
-            kind=r.kind,
-            title=r.title,
-            mime=r.mime,
-            url=f"/visuals/{r.visual_id}",
-            created_ts=r.created_ts,
-        )
-
-
-class RenderIn(BaseModel):
-    kind: str = Field(..., description="chart | diagram | table | code | math | timeline")
-    spec: dict[str, Any] = Field(
-        ..., description="Renderer spec (see docs/reference/visual-tools.md)"
-    )
-    thread_id: str = Field("rest", description="Thread/session to file the visual under")
 
 
 @router.get(
