@@ -258,6 +258,7 @@ does not have.
 | `models/interrupts.py:5,9` | `engine._prompt_permission()`, `PermissionMiddleware` | renamed and removed |
 | `prefs/injector.py:1-3` | the block is orchestrator-only, per "PHASE_2_PLAN" | injected for CLI and tinker too (`core/engine.py:839-842`); the plan is not in the repository |
 | `cli/cli.py:7` | "see RESTRUCTURE_HANDOFF.md §5" | no such file |
+| `daemon/web/routers/converse.py:42` | the ask frame is `{"type":"ask","payload":{...}}` | both emitters send `{"type":"ask","ask":{...}}` (`:587`, `services/stream_service.py:101`). The Electron store reads `msg.ask \|\| msg.payload`, so clients work; the never-run test asserted the docstring's shape and failed the moment a runner executed it (`R-TST-11`) |
 | `cli/render/console.py:18` | mirrors the palette "in chat_repl.py" | it is `cli/render/plain.py:24-29` |
 | `context/meter.py:491-494` | explains a lazy import by `core.prompts` | the function no longer imports it |
 | `cli/commands/scenarios.py:33,41,51` | prompts use `/yuyutsava/workspace/…` virtual paths and `read_file`/`write_file` | the tool contract is `tr_*` with real paths (suspected stale) |

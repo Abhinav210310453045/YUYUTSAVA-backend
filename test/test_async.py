@@ -15,12 +15,28 @@ Consider renaming to scripts/smoke_async.py so it stops looking like a test.
 """
 
 import os as _os
+import sys as _sys
 
-if _os.environ.get("YUYUTSAVA_ALLOW_BILLABLE") != "1":
-    raise SystemExit(
-        "test_async.py makes REAL billable LLM calls and was skipped.\n"
-        "Re-run with YUYUTSAVA_ALLOW_BILLABLE=1 if that is intended."
-    )
+_ALLOWED = _os.environ.get("YUYUTSAVA_ALLOW_BILLABLE") == "1"
+_REFUSAL = (
+    "test_async.py makes REAL billable LLM calls and was skipped.\n"
+    "Re-run with YUYUTSAVA_ALLOW_BILLABLE=1 if that is intended."
+)
+
+if not _ALLOWED:
+    # A module-level `raise SystemExit` here aborted pytest's *collection* of
+    # the whole suite, not just this file: pytest imports every test module up
+    # front, so one SystemExit stops all 1,587 tests. Skip when pytest is the
+    # importer; keep exiting when run directly, which is the guard that matters
+    # for a `for f in test/*.py` sweep — how this got billed on 2026-08-08.
+    # The test is whether pytest is *importing* us, not whether it happens to be
+    # installed: `import pytest` succeeds either way now, and calling skip()
+    # outside a pytest run raises `Skipped` — a traceback with exit status 0,
+    # which a bulk sweep would read as success.
+    _pytest = _sys.modules.get("pytest")
+    if _pytest is None:
+        raise SystemExit(_REFUSAL)
+    _pytest.skip(_REFUSAL, allow_module_level=True)
 
 import asyncio
 import sys

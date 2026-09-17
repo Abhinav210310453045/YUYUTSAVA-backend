@@ -13,23 +13,27 @@ Postgres or an API key, and CI therefore runs no tests at all.
 
 ## R-TST-01 — No runner configuration, no markers, no CI test gate
 
-**Severity** P1 · **Wave** W6 · **Status** Open
+**Severity** P1 · **Wave** W6 · **Status** Runner landed in W4; markers and CI open
 
 **Claim.** The suite cannot be run safely by a machine.
 
 **Evidence.**
 - 115 files use `unittest`; 2 import `pytest`. There is no `conftest.py` and no
   `[tool.pytest.ini_options]`.
-- `pytest` itself is not declared in `pyproject.toml` and is not installed in the
-  project venv. The two files that import it, `test/web/test_voice_ws.py` and
-  `test/test_general_purpose_search_tools.py`, fail at `import pytest` under any
-  runner (found during W2; identical at `f4ec45c`).
+- `pytest` was neither declared in `pyproject.toml` nor installed in the project
+  venv (W4 declared it under the `dev` extra and installed it).
+- This bullet undercounted the damage, and W4 corrected it: only
+  `test/web/test_voice_ws.py` fails at `import pytest`. **Five** files are
+  written in pytest style, and in the other four `unittest` silently collects
+  nothing and reports `OK` — 17 tests that no runner had ever executed. See
+  `R-TST-11`.
 - `CONTRIBUTING.md` lists "No test gate in CI" as a known gap. It never says how
   to run the tests.
 - An unknown subset needs a live Postgres or model credentials, and nothing
   marks which.
-- The one billable test is guarded correctly: `test/test_async.py` refuses to
-  run without `YUYUTSAVA_ALLOW_BILLABLE=1`.
+- The one billable test is guarded, but not correctly: `test/test_async.py`
+  refused to run by raising `SystemExit` at import, which aborted pytest's
+  collection of the entire suite. See `R-TST-12`.
 
 **Consequence.** Regressions reach `main` unless someone remembers the right
 files. A contributor cannot run "everything that does not need a database".
@@ -237,7 +241,15 @@ proving they exercise the builder.
 
 ## R-TST-10 — A regression test that cannot import what it tests
 
-**Severity** P1 · **Wave** W6 · **Status** Open (found during W2)
+**Severity** P1 · **Wave** W6 · **Status** Done (found during W2, fixed in W4)
+
+**Landed.** The test builds the handler through `make_ask_handler` with a stub
+renderer whose only method is `pause()`, and patches the module's `read_line`
+rather than `builtins.input` — the handler stopped using `input()` when the
+split view put stdin in raw mode, so the old patch target was a second reason
+the file could never have passed. All five assertions kept. The negative control
+this finding asked for was run: removing the blank-line skip from the handler
+fails `test_blank_lines_skipped_then_session` and nothing else.
 
 **Claim.** `test/test_ask_handler.py` imports `_ask_handler` from
 `yuyutsava.cli.commands.chat_repl`. No module-level function has had that name
@@ -263,6 +275,123 @@ keep the assertions.
 
 **Verification.** The file passes. Removing the blank-line skip from the handler
 makes it fail.
+
+---
+
+## R-TST-11 — Five files no runner ever ran, four of them reporting success
+
+**Severity** P0 · **Wave** W4 · **Status** Done (found during W4)
+
+**Claim.** 17 test functions in five files were written as bare `def test_*`
+with no `TestCase`. `unittest` discovers nothing in them and exits **OK**, so
+they counted as passing everywhere — including this review's own per-file
+sweeps.
+
+**Evidence.** An AST scan for modules with `test_*` functions and no `TestCase`
+subclass: `framework_contract/test_deepagents_contract.py` (5),
+`test_filesystem_prompt_override.py` (2), `test_general_purpose_search_tools.py`
+(4), `web/test_converse_ws.py` (4), `web/test_voice_ws.py` (2). Only the last
+fails loudly, because it imports `pytest` at module level; the other four print
+`Ran 0 tests ... OK`.
+
+**Consequence.** A green sweep line meant nothing for these files. The W3 commit
+messages in this branch cite `test_converse_ws.py` and
+`test_general_purpose_search_tools.py` as green; they had not executed. Worse
+than a red test is a runner that reports success over zero tests.
+
+**Fix / Landed.** pytest declared (`[project.optional-dependencies] dev`) and
+installed; it collects both styles. On first execution: **14 pass, 3 fail**, and
+all three failures are stale tests, not product defects —
+`test_converse_ws.py::test_inline_ask_roundtrip` asserts
+`ask["payload"]["body"]` while both emitters send `{"type":"ask","ask":{...}}`
+(`routers/converse.py:587`, `services/stream_service.py:101`), and
+`test_voice_ws.py`'s `_FakeVoice` lacks `prewarm`, which production has called
+since before `f4ec45c`. Both confirmed pre-existing: the converse one fails
+identically in a `f4ec45c` worktree, and `git show f4ec45c` shows `prewarm()`
+already called against a fake that never had it.
+
+**Verification.** `pytest --collect-only test` reports 1,721 tests, 0 errors.
+The three stale tests are fixed in W6 with the other test debt.
+
+---
+
+## R-TST-12 — The billable guard stopped the whole suite from collecting
+
+**Severity** P1 · **Wave** W4 · **Status** Done (found during W4)
+
+**Claim.** `test/test_async.py` refused to run by raising `SystemExit` at import
+time. pytest imports every test module during collection, so that one statement
+aborted collection of all 1,587 otherwise-collectable tests with
+`INTERNALERROR`.
+
+**Consequence.** Adopting pytest looked impossible: the runner appeared broken
+on the whole tree when in fact one module was exiting during import.
+
+**Fix / Landed.** Skip at module level when pytest is the importer
+(`sys.modules.get("pytest")` — *importing* pytest, not merely having it
+installed), and keep `SystemExit` for a direct run. The distinction matters:
+calling `pytest.skip()` outside a pytest session raises `Skipped`, which exits
+**0** — a bulk `for f in test/*.py` sweep would have read that as success, which
+is how this script got billed on 2026-08-08.
+
+**Verification.** Collection is clean; `python test/test_async.py` still refuses
+with exit 1 and no traceback.
+
+---
+
+## R-TST-13 — A cached default store makes three files fail, but only together
+
+**Severity** P1 · **Wave** W6 · **Status** Open (found during W4)
+
+**Claim.** `test/daemon/test_build_storage.py` calls `build_storage`, which
+calls `set_default_session_store(PgSessionStore(storage, pool=pg_pool))`
+(`daemon/bootstrap.py:442`), writing the module-level `_DEFAULT_STORE`
+(`storage/sessions/sqlite_impl.py:374`). Its `tearDown` restores
+`YUYUTSAVA_STATE_DIR` and `YUYUTSAVA_STORAGE_BACKEND` faithfully — but an
+environment variable cannot un-cache an object.
+
+**Evidence.** In a whole-suite run, `storage/test_app_context.py`
+`::test_full_purge_never_consults_a_global`, `storage/test_feedback_purge.py`
+and `web/test_todo_board_dependency.py` (8 subtests) fail with
+`RuntimeError: PgPool.open() must be called first`. Each passes alone, under
+both runners. Bisecting by directory and then by file names
+`test_build_storage.py` as the only predecessor that causes it.
+
+**Consequence.** This is `R-GLB`'s `set_default_*` family with a bill attached:
+six setters fire inside `build_storage`. It was undetectable by construction
+while every check ran one file per process — which is what every sweep in this
+review did until W4.
+
+**Fix.** W6: the setters get a documented reset for tests, or the fixtures stop
+relying on process-wide defaults (the `AppContext` seam already exists and is
+what `test_app_context` is asserting about). Not a W4 refactor.
+
+**Verification.** `pytest test/daemon/test_build_storage.py
+test/storage/test_app_context.py` passes.
+
+---
+
+## R-TST-14 — A standing failure that was never in the ledger
+
+**Severity** P1 · **Wave** W6 · **Status** Open (found during W4)
+
+**Claim.** `retrieval/test_find_duplicate_row_shape.py`
+`::TheRealWritePath::test_identical_text_is_deduplicated` fails in isolation
+under both runners: two identical writes produce two rows, and the message says
+it plainly — "find_duplicate returned None, so the dedup probe is not actually
+running".
+
+**Evidence.** The known-red list in this review named four files
+(`R-TST-08`…`10`, plus `test_voice_ws`). This is a fifth. The test file is
+unchanged on `code-improvement` apart from the tree-wide `ruff format`
+(`a309b8a`), so it pre-dates the branch.
+
+**Consequence.** Unlike the others this is a claim about *product* behaviour —
+memory dedup may not be deduplicating — not a broken test. It needs Postgres to
+reproduce.
+
+**Fix.** W6, with `R-TST-08`/`09`: classify against a clean baseline, then fix
+the dedup probe or the test's premise.
 
 ---
 

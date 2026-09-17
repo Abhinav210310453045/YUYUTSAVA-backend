@@ -154,6 +154,14 @@ all-providers = [
     "langchain-mistralai>=1.1,<2",
     "langchain-cohere>=0.6,<1",
 ]
+# The test runner. Most of the suite is `unittest` and runs without it, but five
+# files are written as bare pytest functions — `unittest` discovers nothing in
+# them and reports OK, so 17 tests silently never ran. pytest collects both
+# styles. Install with `uv pip install -e '.[dev]'` (W6 makes it the runner of
+# record and adds markers).
+dev = [
+    "pytest>=8.0",
+]
 
 [project.scripts]
 yuyutsava = "yuyutsava.cli.cli:main"
