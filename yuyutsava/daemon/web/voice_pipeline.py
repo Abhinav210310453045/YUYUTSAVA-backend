@@ -24,10 +24,10 @@ import wave
 from pathlib import Path
 from typing import Callable
 
-from yuyutsava.audio_io.synth import synthesize_pcm
-from yuyutsava.audio_io.vad import VadResult, VadSegmenter
-from yuyutsava.io.stt import STT, TranscriptResult, stt_from_env
-from yuyutsava.io.tts import TTS, tts_from_env
+from yuyutsava.voice.backends.stt import STT, TranscriptResult, stt_from_env
+from yuyutsava.voice.backends.tts import TTS, tts_from_env
+from yuyutsava.voice.synth import synthesize_pcm
+from yuyutsava.voice.vad import VadResult, VadSegmenter
 
 logger = logging.getLogger("yuyutsava.daemon.web.voice_pipeline")
 

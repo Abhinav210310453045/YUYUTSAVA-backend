@@ -660,7 +660,7 @@ async def _send_audio(pcm: bytes, rate: int) -> None:
         await asyncio.sleep(0)  # let the pumps drain between frames
 ```
 
-Prose is sentence-chunked by `SentenceChunker` ([`audio_io/sentence.py`](../../yuyutsava/audio_io/sentence.py))
+Prose is sentence-chunked by `SentenceChunker` ([`voice/sentence.py`](../../yuyutsava/voice/sentence.py))
 before synthesis, so audio starts playing on sentence one rather than at the end of the
 turn.
 
@@ -669,12 +669,12 @@ turn.
 | Piece | Side | Code |
 |---|---|---|
 | Mic capture, resample, framing | **Renderer** (Web Audio) | [`renderer/audio/capture.js`](../../electron-app/src/renderer/audio/capture.js) |
-| VAD segmentation | **Daemon** | [`audio_io/vad.py`](../../yuyutsava/audio_io/vad.py) via [`voice_pipeline.py:64`](../../yuyutsava/daemon/web/voice_pipeline.py#L64) |
-| STT | **Daemon** | [`io/stt.py`](../../yuyutsava/io/stt.py) |
-| TTS synthesis → PCM | **Daemon** | [`audio_io/synth.py:25-37`](../../yuyutsava/audio_io/synth.py#L25-L37) |
+| VAD segmentation | **Daemon** | [`voice/vad.py`](../../yuyutsava/voice/vad.py) via [`voice_pipeline.py:64`](../../yuyutsava/daemon/web/voice_pipeline.py#L64) |
+| STT | **Daemon** | [`voice/backends/stt.py`](../../yuyutsava/voice/backends/stt.py) |
+| TTS synthesis → PCM | **Daemon** | [`voice/synth.py:25-37`](../../yuyutsava/voice/synth.py#L25-L37) |
 | TTS playback | **Renderer** | [`renderer/audio/index.js:159-177`](../../electron-app/src/renderer/audio/index.js#L159-L177) |
-| Earcons | **Renderer** (oscillators) | [`audio/index.js:16-22`](../../electron-app/src/renderer/audio/index.js#L16-L22), mirroring [`audio_io/earcons.py:38-44`](../../yuyutsava/audio_io/earcons.py#L38-L44) |
-| Announcer (`say()` on daemon speakers) | **Daemon only** | [`audio_io/announcer.py`](../../yuyutsava/audio_io/announcer.py) — used by `VoiceChannel`, *not* the Electron path |
+| Earcons | **Renderer** (oscillators) | [`audio/index.js:16-22`](../../electron-app/src/renderer/audio/index.js#L16-L22), mirroring [`voice/earcons.py:38-44`](../../yuyutsava/voice/earcons.py#L38-L44) |
+| Announcer (`say()` on daemon speakers) | **Daemon only** | [`voice/announcer.py`](../../yuyutsava/voice/announcer.py) — used by `VoiceChannel`, *not* the Electron path |
 
 Playback deliberately lives on the client because the daemon may be remote — the
 rationale is stated in the file header at

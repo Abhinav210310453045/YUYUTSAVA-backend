@@ -294,10 +294,10 @@ Collected during the code audit. Use as an implementation checklist.
 | `yuyutsava/agents/task_runner/executor.py` | 83 | `asyncio.create_subprocess_shell` (host shell) |
 | `yuyutsava/agents/task_runner/tools.py` | 409–411 | `grep -rn` command string → L1 pure Python |
 | `yuyutsava/agents/task_runner/tools.py` | 613–616 | `curl -fSL` + POSIX `shlex.quote` → L1 httpx |
-| `yuyutsava/io/tts.py` | 54 | `piper` binary (cross-platform if installed) |
-| `yuyutsava/io/tts.py` | 150, 165–166 | macOS `say` (darwin-gated) |
+| `yuyutsava/voice/backends/tts.py` | 54 | `piper` binary (cross-platform if installed) |
+| `yuyutsava/voice/backends/tts.py` | 150, 165–166 | macOS `say` (darwin-gated) |
 | `yuyutsava/visuals/diagrams.py` | 65 | Graphviz `dot` (has Kroki fallback) |
-| `yuyutsava/core/docker_sandbox_backend.py` | 166, 206, 252, 338, 412, 424, 464 | `docker` CLI + `sh -s` (Linux container — safe) |
+| `yuyutsava/docker_sandbox/backend.py` | 166, 206, 252, 338, 412, 424, 464 | `docker` CLI + `sh -s` (Linux container — safe) |
 
 ### Hardcoded POSIX paths
 | File | Lines | Path(s) |

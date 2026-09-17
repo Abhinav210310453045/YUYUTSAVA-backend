@@ -235,7 +235,7 @@ yuyutsava/
   mcp/           MCP client manager, tool adapter, scoping
   todoboard/     planning surface, cards, artifact blocks
   artifacts/     non-card artifact store for chat and voice
-  audio_io/      VAD, earcons, synthesis, announcer
+  voice/         STT/TTS/wake backends, VAD, earcons, synthesis, announcer
   conversation/  I/O-agnostic turn loop shared by CLI, app and voice
   skills/        SKILL.md pattern library
   visuals/       delivery-agnostic rendering library

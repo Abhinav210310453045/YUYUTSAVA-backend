@@ -16,11 +16,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 import yuyutsava.daemon.web.routers.converse as converse_router
-from yuyutsava.audio_io.vad import VadResult
 from yuyutsava.core.streaming import StreamEvent
 from yuyutsava.daemon.turn_registry import TurnRegistry
 from yuyutsava.daemon.web.app import create_app
 from yuyutsava.daemon.web.services.stream_service import WebHub
+from yuyutsava.voice.vad import VadResult
 
 
 class _RecordingStore:

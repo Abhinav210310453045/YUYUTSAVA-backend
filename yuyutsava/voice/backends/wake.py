@@ -18,7 +18,7 @@ from abc import ABC, abstractmethod
 
 from yuyutsava.config.env import env_flag
 
-logger = logging.getLogger("yuyutsava.io.wake")
+logger = logging.getLogger("yuyutsava.voice.backends.wake")
 
 # Default openwakeword model. The ONNX weights are fetched on first use (see
 # OpenWakeWordDetector._load), not bundled with the package.

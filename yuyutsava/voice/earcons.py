@@ -49,7 +49,7 @@ _DEFAULT_TONES: dict[str, list[tuple[float, float]]] = {
 
 def _bundled_dir() -> Path:
     """Repo-bundled assets dir: ``<repo>/assets/earcons``."""
-    # earcons.py -> audio_io -> yuyutsava -> <repo root>
+    # earcons.py -> voice -> yuyutsava -> <repo root>
     return Path(__file__).resolve().parents[2] / "assets" / "earcons"
 
 

@@ -98,7 +98,8 @@ def main(argv: list[str] | None = None) -> None:
         return
 
     try:
-        from yuyutsava.io.wake import wake_from_env  # noqa: PLC0415 — subprocess entry module
+        # Subprocess entry module.
+        from yuyutsava.voice.backends.wake import wake_from_env  # noqa: PLC0415
     except Exception as exc:
         _fatal(f"Failed to import wake module: {exc}")
         return

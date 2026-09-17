@@ -57,8 +57,8 @@ LAYERS: dict[str, int] = {
     "visuals": 2,
     "artifacts": 2,
     "events": 2,
-    "io": 2,
-    "audio_io": 2,
+    # Backends plus the pipeline on them; was io/ + audio_io/ (R-PLC-07).
+    "voice": 2,
     # Imports nothing else from the package; skills builds on it.
     "discovery": 2,
     # L3 — agent capabilities

@@ -23,7 +23,7 @@ from pathlib import Path
 
 import httpx
 
-logger = logging.getLogger("yuyutsava.io.tts")
+logger = logging.getLogger("yuyutsava.voice.backends.tts")
 
 
 class TTS(ABC):

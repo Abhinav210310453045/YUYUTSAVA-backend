@@ -25,7 +25,7 @@ from dataclasses import dataclass
 
 from yuyutsava.config.env import env_float, env_int
 
-logger = logging.getLogger("yuyutsava.audio_io.vad")
+logger = logging.getLogger("yuyutsava.voice.vad")
 
 _SAMPLE_RATE = 16_000
 _BYTES_PER_SAMPLE = 2

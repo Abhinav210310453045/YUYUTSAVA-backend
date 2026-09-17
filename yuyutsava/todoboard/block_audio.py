@@ -7,8 +7,8 @@ the closed V1 kind vocabulary as ``kind="file"`` refined by ``audio/*``
 mimes, exactly the umbrella the Phase-4 checks proved.
 
 ``generate(spec, out_dir)`` delegates to the voice interface's existing synth
-path (:func:`yuyutsava.audio_io.synth.synthesize_pcm` over
-:func:`yuyutsava.io.tts.tts_from_env`: Piper when ``PIPER_MODEL`` is set,
+path (:func:`yuyutsava.voice.synth.synthesize_pcm` over
+:func:`yuyutsava.voice.backends.tts.tts_from_env`: Piper when ``PIPER_MODEL`` is set,
 zero-config macOS ``say``/pyttsx3 fallback otherwise) and writes a mono
 16-bit WAV into the card workspace for the caller to ``attach()``.
 """
@@ -22,10 +22,10 @@ from typing import Any
 
 from ulid import ULID
 
-from yuyutsava.audio_io.synth import synthesize_pcm
-from yuyutsava.io.tts import tts_from_env
 from yuyutsava.todoboard.block_registry import ArtifactBlock, file_validator
 from yuyutsava.todoboard.exchange import TodoValidationError
+from yuyutsava.voice.backends.tts import tts_from_env
+from yuyutsava.voice.synth import synthesize_pcm
 
 # What the multipart endpoint accepts. Rendering is broader — the frontend
 # block claims any audio/* mime and plays it through Web Audio decoding.

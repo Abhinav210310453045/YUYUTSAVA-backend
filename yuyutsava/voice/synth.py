@@ -1,6 +1,6 @@
 """Synthesize text to raw PCM for streaming to a remote client.
 
-The daemon-local :class:`~yuyutsava.audio_io.announcer.Announcer` *plays* audio on
+The daemon-local :class:`~yuyutsava.voice.announcer.Announcer` *plays* audio on
 the host's speakers. The WS voice path is different: the client (Electron/mobile)
 may be remote, so the daemon must turn agent text into **PCM bytes** and stream
 them back as ``audio_chunk`` frames for the renderer's Web Audio queue to play.
@@ -18,9 +18,9 @@ import tempfile
 import wave
 from pathlib import Path
 
-from yuyutsava.io.tts import TTS
+from yuyutsava.voice.backends.tts import TTS
 
-logger = logging.getLogger("yuyutsava.audio_io.synth")
+logger = logging.getLogger("yuyutsava.voice.synth")
 
 
 async def synthesize_pcm(tts: TTS, text: str) -> tuple[bytes, int]:

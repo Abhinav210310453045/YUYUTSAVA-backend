@@ -21,7 +21,7 @@ from pathlib import Path
 
 from yuyutsava.config.env import env_float
 
-logger = logging.getLogger("yuyutsava.io.stt")
+logger = logging.getLogger("yuyutsava.voice.backends.stt")
 
 
 @dataclass(frozen=True)

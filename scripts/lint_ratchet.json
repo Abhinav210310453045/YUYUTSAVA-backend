@@ -49,12 +49,6 @@
     "PLR0913": 1,
     "S110": 4
   },
-  "yuyutsava/audio_io/announcer.py": {
-    "S110": 2
-  },
-  "yuyutsava/audio_io/vad.py": {
-    "PLR0913": 1
-  },
   "yuyutsava/channels/telegram/channel.py": {
     "S110": 1
   },
@@ -299,5 +293,11 @@
   },
   "yuyutsava/todoboard/tools.py": {
     "C901": 1
+  },
+  "yuyutsava/voice/announcer.py": {
+    "S110": 2
+  },
+  "yuyutsava/voice/vad.py": {
+    "PLR0913": 1
   }
 }

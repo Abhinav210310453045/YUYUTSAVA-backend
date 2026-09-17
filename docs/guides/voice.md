@@ -116,14 +116,14 @@ IP (e.g. `http://100.x.y.z:7654`) and the bearer token if the daemon requires on
 - Renderer `lib/tokenSmoother.js` for smooth char-by-char streaming.
 
 ### Phase 3 — Reusable sound/announcer subsystem
-- `yuyutsava/audio_io/` — `earcons.py` (open/close/listening/done/error tones),
+- `yuyutsava/voice/` — `earcons.py` (open/close/listening/done/error tones),
   `announcer.py` (serialized speak/earcon/stop queue, graceful when audio absent).
-- `io/audio.stop_playback()` for barge-in. `VoiceChannel` speaks via the Announcer.
+- `voice/backends/device.stop_playback()` for barge-in. `VoiceChannel` speaks via the Announcer.
 - Renderer mirror `electron-app/src/renderer/audio/index.js` (`audioPlayer` singleton).
 
 ### Phase 4 — Voice pipeline on the WS
-- `audio_io/vad.py` (VAD segmenter), `audio_io/sentence.py` (token→sentence chunker),
-  `audio_io/synth.py` (text→PCM), `daemon/web/voice_pipeline.py`.
+- `voice/vad.py` (VAD segmenter), `voice/sentence.py` (token→sentence chunker),
+  `voice/synth.py` (text→PCM), `daemon/web/voice_pipeline.py`.
 - WS frames in: `audio` / `audio_end`. Out: `speech_started` / `transcript` /
   `speaking_start` / `audio_chunk` / `speaking_end`. **Barge-in** = speech during a
   turn cancels it + its TTS.
@@ -147,7 +147,7 @@ IP (e.g. `http://100.x.y.z:7654`) and the bearer token if the daemon requires on
   - New `voice_messages` table (PG migration **v11** + standalone SQLite store
     `storage/voice_store.py`) — one row per spoken turn (role/modality/text/audio_blob/sample_rate).
   - Agent TTS WAVs saved under `~/.yuyutsava/blobs/voice/<thread_id>/`
-    (`audio_io/blobs.py`); **session-scoped** (deleted on session delete, *not*
+    (`storage/voice_blobs.py`); **session-scoped** (deleted on session delete, *not*
     TTL-swept — so replay survives indefinitely). User side stores transcript text
     only (raw user audio off by default).
   - Endpoints: `GET /sessions/{id}/messages`, `GET /sessions/{id}/audio/{seq}`;
@@ -315,8 +315,8 @@ Audio blobs live at `~/.yuyutsava/blobs/voice/<thread_id>/*.wav`.
 | Symptom | Likely file |
 |---------|-------------|
 | WS won't connect from Electron | CSP `connect-src` in `electron-app/src/renderer/index.html`; daemon running w/o `--no-ui` |
-| No audio out | `audio_io/announcer.py` / `synth.py`; TTS provider config; macOS `say` fallback |
-| No transcript / mic dead | `audio_io/vad.py`; renderer `audio/capture.js`; mic permission |
+| No audio out | `voice/announcer.py` / `synth.py`; TTS provider config; macOS `say` fallback |
+| No transcript / mic dead | `voice/vad.py`; renderer `audio/capture.js`; mic permission |
 | Resume opens empty | `GET /sessions/{id}/messages`; `useConverse` resume fetch; `voice_store`/`transcript_store` on `app.state` |
 | ▶ replay silent after restart | blob exists under `blobs/voice/`? `GET /sessions/{id}/audio/{seq}`; `audioPlayer.playUrl` |
 | Wake word not firing | events source `voice` enabled + `params.wake_words`; `WAKE_THRESHOLD`; openWakeWord model present |

@@ -264,8 +264,8 @@ yuyutsava/
 │   ├── events/            events domain store + 13 role Protocols (roles.py)
 │   └── sessions/          session store (sqlite + pg impls)
 ├── visuals/             chart/diagram/table/code/math/timeline render + vis_* tools
-├── audio_io/            VAD, STT/TTS glue, earcons, announcer (voice)
-├── io/                  audio/stt/tts/wake backends
+├── voice/               VAD, sentence chunking, synthesis, earcons, announcer
+│   └── backends/          device (PortAudio capture/playback), stt, tts, wake
 ├── mcp/                 MCP client manager + tool adapter (external tool servers)
 ├── platform/            OS-invariance: FileLock, HostProfile, elevation, process
 ├── prefs/               PrefsInjector (user prefs → prompt block)
@@ -1602,7 +1602,7 @@ A Siri-like voice loop reuses the same conversational deepagent. Two halves:
 ```mermaid
 flowchart TD
     Mic["mic audio"] --> VAD["VadSegmenter<br/>(webrtcvad-wheels + energy backstop)"]
-    VAD --> Wake["wake-word detect<br/>(io/wake.py)"]
+    VAD --> Wake["wake-word detect<br/>(voice/backends/wake.py)"]
     Wake -->|"voice.wake on bus"| Bridge["wake_bridge → WebHub<br/>StreamWakeItem"]
     Bridge --> Overlay["Electron voice overlay opens"]
     Overlay -->|"WS /ws/converse (audio)"| Pipe["VoicePipeline"]
@@ -1616,8 +1616,9 @@ flowchart TD
 
 Design points:
 
-- `audio_io/` owns the audio domain (VAD, earcons, announcer, sentence chunking,
-  `synthesize_pcm`); `io/` holds the swappable STT/TTS/wake backends built from env.
+- `voice/` owns the audio domain (VAD, earcons, announcer, sentence chunking,
+  `synthesize_pcm`); `voice/backends/` holds the swappable device/STT/TTS/wake
+  adapters built from env.
 - **VAD hardening:** `webrtcvad-wheels` (the `pkg_resources`/`setuptools≥81` breakage in
   plain `webrtcvad` caused an energy-VAD flood) + a minimum-utterance guard so tiny
   clips aren't hallucinated into text.

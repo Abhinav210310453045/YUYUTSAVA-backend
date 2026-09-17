@@ -28,11 +28,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from yuyutsava.audio_io.earcons import earcon_path
-from yuyutsava.io.audio import AudioUnavailableError, play_wav, stop_playback
-from yuyutsava.io.tts import TTS, tts_from_env
+from yuyutsava.voice.backends.device import AudioUnavailableError, play_wav, stop_playback
+from yuyutsava.voice.backends.tts import TTS, tts_from_env
+from yuyutsava.voice.earcons import earcon_path
 
-logger = logging.getLogger("yuyutsava.audio_io.announcer")
+logger = logging.getLogger("yuyutsava.voice.announcer")
 
 
 @dataclass

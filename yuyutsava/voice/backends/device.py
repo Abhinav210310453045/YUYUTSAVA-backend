@@ -14,7 +14,7 @@ import logging
 import wave
 from pathlib import Path
 
-logger = logging.getLogger("yuyutsava.io.audio")
+logger = logging.getLogger("yuyutsava.voice.backends.device")
 
 SAMPLE_RATE = 16_000
 CHANNELS = 1

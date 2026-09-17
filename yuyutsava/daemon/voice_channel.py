@@ -31,10 +31,6 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from yuyutsava.audio_io import Announcer
-from yuyutsava.io.audio import AudioUnavailableError, capture_wav
-from yuyutsava.io.stt import STT, stt_from_env
-from yuyutsava.io.tts import tts_from_env
 from yuyutsava.ports.channels import (
     AskPrompt,
     ChannelEvent,
@@ -43,6 +39,10 @@ from yuyutsava.ports.channels import (
     UserChannel,
 )
 from yuyutsava.storage.events import Proposal
+from yuyutsava.voice import Announcer
+from yuyutsava.voice.backends.device import AudioUnavailableError, capture_wav
+from yuyutsava.voice.backends.stt import STT, stt_from_env
+from yuyutsava.voice.backends.tts import tts_from_env
 
 logger = logging.getLogger("yuyutsava.daemon.voice_channel")
 
