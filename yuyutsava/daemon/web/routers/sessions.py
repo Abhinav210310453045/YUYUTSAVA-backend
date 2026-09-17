@@ -21,9 +21,9 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 
+from yuyutsava.artifacts.events import artifact_event_from_result
 from yuyutsava.core.app_context import AppContext
 from yuyutsava.core.purge import purge_session
-from yuyutsava.core.streaming import artifact_event_from_result
 from yuyutsava.daemon.web.schemas.session import SessionOut
 from yuyutsava.storage.sessions import (
     SessionNotFound,

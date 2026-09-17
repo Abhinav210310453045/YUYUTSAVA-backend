@@ -30,6 +30,7 @@ from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, Too
 from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command
 
+from yuyutsava.artifacts.events import ARTIFACT_EVENT
 from yuyutsava.core.tool_result import guard_tool_result, is_tool_error
 from yuyutsava.llm.tracing import get_callback, trace_metadata
 from yuyutsava.models.interrupts import (
@@ -38,13 +39,20 @@ from yuyutsava.models.interrupts import (
     UserQuestionInterrupt,
 )
 from yuyutsava.ports.agent import Agent
+from yuyutsava.ports.tool_events import ToolEventRegistry
 from yuyutsava.storage.interrupts import InterruptsStore
 from yuyutsava.storage.models import InterruptRecord
 from yuyutsava.text import flatten_content, sanitize_message_metadata
+from yuyutsava.visuals.events import IMAGE_EVENT
 
 logger = logging.getLogger("yuyutsava")
 
 _SEP = "━" * 60
+
+#: What a tool result can turn into besides text. Each package owns the rule for
+#: its own results; the driver holds the list and knows nothing about ``vis_*``
+#: or ``artifact_create`` beyond the order it tries them in.
+_TOOL_EVENTS = ToolEventRegistry((IMAGE_EVENT, ARTIFACT_EVENT))
 
 
 # ---------------------------------------------------------------------------
@@ -298,52 +306,6 @@ class StreamEvent:
 
     kind: str
     data: dict
-
-
-def _image_event_from_result(body: str) -> dict | None:
-    """Extract an ``image`` event payload from a ``vis_*`` tool result, or None.
-
-    ``vis_*`` tools return JSON like ``{"status":"ok","visual_id":...,"url":...}``.
-    A rendered visual becomes a typed ``image`` frame so the UI can show it inline
-    (and any SSE consumer gets structured image data, not opaque text).
-    """
-    try:
-        data = json.loads(body)
-    except (ValueError, TypeError):
-        return None
-    if not isinstance(data, dict) or data.get("status") != "ok" or not data.get("visual_id"):
-        return None
-    return {
-        "visual_id": data["visual_id"],
-        "url": data.get("url"),
-        "kind": data.get("kind"),
-        "title": data.get("title"),
-        "mime": data.get("mime", "image/png"),
-    }
-
-
-def artifact_event_from_result(body: str) -> dict | None:
-    """Extract an ``artifact`` event payload from an ``artifact_create`` result.
-
-    Turns the tool's record JSON into a typed ``artifact`` frame so the UI can
-    render the pluggable block inline (SandboxBlock/AudioBlock/TextBlock/…) and
-    open it big — the non-visual twin of :func:`_image_event_from_result`.
-    """
-    try:
-        data = json.loads(body)
-    except (ValueError, TypeError):
-        return None
-    if not isinstance(data, dict) or data.get("status") != "ok" or not data.get("artifact_id"):
-        return None
-    return {
-        # attachment_id is the key the frontend block components read; alias it.
-        "artifact_id": data["artifact_id"],
-        "attachment_id": data["artifact_id"],
-        "url": data.get("url"),
-        "kind": data.get("kind"),
-        "mime": data.get("mime"),
-        "title": data.get("title"),
-    }
 
 
 async def _has_resumable_state(agent: Agent, cfg: RunnableConfig) -> bool:
@@ -656,14 +618,9 @@ async def astream_agent_iter(
                 if keep_full_payloads:
                     payload["full"] = safe_body
                 yield StreamEvent("tool_result", payload)
-                if tn.startswith("vis_"):
-                    img = _image_event_from_result(safe_body)
-                    if img is not None:
-                        yield StreamEvent("image", img)
-                elif tn in ("artifact_create", "artifact_show"):
-                    art = artifact_event_from_result(safe_body)
-                    if art is not None:
-                        yield StreamEvent("artifact", art)
+                extra = _TOOL_EVENTS.event_for(tn, safe_body)
+                if extra is not None:
+                    yield StreamEvent(*extra)
 
         elif kind == "pass_end":
             steps_last_pass = item

@@ -15,6 +15,8 @@ The decision is ADR-003.
 - :mod:`~yuyutsava.ports.retrieval` — ``ConversationIndex``, ``VectorSearcher``
 - :mod:`~yuyutsava.ports.storage` — ``ArtifactStore``, ``MemoryStore``, ``SummaryStore``,
   ``TranscriptStore``, ``UsageStore``
+- :mod:`~yuyutsava.ports.tool_events` — ``ToolEventRule``, ``ToolEventRegistry``: how a
+  tool result becomes a typed stream event, without the driver naming the tools
 
 The names below are re-exported because consumers import them from the package root;
 import anything else from the module that owns it.

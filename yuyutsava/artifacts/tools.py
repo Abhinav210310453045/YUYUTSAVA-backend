@@ -4,7 +4,7 @@ Produces a rich artifact (interactive HTML/JSX, a Markdown/text/CSV/JSON
 document, a code snippet, or a spoken audio note) into the general artifact
 store and returns a JSON record. The streaming layer turns that record into an
 ``artifact`` StreamEvent so it renders inline in the SAME chat/voice reply
-(see :func:`yuyutsava.core.streaming.artifact_event_from_result`), and the
+(see :func:`yuyutsava.artifacts.events.artifact_event_from_result`), and the
 frontend's shared block registry renders/opens it — no card required.
 
 Charts, data plots, and diagrams already have first-class tools (``vis_*``);
