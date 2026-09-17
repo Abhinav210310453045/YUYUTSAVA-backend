@@ -27,7 +27,7 @@ from langchain_core.tools import BaseTool, StructuredTool, tool
 
 from yuyutsava.config.search import SearchConfig
 
-logger = logging.getLogger("yuyutsava.tools.search")
+logger = logging.getLogger("yuyutsava.websearch.tools")
 
 
 class SearchError(Exception):

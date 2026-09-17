@@ -15,7 +15,7 @@ from __future__ import annotations
 from langchain_core.tools import BaseTool
 
 from yuyutsava.agents.base_sub_agent import BaseSubAgent
-from yuyutsava.tools.search import make_search_tools
+from yuyutsava.websearch.tools import make_search_tools
 
 _SYSTEM_PROMPT = """\
 You are the **general-purpose subagent** of YUYUTSAVA. The orchestrator has

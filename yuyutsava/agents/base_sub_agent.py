@@ -49,8 +49,8 @@ from yuyutsava.ports import CapEnforcer, MemoryStore
 from yuyutsava.skills.registry import SkillRegistry
 from yuyutsava.skills.tools import make_read_skill_tool, make_skill_tools
 from yuyutsava.storage.paths import WorkspaceLayout
-from yuyutsava.tools.search import make_search_tools
 from yuyutsava.visuals.tools import make_visual_tools
+from yuyutsava.websearch.tools import make_search_tools
 
 
 class BaseSubAgent(ABC):

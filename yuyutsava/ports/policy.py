@@ -10,7 +10,7 @@ class CapEnforcer(Protocol):
     """Daily per-tool rate cap for the ``ws_*`` searches.
 
     Previously ``cap_enforcer: object | None`` on both ``OrchestratorDeps`` and
-    ``BaseSubAgent``, annotated ``# tools.search._CapEnforcer; untyped to avoid
+    ``BaseSubAgent``, annotated ``# websearch.tools._CapEnforcer; untyped to avoid
     cycle`` — ``tools`` imports ``core``, and ``core`` builds the agents that
     carry this.
     """

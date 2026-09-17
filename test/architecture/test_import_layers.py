@@ -59,6 +59,8 @@ LAYERS: dict[str, int] = {
     "events": 2,
     # Backends plus the pipeline on them; was io/ + audio_io/ (R-PLC-07).
     "voice": 2,
+    # The ws_* tools over Tavily/Exa; was the one-module tools/ (R-PLC-05).
+    "websearch": 2,
     # Imports nothing else from the package; skills builds on it.
     "discovery": 2,
     # L3 — agent capabilities
@@ -67,7 +69,6 @@ LAYERS: dict[str, int] = {
     "mcp": 3,
     "docker_sandbox": 3,
     "consent": 3,
-    "tools": 3,
     # L4 — agent assembly
     "core": 4,
     "agents": 4,

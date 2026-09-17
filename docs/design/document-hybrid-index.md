@@ -212,8 +212,8 @@ later upgrade memory/skills to hybrid too.
 
 ### 5. Agent surface — new `doc_*` tool family
 
-New factory `yuyutsava/tools/documents.py :: make_document_tools(...)` (mirror
-`make_search_tools` in [search.py](../../yuyutsava/tools/search.py)):
+New factory `yuyutsava/documents/tools.py :: make_document_tools(...)` (mirror
+`make_search_tools` in [websearch/tools.py](../../yuyutsava/websearch/tools.py)):
 
 - `doc_index(path, reason)` → `{doc_id, mime, pages, chunk_count, outline}` — small manifest.
 - `doc_search(query, doc_id=None, k=8, reason)` → ranked snippets + locators,

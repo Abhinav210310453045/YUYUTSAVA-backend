@@ -23,7 +23,7 @@ Add another by extending the ``_databases()`` map.
 Lived under ``daemon/db_introspect.py`` until the storage restructure — it's a
 storage concern (read-only SQL execution against the persistence layer), not
 daemon-specific. The HTTP shim at ``daemon/web/routers/db.py`` and the
-``db_*`` agent tools at ``agents/db_tools/tools.py`` are the two consumers.
+``db_*`` agent tools at ``storage/introspect_tools.py`` are the two consumers.
 """
 
 from __future__ import annotations

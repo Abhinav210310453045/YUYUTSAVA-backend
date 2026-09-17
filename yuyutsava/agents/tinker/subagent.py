@@ -38,7 +38,7 @@ from yuyutsava.artifacts.tools import make_artifact_tools
 from yuyutsava.storage.paths import blobs_dir
 from yuyutsava.todoboard.exchange import board_workspace_root
 from yuyutsava.todoboard.tools import make_todo_tools
-from yuyutsava.tools.search import make_search_tools
+from yuyutsava.websearch.tools import make_search_tools
 
 _SYSTEM_PROMPT = """\
 You are the **background TinkerAgent** of YUYUTSAVA. The master agent has

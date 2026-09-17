@@ -89,8 +89,8 @@ from yuyutsava.storage.paths import (
 )
 from yuyutsava.todoboard.recall import TodoNoteInjector
 from yuyutsava.todoboard.tools import make_todo_tools
-from yuyutsava.tools.search import make_search_tools
 from yuyutsava.visuals.tools import make_visual_tools
+from yuyutsava.websearch.tools import make_search_tools
 
 if TYPE_CHECKING:
     from yuyutsava.agents.orchestrator.agent import OrchestratorDeps
@@ -266,9 +266,9 @@ def _build_tool_registry_and_tools(
     ws_* searches (daemon policy); None (standalone CLI, no events store)
     leaves them uncapped.
     """
-    # Deferred: db_tools needs sqlglot, which adds ~45 ms to every CLI start,
-    # including commands that never build an agent.
-    from yuyutsava.agents.db_tools import make_db_tools  # noqa: PLC0415
+    # Deferred: the db_* tools need sqlglot, which adds ~45 ms to every CLI
+    # start, including commands that never build an agent.
+    from yuyutsava.storage.introspect_tools import make_db_tools  # noqa: PLC0415
 
     search_tools = (
         make_search_tools(search_config, cap_enforcer=cap_enforcer) if search_config else []

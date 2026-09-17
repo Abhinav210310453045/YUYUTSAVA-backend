@@ -230,8 +230,7 @@ yuyutsava/
 │   ├── file_organizer/    subagent
 │   ├── face_watcher/      subagent
 │   ├── general_purpose/   subagent (overrides deepagents' default)
-│   ├── base_sub_agent.py  BaseSubAgent (tool wiring, sync + async graph specs)
-│   └── db_tools/          read-only DB introspection tools
+│   └── base_sub_agent.py  BaseSubAgent (tool wiring, sync + async graph specs)
 ├── async_subagents/     in-proc LangGraph host, watcher, mirror, launch index, host lock
 ├── daemon/
 │   ├── main.py            lifecycle: signals, loops, teardown, self-reexec
