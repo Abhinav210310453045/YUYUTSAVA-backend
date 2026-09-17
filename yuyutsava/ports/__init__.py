@@ -12,7 +12,7 @@ The decision is ADR-003.
   and ``AskRouter``: what the daemon sends to the user and how
 - :mod:`~yuyutsava.ports.policy` — ``CapEnforcer``, ``RuntimeToggles``, ``ContextTuning``,
   ``TaskMirror``, ``RemoteSubagentSpec``
-- :mod:`~yuyutsava.ports.retrieval` — ``ConversationIndex``, ``VectorSearcher``
+- :mod:`~yuyutsava.ports.retrieval` — ``ConversationIndex``
 - :mod:`~yuyutsava.ports.storage` — ``ArtifactStore``, ``MemoryStore``, ``SummaryStore``,
   ``TranscriptStore``, ``UsageStore``
 - :mod:`~yuyutsava.ports.tool_events` — ``ToolEventRule``, ``ToolEventRegistry``: how a

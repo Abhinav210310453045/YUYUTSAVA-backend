@@ -162,12 +162,3 @@ class Announcer:
             logger.debug("Announcer: audio unavailable — earcon silent")
         except KeyError:
             logger.warning("Announcer: unknown earcon %r", name)
-
-
-def announcer_from_env() -> Announcer:
-    """Build an Announcer using the env-configured TTS backend (lazy).
-
-    TTS is only constructed on the first ``say()``, so this never raises for a
-    missing ``PIPER_MODEL`` — earcons work regardless.
-    """
-    return Announcer()

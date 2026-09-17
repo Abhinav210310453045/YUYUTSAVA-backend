@@ -1114,8 +1114,9 @@ def build_orchestrator(
     master_tools: list = [
         make_ask_user_tool(deps.channels),
         make_recall_tool(deps.store),
-        # spawn_subagent is intentionally NOT registered. The orchestrator
-        # delegates dynamic tasks to the `general-purpose` subagent instead.
+        # No spawn tool here, by decision: the orchestrator delegates dynamic
+        # work to the `general-purpose` subagent rather than minting ad-hoc
+        # ones. A boundary, not an omission — don't add one back.
     ]
     if skill_registry:
         master_tools.extend(

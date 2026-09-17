@@ -133,16 +133,15 @@ class MCPClientManager:
 
         ready = asyncio.Event()
         stop_event = asyncio.Event()
-        result: dict[str, Exception | None] = {"error": None}
 
         runner = asyncio.create_task(
-            self._run_server(name, spec, ready, stop_event, result),
+            self._run_server(name, spec, ready, stop_event),
             name=f"mcp-server[{name}]",
         )
         # Wait for the runner to either register the entry or signal failure.
         ready_wait = asyncio.create_task(ready.wait())
         try:
-            done, _ = await asyncio.wait(
+            await asyncio.wait(
                 {ready_wait, runner},
                 return_when=asyncio.FIRST_COMPLETED,
             )
@@ -160,7 +159,6 @@ class MCPClientManager:
         spec: MCPServerSpec,
         ready: asyncio.Event,
         stop_event: asyncio.Event,
-        result: dict[str, Exception | None],
     ) -> None:
         """Own the transport + session for one MCP server, end to end.
 
@@ -194,7 +192,6 @@ class MCPClientManager:
                 adapted = [adapt(session, name, t) for t in mcp_tools]
             except Exception as exc:  # noqa: BLE001
                 logger.exception("MCP server %r failed to start: %s", name, exc)
-                result["error"] = exc
                 ready.set()
                 return
 

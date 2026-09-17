@@ -80,23 +80,6 @@ async def capture_wav(path: Path, duration_sec: float, sample_rate: int = SAMPLE
         wf.writeframes(raw)
 
 
-async def play_audio(path: Path) -> None:
-    """Play an audio file (WAV or MP3) through the default output device.
-
-    Uses soundfile for decoding so MP3, FLAC, OGG, and WAV all work.
-    """
-    sd = _require_sd()
-    sf = _require_sf()
-    loop = asyncio.get_running_loop()
-
-    def _play() -> None:
-        data, rate = sf.read(str(path), dtype="int16", always_2d=False)
-        sd.play(data, rate)
-        sd.wait()
-
-    await loop.run_in_executor(None, _play)
-
-
 async def play_wav(path: Path) -> None:
     """Play a WAV file without requiring soundfile (stdlib wave only)."""
     sd = _require_sd()

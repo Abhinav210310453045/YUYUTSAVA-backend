@@ -35,7 +35,6 @@ NARROWED: dict[str, str] = {
     "yuyutsava.daemon.task_submission": "TriageStore",
     "yuyutsava.daemon.orchestrator_loop": "DecisionWriter",
     "yuyutsava.storage.sweeper": "EventPayloadSweeper",
-    "yuyutsava.agents.orchestrator.spawn": "DecisionWriter",
 }
 
 

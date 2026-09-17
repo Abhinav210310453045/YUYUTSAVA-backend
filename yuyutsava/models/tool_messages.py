@@ -3,9 +3,9 @@ Standardized structured messages embedded in tool results.
 
 Tool results are JSON objects (OperationResponse). When a result field
 contains content that cannot or should not be passed to the LLM in full
-(too large, binary, etc.) the system replaces that field with a typed
-``ToolNotice``.  Future notice types (pagination cursors, warnings,
-confirmations) can be added here following the same pattern.
+(too large, binary, etc.) the system replaces that field with a typed notice —
+today :class:`SuppressedContentNotice`. Future notice types (pagination
+cursors, warnings, confirmations) can be added here following the same pattern.
 
 Using a typed model instead of ad-hoc strings means:
   - The LLM always sees the same JSON structure and can act on it reliably.
@@ -28,7 +28,7 @@ RecoveryHint
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -179,14 +179,3 @@ class SuppressedContentNotice(BaseModel):
 # ---------------------------------------------------------------------------
 # Union of all notice types (extend here as new types are added)
 # ---------------------------------------------------------------------------
-
-ToolNotice = SuppressedContentNotice
-
-
-def is_tool_notice(value: Any) -> bool:
-    """Return True if *value* is a serialized ToolNotice dict (any notice type)."""
-    if isinstance(value, dict):
-        return "notice_type" in value
-    if isinstance(value, SuppressedContentNotice):
-        return True
-    return False

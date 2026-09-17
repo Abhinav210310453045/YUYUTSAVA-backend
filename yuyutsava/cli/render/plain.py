@@ -301,25 +301,6 @@ class ChatRenderer:
             pass
         return str(args)
 
-    @staticmethod
-    def _fmt_args(args: Any, *, limit: int) -> str:
-        try:
-            if isinstance(args, dict):
-                items = []
-                for k, v in args.items():
-                    sval = str(v)
-                    if len(sval) > 40:
-                        sval = sval[:40] + "…"
-                    items.append(f"{k}={sval}")
-                out = ", ".join(items)
-            else:
-                out = str(args)
-        except Exception:
-            out = "…"
-        if len(out) > limit:
-            out = out[:limit] + "…"
-        return out
-
     # ------------------------------------------------------------------
     # Mode-specific renderers
     # ------------------------------------------------------------------

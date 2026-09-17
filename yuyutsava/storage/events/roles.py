@@ -15,7 +15,6 @@ Consumer                                         Store methods used
 ``daemon/triage_loop.py``                        3
 ``daemon/consent.py``                            1
 ``policy/builtin/tool_permissions.py``                               1
-``agents/orchestrator/spawn.py``                 1
 ``daemon/orchestrator_loop.py``                  1
 …18 more                                         1–2 each
 ===============================================  ==================
@@ -52,7 +51,7 @@ class DecisionWriter(Protocol):
     """Record an outcome on the timeline.
 
     The single most common dependency: ``triage_loop``, ``orchestrator_loop``,
-    ``task_submission`` and ``orchestrator/spawn`` each want only this.
+    and ``task_submission`` each want only this.
     """
 
     async def put_decision(

@@ -8,8 +8,8 @@ and it wins.
 
 Defaults are **synthesized from stdlib** (simple tone sequences with click-free
 envelopes) so the repo ships no binary blobs and the sounds always exist even on
-a fresh checkout. :func:`generate_default_earcons` writes the bundled assets;
-:func:`ensure_earcons` lazily materialises any that are missing at runtime.
+a fresh checkout. :func:`earcon_path` synthesizes a missing default into the
+user cache the first time something asks for it.
 
 Resolution order for :func:`earcon_path`:
 
@@ -84,19 +84,6 @@ def _synthesize_wav(tones: list[tuple[float, float]], out_path: Path) -> None:
         wf.writeframes(bytes(frames))
 
 
-def generate_default_earcons(dest: Path | None = None) -> Path:
-    """Write the default earcon WAVs into ``dest`` (default: bundled assets).
-
-    Idempotent: regenerates every default earcon. Returns the directory written.
-    Used to seed the committed ``assets/earcons`` and as the runtime fallback.
-    """
-    target = dest or _bundled_dir()
-    target.mkdir(parents=True, exist_ok=True)
-    for name, tones in _DEFAULT_TONES.items():
-        _synthesize_wav(tones, target / f"{name}.wav")
-    return target
-
-
 def earcon_path(name: str) -> Path:
     """Resolve ``name`` to a playable WAV path, synthesizing a default if needed.
 
@@ -120,9 +107,3 @@ def earcon_path(name: str) -> Path:
     if not cached.exists():
         _synthesize_wav(_DEFAULT_TONES[name], cached)
     return cached
-
-
-def ensure_earcons() -> None:
-    """Materialise any missing earcons so later playback never blocks on synth."""
-    for name in EARCON_NAMES:
-        earcon_path(name)
