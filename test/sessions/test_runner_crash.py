@@ -2,7 +2,7 @@
 
 Verifies the load-bearing claim of the architecture: even an ungraceful exit
 (no ``finally:``, simulated kill mid-stream) leaves a row in the store that
-:func:`yuyutsava.sessions.runner.run_session` can pick up via ``--resume``.
+:func:`yuyutsava.cli.session_run.run_session` can pick up via ``--resume``.
 
 Run:  uv run python -m unittest test.sessions.test_runner_crash -v
 """

@@ -1,44 +1,39 @@
-"""Crash-safe wrapper around ``astream_agent`` for the CLI.
+"""The one-shot CLI turn: ``yuyutsava "<task>"``, run once and report.
 
-Owns the session-row lifecycle so a SIGKILL, Ctrl+C, terminal close, or power
-loss still leaves a recoverable row in the store:
+One agent run wrapped in the session-row lifecycle from
+:mod:`yuyutsava.conversation.sessions`, plus the banner that tells the user the
+exact command to resume it. On resume it first repairs tool calls the previous
+process left cancelled: a permission prompt dies with its terminal, and the
+agent coming back would otherwise read the cancelled result as success.
 
-    1. ``store.create`` BEFORE any LLM call — durable from tick zero.
-    2. Streaming ticks call ``store.touch`` (coalesced) to bump ``updated_at``
-       and message counters.
-    3. ``finally:`` flips status to ``done`` (graceful) or ``crashed``.
+Everything here is the CLI's own surface — it prints to stderr and owns no
+policy anyone else needs. The multi-turn fronts (the REPL, the app, voice) run
+:class:`~yuyutsava.conversation.service.ConversationService`, which repairs
+interrupted turns and retries empty ones; this path does neither, so W5 of the
+code review moves it onto the service as a behaviour change of its own
+(R-PLC-06).
 """
 
 from __future__ import annotations
 
-import asyncio
-import logging
 import sys
-import time
 from pathlib import Path
 
 from langgraph.graph.state import CompiledStateGraph
 
+from yuyutsava.conversation.repair import Cause, repair_orphan_tool_calls
+from yuyutsava.conversation.sessions import (
+    CoalescedTicker,
+    count_memory_files,
+    resolve_session,
+)
 from yuyutsava.core.streaming import astream_agent
 from yuyutsava.storage.interrupts import InterruptsStore
 from yuyutsava.storage.interrupts_unified import sqlite_interrupts_store
 from yuyutsava.storage.models import Session
-from yuyutsava.storage.paths import WorkspaceLayout
-from yuyutsava.storage.sessions import SessionNotFound, SessionsSettings, SessionStore
+from yuyutsava.storage.sessions import SessionsSettings, SessionStore
 
-logger = logging.getLogger("yuyutsava.sessions.runner")
-
-
-_TICK_COALESCE_SEC = 0.5
 _BANNER = "═" * 60
-
-
-class ResumeFailed(Exception):
-    """``--resume <id>`` was given but no matching session exists.
-
-    Surfaced to the CLI so it can print a clean message and exit non-zero
-    without a Python traceback.
-    """
 
 
 async def _patch_orphan_cancellations(agent: CompiledStateGraph, thread_id: str) -> int:
@@ -52,27 +47,7 @@ async def _patch_orphan_cancellations(agent: CompiledStateGraph, thread_id: str)
     ``SESSION_ENDED`` because this runs on resume: the prompt died with the
     previous process, so consent was never given.
     """
-    from yuyutsava.conversation.repair import (  # noqa: PLC0415 — import cycle: conversation imports runner
-        Cause,
-        repair_orphan_tool_calls,
-    )
-
     return await repair_orphan_tool_calls(agent, thread_id, cause=Cause.SESSION_ENDED)
-
-
-def count_memory_files(workspace: Path) -> int:
-    """Count workspace-scoped skill files. Cheap, defensive against missing dirs.
-
-    Matches the convention used by ``SkillRegistry`` — workspace skills live in
-    ``<workspace>/.yuyutsava/skills/<slug>/SKILL.md`` (``WorkspaceLayout.skills``).
-    """
-    skills_dir = WorkspaceLayout.for_workspace(workspace).skills
-    if not skills_dir.is_dir():
-        return 0
-    try:
-        return sum(1 for _ in skills_dir.rglob("SKILL.md"))
-    except OSError:
-        return 0
 
 
 def _print_start_banner(session: Session, *, resuming: bool) -> None:
@@ -84,85 +59,6 @@ def _print_start_banner(session: Session, *, resuming: bool) -> None:
     print(f"  workspace  : {session.workspace}", file=sys.stderr)
     print(f"  resume cmd : {cmd}", file=sys.stderr)
     print(f"\033[36m{_BANNER}\033[0m\n", file=sys.stderr)
-
-
-class CoalescedTicker:
-    """Batch ``store.touch`` calls so a chatty agent doesn't thrash WAL."""
-
-    def __init__(self, store: SessionStore, session_id: str) -> None:
-        self._store = store
-        self._session_id = session_id
-        self._pending_delta = 0
-        self._last_flush = 0.0
-        self._lock = asyncio.Lock()
-
-    async def tick(self, delta: int = 1) -> None:
-        self._pending_delta += delta
-        now = time.monotonic()
-        if now - self._last_flush < _TICK_COALESCE_SEC:
-            return
-        await self._flush(now)
-
-    async def flush_final(self, *, memory_files_count: int) -> None:
-        # Force-write any pending counts plus the memory snapshot.
-        async with self._lock:
-            await self._store.touch(
-                self._session_id,
-                message_delta=self._pending_delta,
-                memory_files_count=memory_files_count,
-            )
-            self._pending_delta = 0
-            self._last_flush = time.monotonic()
-
-    async def _flush(self, now: float) -> None:
-        async with self._lock:
-            if self._pending_delta == 0:
-                return
-            delta, self._pending_delta = self._pending_delta, 0
-            self._last_flush = now
-        await self._store.touch(self._session_id, message_delta=delta)
-
-
-async def resolve_session(
-    store: SessionStore,
-    *,
-    workspace: Path,
-    task: str,
-    resume_id: str | None,
-    continue_latest: bool,
-    origin: str = "cli",
-) -> tuple[Session, bool]:
-    """Return ``(session, resuming)``. Raises if --resume id is unknown.
-
-    ``--continue`` with no prior session in this workspace falls through to a
-    fresh row — the user explicitly asked to continue, so the new session
-    inherits the workspace context.
-    """
-    if resume_id:
-        try:
-            existing = await store.get(resume_id)
-        except SessionNotFound:
-            raise ResumeFailed(
-                f"No session with id {resume_id!r}. Run with --list-sessions to see available ids."
-            ) from None
-        if str(existing.workspace) != str(workspace.resolve()):
-            print(
-                f"\033[33mwarning:\033[0m resuming session {resume_id} "
-                f"whose original workspace was {existing.workspace} "
-                f"(current --workspace is {workspace}). Continuing anyway.",
-                file=sys.stderr,
-            )
-        await store.update_status(resume_id, "running")
-        return existing, True
-
-    if continue_latest:
-        rows = await store.list(workspace=workspace, limit=1)
-        if rows:
-            await store.update_status(rows[0].id, "running")
-            return rows[0], True
-
-    fresh = await store.create(workspace=workspace, task=task, origin=origin)
-    return fresh, False
 
 
 async def run_session(

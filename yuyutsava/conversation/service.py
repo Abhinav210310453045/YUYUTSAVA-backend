@@ -33,14 +33,10 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 from yuyutsava.conversation.repair import Cause, diagnose, repair_orphan_tool_calls
+from yuyutsava.conversation.sessions import CoalescedTicker, count_memory_files, resolve_session
 from yuyutsava.conversation.titles import derive_session_title
 from yuyutsava.core.engine import AgentBundle
 from yuyutsava.core.streaming import StreamEvent, astream_agent_iter
-from yuyutsava.sessions.runner import (
-    CoalescedTicker,
-    count_memory_files,
-    resolve_session,
-)
 from yuyutsava.storage.models import Session
 from yuyutsava.storage.sessions import SessionStore
 
@@ -170,7 +166,7 @@ class ConversationService:
 
         Returns ``(service, resuming)`` — ``resuming`` is True when an existing
         session was continued (``--resume`` / ``--continue``), mirroring
-        :func:`yuyutsava.sessions.runner.resolve_session`. Pass ``bundle`` for
+        :func:`yuyutsava.conversation.sessions.resolve_session`. Pass ``bundle`` for
         an already-built stack (CLI) or ``bundle_factory`` to defer the build to
         the first turn (daemon, so the WS handshake stays instant).
         """

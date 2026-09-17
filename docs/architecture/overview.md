@@ -187,6 +187,7 @@ which is SQLite by default and Postgres+pgvector when durable mode is on.
 ```
 yuyutsava/
 ├── cli/                 CLI entry, chat REPL, session/prefs commands, attach
+│   ├── session_run.py     the one-shot turn: one agent run plus its session row
 │   └── commands/        chat, chat_repl, sessions, prefs, scenarios, attach
 ├── core/                agent assembly: the engine and the stack builders
 │   ├── engine.py          build_cli_deepagent / build_orchestrator / build_tinker_agent
@@ -243,8 +244,8 @@ yuyutsava/
 │   ├── conversation_manager.py  lazy stack for /ws/converse
 │   └── web/               FastAPI app, routers, schemas, services (SSE hub)
 ├── channels/            channel plugins (telegram) + registry + config
-├── conversation/        ConversationService (I/O-agnostic multi-turn loop)
-├── sessions/            session runner (CLI + conversation bookkeeping)
+├── conversation/        ConversationService (I/O-agnostic multi-turn loop) +
+│                        sessions.py, the resumable row both fronts bookkeep
 ├── context/             offload · compaction · transcript · artifacts · injectors
 ├── memory/              MemoryStore (pgvector / sqlite), embedder, mem_* tools
 ├── skills/              SkillRegistry (disk) + SkillStore (semantic index) + tools

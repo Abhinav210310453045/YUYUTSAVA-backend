@@ -11,13 +11,14 @@ import sys
 from pathlib import Path
 from typing import Literal
 
+from yuyutsava.cli.session_run import run_session
 from yuyutsava.cli.tooling import cleanup_local_sandbox
 from yuyutsava.config.execution import DockerSettings, LocalSettings
 from yuyutsava.config.search import SearchConfig
+from yuyutsava.conversation.sessions import ResumeFailed
 from yuyutsava.core.agent_stack import build_agent_stack
 from yuyutsava.docker_sandbox.backend import pull_virtual_paths_to_host
 from yuyutsava.llm.settings import LlmSettings
-from yuyutsava.sessions import ResumeFailed, run_session
 from yuyutsava.storage.paths import WorkspaceLayout
 from yuyutsava.storage.sessions import (
     SessionsSettings,

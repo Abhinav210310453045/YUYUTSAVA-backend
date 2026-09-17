@@ -205,7 +205,7 @@ Only `cli/` and `daemon/main.py` use any of it.
 
 ## R-PLC-06 — Two engines run a conversation turn
 
-**Severity** P1 · **Wave** W3 (placement) + W5 (behaviour) · **Status** Open
+**Severity** P1 · **Wave** W3 (placement) + W5 (behaviour) · **Status** W3 done · W5 open
 
 **Evidence.**
 - The one-shot CLI turns through `sessions/runner.py:169-242`
@@ -221,7 +221,11 @@ Only `cli/` and `daemon/main.py` use any of it.
 The one-shot path can end a turn in silence, which the REPL path was fixed not to do.
 
 **Fix.**
-- **W3:** the helpers become public in `conversation/`, and `sessions/` is removed.
+- **W3:** done — `CoalescedTicker`, `count_memory_files`, `resolve_session` and
+  `ResumeFailed` are public in `conversation/sessions.py`; the one-shot runner and
+  its banner are `cli/session_run.py`; `sessions/` is gone. `resolve_session`'s
+  stderr warning is now a `print` below `cli/` — carried to W5 with the other
+  `print`→logging work.
 - **W5:** a separate `fix:` commit makes the one-shot command run through
   `ConversationService`. It changes behaviour, so it is not a refactor.
 

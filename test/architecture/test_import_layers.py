@@ -74,7 +74,6 @@ LAYERS: dict[str, int] = {
     "conversation": 4,
     "todoboard": 4,
     "async_subagents": 4,
-    "sessions": 4,
     # L5 — composition roots
     "cli": 5,
     "daemon": 5,

@@ -530,9 +530,9 @@ class TheResumePathStillWorks(unittest.TestCase):
     def test_the_cli_resume_helper_delegates_with_the_session_cause(self):
         import inspect
 
-        from yuyutsava.sessions import runner
+        from yuyutsava.cli import session_run
 
-        src = inspect.getsource(runner._patch_orphan_cancellations)
+        src = inspect.getsource(session_run._patch_orphan_cancellations)
         self.assertIn("SESSION_ENDED", src)
         self.assertIn("repair_orphan_tool_calls", src)
 

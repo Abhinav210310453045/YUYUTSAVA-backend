@@ -677,7 +677,7 @@ async def astream_agent(
     - ``interrupt()`` pauses and asks the user on stdin, then resumes.
     - Returns the final assistant text.
     - ``on_tick`` (optional): awaited with the count of new messages observed
-      after each graph step batch. Used by ``yuyutsava.sessions.runner`` to
+      after each graph step batch. Used by ``yuyutsava.cli.session_run`` to
       coalesce ``store.touch`` updates without coupling the engine to the
       session layer.
     """

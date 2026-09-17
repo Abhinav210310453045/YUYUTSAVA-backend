@@ -91,6 +91,9 @@
   "yuyutsava/cli/render/tool_format.py": {
     "C901": 1
   },
+  "yuyutsava/cli/session_run.py": {
+    "PLR0913": 1
+  },
   "yuyutsava/cli/stream_smoother.py": {
     "S110": 1
   },
@@ -116,6 +119,9 @@
   "yuyutsava/conversation/service.py": {
     "PLR0913": 3,
     "S110": 1
+  },
+  "yuyutsava/conversation/sessions.py": {
+    "T201": 1
   },
   "yuyutsava/core/agent_profiles.py": {
     "T201": 5
@@ -262,10 +268,6 @@
   },
   "yuyutsava/run_context.py": {
     "BLE001": 1
-  },
-  "yuyutsava/sessions/runner.py": {
-    "PLR0913": 1,
-    "T201": 12
   },
   "yuyutsava/skills/tools.py": {
     "BLE001": 1
