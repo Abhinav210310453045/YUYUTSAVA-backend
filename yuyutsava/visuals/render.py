@@ -32,11 +32,11 @@ def _load(kind: str):
 
         return render_table
     if kind == "code":
-        from .code import render_code  # noqa: PLC0415 — needs the visuals extra
+        from .code_image import render_code  # noqa: PLC0415 — needs the visuals extra
 
         return render_code
     if kind == "math":
-        from .math import render_math  # noqa: PLC0415 — needs the visuals extra
+        from .latex import render_math  # noqa: PLC0415 — needs the visuals extra
 
         return render_math
     if kind == "timeline":
