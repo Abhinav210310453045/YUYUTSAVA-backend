@@ -239,7 +239,7 @@ class _Capture(logging.Handler):
 
 async def run_cli_driver(passes: list[list[tuple[str, Any]]], answers: list[str]) -> dict[str, Any]:
     """Drive ``astream_agent`` over a scripted graph, capturing everything."""
-    from yuyutsava.core import streaming
+    from yuyutsava.cli.render import terminal_stream
 
     graph = ScriptedGraph(passes)
     queue = list(answers)
@@ -251,8 +251,8 @@ async def run_cli_driver(passes: list[list[tuple[str, Any]]], answers: list[str]
     async def _on_tick(steps: int) -> None:
         ticks.append(steps)
 
-    # ``streaming`` logs under the "yuyutsava" logger, and at the default level
-    # its INFO records — every TOOL CALL / TOOL RESULT line — are filtered out
+    # The sink logs under the "yuyutsava" logger, and at the default level its
+    # INFO records — every TOOL CALL / TOOL RESULT line — are filtered out
     # entirely. Capturing at DEBUG with propagation off separates the two
     # surfaces cleanly: `stderr` is what `print()` wrote, `logs` is what was
     # logged, and neither leaks into the other.
@@ -263,8 +263,11 @@ async def run_cli_driver(passes: list[list[tuple[str, Any]]], answers: list[str]
     logger.addHandler(handler)
     buf = io.StringIO()
     try:
-        with patch.object(streaming, "prompt_permission", _fake_prompt), redirect_stderr(buf):
-            final = await streaming.astream_agent(
+        with (
+            patch.object(terminal_stream, "prompt_permission", _fake_prompt),
+            redirect_stderr(buf),
+        ):
+            final = await terminal_stream.astream_agent(
                 graph, "do the thing", thread_id="thr-fixed", agent_path="cli", on_tick=_on_tick
             )
     finally:

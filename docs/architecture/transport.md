@@ -52,18 +52,18 @@
 There is exactly **one** piece of code in this repo that drives a language model:
 
 ```python
-# yuyutsava/core/streaming.py:466
+# yuyutsava/core/streaming.py:216
 async for event in agent.astream(
     current_input, config=cfg, stream_mode=["messages", "updates"],
 ):
 ```
 
-That call lives inside `_drive_graph()` ([`core/streaming.py:427`](../../yuyutsava/core/streaming.py#L427)),
-which is wrapped by `astream_agent_iter()` ([`core/streaming.py:519`](../../yuyutsava/core/streaming.py#L519)) —
+That call lives inside `drive_graph()` ([`core/streaming.py:177`](../../yuyutsava/core/streaming.py#L177)),
+which is wrapped by `astream_agent_iter()` ([`core/streaming.py:272`](../../yuyutsava/core/streaming.py#L272)) —
 an **async generator that yields typed `StreamEvent` objects**:
 
 ```python
-# yuyutsava/core/streaming.py:281-296
+# yuyutsava/core/streaming.py:70-93
 @dataclass(frozen=True)
 class StreamEvent:
     """Structured event yielded by ``astream_agent_iter``.
@@ -104,7 +104,7 @@ process that read your keystroke. No socket, no serialization, no daemon. See [�
 
 | # | Transport | Direction | Carries | Primary code |
 |---|---|---|---|---|
-| **1** | **In-process async generator** (no wire) | — | the entire CLI conversation | [`core/streaming.py:519`](../../yuyutsava/core/streaming.py#L519) |
+| **1** | **In-process async generator** (no wire) | — | the entire CLI conversation | [`core/streaming.py:272`](../../yuyutsava/core/streaming.py#L272) |
 | **2** | **SSE** — `GET /stream` | daemon → clients | channel events, HITL asks, wake word, settings, background-task progress | [`daemon/web/routers/stream.py:43`](../../yuyutsava/daemon/web/routers/stream.py#L43) |
 | **3** | **WebSocket** — `WS /ws/converse` | daemon ↔ clients | live agent turns, in-band HITL, mic PCM up, TTS PCM down | [`daemon/web/routers/converse.py:310`](../../yuyutsava/daemon/web/routers/converse.py#L310) |
 | **4** | **HTTP / REST** | clients → daemon, daemon → provider | ~50 CRUD endpoints, polling, LLM provider SDK calls | [`daemon/web/app.py:111`](../../yuyutsava/daemon/web/app.py#L111), [`llm/providers/`](../../yuyutsava/llm/providers) |
@@ -152,7 +152,7 @@ Two facts that surprise people:
        │       │
    ┌───┴───────┴──────────────────────────────────────────────────────────┐
    │  THE COMMON CORE                                                      │
-   │     astream_agent_iter()  →  _drive_graph()  →  agent.astream(...)    │
+   │     astream_agent_iter()  →  drive_graph()  →  agent.astream(...)    │
    │                              yields StreamEvent(kind, data)           │
    └───────────────────────────────┬───────────────────────────────────────┘
                                    │
@@ -310,7 +310,7 @@ that means grabbing stdin back from the renderer:
 | Where | Call |
 |---|---|
 | [`cli/commands/chat_repl.py:345-407`](../../yuyutsava/cli/commands/chat_repl.py#L345-L407) | `make_ask_handler` — `renderer.pause()`, then `input("> ")` in an executor, retried 3× |
-| [`core/streaming.py:209,236,266`](../../yuyutsava/core/streaming.py#L209) | one-shot path — `await asyncio.to_thread(input, "  Allow? [y/N]: ")` |
+| [`cli/render/terminal_stream.py:178,205,237`](../../yuyutsava/cli/render/terminal_stream.py#L178) | one-shot path — `await asyncio.to_thread(input, "  Allow? [y/N]: ")` |
 | [`cli/async_hitl.py:249`](../../yuyutsava/cli/async_hitl.py#L249) | `CliHitlBridge.post_ask` — same executor pattern |
 
 This is why `--no-permission-check` exists: automated pipelines have no stdin to prompt
@@ -988,13 +988,13 @@ that thread, stamped with a monotonic `seq`:
 | `type` | Fields | Source |
 |---|---|---|
 | `turn_start` | `run_id`, `text`, `kind` (`text`\|`voice`) | [`turn_registry.py:292`](../../yuyutsava/daemon/turn_registry.py#L292) |
-| `token` | `text`, `node`, `ns` | [`streaming.py:628`](../../yuyutsava/core/streaming.py#L628) |
-| `tool_call` | `name`, `args` | [`streaming.py:636`](../../yuyutsava/core/streaming.py#L636) |
-| `tool_result` | `name`, `preview`, `full?` | [`streaming.py:647`](../../yuyutsava/core/streaming.py#L647) |
-| `image` | `visual_id`, `url`, `kind`, `title`, `mime` | [`streaming.py:651`](../../yuyutsava/core/streaming.py#L651) |
-| `artifact` | `artifact_id`, `attachment_id`, `url`, `kind` | [`streaming.py:655`](../../yuyutsava/core/streaming.py#L655) |
-| `log` | `text` | [`streaming.py:661`](../../yuyutsava/core/streaming.py#L661) |
-| `final` | `text` | [`streaming.py:675`](../../yuyutsava/core/streaming.py#L675) |
+| `token` | `text`, `node`, `ns` | [`streaming.py:386`](../../yuyutsava/core/streaming.py#L386) |
+| `tool_call` | `name`, `args` | [`streaming.py:394`](../../yuyutsava/core/streaming.py#L394) |
+| `tool_result` | `name`, `preview`, `full?` | [`streaming.py:405`](../../yuyutsava/core/streaming.py#L405) |
+| `image` | `visual_id`, `url`, `kind`, `title`, `mime` | shape: [`visuals/events.py:17`](../../yuyutsava/visuals/events.py#L17); emitted at [`streaming.py:408`](../../yuyutsava/core/streaming.py#L408) |
+| `artifact` | `artifact_id`, `attachment_id`, `url`, `kind` | shape: [`artifacts/events.py:21`](../../yuyutsava/artifacts/events.py#L21); emitted at [`streaming.py:408`](../../yuyutsava/core/streaming.py#L408) |
+| `log` | `text` | [`streaming.py:414`](../../yuyutsava/core/streaming.py#L414) |
+| `final` | `text` | [`streaming.py:439`](../../yuyutsava/core/streaming.py#L439) |
 | `ask` / `ask_resolved` | ask payload / `ask_id` | `_ask_handler`, [`converse.py:504`](../../yuyutsava/daemon/web/routers/converse.py#L504) |
 | `speaking_start` / `audio_chunk` / `speaking_end` | — / `pcm`+`sample_rate` / — | [`converse.py:633`](../../yuyutsava/daemon/web/routers/converse.py#L633) |
 | `turn_end` | `status` | [`turn_registry.py`](../../yuyutsava/daemon/turn_registry.py) |
@@ -1141,13 +1141,13 @@ converse() receive loop                             routers/converse.py:927
                                                     conversation/service.py:186
                               ├─ bundle = await self._ensure_bundle()    :210
                               └─ async for ev in astream_agent_iter(…)   :214
-                                  └─ core/streaming.py:519
-                                      └─ _drive_graph(agent, input, cfg, ask)
-                                                     core/streaming.py:427
+                                  └─ core/streaming.py:272
+                                      └─ drive_graph(agent, input, cfg, ask)
+                                                     core/streaming.py:177
                                           └─ agent.astream(
                                                  current_input, config=cfg,
                                                  stream_mode=["messages","updates"])
-                                                     core/streaming.py:466
+                                                     core/streaming.py:216
                                               ══ LangGraph → BaseChatModel
                                                  → provider SDK (HTTP+SSE | gRPC) ══
                                   ◄─ yields StreamEvent(kind, data)

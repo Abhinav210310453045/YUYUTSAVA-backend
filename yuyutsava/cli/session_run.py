@@ -21,13 +21,13 @@ from pathlib import Path
 
 from langgraph.graph.state import CompiledStateGraph
 
+from yuyutsava.cli.render.terminal_stream import astream_agent
 from yuyutsava.conversation.repair import Cause, repair_orphan_tool_calls
 from yuyutsava.conversation.sessions import (
     CoalescedTicker,
     count_memory_files,
     resolve_session,
 )
-from yuyutsava.core.streaming import astream_agent
 from yuyutsava.storage.interrupts import InterruptsStore
 from yuyutsava.storage.interrupts_unified import sqlite_interrupts_store
 from yuyutsava.storage.models import Session

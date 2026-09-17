@@ -92,7 +92,7 @@ storage without the web layer, means importing both.
 | `agent_context.py` | reads session and agent path from the run config | `core/` ✓ (only `agents/` uses it) |
 | `tool_result.py` | size guard for tool results | `core/` ✓ |
 | `tracing.py` | Langfuse integration | `core/` ✓ |
-| `streaming.py` | graph driver **plus** CLI prompting, audit writes, daemon iterator, UI-event mapping | split (`R-PLC-03`) |
+| `streaming.py` | graph driver **plus** CLI prompting, audit writes, daemon iterator, UI-event mapping | split ✓ (`R-PLC-03`): `drive_graph` and the daemon sink stay; prompting, printing and the audit write went to `cli/render/terminal_stream.py`; event mapping became a rule registry |
 | `config.py` | 13 LLM settings classes, Docker/local settings, limits, events config, daemon config, search config | split (`R-PLC-02`) |
 | `filesystem_prompt_policy.py`, `permission_policy.py`, `retrieval_injection_policy.py`, `subagent_gate_policy.py`, `tool_filter_policy.py`, `voice_style_policy.py` | `Policy` implementations | `policy/builtin/` |
 | `docker_sandbox_backend.py` | Docker execution backend, CLI-only | `docker_sandbox/` |
@@ -145,7 +145,7 @@ and `core` ↔ `llm` cycles.
 
 ## R-PLC-03 — `core/streaming.py` holds four unrelated jobs
 
-**Severity** P1 · **Wave** W3 · **Status** Open
+**Severity** P1 · **Wave** W3 · **Status** Done
 
 **Evidence.**
 - CLI prompting on stdin/stderr (`:115-275`).
@@ -160,6 +160,16 @@ and `core` ↔ `llm` cycles.
 - The graph driver and `StreamEvent` stay in `core/`.
 - Permission prompts and terminal printing move to `cli/render/`.
 - Tool-to-event mapping becomes a registry that `visuals/` and `artifacts/` fill.
+
+**Landed.** `drive_graph` and `run_config` are public names: a sink in `cli/`
+cannot import underscore-prefixed ones, because `ALLOWED_PRIVATE` in the layer
+test is empty and STD-IMP-5 says a name both packages need is API. The sink
+itself — `astream_agent`, `prompt_permission`, the yes/no vocabulary and the ANSI
+helpers — is `cli/render/terminal_stream.py`. The mapping is
+`ports/tool_events.py`, whose rules live with the tools that produce the results
+(`visuals/events.py`, `artifacts/events.py`). `core/streaming.py` now imports
+neither `sys` nor `asyncio` and holds no `print`: its 34 `T201` counts moved to
+`cli/`, which is T201-exempt by design.
 
 ---
 

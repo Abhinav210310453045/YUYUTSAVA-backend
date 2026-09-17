@@ -11,7 +11,7 @@
 > (`docs/architecture/review/`). The structural changes that show up here:
 > `build_daemon` split into seven builders, the fourteen middleware classes
 > replaced by one `LangChainPolicyAdapter` over plain policies, the two stream
-> drivers merged into `_drive_graph` + two sinks, and the SQLite/Postgres store
+> drivers merged into `drive_graph` + two sinks, and the SQLite/Postgres store
 > twins collapsed onto one `Dialect` adapter.
 
 ---
@@ -301,7 +301,7 @@ flowchart TD
 ## 7. Core Engine — the stream driver
 
 `core/streaming.py` used to hold **two** ~226-line drivers that were ~90%
-identical. ADR-004 collapsed them into one driver plus two sinks: `_drive_graph`
+identical. ADR-004 collapsed them into one driver plus two sinks: `drive_graph`
 owns the loop, interrupt collection and the resume handshake; `astream_agent_iter`
 turns its items into `StreamEvent`s and `astream_agent` prints them.
 
@@ -309,13 +309,13 @@ turns its items into `StreamEvent`s and `astream_agent` prints them.
 sequenceDiagram
     participant OL as OrchestratorLoop
     participant Sink as astream_agent_iter (sink)
-    participant Drive as _drive_graph (the driver)
+    participant Drive as drive_graph (the driver)
     participant Graph as Agent (ports.Agent)
     participant Pol as LangChainPolicyAdapter
     participant LLM as LLM Provider
 
     OL->>Sink: astream_agent_iter(agent, task, thread_id, ask_handler)
-    Sink->>Drive: _drive_graph(agent, input, cfg, ask=ask_handler)
+    Sink->>Drive: drive_graph(agent, input, cfg, ask=ask_handler)
     Drive->>Graph: astream(input, config, stream_mode=["messages","updates"])
 
     loop each graph chunk
@@ -358,7 +358,7 @@ arriving with **no ids**; the CLI one built `Command(resume={})` and discarded
 every answer the user had just typed. `_resume_command` is now the single
 implementation.
 
-`_drive_graph` is annotated against `ports.Agent` (`astream` + `aget_state`), not
+`drive_graph` is annotated against `ports.Agent` (`astream` + `aget_state`), not
 `CompiledStateGraph` — so its whole parity suite runs against a scripted double
 that is not a graph.
 

@@ -196,7 +196,8 @@ yuyutsava/
 │   ├── tinker_stack.py    the TODO-card tinker stack
 │   ├── stores.py          StoreFactory — every store, backend chosen once
 │   ├── app_context.py     store handles; purge.py deletes a session everywhere
-│   ├── streaming.py       _drive_graph + two sinks (astream_agent / _iter)
+│   ├── streaming.py       drive_graph + the daemon sink (astream_agent_iter);
+│   │                      the terminal sink is cli/render/terminal_stream.py
 │   ├── model_router.py    complexity → tier model
 │   └── tool_result.py     size guard for tool results
 ├── config/              dependency-free settings: env helpers, limits, execution, search
@@ -921,7 +922,7 @@ scopes), and all `asyncio` primitives (Queue/Lock/Event). The rules:
 
 `core/streaming.py` *drives* the compiled graphs (the engine only builds them).
 
-**One driver, two sinks.** `_drive_graph` owns the loop, interrupt collection and
+**One driver, two sinks.** `drive_graph` owns the loop, interrupt collection and
 the resume handshake; the two entrypoints are sinks over it and re-implement none
 of that:
 
@@ -932,7 +933,7 @@ of that:
 
 ```
              ┌──────────────────────────────────────────────┐
-             │  _drive_graph(agent, input, cfg, ask=…)       │
+             │  drive_graph(agent, input, cfg, ask=…)       │
              │  · astream(stream_mode=[messages, updates])   │
              │  · collect __interrupt__, ask, resume         │
              │  · yield ("chunk"|"message"|"pass_end"|…)     │
@@ -946,7 +947,7 @@ The two were ~226 lines each and ~90% identical — and they had **drifted**. Th
 multi-interrupt resume protocol was written twice, and only the daemon copy
 handled interrupts arriving with no ids; the CLI copy built `Command(resume={})`
 and **discarded every answer the user had just typed**. One `_resume_command`
-now serves both. `_run_config` likewise: only the daemon path used to seed
+now serves both. `run_config` likewise: only the daemon path used to seed
 `modality`, so a middleware asking "is this a voice turn?" got no key at all on
 the CLI.
 
