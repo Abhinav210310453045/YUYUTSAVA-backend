@@ -32,7 +32,7 @@ from yuyutsava.core.agent_profiles import (
     ORCHESTRATOR_PROFILE,
     TINKER_PROFILE,
     AgentProfile,
-    Policy,
+    PolicyKind,
     ToolFamily,
     divergences,
     unreviewed_divergences,
@@ -279,9 +279,9 @@ class PoliciesAreProfileDriven(unittest.TestCase):
         covered = set(_POLICY_ORDER_PRE) | set(_POLICY_ORDER_POST)
         self.assertEqual(
             covered,
-            set(Policy),
+            set(PolicyKind),
             f"policies declared but never placed in the pipeline: "
-            f"{sorted(p.value for p in set(Policy) - covered)} — a profile could "
+            f"{sorted(p.value for p in set(PolicyKind) - covered)} — a profile could "
             f"declare one and it would silently never be built",
         )
 
@@ -289,8 +289,8 @@ class PoliciesAreProfileDriven(unittest.TestCase):
         """Both must observe POST-compaction token counts."""
         from yuyutsava.core.engine import _POLICY_ORDER_POST
 
-        self.assertIn(Policy.BUDGET, _POLICY_ORDER_POST)
-        self.assertIn(Policy.USAGE, _POLICY_ORDER_POST)
+        self.assertIn(PolicyKind.BUDGET, _POLICY_ORDER_POST)
+        self.assertIn(PolicyKind.USAGE, _POLICY_ORDER_POST)
 
     def test_declared_policies_match_what_is_built(self) -> None:
         """Every profile's policy set is reachable through the pipeline order."""

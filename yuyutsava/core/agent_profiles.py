@@ -33,7 +33,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 
-class Policy(str, Enum):
+class PolicyKind(str, Enum):
     """Cross-cutting middleware attached to a master's own graph.
 
     Order is fixed by the pipeline, not by this list — see
@@ -103,7 +103,7 @@ class AgentProfile:
     """
 
     role: str
-    policies: frozenset[Policy]
+    policies: frozenset[PolicyKind]
     injectors: frozenset[Injector]
     tools: frozenset[ToolFamily]
 
@@ -136,13 +136,13 @@ CLI_PROFILE = AgentProfile(
     role="cli",
     policies=frozenset(
         {
-            Policy.TOOL_FILTER,
-            Policy.FILESYSTEM_PROMPT,
-            Policy.VOICE_STYLE,
-            Policy.SUBAGENT_GATE,
-            Policy.BUDGET,
-            Policy.USAGE,
-            Policy.PERMISSION,
+            PolicyKind.TOOL_FILTER,
+            PolicyKind.FILESYSTEM_PROMPT,
+            PolicyKind.VOICE_STYLE,
+            PolicyKind.SUBAGENT_GATE,
+            PolicyKind.BUDGET,
+            PolicyKind.USAGE,
+            PolicyKind.PERMISSION,
         }
     ),
     injectors=frozenset(
@@ -182,12 +182,12 @@ ORCHESTRATOR_PROFILE = AgentProfile(
     role="orchestrator",
     policies=frozenset(
         {
-            Policy.TOOL_FILTER,
-            Policy.FILESYSTEM_PROMPT,
-            Policy.VOICE_STYLE,
-            Policy.SUBAGENT_GATE,
-            Policy.BUDGET,
-            Policy.USAGE,
+            PolicyKind.TOOL_FILTER,
+            PolicyKind.FILESYSTEM_PROMPT,
+            PolicyKind.VOICE_STYLE,
+            PolicyKind.SUBAGENT_GATE,
+            PolicyKind.BUDGET,
+            PolicyKind.USAGE,
         }
     ),
     injectors=frozenset(
@@ -230,13 +230,13 @@ TINKER_PROFILE = AgentProfile(
     role="tinker",
     policies=frozenset(
         {
-            Policy.TOOL_FILTER,
-            Policy.FILESYSTEM_PROMPT,
-            Policy.VOICE_STYLE,
-            Policy.SUBAGENT_GATE,
-            Policy.BUDGET,
-            Policy.USAGE,
-            Policy.PERMISSION,
+            PolicyKind.TOOL_FILTER,
+            PolicyKind.FILESYSTEM_PROMPT,
+            PolicyKind.VOICE_STYLE,
+            PolicyKind.SUBAGENT_GATE,
+            PolicyKind.BUDGET,
+            PolicyKind.USAGE,
+            PolicyKind.PERMISSION,
         }
     ),
     injectors=frozenset(
@@ -391,7 +391,7 @@ def divergences() -> dict[str, dict[str, bool]]:
     """
     out: dict[str, dict[str, bool]] = {}
 
-    for enum_cls, attr in ((Policy, "policies"), (Injector, "injectors"), (ToolFamily, "tools")):
+    for enum_cls, attr in ((PolicyKind, "policies"), (Injector, "injectors"), (ToolFamily, "tools")):
         for member in enum_cls:
             row = {p.role: member in getattr(p, attr) for p in ALL_PROFILES}
             if len(set(row.values())) > 1:
@@ -413,7 +413,7 @@ def divergences() -> dict[str, dict[str, bool]]:
 def format_matrix() -> str:
     """The full matrix as a text table — for docs, review, and eyeballing."""
     rows: list[tuple[str, dict[str, str]]] = []
-    for enum_cls, attr in ((Policy, "policies"), (Injector, "injectors"), (ToolFamily, "tools")):
+    for enum_cls, attr in ((PolicyKind, "policies"), (Injector, "injectors"), (ToolFamily, "tools")):
         for member in enum_cls:
             rows.append(
                 (

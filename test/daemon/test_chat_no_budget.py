@@ -21,7 +21,7 @@ from __future__ import annotations
 import inspect
 import unittest
 
-from yuyutsava.core.agent_profiles import CLI_PROFILE, ORCHESTRATOR_PROFILE, Policy
+from yuyutsava.core.agent_profiles import CLI_PROFILE, ORCHESTRATOR_PROFILE, PolicyKind
 from yuyutsava.daemon import conversation_manager as cm
 
 
@@ -42,8 +42,8 @@ class ChatBundleHasNoBudget(unittest.TestCase):
         # caller may pass budget_tokens and get budgeting. Dropping it from
         # the profile would disable it everywhere, which is a different and
         # larger decision (ADR-001 keeps the two questions separate).
-        self.assertIn(Policy.BUDGET, CLI_PROFILE.policies)
-        self.assertIn(Policy.BUDGET, ORCHESTRATOR_PROFILE.policies)
+        self.assertIn(PolicyKind.BUDGET, CLI_PROFILE.policies)
+        self.assertIn(PolicyKind.BUDGET, ORCHESTRATOR_PROFILE.policies)
 
 
 class TinkerBundleUnchanged(unittest.TestCase):

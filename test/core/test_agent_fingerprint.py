@@ -30,7 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from agent_fingerprint import all_fingerprints, diff_fingerprints  # noqa: E402
 
-from yuyutsava.core.agent_profiles import PROFILES_BY_ROLE, Policy, ToolFamily  # noqa: E402
+from yuyutsava.core.agent_profiles import PROFILES_BY_ROLE, PolicyKind, ToolFamily  # noqa: E402
 
 SNAPSHOT = Path(__file__).resolve().parent / "agent_fingerprint_snapshot.json"
 
@@ -190,7 +190,7 @@ class ProfileAgreement(unittest.TestCase):
 
     #: Policies whose presence depends on wiring the caller supplies, so they
     #: are only asserted on the ``:wired`` fingerprints.
-    _WIRING_DEPENDENT = {Policy.BUDGET, Policy.USAGE}
+    _WIRING_DEPENDENT = {PolicyKind.BUDGET, PolicyKind.USAGE}
 
     def test_declared_policies_are_assembled(self) -> None:
         for key, fp in all_fingerprints().items():
@@ -201,7 +201,7 @@ class ProfileAgreement(unittest.TestCase):
             # rather than as its own class, and "is it attached" must not depend
             # on which.
             stack = set(fp["policies"])
-            for policy in Policy:
+            for policy in PolicyKind:
                 if mode == "bare" and policy in self._WIRING_DEPENDENT:
                     continue
                 with self.subTest(profile=key, policy=policy.value):

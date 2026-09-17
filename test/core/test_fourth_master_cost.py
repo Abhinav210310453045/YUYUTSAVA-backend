@@ -27,7 +27,7 @@ from yuyutsava.core import engine
 from yuyutsava.core.agent_profiles import (
     AgentProfile,
     Injector,
-    Policy,
+    PolicyKind,
     Requirement,
     ToolFamily,
 )
@@ -40,11 +40,11 @@ RESEARCH_PROFILE = AgentProfile(
     role="research",
     policies=frozenset(
         {
-            Policy.TOOL_FILTER,
-            Policy.FILESYSTEM_PROMPT,
-            Policy.VOICE_STYLE,
-            Policy.BUDGET,
-            Policy.USAGE,
+            PolicyKind.TOOL_FILTER,
+            PolicyKind.FILESYSTEM_PROMPT,
+            PolicyKind.VOICE_STYLE,
+            PolicyKind.BUDGET,
+            PolicyKind.USAGE,
         }
     ),
     injectors=frozenset(

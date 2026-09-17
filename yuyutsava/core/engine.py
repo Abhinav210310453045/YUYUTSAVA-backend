@@ -54,7 +54,7 @@ from yuyutsava.core.agent_profiles import (
     ORCHESTRATOR_PROFILE,
     TINKER_PROFILE,
     AgentProfile,
-    Policy,
+    PolicyKind,
     ToolFamily,
 )
 from yuyutsava.discovery.tool_registry import ToolRegistry
@@ -307,16 +307,16 @@ def _build_tool_registry_and_tools(
 #
 # `pre` runs before the context controllers, `post` after: budget and usage must
 # observe POST-compaction token counts, so they cannot be hoisted.
-_POLICY_ORDER_PRE: tuple[Policy, ...] = (
-    Policy.TOOL_FILTER,
-    Policy.FILESYSTEM_PROMPT,
-    Policy.VOICE_STYLE,
-    Policy.SUBAGENT_GATE,
+_POLICY_ORDER_PRE: tuple[PolicyKind, ...] = (
+    PolicyKind.TOOL_FILTER,
+    PolicyKind.FILESYSTEM_PROMPT,
+    PolicyKind.VOICE_STYLE,
+    PolicyKind.SUBAGENT_GATE,
 )
-_POLICY_ORDER_POST: tuple[Policy, ...] = (
-    Policy.BUDGET,
-    Policy.USAGE,
-    Policy.PERMISSION,
+_POLICY_ORDER_POST: tuple[PolicyKind, ...] = (
+    PolicyKind.BUDGET,
+    PolicyKind.USAGE,
+    PolicyKind.PERMISSION,
 )
 
 
@@ -344,7 +344,7 @@ def _policy_middleware(
     * the **argument** supplies it — the standalone CLI passes no ``usage_store``
       and gets no accounting, without that being a different kind of agent.
 
-    So dropping ``Policy.BUDGET`` from a profile disables budgeting for that
+    So dropping ``PolicyKind.BUDGET`` from a profile disables budgeting for that
     master everywhere, while passing ``budget_tokens=None`` just leaves it
     unwired here. Conflating the two is why this was assembled by hand three
     times.
@@ -354,27 +354,27 @@ def _policy_middleware(
     for policy in order:
         if policy not in profile.policies:
             continue
-        if policy is Policy.TOOL_FILTER:
+        if policy is PolicyKind.TOOL_FILTER:
             out.append(LangChainPolicyAdapter([ToolFilterPolicy()]))
-        elif policy is Policy.FILESYSTEM_PROMPT:
+        elif policy is PolicyKind.FILESYSTEM_PROMPT:
             # Strips the deepagents "## Filesystem Tools" block: those built-ins
             # are filtered out by ToolFilterPolicy and our prompt routes
             # filesystem work through tr_*, so the block only misleads the model
             # and burns ~700 cache-prefix tokens per turn.
             out.append(LangChainPolicyAdapter([FilesystemPromptPolicy()]))
-        elif policy is Policy.VOICE_STYLE:
+        elif policy is PolicyKind.VOICE_STYLE:
             out.append(LangChainPolicyAdapter([VoiceStylePolicy()]))
-        elif policy is Policy.SUBAGENT_GATE:
+        elif policy is PolicyKind.SUBAGENT_GATE:
             # Unconditional, and `runtime_settings` may be None: the gate treats
             # that as "no toggles configured" and passes everything. Guarding on
             # it here would silently drop the policy for the standalone CLI —
             # caught by the fingerprint gate when this was first written that way.
             out.append(LangChainPolicyAdapter([SubagentGatePolicy(runtime_settings)]))
-        elif policy is Policy.BUDGET and budget_tokens is not None:
+        elif policy is PolicyKind.BUDGET and budget_tokens is not None:
             out.append(
                 LangChainPolicyAdapter([BudgetPolicy(max_input_tokens=budget_tokens, role=role)])
             )
-        elif policy is Policy.USAGE and usage_store is not None:
+        elif policy is PolicyKind.USAGE and usage_store is not None:
             # task_id/thread_id are pinned only where the bundle IS one
             # conversation — the tinker graph is per-card. The chat bundle is
             # shared across threads, so its rows land task-less/thread-less,
@@ -396,7 +396,7 @@ def _policy_middleware(
                     ]
                 )
             )
-        elif policy is Policy.PERMISSION and permission_check and workspace_root:
+        elif policy is PolicyKind.PERMISSION and permission_check and workspace_root:
             # PermissionPolicy imports no framework and is tested without one
             # (test/policy/test_permission_parity.py); the adapter is what
             # attaches it to the graph.
