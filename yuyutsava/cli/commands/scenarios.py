@@ -2,7 +2,9 @@
 Built-in prompts for YUYUTSAVA (filesystem + ``execute``).
 
 Paths assume ``-w`` is the repo root and ``LocalShellBackend`` uses virtual paths
-(e.g. ``/yuyutsava/workspace/README.txt``).
+(e.g. ``/workspace/README.md``), which is also where
+:data:`~yuyutsava.storage.paths.CONTAINER_WORKSPACE_MOUNT` puts the workspace
+inside the docker sandbox.
 """
 
 from __future__ import annotations
@@ -30,7 +32,7 @@ SCENARIOS: tuple[Scenario, ...] = (
         id="read_then_summarize",
         title="read_file then summarize",
         prompt=(
-            "Use read_file on /yuyutsava/workspace/README.txt "
+            "Use read_file on /workspace/README.md "
             "(virtual path under the agent workspace). Summarize it in two short sentences."
         ),
     ),
@@ -38,7 +40,7 @@ SCENARIOS: tuple[Scenario, ...] = (
         id="write_artifact",
         title="write_file artifact",
         prompt=(
-            "Use write_file to create /yuyutsava/workspace/from_agent.txt with exactly three lines: "
+            "Use write_file to create /workspace/from_agent.txt with exactly three lines: "
             "(1) mention read_file, write_file, and execute, "
             "(2) one sentence on read_file, (3) one sentence on execute. Confirm the path."
         ),
@@ -48,8 +50,8 @@ SCENARIOS: tuple[Scenario, ...] = (
         title="execute + read_file + write_file",
         prompt=(
             "1) Use execute to echo 'step1'. "
-            "2) read_file /yuyutsava/workspace/README.txt "
-            "3) write_file /yuyutsava/workspace/loop_result.txt with the first line of that README "
+            "2) read_file /workspace/README.md "
+            "3) write_file /workspace/loop_result.txt with the first line of that README "
             "plus a line 'done'. One-sentence summary for the user."
         ),
     ),
