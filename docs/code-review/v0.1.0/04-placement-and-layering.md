@@ -12,7 +12,7 @@ logic lives.
 
 ## R-LAY-01 — One import cycle spans 21 of 31 sub-packages
 
-**Severity** P0 · **Wave** W3 · **Status** Open
+**Severity** P0 · **Wave** W3 · **Status** Done
 
 **Claim.** Counting module-level imports only (`TYPE_CHECKING` and function-body
 imports excluded), 21 sub-packages form a single strongly connected component,
@@ -54,7 +54,7 @@ and no cycle involving `core`, `llm` or `storage`.
 
 ## R-LAY-02 — Lower layers import the composition roots
 
-**Severity** P1 · **Wave** W3 · **Status** Open
+**Severity** P1 · **Wave** W3 · **Status** Done
 
 **Claim.** Libraries depend on the applications that use them.
 
@@ -79,7 +79,7 @@ storage without the web layer, means importing both.
 
 ## R-PLC-01 — `core/` is a grab-bag
 
-**Severity** P1 · **Wave** W3 · **Status** Open
+**Severity** P1 · **Wave** W3 · **Status** Done
 
 **Claim.** Only a third of `core/`'s modules are about assembling agents.
 
@@ -118,7 +118,7 @@ fingerprint and the framework contract stay green after each move.
 
 ## R-PLC-02 — `core/config.py` mixes unrelated configuration
 
-**Severity** P1 · **Wave** W3 · **Status** Open (legacy `F-S09`)
+**Severity** P1 · **Wave** W3 · **Status** Done (legacy `F-S09`)
 
 **Evidence.** 825 lines:
 - 13 LLM settings classes and their factory (`:519-558`)
@@ -175,7 +175,7 @@ neither `sys` nor `asyncio` and holds no `print`: its 34 `T201` counts moved to
 
 ## R-PLC-04 — Command-line tooling inside the agent builder
 
-**Severity** P2 · **Wave** W3 · **Status** Open
+**Severity** P2 · **Wave** W3 · **Status** Done
 
 **Evidence.** In `core/engine.py`:
 - ANSI logging setup (`:106-197`)
@@ -190,7 +190,7 @@ Only `cli/` and `daemon/main.py` use any of it.
 
 ## R-PLC-05 — No rule for where a tool lives
 
-**Severity** P1 · **Wave** W3 · **Status** Open
+**Severity** P1 · **Wave** W3 · **Status** Done
 
 **Evidence.** 15 tool factories in 13 files, following at least five conventions:
 
@@ -243,7 +243,7 @@ The one-shot path can end a turn in silence, which the REPL path was fixed not t
 
 ## R-PLC-07 — `io/` and `audio_io/` split one concern
 
-**Severity** P2 · **Wave** W3 · **Status** Open
+**Severity** P2 · **Wave** W3 · **Status** Done
 
 **Evidence.**
 - `io/` holds device and backend adapters: `audio.py`, `stt.py`, `tts.py`,
@@ -268,7 +268,7 @@ The split is documented nowhere.
 
 ## R-PLC-08 — Docker sandbox split across two places
 
-**Severity** P2 · **Wave** W3 · **Status** Open
+**Severity** P2 · **Wave** W3 · **Status** Done
 
 **Evidence.**
 - The CLI-only backend is `core/docker_sandbox_backend.py`.
@@ -288,7 +288,7 @@ The split is documented nowhere.
 
 ## R-PLC-09 — The web layer keeps schemas and logic in routers
 
-**Severity** P2 · **Wave** W3 (schemas) + W4 (logic) · **Status** Open
+**Severity** P2 · **Wave** W3 (schemas) + W4 (logic) · **Status** W3 done · W4 open
 
 **Evidence.**
 - `daemon/web/schemas/` exists, yet five routers define request models inline:
@@ -303,7 +303,7 @@ The split is documented nowhere.
 
 ## R-PLC-10 — Pricing knowledge in three places
 
-**Severity** P2 · **Wave** W3 · **Status** Open
+**Severity** P2 · **Wave** W3 · **Status** Open — the module moved to `llm/pricing.py`; the provider-method half did not
 
 **Evidence.**
 - `core/model_router.py:51-160` holds the price table, `load_price_table`,
@@ -320,7 +320,7 @@ provider knowledge stays in `llm/providers/`.
 
 ## R-PLC-11 — Dead code
 
-**Severity** P2 · **Wave** W3 · **Status** Open
+**Severity** P2 · **Wave** W3 · **Status** Done
 
 Each item below was verified to have zero references across `yuyutsava/`,
 `test/` and `scripts/`, or references from tests only where noted.
@@ -348,7 +348,7 @@ code. Then `verify_imports.py` and the package's tests.
 
 ## R-PLC-12 — Names that shadow other modules
 
-**Severity** P2 · **Wave** W3 (partial) · **Status** Open
+**Severity** P2 · **Wave** W3 (partial) · **Status** W3 done · `platform`/`mcp` renames carried
 
 **Evidence.**
 - Standard-library names: `yuyutsava/io/`, `yuyutsava/platform/`,

@@ -391,7 +391,11 @@ def divergences() -> dict[str, dict[str, bool]]:
     """
     out: dict[str, dict[str, bool]] = {}
 
-    for enum_cls, attr in ((PolicyKind, "policies"), (Injector, "injectors"), (ToolFamily, "tools")):
+    for enum_cls, attr in (
+        (PolicyKind, "policies"),
+        (Injector, "injectors"),
+        (ToolFamily, "tools"),
+    ):
         for member in enum_cls:
             row = {p.role: member in getattr(p, attr) for p in ALL_PROFILES}
             if len(set(row.values())) > 1:
@@ -413,7 +417,11 @@ def divergences() -> dict[str, dict[str, bool]]:
 def format_matrix() -> str:
     """The full matrix as a text table — for docs, review, and eyeballing."""
     rows: list[tuple[str, dict[str, str]]] = []
-    for enum_cls, attr in ((PolicyKind, "policies"), (Injector, "injectors"), (ToolFamily, "tools")):
+    for enum_cls, attr in (
+        (PolicyKind, "policies"),
+        (Injector, "injectors"),
+        (ToolFamily, "tools"),
+    ):
         for member in enum_cls:
             rows.append(
                 (

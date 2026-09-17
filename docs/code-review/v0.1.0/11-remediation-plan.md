@@ -258,6 +258,48 @@ Postgres-backed files were run with Postgres up and no case skipped.
 - `core/` holds agent assembly only.
 - `verify_imports.py`, fingerprint and framework contract green after every commit.
 
+**Outcome — done.** On `code-improvement`:
+
+- **The cycle is gone.** `subpackage_two_cycles` 18 → **0**, and the strongly
+  connected component that spanned 21 of 31 sub-packages is **1** package.
+  `private_cross_package_imports` **0**; `ALLOWED_UPWARD` holds one entry,
+  `("artifacts", "todoboard")`, carried to W4. Deferred internal imports
+  **2.4%**, `mid_file_imports` **0**.
+- **`core/` is agent assembly only** — twelve modules. Config, pricing, the six
+  policies, the tool registry, prompts, tracing, text helpers, the docker
+  backend and the CLI tooling all left; `streaming.py` kept the driver and the
+  daemon sink while the terminal sink became `cli/render/terminal_stream.py`.
+  `core/streaming.py` now holds no `print` and imports neither `sys` nor
+  `asyncio`.
+- **Packages merged or removed:** `io/` + `audio_io/` → `voice/` (+ `backends/`),
+  `sessions/` → `conversation/sessions.py` + `cli/session_run.py`, `tools/` →
+  `websearch/`, `agents/db_tools/` → `storage/introspect_tools.py`. Thirteen
+  router models moved to `daemon/web/schemas/`.
+- **Renames:** the profile enum is `PolicyKind` (the `Policy` ABC keeps its
+  name), `visuals/latex.py` and `visuals/code_image.py` no longer shadow the
+  stdlib, `permission_middleware.py` is `command_safety.py`.
+- **Dead code:** three modules and nine definitions deleted. Two entries in
+  `R-PLC-11`'s table were **not** dead and are kept with reasons
+  (`needs_repair`, `llm.factory.supports` — both test-only), and `Capability`
+  was live, so only the free function beside it went.
+- **Ratchets:** `T201` 86 → **41** (prints moved into `cli/`, which is exempt by
+  design; one genuine print surfaced below `cli/` and is carried to W5),
+  `BLE001` 68 → 67, `PLR0913` 38 → 37. `PLC0415` steady at 22.
+
+**Departures from the task list, deliberate:**
+
+- *"Search tools and their exceptions → `discovery/`"* — not done. `discovery/`
+  is progressive disclosure over the agent's own catalog; these query the web
+  through Tavily/Exa. They share only the word "search", so web search became
+  its own domain (`websearch/`) instead.
+- *"Public `build_retrieval_stores` in `storage/factory.py`"* — the factory is
+  `core/stores.py`; `storage/factory.py` no longer exists. STD-PLC-1 in
+  01-standards.md was pointing at that dead path and now names the real one.
+- `tracing.py` went to `llm/` rather than staying in `core/`, and `AppContext`
+  plus the `artifacts`→`todoboard` edge are carried to W4/W5.
+- `R-PLC-10` stays **open**: `llm/pricing.py` exists, but live lookup still
+  sniffs `base_url` instead of asking a provider — the half that mattered.
+
 ## W4 — Readability, SOLID, DRY
 
 Characterization tests first, for every unit that is split.
