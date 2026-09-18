@@ -30,13 +30,13 @@ def adapt(session: ClientSession, server_name: str, mcp_tool: MCPTool) -> BaseTo
     """Wrap one MCP tool as a LangChain ``StructuredTool``.
 
     The returned tool's name is ``<server_name>__<tool_name>``; its
-    ``args_schema`` is the MCP tool's ``inputSchema`` (a JSON Schema dict).
+    ``args_schema`` is the MCP tool's ``input_schema`` (a JSON Schema dict).
     Invoking the tool calls ``session.call_tool`` and flattens text content
     blocks to a single string.
     """
     namespaced = f"{server_name}__{mcp_tool.name}"
     description = mcp_tool.description or f"MCP tool {namespaced}"
-    input_schema = dict(mcp_tool.inputSchema or {"type": "object", "properties": {}})
+    input_schema = dict(mcp_tool.input_schema or {"type": "object", "properties": {}})
     # adapt() runs inside the manager's _run_server task, so this IS the loop
     # the session (and its cancel scopes) belongs to.
     home_loop = asyncio.get_running_loop()
@@ -84,6 +84,6 @@ def _flatten_content(result: Any) -> str:
             continue
         kind = getattr(block, "type", type(block).__name__)
         pieces.append(f"[non-text content: {kind}]")
-    is_error = getattr(result, "isError", False)
+    is_error = getattr(result, "is_error", getattr(result, "isError", False))
     body = "\n".join(pieces).strip()
     return f"[error] {body}" if is_error else body
