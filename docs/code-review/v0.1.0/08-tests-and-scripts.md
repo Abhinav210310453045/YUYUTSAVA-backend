@@ -310,6 +310,26 @@ since before `f4ec45c`. Both confirmed pre-existing: the converse one fails
 identically in a `f4ec45c` worktree, and `git show f4ec45c` shows `prewarm()`
 already called against a fake that never had it.
 
+**These two need rewriting, not patching — attempted and reverted in W4.** Each
+single-layer repair moves the file from a fast failure to an indefinite hang,
+because both encode a router flow that no longer exists:
+
+- Giving `_FakeVoice` the missing `prewarm` lets `_ensure_voice()` succeed, and
+  the test then blocks forever waiting for `speech_started`: with barge-in
+  disabled the `audio` branch ignores mic input for the whole duration of an
+  active turn (`converse.py:1033-1042`), so `feed_audio` is never reached. The
+  test predates that gate.
+- In `test_converse_ws.py` the ask assertion has three independent stale layers,
+  not one: the frame key (`payload` → `ask`), the field the stub feeds the
+  interrupt (`body` → `question`, since `body_for_interrupt` reads
+  `iv["question"]` for a `user_question`), and a third that hangs the socket
+  once the first two are corrected.
+
+Both were reverted so the suite keeps failing in under a second rather than
+hanging, which is what a whole-suite run depends on. W6 rewrites them against
+the current frame contract; `R-RDB-01`'s characterization net is written fresh
+rather than inherited from them.
+
 **Verification.** `pytest --collect-only test` reports 1,721 tests, 0 errors.
 The three stale tests are fixed in W6 with the other test debt.
 
