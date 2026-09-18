@@ -86,6 +86,7 @@ from yuyutsava.core.streaming import StreamEvent
 from yuyutsava.daemon.turn_registry import TurnRun
 from yuyutsava.daemon.web.exceptions import ConflictError, ServiceUnavailableError
 from yuyutsava.daemon.web.schemas.proposal import OkOut
+from yuyutsava.daemon.web.services.converse_session import DictationSession
 from yuyutsava.daemon.web.voice_pipeline import VoicePipeline
 from yuyutsava.policy.interrupt_format import (
     body_for_interrupt,
@@ -172,98 +173,14 @@ _POST_SPEAK_GRACE_SEC = _post_speak_grace_sec()
 
 
 async def _dictate(ws: WebSocket) -> None:
-    """Transcribe-only loop for ``?mode=dictate`` (STT dictation, no agent).
+    """Hand the socket to a dictation session (``?mode=dictate``).
 
-    Reuses the exact voice plumbing of a conversation — :class:`VoicePipeline`
-    VAD → STT — but never opens a session and never runs a turn. Utterances are
-    transcribed strictly in capture order by a single worker (transcription can
-    take seconds; the receive loop must keep feeding the VAD meanwhile), each
-    non-empty transcript is sent as its own ``transcript`` frame, and the
-    ``audio_end`` flush is acknowledged with ``dictate_done`` once the tail has
-    drained. Low-confidence transcripts are dropped like the conversation path
-    drops them — hallucinated noise is worse than a gap in an editable textarea.
+    The loop and its state live in
+    :class:`~yuyutsava.daemon.web.services.converse_session.DictationSession`.
+    The pipeline is built here and injected, so this module stays the only place
+    that constructs a real :class:`VoicePipeline`.
     """
-    voice = VoicePipeline()
-    send_lock = asyncio.Lock()
-    utterances: asyncio.Queue[bytes | None] = asyncio.Queue()
-
-    async def _send(obj: dict) -> None:
-        async with send_lock:
-            await ws.send_text(json.dumps(obj, default=str))
-
-    async def _worker() -> None:
-        while True:
-            utt = await utterances.get()
-            if utt is None:
-                await _send({"type": "dictate_done"})
-                return
-            result = await voice.transcribe_detailed(utt)
-            text = result.text
-            conf = result.confidence
-            if text and conf is not None and _STT_MIN_CONFIDENCE > 0 and conf < _STT_MIN_CONFIDENCE:
-                logger.info(
-                    "dictate: low-confidence transcript dropped (%.2f) %r",
-                    conf,
-                    text[:80],
-                )
-                continue
-            if text:
-                logger.info("dictate: transcript=%r", text[:120])
-                await _send({"type": "transcript", "text": text})
-
-    prewarm = asyncio.create_task(voice.prewarm())
-    worker = asyncio.create_task(_worker())
-    await _send({"type": "hello", "mode": "dictate"})
-    try:
-        while True:
-            raw = await ws.receive_text()
-            try:
-                msg = json.loads(raw)
-            except (ValueError, TypeError):
-                await _send({"type": "error", "message": "invalid JSON frame"})
-                continue
-            mtype = msg.get("type")
-
-            if mtype == "ping":
-                await _send({"type": "pong"})
-                continue
-
-            if mtype == "audio":
-                b64 = msg.get("pcm")
-                if not b64:
-                    continue
-                try:
-                    pcm = base64.b64decode(b64)
-                except (ValueError, TypeError):
-                    continue
-                res = voice.feed_audio(pcm)
-                if res.speech_started:
-                    await _send({"type": "speech_started"})
-                if res.utterance is not None:
-                    utterances.put_nowait(res.utterance)
-                continue
-
-            if mtype == "audio_end":
-                # End of capture: flush the VAD tail, then let the worker drain
-                # in order and ack with dictate_done behind the last transcript.
-                tail = voice.flush()
-                if tail:
-                    utterances.put_nowait(tail)
-                utterances.put_nowait(None)
-                continue
-
-            await _send({"type": "error", "message": f"unknown message type {mtype!r}"})
-
-    except WebSocketDisconnect:
-        pass
-    finally:
-        prewarm.cancel()
-        worker.cancel()
-        try:
-            await worker
-        except (asyncio.CancelledError, Exception):  # noqa: BLE001
-            pass
-        voice.close()
+    await DictationSession(ws, VoicePipeline(), min_confidence=_STT_MIN_CONFIDENCE).run()
 
 
 async def _tts_enabled(ws: WebSocket) -> bool:
