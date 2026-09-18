@@ -299,3 +299,46 @@ server runs.
 
 **Verification.** Start the daemon the way `daemon.js` does and get `200` from
 `/health`, then drive it from the Electron app.
+
+---
+
+## R-BUG-08 — An answered inline ask leaves the turn silent and the socket waiting
+
+**Severity** P1 · **Wave** W5 (`fix:` commit) · **Status** Open (found during W4)
+
+**Evidence.** Measured over `/ws/converse` with a stub conversation manager and
+neither `channels` nor `decision_service` wired — the path the code itself calls
+the fallback "for tests / embedded use" (`routers/converse.py:594`):
+
+```
+hello → turn_start → token → ask{body: "proceed?"}
+     ← {"type": "ask_response", "text": "yes go"}
+ask_resolved → (nothing further; event loop idle)
+```
+
+The answer is accepted and the ask does resolve — `ask_resolved` is emitted from
+`_ask`'s `finally` (`:607`). What never arrives is the remainder of the turn: no
+token carrying the answer, no `final`, and no `turn_end`. A `faulthandler` dump
+after 20 s shows the client parked in `receive_json` and the server's loop in
+`select` with nothing pending, so the turn task is gone rather than busy.
+
+**Consequence.** The comment at `:594` promises the run-local future keeps "the
+inline prompt still working" when no channel router is wired. It does not: a
+client answering an inline ask on that path waits forever, and no `turn_end`
+ever closes the turn. This is also why
+`test/web/test_converse_ws.py::test_inline_ask_roundtrip` hangs once its three
+stale layers are corrected (`R-TST-11`) — that test was the only thing
+exercising this path, and it had never run.
+
+**Not diagnosed here, deliberately.** Three mechanisms were tested and refuted:
+the emit-before-future window (`:587` emits before `:598` assigns — but a
+*delayed* answer hangs too), a `channels`-set-with-`decisions`-unset split (both
+default to `None`, and the probe passes neither), and simple test staleness. The
+cause needs isolating in the fix rather than a fourth guess.
+
+**Fix.** W5: make the fallback complete a turn — an answered ask must resume
+`run_turn` and reach `turn_end`.
+
+**Verification.** The sequence above ends `… → token → final → turn_end`, and
+the ask round-trip joins `test/web/test_converse_frames.py`, which currently
+documents the gap instead of covering it.

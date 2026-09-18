@@ -396,22 +396,32 @@ test/storage/test_app_context.py` passes.
 **Severity** P1 · **Wave** W6 · **Status** Open (found during W4)
 
 **Claim.** `retrieval/test_find_duplicate_row_shape.py`
-`::TheRealWritePath::test_identical_text_is_deduplicated` fails in isolation
-under both runners: two identical writes produce two rows, and the message says
-it plainly — "find_duplicate returned None, so the dedup probe is not actually
-running".
+`::TheRealWritePath::test_identical_text_is_deduplicated` is **flaky against the
+live Postgres**, which is worse than a standing failure because it hides.
+
+**Correction (W4).** This entry first recorded it as failing in isolation under
+both runners — two identical writes producing two rows, with the message
+"find_duplicate returned None, so the dedup probe is not actually running". That
+was what two consecutive runs showed. A later run of the same file, unchanged,
+**passed** (8 passed in 0.35s), and a whole-suite run that previously failed it
+also passed it. So the outcome depends on rows left in the database by other
+suites, not on the code under test.
 
 **Evidence.** The known-red list in this review named four files
-(`R-TST-08`…`10`, plus `test_voice_ws`). This is a fifth. The test file is
-unchanged on `code-improvement` apart from the tree-wide `ruff format`
-(`a309b8a`), so it pre-dates the branch.
+(`R-TST-08`…`10`, plus `test_voice_ws`). This is a fifth, and the only flaky
+one. The test file is unchanged on `code-improvement` apart from the tree-wide
+`ruff format` (`a309b8a`), so whatever it depends on pre-dates the branch.
 
-**Consequence.** Unlike the others this is a claim about *product* behaviour —
-memory dedup may not be deduplicating — not a broken test. It needs Postgres to
-reproduce.
+**Consequence.** Either reading is bad. If the dedup probe really does miss an
+identical row under some database states, that is a product defect in memory
+writes. If it does not, the test asserts on rows other suites leave behind, and
+will keep flickering red in CI and training people to ignore it. A flaky test
+also poisons the suite's value as a net: this branch's own baseline moved 24 → 23
+failures between two runs with no code change, purely from this file.
 
-**Fix.** W6, with `R-TST-08`/`09`: classify against a clean baseline, then fix
-the dedup probe or the test's premise.
+**Fix.** W6, with `R-TST-08`/`09`: make it deterministic first — its own schema
+or a cleaned table per run — and only then judge whether dedup is broken. The
+`pg` marker from `R-TST-01` is what lets CI exclude it until then.
 
 ---
 
