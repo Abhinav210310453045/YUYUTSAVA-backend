@@ -185,15 +185,14 @@
     "PLR0913": 1,
     "S110": 1
   },
-  "yuyutsava/daemon/web/routers/converse.py": {
-    "C901": 1,
-    "S110": 1
-  },
   "yuyutsava/daemon/web/routers/sessions.py": {
     "C901": 1
   },
   "yuyutsava/daemon/web/server.py": {
     "PLR0913": 1
+  },
+  "yuyutsava/daemon/web/services/converse_connection.py": {
+    "S110": 1
   },
   "yuyutsava/daemon/web/services/converse_session.py": {
     "S110": 2

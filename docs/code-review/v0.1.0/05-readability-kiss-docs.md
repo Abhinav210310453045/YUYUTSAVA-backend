@@ -91,7 +91,8 @@ session, and awaiting the answer from either the hub or the run-local future.
 | `SpokenReply` | 706 | 947 |
 | `UtteranceRouter` | 594 | 837 |
 | `InlineAsks` | 558 | 802 |
-| `ConverseFrames` | **438** | 681 |
+| `ConverseFrames` | 438 | 681 |
+| `ConverseConnection` | **105** | 303 |
 
 \* it grew before it shrank: the frame-contract work added the `origin`/replay
 handling the old count predated.
@@ -103,22 +104,35 @@ what does this utterance become — are named methods rather than nested
 conditionals. The loop now only parses and dispatches; what a frame *does*
 belongs to a collaborator.
 
-Still open: the turn-start helpers and the handshake, which is what stands
-between this and the 60-line target. Those are one more step, not four — the
-turn machinery has around fourteen dependencies on the connection, which is the
-signal that it *is* the connection rather than another collaborator with a
-dependency bundle. The seam is already visible in the code: everything above
-`send_lock` (accept, the dictate branch, query parsing, `manager.open`) is the
-router's job, and everything below it is the connection's, so the split is
-`converse()` keeping ~80 lines of setup and handing a `ConverseConnection` the
-socket.
+`ConverseConnection` took the rest: the handshake, the replay, the frame pump,
+starting turns, and closing down without cutting a live reply off. The seam is
+the one the code already implied — everything above `send_lock` is endpoint work
+(accept, the dictate branch, query parsing, `manager.open`), everything below is
+the connection — so `converse` is now 105 lines of exactly that, and the router
+module went 1,099 → 303.
 
-**One hazard to carry into that step.** `test_voice_ws.py` and
-`test_dictation_frames.py` both monkeypatch `converse_router.VoicePipeline`. The
-connection must therefore be handed a *factory* rather than constructing the
-pipeline itself: resolving the name inside a new module silently detaches that
-patch point, and the failure mode is not a red test but two test files quietly
-loading real STT models.
+The thirteen things the router resolves travel as one `ConverseSpec`, and the
+three env knobs as one `VoicePolicy`. The pipeline arrives as a **factory**:
+both WS test files patch `converse_router.VoicePipeline`, and resolving that
+name inside the new module would have detached the patch silently — the failure
+mode being not a red test but two files loading real STT models.
+
+`converse`'s cyclomatic entry fell out of the ratchet entirely (C901 19 → 17
+across the branch).
+
+Three stale things in the module docstring surfaced while moving it, all now
+fixed: it documented the ask frame as `{"type":"ask","payload":{...}}` when the
+code has always sent `"ask"` — which is almost certainly where
+`test_converse_ws`'s `ask["payload"]` assertion came from (`R-TST-11`) — it
+claimed a speech onset during a turn cancels it, which stopped being true when
+the mic gate landed, and it carried a comment for a constant that had already
+moved.
+
+**Remaining.** 105 lines against a 60-line target. What is left is genuine
+endpoint work — parse the query string, open a conversation, hand over the
+socket — so the last 45 would come from moving the query parsing behind a
+constructor on `ConverseSpec`, which is worth doing only if it reads better
+rather than to hit the number.
 
 ---
 

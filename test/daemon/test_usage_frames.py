@@ -122,33 +122,38 @@ class HandlerWiring(unittest.TestCase):
         socket and a real bundle. The pair now spans two modules, because the
         spoken body moved to ``services/converse_session.py`` (`R-RDB-01`) — an
         assertion pinned to one file counted 1 and read as a lost wrapper.
+        This has now broken twice by following moved code, which is the argument
+        for making it behavioural in W6.
         """
         import inspect
 
-        from yuyutsava.daemon.web.routers import converse
-        from yuyutsava.daemon.web.services import converse_session
+        from yuyutsava.daemon.web.services import converse_connection, converse_session
 
-        router = inspect.getsource(converse)
+        conn = inspect.getsource(converse_connection)
         session = inspect.getsource(converse_session)
-        self.assertIn("bus().unsubscribe(token)", router)
+        self.assertIn("bus().unsubscribe(token)", conn)
         # The text body wraps it directly...
-        self.assertEqual(router.count("async with _meter_frames(run):"), 1)
+        self.assertEqual(conn.count("async with self._meter_frames(run):"), 1)
         # ...and the spoken body receives it as plumbing and wraps it there.
-        self.assertIn("meter_frames=_meter_frames", router)
+        self.assertIn("meter_frames=self._meter_frames", conn)
         self.assertEqual(session.count("async with plumbing.meter_frames(self._run):"), 1)
 
     def test_the_handshake_carries_the_last_known_reading(self):
+        """The reading rides the `hello` frame, so a panel opened between turns
+        shows real numbers rather than waiting for the next model call."""
         import inspect
 
-        from yuyutsava.daemon.web.routers import converse
+        from yuyutsava.daemon.web.services import converse_connection
 
-        src = inspect.getsource(converse)
-        self.assertIn('"usage": _latest_usage_snapshot(convo.thread_id)', src)
+        src = inspect.getsource(converse_connection)
+        self.assertIn('"usage": latest_usage_snapshot(spec.convo.thread_id)', src)
 
     def test_a_broken_snapshot_read_cannot_fail_the_handshake(self):
-        from yuyutsava.daemon.web.routers.converse import _latest_usage_snapshot
+        from yuyutsava.daemon.web.services.converse_connection import (
+            latest_usage_snapshot,
+        )
 
-        self.assertIsNone(_latest_usage_snapshot("no-such-thread"))
+        self.assertIsNone(latest_usage_snapshot("no-such-thread"))
 
 
 if __name__ == "__main__":
