@@ -79,8 +79,24 @@ directly: 13 tests covering confident talk-over, noise, whitespace, a
 low-confidence guess, the disabled case, and a failed transcription (which must
 not kill the reply).
 
-Still open: the frame loop itself (`converse`'s remaining 594 lines are mostly
-the receive loop and connection setup).
+A fourth took the inline-ask protocol into `InlineAsks` — building the prompt,
+carrying the ownership that keeps a permission prompt out of somebody else's
+session, and awaiting the answer from either the hub or the run-local future.
+`converse` **594 → 558**.
+
+| extraction | `converse` | module |
+|---|---|---|
+| at review (`f4ec45c`) | 771 | 1,099 |
+| `DictationSession` | 801* | 1,040 |
+| `SpokenReply` | 706 | 947 |
+| `UtteranceRouter` | 594 | 837 |
+| `InlineAsks` | **558** | 802 |
+
+\* it grew before it shrank: the frame-contract work added the `origin`/replay
+handling the old count predated.
+
+Still open: the receive loop (174 lines) and the connection setup, which is what
+stands between this and the 60-line target.
 
 ---
 

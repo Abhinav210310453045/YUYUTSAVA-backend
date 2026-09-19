@@ -18,12 +18,14 @@ import base64
 import json
 import logging
 import time
+import uuid
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Protocol
 
 from fastapi import WebSocket
 from starlette.websockets import WebSocketDisconnect
 
+from yuyutsava.ports.channels import AskPrompt
 from yuyutsava.voice.sentence import SentenceChunker
 
 logger = logging.getLogger("yuyutsava.daemon.web.services.converse_session")
@@ -546,3 +548,93 @@ class UtteranceRouter:
             await self._deps.start_turn(heard.words, preempt=True)
         finally:
             self._barge_pending = False
+
+
+@dataclass(frozen=True)
+class AskOwnership:
+    """Who an inline ask belongs to.
+
+    An ask may render *inline* only in the conversation that raised it —
+    everywhere else it is a notification plus an Inbox entry. A permission
+    prompt must never appear inside somebody's other running session, which is
+    what these fields carry onto the wire record.
+    """
+
+    session_id: str
+    thread_id: str
+    origin: str
+    surface: str
+    card_id: str | None
+    agent_label: str | None
+
+
+class InlineAsks:
+    """Turns a graph interrupt into a prompt, and waits for the answer.
+
+    Where the answer comes back from depends on whether a channel router is
+    wired. With one, the ask joins the hub: persisted before broadcast, visible
+    on every surface, and answerable from any of them — first answer anywhere
+    wins. Without one (tests, embedded use) it falls back to a future on the run
+    itself, which the conversation socket resolves directly.
+
+    Either way the prompt is announced and retired on this thread, so a card
+    answered in the Inbox does not sit dead in the chat.
+    """
+
+    def __init__(
+        self,
+        ownership: AskOwnership,
+        *,
+        channels: Any | None,
+        describe: Callable[[dict[str, Any]], tuple[str, str, list[str]]],
+    ) -> None:
+        self._own = ownership
+        self._channels = channels
+        self._describe = describe
+
+    def handler(self, run: Any) -> Callable[[Any], Awaitable[str]]:
+        """The ``ask_handler`` for one run."""
+
+        async def _ask(interrupt_value: Any) -> str:
+            iv = (
+                dict(interrupt_value)
+                if isinstance(interrupt_value, dict)
+                else {"type": "user_question", "question": str(interrupt_value)}
+            )
+            title, body, options = self._describe(iv)
+            ask = AskPrompt(
+                ask_id=str(uuid.uuid4()),
+                title=title,
+                body=body,
+                options=options,
+                interrupt_value=iv,
+                session_id=self._own.session_id,
+                agent_path=iv.get("agent_path") or self._own.origin,
+                surface=self._own.surface,
+                thread_id=self._own.thread_id,
+                card_id=self._own.card_id,
+                agent_label=self._own.agent_label,
+                interrupt_id=iv.get("interrupt_id"),
+            )
+            run.pending_ask_id = ask.ask_id
+            # Inline frame for whoever is viewing this thread — the same wire
+            # record the SSE/inbox/overlay surfaces receive, so all of them
+            # render from one shape through one shared card.
+            run.emit({"type": "ask", "ask": ask.to_wire_dict()})
+            try:
+                if self._channels is not None:
+                    return await self._channels.post_ask(ask)
+                loop = asyncio.get_running_loop()
+                fut: asyncio.Future[str] = loop.create_future()
+                run.pending_ask = fut
+                return await fut
+            finally:
+                run.pending_ask = None
+                run.pending_ask_id = None
+                # However it was answered — inline here, from the Inbox, from
+                # the overlay, or by the turn being cancelled — every viewer of
+                # this thread clears its inline card. Without this, answering in
+                # the Inbox would leave a dead prompt sitting in the chat.
+                run.emit({"type": "ask_resolved", "ask_id": ask.ask_id})
+
+        return _ask

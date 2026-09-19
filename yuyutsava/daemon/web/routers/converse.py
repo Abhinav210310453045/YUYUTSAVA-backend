@@ -76,7 +76,6 @@ import contextlib
 import json
 import logging
 import time
-import uuid
 
 from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
 
@@ -87,7 +86,9 @@ from yuyutsava.daemon.turn_registry import TurnRun
 from yuyutsava.daemon.web.exceptions import ConflictError, ServiceUnavailableError
 from yuyutsava.daemon.web.schemas.proposal import OkOut
 from yuyutsava.daemon.web.services.converse_session import (
+    AskOwnership,
     DictationSession,
+    InlineAsks,
     MicDeps,
     SpeakingState,
     SpokenReply,
@@ -100,7 +101,7 @@ from yuyutsava.policy.interrupt_format import (
     options_for_interrupt,
     title_for_interrupt,
 )
-from yuyutsava.ports.channels import AskPrompt, DecisionConflictError
+from yuyutsava.ports.channels import DecisionConflictError
 from yuyutsava.storage.voice_blobs import write_voice_wav
 
 logger = logging.getLogger("yuyutsava.daemon.web.routers.converse")
@@ -476,58 +477,22 @@ async def converse(ws: WebSocket) -> None:
 
         return _sink
 
-    def _ask_handler(run: TurnRun):
-        async def _ask(interrupt_value) -> str:
-            iv = (
-                dict(interrupt_value)
-                if isinstance(interrupt_value, dict)
-                else {"type": "user_question", "question": str(interrupt_value)}
-            )
-            ask = AskPrompt(
-                ask_id=str(uuid.uuid4()),
-                title=title_for_interrupt(iv),
-                body=body_for_interrupt(iv),
-                options=options_for_interrupt(iv),
-                interrupt_value=iv,
-                session_id=convo.session_id,
-                agent_path=iv.get("agent_path") or origin,
-                # Ownership. This ask belongs to THIS conversation and may only
-                # render inline here; everywhere else it is a notification plus
-                # an Inbox entry. A permission prompt must never appear inside
-                # somebody's other running session.
-                surface=surface,
-                thread_id=thread_id,
-                card_id=card_id,
-                agent_label=agent_label,
-                interrupt_id=iv.get("interrupt_id"),
-            )
-            run.pending_ask_id = ask.ask_id
-            # Inline frame for whoever is viewing this thread — the same wire
-            # record the SSE/inbox/overlay surfaces receive, so all of them
-            # render from one shape through one shared card.
-            run.emit({"type": "ask", "ask": ask.to_wire_dict()})
-            try:
-                if channels is not None:
-                    # Joins the hub: persisted before broadcast, visible on
-                    # every surface, answerable via POST /ask/{id}/respond from
-                    # any of them — first answer anywhere wins.
-                    return await channels.post_ask(ask)
-                # No channel router (tests / embedded use): fall back to the
-                # run-local future so the inline prompt still works.
-                loop = asyncio.get_running_loop()
-                fut: asyncio.Future[str] = loop.create_future()
-                run.pending_ask = fut
-                return await fut
-            finally:
-                run.pending_ask = None
-                run.pending_ask_id = None
-                # However it was answered — inline here, from the Inbox, from
-                # the overlay, or by the turn being cancelled — every viewer of
-                # this thread clears its inline card. Without this, answering in
-                # the Inbox would leave a dead prompt sitting in the chat.
-                run.emit({"type": "ask_resolved", "ask_id": ask.ask_id})
-
-        return _ask
+    _asks = InlineAsks(
+        AskOwnership(
+            session_id=convo.session_id,
+            thread_id=thread_id,
+            origin=origin,
+            surface=surface,
+            card_id=card_id,
+            agent_label=agent_label,
+        ),
+        channels=channels,
+        describe=lambda iv: (
+            title_for_interrupt(iv),
+            body_for_interrupt(iv),
+            options_for_interrupt(iv),
+        ),
+    )
 
     async def _run_turn(run: TurnRun) -> None:
         """Text turn body. Errors, cancellation and ``turn_end`` are the
@@ -541,7 +506,7 @@ async def converse(ws: WebSocket) -> None:
                 await convo.run_turn(
                     run.text,
                     on_event=_event_sink(run),
-                    ask_handler=_ask_handler(run),
+                    ask_handler=_asks.handler(run),
                     run_name=f"{origin}-chat",
                     keep_full_payloads=True,
                 )
@@ -605,7 +570,7 @@ async def converse(ws: WebSocket) -> None:
                 convo=convo,
                 origin=origin,
                 event_sink=_event_sink,
-                ask_handler=_ask_handler,
+                ask_handler=_asks.handler,
                 meter_frames=_meter_frames,
             ),
             persist=_persist_voice_message if voice_store is not None else None,
