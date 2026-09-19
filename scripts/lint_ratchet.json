@@ -287,9 +287,6 @@
   "yuyutsava/todoboard/exchange.py": {
     "PLR0913": 1
   },
-  "yuyutsava/todoboard/tools.py": {
-    "C901": 1
-  },
   "yuyutsava/voice/announcer.py": {
     "S110": 2
   },
