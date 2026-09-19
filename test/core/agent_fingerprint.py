@@ -283,6 +283,24 @@ def _attached_behaviours(middleware: list[Any]) -> set[str]:
     return names
 
 
+def _portable(prompt: str) -> str:
+    """Replace machine-specific absolute paths with stable tokens.
+
+    The prompt embeds the workspace root and the user's home directory (the zone
+    table, the output/scratch/scripts paths, the workspace-state header), so its
+    hash and length differ on every checkout. That made the snapshot a
+    machine-local artefact: it could only match on the machine and directory
+    that generated it, and the gate was silently red everywhere else — including
+    on a fresh clone of `main`. Normalising here keeps the gate sensitive to
+    every *authored* change while ignoring where the repo happens to live.
+    """
+    out = prompt.replace(str(REPO), "<REPO>")
+    home = str(Path.home())
+    if home not in ("", "/"):
+        out = out.replace(home, "<HOME>")
+    return out
+
+
 def fingerprint_from_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
     """Normalise captured ``create_deep_agent`` kwargs into a comparable dict.
 
@@ -291,7 +309,7 @@ def fingerprint_from_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
     stored so a fingerprint stays small and readable; ``prompt_len`` is kept
     alongside so a mismatch says whether the prompt grew or merely changed.
     """
-    prompt = kwargs.get("system_prompt") or ""
+    prompt = _portable(kwargs.get("system_prompt") or "")
     subs = kwargs.get("subagents") or []
     middleware = kwargs.get("middleware") or []
     return {

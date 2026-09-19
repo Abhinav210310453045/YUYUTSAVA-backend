@@ -458,3 +458,47 @@ These are the parts every change should protect, and imitate:
   storage collapse into a mechanical change.
 - **`test/test_ports_is_a_leaf.py`:** keeps the protocol layer acyclic.
 - **The billable-call guard in `test/test_async.py`.**
+
+## R-TST-15 — The agent fingerprint could only pass on the machine that wrote it
+
+**Severity** P1 · **Wave** W4 · **Status** Fixed (`test/core/agent_fingerprint.py`)
+
+**Evidence.** `test_matches_snapshot` fails on a clean checkout of `main`
+(`f4ec45c`) — before this branch exists — and fails differently again depending
+on where the repo is checked out:
+
+| configuration | `cli:bare` prompt_len |
+|---|---|
+| snapshot as committed | 16421 |
+| `main`, worktree under `/private/tmp/…` | 17653 |
+| `main`, checkout under `~/Desktop/…` | 16773 |
+
+The prompt embeds absolute paths — the zone table, the
+deliverables/scratch/scripts lines, the workspace-state header — so
+`prompt_sha` and `prompt_len` are a function of the checkout's location. The
+snapshot was therefore a machine-local artefact, and the gate was red for
+everyone except whoever generated it.
+
+**Consequence.** This is the plan's primary tripwire for "did a refactor change
+agent behaviour", to be checked after every `core`/`agents`/`policy` commit. It
+could not fire. Roughly sixty refactor commits were made against a gate that was
+already failing, so its output carried no signal — and reporting those commits
+as "fingerprint byte-identical" was not supportable.
+
+**Fix.** Normalise the prompt before hashing: the repo root becomes `<REPO>` and
+the home directory `<HOME>`, so the fingerprint tracks authored content and
+ignores where the code lives. The snapshot is regenerated once against the
+normalised form.
+
+**Verification.** The same normalised fingerprint is computed from two
+checkouts at different absolute paths — `main` under `/private/tmp/…/wt-main`
+and this branch under `~/Desktop/YUYUTSAVA-backend` — and both give
+`prompt_sha 7ad154ac0b41b620`, `prompt_len 16355`. That is simultaneously the
+portability proof and evidence that W1–W4 changed no agent behaviour: every
+configuration matches `main` exactly.
+
+Negative-controlled: appending ten characters to a prompt line that the composed
+prompt actually contains turns six of the nine configurations red. (A first
+attempt injected the sentinel into a surface-specific block none of the nine
+use, which proved nothing — the control has to touch text the fingerprint
+actually sees.)
