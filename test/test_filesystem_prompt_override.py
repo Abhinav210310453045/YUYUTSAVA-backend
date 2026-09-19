@@ -37,6 +37,7 @@ from yuyutsava.agents.general_purpose.agent import GeneralPurposeAgent
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
 from yuyutsava.config.execution import LocalSettings
 from yuyutsava.config.search import SearchConfig
+from yuyutsava.core.deps import MasterDeps
 from yuyutsava.llm.settings import AnthropicSettings
 from yuyutsava.skills.registry import SkillRegistry
 
@@ -88,11 +89,13 @@ def _render_prompt() -> dict[str, Any]:
         bundle = engine.build_cli_deepagent(
             workspace,
             settings,
+            deps=MasterDeps(
+                permission_check=True,
+                search_config=search_config,
+                subagents=[general_purpose],
+            ),
             execution_mode="local",
             local_settings=LocalSettings(),
-            permission_check=True,
-            search_config=search_config,
-            subagents=[general_purpose],
         )
         # ``ainvoke``, not ``invoke``: LangChain picks the sync or async
         # middleware hooks from how the graph is driven, and every production

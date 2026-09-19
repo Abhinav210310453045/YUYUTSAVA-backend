@@ -384,6 +384,7 @@ class WiredIntoTheRealBuild(unittest.IsolatedAsyncioTestCase):
         from yuyutsava.config.execution import LocalSettings
         from yuyutsava.config.search import SearchConfig
         from yuyutsava.core import engine
+        from yuyutsava.core.deps import MasterDeps
         from yuyutsava.llm.settings import AnthropicSettings
         from yuyutsava.skills.registry import SkillRegistry
 
@@ -400,11 +401,9 @@ class WiredIntoTheRealBuild(unittest.IsolatedAsyncioTestCase):
             engine.build_cli_deepagent(
                 ws,
                 AnthropicSettings(api_key="sk-fake", model="claude-haiku-4-5-20251001"),
+                deps=MasterDeps(permission_check=True, search_config=search, subagents=[gp]),
                 execution_mode="local",
                 local_settings=LocalSettings(),
-                permission_check=True,
-                search_config=search,
-                subagents=[gp],
             )
         # Select by the policy carried, not by adapter type: since step 4.6 the
         # stack holds several adapters (one per migrated policy, each at the

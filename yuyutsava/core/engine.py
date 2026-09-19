@@ -57,6 +57,7 @@ from yuyutsava.core.agent_profiles import (
     PolicyKind,
     ToolFamily,
 )
+from yuyutsava.core.deps import TINKER_BUDGET_TOKENS, MasterDeps
 from yuyutsava.discovery.tool_registry import ToolRegistry
 from yuyutsava.docker_sandbox.backend import DockerSandboxBackend
 from yuyutsava.events.tools import make_recall_tool
@@ -760,36 +761,10 @@ def build_cli_deepagent(
     workspace_root: Path,
     settings: LlmSettings,
     *,
-    bash_timeout_sec: int = 120,
+    deps: MasterDeps | None = None,
     execution_mode: Literal["local", "docker"] = "local",
     docker_settings: DockerSettings | None = None,
     local_settings: LocalSettings | None = None,
-    permission_check: bool = True,
-    search_config: SearchConfig | None = None,
-    checkpointer: BaseCheckpointSaver | None = None,
-    subagents: "list[Any] | None" = None,
-    async_subagents: "list[Any] | None" = None,
-    async_host_url: str | None = None,
-    remote_async_subagents: "list[Any] | None" = None,
-    async_task_mirror: Any | None = None,
-    async_max_concurrent: int = 8,
-    async_host: Any | None = None,
-    async_host_attachment: Any | None = None,
-    artifact_store: Any | None = None,
-    summary_store: Any | None = None,
-    memory_store: Any | None = None,
-    transcript_store: Any | None = None,
-    context_settings: Any | None = None,
-    compaction_model: BaseChatModel | None = None,
-    skill_store: Any | None = None,
-    transcript_index: Any | None = None,
-    mcp_tools: "list[Any] | None" = None,
-    cap_enforcer: Any | None = None,
-    budget_tokens: int | None = None,
-    usage_store: Any | None = None,
-    prefs_store: Any | None = None,
-    runtime_settings: Any | None = None,
-    extra_tools: "list[Any] | None" = None,
     front: str = "app",
 ) -> AgentBundle:
     """Build the CLI deepagent.
@@ -837,6 +812,34 @@ def build_cli_deepagent(
             CLI chat threads are the longest-lived in the system, so the
             stack factory (``core/agent_stack.py``) wires these by default.
     """
+    deps = deps or MasterDeps()
+    bash_timeout_sec = deps.bash_timeout_sec
+    permission_check = deps.permission_check
+    search_config = deps.search_config
+    checkpointer = deps.checkpointer
+    subagents = deps.subagents
+    async_subagents = deps.async_subagents
+    async_host_url = deps.async_host_url
+    remote_async_subagents = deps.remote_async_subagents
+    async_task_mirror = deps.async_task_mirror
+    async_max_concurrent = deps.async_max_concurrent
+    async_host = deps.async_host
+    async_host_attachment = deps.async_host_attachment
+    artifact_store = deps.artifact_store
+    summary_store = deps.summary_store
+    memory_store = deps.memory_store
+    transcript_store = deps.transcript_store
+    context_settings = deps.context_settings
+    compaction_model = deps.compaction_model
+    skill_store = deps.skill_store
+    transcript_index = deps.transcript_index
+    mcp_tools = deps.mcp_tools
+    cap_enforcer = deps.cap_enforcer
+    budget_tokens = deps.budget_tokens
+    usage_store = deps.usage_store
+    prefs_store = deps.prefs_store
+    runtime_settings = deps.runtime_settings
+    extra_tools = deps.extra_tools
     model = chat_model(settings)
     checkpointer = checkpointer or MemorySaver()
     # FilesystemPromptPolicy strips the deepagents "## Filesystem Tools"
@@ -1304,35 +1307,9 @@ def build_tinker_agent(
     card_workspace: Path,
     settings: LlmSettings,
     *,
-    bash_timeout_sec: int = 120,
-    permission_check: bool = True,
-    search_config: SearchConfig | None = None,
-    checkpointer: BaseCheckpointSaver | None = None,
-    subagents: "list[Any] | None" = None,
-    async_subagents: "list[Any] | None" = None,
-    async_host_url: str | None = None,
-    remote_async_subagents: "list[Any] | None" = None,
-    async_task_mirror: Any | None = None,
-    async_max_concurrent: int = 8,
-    async_host: Any | None = None,
-    async_host_attachment: Any | None = None,
-    runtime_settings: Any | None = None,
-    artifact_store: Any | None = None,
-    summary_store: Any | None = None,
-    memory_store: Any | None = None,
-    transcript_store: Any | None = None,
-    context_settings: Any | None = None,
-    compaction_model: BaseChatModel | None = None,
-    skill_store: Any | None = None,
-    transcript_index: Any | None = None,
-    skill_registry: SkillRegistry | None = None,
-    budget_tokens: int = 60_000,
-    usage_store: Any | None = None,
-    mcp_tools: "list[Any] | None" = None,
+    deps: MasterDeps | None = None,
+    skill_registry: Any | None = None,
     note_index: Any | None = None,
-    cap_enforcer: Any | None = None,
-    prefs_store: Any | None = None,
-    extra_tools: "list[Any] | None" = None,
 ) -> AgentBundle:
     """Build the TinkerAgent — third factory, sibling of :func:`build_cli_deepagent`
     and :func:`build_orchestrator`.
@@ -1362,6 +1339,36 @@ def build_tinker_agent(
     tinker skills namespace. ``subagents``/``async_subagents`` ride along
     exactly like the CLI factory — no spawn-subagent tool.
     """
+    deps = deps or MasterDeps()
+    bash_timeout_sec = deps.bash_timeout_sec
+    permission_check = deps.permission_check
+    search_config = deps.search_config
+    checkpointer = deps.checkpointer
+    subagents = deps.subagents
+    async_subagents = deps.async_subagents
+    async_host_url = deps.async_host_url
+    remote_async_subagents = deps.remote_async_subagents
+    async_task_mirror = deps.async_task_mirror
+    async_max_concurrent = deps.async_max_concurrent
+    async_host = deps.async_host
+    async_host_attachment = deps.async_host_attachment
+    artifact_store = deps.artifact_store
+    summary_store = deps.summary_store
+    memory_store = deps.memory_store
+    transcript_store = deps.transcript_store
+    context_settings = deps.context_settings
+    compaction_model = deps.compaction_model
+    skill_store = deps.skill_store
+    transcript_index = deps.transcript_index
+    mcp_tools = deps.mcp_tools
+    cap_enforcer = deps.cap_enforcer
+    budget_tokens = deps.budget_tokens
+    usage_store = deps.usage_store
+    prefs_store = deps.prefs_store
+    runtime_settings = deps.runtime_settings
+    extra_tools = deps.extra_tools
+    if budget_tokens is None:
+        budget_tokens = TINKER_BUDGET_TOKENS
 
     model = chat_model(settings)
     checkpointer = checkpointer or MemorySaver()

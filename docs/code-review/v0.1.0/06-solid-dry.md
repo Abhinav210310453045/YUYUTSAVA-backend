@@ -151,6 +151,32 @@ the dispatcher being asked about it.
 
 ---
 
+**Progress (W4).** `build_cli_deepagent` took 33 parameters and
+`build_tinker_agent` 32, **27 of them the same 27**, repeated at every call
+site. They now take a `MasterDeps` (`core/deps.py`) and 7 / 6 parameters
+respectively; `PLR0913` 35 → 33.
+
+What stays out is what genuinely differs: where the CLI agent runs and who reads
+its output (`execution_mode`, `docker_settings`, `local_settings`, `front`), and
+which card the tinker agent is bound to.
+
+**The two lists had already drifted**, which is the argument for the change
+rather than a side note. `budget_tokens` defaulted to `None` for the CLI and
+`60_000` for tinker, and `tinker_stack` never passes it — so that default was
+live. It is deliberate: a conversation's input grows with its own history, so a
+cumulative budget that never resets would eventually refuse every turn, while
+the tinker agent works a single card and a cap keeps a runaway think loop from
+spending the session. Collapsing the two lists naively would have silently
+picked one. `MasterDeps.budget_tokens` means "no budget", and
+`build_tinker_agent` applies the named `TINKER_BUDGET_TOKENS` when it is unset,
+so the divergence is now stated instead of hidden in a default.
+
+**Verification.** The agent fingerprint is byte-identical across all nine
+configurations — which is exactly what it exists for, and what makes a change of
+this shape checkable at all rather than argued. The harness splits its overrides
+by field name so every configuration stays expressible. Live on a restarted
+daemon: a five-turn conversation with a permission ask, and a CLI chat turn.
+
 ## R-SOL-04 — Dependencies declared as `Any` while the protocols exist (dependency inversion)
 
 **Severity** P1 · **Wave** W4 · **Status** Open (legacy `F-S05` partly closed; `F-D01` partly closed)

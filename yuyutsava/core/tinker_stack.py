@@ -31,6 +31,7 @@ from yuyutsava.config.env import env, env_flag
 from yuyutsava.config.search import SearchConfig
 from yuyutsava.context.config import ContextSettings
 from yuyutsava.context.tools import make_context_tools
+from yuyutsava.core.deps import MasterDeps
 from yuyutsava.core.engine import AgentBundle, build_tinker_agent, context_middleware
 from yuyutsava.core.stores import StoreFactory, build_retrieval_stores
 from yuyutsava.llm.factory import chat_model
@@ -185,31 +186,35 @@ async def build_tinker_stack(
         card_id,
         card_ws,
         settings,
-        bash_timeout_sec=bash_timeout_sec,
-        permission_check=True,
-        search_config=search_config,
-        checkpointer=checkpointer,
-        subagents=[general_purpose],
-        async_subagents=async_subagents,
-        async_host_url=async_host_url,
-        async_task_mirror=async_mirror,
-        async_host=async_host,
-        async_host_attachment=async_host_attachment,
-        artifact_store=artifact_store,
-        summary_store=summary_store,
-        memory_store=memory_store,
-        transcript_store=transcript_store,
-        context_settings=context_settings,
-        compaction_model=compaction_model,
-        skill_store=skill_store,
-        transcript_index=transcript_index,
+        deps=MasterDeps(
+            bash_timeout_sec=bash_timeout_sec,
+            permission_check=True,
+            search_config=search_config,
+            checkpointer=checkpointer,
+            subagents=[general_purpose],
+            async_subagents=async_subagents,
+            async_host_url=async_host_url,
+            async_task_mirror=async_mirror,
+            async_host=async_host,
+            async_host_attachment=async_host_attachment,
+            artifact_store=artifact_store,
+            summary_store=summary_store,
+            memory_store=memory_store,
+            transcript_store=transcript_store,
+            context_settings=context_settings,
+            compaction_model=compaction_model,
+            skill_store=skill_store,
+            transcript_index=transcript_index,
+            usage_store=usage_store,
+            mcp_tools=mcp_tools,
+            prefs_store=prefs_store,
+            cap_enforcer=cap_enforcer,
+            extra_tools=extra_tools,
+            # budget_tokens deliberately unset — build_tinker_agent supplies
+            # TINKER_BUDGET_TOKENS, which is what this call has always got.
+        ),
         skill_registry=skill_registry,
-        usage_store=usage_store,
-        mcp_tools=mcp_tools,
         note_index=note_index,
-        prefs_store=prefs_store,
-        cap_enforcer=cap_enforcer,
-        extra_tools=extra_tools,
     )
     bundle.pg_pool = pg_pool
     bundle.embedder = embedder

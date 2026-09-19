@@ -35,6 +35,7 @@ from yuyutsava.cli.tooling import (
 )
 from yuyutsava.config.execution import DockerSettings, LocalSettings
 from yuyutsava.config.search import SearchConfig
+from yuyutsava.core.deps import MasterDeps
 from yuyutsava.core.engine import build_cli_deepagent
 from yuyutsava.llm.settings import llm_settings_from_env
 from yuyutsava.storage.paths import ensure_state_dirs
@@ -383,7 +384,7 @@ async def _async_main(argv: list[str] | None = None, *, force_chat: bool = False
         graph_bundle = build_cli_deepagent(
             workspace,
             settings,
-            bash_timeout_sec=args.bash_timeout,
+            deps=MasterDeps(bash_timeout_sec=args.bash_timeout),
             execution_mode="local",
         )
         graph_dir = (args.graph_dir or Path.cwd()).resolve()

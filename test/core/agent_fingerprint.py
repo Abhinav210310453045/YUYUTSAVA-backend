@@ -429,6 +429,23 @@ def wired_stores(tmp: Path) -> dict[str, Any]:
     }
 
 
+def _split_overrides(overrides: dict[str, Any], **base: Any):
+    """Sort a fingerprint's overrides into `MasterDeps` fields and the rest.
+
+    The configurations vary the agent by keyword (`memory_store=...`,
+    `checkpointer=...`), and most of those are now fields on `MasterDeps` while
+    a few (`front`, `note_index`) remain the builder's own. Splitting by field
+    name keeps every configuration expressible without the callers having to
+    know which side a given keyword now lives on.
+    """
+    from yuyutsava.core.deps import MasterDeps
+
+    fields = set(MasterDeps.__dataclass_fields__)
+    base.update({k: v for k, v in overrides.items() if k in fields})
+    rest = {k: v for k, v in overrides.items() if k not in fields}
+    return MasterDeps(**base), rest
+
+
 def fingerprint_cli(**overrides: Any) -> dict[str, Any]:
     from yuyutsava.agents.general_purpose.agent import GeneralPurposeAgent
     from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
@@ -446,17 +463,18 @@ def fingerprint_cli(**overrides: Any) -> dict[str, Any]:
         skill_registry=SkillRegistry(workspace_dir=ws),
         search_config=search,
     )
+    deps, rest = _split_overrides(
+        overrides, permission_check=True, search_config=search, subagents=[gp]
+    )
     kwargs: dict[str, Any] = {}
     with _fake_chat_model(), _capture_deep_agent_kwargs(kwargs):
         engine.build_cli_deepagent(
             ws,
             AnthropicSettings(api_key="sk-fake", model="claude-haiku-4-5-20251001"),
+            deps=deps,
             execution_mode="local",
             local_settings=LocalSettings(),
-            permission_check=True,
-            search_config=search,
-            subagents=[gp],
-            **overrides,
+            **rest,
         )
     return fingerprint_from_kwargs(kwargs)
 
@@ -468,15 +486,19 @@ def fingerprint_tinker(**overrides: Any) -> dict[str, Any]:
 
     card_ws = _workspace() / "_fingerprint_card"
     card_ws.mkdir(parents=True, exist_ok=True)
+    deps, rest = _split_overrides(
+        overrides,
+        permission_check=True,
+        search_config=SearchConfig(tavily_api_key="dummy", exa_api_key="dummy"),
+    )
     kwargs: dict[str, Any] = {}
     with _fake_chat_model(), _capture_deep_agent_kwargs(kwargs):
         engine.build_tinker_agent(
             "card_fingerprint",
             card_ws,
             AnthropicSettings(api_key="sk-fake", model="claude-haiku-4-5-20251001"),
-            permission_check=True,
-            search_config=SearchConfig(tavily_api_key="dummy", exa_api_key="dummy"),
-            **overrides,
+            deps=deps,
+            **rest,
         )
     return fingerprint_from_kwargs(kwargs)
 
