@@ -326,12 +326,35 @@ because both encode a router flow that no longer exists:
   once the first two are corrected.
 
 Both were reverted so the suite keeps failing in under a second rather than
-hanging, which is what a whole-suite run depends on. W6 rewrites them against
-the current frame contract; `R-RDB-01`'s characterization net is written fresh
-rather than inherited from them.
+hanging, which is what a whole-suite run depends on; `R-RDB-01`'s
+characterization net is written fresh rather than inherited from them.
+
+**`test_voice_ws.py` rewritten (W4).** It could not wait for W6: the voice
+machinery is ~280 lines of the `converse` function about to be split, and
+nothing else covered it. Rewritten against what the router actually does — five
+tests: a spoken utterance runs a turn and is streamed back as audio, an empty
+transcript releases the UI without running one, a low-confidence transcript gets
+a `clarify` frame instead of reaching the agent, the mic gate drops input for
+the whole duration of an active turn, and `audio_end` flushes the VAD tail.
+
+Writing it surfaced two more things the old stub could not have known. The
+router calls `voice.set_speaking()` around every spoken reply (it tightens the
+VAD so the agent's own TTS cannot self-interrupt), and a stub without it kills
+the TTS worker immediately after `speaking_start` — `speaking_start` arrives,
+then no `audio_chunk` and no `speaking_end`, which reads exactly like a product
+bug. And `audio_end` before any `audio` frame is a silent no-op, because the
+pipeline is built lazily on the first audio frame. The full surface a stub must
+provide is `prewarm`, `feed_audio`, `transcribe_detailed`, `synthesize`,
+`flush`, `set_speaking`, `close`.
+
+Each drain runs under a deadline on a daemon thread, so a wrong expectation
+fails in 20 s instead of parking the suite — the mic gate drops frames silently,
+so "no frame ever arrives" is the normal failure mode here.
 
 **Verification.** `pytest --collect-only test` reports 1,721 tests, 0 errors.
-The three stale tests are fixed in W6 with the other test debt.
+`test_voice_ws.py` is green (5 tests, stable over repeated runs and under random
+ordering); the whole-suite failure set drops from 23 to 21.
+`test_converse_ws.py` is still stale and is rewritten in W6.
 
 ---
 
