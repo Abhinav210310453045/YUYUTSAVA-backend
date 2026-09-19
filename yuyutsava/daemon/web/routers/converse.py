@@ -88,9 +88,11 @@ from yuyutsava.daemon.web.exceptions import ConflictError, ServiceUnavailableErr
 from yuyutsava.daemon.web.schemas.proposal import OkOut
 from yuyutsava.daemon.web.services.converse_session import (
     DictationSession,
+    MicDeps,
     SpeakingState,
     SpokenReply,
     TurnPlumbing,
+    UtteranceRouter,
 )
 from yuyutsava.daemon.web.voice_pipeline import VoicePipeline
 from yuyutsava.policy.interrupt_format import (
@@ -400,10 +402,11 @@ async def converse(ws: WebSocket) -> None:
     # kept referenced so they aren't GC'd mid-flight; cancelled on disconnect.
     bg_tasks: set[asyncio.Task] = set()
 
-    def _spawn_bg(coro) -> None:
+    def _spawn_bg(coro) -> asyncio.Task:
         t = asyncio.create_task(coro)
         bg_tasks.add(t)
         t.add_done_callback(bg_tasks.discard)
+        return t
 
     # Pre-warm the (heavy) agent bundle in the background so the first turn isn't a
     # cold start — overlaps the one-time build with the user speaking. No-op once
@@ -608,30 +611,6 @@ async def converse(ws: WebSocket) -> None:
             persist=_persist_voice_message if voice_store is not None else None,
         ).run()
 
-    # Continuous (hands-free) voice: the mic stays live across turns, so the
-    # user can keep talking while the agent is mid-answer. A completed utterance
-    # spoken during a running turn is queued (latest wins) and run the moment the
-    # current turn ends, instead of being dropped — so nothing the user says is
-    # lost and they never wait for the mic to "stop".
-    queued_utterance: bytes | None = None
-    # Transcription of a captured utterance. Genuinely per-connection (it feeds
-    # on this socket's VoicePipeline) — only the agent turn it leads to is
-    # handed to the daemon.
-    utt_task: asyncio.Task | None = None
-
-    def _utterance_pending() -> bool:
-        return utt_task is not None and not utt_task.done()
-
-    def _on_turn_done(run: TurnRun, task: asyncio.Task) -> None:
-        nonlocal queued_utterance
-        utt = queued_utterance
-        queued_utterance = None
-        if utt is None or task.cancelled():
-            # A cancelled turn is a barge-in that already started a fresh turn;
-            # don't double-run.
-            return
-        _spawn_utterance(utt)
-
     def _start_turn(text: str, *, spoken: bool) -> bool:
         """Hand one turn to the daemon. False when the thread is already busy."""
         run = manager.start_turn(
@@ -643,7 +622,7 @@ async def converse(ws: WebSocket) -> None:
             card_id=card_id,
             kind="voice" if spoken else "text",
             text=text,
-            on_done=_on_turn_done,
+            on_done=_utterances.on_turn_done,
         )
         if run is None:
             return False
@@ -666,110 +645,21 @@ async def converse(ws: WebSocket) -> None:
         if not _start_turn(text, spoken=spoken):
             await _reject_busy()
 
-    async def _voice_turn_from_utterance(pcm: bytes, *, preempt: bool = False) -> None:
-        """Transcribe a completed utterance, echo it as the user turn, run it."""
-        assert voice is not None
-        logger.info("voice[%s]: utterance %d bytes → transcribing", origin, len(pcm))
-        try:
-            result = await voice.transcribe_detailed(pcm)
-        except asyncio.CancelledError:
-            raise
-        text = result.text
-        if not text:
-            # Nothing intelligible — release the UI without a turn. Logged so a
-            # "no response" symptom is traceable to empty STT vs. a failed turn.
-            logger.info("voice[%s]: empty transcript — no turn run", origin)
-            await _send({"type": "turn_end"})
-            return
-        # Confidence gate: a low-confidence transcript is likely garbled ASR
-        # (the "welcome to the general" failure). Ask the user to repeat rather
-        # than feed the agent a bad query. Only gates backends that report a
-        # confidence; None (e.g. Groq) always passes.
-        conf = result.confidence
-        if conf is not None and _STT_MIN_CONFIDENCE > 0 and conf < _STT_MIN_CONFIDENCE:
-            logger.info(
-                "voice[%s]: low-confidence transcript (%.2f < %.2f) %r — asking to repeat",
-                origin,
-                conf,
-                _STT_MIN_CONFIDENCE,
-                text[:120],
-            )
-            await _send(
-                {
-                    "type": "clarify",
-                    "reason": "low_confidence",
-                    "confidence": round(conf, 3),
-                    "heard": text,
-                    "message": "I didn't quite catch that — could you say it again?",
-                }
-            )
-            await _send({"type": "turn_end"})
-            return
-        logger.info("voice[%s]: transcript=%r → running turn", origin, text[:120])
-        # Mic artifacts stay on this socket; the run's `turn_start` frame carries
-        # the same text to every other viewer.
-        await _send({"type": "transcript", "text": text})
-        # Persist the user side as text (the STT transcript). Raw user audio is
-        # intentionally not stored by default — privacy + size.
-        await _persist_voice_message(role="user", modality="text", text=text)
-        await _start_spoken_turn(text, preempt=preempt)
-
-    def _spawn_utterance(pcm: bytes, *, preempt: bool = False) -> None:
-        """Transcribe-then-run, replacing any utterance still transcribing."""
-        nonlocal utt_task
-        if _utterance_pending():
-            utt_task.cancel()
-        utt_task = asyncio.create_task(_voice_turn_from_utterance(pcm, preempt=preempt))
-        bg_tasks.add(utt_task)
-        utt_task.add_done_callback(bg_tasks.discard)
-
-    # True while a candidate barge-in utterance is being transcribed, so we don't
-    # evaluate several overlapping talk-over guesses at once.
-    barge_pending = False
-
-    async def _maybe_barge_in(pcm: bytes) -> None:
-        """Interrupt the agent's spoken reply only for genuine talk-over.
-
-        Called when a full utterance is captured *while the agent is speaking*.
-        Instead of cancelling the reply on a raw VAD onset (which room noise or
-        the agent's own TTS echo trips constantly — the reply cutting out
-        mid-sentence), we transcribe the utterance first and only interrupt when
-        it yields real, confident words. Otherwise the agent is left to finish.
-        """
-        nonlocal barge_pending
-        if not _BARGE_IN_ENABLED or barge_pending or voice is None:
-            return
-        barge_pending = True
-        try:
-            try:
-                result = await voice.transcribe_detailed(pcm)
-            except asyncio.CancelledError:
-                raise
-            except Exception:  # noqa: BLE001
-                logger.debug("voice[%s]: barge transcription failed", origin, exc_info=True)
-                return
-            text = (result.text or "").strip()
-            if not text:
-                logger.info("voice[%s]: talk-over ignored — noise/echo while speaking", origin)
-                return
-            conf = result.confidence
-            if conf is not None and _STT_MIN_CONFIDENCE > 0 and conf < _STT_MIN_CONFIDENCE:
-                logger.info(
-                    "voice[%s]: talk-over ignored — low confidence (%.2f) %r",
-                    origin,
-                    conf,
-                    text[:80],
-                )
-                return
-            # Real talk-over: stop the agent's audio + turn, then answer the new
-            # utterance. speech_started tells the client to drop the stale audio.
-            logger.info("voice[%s]: barge-in confirmed → %r", origin, text[:80])
-            await _send({"type": "speech_started"})
-            await _send({"type": "transcript", "text": text})
-            await _persist_voice_message(role="user", modality="text", text=text)
-            await _start_spoken_turn(text, preempt=True)
-        finally:
-            barge_pending = False
+    # What a captured utterance becomes — a turn, a queued follow-up, or
+    # nothing — including the talk-over guess. Built here because it needs this
+    # socket's pipeline and its send/persist/turn calls.
+    _utterances = UtteranceRouter(
+        MicDeps(
+            voice_of=lambda: voice,
+            send=_send,
+            start_turn=_start_spoken_turn,
+            persist=_persist_voice_message,
+            spawn=_spawn_bg,
+        ),
+        origin=origin,
+        min_confidence=_STT_MIN_CONFIDENCE,
+        barge_in_enabled=_BARGE_IN_ENABLED,
+    )
 
     try:
         while True:
@@ -858,7 +748,7 @@ async def converse(ws: WebSocket) -> None:
                 if not _BARGE_IN_ENABLED:
                     turn_active = (
                         turn_running
-                        or _utterance_pending()
+                        or _utterances.pending()
                         or speaking.agent_active
                         or speaking.speaking
                         or (time.monotonic() - speaking.speaking_ended_at) < _POST_SPEAK_GRACE_SEC
@@ -882,14 +772,14 @@ async def converse(ws: WebSocket) -> None:
                         # speech (transcribe-before-cancel) so noise/echo can't chop
                         # the reply off. Runs off to the side while the agent keeps
                         # speaking; only confirmed words actually interrupt.
-                        _spawn_bg(_maybe_barge_in(res.utterance))
+                        _spawn_bg(_utterances.maybe_barge_in(res.utterance))
                     elif speaking.agent_active or turn_running:
                         # The agent is mid-answer (thinking) — don't interrupt it,
                         # but don't drop what the user just said either. Queue this
                         # completed utterance (latest wins) so it runs as the next
                         # turn the moment the current one ends. Keeps the mic
                         # continuously useful without killing the in-flight answer.
-                        queued_utterance = res.utterance
+                        _utterances.queue(res.utterance)
                         logger.info(
                             "voice[%s]: utterance queued — runs after current turn",
                             origin,
@@ -898,7 +788,7 @@ async def converse(ws: WebSocket) -> None:
                         # Idle, or only transcribing a prior (possibly-empty noise)
                         # utterance — let this newer utterance win: the spawn
                         # cancels the stale transcription and runs this one.
-                        _spawn_utterance(res.utterance)
+                        _utterances.hear(res.utterance)
                 continue
 
             if mtype == "audio_end":
@@ -906,7 +796,7 @@ async def converse(ws: WebSocket) -> None:
                 if voice is not None:
                     utt = voice.flush()
                     if utt:
-                        _spawn_utterance(utt, preempt=True)
+                        _utterances.hear(utt, preempt=True)
                 continue
 
             await _send({"type": "error", "message": f"unknown message type {mtype!r}"})

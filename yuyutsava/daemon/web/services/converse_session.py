@@ -350,3 +350,201 @@ class SpokenReply:
                         pcm=b"".join(self._pcm_parts) if self._pcm_parts else None,
                         rate=self._rate,
                     )
+
+
+@dataclass(frozen=True)
+class Heard:
+    """What one captured utterance turned out to be."""
+
+    text: str
+    confidence: float | None
+
+    @property
+    def words(self) -> str:
+        return (self.text or "").strip()
+
+
+@dataclass
+class MicDeps:
+    """The connection-side calls the mic router makes.
+
+    One object because all five belong to the same socket and always travel
+    together; passing them individually puts the router over the argument limit
+    and reads as a list of unrelated hooks.
+    """
+
+    voice_of: Callable[[], Any]
+    send: Callable[[dict[str, Any]], Awaitable[None]]
+    start_turn: Callable[..., Awaitable[None]]
+    persist: Callable[..., Awaitable[None]]
+    spawn: Callable[[Any], "asyncio.Task[Any]"]
+
+
+class UtteranceRouter:
+    """Decides what a captured utterance becomes: a turn, a queued follow-up, or nothing.
+
+    The VAD hands over completed utterances and this routes each one. Both of
+    its paths transcribe first and apply the same confidence gate — garbled ASR
+    must not reach the agent — which is why that gate lives here once instead of
+    being written out at each call site.
+
+    The two paths differ in what silence means. A deliberate utterance that
+    transcribes to nothing still has to release the UI, so it answers with
+    ``turn_end``; a talk-over that transcribes to nothing is room noise or the
+    agent's own echo, so it is dropped and the reply is left to finish.
+    """
+
+    def __init__(
+        self,
+        deps: MicDeps,
+        *,
+        origin: str,
+        min_confidence: float,
+        barge_in_enabled: bool,
+    ) -> None:
+        self._deps = deps
+        self._origin = origin
+        self._min_confidence = min_confidence
+        self._barge_in_enabled = barge_in_enabled
+        # Continuous (hands-free) voice: the mic stays live across turns, so a
+        # completed utterance spoken during a running turn is kept (latest wins)
+        # and run the moment that turn ends, rather than dropped. Nothing the
+        # user says is lost and they never wait for the mic to "stop".
+        self._queued: bytes | None = None
+        # Transcription of a captured utterance. Per-connection — it feeds on
+        # this socket's pipeline; only the turn it leads to is daemon-owned.
+        self._task: asyncio.Task[Any] | None = None
+        # True while a candidate talk-over is being transcribed, so several
+        # overlapping guesses are not evaluated at once.
+        self._barge_pending = False
+
+    # -- state the frame loop consults ---------------------------------- #
+
+    def pending(self) -> bool:
+        """True while an utterance is still being transcribed."""
+        return self._task is not None and not self._task.done()
+
+    def queue(self, pcm: bytes) -> None:
+        """Keep an utterance spoken over a running turn; latest wins."""
+        self._queued = pcm
+
+    def on_turn_done(self, run: Any, task: "asyncio.Task[Any]") -> None:
+        """Run whatever was said during the turn that just finished."""
+        utt, self._queued = self._queued, None
+        if utt is None or task.cancelled():
+            # A cancelled turn is a barge-in that already started a fresh turn;
+            # don't double-run.
+            return
+        self.hear(utt)
+
+    def hear(self, pcm: bytes, *, preempt: bool = False) -> None:
+        """Transcribe-then-run, replacing any utterance still transcribing."""
+        if self.pending() and self._task is not None:
+            self._task.cancel()
+        self._task = self._deps.spawn(self._run_from_utterance(pcm, preempt=preempt))
+
+    # -- the two routes ------------------------------------------------- #
+
+    async def _transcribe(self, pcm: bytes) -> Heard | None:
+        voice = self._deps.voice_of()
+        if voice is None:
+            return None
+        result = await voice.transcribe_detailed(pcm)
+        return Heard(text=result.text, confidence=result.confidence)
+
+    def _too_uncertain(self, heard: Heard) -> bool:
+        """A low-confidence transcript is garbled ASR, not a request.
+
+        Only gates backends that report a confidence; ``None`` (e.g. Groq)
+        always passes.
+        """
+        conf = heard.confidence
+        return conf is not None and self._min_confidence > 0 and conf < self._min_confidence
+
+    async def _run_from_utterance(self, pcm: bytes, *, preempt: bool = False) -> None:
+        """Transcribe a completed utterance, echo it as the user turn, run it."""
+        logger.info("voice[%s]: utterance %d bytes → transcribing", self._origin, len(pcm))
+        heard = await self._transcribe(pcm)
+        if heard is None:
+            return
+        # NOTE: the raw text, not `.words` — matching the behaviour this was
+        # extracted from. The talk-over path strips first, so a whitespace-only
+        # transcript is dropped there but runs a turn here.
+        if not heard.text:
+            # Nothing intelligible — release the UI without a turn. Logged so a
+            # "no response" symptom is traceable to empty STT vs. a failed turn.
+            logger.info("voice[%s]: empty transcript — no turn run", self._origin)
+            await self._deps.send({"type": "turn_end"})
+            return
+        if self._too_uncertain(heard):
+            logger.info(
+                "voice[%s]: low-confidence transcript (%.2f < %.2f) %r — asking to repeat",
+                self._origin,
+                heard.confidence,
+                self._min_confidence,
+                heard.text[:120],
+            )
+            await self._deps.send(
+                {
+                    "type": "clarify",
+                    "reason": "low_confidence",
+                    "confidence": round(heard.confidence or 0.0, 3),
+                    "heard": heard.text,
+                    "message": "I didn't quite catch that — could you say it again?",
+                }
+            )
+            await self._deps.send({"type": "turn_end"})
+            return
+        logger.info("voice[%s]: transcript=%r → running turn", self._origin, heard.text[:120])
+        # Mic artifacts stay on this socket; the run's `turn_start` frame carries
+        # the same text to every other viewer.
+        await self._deps.send({"type": "transcript", "text": heard.text})
+        # The user side is persisted as text (the STT transcript). Raw user audio
+        # is intentionally not stored by default — privacy + size.
+        await self._deps.persist(role="user", modality="text", text=heard.text)
+        await self._deps.start_turn(heard.text, preempt=preempt)
+
+    async def maybe_barge_in(self, pcm: bytes) -> None:
+        """Interrupt the agent's spoken reply only for genuine talk-over.
+
+        Called when a full utterance is captured *while the agent is speaking*.
+        Cancelling on a raw VAD onset is what makes a reply cut out mid-sentence,
+        because room noise and the agent's own TTS echo trip it constantly — so
+        the utterance is transcribed first and only real, confident words
+        interrupt.
+        """
+        if not self._barge_in_enabled or self._barge_pending:
+            return
+        self._barge_pending = True
+        try:
+            try:
+                heard = await self._transcribe(pcm)
+            except asyncio.CancelledError:
+                raise
+            except Exception:  # noqa: BLE001 — a failed guess must not kill the reply
+                logger.debug("voice[%s]: barge transcription failed", self._origin, exc_info=True)
+                return
+            if heard is None:
+                return
+            if not heard.words:
+                logger.info(
+                    "voice[%s]: talk-over ignored — noise/echo while speaking", self._origin
+                )
+                return
+            if self._too_uncertain(heard):
+                logger.info(
+                    "voice[%s]: talk-over ignored — low confidence (%.2f) %r",
+                    self._origin,
+                    heard.confidence,
+                    heard.words[:80],
+                )
+                return
+            # Real talk-over: stop the agent's audio + turn, then answer the new
+            # utterance. speech_started tells the client to drop the stale audio.
+            logger.info("voice[%s]: barge-in confirmed → %r", self._origin, heard.words[:80])
+            await self._deps.send({"type": "speech_started"})
+            await self._deps.send({"type": "transcript", "text": heard.words})
+            await self._deps.persist(role="user", modality="text", text=heard.words)
+            await self._deps.start_turn(heard.words, preempt=True)
+        finally:
+            self._barge_pending = False

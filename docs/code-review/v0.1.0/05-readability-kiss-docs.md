@@ -60,8 +60,27 @@ persist-on-clean-finish rule — along with the `C901` entry it carried
 on the connection, and the five per-connection callables a turn body needs
 became one `TurnPlumbing`, which is what let the body move out at all.
 
-Still open: the frame loop itself, and the utterance/barge-in machinery
-(`_voice_turn_from_utterance`, `_spawn_utterance`, `_maybe_barge_in`).
+A third extraction took the utterance/barge-in machinery into
+`UtteranceRouter` — what a captured utterance becomes: a turn, a queued
+follow-up, or nothing. `converse` **706 → 594**, the module 947 → 837.
+
+Both of its paths transcribed and then applied the same confidence gate, written
+out twice; the gate is now stated once. The copies had already drifted — the
+talk-over path strips the transcript before testing it for emptiness and the
+turn path does not, so a whitespace-only transcript is dropped by one and runs a
+turn on the other. That divergence is preserved here and fixed separately, so
+the refactor stays behaviour-preserving.
+
+It also earned the logic its first tests. Barge-in could previously only be
+reached through a live socket with barge-in enabled — and it is off by default,
+which means the mic gate drops the very frames that would exercise it, so it had
+**no coverage at all**. `test/web/test_utterance_router.py` now drives it
+directly: 13 tests covering confident talk-over, noise, whitespace, a
+low-confidence guess, the disabled case, and a failed transcription (which must
+not kill the reply).
+
+Still open: the frame loop itself (`converse`'s remaining 594 lines are mostly
+the receive loop and connection setup).
 
 ---
 
