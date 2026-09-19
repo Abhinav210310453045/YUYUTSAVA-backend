@@ -90,12 +90,20 @@ session, and awaiting the answer from either the hub or the run-local future.
 | `DictationSession` | 801* | 1,040 |
 | `SpokenReply` | 706 | 947 |
 | `UtteranceRouter` | 594 | 837 |
-| `InlineAsks` | **558** | 802 |
+| `InlineAsks` | 558 | 802 |
+| `ConverseFrames` | **438** | 681 |
 
 \* it grew before it shrank: the frame-contract work added the `origin`/replay
 handling the old count predated.
 
-Still open: the receive loop (174 lines) and the connection setup, which is what
+`ConverseFrames` is the one the finding actually asked for: **one handler per
+frame type**. The seven types dispatch from a table instead of a 174-line
+if-chain, and the two judgements the audio frame makes — is the mic gated, and
+what does this utterance become — are named methods rather than nested
+conditionals. The loop now only parses and dispatches; what a frame *does*
+belongs to a collaborator.
+
+Still open: the connection setup and the turn-start helpers, which is what
 stands between this and the 60-line target.
 
 ---

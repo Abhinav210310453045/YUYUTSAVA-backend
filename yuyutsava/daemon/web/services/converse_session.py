@@ -25,7 +25,7 @@ from typing import Any, Awaitable, Callable, Protocol
 from fastapi import WebSocket
 from starlette.websockets import WebSocketDisconnect
 
-from yuyutsava.ports.channels import AskPrompt
+from yuyutsava.ports.channels import AskPrompt, DecisionConflictError
 from yuyutsava.voice.sentence import SentenceChunker
 
 logger = logging.getLogger("yuyutsava.daemon.web.services.converse_session")
@@ -638,3 +638,216 @@ class InlineAsks:
                 run.emit({"type": "ask_resolved", "ask_id": ask.ask_id})
 
         return _ask
+
+
+@dataclass
+class FrameDeps:
+    """What the frame loop needs from the connection it serves.
+
+    One object because every field belongs to the same socket; as separate
+    arguments this is a twelve-parameter constructor that reads as a pile of
+    unrelated hooks.
+    """
+
+    send: Callable[[dict[str, Any]], Awaitable[None]]
+    registry: Any
+    thread_id: str
+    origin: str
+    decisions: Any | None
+    start_turn: Callable[..., bool]
+    reject_busy: Callable[[], Awaitable[None]]
+    ensure_voice: Callable[[], Any]
+    voice_of: Callable[[], Any]
+    speaking: SpeakingState
+    utterances: UtteranceRouter
+    spawn: Callable[[Any], "asyncio.Task[Any]"]
+
+
+class ConverseFrames:
+    """The inbound frame protocol for a conversation socket.
+
+    One handler per frame type (`R-RDB-01`): every type used to be a branch
+    inside one 771-line function, so changing the handling of one meant reading
+    all of them, and none could be exercised on its own.
+
+    The loop itself only parses and dispatches. Anything a frame *does* — start
+    a turn, resolve an ask, route an utterance — belongs to a collaborator, so
+    this stays a description of the protocol rather than of the agent.
+    """
+
+    def __init__(
+        self,
+        ws: WebSocket,
+        deps: FrameDeps,
+        *,
+        barge_in_enabled: bool,
+        post_speak_grace: float,
+    ) -> None:
+        self._ws = ws
+        self._d = deps
+        self._barge_in_enabled = barge_in_enabled
+        self._post_speak_grace = post_speak_grace
+
+    async def run(self) -> None:
+        """Read frames until the client goes away."""
+        handlers: dict[str, Callable[[dict[str, Any]], Awaitable[None]]] = {
+            "ping": self._on_ping,
+            "ask_response": self._on_ask_response,
+            "interrupt": self._on_interrupt,
+            "user_text": self._on_user_text,
+            "audio": self._on_audio,
+            "audio_end": self._on_audio_end,
+        }
+        try:
+            while True:
+                raw = await self._ws.receive_text()
+                try:
+                    msg = json.loads(raw)
+                except (ValueError, TypeError):
+                    await self._d.send({"type": "error", "message": "invalid JSON frame"})
+                    continue
+                handler = handlers.get(msg.get("type"))
+                if handler is None:
+                    await self._d.send(
+                        {"type": "error", "message": f"unknown message type {msg.get('type')!r}"}
+                    )
+                    continue
+                await handler(msg)
+        except WebSocketDisconnect:
+            pass
+
+    # ------------------------------------------------------------------ #
+    # One handler per frame type                                          #
+    # ------------------------------------------------------------------ #
+
+    async def _on_ping(self, msg: dict[str, Any]) -> None:
+        await self._d.send({"type": "pong"})
+
+    async def _on_interrupt(self, msg: dict[str, Any]) -> None:
+        self._d.registry.cancel(self._d.thread_id)
+
+    async def _on_user_text(self, msg: dict[str, Any]) -> None:
+        text = (msg.get("text") or "").strip()
+        if not text:
+            return
+        # Board-UI selection context (objective/note reference ids) rides a
+        # structured field and is composed here — the sentinel wrapper is
+        # canonical server-side, and clients strip it from hydrated transcripts
+        # so the user only ever sees their own text.
+        context = (msg.get("context") or "").strip()
+        if context:
+            text = f"<selection-context>\n{context}\n</selection-context>\n\n{text}"
+        if not self._d.start_turn(text, spoken=False):
+            await self._d.reject_busy()
+
+    async def _on_ask_response(self, msg: dict[str, Any]) -> None:
+        text = str(msg.get("text", ""))
+        run = self._d.registry.active(self._d.thread_id)
+        ask_id = msg.get("ask_id") or (run.pending_ask_id if run else None)
+        # Answer whichever mechanism is actually waiting. `InlineAsks` picks its
+        # wait on `channels`; deciding here on `decisions` alone would disagree
+        # with it, because `create_app` always builds a DecisionService but
+        # `channels` may be absent (tests, embedded). In that pairing the turn
+        # parks on a future nobody resolves — no `final`, no `turn_end`, forever
+        # (`R-BUG-08`). `pending_ask` is set only by that run-local branch, so a
+        # future that accepts the answer identifies it exactly.
+        if run is not None and run.answer_ask(text):
+            return
+        # The hub path: an answer given here is indistinguishable from one given
+        # in the Inbox or the overlay — same record, same resolution, same
+        # ask_resolved broadcast clearing every surface.
+        if ask_id and self._d.decisions is not None:
+            # An ask is visible here before the hub registers the future that
+            # carries its answer, so answering immediately can beat the waiter.
+            # This run raised this ask and is still blocked on it, so the answer
+            # is worth holding rather than rejecting (`R-BUG-09`).
+            in_flight = run is not None and run.pending_ask_id == ask_id
+            try:
+                await self._d.decisions.respond_ask(str(ask_id), text, hold_if_unwaited=in_flight)
+            except DecisionConflictError:
+                # Someone answered it elsewhere first — that's the design, not
+                # an error. Tell this socket so it clears.
+                await self._d.send({"type": "ask_resolved", "ask_id": ask_id})
+
+    async def _on_audio(self, msg: dict[str, Any]) -> None:
+        b64 = msg.get("pcm")
+        if not b64:
+            return
+        try:
+            pcm = base64.b64decode(b64)
+        except (ValueError, TypeError):
+            return
+        voice = self._d.ensure_voice()
+        turn_running = self._d.registry.active(self._d.thread_id) is not None
+        if self._mic_is_gated(turn_running):
+            return
+        res = voice.feed_audio(pcm)
+        if res.speech_started and not self._d.speaking.speaking:
+            # A raw speech ONSET never interrupts the agent. While it is
+            # SPEAKING an onset is almost always room noise or the agent's own
+            # TTS echo, and cutting the reply there is exactly the "it stops
+            # mid-sentence" bug; a genuine talk-over is handled below, once a
+            # full utterance transcribes to real words. While the agent is
+            # THINKING or idle this only raises the listening indicator, which
+            # does not cancel anything, so the user can see they were heard.
+            await self._d.send({"type": "speech_started"})
+        if res.utterance is not None:
+            self._route_utterance(res.utterance, turn_running=turn_running)
+
+    async def _on_audio_end(self, msg: dict[str, Any]) -> None:
+        """Explicit end of capture (push-to-talk release): flush the VAD."""
+        voice = self._d.voice_of()
+        if voice is None:
+            return
+        utt = voice.flush()
+        if utt:
+            self._d.utterances.hear(utt, preempt=True)
+
+    # ------------------------------------------------------------------ #
+    # The two decisions the audio frame makes                             #
+    # ------------------------------------------------------------------ #
+
+    def _mic_is_gated(self, turn_running: bool) -> bool:
+        """Whether mic input is being ignored right now.
+
+        Unless barge-in is explicitly enabled, input is dropped for the WHOLE
+        duration of an active turn — thinking, speaking, and a short tail while
+        buffered audio drains — so the agent's own TTS echo or room noise cannot
+        cut the reply off or queue a spurious follow-up. The answer is always
+        heard in full; the user interrupts with the Stop button instead. (The
+        client also mutes its mic while the reply is still PLAYING — see the
+        `barge_in` field of `hello` — which is the authoritative guard, since
+        only the client knows when playback truly ends.)
+        """
+        if self._barge_in_enabled:
+            return False
+        speaking = self._d.speaking
+        return (
+            turn_running
+            or self._d.utterances.pending()
+            or speaking.agent_active
+            or speaking.speaking
+            or (time.monotonic() - speaking.speaking_ended_at) < self._post_speak_grace
+        )
+
+    def _route_utterance(self, utterance: bytes, *, turn_running: bool) -> None:
+        """Talk-over, queued follow-up, or a turn right now."""
+        speaking = self._d.speaking
+        if speaking.speaking:
+            # Possible talk-over. Don't cancel yet — verify it is real speech
+            # (transcribe-before-cancel) so noise and echo cannot chop the reply
+            # off. Runs off to the side while the agent keeps speaking; only
+            # confirmed words actually interrupt.
+            self._d.spawn(self._d.utterances.maybe_barge_in(utterance))
+        elif speaking.agent_active or turn_running:
+            # The agent is mid-answer (thinking) — don't interrupt it, but don't
+            # drop what the user just said either. Queue this completed
+            # utterance (latest wins) so it runs the moment the current turn
+            # ends, keeping the mic continuously useful.
+            self._d.utterances.queue(utterance)
+            logger.info("voice[%s]: utterance queued — runs after current turn", self._d.origin)
+        else:
+            # Idle, or only transcribing a prior (possibly-empty noise)
+            # utterance — let this newer one win: it cancels the stale
+            # transcription and runs this instead.
+            self._d.utterances.hear(utterance)

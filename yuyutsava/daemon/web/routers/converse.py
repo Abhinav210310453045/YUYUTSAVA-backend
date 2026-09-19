@@ -71,13 +71,11 @@ binds (the local Electron app) are exempt, matching ``/stream``.
 from __future__ import annotations
 
 import asyncio
-import base64
 import contextlib
 import json
 import logging
-import time
 
-from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Request, WebSocket
 
 from yuyutsava.config.env import env_flag, env_float
 from yuyutsava.context.meter import bus
@@ -87,7 +85,9 @@ from yuyutsava.daemon.web.exceptions import ConflictError, ServiceUnavailableErr
 from yuyutsava.daemon.web.schemas.proposal import OkOut
 from yuyutsava.daemon.web.services.converse_session import (
     AskOwnership,
+    ConverseFrames,
     DictationSession,
+    FrameDeps,
     InlineAsks,
     MicDeps,
     SpeakingState,
@@ -101,7 +101,6 @@ from yuyutsava.policy.interrupt_format import (
     options_for_interrupt,
     title_for_interrupt,
 )
-from yuyutsava.ports.channels import DecisionConflictError
 from yuyutsava.storage.voice_blobs import write_voice_wav
 
 logger = logging.getLogger("yuyutsava.daemon.web.routers.converse")
@@ -626,148 +625,28 @@ async def converse(ws: WebSocket) -> None:
         barge_in_enabled=_BARGE_IN_ENABLED,
     )
 
+    frames = ConverseFrames(
+        ws,
+        FrameDeps(
+            send=_send,
+            registry=registry,
+            thread_id=thread_id,
+            origin=origin,
+            decisions=decisions,
+            start_turn=_start_turn,
+            reject_busy=_reject_busy,
+            ensure_voice=_ensure_voice,
+            voice_of=lambda: voice,
+            speaking=speaking,
+            utterances=_utterances,
+            spawn=_spawn_bg,
+        ),
+        barge_in_enabled=_BARGE_IN_ENABLED,
+        post_speak_grace=_POST_SPEAK_GRACE_SEC,
+    )
+
     try:
-        while True:
-            raw = await ws.receive_text()
-            try:
-                msg = json.loads(raw)
-            except (ValueError, TypeError):
-                await _send({"type": "error", "message": "invalid JSON frame"})
-                continue
-            mtype = msg.get("type")
-
-            if mtype == "ping":
-                await _send({"type": "pong"})
-                continue
-
-            if mtype == "ask_response":
-                text = str(msg.get("text", ""))
-                run = registry.active(thread_id)
-                ask_id = msg.get("ask_id") or (run.pending_ask_id if run else None)
-                # Answer whichever mechanism is actually waiting. ``_ask`` picks
-                # its wait on ``channels``; deciding here on ``decisions`` alone
-                # would disagree with it, because ``create_app`` always builds a
-                # DecisionService but ``channels`` may be absent (tests,
-                # embedded). In that pairing the turn parks on a future nobody
-                # resolves — no ``final``, no ``turn_end``, forever.
-                # ``pending_ask`` is set only by that run-local branch, so a
-                # future that accepts the answer identifies it exactly.
-                if run is not None and run.answer_ask(text):
-                    continue
-                # The hub path: an answer given here is indistinguishable from
-                # one given in the Inbox or the overlay — same record, same
-                # resolution, same ask_resolved broadcast clearing every surface.
-                if ask_id and decisions is not None:
-                    # An ask is visible here before the hub registers the future
-                    # that carries its answer, so answering immediately can beat
-                    # the waiter. This run raised this ask and is still blocked
-                    # on it, so the answer is worth holding rather than
-                    # rejecting (`R-BUG-09`).
-                    in_flight = run is not None and run.pending_ask_id == ask_id
-                    try:
-                        await decisions.respond_ask(str(ask_id), text, hold_if_unwaited=in_flight)
-                    except DecisionConflictError:
-                        # Someone answered it elsewhere first — that's the
-                        # design, not an error. Tell this socket so it clears.
-                        await _send({"type": "ask_resolved", "ask_id": ask_id})
-                continue
-
-            if mtype == "interrupt":
-                registry.cancel(thread_id)
-                continue
-
-            if mtype == "user_text":
-                text = (msg.get("text") or "").strip()
-                if not text:
-                    continue
-                # Board-UI selection context (objective/note reference ids)
-                # rides a structured field and is composed here — the sentinel
-                # wrapper is canonical server-side, and clients strip it from
-                # hydrated transcripts so the user only ever sees their text.
-                context = (msg.get("context") or "").strip()
-                if context:
-                    text = f"<selection-context>\n{context}\n</selection-context>\n\n{text}"
-                if not _start_turn(text, spoken=False):
-                    await _reject_busy()
-                continue
-
-            if mtype == "audio":
-                b64 = msg.get("pcm")
-                if not b64:
-                    continue
-                try:
-                    pcm = base64.b64decode(b64)
-                except (ValueError, TypeError):
-                    continue
-                vp = _ensure_voice()
-                # Unless voice barge-in is explicitly enabled, ignore mic input for
-                # the WHOLE duration of an active turn (thinking + speaking + a
-                # short tail while buffered audio drains) so the agent's own TTS
-                # echo / room noise can't cut the reply off or queue a spurious
-                # follow-up turn. The answer is always heard in full; the user
-                # interrupts with the UI Stop button instead. (The client also
-                # mutes its mic while the reply is still PLAYING — see hello
-                # barge_in — which is the authoritative guard, since only the
-                # client knows when playback truly ends.)
-                turn_running = registry.active(thread_id) is not None
-                if not _BARGE_IN_ENABLED:
-                    turn_active = (
-                        turn_running
-                        or _utterances.pending()
-                        or speaking.agent_active
-                        or speaking.speaking
-                        or (time.monotonic() - speaking.speaking_ended_at) < _POST_SPEAK_GRACE_SEC
-                    )
-                    if turn_active:
-                        continue
-                res = vp.feed_audio(pcm)
-                if res.speech_started:
-                    # A raw speech ONSET never interrupts the agent. While it is
-                    # SPEAKING, an onset is almost always room noise or the agent's
-                    # own TTS echo — cutting the reply here is exactly the "it stops
-                    # mid-sentence" bug. A genuine talk-over is handled below, once a
-                    # full utterance is captured AND transcribes to real words. While
-                    # the agent is THINKING or idle we only surface the listening
-                    # indicator (also non-cancelling) so the user sees they're heard.
-                    if not speaking.speaking:
-                        await _send({"type": "speech_started"})
-                if res.utterance is not None:
-                    if speaking.speaking:
-                        # Possible talk-over. Don't cancel yet — verify it's real
-                        # speech (transcribe-before-cancel) so noise/echo can't chop
-                        # the reply off. Runs off to the side while the agent keeps
-                        # speaking; only confirmed words actually interrupt.
-                        _spawn_bg(_utterances.maybe_barge_in(res.utterance))
-                    elif speaking.agent_active or turn_running:
-                        # The agent is mid-answer (thinking) — don't interrupt it,
-                        # but don't drop what the user just said either. Queue this
-                        # completed utterance (latest wins) so it runs as the next
-                        # turn the moment the current one ends. Keeps the mic
-                        # continuously useful without killing the in-flight answer.
-                        _utterances.queue(res.utterance)
-                        logger.info(
-                            "voice[%s]: utterance queued — runs after current turn",
-                            origin,
-                        )
-                    else:
-                        # Idle, or only transcribing a prior (possibly-empty noise)
-                        # utterance — let this newer utterance win: the spawn
-                        # cancels the stale transcription and runs this one.
-                        _utterances.hear(res.utterance)
-                continue
-
-            if mtype == "audio_end":
-                # Explicit end of capture (push-to-talk release): flush the VAD.
-                if voice is not None:
-                    utt = voice.flush()
-                    if utt:
-                        _utterances.hear(utt, preempt=True)
-                continue
-
-            await _send({"type": "error", "message": f"unknown message type {mtype!r}"})
-
-    except WebSocketDisconnect:
-        pass
+        await frames.run()
     finally:
         # This socket was only ever a VIEWER. Detach — never cancel: the run
         # keeps going on the daemon loop and whichever client comes back next
