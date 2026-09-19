@@ -118,6 +118,20 @@ class HearingAnUtterance(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(clarify["reason"], "low_confidence")
         self.assertEqual(clarify["heard"], "welcome to the general")
 
+    async def test_a_whitespace_only_transcript_is_silence(self) -> None:
+        """Whitespace is not a request — it must not reach the agent.
+
+        The talk-over path already stripped before testing for emptiness; this
+        path did not, so `"   "` ran a turn whose text was blank.
+        """
+        rec, voice = _Recorder(), _FakeVoice()
+        router = _router(rec, voice)
+        router.hear(b"BLANK")
+        await asyncio.gather(*rec.tasks)
+
+        self.assertEqual(rec.turns, [])
+        self.assertEqual(rec.kinds(), ["turn_end"])
+
     async def test_a_newer_utterance_replaces_one_still_transcribing(self) -> None:
         rec, voice = _Recorder(), _FakeVoice()
         router = _router(rec, voice)

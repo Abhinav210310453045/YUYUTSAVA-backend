@@ -391,7 +391,8 @@ class UtteranceRouter:
     The two paths differ in what silence means. A deliberate utterance that
     transcribes to nothing still has to release the UI, so it answers with
     ``turn_end``; a talk-over that transcribes to nothing is room noise or the
-    agent's own echo, so it is dropped and the reply is left to finish.
+    agent's own echo, so it is dropped and the reply is left to finish. Both
+    treat a whitespace-only transcript as silence.
     """
 
     def __init__(
@@ -467,10 +468,7 @@ class UtteranceRouter:
         heard = await self._transcribe(pcm)
         if heard is None:
             return
-        # NOTE: the raw text, not `.words` — matching the behaviour this was
-        # extracted from. The talk-over path strips first, so a whitespace-only
-        # transcript is dropped there but runs a turn here.
-        if not heard.text:
+        if not heard.words:
             # Nothing intelligible — release the UI without a turn. Logged so a
             # "no response" symptom is traceable to empty STT vs. a failed turn.
             logger.info("voice[%s]: empty transcript — no turn run", self._origin)
@@ -482,27 +480,27 @@ class UtteranceRouter:
                 self._origin,
                 heard.confidence,
                 self._min_confidence,
-                heard.text[:120],
+                heard.words[:120],
             )
             await self._deps.send(
                 {
                     "type": "clarify",
                     "reason": "low_confidence",
                     "confidence": round(heard.confidence or 0.0, 3),
-                    "heard": heard.text,
+                    "heard": heard.words,
                     "message": "I didn't quite catch that — could you say it again?",
                 }
             )
             await self._deps.send({"type": "turn_end"})
             return
-        logger.info("voice[%s]: transcript=%r → running turn", self._origin, heard.text[:120])
+        logger.info("voice[%s]: transcript=%r → running turn", self._origin, heard.words[:120])
         # Mic artifacts stay on this socket; the run's `turn_start` frame carries
         # the same text to every other viewer.
-        await self._deps.send({"type": "transcript", "text": heard.text})
+        await self._deps.send({"type": "transcript", "text": heard.words})
         # The user side is persisted as text (the STT transcript). Raw user audio
         # is intentionally not stored by default — privacy + size.
-        await self._deps.persist(role="user", modality="text", text=heard.text)
-        await self._deps.start_turn(heard.text, preempt=preempt)
+        await self._deps.persist(role="user", modality="text", text=heard.words)
+        await self._deps.start_turn(heard.words, preempt=preempt)
 
     async def maybe_barge_in(self, pcm: bytes) -> None:
         """Interrupt the agent's spoken reply only for genuine talk-over.

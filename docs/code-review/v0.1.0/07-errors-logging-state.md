@@ -478,3 +478,42 @@ which is exactly the bug. Negative-controlled: reinstating the rename fails two
 of them with the production `AttributeError`. Live: after the fix the daemon
 logs `google-drive started — 32 tool(s)` and `apify-makemytrip started — 6
 tool(s)`.
+
+
+## R-BUG-11 — A whitespace-only transcript ran a turn
+
+**Severity** P2 · **Wave** W4 · **Status** Fixed (`services/converse_session.py`)
+
+**Evidence.** The two mic paths tested a transcript for emptiness differently.
+The talk-over path stripped first:
+
+```python
+text = (result.text or "").strip()
+if not text:  # noise/echo while speaking → ignored
+```
+
+while the utterance-to-turn path did not:
+
+```python
+text = result.text
+if not text:  # → turn_end, no turn
+```
+
+So a transcript of `"   "` was silence on one path and a request on the other.
+
+**Consequence.** A blank turn: `transcript` echoed as whitespace, a
+`voice_messages` row persisted with no text, and the agent handed a prompt of
+spaces to answer. Small, but it costs a model call and puts an empty user turn
+in the replayable history.
+
+**Why it survived.** The rule was written out twice, ~100 lines apart, inside a
+771-line function — the shape `R-RDB-01` describes. Extracting `UtteranceRouter`
+put both paths on one gate, which is what made the divergence visible at all.
+
+**Fix.** Both paths test `Heard.words` (the stripped transcript), and the turn
+path uses it for the echo, the persisted row and the turn text.
+
+**Verification.** `test_a_whitespace_only_transcript_is_silence` — a `"   "`
+transcript yields `turn_end` and no turn. The refactor that exposed it was
+committed separately, with the divergence deliberately preserved, so this
+behaviour change stands on its own.
