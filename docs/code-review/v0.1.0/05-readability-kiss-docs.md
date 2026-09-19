@@ -103,8 +103,22 @@ what does this utterance become — are named methods rather than nested
 conditionals. The loop now only parses and dispatches; what a frame *does*
 belongs to a collaborator.
 
-Still open: the connection setup and the turn-start helpers, which is what
-stands between this and the 60-line target.
+Still open: the turn-start helpers and the handshake, which is what stands
+between this and the 60-line target. Those are one more step, not four — the
+turn machinery has around fourteen dependencies on the connection, which is the
+signal that it *is* the connection rather than another collaborator with a
+dependency bundle. The seam is already visible in the code: everything above
+`send_lock` (accept, the dictate branch, query parsing, `manager.open`) is the
+router's job, and everything below it is the connection's, so the split is
+`converse()` keeping ~80 lines of setup and handing a `ConverseConnection` the
+socket.
+
+**One hazard to carry into that step.** `test_voice_ws.py` and
+`test_dictation_frames.py` both monkeypatch `converse_router.VoicePipeline`. The
+connection must therefore be handed a *factory* rather than constructing the
+pipeline itself: resolving the name inside a new module silently detaches that
+patch point, and the failure mode is not a red test but two test files quietly
+loading real STT models.
 
 ---
 
