@@ -20,7 +20,9 @@ Run:  .venv/bin/python test/cli/test_terminal_front.py
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import copy
+import io
 import json
 import os
 import tempfile
@@ -198,17 +200,104 @@ class FrontAwarePrompt(unittest.TestCase):
         self.assertNotIn("front=", inspect.getsource(cm.ConversationManager._build_master_bundle))
 
 
+class _StubRenderer:
+    """The terminal adapter, reduced to what one turn touches."""
+
+    def begin_turn(self) -> None: ...
+    async def end_of_turn(self) -> None: ...
+    def render(self, ev) -> None: ...
+
+
+class _RaisingConvo:
+    """A conversation whose turn fails however the test asks it to."""
+
+    def __init__(self, exc: BaseException | None) -> None:
+        self._exc = exc
+
+    async def run_turn(self, *args, **kwargs) -> None:
+        if self._exc is not None:
+            raise self._exc
+
+
 class InterruptKeepsTheSessionOpen(unittest.TestCase):
     """Ctrl+C mid-turn arrives as CancelledError, not KeyboardInterrupt."""
 
-    def test_the_handler_catches_both(self):
-        import inspect
-
+    def test_a_cancelled_turn_reports_and_returns(self):
+        """Driven, not read. `run_one_turn` came out of the loop for this: the
+        handling used to be reachable only by starting a REPL and pressing
+        Ctrl+C at the right moment, so it was asserted by reading the source."""
         from yuyutsava.cli.commands import chat_repl
 
-        src = inspect.getsource(chat_repl.run_chat_repl)
-        self.assertIn("except (KeyboardInterrupt, asyncio.CancelledError):", src)
-        self.assertIn("task.uncancel()", src)
+        out = io.StringIO()
+        with contextlib.redirect_stderr(out):
+            completed = asyncio.run(
+                chat_repl.run_one_turn(
+                    _RaisingConvo(asyncio.CancelledError()),
+                    "hello",
+                    renderer=_StubRenderer(),
+                    ask_handler=None,
+                    dashboard=None,
+                )
+            )
+        self.assertFalse(completed, "a cancelled turn must not be reported as done")
+        self.assertIn("session still open", out.getvalue())
+
+    def test_a_failed_turn_keeps_the_session(self):
+        from yuyutsava.cli.commands import chat_repl
+
+        out = io.StringIO()
+        with contextlib.redirect_stderr(out):
+            completed = asyncio.run(
+                chat_repl.run_one_turn(
+                    _RaisingConvo(ValueError("list index out of range")),
+                    "hello",
+                    renderer=_StubRenderer(),
+                    ask_handler=None,
+                    dashboard=None,
+                )
+            )
+        self.assertFalse(completed)
+        # The type is named and the traceback kept: "list index out of range"
+        # alone is unattributable.
+        self.assertIn("ValueError", out.getvalue())
+        self.assertIn("Traceback", out.getvalue())
+
+    def test_provider_capacity_is_one_line_not_a_traceback(self):
+        """429/503 is not a bug in this program, and its traceback is 30 frames
+        of SDK internals the reader cannot act on."""
+        from yuyutsava.cli.commands import chat_repl
+
+        class ResourceExhausted(Exception):
+            pass
+
+        out = io.StringIO()
+        with contextlib.redirect_stderr(out):
+            completed = asyncio.run(
+                chat_repl.run_one_turn(
+                    _RaisingConvo(ResourceExhausted("quota")),
+                    "hello",
+                    renderer=_StubRenderer(),
+                    ask_handler=None,
+                    dashboard=None,
+                )
+            )
+        self.assertFalse(completed)
+        self.assertIn("provider busy (429)", out.getvalue())
+        self.assertNotIn("Traceback", out.getvalue())
+
+    def test_a_good_turn_reports_done(self):
+        from yuyutsava.cli.commands import chat_repl
+
+        completed = asyncio.run(
+            chat_repl.run_one_turn(
+                _RaisingConvo(None),
+                "hello",
+                renderer=_StubRenderer(),
+                ask_handler=None,
+                dashboard=None,
+            )
+        )
+        self.assertTrue(completed)
 
     def test_uncancel_lets_a_cancelled_task_carry_on(self):
         # The mechanism the handler relies on: without uncancel() the next

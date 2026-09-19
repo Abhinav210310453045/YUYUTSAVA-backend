@@ -226,6 +226,87 @@ def quieten_chat_loggers(*, debug_plumbing: bool, verbose: bool) -> None:
                 logging.getLogger(_name).setLevel(logging.ERROR)
 
 
+async def run_one_turn(
+    convo: Any,
+    text: str,
+    *,
+    renderer: "ChatRenderer",
+    ask_handler: Any,
+    dashboard: "ChatDashboard | None",
+) -> bool:
+    """Run one turn and fail soft. False when it did not finish.
+
+    The renderer is the terminal's output adapter and ``ask_handler`` its HITL
+    bridge; everything else here is about not ending the session over a turn.
+    The caller skips the cost summary on False — there is nothing to report for
+    a turn that was cancelled or never reached the model.
+    """
+    try:
+        renderer.begin_turn()
+        if dashboard is not None:
+            # In raw mode Ctrl+C is a key event, not SIGINT, so the dashboard
+            # cancels this task by hand and the handler below does the rest.
+            dashboard.set_turn_task(asyncio.current_task())
+        await convo.run_turn(
+            text,
+            on_event=renderer.render,
+            ask_handler=ask_handler,
+            run_name="cli-chat",
+            keep_full_payloads=True,
+        )
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        # Ctrl+C during a turn does NOT arrive as KeyboardInterrupt here:
+        # asyncio.Runner installs a SIGINT handler that cancels the main task,
+        # so the await raises CancelledError — which `except Exception` below
+        # does not catch either, it being a BaseException. It escaped to the
+        # runner, which re-raised KeyboardInterrupt, and the user got a
+        # 20-frame traceback instead of their prompt back.
+        #
+        # uncancel() clears the request so the REPL can keep awaiting; without
+        # it the next await re-raises at once and the runner still turns the
+        # cancelled task into a KeyboardInterrupt exit.
+        task = asyncio.current_task()
+        if task is not None:
+            task.uncancel()
+        await renderer.end_of_turn()
+        print(f"{_DIM}(turn cancelled — session still open){_RESET}", file=sys.stderr)
+        return False
+    except Exception as exc:  # noqa: BLE001 — a failed turn must not end the session
+        await renderer.end_of_turn()
+        _report_turn_failure(exc)
+        return False
+
+    await renderer.end_of_turn()
+    if dashboard is not None:
+        # Turn over: Ctrl+C goes back to meaning "clear the line".
+        dashboard.set_turn_task(None)
+    return True
+
+
+def _report_turn_failure(exc: BaseException) -> None:
+    """Say what went wrong in the terms the reader can act on."""
+    if type(exc).__name__ in ("ResourceExhausted", "ServiceUnavailable"):
+        # Provider capacity is not a bug in this program, and its traceback is
+        # 30 frames of SDK internals that say nothing the user can act on. One
+        # line, and the session stays open so the message can simply be resent.
+        code = "429" if type(exc).__name__ == "ResourceExhausted" else "503"
+        print(
+            f"{_RED}provider busy ({code}){_RESET} — retries gave up. "
+            f"{_DIM}Resend to try again; VERTEX_RETRY_BUDGET_SEC (default 90) "
+            f"and VERTEX_MAX_RETRIES control how long it keeps trying. "
+            f"Session still open.{_RESET}",
+            file=sys.stderr,
+        )
+        return
+    # Otherwise name the exception type and keep the traceback: a bare str(exc)
+    # turns a library-internal failure ("list index out of range") into an
+    # unattributable one-liner, and the frame it came from is the only thing
+    # that makes it fixable.
+    print(f"{_RED}error:{_RESET} {type(exc).__name__}: {exc}", file=sys.stderr)
+    tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+    print(f"{_DIM}{tb.rstrip()}{_RESET}", file=sys.stderr)
+
+
 @dataclass(frozen=True)
 class ChatSurface:
     """Where the transcript goes, and who draws it.
@@ -1320,79 +1401,15 @@ async def run_chat_repl(
                     session = commands.session
                     continue
 
-                # Run one turn through the shared conversation engine. The
-                # renderer is the terminal output adapter; _ask_handler is the
-                # terminal HITL bridge.
                 turn_started = time.time()
-                try:
-                    renderer.begin_turn()
-                    if dashboard is not None:
-                        # In raw mode Ctrl+C is a key event, not SIGINT, so the
-                        # dashboard cancels this task by hand and the handler
-                        # below (task.uncancel) does the rest.
-                        dashboard.set_turn_task(asyncio.current_task())
-                    await convo.run_turn(
-                        user_input,
-                        on_event=renderer.render,
-                        ask_handler=ask_handler,
-                        run_name="cli-chat",
-                        keep_full_payloads=True,
-                    )
-                except (KeyboardInterrupt, asyncio.CancelledError):
-                    # Ctrl+C during a turn does NOT arrive as KeyboardInterrupt
-                    # here: asyncio.Runner installs a SIGINT handler that
-                    # cancels the main task, so the await raises
-                    # CancelledError — which `except Exception` below does not
-                    # catch either (it is a BaseException). It escaped to the
-                    # runner, which re-raised KeyboardInterrupt, and the user
-                    # got a 20-frame traceback instead of their prompt back.
-                    #
-                    # uncancel() clears the request so the REPL can keep
-                    # awaiting; without it the next await re-raises at once and
-                    # the runner still turns the cancelled task into a
-                    # KeyboardInterrupt exit.
-                    task = asyncio.current_task()
-                    if task is not None:
-                        task.uncancel()
-                    await renderer.end_of_turn()
-                    print(
-                        f"{_DIM}(turn cancelled — session still open){_RESET}",
-                        file=sys.stderr,
-                    )
+                if not await run_one_turn(
+                    convo,
+                    user_input,
+                    renderer=renderer,
+                    ask_handler=ask_handler,
+                    dashboard=dashboard,
+                ):
                     continue
-                except Exception as exc:  # noqa: BLE001
-                    await renderer.end_of_turn()
-                    # Provider capacity is not a bug in this program, and its
-                    # traceback is 30 frames of SDK internals that say nothing
-                    # the user can act on. One line, and the session stays
-                    # open so the message can simply be resent.
-                    if type(exc).__name__ in ("ResourceExhausted", "ServiceUnavailable"):
-                        code = "429" if type(exc).__name__ == "ResourceExhausted" else "503"
-                        print(
-                            f"{_RED}provider busy ({code}){_RESET} — retries gave up. "
-                            f"{_DIM}Resend to try again; VERTEX_RETRY_BUDGET_SEC (default 90) "
-                            f"and VERTEX_MAX_RETRIES control how long it keeps trying. "
-                            f"Session still open.{_RESET}",
-                            file=sys.stderr,
-                        )
-                        continue
-                    # Otherwise name the exception type and keep the traceback:
-                    # a bare str(exc) turns a library-internal failure ("list
-                    # index out of range") into an unattributable one-liner, and
-                    # the frame it came from is the only thing that makes it
-                    # fixable. The turn still fails soft either way.
-                    print(
-                        f"{_RED}error:{_RESET} {type(exc).__name__}: {exc}",
-                        file=sys.stderr,
-                    )
-                    tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
-                    print(f"{_DIM}{tb.rstrip()}{_RESET}", file=sys.stderr)
-                    continue
-
-                await renderer.end_of_turn()
-                if dashboard is not None:
-                    # Turn over: Ctrl+C goes back to meaning "clear the line".
-                    dashboard.set_turn_task(None)
 
                 # What the turn cost, from the rows the graph just wrote. The
                 # input count climbs with the conversation (the whole history
