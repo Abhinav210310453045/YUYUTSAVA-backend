@@ -100,9 +100,6 @@
   "yuyutsava/context/prompt_inspector.py": {
     "BLE001": 1
   },
-  "yuyutsava/context/tools.py": {
-    "C901": 1
-  },
   "yuyutsava/context/transcript_index.py": {
     "BLE001": 1
   },

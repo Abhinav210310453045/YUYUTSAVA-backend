@@ -61,10 +61,7 @@ class TheTodoToolSurface(unittest.TestCase):
     def test_the_author_label_does_not_change_the_surface(self) -> None:
         """`author` labels what the tools write, not which ones exist."""
         master = [t.name for t in make_todo_tools(exchange=object(), scope="full")]
-        tinker = [
-            t.name
-            for t in make_todo_tools(exchange=object(), scope="full", author="tinker")
-        ]
+        tinker = [t.name for t in make_todo_tools(exchange=object(), scope="full", author="tinker")]
         self.assertEqual(master, tinker)
 
 

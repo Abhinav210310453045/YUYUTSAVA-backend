@@ -120,8 +120,13 @@ def run(coro):
 
 
 def with_thread(fn):
-    """Run *fn* with ``thread_id_from_runtime`` resolving to THREAD."""
-    with mock.patch("yuyutsava.context.tools.thread_id_from_runtime", return_value=THREAD):
+    """Run *fn* with ``thread_id_from_runtime`` resolving to THREAD.
+
+    Patched on `context.tools.history`, where the history tools resolve it:
+    the family modules import it themselves, so patching the package would
+    replace a name nothing reads.
+    """
+    with mock.patch("yuyutsava.context.tools.history.thread_id_from_runtime", return_value=THREAD):
         return fn()
 
 
@@ -393,7 +398,9 @@ class HistoryReadback(unittest.TestCase):
         self.assertNotIn("Opened YouTube", out)
 
     def test_no_live_thread_is_reported_not_crashed(self):
-        with mock.patch("yuyutsava.context.tools.thread_id_from_runtime", return_value="unknown"):
+        with mock.patch(
+            "yuyutsava.context.tools.history.thread_id_from_runtime", return_value="unknown"
+        ):
             out = run(self.tools["ctx_history"].ainvoke({}))
         self.assertIn("no active thread", out)
 
