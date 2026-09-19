@@ -226,6 +226,70 @@ def quieten_chat_loggers(*, debug_plumbing: bool, verbose: bool) -> None:
                 logging.getLogger(_name).setLevel(logging.ERROR)
 
 
+@dataclass
+class BackgroundApprovals:
+    """How a background subagent's approval request reaches this chat.
+
+    Preferred: when a daemon is running it owns the async host and the single
+    idempotent decision pipeline, so the chat defers to it — consume the
+    daemon's SSE, answer over REST. An approval can then be answered from the
+    CLI *or* the desktop app and stay in sync, and the prompt never freezes,
+    because there is no competing stdin reader and no double-resume.
+
+    Fallback: only when this chat OWNS the host — no daemon running — does it
+    run the in-process watcher that prompts locally.
+    """
+
+    bridge: Any | None = None
+    watcher: Any | None = None
+    remote: Any | None = None
+
+    @classmethod
+    async def open(cls, bundle: Any) -> "BackgroundApprovals":
+        if bundle.async_host_url is None:
+            # Nothing runs in the background, so nothing can ask.
+            return cls()
+        disco = read_daemon_discovery()
+        daemon_web = disco.get("web_url") if isinstance(disco, dict) else None
+        if daemon_web:
+            remote = CliRemoteHitl(
+                CliAttachClient(base_url=_loopback_url(str(daemon_web)), label="yuyutsava-chat")
+            )
+            await remote.start()
+            return cls(remote=remote)
+        if bundle.async_task_mirror is not None:
+            bridge = CliHitlBridge()
+            watcher = AsyncTaskHealthWatcher(
+                mirror=bundle.async_task_mirror,
+                host_url=bundle.async_host_url,
+                ask_handler=bridge.post_ask,
+                event_sink=bridge.post_event,
+                agent_path_root="cli",
+            )
+            await watcher.start()
+            return cls(bridge=bridge, watcher=watcher)
+        return cls()
+
+    async def render_between_turns(self) -> None:
+        """Show what the background did while the user was composing.
+
+        Between turns, not during one: interleaving it with a streaming reply is
+        how the transcript became unreadable.
+        """
+        if self.bridge is None:
+            return
+        with contextlib.suppress(Exception):
+            await self.bridge.render_between_turns()
+
+    async def aclose(self) -> None:
+        if self.watcher is not None:
+            with contextlib.suppress(Exception):
+                await self.watcher.shutdown()
+        if self.remote is not None:
+            with contextlib.suppress(Exception):
+                await self.remote.stop()
+
+
 async def run_one_turn(
     convo: Any,
     text: str,
@@ -1253,37 +1317,9 @@ async def run_chat_repl(
             # uvicorn handlers, so re-silence after the build.
             silence_plumbing_loggers()
 
-        # Async-subagent HITL wiring.
-        #   Preferred: when a daemon is running it owns the async host and the
-        #   single, idempotent decision pipeline. The chat defers to it — consume
-        #   the daemon's SSE and answer over REST — so a background approval can be
-        #   answered from the CLI OR the UI and stays in sync, and the prompt never
-        #   freezes (no competing stdin reader, no double-resume).
-        #   Fallback: only when this chat OWNS the host (no daemon) do we run the
-        #   legacy in-process watcher that prompts locally.
-        cli_bridge = None
-        cli_watcher = None
-        cli_remote = None
+        approvals = await BackgroundApprovals.open(bundle)
         # /voice + /subagents backing store — opened on first use, not here.
         runtime_toggles = _LazyRuntimeSettings()
-        if bundle.async_host_url is not None:
-            disco = read_daemon_discovery()
-            daemon_web = disco.get("web_url") if isinstance(disco, dict) else None
-            if daemon_web:
-                cli_remote = CliRemoteHitl(
-                    CliAttachClient(base_url=_loopback_url(str(daemon_web)), label="yuyutsava-chat")
-                )
-                await cli_remote.start()
-            elif bundle.async_task_mirror is not None:
-                cli_bridge = CliHitlBridge()
-                cli_watcher = AsyncTaskHealthWatcher(
-                    mirror=bundle.async_task_mirror,
-                    host_url=bundle.async_host_url,
-                    ask_handler=cli_bridge.post_ask,
-                    event_sink=cli_bridge.post_event,
-                    agent_path_root="cli",
-                )
-                await cli_watcher.start()
 
         try:
             # Resolve initial session (--resume / --continue / fresh) and wrap
@@ -1332,7 +1368,7 @@ async def run_chat_repl(
                 runtime_toggles=runtime_toggles,
                 status_line=status_line,
                 session=session,
-                remote=cli_remote,
+                remote=approvals.remote,
             )
 
             # prompt_toolkit needs a TTY on stdin; when run with piped input
@@ -1376,11 +1412,7 @@ async def run_chat_repl(
             while True:
                 # Flush any background-task events queued during the previous
                 # turn so the user sees them before composing the next message.
-                if cli_bridge is not None:
-                    try:
-                        await cli_bridge.render_between_turns()
-                    except Exception:
-                        pass
+                await approvals.render_between_turns()
 
                 try:
                     user_input = await _read_input()
@@ -1443,14 +1475,7 @@ async def run_chat_repl(
             with contextlib.suppress(Exception):
                 if renderer._smoother is not None:
                     await renderer._smoother.aclose()
-            if cli_watcher is not None:
-                try:
-                    await cli_watcher.shutdown()
-                except Exception:
-                    pass
-            if cli_remote is not None:
-                with contextlib.suppress(Exception):
-                    await cli_remote.stop()
+            await approvals.aclose()
             await runtime_toggles.aclose()
             await bundle.aclose()
             # After teardown: in docker mode the container is gone, so the
