@@ -126,23 +126,53 @@ class DecisionService:
         fut.set_result(ProposalDecision(decision=decision, edited_instruction=edited))
         return RespondOutcome(ok=True)
 
-    async def respond_ask(self, ask_id: str, response: str) -> RespondOutcome:
-        """Resolve a Tier-2 ask. Empty responses default to ``"reject"``."""
+    async def respond_ask(
+        self,
+        ask_id: str,
+        response: str,
+        *,
+        hold_if_unwaited: bool = False,
+    ) -> RespondOutcome:
+        """Resolve a Tier-2 ask. Empty responses default to ``"reject"``.
+
+        ``hold_if_unwaited`` may only be set by a caller that knows this ask is
+        genuinely in flight — the conversation socket that raised it, which
+        still holds its id in ``run.pending_ask_id``. Without that knowledge an
+        unregistered id is indistinguishable from a bogus one, and answering a
+        bogus id must still conflict rather than report a false success.
+        """
         response = response.strip() or "reject"
         fut = self._find(self._ask_maps, ask_id)
         if fut is not None and not fut.done():
             fut.set_result(response)
             return RespondOutcome(ok=True)
-        # No live waiter. That is either "already answered" — or the daemon has
-        # restarted since the ask was raised, in which case the agent is still
-        # parked on its checkpointed interrupt and the answer must be delivered
-        # by re-entering the graph rather than by waking a future that no longer
-        # exists. Asks never expire, so this second case is normal, not an edge.
+        # No live waiter — which is three different situations.
+        #
+        # The daemon may have restarted since the ask was raised, leaving the
+        # agent parked on its checkpointed interrupt; the answer then has to be
+        # delivered by re-entering the graph rather than by waking a future that
+        # no longer exists. Asks never expire, so this is normal, not an edge.
         if self._ask_resume is not None:
             resumed = await self._ask_resume.resume(ask_id, response)
             if resumed:
                 return RespondOutcome(ok=True, note="agent resumed from its checkpoint")
+        # Or the waiter simply has not registered yet: an ask is visible to
+        # clients before the future carrying its answer exists, so a surface
+        # that answers immediately gets here first (`R-BUG-09`). Rejecting that
+        # answer strands the turn forever, so hold it for the arriving waiter.
+        if hold_if_unwaited and self._hold_early(ask_id, response):
+            return RespondOutcome(ok=True, note="held for a waiter that is still registering")
+        # Otherwise a waiter has been and gone, so the prompt really is done.
         raise DecisionConflictError("ask expired or already answered")
+
+    def _hold_early(self, ask_id: str, response: str) -> bool:
+        """Park an answer whose waiter has not registered yet.
+
+        Only maps that have never seen ``ask_id`` accept it, so a genuinely
+        finished ask still conflicts rather than silently swallowing a late
+        answer.
+        """
+        return any(m.hold(ask_id, response) for m in self._ask_maps if hasattr(m, "hold"))
 
     # ------------------------------------------------------------------ #
     # Introspection (InboundSink.list_pending)                            #

@@ -14,6 +14,7 @@ from collections import OrderedDict, deque
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Literal
 
+from yuyutsava.aio import WaiterMap
 from yuyutsava.ports.channels import (
     AskPrompt,
     ChannelEvent,
@@ -214,7 +215,9 @@ class WebHub:
         self._subscribers: list[asyncio.Queue[StreamItem]] = []
         self._lock = asyncio.Lock()
         self.pending_proposals: dict[str, asyncio.Future[ProposalDecision]] = {}
-        self.pending_asks: dict[str, asyncio.Future[str]] = {}
+        # A WaiterMap, not a dict: a surface can answer a prompt before this
+        # future is registered, and that answer must not be thrown away.
+        self.pending_asks: WaiterMap = WaiterMap()
         self._task_rings: "OrderedDict[str, deque[StreamItem]]" = OrderedDict()
 
     async def subscribe(self) -> AsyncIterator[StreamItem]:

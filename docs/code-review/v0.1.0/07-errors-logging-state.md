@@ -371,7 +371,7 @@ suite's failure set is byte-identical before and after.
 
 ## R-BUG-09 — A promptly answered permission prompt hangs the turn (race)
 
-**Severity** P0 · **Wave** W5 (`fix:` commit) · **Status** Open (found during W4)
+**Severity** P0 · **Wave** W5 (`fix:` commit) · **Status** Fixed (W4, `aio/waiters.py`)
 
 **Evidence.** Measured against the **live daemon** (real Vertex turn, channels and
 DecisionService wired — the shipped configuration), asking it to delete a
@@ -412,11 +412,27 @@ slower the ask registry write, the wider the window.
 the `ask_resolved` frame has two emitters — `_ask`'s `finally` and this conflict
 handler — so its arrival reads as success on the wire.
 
-**Fix.** The waiter must exist before the ask is visible. The registration is
-currently several `await`s downstream of the emit, so either the ask frame moves
-behind registration, or the inline surface gets a future created synchronously in
-`_ask` (before the emit) and raced against `channels.post_ask`, first answer
-winning — the router already owns `run.pending_ask` for exactly this shape.
+**Fix.** Reordering cannot close this — a slow registry write would always lose
+to a fast click — so the answer is held instead of refused. `hub.pending_asks`
+and the InboundSink's map become a `WaiterMap` (`yuyutsava/aio/waiters.py`, L0
+and stdlib-only so both the daemon and `channels/` can import it downward): a
+`dict` subclass whose `__setitem__` delivers an answer that arrived early.
+`DecisionService.respond_ask` holds such an answer rather than raising.
 
-**Verification.** The live delete-with-immediate-answer completes, and a
-regression test drives an answer that lands before the hub registers its waiter.
+Holding is **opt-in** (`hold_if_unwaited=`), and only the conversation socket
+that raised the ask passes it — it still holds the id in `run.pending_ask_id`.
+Without that knowledge an unregistered id cannot be told from a bogus one, and a
+bogus id must keep conflicting rather than report a false success; the existing
+`409` contract on `POST /ask/{id}/respond` is unchanged. A `WaiterMap` also
+refuses to hold for an id whose waiter has already been and gone, so a genuinely
+finished prompt still conflicts.
+
+**Verification.** Live, against the running daemon, same prompt and answer:
+
+| | before | after |
+|---|---|---|
+| answered immediately | parked 369.3 s | `turn … done … (20.0s)`, file deleted |
+
+Plus `test/aio/test_waiters.py` (6 tests: delivery, no-hold-once-seen, TTL,
+bounding, dict behaviour) and two `test/web/test_decision_service.py` cases. The
+full-suite failure set is byte-identical to the pre-fix baseline.

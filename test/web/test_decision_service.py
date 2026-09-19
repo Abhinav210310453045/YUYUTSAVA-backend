@@ -10,6 +10,7 @@ import unittest
 
 import httpx
 
+from yuyutsava.aio import WaiterMap
 from yuyutsava.daemon.web.app import create_app
 from yuyutsava.daemon.web.services.decision_service import DecisionService
 from yuyutsava.daemon.web.services.stream_service import WebHub
@@ -100,6 +101,46 @@ class DecisionServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(fut.result(), "reject")
         with self.assertRaises(DecisionConflictError):
             await service.respond_ask("ask_missing", "yes")
+
+    async def test_an_answer_that_beats_its_waiter_is_held_not_refused(self) -> None:
+        """`R-BUG-09`: an ask is visible before its future is registered.
+
+        A surface that answers in that window used to get a conflict, which the
+        router reported as ``ask_resolved`` while the turn stayed blocked on a
+        future nobody would ever resolve.
+        """
+        service = DecisionService(_FakeStore())
+        asks: WaiterMap = WaiterMap()
+        service.add_waiters(proposals={}, asks=asks)
+
+        outcome = await service.respond_ask("ask_early", "approve", hold_if_unwaited=True)
+        self.assertTrue(outcome.ok)
+        self.assertIn("registering", outcome.note or "")
+
+        # The waiter turns up late and is answered on arrival.
+        fut: asyncio.Future = asyncio.get_running_loop().create_future()
+        asks["ask_early"] = fut
+        self.assertEqual(fut.result(), "approve")
+
+    async def test_a_finished_ask_still_conflicts(self) -> None:
+        service = DecisionService(_FakeStore())
+        asks: WaiterMap = WaiterMap()
+        service.add_waiters(proposals={}, asks=asks)
+        fut: asyncio.Future = asyncio.get_running_loop().create_future()
+        asks["ask_done"] = fut
+        await service.respond_ask("ask_done", "approve")
+        del asks["ask_done"]
+
+        with self.assertRaises(DecisionConflictError):
+            await service.respond_ask("ask_done", "approve", hold_if_unwaited=True)
+
+    async def test_an_unknown_ask_still_conflicts_over_http(self) -> None:
+        """Holding is opt-in: without it an unregistered id is a conflict."""
+        service = DecisionService(_FakeStore())
+        asks: WaiterMap = WaiterMap()
+        service.add_waiters(proposals={}, asks=asks)
+        with self.assertRaises(DecisionConflictError):
+            await service.respond_ask("never_seen", "approve")
 
     async def test_pending_ids_across_maps(self) -> None:
         service = DecisionService(_FakeStore())

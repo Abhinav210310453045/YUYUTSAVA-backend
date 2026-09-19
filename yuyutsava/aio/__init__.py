@@ -7,5 +7,6 @@ llm quirks — can import it without dragging in ``yuyutsava.core`` (whose
 
 from yuyutsava.aio.loop_local import LoopLocal
 from yuyutsava.aio.run import run
+from yuyutsava.aio.waiters import WaiterMap
 
-__all__ = ["LoopLocal", "run"]
+__all__ = ["LoopLocal", "WaiterMap", "run"]

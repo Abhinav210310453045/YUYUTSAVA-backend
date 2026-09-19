@@ -907,8 +907,14 @@ async def converse(ws: WebSocket) -> None:
                 # one given in the Inbox or the overlay — same record, same
                 # resolution, same ask_resolved broadcast clearing every surface.
                 if ask_id and decisions is not None:
+                    # An ask is visible here before the hub registers the future
+                    # that carries its answer, so answering immediately can beat
+                    # the waiter. This run raised this ask and is still blocked
+                    # on it, so the answer is worth holding rather than
+                    # rejecting (`R-BUG-09`).
+                    in_flight = run is not None and run.pending_ask_id == ask_id
                     try:
-                        await decisions.respond_ask(str(ask_id), text)
+                        await decisions.respond_ask(str(ask_id), text, hold_if_unwaited=in_flight)
                     except DecisionConflictError:
                         # Someone answered it elsewhere first — that's the
                         # design, not an error. Tell this socket so it clears.

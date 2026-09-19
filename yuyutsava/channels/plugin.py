@@ -21,6 +21,7 @@ import logging
 from abc import abstractmethod
 from typing import Any, Callable
 
+from yuyutsava.aio import WaiterMap
 from yuyutsava.ports.channels import ProposalDecision, UserChannel
 
 logger = logging.getLogger("yuyutsava.channels.plugin")
@@ -89,7 +90,8 @@ class InboundSink:
         self._prefs = prefs_store
         self._status_provider = status_provider
         self.pending_proposals: dict[str, "asyncio.Future[ProposalDecision]"] = {}
-        self.pending_asks: dict[str, "asyncio.Future[str]"] = {}
+        # A WaiterMap, not a dict — see WebHub.pending_asks.
+        self.pending_asks: WaiterMap = WaiterMap()
 
     # ------------------------------------------------------------------ #
     # Invoke                                                              #
