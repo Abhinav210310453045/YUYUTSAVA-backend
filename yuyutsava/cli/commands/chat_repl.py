@@ -187,6 +187,105 @@ def _print_banner(
 _HISTORY_MAX_BYTES = 10 * 1024 * 1024
 
 
+def quieten_chat_loggers(*, debug_plumbing: bool, verbose: bool) -> None:
+    """Leave the renderer as the only voice in chat mode.
+
+    Without this the TaskRunner, tool-registry and command-safety INFO lines
+    interleave with renderer output and read as duplicate noise; retry chatter
+    is worse, because it emits at WARNING and prints straight through the Live
+    region. Both are shown through the renderer instead — the spinner and the
+    panel's notices — so silencing them here loses nothing and
+    ``--debug-plumbing`` / ``--verbose`` keep the escape hatch.
+
+    REPL-scoped on purpose: the daemon keeps every one of these lines.
+    """
+    if not debug_plumbing:
+        for _name in (
+            "yuyutsava.task_runner",
+            "yuyutsava.agents.task_runner.tools",
+            "yuyutsava.discovery.tool_registry",
+            "yuyutsava.policy.builtin.command_safety",
+            # Startup chatter folded into the banner status line instead:
+            # "pg pool: open", "pg migrations: at vN", "Langfuse not active".
+            # REPL-scoped on purpose — the daemon keeps these lines.
+            "yuyutsava.storage.pg.pool",
+            "yuyutsava.storage.pg.migrations",
+            "yuyutsava.llm.tracing",
+        ):
+            logging.getLogger(_name).setLevel(logging.WARNING)
+
+        # Retry chatter is rendered on the spinner instead (note_retry above).
+        # These two emit at WARNING, so the level filter above cannot reach
+        # them — and between them a single 429 storm produced a dozen lines
+        # through the Live region. --verbose keeps them.
+        if not verbose:
+            for _name in (
+                "langchain_google_vertexai._retry",
+                "yuyutsava.llm.retry",
+            ):
+                logging.getLogger(_name).setLevel(logging.ERROR)
+
+
+@dataclass(frozen=True)
+class ChatSurface:
+    """Where the transcript goes, and who draws it.
+
+    Three modes, most capable first: **dashboard** is the split screen, with the
+    transcript left and a live context column right; **rich** is the scrolling
+    transcript; **plain** is ANSI lines for pipes and dumb terminals, byte for
+    byte what this printed before either of the others existed. Rich renders the
+    transcript in all three — the dashboard only changes where it lands and who
+    draws the status line.
+    """
+
+    mode: str
+    console: Any | None
+    dashboard: "ChatDashboard | None"
+    renderer: "ChatRenderer"
+
+
+def build_surface(
+    workspace: Path,
+    *,
+    history_path: Path,
+    verbose: bool,
+    classic: bool,
+) -> ChatSurface:
+    """Pick a display mode and build the renderer for it."""
+    console = None
+    dashboard: ChatDashboard | None = None
+    mode = display_mode(
+        classic=classic,
+        is_tty=sys.stdin.isatty(),
+        rich=rich_capable(),
+        enabled=dashboard_enabled(),
+        wide=wide_enough(),
+    )
+    if mode == "dashboard":
+        dashboard = ChatDashboard(history_path=history_path, completer=_SlashCompleter())
+        console = dashboard.console
+        renderer: ChatRenderer = RichChatRenderer(
+            verbose=verbose, workspace=workspace, console=console, live=False
+        )
+        dashboard.attach_renderer(renderer)
+    elif mode == "rich":
+        console = make_console()
+        renderer = RichChatRenderer(verbose=verbose, workspace=workspace, console=console)
+    else:
+        renderer = ChatRenderer(verbose=verbose, workspace=workspace)
+    # Only the width can surprise someone: --classic and the env flag are
+    # choices, a narrow terminal is not. Said once, before the banner, because
+    # silently dropping to the single-pane view looks like a bug.
+    if mode == "rich" and not classic and dashboard_enabled() and not wide_enough():
+        print(
+            f"{_DIM}terminal is {terminal_cols()} columns — too narrow to split; "
+            f"using the classic transcript (resize and restart for the "
+            f"context panel){_RESET}",
+            file=sys.stderr,
+        )
+    return ChatSurface(mode=mode, console=console, dashboard=dashboard, renderer=renderer)
+
+
 def _rotate_history(path: Path) -> None:
     """Keep ``chat_history`` under the size ceiling. Never raises.
 
@@ -1019,47 +1118,8 @@ async def run_chat_repl(
     history_path = state_dir() / "chat_history"
     _rotate_history(history_path)
 
-    # Three display modes, most capable first:
-    #
-    #   dashboard — split screen, transcript left and a live context column
-    #               right (needs a TTY and a terminal wide enough to split);
-    #   rich      — the scrolling transcript, unchanged;
-    #   plain     — ANSI lines for pipes and dumb terminals, byte-identical to
-    #               the historical behavior.
-    #
-    # Rich renders the transcript in all three; the dashboard only changes
-    # where it lands and who draws the status line.
-    console = None
-    dashboard: ChatDashboard | None = None
-    mode = display_mode(
-        classic=classic,
-        is_tty=sys.stdin.isatty(),
-        rich=rich_capable(),
-        enabled=dashboard_enabled(),
-        wide=wide_enough(),
-    )
-    if mode == "dashboard":
-        dashboard = ChatDashboard(history_path=history_path, completer=_SlashCompleter())
-        console = dashboard.console
-        renderer: ChatRenderer = RichChatRenderer(
-            verbose=verbose, workspace=workspace, console=console, live=False
-        )
-        dashboard.attach_renderer(renderer)
-    elif mode == "rich":
-        console = make_console()
-        renderer = RichChatRenderer(verbose=verbose, workspace=workspace, console=console)
-    else:
-        renderer = ChatRenderer(verbose=verbose, workspace=workspace)
-    # Only the width can surprise someone: --classic and the env flag are
-    # choices, a narrow terminal is not. Said once, before the banner, because
-    # silently dropping to the single-pane view looks like a bug.
-    if mode == "rich" and not classic and dashboard_enabled() and not wide_enough():
-        print(
-            f"{_DIM}terminal is {terminal_cols()} columns — too narrow to split; "
-            f"using the classic transcript (resize and restart for the "
-            f"context panel){_RESET}",
-            file=sys.stderr,
-        )
+    surface = build_surface(workspace, history_path=history_path, verbose=verbose, classic=classic)
+    console, dashboard, renderer = surface.console, surface.dashboard, surface.renderer
     ask_handler = make_ask_handler(renderer, console)
     exit_code = 0
 
@@ -1080,35 +1140,7 @@ async def run_chat_repl(
 
     set_retry_listener(_on_retry)
 
-    # The renderer is the only voice the user should hear in chat mode.
-    # Without this, the TaskRunner / tool_registry / task_runner.tools
-    # INFO lines interleave with renderer output and look like duplicate
-    # noise. Plumbing debugging keeps its escape hatch via the env var.
-    if not debug_plumbing:
-        for _name in (
-            "yuyutsava.task_runner",
-            "yuyutsava.agents.task_runner.tools",
-            "yuyutsava.discovery.tool_registry",
-            "yuyutsava.policy.builtin.command_safety",
-            # Startup chatter folded into the banner status line instead:
-            # "pg pool: open", "pg migrations: at vN", "Langfuse not active".
-            # REPL-scoped on purpose — the daemon keeps these lines.
-            "yuyutsava.storage.pg.pool",
-            "yuyutsava.storage.pg.migrations",
-            "yuyutsava.llm.tracing",
-        ):
-            logging.getLogger(_name).setLevel(logging.WARNING)
-
-        # Retry chatter is rendered on the spinner instead (note_retry above).
-        # These two emit at WARNING, so the level filter above cannot reach
-        # them — and between them a single 429 storm produced a dozen lines
-        # through the Live region. --verbose keeps them.
-        if not verbose:
-            for _name in (
-                "langchain_google_vertexai._retry",
-                "yuyutsava.llm.retry",
-            ):
-                logging.getLogger(_name).setLevel(logging.ERROR)
+    quieten_chat_loggers(debug_plumbing=debug_plumbing, verbose=verbose)
 
     async with build_checkpointer(sessions_settings) as checkpointer:
         # Build the agent stack ONCE. Swallow the LangGraph host's startup

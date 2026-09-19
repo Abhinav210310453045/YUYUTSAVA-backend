@@ -270,3 +270,43 @@ class BannerAndNoise(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class BuildingTheChatSurface(unittest.TestCase):
+    """`build_surface` turns a display mode into the objects that draw it.
+
+    `display_mode` (which mode) is covered in `test_dashboard.py`; this is the
+    construction that follows it, which moved out of `run_chat_repl` whole and
+    is otherwise only reachable by starting a real REPL — and a piped stdin can
+    only ever exercise the plain branch.
+    """
+
+    def _surface(self, mode: str, tmp: Path):
+        from unittest.mock import patch
+
+        from yuyutsava.cli.commands import chat_repl as cr
+
+        with patch.object(cr, "display_mode", return_value=mode):
+            return cr.build_surface(tmp, history_path=tmp / "history", verbose=False, classic=False)
+
+    def test_plain_mode_has_no_console_and_no_dashboard(self) -> None:
+        """The pipe/dumb-terminal path: ANSI lines and nothing else."""
+        with tempfile.TemporaryDirectory() as td:
+            surface = self._surface("plain", Path(td))
+        self.assertIsNone(surface.console)
+        self.assertIsNone(surface.dashboard)
+        self.assertEqual(type(surface.renderer).__name__, "ChatRenderer")
+
+    def test_rich_mode_gets_a_console(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            surface = self._surface("rich", Path(td))
+        self.assertIsNotNone(surface.console)
+        self.assertIsNone(surface.dashboard)
+        self.assertEqual(type(surface.renderer).__name__, "RichChatRenderer")
+
+    def test_every_mode_yields_a_renderer(self) -> None:
+        """Whatever the mode, something has to draw the transcript."""
+        with tempfile.TemporaryDirectory() as td:
+            for mode in ("plain", "rich"):
+                with self.subTest(mode=mode):
+                    self.assertTrue(hasattr(self._surface(mode, Path(td)).renderer, "render"))
