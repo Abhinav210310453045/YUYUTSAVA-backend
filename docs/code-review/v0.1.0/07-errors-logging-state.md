@@ -304,11 +304,11 @@ server runs.
 
 ## R-BUG-08 — An answered inline ask leaves the turn silent and the socket waiting
 
-**Severity** P1 · **Wave** W5 (`fix:` commit) · **Status** Open (found during W4)
+**Severity** P1 · **Wave** W5 (`fix:` commit) · **Status** Fixed (W4, `converse.py:896`)
 
 **Evidence.** Measured over `/ws/converse` with a stub conversation manager and
-neither `channels` nor `decision_service` wired — the path the code itself calls
-the fallback "for tests / embedded use" (`routers/converse.py:594`):
+no `channels` wired — the path the code itself calls the fallback "for tests /
+embedded use":
 
 ```
 hello → turn_start → token → ask{body: "proceed?"}
@@ -316,29 +316,50 @@ hello → turn_start → token → ask{body: "proceed?"}
 ask_resolved → (nothing further; event loop idle)
 ```
 
-The answer is accepted and the ask does resolve — `ask_resolved` is emitted from
-`_ask`'s `finally` (`:607`). What never arrives is the remainder of the turn: no
-token carrying the answer, no `final`, and no `turn_end`. A `faulthandler` dump
-after 20 s shows the client parked in `receive_json` and the server's loop in
-`select` with nothing pending, so the turn task is gone rather than busy.
+**Cause.** `_ask` and the `ask_response` handler chose their mechanism from two
+different variables:
 
-**Consequence.** The comment at `:594` promises the run-local future keeps "the
-inline prompt still working" when no channel router is wired. It does not: a
-client answering an inline ask on that path waits forever, and no `turn_end`
-ever closes the turn. This is also why
-`test/web/test_converse_ws.py::test_inline_ask_roundtrip` hangs once its three
-stale layers are corrected (`R-TST-11`) — that test was the only thing
-exercising this path, and it had never run.
+| | selects on | when absent |
+|---|---|---|
+| `_ask` (`:506`) | `channels` | parks on a run-local `asyncio.Future` (`run.pending_ask`) |
+| handler (`:900`) | `decisions` | falls through to `registry.answer_ask` |
 
-**Not diagnosed here, deliberately.** Three mechanisms were tested and refuted:
-the emit-before-future window (`:587` emits before `:598` assigns — but a
-*delayed* answer hangs too), a `channels`-set-with-`decisions`-unset split (both
-default to `None`, and the probe passes neither), and simple test staleness. The
-cause needs isolating in the fix rather than a fourth guess.
+`create_app` **always** ends up with a `DecisionService` — it builds a hub-local
+one when the caller passes none (`web/app.py:172-178`) — while `channels` passes
+through as given. So `channels=None, decisions=<live>` is the *default* shape for
+any embedder, and in it the two disagree: the turn waits on the run-local future
+while the handler answers a hub that never received the ask. `respond_ask` then
+raises `DecisionConflictError` for the unknown id, whose handler emits the
+`ask_resolved` seen above. The future is never resolved, so `_ask` never returns
+and `TurnRegistry._drive` never reaches `turn_end`.
 
-**Fix.** W5: make the fallback complete a turn — an answered ask must resume
-`run_turn` and reach `turn_end`.
+That also makes `registry.answer_ask` at `:909` — and its comment "No hub (tests
+/ embedded): the run-local future is the path" — unreachable.
 
-**Verification.** The sequence above ends `… → token → final → turn_end`, and
-the ask round-trip joins `test/web/test_converse_frames.py`, which currently
-documents the gap instead of covering it.
+**Scope.** The shipped daemon is unaffected: `bootstrap.py:1576` passes both, so
+`_ask` uses `post_ask` and the handler uses `respond_ask` consistently. The
+defect is confined to callers of `create_app`/`make_app` that omit `channels`
+(`web/server.py` defaults it to `None`), which is every test and embedded use.
+
+**Correcting the earlier entry.** Three mechanisms had been recorded as refuted.
+Two genuinely were (the emit-before-future window — there is no `await` between
+the emit and the assignment, so the task cannot be interrupted there; and plain
+test staleness). The third was refuted *wrongly*: it was checked as
+"`channels` set with `decisions` unset", on the stated premise that "both default
+to `None`". `decisions` never defaults to `None`, and the real split is the
+opposite direction. The inference that "the turn task is gone rather than busy"
+was also wrong — it was parked on the future the whole time. `ask_resolved` had
+two emitters (`_ask`'s `finally` at `:524` and the conflict handler at `:906`),
+so its arrival never proved `_ask` had returned, which is what made the earlier
+evidence read as a contradiction.
+
+**Fix.** Answer whichever mechanism is actually waiting. `pending_ask` is set
+only by the run-local branch, so `run.answer_ask(text)` returning `True`
+identifies that branch exactly; anything else falls through to the hub. With
+`channels` wired, `pending_ask` is always `None`, so the hub path is unchanged.
+
+**Verification.** `test/web/test_converse_frames.py::test_an_answered_ask_resumes_the_turn`
+drives the round-trip and asserts `ask_resolved`, `final`, `turn_end` and that
+the agent resumed with the answer text. Negative-controlled: with the fix
+reverted it fails (on a 15 s deadline) rather than hanging the suite. The full
+suite's failure set is byte-identical before and after.

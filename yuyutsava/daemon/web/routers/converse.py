@@ -893,10 +893,19 @@ async def converse(ws: WebSocket) -> None:
                 text = str(msg.get("text", ""))
                 run = registry.active(thread_id)
                 ask_id = msg.get("ask_id") or (run.pending_ask_id if run else None)
-                # Route through the shared DecisionService so an answer given
-                # here is indistinguishable from one given in the Inbox or the
-                # overlay: same record, same resolution, same ask_resolved
-                # broadcast clearing every other surface.
+                # Answer whichever mechanism is actually waiting. ``_ask`` picks
+                # its wait on ``channels``; deciding here on ``decisions`` alone
+                # would disagree with it, because ``create_app`` always builds a
+                # DecisionService but ``channels`` may be absent (tests,
+                # embedded). In that pairing the turn parks on a future nobody
+                # resolves — no ``final``, no ``turn_end``, forever.
+                # ``pending_ask`` is set only by that run-local branch, so a
+                # future that accepts the answer identifies it exactly.
+                if run is not None and run.answer_ask(text):
+                    continue
+                # The hub path: an answer given here is indistinguishable from
+                # one given in the Inbox or the overlay — same record, same
+                # resolution, same ask_resolved broadcast clearing every surface.
                 if ask_id and decisions is not None:
                     try:
                         await decisions.respond_ask(str(ask_id), text)
@@ -904,9 +913,6 @@ async def converse(ws: WebSocket) -> None:
                         # Someone answered it elsewhere first — that's the
                         # design, not an error. Tell this socket so it clears.
                         await _send({"type": "ask_resolved", "ask_id": ask_id})
-                    continue
-                # No hub (tests / embedded): the run-local future is the path.
-                registry.answer_ask(thread_id, text)
                 continue
 
             if mtype == "interrupt":

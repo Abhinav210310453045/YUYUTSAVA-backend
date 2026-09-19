@@ -8,10 +8,6 @@ than the implementation.
 
 **Deliberately not covered here, with reasons:**
 
-- *The inline ask round-trip.* It hangs: the ask arrives, `ask_response` resolves
-  it, `ask_resolved` is emitted, and then the turn produces no `final` and no
-  `turn_end` while the event loop goes idle. That is `R-BUG-08`, not something
-  to pin as correct behaviour.
 - *Voice and barge-in* (`audio` on the main loop, the TTS worker). `R-TST-11`
   records why: the existing voice test's flow predates the mic gate that ignores
   input for the duration of an active turn, so driving that path from a test
@@ -27,6 +23,7 @@ what the split has to preserve.
 from __future__ import annotations
 
 import asyncio
+import threading
 
 from fastapi.testclient import TestClient
 
@@ -63,6 +60,11 @@ class _FakeConvo:
         await on_event(StreamEvent("token", {"text": "hi "}))
         if "slow" in text:
             await asyncio.sleep(5)  # long enough for the test to interrupt it
+        if "ask me" in text and ask_handler is not None:
+            # Echo the answer so the assertion can tell "the socket was told it
+            # was resolved" apart from "the agent actually received it".
+            answer = await ask_handler({"type": "user_question", "question": "proceed?"})
+            await on_event(StreamEvent("token", {"text": f"[{answer}]"}))
         await on_event(StreamEvent("final", {"text": "done"}))
         return "done"
 
@@ -106,6 +108,31 @@ def _drain_to_turn_end(ws) -> list[dict]:
 # --------------------------------------------------------------------------
 # Handshake
 # --------------------------------------------------------------------------
+
+
+def _collect_until(ws, until: str, timeout: float = 15.0) -> list[dict]:
+    """Drain frames until ``until`` arrives, failing rather than parking.
+
+    `R-BUG-08` was precisely a hang, so a regression has to fail the suite
+    instead of stopping it: the blocking read runs on a daemon thread that is
+    abandoned when the deadline passes.
+    """
+    frames: list[dict] = []
+    arrived = threading.Event()
+
+    def _read() -> None:
+        while True:
+            frame = ws.receive_json()
+            frames.append(frame)
+            if frame["type"] == until:
+                arrived.set()
+                return
+
+    threading.Thread(target=_read, daemon=True).start()
+    assert arrived.wait(timeout), (
+        f"no {until!r} frame within {timeout}s; saw {[f['type'] for f in frames]}"
+    )
+    return frames
 
 
 def test_hello_describes_the_connection():
@@ -217,3 +244,29 @@ def test_interrupt_ends_the_turn_without_a_final():
         frames = _drain_to_turn_end(ws)
     assert frames[-1]["type"] == "turn_end"
     assert all(f["type"] != "final" for f in frames), "a cancelled turn has no final"
+
+
+def test_an_answered_ask_resumes_the_turn():
+    """`R-BUG-08`: the answer must reach whatever the turn is actually waiting on.
+
+    ``_ask`` parks on a run-local future when no channel router is wired, but
+    ``create_app`` always builds a DecisionService — so a handler choosing on
+    ``decisions`` alone answered a hub that had never seen the ask, and the turn
+    hung forever with no ``final`` and no ``turn_end``.
+    """
+    app, _ = _app()
+    with TestClient(app).websocket_connect("/ws/converse") as ws:
+        ws.receive_json()  # hello
+        ws.send_json({"type": "user_text", "text": "ask me something"})
+        asked = _collect_until(ws, "ask")[-1]
+        assert asked["ask"]["ask_id"]
+        ws.send_json({"type": "ask_response", "ask_id": asked["ask"]["ask_id"], "text": "yes"})
+        rest = _collect_until(ws, "turn_end")
+
+    kinds = [f["type"] for f in rest]
+    assert "ask_resolved" in kinds, "the inline card is never cleared"
+    assert "final" in kinds, "the turn produced no answer"
+    assert kinds[-1] == "turn_end"
+    # The agent resumed with the text, rather than the socket merely being told
+    # the ask was resolved.
+    assert any("[yes]" in f.get("text", "") for f in rest if f["type"] == "token")
