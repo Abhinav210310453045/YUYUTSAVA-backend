@@ -38,6 +38,31 @@ with the router reduced to accepting the socket and delegating.
 **Verification.** Characterization tests green before and after. `converse` under
 60 lines; no function in the new service above complexity 15.
 
+**Progress (W4).** The net came first: 20 characterization tests across
+`test/web/test_converse_frames.py` (the text path and the protocol's error
+handling), `test_dictation_frames.py`, and a rewritten `test_voice_ws.py`
+(`R-TST-11`). Then two extractions into
+`daemon/web/services/converse_session.py`:
+
+| | `converse` | router module |
+|---|---|---|
+| at review (`f4ec45c`) | 771 | 1,099 |
+| after the dictation split | 801* | 1,040 |
+| after the spoken-turn split | **706** | 947 |
+
+\* it grew before it shrank: the frame-contract work added the `origin`/replay
+handling the old count predated.
+
+`DictationSession` took the second dispatch loop; `SpokenReply` took the spoken
+turn — sentence chunking, the TTS queue and worker, audio framing, and the
+persist-on-clean-finish rule — along with the `C901` entry it carried
+(`converse.py` 2 → 1). The four `nonlocal` mic guards became one `SpeakingState`
+on the connection, and the five per-connection callables a turn body needs
+became one `TurnPlumbing`, which is what let the body move out at all.
+
+Still open: the frame loop itself, and the utterance/barge-in machinery
+(`_voice_turn_from_utterance`, `_spawn_utterance`, `_maybe_barge_in`).
+
 ---
 
 ## R-RDB-02 — Functions longer than a screen, many times over

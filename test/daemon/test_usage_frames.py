@@ -115,15 +115,27 @@ class HandlerWiring(unittest.TestCase):
     """Pin the shape of the handler's own hookup without a live socket."""
 
     def test_the_handler_subscribes_per_turn_and_unsubscribes(self):
+        """Both turn bodies are metered — text and voice.
+
+        Still a source-text check: the meter is a context manager wrapped around
+        ``convo.run_turn``, and asserting it from outside would need a live
+        socket and a real bundle. The pair now spans two modules, because the
+        spoken body moved to ``services/converse_session.py`` (`R-RDB-01`) — an
+        assertion pinned to one file counted 1 and read as a lost wrapper.
+        """
         import inspect
 
         from yuyutsava.daemon.web.routers import converse
+        from yuyutsava.daemon.web.services import converse_session
 
-        src = inspect.getsource(converse)
-        self.assertIn("_meter_frames", src)
-        self.assertIn("bus().unsubscribe(token)", src)
-        # Both turn bodies, text and voice, are wrapped.
-        self.assertEqual(src.count("async with _meter_frames(run):"), 2)
+        router = inspect.getsource(converse)
+        session = inspect.getsource(converse_session)
+        self.assertIn("bus().unsubscribe(token)", router)
+        # The text body wraps it directly...
+        self.assertEqual(router.count("async with _meter_frames(run):"), 1)
+        # ...and the spoken body receives it as plumbing and wraps it there.
+        self.assertIn("meter_frames=_meter_frames", router)
+        self.assertEqual(session.count("async with plumbing.meter_frames(self._run):"), 1)
 
     def test_the_handshake_carries_the_last_known_reading(self):
         import inspect

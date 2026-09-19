@@ -186,8 +186,8 @@
     "S110": 1
   },
   "yuyutsava/daemon/web/routers/converse.py": {
-    "C901": 2,
-    "S110": 2
+    "C901": 1,
+    "S110": 1
   },
   "yuyutsava/daemon/web/routers/sessions.py": {
     "C901": 1
@@ -196,7 +196,7 @@
     "PLR0913": 1
   },
   "yuyutsava/daemon/web/services/converse_session.py": {
-    "S110": 1
+    "S110": 2
   },
   "yuyutsava/daemon/web/voice_pipeline.py": {
     "S110": 1

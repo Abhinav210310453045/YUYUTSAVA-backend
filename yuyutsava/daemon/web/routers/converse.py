@@ -86,7 +86,12 @@ from yuyutsava.core.streaming import StreamEvent
 from yuyutsava.daemon.turn_registry import TurnRun
 from yuyutsava.daemon.web.exceptions import ConflictError, ServiceUnavailableError
 from yuyutsava.daemon.web.schemas.proposal import OkOut
-from yuyutsava.daemon.web.services.converse_session import DictationSession
+from yuyutsava.daemon.web.services.converse_session import (
+    DictationSession,
+    SpeakingState,
+    SpokenReply,
+    TurnPlumbing,
+)
 from yuyutsava.daemon.web.voice_pipeline import VoicePipeline
 from yuyutsava.policy.interrupt_format import (
     body_for_interrupt,
@@ -95,7 +100,6 @@ from yuyutsava.policy.interrupt_format import (
 )
 from yuyutsava.ports.channels import AskPrompt, DecisionConflictError
 from yuyutsava.storage.voice_blobs import write_voice_wav
-from yuyutsava.voice.sentence import SentenceChunker
 
 logger = logging.getLogger("yuyutsava.daemon.web.routers.converse")
 
@@ -124,7 +128,6 @@ router = APIRouter(tags=["converse"])
 
 # Bytes per outbound audio frame (~0.5s of 16 kHz mono int16) — small enough to
 # start playback quickly, large enough to avoid WS frame overhead.
-_AUDIO_FRAME_BYTES = 16_000
 
 
 # Grace window after the agent starts speaking during which VAD speech onsets are
@@ -407,22 +410,20 @@ async def converse(ws: WebSocket) -> None:
     # the shared bundle exists.
     if not convo.bundle_ready:
         _spawn_bg(convo.prewarm())
-    # Barge-in guard: True while the agent's TTS is playing, with the monotonic
-    # time it started, so the audio handler can ignore self-echo during the grace
-    # window (set in the TTS worker below). ``speaking_ended_at`` marks when the
-    # last reply finished so we keep ignoring mic input for a short grace after —
+    # Mic guards, read by the audio branch and written by whichever turn body is
+    # running. ``speaking`` is True while the agent's TTS is playing (with the
+    # monotonic time it started) so self-echo can be ignored during the grace
+    # window; ``speaking_ended_at`` marks when the last reply finished, because
     # the client is still draining buffered audio and the mic still hears it.
-    # These are mic guards, so they stay connection-scoped even though the run
-    # they describe may outlive this socket.
-    agent_speaking = False
-    speaking_since = 0.0
-    speaking_ended_at = 0.0
-    # True while an ACTUAL agent turn is executing (a non-empty transcript has
-    # started run_turn), as opposed to merely transcribing an utterance that may
-    # turn out to be empty noise. The audio handler protects an active turn from
-    # being cancelled by trailing words / noise, but still lets a fresh utterance
-    # replace a turn that's only transcribing.
-    agent_active = False
+    # ``agent_active`` is True while an ACTUAL turn is executing, as opposed to
+    # merely transcribing an utterance that may turn out to be empty noise — the
+    # audio branch protects an active turn from trailing words, but still lets a
+    # fresh utterance replace one that is only transcribing.
+    #
+    # One object rather than four ``nonlocal`` names: they are connection-scoped
+    # (the run they describe may outlive this socket) and the turn body that
+    # writes them now lives outside this function.
+    speaking = SpeakingState()
 
     async def _reject_busy() -> None:
         """Refuse a second turn — to THIS socket only.
@@ -529,8 +530,7 @@ async def converse(ws: WebSocket) -> None:
         """Text turn body. Errors, cancellation and ``turn_end`` are the
         registry's job (``TurnRegistry._drive``) — it terminates a run exactly
         once however it ends, for every viewer at the same time."""
-        nonlocal agent_active
-        agent_active = True
+        speaking.agent_active = True
         try:
             if not convo.bundle_ready:
                 run.emit({"type": "log", "text": "preparing agent (first run)…"})
@@ -543,7 +543,7 @@ async def converse(ws: WebSocket) -> None:
                     keep_full_payloads=True,
                 )
         finally:
-            agent_active = False
+            speaking.agent_active = False
 
     # ---- voice path ------------------------------------------------------
 
@@ -592,125 +592,21 @@ async def converse(ws: WebSocket) -> None:
             logger.warning("converse: persisting voice message failed", exc_info=True)
 
     async def _run_voice_turn(run: TurnRun) -> None:
-        """Run a turn whose prose is also spoken back as streamed audio.
-
-        Agent tokens are accumulated into sentences and synthesized one at a
-        time on a side queue, so audio starts on sentence 1 while the model is
-        still writing. Cancellation (barge-in / interrupt) stops both the turn
-        and any queued/in-flight TTS immediately.
-        """
-        nonlocal agent_active
-        agent_active = True
+        """Body for a spoken turn — the streaming lives in :class:`SpokenReply`."""
         assert voice is not None
-        chunker = SentenceChunker()
-        tts_queue: asyncio.Queue[str | None] = asyncio.Queue()
-        cancel = asyncio.Event()
-        # Buffer the full turn's audio + prose so a clean (non-barge-in) turn can
-        # be persisted as one replayable voice_messages row.
-        pcm_parts: list[bytes] = []
-        audio_rate: int | None = None
-        final_text = ""
-
-        async def _send_audio(pcm: bytes, rate: int) -> None:
-            for i in range(0, len(pcm), _AUDIO_FRAME_BYTES):
-                if cancel.is_set():
-                    return
-                frame = pcm[i : i + _AUDIO_FRAME_BYTES]
-                # Ephemeral: fanned out live to every viewer, never ringed (a
-                # turn's PCM is megabytes). The persisted WAV is the replay path.
-                run.emit(
-                    {
-                        "type": "audio_chunk",
-                        "pcm": base64.b64encode(frame).decode("ascii"),
-                        "sample_rate": rate,
-                    }
-                )
-                await asyncio.sleep(0)  # let the pumps drain between frames
-
-        async def _tts_worker() -> None:
-            nonlocal audio_rate, agent_speaking, speaking_since, speaking_ended_at
-            spoke = False
-            while True:
-                sentence = await tts_queue.get()
-                try:
-                    if sentence is None:
-                        break
-                    if cancel.is_set():
-                        continue
-                    pcm, rate = await voice.synthesize(sentence)
-                    if not pcm:
-                        logger.warning(
-                            "voice[%s]: TTS produced no audio for %r — check PIPER_MODEL / `say`",
-                            origin,
-                            sentence[:80],
-                        )
-                    if pcm and not cancel.is_set():
-                        if not spoke:
-                            run.emit({"type": "speaking_start"})
-                            spoke = True
-                            # Enter speaking mode: stricter VAD onset + grace
-                            # window so the agent's own TTS can't self-interrupt.
-                            agent_speaking = True
-                            speaking_since = time.monotonic()
-                            if voice is not None:
-                                voice.set_speaking(True)
-                        await _send_audio(pcm, rate)
-                        pcm_parts.append(pcm)
-                        audio_rate = rate
-                finally:
-                    tts_queue.task_done()
-            if spoke:
-                run.emit({"type": "speaking_end"})
-            agent_speaking = False
-            speaking_ended_at = time.monotonic()
-            if voice is not None:
-                voice.set_speaking(False)
-
-        worker = asyncio.create_task(_tts_worker())
-        sink = _event_sink(run)
-
-        async def _voice_on_event(ev: StreamEvent) -> None:
-            nonlocal final_text
-            await sink(ev)
-            if ev.kind == "token":
-                for sentence in chunker.feed(ev.data.get("text", "")):
-                    await tts_queue.put(sentence)
-            elif ev.kind == "final":
-                final_text = ev.data.get("text", "") or final_text
-                rest = chunker.flush()
-                if rest:
-                    await tts_queue.put(rest)
-
-        try:
-            async with _meter_frames(run):
-                await convo.run_turn(
-                    run.text,
-                    on_event=_voice_on_event,
-                    ask_handler=_ask_handler(run),
-                    run_name=f"{origin}-voice",
-                    keep_full_payloads=True,
-                    modality="voice",
-                )
-        except asyncio.CancelledError:
-            cancel.set()
-            raise
-        finally:
-            agent_active = False
-            await tts_queue.put(None)
-            try:
-                await worker
-            except (asyncio.CancelledError, Exception):  # noqa: BLE001
-                pass
-            # Persist the assistant turn (text + replayable TTS audio) only when
-            # it completed cleanly — a barge-in leaves a partial clip we discard.
-            if voice_store is not None and not cancel.is_set() and (final_text or pcm_parts):
-                await _persist_voice_message(
-                    role="assistant",
-                    modality="audio" if pcm_parts else "text",
-                    text=final_text,
-                    pcm=b"".join(pcm_parts) if pcm_parts else None,
-                    rate=audio_rate,
-                )
+        await SpokenReply(
+            run,
+            voice=voice,
+            state=speaking,
+            plumbing=TurnPlumbing(
+                convo=convo,
+                origin=origin,
+                event_sink=_event_sink,
+                ask_handler=_ask_handler,
+                meter_frames=_meter_frames,
+            ),
+            persist=_persist_voice_message if voice_store is not None else None,
+        ).run()
 
     # Continuous (hands-free) voice: the mic stays live across turns, so the
     # user can keep talking while the agent is mid-answer. A completed utterance
@@ -963,9 +859,9 @@ async def converse(ws: WebSocket) -> None:
                     turn_active = (
                         turn_running
                         or _utterance_pending()
-                        or agent_active
-                        or agent_speaking
-                        or (time.monotonic() - speaking_ended_at) < _POST_SPEAK_GRACE_SEC
+                        or speaking.agent_active
+                        or speaking.speaking
+                        or (time.monotonic() - speaking.speaking_ended_at) < _POST_SPEAK_GRACE_SEC
                     )
                     if turn_active:
                         continue
@@ -978,16 +874,16 @@ async def converse(ws: WebSocket) -> None:
                     # full utterance is captured AND transcribes to real words. While
                     # the agent is THINKING or idle we only surface the listening
                     # indicator (also non-cancelling) so the user sees they're heard.
-                    if not agent_speaking:
+                    if not speaking.speaking:
                         await _send({"type": "speech_started"})
                 if res.utterance is not None:
-                    if agent_speaking:
+                    if speaking.speaking:
                         # Possible talk-over. Don't cancel yet — verify it's real
                         # speech (transcribe-before-cancel) so noise/echo can't chop
                         # the reply off. Runs off to the side while the agent keeps
                         # speaking; only confirmed words actually interrupt.
                         _spawn_bg(_maybe_barge_in(res.utterance))
-                    elif agent_active or turn_running:
+                    elif speaking.agent_active or turn_running:
                         # The agent is mid-answer (thinking) — don't interrupt it,
                         # but don't drop what the user just said either. Queue this
                         # completed utterance (latest wins) so it runs as the next
