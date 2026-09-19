@@ -43,6 +43,7 @@ from prompt_toolkit.patch_stdout import patch_stdout
 
 from yuyutsava.async_subagents.watcher import AsyncTaskHealthWatcher
 from yuyutsava.cli.async_hitl import CliHitlBridge, CliRemoteHitl
+from yuyutsava.cli.commands.options import ChatOptions
 from yuyutsava.cli.line_reader import read_line
 from yuyutsava.cli.remote_attach import CliAttachClient
 from yuyutsava.cli.render import panels
@@ -66,9 +67,7 @@ from yuyutsava.cli.render.plain import (
 from yuyutsava.cli.render.renderer import RichChatRenderer
 from yuyutsava.cli.tooling import cleanup_local_sandbox
 from yuyutsava.config.env import env_flag
-from yuyutsava.config.execution import DockerSettings, LocalSettings
 from yuyutsava.config.logs import silence_plumbing_loggers
-from yuyutsava.config.search import SearchConfig
 from yuyutsava.consent import decision_token as _decision_token
 from yuyutsava.context.meter import bus
 from yuyutsava.conversation import ConversationService
@@ -76,7 +75,6 @@ from yuyutsava.core.agent_stack import build_agent_stack
 from yuyutsava.daemon.singleton import read_daemon_discovery
 from yuyutsava.llm import tracing as _tracing
 from yuyutsava.llm.quirks.first_chunk_retry import set_retry_listener
-from yuyutsava.llm.settings import LlmSettings
 from yuyutsava.prefs.runtime import UNDISABLEABLE, RuntimeSettings
 from yuyutsava.skills.injector import last_recalled
 from yuyutsava.skills.registry import SkillRegistry
@@ -882,23 +880,28 @@ def _handle_slash(
 
 
 async def run_chat_repl(
+    opts: ChatOptions,
     *,
-    workspace: Path,
-    settings: LlmSettings,
-    execution_mode: str,
-    docker_settings: DockerSettings,
-    local_settings: LocalSettings,
-    search_config: SearchConfig,
-    bash_timeout_sec: int,
-    recursion_limit: int,
-    permission_check: bool,
-    resume_id: str | None,
-    continue_latest: bool,
-    verbose: bool,
     debug_plumbing: bool = False,
     classic: bool = False,
 ) -> int:
-    """Drive the interactive chat loop. Returns process exit code."""
+    """Drive the interactive chat loop. Returns process exit code.
+
+    ``debug_plumbing`` and ``classic`` stay separate because they are this
+    surface's own: how much the terminal shows, not what the agent is.
+    """
+    workspace = opts.workspace
+    settings = opts.settings
+    execution_mode = opts.execution_mode
+    docker_settings = opts.docker_settings
+    local_settings = opts.local_settings
+    search_config = opts.search_config
+    bash_timeout_sec = opts.bash_timeout_sec
+    recursion_limit = opts.recursion_limit
+    permission_check = opts.permission_check
+    resume_id = opts.resume_id
+    continue_latest = opts.continue_latest
+    verbose = opts.verbose
     if not debug_plumbing:
         debug_plumbing = env_flag("YUYUTSAVA_DEBUG_PLUMBING", true=("1", "true", "yes"))
     if not debug_plumbing:

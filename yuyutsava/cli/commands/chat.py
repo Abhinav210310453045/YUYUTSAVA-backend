@@ -8,17 +8,13 @@ sandbox. Pulled out of cli.py so the entry-point dispatch stays trivial.
 from __future__ import annotations
 
 import sys
-from pathlib import Path
-from typing import Literal
 
+from yuyutsava.cli.commands.options import ChatOptions
 from yuyutsava.cli.session_run import run_session
 from yuyutsava.cli.tooling import cleanup_local_sandbox
-from yuyutsava.config.execution import DockerSettings, LocalSettings
-from yuyutsava.config.search import SearchConfig
 from yuyutsava.conversation.sessions import ResumeFailed
 from yuyutsava.core.agent_stack import build_agent_stack
 from yuyutsava.docker_sandbox.backend import pull_virtual_paths_to_host
-from yuyutsava.llm.settings import LlmSettings
 from yuyutsava.storage.paths import WorkspaceLayout
 from yuyutsava.storage.sessions import (
     SessionsSettings,
@@ -32,23 +28,24 @@ def _parse_pull_paths(s: str) -> list[str]:
 
 
 async def run_chat(
+    opts: ChatOptions,
     *,
     task: str,
-    workspace: Path,
-    settings: LlmSettings,
-    execution_mode: Literal["local", "docker"],
-    docker_settings: DockerSettings,
-    local_settings: LocalSettings,
-    search_config: SearchConfig,
-    bash_timeout_sec: int,
-    recursion_limit: int,
-    permission_check: bool,
-    resume_id: str | None,
-    continue_latest: bool,
     docker_pull_paths: str,
-    verbose: bool,
 ) -> int:
     """Drive one CLI task end-to-end. Returns process exit code."""
+    workspace = opts.workspace
+    settings = opts.settings
+    execution_mode = opts.execution_mode
+    docker_settings = opts.docker_settings
+    local_settings = opts.local_settings
+    search_config = opts.search_config
+    bash_timeout_sec = opts.bash_timeout_sec
+    recursion_limit = opts.recursion_limit
+    permission_check = opts.permission_check
+    resume_id = opts.resume_id
+    continue_latest = opts.continue_latest
+    verbose = opts.verbose
     store = get_default_session_store()
     sessions_settings = SessionsSettings.from_env()
 

@@ -24,6 +24,7 @@ except ImportError:
 from yuyutsava.aio import run as aio_run
 from yuyutsava.cli.commands.attach import run_attach
 from yuyutsava.cli.commands.chat import run_chat
+from yuyutsava.cli.commands.options import ChatOptions
 from yuyutsava.cli.commands.prefs import run_prefs
 from yuyutsava.cli.commands.scenarios import format_scenario_list, get_scenario
 from yuyutsava.cli.commands.sessions import delete_session, print_sessions_table
@@ -255,6 +256,33 @@ def _build_parser() -> argparse.ArgumentParser:
     return p
 
 
+def _chat_options(args) -> ChatOptions:
+    """Read the invocation's decisions off the parsed arguments, once.
+
+    Both chat entry points take the same twelve values, and this list was
+    written out at both call sites — so anything new had to be added in two
+    places that nothing checks against each other.
+
+    What legitimately differs stays out: the one-shot's task and its
+    `--docker-pull-paths` (which copies files out *after the run*, and a session
+    has no such moment), and the REPL's display flags.
+    """
+    return ChatOptions(
+        workspace=args.workspace.resolve(),
+        settings=llm_settings_from_env(),
+        execution_mode=_resolved_execution_mode(args),
+        docker_settings=_docker_settings_from_args(args),
+        local_settings=_local_settings_from_args(args),
+        search_config=SearchConfig.from_env(),
+        bash_timeout_sec=args.bash_timeout,
+        recursion_limit=args.recursion_limit,
+        permission_check=not args.no_permission_check,
+        resume_id=args.resume,
+        continue_latest=args.continue_,
+        verbose=args.verbose,
+    )
+
+
 def _resolved_execution_mode(args: argparse.Namespace) -> Literal["local", "docker"]:
     if args.execution is not None:
         return args.execution
@@ -396,37 +424,15 @@ async def _async_main(argv: list[str] | None = None, *, force_chat: bool = False
             from yuyutsava.cli.commands.chat_repl import run_chat_repl  # noqa: PLC0415
 
             return await run_chat_repl(
-                workspace=args.workspace.resolve(),
-                settings=llm_settings_from_env(),
-                execution_mode=_resolved_execution_mode(args),
-                docker_settings=_docker_settings_from_args(args),
-                local_settings=_local_settings_from_args(args),
-                search_config=SearchConfig.from_env(),
-                bash_timeout_sec=args.bash_timeout,
-                recursion_limit=args.recursion_limit,
-                permission_check=not args.no_permission_check,
-                resume_id=args.resume,
-                continue_latest=args.continue_,
-                verbose=args.verbose,
+                _chat_options(args),
                 debug_plumbing=args.debug_plumbing,
                 classic=args.classic,
             )
 
     return await run_chat(
+        _chat_options(args),
         task=task,
-        workspace=args.workspace.resolve(),
-        settings=llm_settings_from_env(),
-        execution_mode=_resolved_execution_mode(args),
-        docker_settings=_docker_settings_from_args(args),
-        local_settings=_local_settings_from_args(args),
-        search_config=SearchConfig.from_env(),
-        bash_timeout_sec=args.bash_timeout,
-        recursion_limit=args.recursion_limit,
-        permission_check=not args.no_permission_check,
-        resume_id=args.resume,
-        continue_latest=args.continue_,
         docker_pull_paths=args.docker_pull_paths,
-        verbose=args.verbose,
     )
 
 

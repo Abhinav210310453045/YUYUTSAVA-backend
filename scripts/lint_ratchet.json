@@ -58,13 +58,11 @@
   },
   "yuyutsava/cli/commands/chat.py": {
     "BLE001": 1,
-    "PLR0913": 1,
     "S110": 1
   },
   "yuyutsava/cli/commands/chat_repl.py": {
     "BLE001": 6,
     "C901": 1,
-    "PLR0913": 1,
     "S110": 5
   },
   "yuyutsava/cli/render/plain.py": {
