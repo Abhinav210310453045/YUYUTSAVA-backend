@@ -16,7 +16,7 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from yuyutsava.agents.task_runner.tools import _looks_like_html, _verify_download
+from yuyutsava.agents.task_runner.tools.web import _looks_like_html, _verify_download
 
 
 def _write(tmp: str, name: str, data: bytes) -> str:

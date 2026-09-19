@@ -160,6 +160,35 @@ rather than to hit the number.
 sitting or test in parts. The closures in the tool factories share mutable
 captured state, which no reader can see at a glance.
 
+**Progress (W4).** Two of the eleven are done.
+
+`converse` 771 → 105 — see `R-RDB-01`.
+
+`bind_tools` 609 → a package, one module per family. All twelve closures
+captured exactly the same three things (`agent`, `workspace_root`,
+`agent_name`), so they travel as one `ToolContext` and each family unpacks it
+into the names the bodies already used — the tool bodies moved verbatim.
+
+| module | tools | longest factory |
+|---|---|---|
+| `files` | read, write, delete | 111 |
+| `search` | ls, glob, grep | 126 |
+| `shell` | execute_in_sandbox, run_python, execute | 137 |
+| `web` | fetch_url | 107 |
+| `ask` | ask_user | 42 |
+| `host` | sysinfo | 30 |
+
+Nothing in the package is over 150 lines, and the split added no ratcheted lint
+(C901 17 → 16, from the old file's entry leaving).
+
+The characterization net was written first and earned its place twice: every
+argument name taken from the old docstring was wrong (there is no
+`task_description` argument anywhere), and the move initially dropped three
+module globals — `_registry`, `_default_policy`, `_default_consent` — which the
+net caught as a `NameError` rather than a mystery at runtime. One test imported
+two private helpers that moved; it was missed on the first sweep because that
+grep was piped through `head`.
+
 **Fix.** Per STD-KIS-2 and §6:
 - tool factories become small classes or module-level functions over a bound context;
 - the REPL loop becomes a `ReplLoop` class with a command registry (`R-SOL-02`);
