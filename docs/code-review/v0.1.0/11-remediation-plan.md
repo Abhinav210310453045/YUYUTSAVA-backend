@@ -355,6 +355,11 @@ Characterization tests first, for every unit that is split.
   - `R-BUG-05` `/clear` in the dashboard, reproduced first;
   - `R-BUG-06` one-shot turns through `ConversationService`;
   - `R-BUG-07` a daemon started from the app serves its API.
+  - `R-BUG-08` an answered inline ask resumes the turn — **landed early, in W4**
+    (`7babeca`): it blocked W4's own characterization tests, so it could not wait.
+  - `R-BUG-09` an answer that beats its waiter is held — **landed early, in W4**
+    (`5873e00`): found by live-testing `R-BUG-08`'s fix against the running
+    daemon, where a promptly answered permission prompt hung the turn outright.
 
 **Exit.**
 - `silent_broad_excepts` 0; `prints_outside_cli` 0.
