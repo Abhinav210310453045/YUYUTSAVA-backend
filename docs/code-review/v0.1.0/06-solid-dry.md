@@ -93,6 +93,29 @@ command or event kind touches exactly one file.
 
 ---
 
+**Progress (W4).** Two steps, in order.
+
+First one list: `SLASH_COMMANDS` replaced the completer's hand-kept dict and the
+hand-written body of `_print_help`, which had already drifted (`R-BUG-12`).
+
+Then one dispatcher. `ReplCommands` (90 lines) replaced five calling conventions
+inside the loop — `_handle_ask_command` and `_handle_settings_command` returning
+`bool`, `_handle_slash` returning sentinel objects, and `/usage`, `/context` and
+`/skills` compared inline — with a single `dispatch()` returning
+`NOT_A_COMMAND | HANDLED | QUIT`. The loop's 72-line command section is now six
+lines, and `run_chat_repl` is **476 → 431**.
+
+The one piece of shared mutable state is the session: `/new` replaces it, and
+the loop reads it back from the dispatcher rather than keeping its own copy.
+That is the part most likely to break silently — a stale copy would leave the
+REPL running turns against the old thread while the banner showed the new one —
+so it was checked live: `/new` printed a new session id, and the next turn
+answered `NONE` to a fact stated before the rotation.
+
+The bodies of the four handlers are untouched. What changed is that the loop no
+longer knows any of their conventions, so a new command cannot be added without
+the dispatcher being asked about it.
+
 ## R-SOL-03 — Substitution and interface width (Liskov, interface segregation)
 
 **Severity** P1 · **Wave** W4 · **Status** Open (legacy `F-S12` closed for stores; recurs here)

@@ -105,22 +105,27 @@ class EveryDocumentedCommandIsHandled(unittest.TestCase):
         dispatchers = "".join(
             inspect.getsource(f)
             for f in (
+                cr.ReplCommands,
                 cr._handle_slash,
                 cr._handle_settings_command,
                 cr._handle_ask_command,
-                cr.run_chat_repl,
             )
         )
         for cmd in cr.SLASH_COMMANDS:
             with self.subTest(cmd=cmd.name):
-                self.assertIn(f'"{cmd.name}"', dispatchers)
+                # assertTrue, not assertIn: assertIn prints both operands, and
+                # one of them is every dispatcher in the module.
+                self.assertTrue(
+                    f'"{cmd.name}"' in dispatchers,
+                    f"{cmd.name} is advertised but no dispatcher mentions it",
+                )
 
     def test_the_quit_aliases_are_handled(self) -> None:
         src = __import__("inspect").getsource(cr._handle_slash)
         quit_cmd = next(c for c in cr.SLASH_COMMANDS if c.name == "/quit")
         for alias in quit_cmd.aliases:
             with self.subTest(alias=alias):
-                self.assertIn(f'"{alias}"', src)
+                self.assertTrue(f'"{alias}"' in src, f"{alias} is never dispatched")
 
 
 if __name__ == "__main__":

@@ -32,6 +32,7 @@ import traceback
 import urllib.request
 from collections.abc import Iterable
 from dataclasses import dataclass
+from enum import Enum, auto
 from pathlib import Path
 from typing import Any
 
@@ -816,6 +817,107 @@ async def _handle_settings_command(cmd: str, runtime_settings: Any) -> bool:
     return True
 
 
+class Outcome(Enum):
+    """What the loop should do with a line it handed to the dispatcher."""
+
+    NOT_A_COMMAND = auto()
+    HANDLED = auto()
+    QUIT = auto()
+
+
+@dataclass
+class ReplCommands:
+    """Runs whatever the user typed that is not a message for the agent.
+
+    The five dispatch styles this replaces — two handlers returning ``bool``,
+    one returning sentinels, and three commands compared inline in the loop —
+    meant the loop had to know each one's calling convention, and a new command
+    could be added without the loop ever asking about it. One `dispatch` now
+    answers a single question: was this line a command, and should we stop?
+
+    ``session`` is mutable because ``/new`` replaces it; the loop reads it back
+    from here afterwards rather than keeping its own copy.
+    """
+
+    workspace: Path
+    console: Any
+    renderer: Any
+    bundle: Any
+    convo: Any
+    runtime_toggles: Any
+    status_line: str
+    session: Any
+    remote: Any | None = None
+
+    async def dispatch(self, text: str) -> Outcome:
+        line = text.strip()
+        if self.remote is not None:
+            if await _handle_ask_command(line, self.remote):
+                return Outcome.HANDLED
+            if await self._answered_a_pending_ask(line):
+                return Outcome.HANDLED
+        if not line.startswith("/"):
+            return Outcome.NOT_A_COMMAND
+        head = line.split()[0].lower()
+        if head in ("/voice", "/subagents"):
+            # Async because they read and write state.db, which every other
+            # surface reads too. Reached only for these two so a normal message
+            # never opens the prefs store.
+            await _handle_settings_command(line, await self.runtime_toggles.get())
+            return Outcome.HANDLED
+        if head == "/usage":
+            await _print_usage_summary(
+                self.bundle.usage_store, self.session.thread_id, self.session.created_at
+            )
+            return Outcome.HANDLED
+        if head == "/context":
+            _print_context(self.session.thread_id, self.console)
+            return Outcome.HANDLED
+        if head == "/skills":
+            _print_skills(self.bundle.layout)
+            return Outcome.HANDLED
+        if head == "/new":
+            await self._rotate_session()
+            return Outcome.HANDLED
+        result = _handle_slash(
+            line,
+            session_id=self.session.id,
+            workspace=self.workspace,
+            renderer=self.renderer,
+        )
+        return Outcome.QUIT if result is _SLASH_QUIT else Outcome.HANDLED
+
+    async def _answered_a_pending_ask(self, line: str) -> bool:
+        """A bare decision word answers the oldest pending approval.
+
+        ``y``/``n``/``approve``/``session``/``p`` and friends, with the id
+        resolved in code so the user never types one. Only intercepted while
+        something is actually pending, so an ordinary message saying "no" still
+        reaches the agent.
+        """
+        token = _decision_token(line)
+        if token is None or not self.remote.list_pending():
+            return False
+        print(f"  {await self.remote.answer('', token)}", file=sys.stderr)
+        remaining = len(self.remote.list_pending())
+        if remaining:
+            print(
+                f"  {_DIM}{remaining} more pending — answer with y/n/s/p{_RESET}",
+                file=sys.stderr,
+            )
+        return True
+
+    async def _rotate_session(self) -> None:
+        """``/new``: a brand-new session row and thread_id, in this process."""
+        self.session = await self.convo.new_session(task="(interactive chat)")
+        _print_banner(
+            session_id=self.session.id,
+            workspace=self.workspace,
+            resuming=False,
+            status=self.status_line,
+        )
+
+
 def _handle_slash(
     cmd: str,
     *,
@@ -1108,6 +1210,18 @@ async def run_chat_repl(
                 status=status_line,
             )
 
+            commands = ReplCommands(
+                workspace=workspace,
+                console=console,
+                renderer=renderer,
+                bundle=bundle,
+                convo=convo,
+                runtime_toggles=runtime_toggles,
+                status_line=status_line,
+                session=session,
+                remote=cli_remote,
+            )
+
             # prompt_toolkit needs a TTY on stdin; when run with piped input
             # (tests, automation), fall back to plain blocking `input()` in a
             # thread so the REPL still works.
@@ -1166,69 +1280,12 @@ async def run_chat_repl(
                 if not user_input:
                     continue
 
-                # Background-approval commands (/asks, /approve, /reject, /reply)
-                # are answered against the daemon — non-blocking, synced with the UI.
-                if cli_remote is not None:
-                    if await _handle_ask_command(user_input, cli_remote):
-                        continue
-                    # A bare decision word (y/n/yes/no/approve/reject/session/
-                    # project/s/p) answers the ACTIVE (oldest) pending approval —
-                    # the id is resolved in code. Only intercepted when something
-                    # is actually pending, so normal messages pass through.
-                    tok = _decision_token(user_input)
-                    if tok is not None and cli_remote.list_pending():
-                        print(f"  {await cli_remote.answer('', tok)}", file=sys.stderr)
-                        remaining = len(cli_remote.list_pending())
-                        if remaining:
-                            print(
-                                f"  {_DIM}{remaining} more pending — answer with y/n/s/p{_RESET}",
-                                file=sys.stderr,
-                            )
-                        continue
-
-                # Runtime toggles (/voice, /subagents) — async because they
-                # read/write state.db, which every other surface reads too.
-                # Guarded so a normal message never opens the prefs store.
-                if user_input.strip().startswith(("/voice", "/subagents")):
-                    if await _handle_settings_command(
-                        user_input,
-                        await runtime_toggles.get(),
-                    ):
-                        continue
-
-                # /usage — async because it reads the usage store.
-                if user_input.strip().split()[0] == "/usage":
-                    await _print_usage_summary(
-                        bundle.usage_store, session.thread_id, session.created_at
-                    )
-                    continue
-                if user_input.strip().split()[0] == "/context":
-                    _print_context(session.thread_id, console)
-                    continue
-
-                if user_input.strip().split()[0] == "/skills":
-                    _print_skills(bundle.layout)
-                    continue
-
-                slash_result = _handle_slash(
-                    user_input,
-                    session_id=session.id,
-                    workspace=workspace,
-                    renderer=renderer,
-                )
-                if slash_result is _SLASH_QUIT:
+                outcome = await commands.dispatch(user_input)
+                if outcome is Outcome.QUIT:
                     break
-                if slash_result is _SLASH_HANDLED:
-                    continue
-                if slash_result == "new":
-                    # Rotate to a brand-new session row + thread_id in-process.
-                    session = await convo.new_session(task="(interactive chat)")
-                    _print_banner(
-                        session_id=session.id,
-                        workspace=workspace,
-                        resuming=False,
-                        status=status_line,
-                    )
+                if outcome is Outcome.HANDLED:
+                    # `/new` may have rotated the session out from under us.
+                    session = commands.session
                     continue
 
                 # Run one turn through the shared conversation engine. The
