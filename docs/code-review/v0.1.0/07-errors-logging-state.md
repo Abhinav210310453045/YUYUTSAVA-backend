@@ -436,3 +436,45 @@ finished prompt still conflicts.
 Plus `test/aio/test_waiters.py` (6 tests: delivery, no-hold-once-seen, TTL,
 bounding, dict behaviour) and two `test/web/test_decision_service.py` cases. The
 full-suite failure set is byte-identical to the pre-fix baseline.
+
+
+## R-BUG-10 — A style rename to snake_case took every MCP server offline
+
+**Severity** P0 · **Wave** W4 · **Status** Fixed (`mcp/tool_adapter.py`)
+
+**Evidence.** Daemon startup, every run:
+
+```
+W yuyutsava.mcp.loader: MCP server 'google-drive' exposed 128 tools; capping at max_tools=32
+E yuyutsava.mcp.loader: MCP server 'google-drive' failed to start:
+    'Tool' object has no attribute 'input_schema'
+E yuyutsava.mcp.loader: MCP server 'apify-makemytrip' failed to start: (same)
+```
+
+**Cause.** `51e85c3` ("fix(mcp): fix camelCase attributes in tool adapter to
+snake_case") renamed `mcp_tool.inputSchema` to `mcp_tool.input_schema` and
+`result.isError` to `result.is_error`. Both are **MCP wire-protocol field
+names**, and the SDK's pydantic models carry the protocol's spelling verbatim —
+`mcp.types.Tool.model_fields` is `[…, 'inputSchema', 'outputSchema', …]` and
+`CallToolResult` has `isError`. The codebase being snake_case everywhere else
+makes the rename look like a tidy-up; it is actually an API change.
+
+`isError` survived only because that line kept a `getattr` fallback.
+`inputSchema` had none, so `adapt()` raised on the first tool of every server.
+
+**Consequence.** All MCP tooling was gone — 38 tools across two servers. The
+loader catches per-server startup failures and continues, so the daemon reports
+itself ready, the UI works, and chat works; only the MCP tools are missing, with
+the reason buried in a startup traceback. Nothing in the suite touched it: the
+adapter had **no tests at all**.
+
+**Fix.** Restore the protocol spellings, and say in the docstring why they are
+camelCase so the next tidy-up does not repeat it.
+
+**Verification.** `test/mcp_layer/test_tool_adapter.py` (5 tests) drives `adapt`
+and `_flatten_content` with real `mcp.types.Tool` / `CallToolResult` objects
+rather than stubs — a stub would grow whatever attribute the adapter asked for,
+which is exactly the bug. Negative-controlled: reinstating the rename fails two
+of them with the production `AttributeError`. Live: after the fix the daemon
+logs `google-drive started — 32 tool(s)` and `apify-makemytrip started — 6
+tool(s)`.
