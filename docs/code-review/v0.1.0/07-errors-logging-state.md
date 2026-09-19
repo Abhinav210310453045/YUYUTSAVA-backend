@@ -517,3 +517,47 @@ path uses it for the echo, the persisted row and the turn text.
 transcript yields `turn_end` and no turn. The refactor that exposed it was
 committed separately, with the divergence deliberately preserved, so this
 behaviour change stands on its own.
+
+
+## R-BUG-12 — `/help` hid the commands for answering a background ask
+
+**Severity** P2 · **Wave** W4 · **Status** Fixed (`cli/commands/chat_repl.py`)
+
+**Evidence.** The chat REPL declared its commands in two hand-kept places — the
+completer's `_SLASH_COMMANDS` dict and the body of `_print_help` — and they had
+drifted:
+
+```
+offered by tab-complete but absent from /help: /approve  /asks  /reject  /reply
+in /help but not tab-completed              : (none)
+```
+
+**Consequence.** Those four are how a user answers a pending approval from a
+background subagent. Undocumented, someone with a blocked background task has no
+way to discover them short of pressing Tab and guessing — and the one moment
+they are needed is the moment the agent has stopped and is waiting.
+
+**Cause.** Two lists and no check between them, plus five dispatch styles
+(`_handle_ask_command` and `_handle_settings_command` returning `bool`,
+`_handle_slash` returning sentinels, and `/usage` / `/context` / `/skills`
+compared inline in the loop). Adding a command meant touching up to four places,
+and nothing noticed when one was missed.
+
+**Fix.** One `SLASH_COMMANDS` registry of `SlashCommand(name, help, usage,
+aliases, group)`. `/help` and the completer are both generated from it, so they
+cannot disagree. Dispatch is unchanged for now — unifying the five styles is the
+`ReplLoop` work in `R-SOL-02`.
+
+**Verification.** `test/cli/test_slash_commands.py` (8 tests, 40 subtests) pins
+the surface and the invariants: help lists exactly what completion offers, the
+four approval commands are documented, usage hints (`/reply <id> <text>`) reach
+the help, and **every advertised command is actually dispatched** — a command in
+the list that nothing handles answers "unknown command", which is worse than not
+offering it because the user believes it. Negative-controlled with a phantom
+command, caught by both the pinned surface and the handler invariant. Confirmed
+in a live REPL: `/help` renders all seventeen.
+
+One false lead worth recording: a first pass compared the two lists with a loose
+regex and reported `/results` as advertised-but-missing. It is not a command —
+the string comes from the phrase "tool calls/results" inside `/ring`'s
+description. The test matches the first token of a help line for that reason.

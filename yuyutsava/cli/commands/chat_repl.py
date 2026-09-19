@@ -31,6 +31,7 @@ import time
 import traceback
 import urllib.request
 from collections.abc import Iterable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -242,40 +243,13 @@ def _startup_status_line(sessions_settings: SessionsSettings) -> str:
 def _print_help() -> None:
     print(file=sys.stderr)
     print(f"{_CYAN}Commands:{_RESET}", file=sys.stderr)
-    print(f"  {_DIM}/help{_RESET}         show this help", file=sys.stderr)
-    print(f"  {_DIM}/quit{_RESET}         exit the chat (Ctrl+D also works)", file=sys.stderr)
-    print(f"  {_DIM}/clear{_RESET}        redraw the banner", file=sys.stderr)
-    print(f"  {_DIM}/new{_RESET}          start a fresh session in this process", file=sys.stderr)
-    print(f"  {_DIM}/session{_RESET}      show the current session id", file=sys.stderr)
-    print(
-        f"  {_DIM}/ring{_RESET}         list recent tool calls/results with their [#n] indices",
-        file=sys.stderr,
-    )
-    print(
-        f"  {_DIM}/last [k]{_RESET}     print the last k captured payloads in full (default 1)",
-        file=sys.stderr,
-    )
-    print(f"  {_DIM}/expand <n>{_RESET}   print the full body of the [#n] entry", file=sys.stderr)
-    print(file=sys.stderr)
-    print(
-        f"  {_DIM}/voice{_RESET}        voice mode: /voice on|off, /voice wake off, /voice tts off",
-        file=sys.stderr,
-    )
-    print(
-        f"  {_DIM}/subagents{_RESET}    dedicated subagents: /subagents off face-watcher",
-        file=sys.stderr,
-    )
-    print(
-        f"  {_DIM}/usage{_RESET}        tokens and estimated cost for this session", file=sys.stderr
-    )
-    print(
-        f"  {_DIM}/context{_RESET}      what is in the context window right now, by segment",
-        file=sys.stderr,
-    )
-    print(
-        f"  {_DIM}/skills{_RESET}       skills recalled this turn, and all available ones",
-        file=sys.stderr,
-    )
+    width = max(len(c.signature) for c in SLASH_COMMANDS)
+    group = SLASH_COMMANDS[0].group
+    for cmd in SLASH_COMMANDS:
+        if cmd.group != group:
+            print(file=sys.stderr)
+            group = cmd.group
+        print(f"  {_DIM}{cmd.signature:<{width}}{_RESET}  {cmd.help}", file=sys.stderr)
     print(file=sys.stderr)
     print(
         f"{_DIM}Ctrl+C cancels the current turn but keeps the session open.{_RESET}",
@@ -340,25 +314,53 @@ def _suppress_stdio():
 # Slash-command completion
 # ---------------------------------------------------------------------------
 
-_SLASH_COMMANDS: dict[str, str] = {
-    "/help": "show available commands",
-    "/quit": "exit the chat (Ctrl+D also works)",
-    "/clear": "clear the screen and redraw the banner",
-    "/new": "start a fresh session in this process",
-    "/session": "show the current session id",
-    "/ring": "list recent tool calls/results with their [#n] indices",
-    "/last": "print the last k captured payloads in full",
-    "/expand": "print the full body of the [#n] entry",
-    "/asks": "list pending background approvals",
-    "/approve": "approve a pending background ask",
-    "/reject": "reject a pending background ask",
-    "/reply": "answer a background question by id",
-    "/voice": "show or set voice mode (/voice on|off|wake on|tts off)",
-    "/subagents": "list dedicated subagents (/subagents on|off <name>)",
-    "/usage": "tokens and estimated cost for this session",
-    "/context": "what is in the context window right now, by segment",
-    "/skills": "skills recalled this turn, and all available ones",
-}
+
+@dataclass(frozen=True)
+class SlashCommand:
+    """One ``/command`` as the user meets it.
+
+    ``group`` only decides where a blank line falls in ``/help``; commands that
+    do unrelated jobs read better apart.
+    """
+
+    name: str
+    help: str
+    usage: str = ""
+    aliases: tuple[str, ...] = ()
+    group: int = 0
+
+    @property
+    def signature(self) -> str:
+        return f"{self.name} {self.usage}".strip()
+
+
+#: Every slash command, once. ``/help`` and the tab-completer are both
+#: generated from this, because they used to be two hand-kept lists and drifted:
+#: the four background-approval commands were offered by completion and missing
+#: from ``/help``, so the only way to find out how to answer a pending ask was
+#: to press Tab and guess.
+SLASH_COMMANDS: tuple[SlashCommand, ...] = (
+    SlashCommand("/help", "show this help"),
+    SlashCommand("/quit", "exit the chat (Ctrl+D also works)", aliases=("/exit", "/q")),
+    SlashCommand("/clear", "clear the screen and redraw the banner"),
+    SlashCommand("/new", "start a fresh session in this process"),
+    SlashCommand("/session", "show the current session id"),
+    SlashCommand("/ring", "list recent tool calls/results with their [#n] indices"),
+    SlashCommand("/last", "print the last k captured payloads in full (default 1)", usage="[k]"),
+    SlashCommand("/expand", "print the full body of the [#n] entry", usage="<n>"),
+    SlashCommand("/asks", "list pending background approvals", group=1),
+    SlashCommand("/approve", "approve a pending background ask", usage="[id]", group=1),
+    SlashCommand("/reject", "reject a pending background ask", usage="[id]", group=1),
+    SlashCommand("/reply", "answer a background question by id", usage="<id> <text>", group=1),
+    SlashCommand("/voice", "voice mode: /voice on|off, /voice wake off, /voice tts off", group=2),
+    SlashCommand("/subagents", "dedicated subagents: /subagents off face-watcher", group=2),
+    SlashCommand("/usage", "tokens and estimated cost for this session", group=2),
+    SlashCommand("/context", "what is in the context window right now, by segment", group=2),
+    SlashCommand("/skills", "skills recalled this turn, and all available ones", group=2),
+)
+
+#: name → description, for the completer.
+_SLASH_COMMANDS: dict[str, str] = {c.name: c.help for c in SLASH_COMMANDS}
 
 
 class _SlashCompleter(Completer):
