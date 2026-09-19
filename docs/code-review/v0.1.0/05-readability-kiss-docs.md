@@ -189,6 +189,34 @@ net caught as a `NameError` rather than a mystery at runtime. One test imported
 two private helpers that moved; it was missed on the first sweep because that
 grep was piped through `head`.
 
+`build_daemon` 556 → 449, continuing the module's own pattern rather than
+inventing one: it already had seven `build_*` functions returning `*Subsystem`
+dataclasses, and four more sections had the same shape.
+
+| new | lines | inputs |
+|---|---|---|
+| `build_mcp` | 16 | workspace |
+| `build_models` | 41 | none (all from the environment) |
+| `build_channels` | 72 | opts, store, the storage fallbacks to announce |
+| `wire_spillover_recovery` | 48 | 6 — a verb, because it installs callbacks and returns nothing |
+
+The web block is deliberately left: it consumes roughly thirty names built
+before it, so extracting it would relocate a parameter list and add `PLR0913`
+violations rather than reduce anything. A composition root wiring everything
+together is the one place a long function is honest.
+
+Two mistakes worth recording, both caught, neither committed. An insertion
+anchored on a `class` line rather than its decorator slid between
+`@dataclass(frozen=True)` and `AsyncSubagentSubsystem`, leaving the class a
+plain class and the decorator on a function — legal Python, so ruff passed; the
+daemon test collection caught it. And `build_channels` is `async`, and its call
+site was written without `await`: the unbound-names gate does not look for that,
+ruff does not either, and no test boots `build_daemon`, so **the live daemon boot
+caught it** — exactly the failure mode `test_bootstrap_no_unbound_names.py` was
+written about. Both now have a standing check: every `*Subsystem` is asserted to
+be a real dataclass, and every call to an async builder is asserted to be
+awaited.
+
 **Fix.** Per STD-KIS-2 and §6:
 - tool factories become small classes or module-level functions over a bound context;
 - the REPL loop becomes a `ReplLoop` class with a command registry (`R-SOL-02`);

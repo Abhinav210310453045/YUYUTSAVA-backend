@@ -792,6 +792,216 @@ async def build_events(
     )
 
 
+def wire_spillover_recovery(
+    storage_health: Any | None,
+    pg_pool: Any | None,
+    store: Any,
+    channels: ChannelRouter,
+    *,
+    memory_store: Any | None,
+    skill_store: Any | None,
+) -> None:
+    """Teach the health probe how to recover from a Postgres outage, and how to
+    say so while it lasts.
+
+    On recovery the buffered SQLite rows are drained back into Postgres
+    (drain-and-delete, so nothing is duplicated) and any vector-less memory or
+    skill rows are re-embedded. While it lasts, the outage is announced on the
+    user timeline: storage quietly diverging — checkpoints landing where
+    Postgres cannot see them — is the one failure mode that must never be quiet.
+    """
+    if storage_health is None or pg_pool is None:
+        return
+    # Both stores declare backfill_embeddings unconditionally since ADR-002
+    # step 2.5b (it returns 0 without vectors), so no getattr probe.
+    # `memory_store` can still be None when memory is switched off.
+    backfills = [s.backfill_embeddings for s in (memory_store, skill_store) if s is not None]
+    reconciler = Reconciler(
+        store.sqlite_backend,
+        pg_pool,
+        backfills=backfills,
+        content_specs=CONTENT_TABLE_SPECS,  # visuals + feedback (RoutedStore-wrapped)
+    )
+    storage_health.set_recover(reconciler.reconcile)
+
+    def _on_storage_degraded(reason: str) -> None:
+        try:
+            asyncio.create_task(
+                channels.post_event(
+                    ChannelEvent(
+                        payload=TimelinePayload(
+                            line=f"storage: postgres unreachable — buffering to SQLite ({reason})",
+                            cls="event-error",
+                        ),
+                    )
+                )
+            )
+        except RuntimeError:
+            pass
+
+    storage_health.set_degrade(_on_storage_degraded)
+
+
+async def build_mcp(workspace: Path) -> MCPClientManager:
+    """Start the MCP servers: the global config, plus the workspace's own when
+    the workspace is trusted."""
+    manager = MCPClientManager()
+    cfg = MCPConfig.load(workspace)
+    await manager.start(cfg)
+    if manager.known_servers():
+        ws_cfg = str(WorkspaceLayout.for_workspace(workspace).mcp_config)
+        logger.info(
+            "  mcp       : %s",
+            ", ".join(
+                f"{n} (workspace)" if cfg.servers[n].source == ws_cfg else n
+                for n in manager.known_servers()
+            ),
+        )
+    return manager
+
+
+@dataclass
+class ModelsSubsystem:
+    """The chat models the daemon runs on, and the settings behind them."""
+
+    triage_settings: Any
+    orchestrator_settings: Any
+    subagent_settings: Any
+    triage: Any
+    orchestrator: Any
+    subagent: Any
+    compaction: Any
+    context_settings: Any
+
+
+async def build_models() -> ModelsSubsystem:
+    """Resolve each role's model from the environment.
+
+    Roles are separate so a cheap or local model can own the cheap work:
+    ``compaction`` falls back to the main provider settings when unset.
+    """
+    triage_settings = llm_settings_from_env("triage")
+    orchestrator_settings = llm_settings_from_env("orchestrator")
+    subagent_settings = llm_settings_from_env("subagent")
+    # Triage is a single-shot classifier — reasoning is wasteful here and (on
+    # thinking models like gemini-2.5-flash) eats the token budget, truncating
+    # the decision JSON. Disable it so the structured output always completes.
+    triage = chat_model(triage_settings, temperature=0.0, disable_reasoning=True)
+    orchestrator = chat_model(orchestrator_settings, temperature=0.0)
+    subagent = chat_model(subagent_settings, temperature=0.1)
+
+    # Warm the Langfuse reachability probe now — before the async host installs
+    # blockbuster — so the runtime path never does urllib on the event loop.
+    await asyncio.to_thread(warm_reachability_cache)
+
+    compaction = chat_model(llm_settings_from_env("compaction"), temperature=0.0)
+    context_settings = ContextSettings.from_env(
+        "orchestrator",
+        provider=env("LLM_PROVIDER", "orchestrator", "groq"),
+    )
+    logger.info(
+        "  context   : compact >%d tokens, keep %d msgs, offload >%d chars",
+        context_settings.compact_trigger_tokens,
+        context_settings.keep_messages,
+        context_settings.offload_threshold_chars,
+    )
+    return ModelsSubsystem(
+        triage_settings=triage_settings,
+        orchestrator_settings=orchestrator_settings,
+        subagent_settings=subagent_settings,
+        triage=triage,
+        orchestrator=orchestrator,
+        subagent=subagent,
+        compaction=compaction,
+        context_settings=context_settings,
+    )
+
+
+@dataclass
+class ChannelsSubsystem:
+    """Where the daemon talks to a person, and what remembers the asking."""
+
+    router: ChannelRouter
+    ask_registry: AskRegistry
+    session_origin: SessionOriginMap
+    web_hub: WebHub | None
+    log_bridge: Any | None
+
+
+async def build_channels(
+    opts: DaemonOptions,
+    store: Any,
+    *,
+    fallbacks: tuple[str | None, ...] = (),
+) -> ChannelsSubsystem:
+    """Assemble the user-facing channels and the ask record behind them.
+
+    ``fallbacks`` are storage degradations to announce on those channels once
+    they exist — a Postgres→SQLite fallback means checkpoints are landing
+    somewhere Postgres cannot see, and that is the one failure mode that must
+    never be silent.
+    """
+    router = ChannelRouter(channels=[], primary_name="web")
+    # Durable Tier-2 asks. Nothing about an ask expires — the agent is parked on
+    # a checkpointed interrupt — so the record has to outlive both the socket
+    # that showed it and this process. Hydrated with whatever a previous run
+    # left unanswered.
+    ask_registry = AskRegistry(store)
+    router.ask_registry = ask_registry
+    await ask_registry.hydrate()
+    # Origin-aware HITL routing is always on: CLI attach and channel plugins
+    # both map session ids to their channel.
+    session_origin = SessionOriginMap()
+    router.session_origin = session_origin
+
+    web_hub: WebHub | None = None
+    log_bridge: Any | None = None
+    if not opts.headless:
+        web_hub = WebHub(store)
+        router.channels.append(WebChannel(web_hub))
+        # Everything the daemon logs about itself reaches the Logs panel.
+        # Attached to the `yuyutsava` logger with no level of its own, so
+        # PUT /logs/level (the titlebar dropdown) controls the panel — which
+        # otherwise changed stderr only and looked like it did nothing.
+        log_bridge = LogBridge(web_hub)
+        log_bridge.install()
+
+    # Terminal is always present as a fallback, and is the only channel when
+    # headless.
+    router.channels.append(TerminalChannel(verbose=opts.verbose))
+    if opts.headless:
+        router.primary_name = "terminal"
+
+    if opts.voice:
+        # Optional, and off by default: it listens to the room.
+        try:
+            vc = voice_channel_from_env()
+            router.channels.append(vc)
+            logger.info(
+                "  voice     : enabled (TTS=%s STT=%s)",
+                os.environ.get("TTS_PROVIDER", "piper"),
+                type(vc._stt).__name__,
+            )
+        except Exception:
+            logger.warning("voice channel init failed — running without voice", exc_info=True)
+
+    for reason in fallbacks:
+        if reason:
+            await router.post_event(
+                ChannelEvent(
+                    payload=TimelinePayload(line=f"storage: {reason}", cls="event-error"),
+                )
+            )
+
+    return ChannelsSubsystem(
+        router=router,
+        ask_registry=ask_registry,
+        session_origin=session_origin,
+        web_hub=web_hub,
+        log_bridge=log_bridge,
+    )
+
+
 @dataclass(frozen=True)
 class AsyncSubagentSubsystem:
     """The background-subagent host, its task mirror and its health watcher.
@@ -1160,20 +1370,7 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     cap_enforcer = _pol.cap_enforcer
     consent_registry = _pol.consent_registry
 
-    # ── MCP servers: global ~/.yuyutsava/mcp_config.json merged with the
-    #    workspace's .yuyutsava/mcp_config.json when the workspace is trusted --
-    mcp_manager = MCPClientManager()
-    mcp_cfg = MCPConfig.load(workspace)
-    await mcp_manager.start(mcp_cfg)
-    if mcp_manager.known_servers():
-        _ws_cfg = str(WorkspaceLayout.for_workspace(workspace).mcp_config)
-        logger.info(
-            "  mcp       : %s",
-            ", ".join(
-                f"{n} (workspace)" if mcp_cfg.servers[n].source == _ws_cfg else n
-                for n in mcp_manager.known_servers()
-            ),
-        )
+    mcp_manager = await build_mcp(workspace)
 
     # ── retention: checkpointer + TTL sweeper (extracted: build_retention) --
     _ret = await build_retention(
@@ -1199,62 +1396,14 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     events_cfg = _ev.events_cfg
     _hot_reload_events_config = _ev.reload
 
-    # ── channels ----------------------------------------------------------
-    channels = ChannelRouter(channels=[], primary_name="web")
-    # Durable Tier-2 asks. Nothing about an ask expires — the agent is parked on
-    # a checkpointed interrupt — so the record has to outlive both the socket
-    # that showed it and this process. Hydrated below with whatever a previous
-    # run left unanswered.
-    ask_registry = AskRegistry(store)
-    channels.ask_registry = ask_registry
-    await ask_registry.hydrate()
-    # Origin-aware HITL routing is always on (Phase 3): CLI attach and
-    # channel plugins both map session ids to their channel. Previously
-    # constructed only when async subagents were enabled.
-    session_origin = SessionOriginMap()
-    channels.session_origin = session_origin
-    web_hub: WebHub | None = None
+    fallback_reasons = (storage_fallback_reason, checkpointer_saver.fallback_reason)
+    chans = await build_channels(opts, store, fallbacks=fallback_reasons)
+    channels = chans.router
+    ask_registry = chans.ask_registry
+    session_origin = chans.session_origin
+    web_hub = chans.web_hub
+    log_bridge = chans.log_bridge
     web_server: uvicorn.Server | None = None
-
-    log_bridge: Any | None = None
-    if not opts.headless:
-        web_hub = WebHub(store)
-        channels.channels.append(WebChannel(web_hub))
-        # Everything the daemon logs about itself now reaches the Logs panel.
-        # Attached to the `yuyutsava` logger with no level of its own, so
-        # PUT /logs/level (the titlebar dropdown) controls the panel — which
-        # until now changed stderr only and looked like it did nothing.
-        log_bridge = LogBridge(web_hub)
-        log_bridge.install()
-
-    # Always include terminal as a fallback (and only channel in headless mode).
-    channels.channels.append(TerminalChannel(verbose=opts.verbose))
-    if opts.headless:
-        channels.primary_name = "terminal"
-
-    # Voice channel — optional, disabled by default (privacy).
-    if opts.voice:
-        try:
-            vc = voice_channel_from_env()
-            channels.channels.append(vc)
-            logger.info(
-                "  voice     : enabled (TTS=%s STT=%s)",
-                os.environ.get("TTS_PROVIDER", "piper"),
-                type(vc._stt).__name__,
-            )
-        except Exception:
-            logger.warning("voice channel init failed — running without voice", exc_info=True)
-
-    # Surface any Postgres→SQLite fallback on the user channels — silent
-    # divergence (checkpoints landing where Postgres can't see them) is the
-    # one failure mode that must never be quiet.
-    for reason in (storage_fallback_reason, checkpointer_saver.fallback_reason):
-        if reason:
-            await channels.post_event(
-                ChannelEvent(
-                    payload=TimelinePayload(line=f"storage: {reason}", cls="event-error"),
-                )
-            )
 
     # ── resource governor (Phase 5) ----------------------------------------
     # Monitor samples psutil into a ring (main.py schedules its run loop);
@@ -1280,35 +1429,15 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         res_settings.max_heavy_tasks,
     )
 
-    # ── models ------------------------------------------------------------
-    triage_settings = llm_settings_from_env("triage")
-    orchestrator_settings = llm_settings_from_env("orchestrator")
-    subagent_settings = llm_settings_from_env("subagent")
-    # Triage is a single-shot classifier — reasoning is wasteful here and (on
-    # thinking models like gemini-2.5-flash) eats the token budget, truncating
-    # the decision JSON. Disable it so the structured output always completes.
-    triage_model = chat_model(triage_settings, temperature=0.0, disable_reasoning=True)
-    orchestrator_model = chat_model(orchestrator_settings, temperature=0.0)
-    subagent_model = chat_model(subagent_settings, temperature=0.1)
-
-    # Warm the Langfuse reachability probe now — before the async host installs
-    # blockbuster — so the runtime path never does urllib on the event loop.
-    await asyncio.to_thread(warm_reachability_cache)
-
-    # Compaction model: role "compaction" so a cheap/local model can own
-    # summarization (COMPACTION_LLM_PROVIDER=ollama …); falls back to the
-    # main provider settings when the role is unset.
-    compaction_model = chat_model(llm_settings_from_env("compaction"), temperature=0.0)
-    context_settings = ContextSettings.from_env(
-        "orchestrator",
-        provider=env("LLM_PROVIDER", "orchestrator", "groq"),
-    )
-    logger.info(
-        "  context   : compact >%d tokens, keep %d msgs, offload >%d chars",
-        context_settings.compact_trigger_tokens,
-        context_settings.keep_messages,
-        context_settings.offload_threshold_chars,
-    )
+    models = await build_models()
+    triage_settings = models.triage_settings
+    orchestrator_settings = models.orchestrator_settings
+    subagent_settings = models.subagent_settings
+    triage_model = models.triage
+    orchestrator_model = models.orchestrator
+    subagent_model = models.subagent
+    compaction_model = models.compaction
+    context_settings = models.context_settings
 
     # ── retrieval: skills + TODO-note indexes (extracted: build_retrieval) --
     _rtv = await build_retrieval(
@@ -1322,40 +1451,14 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     skill_registry = _rtv.skill_registry
     skill_store = _rtv.skill_store
 
-    # ── storage spillover recovery -----------------------------------------
-    # On Postgres recovery the health probe drains the buffered SQLite rows back
-    # into Postgres (drain-and-delete: no duplication) and re-embeds any
-    # vector-less memory/skill rows via their backfill(). The degrade notifier
-    # surfaces the outage on the user timeline (never silently divergent).
-    if storage_health is not None and pg_pool is not None:
-        # Both stores declare backfill_embeddings unconditionally since
-        # ADR-002 step 2.5b (it returns 0 without vectors), so no getattr probe.
-        # `memory_store` can still be None when memory is switched off.
-        _backfills = [s.backfill_embeddings for s in (memory_store, skill_store) if s is not None]
-        _reconciler = Reconciler(
-            store.sqlite_backend,
-            pg_pool,
-            backfills=_backfills,
-            content_specs=CONTENT_TABLE_SPECS,  # visuals + feedback (RoutedStore-wrapped)
-        )
-        storage_health.set_recover(_reconciler.reconcile)
-
-        def _on_storage_degraded(reason: str) -> None:
-            try:
-                asyncio.create_task(
-                    channels.post_event(
-                        ChannelEvent(
-                            payload=TimelinePayload(
-                                line=f"storage: postgres unreachable — buffering to SQLite ({reason})",
-                                cls="event-error",
-                            ),
-                        )
-                    )
-                )
-            except RuntimeError:
-                pass
-
-        storage_health.set_degrade(_on_storage_degraded)
+    wire_spillover_recovery(
+        storage_health,
+        pg_pool,
+        store,
+        channels,
+        memory_store=memory_store,
+        skill_store=skill_store,
+    )
 
     # ── search config (ws_* tools) ---------------------------------------
     search_config = SearchConfig.from_env()
