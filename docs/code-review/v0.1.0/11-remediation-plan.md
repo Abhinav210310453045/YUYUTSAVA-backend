@@ -380,6 +380,34 @@ Characterization tests first, for every unit that is split.
 - **New tests** for units extracted in W3–W5, and contract tests for `platform/`. (`R-TST-06`)
 - **`scripts/README.md`.** (`R-SCR-01`)
 
+### Closing out the standing failures
+
+The suite settles at **21 failures, and they are five root causes, not
+twenty-one problems.** Triaged 2026-09-19 by running each group alone:
+
+| group | failures | cause | kind |
+|---|---|---|---|
+| `memory/test_embedder.py` | 6 | injects `emb._client`, but the loop-affinity work replaced it with `_clients: LoopLocal[AsyncClient]`. The fake is never used, so the test quietly calls the **real** embed endpoint — which is why it "varies with local Ollama". | test debt (`R-TST-08`) |
+| `daemon/test_build_retrieval.py` | 4 | calls `build_retrieval()` without the `workspace` keyword it has since gained | test debt (`R-TST-09`) |
+| `web/test_todo_board_dependency.py` (8 subtests), `storage/test_app_context.py`, `storage/test_feedback_purge.py` | 10 | `test_build_storage` calls `set_default_session_store(...)`, caching a module-level `_DEFAULT_STORE` that restoring the environment cannot un-cache | **product**, not test (`R-TST-13`) |
+| `web/test_converse_ws.py::test_inline_ask_roundtrip` | 1 | asserts the old `ask["payload"]` frame shape, across three stale layers | test debt (`R-TST-11`) |
+
+All ten in the third group **pass in isolation** (19 passed, 14 subtests) and
+fail only in a shared process. That group is therefore not fixed here: the
+global singleton *is* the defect, and W5 already owns retiring the seven
+`set_default_*` accessors through injection. Fix the cause, and the ten
+disappear; patch the tests, and the daemon keeps its hidden global.
+
+The other eleven are genuinely stale tests, and each is restored to asserting
+the behaviour it was written for — the char cap, the nomic prefixes and the
+dimension check are all still real rules, the tests simply stopped reaching
+them.
+
+**Treat each as a suspect, not as known debt.** `R-BUG-10` was filed as exactly
+this kind of "obviously stale" symptom and turned out to be every MCP server
+failing to load. A failing test is evidence about the product until proven
+otherwise, so each fix states which it was.
+
 ## W7 — Electron app
 
 - **Dead code and consistency:**
