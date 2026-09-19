@@ -336,10 +336,14 @@ and `TurnRegistry._drive` never reaches `turn_end`.
 That also makes `registry.answer_ask` at `:909` — and its comment "No hub (tests
 / embedded): the run-local future is the path" — unreachable.
 
-**Scope.** The shipped daemon is unaffected: `bootstrap.py:1576` passes both, so
-`_ask` uses `post_ask` and the handler uses `respond_ask` consistently. The
-defect is confined to callers of `create_app`/`make_app` that omit `channels`
-(`web/server.py` defaults it to `None`), which is every test and embedded use.
+**Scope.** This cause is confined to callers of `create_app`/`make_app` that omit
+`channels` (`web/server.py` defaults it to `None`) — every test and embedded use.
+The shipped daemon passes both (`bootstrap.py:1576`) and so escapes *this* cause,
+but it is **not** unaffected: it hits a second, independent cause recorded as
+`R-BUG-09`, measured live against the running daemon.
+
+An earlier revision of this entry claimed the shipped daemon was unaffected. That
+claim was made from reading the wiring, not from running it, and it was wrong.
 
 **Correcting the earlier entry.** Three mechanisms had been recorded as refuted.
 Two genuinely were (the emit-before-future window — there is no `await` between
@@ -363,3 +367,56 @@ drives the round-trip and asserts `ask_resolved`, `final`, `turn_end` and that
 the agent resumed with the answer text. Negative-controlled: with the fix
 reverted it fails (on a 15 s deadline) rather than hanging the suite. The full
 suite's failure set is byte-identical before and after.
+
+
+## R-BUG-09 — A promptly answered permission prompt hangs the turn (race)
+
+**Severity** P0 · **Wave** W5 (`fix:` commit) · **Status** Open (found during W4)
+
+**Evidence.** Measured against the **live daemon** (real Vertex turn, channels and
+DecisionService wired — the shipped configuration), asking it to delete a
+workspace file, which the zone policy gates `asks user`:
+
+| answer timing | outcome |
+|---|---|
+| immediately on receiving the `ask` frame | `ask_resolved`, then silence; turn parked 369 s until answered over HTTP |
+| after a 4 s pause | `ask` → `ask_resolved` → `tool_result` → … → `final` → `turn_end` |
+
+Same prompt, same daemon, same answer (`approve`); only the delay differs. While
+parked, `GET /asks` still listed the ask as pending, and `POST /ask/{id}/respond`
+resolved it and resumed the turn (`turn … done … (369.3s)`), proving the waiter
+map and the ask id were both correct.
+
+**Cause.** `_ask` publishes the ask before anything is waiting for the answer:
+
+```
+run.emit({"type": "ask", ...})        # the client may answer from here on
+await channels.post_ask(ask)
+  └─ await ask_registry.record(a)     # a DB write — the window is wide
+  └─ _race_ask -> asyncio.create_task(WebChannel.post_ask(a))
+       └─ hub.pending_asks[ask_id] = fut   # the waiter finally exists
+```
+
+An answer arriving in that window finds no waiter: `DecisionService.respond_ask`
+falls through `_find`, finds no `_ask_resume` entry either, and raises
+`DecisionConflictError`. The router treats that as "answered elsewhere first" and
+emits `ask_resolved` — so every surface clears the card while the turn is still
+blocked on a future that will now never be resolved by anyone.
+
+**Consequence.** Any surface that answers quickly loses the turn: the Electron
+app's `approve` button, a remembered/auto-approval, or a scripted client. The
+user sees the prompt vanish and the agent go silent forever, with no error. The
+slower the ask registry write, the wider the window.
+
+**Why it was missed.** The inline-ask path had no executing test (`R-TST-11`), and
+the `ask_resolved` frame has two emitters — `_ask`'s `finally` and this conflict
+handler — so its arrival reads as success on the wire.
+
+**Fix.** The waiter must exist before the ask is visible. The registration is
+currently several `await`s downstream of the emit, so either the ask frame moves
+behind registration, or the inline surface gets a future created synchronously in
+`_ask` (before the emit) and raced against `channels.post_ask`, first answer
+winning — the router already owns `run.pending_ask` for exactly this shape.
+
+**Verification.** The live delete-with-immediate-answer completes, and a
+regression test drives an answer that lands before the hub registers its waiter.
