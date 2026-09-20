@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from yuyutsava.cli.render import artifact_view as av
+from yuyutsava.cli.render import tool_format as tf
 from yuyutsava.cli.stream_smoother import TokenSmoother
 from yuyutsava.config.env import env_flag, env_float, env_int
 from yuyutsava.core.streaming import StreamEvent
@@ -187,6 +188,14 @@ class ChatRenderer:
             elif is_err:
                 self._render_tool_result_compact_error(name, full or body, idx)
             # else: suppress on success in non-verbose
+            return
+
+        if ev.kind == "image":
+            # Dropped entirely here until now: a chart the agent generated left
+            # no line in a piped transcript, which reads exactly like one it
+            # never made. Named rather than inlined — a pipe cannot show it.
+            title = ev.data.get("title") or ev.data.get("path") or "image"
+            print(f"  ◨ visual: {tf.sanitize(title)}", file=sys.stderr, flush=True)
             return
 
         if ev.kind == "artifact":

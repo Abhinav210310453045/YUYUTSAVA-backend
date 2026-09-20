@@ -218,7 +218,21 @@ warning is logged.
 
 ## R-BUG-03 — The plain renderer drops visuals
 
-**Severity** P2 · **Wave** W4/W5 (`fix:` commit) · **Status** Open
+**Severity** P2 · **Wave** W4/W5 (`fix:` commit) · **Status** Fixed (W4, `cli/render/plain.py`)
+
+**Found by the parity test rather than by looking.** `R-SOL-01` asks for a test
+that every renderer handles every event kind; writing it turned this from a
+noted divergence into a failing assertion, which is why the fix came forward
+from W5 — leaving it open would have meant committing a red suite.
+
+**Fix.** The plain renderer names the visual the way it already names an
+artifact: `◨ visual: <title>`, through `tool_format.sanitize` so a crafted title
+cannot write escape sequences into the transcript. Named rather than inlined —
+a pipe cannot show an image.
+
+**Verification.** Live, piped (which is what selects this renderer — `is_tty`
+is false): asking the agent for a chart now prints `◨ visual: Tiny Bar Chart`
+where previously nothing appeared at all.
 
 **Evidence.** `cli/render/renderer.py:300` handles `ev.kind == "image"`;
 `cli/render/plain.py:149-239` has no such branch, so the event is silently ignored.
