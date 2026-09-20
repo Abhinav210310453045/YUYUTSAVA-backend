@@ -354,7 +354,7 @@ Characterization tests first, for every unit that is split.
 | `PLR0913` | 38 | **31** | allowlist only shrinks |
 | `BLE001` | 68 | **62** | W5 |
 | `S110` | 50 | **42** | W5 |
-| history narration | 176 | **163** | 0 |
+| history narration | 176 | **160** | 0 |
 
 Done so far:
 
@@ -390,13 +390,20 @@ Done so far:
   `chat_repl.py` 1,486 → 1,137 lines, and three tests stopped importing
   private names from it.
 
+- **The meter is a package**, one stage per module in the order a reading is
+  built — `snapshot` → `bus` → `sizing` → `calibration` → `policy`. 1,034 lines
+  and eight module-level stores became six modules; the import path and all 15
+  exported names are unchanged.
+- **Three pieces left `ChatDashboard`**: `StdioCapture`, `ScrollView` and
+  `InputBroker`, 607 → 438 lines with 40 tests that need no application. It
+  stops above 400 deliberately — see `R-SOL-01`.
+
 Still open in this wave: `build_daemon` (451), the agent builders in
 `core/engine.py` and `core/agent_stack.py` (297, 281 with 19 parameters, 239,
 211), `_async_main` (224), `_build_parser` (205 — the duplicate definition is
 fixed, the length is not), `run_chat_repl` itself (261) and the rest of its
-module, the `AsyncTaskHealthWatcher` (724), `ChatDashboard` (608) and
-`meter.py` (1,034) splits, the remaining DRY helpers, the provider and
-visual-kind registries, and the 163 history-narration phrases.
+module, the `AsyncTaskHealthWatcher` (724) split, the remaining DRY helpers, the provider
+and visual-kind registries, and the 160 history-narration phrases.
 
 **Two departures from the task list, deliberate.**
 

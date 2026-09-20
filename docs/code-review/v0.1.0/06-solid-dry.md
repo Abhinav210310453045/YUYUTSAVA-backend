@@ -13,15 +13,15 @@ user-visible bug. Small helpers exist in up to eighteen disagreeing copies.
 
 ## R-SOL-01 — Classes and modules with many reasons to change
 
-**Severity** P1 · **Wave** W4 · **Status** Partly done — 2 of 6 units closed, 1 partly
+**Severity** P1 · **Wave** W4 · **Status** Partly done — 3 of 6 units closed, 1 partly
 
 | Unit | State |
 |---|---|
 | `TodoExchange` | **Done** (`cad6303`). A facade over `todoboard/services/` — cards, objectives, notes, attachments — with no service importing another; `BoardCore` holds the store, the fault guard, the timeline and the two parent lookups, and `validate.py` the vocabularies. 763 lines and 30 methods → 273 lines of delegation, largest module 229. The public API is unchanged against a signature snapshot, and the error types moved to a leaf first (`9577372`), which made the package acyclic. Characterization first: 40 tests, negative-controlled. |
 | `AsyncTaskHealthWatcher` | Open — now 724 lines, the largest class in the tree |
-| `ChatDashboard` | Open — 603 lines |
+| `ChatDashboard` | **Done** (`cb275da`, `0d82259`, `4749e35`), with a stated stop. `StdioCapture` (process-wide output redirection), `ScrollView` (which rows are on screen) and `InputBroker` (whether a line answers a question or starts a turn) are out, each with its own tests that need no application: 607 → **438** lines and 40 new tests. It stops above 400 on purpose. What is left is the application's layout and lifecycle, which is one responsibility; the only 80-line block still extractable is `_build_app`, and pulling it out means a function taking nine callbacks from the object it came from — indirection without decoupling. |
 | `ChatRenderer` | **Done** (`c10aea5`). Not a base class any more: both renderers satisfy `render/protocol.py` and compose `PayloadRing`, so the fifteen helpers the rich one inherited-but-had-replaced are gone from its surface. 501 → 375 lines; `RichChatRenderer` 412 → 409, still over 400 and carried. |
-| `context/meter.py` | Open — 1,034 lines |
+| `context/meter.py` | **Done** (`c3193db`). A package, one stage per module — `snapshot` → `bus` → `sizing` → `calibration` → `policy`, in the order a reading is built, plus `bounded` for the dict every per-thread map uses. The import path and all 15 exported names are unchanged. |
 | `cli/commands/chat_repl.py` | Partly done (`339ed85`). `run_chat_repl` is 504 → 261 lines behind a slash-command registry that also generates `/help`, and the printers and the `llm_usage` read have left for `render/startup.py`, `render/reports.py` and `cli/usage.py`: 1,486 → 1,137 lines. Still in the file: the turn runner, the surface builder, the ask handler, the slash dispatcher and `_LazyRuntimeSettings`. |
 
 **Claim.** Each unit below holds several responsibilities that share little
