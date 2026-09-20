@@ -296,7 +296,7 @@ site passes the separator it uses today.
 
 ## R-DRY-03 — The current thread id, looked up three ways
 
-**Severity** P2 · **Wave** W4 · **Status** Open
+**Severity** P2 · **Wave** W4 · **Status** **Done** (`b10908f`). `run_context.thread_id_from_runtime(default=...)` is the only definition in the tree, asserted by a test. Call sites keep the fallback they had, because which one is right is a product decision: the consequence the finding names — every offload made outside a run sharing the key `"unknown"` — is now stated in the function's docstring and pinned by a test rather than being an accident of which copy a caller reached. `BLE001` 62 → 59, `S110` 42 → 41.
 
 **Evidence.** `policy/adapter.py:371`, `context/compaction.py:453` and
 `context/artifacts.py:83-91`, with `artifacts/tools.py:31` wrapping the last one.
