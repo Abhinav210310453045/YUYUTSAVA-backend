@@ -349,10 +349,12 @@ Characterization tests first, for every unit that is split.
 | functions > 100 lines | — | **39** | ≤ 10 |
 | functions > 10 params | 14 | **8** | ≤ 3 |
 | max complexity (approx) | ~130 | **38** | ≤ 25 |
-| classes > 400 lines | 11 | **10** | 0 |
+| classes > 400 lines | 11 | **9** | 0 |
 | `C901` (ruff, the gate) | 19 | **13** | allowlist only shrinks |
 | `PLR0913` | 38 | **31** | allowlist only shrinks |
-| history narration | 176 | **168** | 0 |
+| `BLE001` | 68 | **62** | W5 |
+| `S110` | 50 | **42** | W5 |
+| history narration | 176 | **163** | 0 |
 
 Done so far:
 
@@ -373,16 +375,44 @@ Done so far:
 - **One terminal palette** (`yuyutsava/ansi.py`): nine escape codes written out
   157 times across ten modules. A leaf, because the daemon's terminal channel
   writes them too. (`R-DRY-04`)
-- **One content flattener** (`R-DRY-02`), and the plain renderer no longer
-  drops `image` events (`R-BUG-03`).
+- **One content flattener** (`R-DRY-02`), and the plain renderer draws `image`
+  events (`R-BUG-03`).
+- **The two renderers are peers.** `RichChatRenderer` subclassed `ChatRenderer`
+  while overriding all seven of its public methods, so it inherited no
+  behaviour and twenty-two private helpers, fifteen of which it had replaced
+  and could not reach — the coupling `R-BUG-03` came out of. They now share
+  `render/ring.py` (`PayloadRing`), `render/zones.py` and `tool_format` by
+  composition, behind `render/protocol.py`. `ChatRenderer` 501 → 375 lines, so
+  `classes_over_400` is 9.
+- **The REPL's reports left the REPL**: `render/startup.py` (banner, status
+  line, version notice), `render/reports.py` (`/help`, `/usage`, `/skills`,
+  `/context`, the permission card) and `cli/usage.py` (the `llm_usage` read).
+  `chat_repl.py` 1,486 → 1,137 lines, and three tests stopped importing
+  private names from it.
 
 Still open in this wave: `build_daemon` (451), the agent builders in
 `core/engine.py` and `core/agent_stack.py` (297, 281 with 19 parameters, 239,
 211), `_async_main` (224), `_build_parser` (205 — the duplicate definition is
-fixed, the length is not), the `chat_repl` module, the
-`AsyncTaskHealthWatcher`/`ChatDashboard`/`ChatRenderer`/`meter.py` splits, the
-remaining DRY helpers, the provider and visual-kind registries, and the 168
-history-narration phrases.
+fixed, the length is not), `run_chat_repl` itself (261) and the rest of its
+module, the `AsyncTaskHealthWatcher` (724), `ChatDashboard` (608) and
+`meter.py` (1,034) splits, the remaining DRY helpers, the provider and
+visual-kind registries, and the 163 history-narration phrases.
+
+**Two departures from the task list, deliberate.**
+
+- *"The zone chip uses `zones.classify_zone`"* — not done, because that is the
+  wrong function. `agents/task_runner/zones.classify_zone` is the **policy**
+  classifier: it canonicalizes the path, requires a sandbox root and can answer
+  `SYSTEM_CRITICAL`, because its verdict decides whether an operation runs. The
+  chip labels the argument as the agent wrote it and shows nothing when it
+  cannot tell. Using the policy one would change what the chip says and make a
+  display concern depend on a sandbox root. Both renderers now share the
+  display classifier instead, so the two chips cannot disagree with each other.
+- *"The plain renderer drops its helper copies in favour of `tool_format`"* —
+  done for `looks_like_error` and `error_message`, which were proved identical
+  over 21 inputs, and **not** for `compact_summary`, whose `tool_format`
+  version routes through `sanitize`/`truncate` and differs by a character on
+  long values. Substituting it would change what the terse tool line prints.
 
 **Bugs found while doing this wave, each fixed in its own commit:** `R-BUG-03`
 (plain renderer dropped visuals), `R-BUG-08` (branch mismatch), `R-BUG-09` (an

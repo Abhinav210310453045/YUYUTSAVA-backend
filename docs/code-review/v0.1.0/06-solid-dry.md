@@ -13,16 +13,16 @@ user-visible bug. Small helpers exist in up to eighteen disagreeing copies.
 
 ## R-SOL-01 — Classes and modules with many reasons to change
 
-**Severity** P1 · **Wave** W4 · **Status** Partly done — 1 of 6 units closed
+**Severity** P1 · **Wave** W4 · **Status** Partly done — 2 of 6 units closed, 1 partly
 
 | Unit | State |
 |---|---|
 | `TodoExchange` | **Done** (`cad6303`). A facade over `todoboard/services/` — cards, objectives, notes, attachments — with no service importing another; `BoardCore` holds the store, the fault guard, the timeline and the two parent lookups, and `validate.py` the vocabularies. 763 lines and 30 methods → 273 lines of delegation, largest module 229. The public API is unchanged against a signature snapshot, and the error types moved to a leaf first (`9577372`), which made the package acyclic. Characterization first: 40 tests, negative-controlled. |
 | `AsyncTaskHealthWatcher` | Open — now 724 lines, the largest class in the tree |
 | `ChatDashboard` | Open — 603 lines |
-| `ChatRenderer` | Open — 501 lines; `RichChatRenderer` is 412 |
+| `ChatRenderer` | **Done** (`c10aea5`). Not a base class any more: both renderers satisfy `render/protocol.py` and compose `PayloadRing`, so the fifteen helpers the rich one inherited-but-had-replaced are gone from its surface. 501 → 375 lines; `RichChatRenderer` 412 → 409, still over 400 and carried. |
 | `context/meter.py` | Open — 1,034 lines |
-| `cli/commands/chat_repl.py` | Open. `run_chat_repl` itself is 504 → 261 lines behind a slash-command registry that also generates `/help`, but the module is **1,484** lines: the printers and the usage queries have not moved out yet, and the registry added to it. The module-level half of this finding is untouched. |
+| `cli/commands/chat_repl.py` | Partly done (`339ed85`). `run_chat_repl` is 504 → 261 lines behind a slash-command registry that also generates `/help`, and the printers and the `llm_usage` read have left for `render/startup.py`, `render/reports.py` and `cli/usage.py`: 1,486 → 1,137 lines. Still in the file: the turn runner, the surface builder, the ask handler, the slash dispatcher and `_LazyRuntimeSettings`. |
 
 **Claim.** Each unit below holds several responsibilities that share little
 state and change for different reasons.
