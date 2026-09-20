@@ -23,7 +23,7 @@ from typing import Any
 from ulid import ULID
 
 from yuyutsava.todoboard.block_registry import ArtifactBlock, file_validator
-from yuyutsava.todoboard.exchange import TodoValidationError
+from yuyutsava.todoboard.errors import TodoValidationError
 from yuyutsava.voice.backends.tts import tts_from_env
 from yuyutsava.voice.synth import synthesize_pcm
 

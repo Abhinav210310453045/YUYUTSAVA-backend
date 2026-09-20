@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from yuyutsava.todoboard.exchange import TodoAttachmentError, TodoValidationError
+from yuyutsava.todoboard.errors import TodoAttachmentError, TodoValidationError
 
 # Python < 3.13 doesn't map .md — agent-side attaches (no browser mime) need
 # the inference so the frontend text block can claim markdown files.

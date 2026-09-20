@@ -25,7 +25,7 @@ from typing import Any
 from ulid import ULID
 
 from yuyutsava.todoboard.block_registry import ArtifactBlock, file_validator
-from yuyutsava.todoboard.exchange import TodoValidationError
+from yuyutsava.todoboard.errors import TodoValidationError
 
 REFLECTION_MARKER = "## Reflection"
 

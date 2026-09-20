@@ -28,6 +28,14 @@ from typing import Any
 from ulid import ULID
 
 from yuyutsava.storage.paths import blobs_dir
+from yuyutsava.todoboard.errors import (
+    TodoAttachmentError,
+    TodoError,
+    TodoNotFoundError,
+    TodoStorageError,
+    TodoValidationError,
+    require,
+)
 from yuyutsava.todoboard.models import (
     ATTACHMENT_KINDS,
     CARD_STATUSES,
@@ -55,26 +63,6 @@ from yuyutsava.todoboard.store import (
 logger = logging.getLogger("yuyutsava.todoboard.exchange")
 
 
-class TodoError(Exception):
-    """Base for all TODO-board failures."""
-
-
-class TodoValidationError(TodoError):
-    """Caller sent a value outside the exchange contract (HTTP 400)."""
-
-
-class TodoNotFoundError(TodoError):
-    """Unknown card/note/attachment id (HTTP 404)."""
-
-
-class TodoStorageError(TodoError):
-    """The backing store failed; the operation may be retried (HTTP 500)."""
-
-
-class TodoAttachmentError(TodoError):
-    """Blob/file handling failed — bad path, unwritable dir (HTTP 507)."""
-
-
 def _workspace_root() -> Path:
     return blobs_dir() / "todoboard"
 
@@ -83,11 +71,6 @@ def board_workspace_root() -> Path:
     """Root of every card workspace (``blobs/todoboard/``) — the containment
     zone for agents that work across cards (the background TinkerAgent)."""
     return _workspace_root()
-
-
-def _require(condition: bool, message: str) -> None:
-    if not condition:
-        raise TodoValidationError(message)
 
 
 class TodoExchange:
@@ -117,8 +100,8 @@ class TodoExchange:
     ) -> TodoCardV1:
         """Create a card (optionally with a first note) and its workspace dir."""
         title = (title or "").strip()
-        _require(bool(title), "card title must be non-empty")
-        _require(len(title) <= MAX_TITLE_LEN, f"card title exceeds {MAX_TITLE_LEN} chars")
+        require(bool(title), "card title must be non-empty")
+        require(len(title) <= MAX_TITLE_LEN, f"card title exceeds {MAX_TITLE_LEN} chars")
         self._check_status(status)
         tags = self._check_tags(tags)
 
@@ -171,8 +154,8 @@ class TodoExchange:
         fields: dict[str, Any] = {}
         if title is not None:
             title = title.strip()
-            _require(bool(title), "card title must be non-empty")
-            _require(len(title) <= MAX_TITLE_LEN, f"card title exceeds {MAX_TITLE_LEN} chars")
+            require(bool(title), "card title must be non-empty")
+            require(len(title) <= MAX_TITLE_LEN, f"card title exceeds {MAX_TITLE_LEN} chars")
             fields["title"] = title
         old_status: str | None = None
         if status is not None:
@@ -218,7 +201,7 @@ class TodoExchange:
     ) -> list[TodoCardSummaryV1]:
         if status is not None:
             self._check_status(status)
-        _require(1 <= limit <= 5_000, "limit must be between 1 and 5000")
+        require(1 <= limit <= 5_000, "limit must be between 1 and 5000")
         cards = await self._guard(self._store.list_cards(status=status, limit=limit), "list cards")
         if tag:
             # Boards are small (hundreds of cards); tag filtering in Python keeps
@@ -248,8 +231,8 @@ class TodoExchange:
     ) -> TodoObjectiveV1:
         """Append one objective to a card's think flow (order_idx = end)."""
         title = (title or "").strip()
-        _require(bool(title), "objective title must be non-empty")
-        _require(len(title) <= MAX_TITLE_LEN, f"objective title exceeds {MAX_TITLE_LEN} chars")
+        require(bool(title), "objective title must be non-empty")
+        require(len(title) <= MAX_TITLE_LEN, f"objective title exceeds {MAX_TITLE_LEN} chars")
         self._check_phase(phase)
         reason = self._check_reason(reason)
         # Appending needs the current tail; boards are small and the hydrated
@@ -298,8 +281,8 @@ class TodoExchange:
         fields: dict[str, Any] = {}
         if title is not None:
             title = title.strip()
-            _require(bool(title), "objective title must be non-empty")
-            _require(len(title) <= MAX_TITLE_LEN, f"objective title exceeds {MAX_TITLE_LEN} chars")
+            require(bool(title), "objective title must be non-empty")
+            require(len(title) <= MAX_TITLE_LEN, f"objective title exceeds {MAX_TITLE_LEN} chars")
             fields["title"] = title
         if phase is not None:
             self._check_phase(phase)
@@ -378,7 +361,7 @@ class TodoExchange:
             # Cross-card guard BEFORE the write: the objective's hydrated card
             # already carries its notes, so membership is one read.
             card = await self.get_card(obj.card_id)
-            _require(
+            require(
                 any(n.note_id == note_id for n in card.notes),
                 f"objective {objective_id} lives on card {obj.card_id}, "
                 f"which has no note {note_id!r}",
@@ -402,7 +385,7 @@ class TodoExchange:
     async def list_events(self, card_id: str, *, limit: int = 500) -> list[TodoEventV1]:
         """A card's activity timeline, oldest first — feeds the journey doc
         and the card view's activity strip."""
-        _require(1 <= limit <= 5_000, "limit must be between 1 and 5000")
+        require(1 <= limit <= 5_000, "limit must be between 1 and 5000")
         return await self._guard(self._store.list_events(card_id, limit=limit), "list events")
 
     # ── notes ──────────────────────────────────────────────────────────
@@ -417,16 +400,16 @@ class TodoExchange:
         phase: str | None = None,
     ) -> TodoNoteV1:
         body = (body or "").strip()
-        _require(bool(body), "note body must be non-empty")
-        _require(len(body) <= MAX_NOTE_LEN, f"note body exceeds {MAX_NOTE_LEN} chars")
-        _require(author in NOTE_AUTHORS, f"author must be one of {NOTE_AUTHORS}")
+        require(bool(body), "note body must be non-empty")
+        require(len(body) <= MAX_NOTE_LEN, f"note body exceeds {MAX_NOTE_LEN} chars")
+        require(author in NOTE_AUTHORS, f"author must be one of {NOTE_AUTHORS}")
         if phase is not None:
             self._check_phase(phase)
         if objective_id is not None:
             obj = await self._guard(self._store.get_objective(objective_id), "load objective")
             if obj is None:
                 raise TodoNotFoundError(f"no TODO objective with id {objective_id!r}")
-            _require(
+            require(
                 obj.card_id == card_id,
                 f"objective {objective_id} lives on card {obj.card_id}, not {card_id}",
             )
@@ -456,8 +439,8 @@ class TodoExchange:
 
     async def update_note(self, note_id: str, body: str) -> TodoNoteV1:
         body = (body or "").strip()
-        _require(bool(body), "note body must be non-empty")
-        _require(len(body) <= MAX_NOTE_LEN, f"note body exceeds {MAX_NOTE_LEN} chars")
+        require(bool(body), "note body must be non-empty")
+        require(len(body) <= MAX_NOTE_LEN, f"note body exceeds {MAX_NOTE_LEN} chars")
         note = await self._guard(self._store.update_note(note_id, body, time.time()), "update note")
         if note is None:
             raise TodoNotFoundError(f"no TODO note with id {note_id!r}")
@@ -470,8 +453,8 @@ class TodoExchange:
         ``card_id``/``note_id``. Empty when no index is wired (SQLite-only
         deployments) — recall is an enhancement, never a dependency."""
         query = (query or "").strip()
-        _require(bool(query), "search query must be non-empty")
-        _require(1 <= k <= 50, "k must be between 1 and 50")
+        require(bool(query), "search query must be non-empty")
+        require(1 <= k <= 50, "k must be between 1 and 50")
 
         index = get_default_note_index()
         if index is None or not index.enabled:
@@ -501,12 +484,12 @@ class TodoExchange:
         file-backed kinds reference an existing file on disk (the upload
         endpoint / agent tools write the file into the card workspace first).
         The block may also infer a missing mime from the file suffix."""
-        # Lazy import — artifacts.py imports our exception types at module
-        # level, so the cycle must break on this side.
-        # Import cycle: yuyutsava.todoboard.artifacts imports this module.
+        # Deferred for cost, not for a cycle: artifacts.py reaches the TTS and
+        # visual renderers, and importing it costs a measured 27 ms and 169
+        # modules that every board consumer would otherwise pay.
         from yuyutsava.todoboard.artifacts import resolve_block  # noqa: PLC0415
 
-        _require(kind in ATTACHMENT_KINDS, f"kind must be one of {ATTACHMENT_KINDS}")
+        require(kind in ATTACHMENT_KINDS, f"kind must be one of {ATTACHMENT_KINDS}")
         block = resolve_block(kind, mime)
         # Validators touch the filesystem — off the event loop.
         mime = await asyncio.to_thread(block.validate, path=path, url=url, mime=mime)
@@ -552,10 +535,10 @@ class TodoExchange:
         with ``needs_context`` get the hydrated card + timeline injected into
         their spec HERE, on the event loop — generators run in a thread and
         must never call back into the loop-bound store."""
-        # Import cycle: yuyutsava.todoboard.artifacts imports this module.
+        # Deferred for cost — see attach().
         from yuyutsava.todoboard.artifacts import blocks  # noqa: PLC0415
 
-        _require(isinstance(spec, dict) or spec is None, "spec must be a JSON object")
+        require(isinstance(spec, dict) or spec is None, "spec must be a JSON object")
         gen = next((b for b in blocks() if b.name == block), None)
         if gen is None or gen.generate is None:
             names = ", ".join(sorted(b.name for b in blocks() if b.generate))
@@ -717,24 +700,24 @@ class TodoExchange:
 
     @staticmethod
     def _check_status(status: str) -> None:
-        _require(status in CARD_STATUSES, f"status must be one of {CARD_STATUSES}")
+        require(status in CARD_STATUSES, f"status must be one of {CARD_STATUSES}")
 
     @staticmethod
     def _check_phase(phase: str) -> None:
-        _require(phase in OBJECTIVE_PHASES, f"phase must be one of {OBJECTIVE_PHASES}")
+        require(phase in OBJECTIVE_PHASES, f"phase must be one of {OBJECTIVE_PHASES}")
 
     @staticmethod
     def _check_reason(text: str | None) -> str | None:
         if text is None:
             return None
         text = text.strip()
-        _require(len(text) <= MAX_REASON_LEN, f"text exceeds {MAX_REASON_LEN} chars")
+        require(len(text) <= MAX_REASON_LEN, f"text exceeds {MAX_REASON_LEN} chars")
         return text or None
 
     @staticmethod
     def _check_tags(tags: list[str] | None) -> list[str]:
         tags = [str(t).strip() for t in (tags or []) if str(t).strip()]
-        _require(len(tags) <= 50, "at most 50 tags per card")
+        require(len(tags) <= 50, "at most 50 tags per card")
         return tags
 
 

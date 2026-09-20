@@ -28,7 +28,7 @@ from yuyutsava.todoboard.block_registry import (
     resolve_block,
     upload_mime_allowed,
 )
-from yuyutsava.todoboard.exchange import TodoValidationError
+from yuyutsava.todoboard.errors import TodoValidationError
 from yuyutsava.visuals.render import render
 
 # ── validators ──────────────────────────────────────────────────────────
