@@ -38,12 +38,12 @@ from langchain_core.messages import (
     RemoveMessage,
     SystemMessage,
 )
-from langgraph.config import get_config
 from langgraph.graph.message import REMOVE_ALL_MESSAGES
 
 from yuyutsava.context.config import ContextSettings
 from yuyutsava.context.meter import note_compaction
 from yuyutsava.context.summary_store import ThreadSummaryStore
+from yuyutsava.run_context import thread_id_from_runtime
 
 logger = logging.getLogger("yuyutsava.context.compaction")
 
@@ -194,7 +194,7 @@ class YuyutsavaCompactionMiddleware(SummarizationMiddleware):
         # Agent-requested compaction (ctx_compact): consume the flag whether
         # or not anything ends up summarizable — a stuck flag must never make
         # every later turn re-attempt a forced pass.
-        thread_id = _current_thread_id()
+        thread_id = thread_id_from_runtime(default="")
         forced = thread_id in _FORCE_COMPACT
         if forced:
             _FORCE_COMPACT.discard(thread_id)
@@ -292,7 +292,7 @@ class YuyutsavaCompactionMiddleware(SummarizationMiddleware):
         messages = state.get("messages", []) if isinstance(state, dict) else []
         if len(messages) > 1:
             return None
-        thread_id = _current_thread_id()
+        thread_id = thread_id_from_runtime(default="")
         if not thread_id:
             return None
         try:
@@ -434,7 +434,7 @@ class YuyutsavaCompactionMiddleware(SummarizationMiddleware):
 
     async def _persist_summary(self, summary: str) -> None:
         """Write the summary to the store + memory. Never raises."""
-        thread_id = _current_thread_id()
+        thread_id = thread_id_from_runtime(default="")
         if not thread_id:
             return
         token_count = 0
@@ -453,12 +453,3 @@ class YuyutsavaCompactionMiddleware(SummarizationMiddleware):
                 await self._memory.add(kind="summary", text=summary, source_thread_id=thread_id)
             except Exception:
                 logger.exception("compaction: failed to embed summary into memory")
-
-
-def _current_thread_id() -> str:
-    """Thread id from the active LangGraph run config, or empty string."""
-    try:
-        cfg = get_config() or {}
-        return str(cfg.get("configurable", {}).get("thread_id", "") or "")
-    except Exception:
-        return ""

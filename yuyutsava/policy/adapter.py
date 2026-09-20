@@ -33,12 +33,12 @@ from typing import Any, Awaitable, Callable, Sequence
 
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
-from langgraph.config import get_config
 
 from yuyutsava.policy.ask import LangGraphAskUser
 from yuyutsava.policy.base import Policy
 from yuyutsava.policy.types import Denied, ModelCall, Raw, ToolCall, Turn, Usage
 from yuyutsava.ports.ask import AskUser
+from yuyutsava.run_context import thread_id_from_runtime
 
 logger = logging.getLogger("yuyutsava.policy.adapter")
 
@@ -231,7 +231,7 @@ class LangChainPolicyAdapter(AgentMiddleware):  # type: ignore[misc]
         )
         return Turn(
             messages=tuple(messages),
-            thread_id=_current_thread_id(),
+            thread_id=thread_id_from_runtime(default=""),
             usage=_latest_usage(messages),
             state=state if isinstance(state, dict) else {},
         )
@@ -367,20 +367,6 @@ def _tool_name(tool: Any) -> str:
     if isinstance(tool, dict):
         return str(tool.get("name", ""))
     return ""
-
-
-def _current_thread_id() -> str:
-    """The thread this run belongs to, or ``""`` outside a graph.
-
-    Was ``_current_thread_id`` in ``context/transcript_middleware.py``; the
-    transcript recorder, the offload policy and the usage rows all need it, and
-    resolving it in the adapter means none of them reaches for the run config.
-    """
-    try:
-        cfg = get_config() or {}
-        return str(cfg.get("configurable", {}).get("thread_id", "") or "")
-    except Exception:  # noqa: BLE001 — outside a graph run, or shape changed
-        return ""
 
 
 def _latest_usage(messages: Any) -> Usage | None:

@@ -40,10 +40,18 @@ def current_context() -> AgentContext:
     }
 
 
-def thread_id_from_runtime() -> str:
-    """Best-effort thread id from the active LangGraph run config."""
+def thread_id_from_runtime(*, default: str = "unknown") -> str:
+    """Best-effort thread id from the active LangGraph run config.
+
+    *default* is what a caller gets outside a run, and it is a choice, not a
+    detail. ``"unknown"`` is a usable key — every caller that passes it is
+    storing something under the thread id and would rather file it under one
+    bucket than under ``""``. The cost is that those buckets collide: two
+    offloads made outside a run are indistinguishable. Callers that would
+    rather have nothing than a shared bucket pass ``default=""``.
+    """
     try:
         cfg = get_config() or {}
-        return str(cfg.get("configurable", {}).get("thread_id", "") or "unknown")
-    except Exception:
-        return "unknown"
+        return str(cfg.get("configurable", {}).get("thread_id", "") or default)
+    except Exception:  # noqa: BLE001 — outside a graph run, or the shape changed
+        return default

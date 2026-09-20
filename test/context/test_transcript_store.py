@@ -85,11 +85,11 @@ class TranscriptRecorderPolicyTests(unittest.IsolatedAsyncioTestCase):
         from yuyutsava.policy.adapter import LangChainPolicyAdapter
 
         self.mw = LangChainPolicyAdapter([TranscriptRecorderPolicy(self.store)])
-        self._orig_tid = tmw._current_thread_id
-        tmw._current_thread_id = lambda: "tA"  # type: ignore[assignment]
+        self._orig_tid = tmw.thread_id_from_runtime
+        tmw.thread_id_from_runtime = lambda **_kw: "tA"  # type: ignore[assignment]
 
     async def asyncTearDown(self) -> None:
-        tmw._current_thread_id = self._orig_tid  # type: ignore[assignment]
+        tmw.thread_id_from_runtime = self._orig_tid  # type: ignore[assignment]
         self._tmp.cleanup()
 
     async def test_records_state_messages_and_dedups_across_hooks(self) -> None:
@@ -105,7 +105,7 @@ class TranscriptRecorderPolicyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([r.message_id for r in rows], ["m1", "m2"])
 
     async def test_no_thread_id_is_noop(self) -> None:
-        tmw._current_thread_id = lambda: ""  # type: ignore[assignment]
+        tmw.thread_id_from_runtime = lambda **_kw: ""  # type: ignore[assignment]
         await self.mw.abefore_model({"messages": [HumanMessage(content="x", id="z1")]}, None)
         self.assertEqual(await self.store.list_messages("tA"), [])
 

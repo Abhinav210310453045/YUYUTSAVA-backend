@@ -162,7 +162,7 @@ class CompactionPersistenceTests(unittest.IsolatedAsyncioTestCase):
         for i in range(8):
             messages.extend(_turn(i))
 
-        with patch("yuyutsava.context.compaction._current_thread_id", return_value="t-persist"):
+        with patch("yuyutsava.context.compaction.thread_id_from_runtime", return_value="t-persist"):
             update = await mw.abefore_model({"messages": messages}, None)
 
         self.assertIsNotNone(update)
@@ -194,7 +194,7 @@ class CompactionPersistenceTests(unittest.IsolatedAsyncioTestCase):
         messages = [TASK]
         for i in range(8):
             messages.extend(_turn(i))
-        with patch("yuyutsava.context.compaction._current_thread_id", return_value="t-mem"):
+        with patch("yuyutsava.context.compaction.thread_id_from_runtime", return_value="t-mem"):
             await mw.abefore_model({"messages": messages}, None)
 
         self.assertEqual(len(captured), 1)
@@ -206,7 +206,7 @@ class CompactionPersistenceTests(unittest.IsolatedAsyncioTestCase):
         await self.summary_store.put("t-resume", FAKE_SUMMARY + "v2 marker")
         mw = _mw(ContextSettings(), summary_store=self.summary_store)
 
-        with patch("yuyutsava.context.compaction._current_thread_id", return_value="t-resume"):
+        with patch("yuyutsava.context.compaction.thread_id_from_runtime", return_value="t-resume"):
             update = await mw.abefore_agent({"messages": [TASK]}, None)
 
         self.assertIsNotNone(update)
@@ -216,11 +216,11 @@ class CompactionPersistenceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_resume_noop_with_history_or_no_summary(self) -> None:
         mw = _mw(ContextSettings(), summary_store=self.summary_store)
-        with patch("yuyutsava.context.compaction._current_thread_id", return_value="t-fresh"):
+        with patch("yuyutsava.context.compaction.thread_id_from_runtime", return_value="t-fresh"):
             # Fresh thread, no stored summary.
             self.assertIsNone(await mw.abefore_agent({"messages": [TASK]}, None))
         await self.summary_store.put("t-live", FAKE_SUMMARY)
-        with patch("yuyutsava.context.compaction._current_thread_id", return_value="t-live"):
+        with patch("yuyutsava.context.compaction.thread_id_from_runtime", return_value="t-live"):
             # Live history present — no injection.
             state = {"messages": [TASK, AIMessage(content="working")]}
             self.assertIsNone(await mw.abefore_agent(state, None))
@@ -240,7 +240,7 @@ class ThreeCycleContinuityTests(unittest.IsolatedAsyncioTestCase):
         )
 
         messages: list = [TASK]
-        with patch("yuyutsava.context.compaction._current_thread_id", return_value="t-3cycles"):
+        with patch("yuyutsava.context.compaction.thread_id_from_runtime", return_value="t-3cycles"):
             turn = 0
             for _cycle in range(3):
                 # Grow the conversation until compaction fires.

@@ -59,7 +59,10 @@ async def _observe(
 ) -> dict | None:
     """Drive one phase through the adapter, the way the graph does."""
     adapter = LangChainPolicyAdapter([policy])
-    with patch("yuyutsava.policy.adapter._current_thread_id", lambda: thread_id):
+    with patch(
+        "yuyutsava.policy.adapter.thread_id_from_runtime",
+        lambda **_kw: thread_id,
+    ):
         return await getattr(adapter, f"a{phase}")({"messages": messages}, None)
 
 
