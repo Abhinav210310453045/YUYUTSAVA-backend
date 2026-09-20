@@ -234,7 +234,7 @@ class ChatRenderer:
     # ------------------------------------------------------------------
 
     def _render_tool_call_compact(self, name: str, args: Any, idx: int) -> None:
-        summary = self._compact_summary(args)
+        summary = tf.compact_summary(args)
         zone_chip = self._zone_chip(name, args)
         head = f"  {DIM}·{RESET} {CYAN}{name}{RESET}"
         body = f"{DIM}: {summary}{RESET}" if summary else ""
@@ -256,7 +256,7 @@ class ChatRenderer:
                     print(f"      {line}", file=sys.stderr)
             else:
                 if len(sval) > 200:
-                    sval = sval[:200] + "…"
+                    sval = tf.truncate(sval, 200)
                 print(f"    {DIM}{k}:{RESET} {sval}", file=sys.stderr)
 
     def _render_tool_result_verbose(self, name: str, body: str, idx: int, is_err: bool) -> None:
@@ -265,7 +265,7 @@ class ChatRenderer:
             f"  {DIM}↳{RESET} {CYAN}{name}{RESET} {status}  {DIM}[#{idx}]{RESET}",
             file=sys.stderr,
         )
-        pretty = self._pretty_body(body)
+        pretty = tf.pretty_body(body)
         if len(pretty) > self.ring.entry_cap:
             pretty = pretty[: self.ring.entry_cap] + f"\n…[truncated; /expand {idx} for full]"
         for line in pretty.splitlines():
@@ -331,40 +331,6 @@ class ChatRenderer:
     # Format helpers
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _compact_summary(args: Any) -> str:
-        if not isinstance(args, dict):
-            s = str(args)
-            return s if len(s) <= 80 else s[:80] + "…"
-        reason = args.get("reason")
-        if isinstance(reason, str) and reason.strip():
-            s = reason.strip()
-            return s if len(s) <= 80 else s[:80] + "…"
-        for key in ("path", "file_path", "target", "directory"):
-            v = args.get(key)
-            if isinstance(v, str) and v.strip():
-                return v.strip()
-        paths = args.get("paths")
-        if isinstance(paths, list) and paths:
-            head = ", ".join(str(p) for p in paths[:2])
-            return head + ("…" if len(paths) > 2 else "")
-        for key in ("query", "pattern", "name", "command", "question"):
-            v = args.get(key)
-            if isinstance(v, str) and v.strip():
-                s = v.strip()
-                if len(s) > 80:
-                    s = s[:80] + "…"
-                return f'{key}="{s}"'
-        # Fallback: terse key=value summary.
-        items: list[str] = []
-        for k, v in args.items():
-            sval = str(v)
-            if len(sval) > 40:
-                sval = sval[:40] + "…"
-            items.append(f"{k}={sval}")
-        out = ", ".join(items)
-        return out if len(out) <= 80 else out[:80] + "…"
-
     def _zone_chip(self, name: str, args: Any) -> str:
         if not name.startswith("tr_"):
             return ""
@@ -393,15 +359,3 @@ class ChatRenderer:
             except Exception:
                 return str(v)
         return str(v)
-
-    @staticmethod
-    def _pretty_body(body: str) -> str:
-        if not isinstance(body, str):
-            return str(body)
-        stripped = body.strip()
-        if stripped.startswith(("{", "[")):
-            try:
-                return json.dumps(json.loads(stripped), indent=2, default=str)
-            except Exception:
-                pass
-        return body

@@ -25,6 +25,7 @@ from yuyutsava.cli.render.plain import ChatRenderer
 from yuyutsava.cli.render.protocol import ChatRendererProtocol
 from yuyutsava.cli.render.renderer import RichChatRenderer
 from yuyutsava.cli.render.ring import PayloadRing
+from yuyutsava.core.streaming import StreamEvent
 
 
 def _renderers(console_file: io.StringIO | None = None) -> dict[str, object]:
@@ -265,6 +266,45 @@ class TheWholeLifecycleRuns(unittest.IsolatedAsyncioTestCase):
                     await renderer.end_of_turn()
                 text = out.getvalue() + err.getvalue() + console_buf.getvalue()
                 self.assertIn("\u2717", text, "an error result must be marked as one")
+
+
+class ToolArgumentsCannotDistortTheLine(unittest.IsolatedAsyncioTestCase):
+    """A tool argument is attacker-adjacent text: the agent may have been told
+    to read a path, and what it was told comes from outside.
+
+    The plain renderer used to summarise arguments with its own copy of
+    `compact_summary`, which passed newlines and bidi overrides through. The
+    terse view is one line per call, so a newline breaks the layout and a
+    right-to-left override can reorder what a reader sees a path to be.
+    """
+
+    async def _summary_line(self, args: dict) -> str:
+        # Not verbose: the terse one-line-per-call view is the one that
+        # summarises arguments. Verbose prints them as indented JSON, where a
+        # newline is expected and harmless.
+        renderer = ChatRenderer(verbose=False, workspace=Path("/tmp"))
+        console_buf = io.StringIO()
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            await renderer.render(
+                StreamEvent(kind="tool_call", data={"name": "tr_read", "args": args})
+            )
+        return out.getvalue() + err.getvalue() + console_buf.getvalue()
+
+    async def test_a_newline_cannot_break_the_one_line_layout(self) -> None:
+        text = await self._summary_line({"reason": "looks fine\nrm -rf /"})
+        body = [ln for ln in text.splitlines() if "tr_read" in ln]
+        self.assertEqual(len(body), 1, "the call must stay on one line")
+        self.assertIn("rm -rf /", body[0], "and nothing is lost, only flattened")
+
+    async def test_a_bidi_override_is_stripped(self) -> None:
+        """U+202E reverses what follows it on screen."""
+        text = await self._summary_line({"path": "/tmp/\u202egnp.exe"})
+        self.assertNotIn("\u202e", text)
+
+    async def test_a_zero_width_character_is_stripped(self) -> None:
+        text = await self._summary_line({"path": "/tmp/a\u200bb"})
+        self.assertNotIn("\u200b", text)
 
 
 if __name__ == "__main__":

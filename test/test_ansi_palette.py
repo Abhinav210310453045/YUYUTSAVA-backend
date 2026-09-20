@@ -19,7 +19,9 @@ import unittest
 from yuyutsava import ansi
 
 _ROOT = pathlib.Path(__file__).resolve().parents[1] / "yuyutsava"
-_ESCAPE = re.compile(r"\\033\[[0-9;]+m")
+#: Any CSI sequence, not only the ones that end in "m". A pattern that
+#: matched colour alone let `\\033[2J\\033[H` sit unnamed in the REPL.
+_ESCAPE = re.compile(r"\\033\[[0-9;?]*[A-Za-z]")
 
 #: The exact bytes each name must keep. Written out here rather than imported
 #: so a change to the module is a change to two places on purpose.
@@ -33,6 +35,8 @@ CODES = {
     "MAGENTA": "\033[35m",
     "CYAN": "\033[36m",
     "BOLD_RED": "\033[1;31m",
+    # Movement, not colour: `/clear` erases the screen and homes the cursor.
+    "CLEAR_SCREEN": "\033[2J\033[H",
 }
 
 

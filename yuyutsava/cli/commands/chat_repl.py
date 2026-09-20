@@ -38,7 +38,7 @@ from prompt_toolkit.formatted_text import ANSI
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.patch_stdout import patch_stdout
 
-from yuyutsava.ansi import CYAN, DIM, RED, RESET, YELLOW
+from yuyutsava.ansi import CLEAR_SCREEN, CYAN, DIM, RED, RESET, YELLOW
 from yuyutsava.async_subagents.watcher import AsyncTaskHealthWatcher
 from yuyutsava.cli.async_hitl import CliHitlBridge, CliRemoteHitl
 from yuyutsava.cli.commands.options import ChatOptions
@@ -832,7 +832,7 @@ def _handle_slash(
         return _SLASH_HANDLED
     if head == "/clear":
         # ANSI clear + redraw banner.
-        print("\033[2J\033[H", end="", file=sys.stderr)
+        print(CLEAR_SCREEN, end="", file=sys.stderr)
         startup.print_banner(session_id=session_id, workspace=workspace, resuming=False)
         return _SLASH_HANDLED
     if head == "/session":

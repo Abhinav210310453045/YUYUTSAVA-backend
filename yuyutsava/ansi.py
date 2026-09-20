@@ -29,8 +29,14 @@ CYAN = "\033[36m"
 #: Reserved for a failure the user must not scroll past.
 BOLD_RED = "\033[1;31m"
 
+# Movement. Not colour, but the same vocabulary and the same reason to name it:
+# a bare "\033[2J\033[H" at a call site is unreviewable.
+#: Erase the screen and put the cursor at the top-left — what `/clear` does.
+CLEAR_SCREEN = "\033[2J\033[H"
+
 __all__ = [
     "BOLD",
+    "CLEAR_SCREEN",
     "BOLD_RED",
     "CYAN",
     "DIM",
