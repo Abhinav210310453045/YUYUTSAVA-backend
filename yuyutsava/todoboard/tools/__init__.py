@@ -6,10 +6,10 @@ and nothing that edits. **full** is the TinkerAgent's, which works a card rather
 than filing it.
 
 The tools are grouped by what they touch — :mod:`capture`, :mod:`editing`,
-:mod:`notes` and :mod:`artifacts` — because they used to be twelve closures in
-one 266-line function (`R-RDB-02`). The families are ordered here to match the
-order the bound list has always had: the model sees the same tools in the same
-places.
+:mod:`notes` and :mod:`artifacts` — so a change to one family is one file
+rather than a stretch of one long factory (`R-RDB-02`). The families are
+ordered here to fix the order of the bound list, because the model sees the
+tools in that order.
 """
 
 from __future__ import annotations

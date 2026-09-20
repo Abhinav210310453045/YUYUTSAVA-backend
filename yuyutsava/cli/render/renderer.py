@@ -51,11 +51,9 @@ _SUBAGENT_INLINE_CHARS = 4000
 class RichChatRenderer:
     """The TTY renderer: a Live status region, Markdown prose, Rich panels.
 
-    Satisfies :class:`~yuyutsava.cli.render.protocol.ChatRendererProtocol`
-    without inheriting from the plain renderer. It used to subclass it, which
-    shared a payload ring and three small formatters at the cost of inheriting
-    fifteen helpers it had already replaced — so a fix to one renderer was
-    invisible in the other.
+    Satisfies :class:`~yuyutsava.cli.render.protocol.ChatRendererProtocol`.
+    It shares the payload ring and the small formatters with the plain
+    renderer by composition, and defines its whole display path itself.
     """
 
     def __init__(

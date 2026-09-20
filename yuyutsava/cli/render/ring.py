@@ -6,10 +6,9 @@ somewhere the user can ask for later. That is this: a bounded deque of the last
 ``YUYUTSAVA_REPL_RING_ENTRY_KB`` so one enormous tool result cannot grow the
 REPL's memory without limit.
 
-It is its own object because both renderers need it and neither owns it. The
-rich renderer used to reach it by inheriting from the plain one, which also
-handed it fifteen formatting helpers it had already replaced — the arrangement
-that let `R-BUG-03` happen.
+Its own object because both renderers need it and neither owns it: sharing it
+through a base class would also share the fifteen formatting helpers each
+renderer defines for itself, which is the coupling `R-BUG-03` came out of.
 """
 
 from __future__ import annotations

@@ -2,8 +2,8 @@
 two parent lookups.
 
 The four domain services never import each other. That is not a style rule —
-it is what stops the board's write path from being one object again. It works
-because the things they would have called each other for are all here:
+it is what keeps the board's write path from collapsing back into one object.
+It works because the things they would otherwise call each other for are here:
 
 * the **store**, resolved lazily so an exchange built before boot wiring still
   lands on the store the daemon injected;

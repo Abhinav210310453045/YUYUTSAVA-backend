@@ -2,10 +2,10 @@
 
 A leaf on purpose. These types are what every caller maps outcomes from — the
 REST layer to HTTP status codes, the ``todo_*`` tools to structured error
-strings — so the artifact blocks that raise them need them too. While they
-lived in :mod:`yuyutsava.todoboard.exchange` alongside the write path, four
-sibling modules imported the facade to reach them, and the facade had to defer
-its imports of *them* to break the cycle it had created.
+strings — and the artifact blocks raise them, so the vocabulary has to sit
+below both the blocks and the write path. Keeping it beside the write path
+instead would make every module that merely raises a validation error import
+the whole board protocol, and the protocol defer its imports of them back.
 """
 
 from __future__ import annotations

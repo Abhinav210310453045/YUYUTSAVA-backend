@@ -658,10 +658,9 @@ class ChatDashboard:
     def attach_renderer(self, renderer: ChatRendererProtocol) -> None:
         """Take the status line from the renderer and repaint when it changes.
 
-        The three members used here are the whole of what a dashboard needs
-        from a renderer, which is why they are in the protocol. Assigning
-        ``on_change`` was guarded against ``AttributeError`` while only the
-        rich renderer happened to define it; both declare it now.
+        These three members are the whole of what a dashboard needs from a
+        renderer, which is why they are the protocol's data members: every
+        renderer declares ``on_change``, so assigning it needs no guard.
         """
         self._status = lambda: renderer.status_text()
         self._tool = lambda: renderer.tool_in_flight()

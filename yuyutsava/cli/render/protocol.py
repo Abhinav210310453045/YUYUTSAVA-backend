@@ -1,17 +1,17 @@
 """What the REPL requires of a renderer, stated once.
 
 There are two terminal renderers — Rich on a TTY, ANSI on stderr everywhere
-else — and they used to be related by inheritance. That looked like sharing but
-was not: the rich renderer overrides every single public method, so it
-inherited none of the behaviour and all of the private helpers, including
-fifteen it had already replaced with its own. A fix applied to one of those was
-invisible in the other, which is how the plain renderer came to drop `image`
-events (`R-BUG-03`).
+else — and neither is a special case of the other. They share no public
+behaviour at all: each draws every event its own way, on its own output. So
+what relates them is this protocol and not a base class. A base class here
+would hand each renderer the other's helpers, and a fix applied to an
+overridden one would be invisible in the renderer that overrode it — the
+failure behind `R-BUG-03`, where one renderer drew `image` events and the other
+silently dropped them.
 
-A protocol says what a host may call without implying that either renderer is
-a special case of the other. Both satisfy it structurally, so neither imports
-the other, and `test/cli/test_renderer_event_kinds.py` is what keeps their
-*coverage* in step — the protocol only guarantees the surface.
+The protocol guarantees the *surface* a host may call.
+`test/cli/test_renderer_event_kinds.py` guarantees the *coverage*: that each
+renderer draws something for every kind.
 """
 
 from __future__ import annotations

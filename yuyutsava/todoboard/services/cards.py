@@ -42,7 +42,8 @@ class CardService:
         """Create a card and its workspace dir.
 
         A first note is the facade's business, not ours: it belongs to the
-        notes domain, and adding it here is what made this one object.
+        notes domain, and reaching into it from here is what would merge the
+        two.
         """
         title = validate.title(title, "card")
         validate.status(status)
