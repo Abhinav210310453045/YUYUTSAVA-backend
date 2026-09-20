@@ -384,7 +384,9 @@ piped CLI output carries actual `ESC[` bytes (`0m`, `2m`, `33m`, `36m`) with no
 
 ## R-DRY-05 — Front-end and builder wiring copied
 
-**Severity** P1 · **Wave** W4 · **Status** Open (legacy `F-D06` partly closed)
+**Severity** P1 · **Wave** W4 · **Status** **Partly done** — the HITL prompt is closed (`32ae54c`). `cli/ask_prompt.py` is the one blocking prompt for both surfaces, which had drifted over whether to show the ask id and mark background askers. Two further spellings turned up: the queued-ask *announcement* is a different rendering and stays, but now takes its answer keys from `permission_keys`; the foreground card's longer wording is deliberate and stays its own. One defect found and fixed on the way — the foreground retry hint hardcoded the scope keys for every interrupt type, teaching `[s]ession`/`[p]roject` for asks that cannot store a grant.
+
+Still open: the background-task event lines (copied text, but over different inputs — a wire dict and a typed payload), the async watcher/bridge wiring in `chat.py` vs `chat_repl.py` (whose teardowns differ), the `_build_host` closure with its `meter_window` drift, the repeated get-state/diagnose/repair in `conversation/service.py`, the two `core/engine.py` repetitions, the identical `search_tools` overrides and `__init__`s, and the start-up environment block.
 
 **Evidence.**
 
