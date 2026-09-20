@@ -89,6 +89,11 @@ class ChatRenderer:
         """No-op display pause. The rich subclass stops its Live region."""
         yield
 
+    async def aclose(self) -> None:
+        """Stop the token smoother, if prose was being paced through one."""
+        if self._smoother is not None:
+            await self._smoother.aclose()
+
     @staticmethod
     def _make_smoother() -> TokenSmoother | None:
         """Build a token smoother for prose, or None to print directly.

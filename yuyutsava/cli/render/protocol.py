@@ -57,5 +57,13 @@ class ChatRendererProtocol(Protocol):
     def pause(self) -> ContextManager[Any]:
         """Stop drawing for the block's duration, so a prompt can own the tty."""
 
+    async def aclose(self) -> None:
+        """Release anything still buffering output. Called once, at shutdown.
+
+        In the protocol because the alternative is what the REPL used to do:
+        reach for ``renderer._smoother``, a field only one of the two renderers
+        has.
+        """
+
 
 __all__ = ["ChatRendererProtocol"]

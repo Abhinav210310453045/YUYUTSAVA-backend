@@ -1120,8 +1120,7 @@ async def run_chat_repl(
                     await dashboard.stop()
                 dashboard.replay_to(sys.stderr)
             with contextlib.suppress(Exception):
-                if renderer._smoother is not None:
-                    await renderer._smoother.aclose()
+                await renderer.aclose()
             await approvals.aclose()
             await runtime_toggles.aclose()
             await bundle.aclose()

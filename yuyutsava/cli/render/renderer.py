@@ -133,6 +133,10 @@ class RichChatRenderer:
         self._in_turn = False
         self._notify()
 
+    async def aclose(self) -> None:
+        """Nothing to release: the Live region paces output itself, so this
+        renderer never builds a token smoother to begin with."""
+
     @contextlib.contextmanager
     def pause(self):
         """Stop the Live region around blocking input (ask cards).

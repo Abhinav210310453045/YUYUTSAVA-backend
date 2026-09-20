@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import re
 import unittest
 from pathlib import Path
 
@@ -73,9 +74,21 @@ class BothAreRenderers(unittest.TestCase):
             def status_text(self) -> str:
                 return ""
 
-            # no render / end_of_turn / tool_in_flight / note_retry / pause
+            # no render / end_of_turn / tool_in_flight / note_retry / pause / aclose
 
         self.assertNotIsInstance(Halfway(), ChatRendererProtocol)
+
+    def test_the_repl_never_reaches_past_the_protocol(self) -> None:
+        """Every renderer member the REPL touches must be on the protocol.
+
+        The one that was not — `_smoother` — survived a refactor only because
+        the call site sat inside `contextlib.suppress(Exception)`, so the
+        AttributeError was swallowed and nothing said the teardown had stopped
+        working.
+        """
+        source = Path("yuyutsava/cli/commands/chat_repl.py").read_text()
+        private = sorted(set(re.findall(r"\brenderer\.(_\w+)", source)))
+        self.assertEqual(private, [], f"chat_repl reaches for {private} on a renderer")
 
 
 class TheRingIsShared(unittest.TestCase):
@@ -196,6 +209,10 @@ class TheWholeLifecycleRuns(unittest.IsolatedAsyncioTestCase):
                     with renderer.pause():
                         pass
                     await renderer.end_of_turn()
+                    # Shutdown. The REPL used to reach for renderer._smoother
+                    # here, a field only the plain renderer has, inside a
+                    # blanket suppress that hid the AttributeError.
+                    await renderer.aclose()
 
     async def test_a_verbose_call_and_result_round_trip(self) -> None:
         """The path that reads ring.entry_cap and the shared formatters — the
