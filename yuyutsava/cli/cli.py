@@ -13,8 +13,9 @@ import argparse
 import dataclasses
 import os
 import sys
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Callable, Literal
 
 try:
     from dotenv import load_dotenv
@@ -51,15 +52,100 @@ from yuyutsava.storage.paths import ensure_state_dirs
 os.environ.setdefault("GRPC_VERBOSITY", "ERROR")
 
 
+@dataclass(frozen=True)
+class Subcommand:
+    """One ``yuyutsava <name>`` command.
+
+    ``summary`` is what ``--help`` prints, so the help text and the dispatch
+    read the same list. They used to be two — a sentence in the parser
+    description and an if-chain in ``main`` — agreeing only by luck, which is
+    exactly how `/help` came to hide four working commands (`R-BUG-12`).
+    """
+
+    name: str
+    summary: str
+    #: Handed the argv *after* the command name; returns the process exit code.
+    run: Callable[[list[str]], int]
+    #: Whether Ctrl+C should exit 130 quietly rather than raise. Only the async
+    #: paths need it: ``daemon`` installs its own handler and ``attach``
+    #: catches its own, while ``prefs`` is short and synchronous.
+    quiet_interrupt: bool = False
+
+
+def _run_daemon(argv: list[str]) -> int:
+    """Hand off to the always-on daemon; the rest of argv is the daemon's own."""
+    # Deferred: the daemon adds ~195 modules (~120 ms) no other command needs.
+    from yuyutsava.daemon.main import main as daemon_main  # noqa: PLC0415
+
+    return daemon_main(argv)
+
+
+def _run_chat(argv: list[str]) -> int:
+    return aio_run(_async_main(argv, force_chat=True))
+
+
+def _run_task(argv: list[str]) -> int:
+    """No subcommand: argv is a task, or flags for the one-shot/REPL path."""
+    return aio_run(_async_main(argv))
+
+
+#: Every subcommand, once. Nothing else may name one.
+SUBCOMMANDS: tuple[Subcommand, ...] = (
+    Subcommand(
+        "chat",
+        "interactive chat REPL (also the default when given no task)",
+        _run_chat,
+        quiet_interrupt=True,
+    ),
+    Subcommand("daemon", "run the always-on daemon", _run_daemon),
+    Subcommand("attach", "answer a running daemon's approvals from this terminal", run_attach),
+    Subcommand("prefs", "read or write stored preferences", run_prefs),
+)
+
+
+def _quietly(run: Callable[[], int]) -> int:
+    """Run *run*, turning a Ctrl+C outside a turn into a quiet exit 130.
+
+    It arrives during the stack build, at a prompt, or in teardown, and the
+    traceback tells the user nothing they did not already know.
+    """
+    try:
+        return run()
+    except KeyboardInterrupt:
+        print(file=sys.stderr)
+        return 130
+
+
+def dispatch(raw: list[str], commands: tuple[Subcommand, ...] = SUBCOMMANDS) -> int:
+    """Route argv to a subcommand, or to the task path when it names none."""
+    cmd = next((c for c in commands if raw and raw[0] == c.name), None)
+    if cmd is None:
+        return _quietly(lambda: _run_task(raw))
+    rest = raw[1:]
+    return _quietly(lambda: cmd.run(rest)) if cmd.quiet_interrupt else cmd.run(rest)
+
+
+def _subcommand_help() -> str:
+    """The subcommand list for ``--help``, written from the registry.
+
+    Not argparse subparsers: ``daemon``, ``attach`` and ``prefs`` each parse
+    their own argv, and the options below belong to the task/chat path. Making
+    them subparsers would change which command lines are accepted.
+    """
+    width = max(len(c.name) for c in SUBCOMMANDS)
+    return "subcommands:\n" + "\n".join(f"  {c.name:<{width}}  {c.summary}" for c in SUBCOMMANDS)
+
+
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="yuyutsava",
         description=(
             "YUYUTSAVA: AI agent for natural language tasks. Runs tools on the "
             "host or in a Docker sandbox. Set LLM_PROVIDER and the matching API "
-            "key in .env — see .env.example for the supported providers. "
-            "Subcommands (not listed below): chat, daemon, attach, prefs."
+            "key in .env — see .env.example for the supported providers."
         ),
+        epilog=_subcommand_help(),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument(
         "task",
@@ -320,30 +406,9 @@ def _local_settings_from_args(args: argparse.Namespace) -> LocalSettings:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Sync entry point required by setuptools console_scripts. Drives async logic."""
+    """Sync entry point required by setuptools console_scripts."""
     ensure_state_dirs()
-    raw = list(argv) if argv is not None else sys.argv[1:]
-    if raw and raw[0] == "daemon":
-        # Hand off to the always-on daemon. The rest of argv is the daemon's own.
-        # Deferred: the daemon adds ~195 modules (~120 ms) no other command needs.
-        from yuyutsava.daemon.main import main as daemon_main  # noqa: PLC0415
-
-        return daemon_main(raw[1:])
-    if raw and raw[0] == "prefs":
-        return run_prefs(raw[1:])
-    if raw and raw[0] == "attach":
-        return run_attach(raw[1:])
-    # Ctrl+C anywhere outside a turn (during the stack build, at a prompt, in
-    # teardown) reaches here as KeyboardInterrupt. Exit 130 quietly — the
-    # traceback tells the user nothing they did not already know, and the
-    # daemon's main has always done this.
-    try:
-        if raw and raw[0] == "chat":
-            return aio_run(_async_main(raw[1:], force_chat=True))
-        return aio_run(_async_main(raw))
-    except KeyboardInterrupt:
-        print(file=sys.stderr)
-        return 130
+    return dispatch(list(argv) if argv is not None else sys.argv[1:])
 
 
 async def _async_main(argv: list[str] | None = None, *, force_chat: bool = False) -> int:

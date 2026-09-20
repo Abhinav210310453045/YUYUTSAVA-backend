@@ -320,13 +320,20 @@ class InterruptKeepsTheSessionOpen(unittest.TestCase):
         self.assertEqual(asyncio.run(turn_loop()), ["turn0", "cancelled", "turn2"])
 
     def test_the_entry_point_exits_quietly(self):
-        import inspect
+        """Driven through `main` itself, not read off its source.
+
+        The handling moved into `_quietly` when the subcommands became a
+        registry (`R-KIS-01`); asserting on `main`'s text only ever confirmed
+        where the `except` was written, not that Ctrl+C reaches the shell as a
+        quiet 130.
+        """
+        from unittest.mock import patch
 
         from yuyutsava.cli import cli
 
-        src = inspect.getsource(cli.main)
-        self.assertIn("except KeyboardInterrupt:", src)
-        self.assertIn("return 130", src)
+        with patch.object(cli, "_run_task", side_effect=KeyboardInterrupt):
+            with patch.object(cli, "ensure_state_dirs"):
+                self.assertEqual(cli.main(["some", "task"]), 130)
 
 
 class BannerAndNoise(unittest.TestCase):

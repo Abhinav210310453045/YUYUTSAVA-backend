@@ -349,6 +349,37 @@ prefs." (`:54`).
 
 ---
 
+**Fixed (W4), though not as subparsers.** The commands were named in two places
+— a sentence in the parser description (`"Subcommands (not listed below): chat,
+daemon, attach, prefs"`) and an if-chain in `main` — with nothing tying them
+together. They happened to agree; the slash commands did not, and four working
+ones went undocumented for it (`R-BUG-12`).
+
+One `SUBCOMMANDS` registry now drives both: `--help` renders its summaries, and
+`dispatch` routes by its names. `main` is 4 lines, `dispatch` is 7.
+
+**Not argparse subparsers, deliberately.** `daemon`, `attach` and `prefs` each
+parse their own argv, and the flags in `_build_parser` belong to the task/chat
+path. Real subparsers would change which command lines are *accepted* — today
+`yuyutsava --workspace X chat` and `yuyutsava chat --workspace X` both work,
+because the subcommand is matched before argparse sees anything. That is a
+user-visible contract on a daily-use tool, and reshaping it is a separate
+decision from removing the duplication.
+
+The registry also states the Ctrl+C rule instead of leaving it implicit: only
+the async paths get the quiet exit 130, because `daemon` installs its own
+handler and `attach` catches its own — which the live check confirmed (Ctrl-C
+detached it cleanly, exit 0).
+
+**Verification.** `test/cli/test_subcommands.py` pins the surface, the routing,
+and the invariants that matter: an unknown first word is a *task* rather than an
+error (so `yuyutsava "summarise this"` keeps working), a word that merely starts
+like a command (`chatter`) is a task too, and importing the CLI does not import
+the daemon — its ~195 modules stay behind the handler. Negative-controlled by
+deleting a command from the registry. All five paths were then driven for real:
+`--help`, `prefs list`, `daemon --status`, `attach` (attach then Ctrl-C), `chat`,
+and the bare task path.
+
 ## R-KIS-02 — Work done and then undone, and structure without a use
 
 **Severity** P2 · **Wave** W4 · **Status** Open
