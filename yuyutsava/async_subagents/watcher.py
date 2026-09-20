@@ -909,10 +909,14 @@ class AsyncTaskHealthWatcher:
 
         Defensive net for the case the master-side interrupt patch missed: an
         errored thread carrying an ``AIMessage(tool_calls)`` with no matching
-        ``ToolMessage`` is otherwise unreadable. Done at most once per thread.
+        ``ToolMessage`` is otherwise unreadable.
+
+        At most once per thread, checked here as well as by the caller: this is
+        the code that owns ``_healed_threads``, and a persistently failing
+        thread patched on every cycle is a write loop against the host.
         """
         assert self._client is not None
-        if not task.sub_thread_id:
+        if not task.sub_thread_id or task.sub_thread_id in self._healed_threads:
             return
         values = (
             thread.get("values") if isinstance(thread, dict) else getattr(thread, "values", None)

@@ -242,6 +242,23 @@ class SelfHealing(WatcherCase):
         await self.watcher._poll_known_tasks()
         self.assertEqual(len(self.host.patched), 1)
 
+    async def test_a_thread_is_never_patched_twice(self) -> None:
+        """Driven directly: a poll that heals also ends the task, so the guard
+        is only reachable from here — and a persistently failing thread must
+        not be patched on every cycle."""
+        task = await self.ingest()
+        self.host.messages = list(self.ORPHANED)
+        thread = await self.host.threads.get("th-1")
+        await self.watcher._heal_orphaned_tool_calls(task, thread)
+        await self.watcher._heal_orphaned_tool_calls(task, thread)
+        self.assertEqual(len(self.host.patched), 1, "patched exactly once")
+
+    async def test_a_thread_with_no_orphans_is_left_alone(self) -> None:
+        await self.ingest()
+        self.host.run_status = "error"
+        await self.watcher._poll_known_tasks()
+        self.assertEqual(self.host.patched, [])
+
 
 class Progress(WatcherCase):
     async def test_only_new_steps_are_emitted(self) -> None:
