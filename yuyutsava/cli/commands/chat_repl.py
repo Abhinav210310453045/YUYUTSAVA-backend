@@ -43,6 +43,7 @@ from prompt_toolkit.formatted_text import ANSI
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.patch_stdout import patch_stdout
 
+from yuyutsava.ansi import CYAN, DIM, RED, RESET, YELLOW
 from yuyutsava.async_subagents.watcher import AsyncTaskHealthWatcher
 from yuyutsava.cli.async_hitl import CliHitlBridge, CliRemoteHitl
 from yuyutsava.cli.commands.options import ChatOptions
@@ -58,14 +59,7 @@ from yuyutsava.cli.render.dashboard import (
     terminal_cols,
     wide_enough,
 )
-from yuyutsava.cli.render.plain import (
-    _CYAN,
-    _DIM,
-    _RED,
-    _RESET,
-    _YELLOW,
-    ChatRenderer,
-)
+from yuyutsava.cli.render.plain import ChatRenderer
 from yuyutsava.cli.render.renderer import RichChatRenderer
 from yuyutsava.cli.tooling import cleanup_local_sandbox
 from yuyutsava.config.env import env_flag
@@ -133,7 +127,7 @@ def _print_version_notice(*, full: bool = False) -> None:
     if _langgraph_api_is_eol(current, latest, releases):
         parts.append("current version is EOL")
     parts.append(f"pip install -U {_LANGGRAPH_API}")
-    print(f"  {_DIM}{_YELLOW}⚠ {' · '.join(parts)}{_RESET}", file=sys.stderr)
+    print(f"  {DIM}{YELLOW}⚠ {' · '.join(parts)}{RESET}", file=sys.stderr)
 
 
 def _langgraph_api_is_eol(current: Version, latest: Version, releases: Iterable[str]) -> bool:
@@ -167,15 +161,15 @@ def _print_banner(
 ) -> None:
     print(file=sys.stderr)
     for line in _BANNER_LINES:
-        print(f"{_CYAN}{line}{_RESET}", file=sys.stderr)
+        print(f"{CYAN}{line}{RESET}", file=sys.stderr)
     verb = "resumed session" if resuming else "session"
     print(file=sys.stderr)
-    print(f"  {_DIM}{verb}:{_RESET}  {session_id}", file=sys.stderr)
-    print(f"  {_DIM}workspace:{_RESET} {workspace}", file=sys.stderr)
+    print(f"  {DIM}{verb}:{RESET}  {session_id}", file=sys.stderr)
+    print(f"  {DIM}workspace:{RESET} {workspace}", file=sys.stderr)
     if status:
-        print(f"  {_DIM}{status}{_RESET}", file=sys.stderr)
+        print(f"  {DIM}{status}{RESET}", file=sys.stderr)
     print(
-        f"  {_DIM}type /help, /quit, or press Ctrl+D to exit{_RESET}",
+        f"  {DIM}type /help, /quit, or press Ctrl+D to exit{RESET}",
         file=sys.stderr,
     )
     print(file=sys.stderr)
@@ -333,7 +327,7 @@ async def run_one_turn(
         if task is not None:
             task.uncancel()
         await renderer.end_of_turn()
-        print(f"{_DIM}(turn cancelled — session still open){_RESET}", file=sys.stderr)
+        print(f"{DIM}(turn cancelled — session still open){RESET}", file=sys.stderr)
         return False
     except Exception as exc:  # noqa: BLE001 — a failed turn must not end the session
         await renderer.end_of_turn()
@@ -355,10 +349,10 @@ def _report_turn_failure(exc: BaseException) -> None:
         # line, and the session stays open so the message can simply be resent.
         code = "429" if type(exc).__name__ == "ResourceExhausted" else "503"
         print(
-            f"{_RED}provider busy ({code}){_RESET} — retries gave up. "
-            f"{_DIM}Resend to try again; VERTEX_RETRY_BUDGET_SEC (default 90) "
+            f"{RED}provider busy ({code}){RESET} — retries gave up. "
+            f"{DIM}Resend to try again; VERTEX_RETRY_BUDGET_SEC (default 90) "
             f"and VERTEX_MAX_RETRIES control how long it keeps trying. "
-            f"Session still open.{_RESET}",
+            f"Session still open.{RESET}",
             file=sys.stderr,
         )
         return
@@ -366,9 +360,9 @@ def _report_turn_failure(exc: BaseException) -> None:
     # turns a library-internal failure ("list index out of range") into an
     # unattributable one-liner, and the frame it came from is the only thing
     # that makes it fixable.
-    print(f"{_RED}error:{_RESET} {type(exc).__name__}: {exc}", file=sys.stderr)
+    print(f"{RED}error:{RESET} {type(exc).__name__}: {exc}", file=sys.stderr)
     tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
-    print(f"{_DIM}{tb.rstrip()}{_RESET}", file=sys.stderr)
+    print(f"{DIM}{tb.rstrip()}{RESET}", file=sys.stderr)
 
 
 @dataclass(frozen=True)
@@ -423,9 +417,9 @@ def build_surface(
     # silently dropping to the single-pane view looks like a bug.
     if mode == "rich" and not classic and dashboard_enabled() and not wide_enough():
         print(
-            f"{_DIM}terminal is {terminal_cols()} columns — too narrow to split; "
+            f"{DIM}terminal is {terminal_cols()} columns — too narrow to split; "
             f"using the classic transcript (resize and restart for the "
-            f"context panel){_RESET}",
+            f"context panel){RESET}",
             file=sys.stderr,
         )
     return ChatSurface(mode=mode, console=console, dashboard=dashboard, renderer=renderer)
@@ -487,25 +481,25 @@ def _startup_status_line(sessions_settings: SessionsSettings) -> str:
 
 def _print_help() -> None:
     print(file=sys.stderr)
-    print(f"{_CYAN}Commands:{_RESET}", file=sys.stderr)
+    print(f"{CYAN}Commands:{RESET}", file=sys.stderr)
     width = max(len(c.signature) for c in SLASH_COMMANDS)
     group = SLASH_COMMANDS[0].group
     for cmd in SLASH_COMMANDS:
         if cmd.group != group:
             print(file=sys.stderr)
             group = cmd.group
-        print(f"  {_DIM}{cmd.signature:<{width}}{_RESET}  {cmd.help}", file=sys.stderr)
+        print(f"  {DIM}{cmd.signature:<{width}}{RESET}  {cmd.help}", file=sys.stderr)
     print(file=sys.stderr)
     print(
-        f"{_DIM}Ctrl+C cancels the current turn but keeps the session open.{_RESET}",
+        f"{DIM}Ctrl+C cancels the current turn but keeps the session open.{RESET}",
         file=sys.stderr,
     )
     print(
-        f"{_DIM}In the split view: PgUp/PgDn or the wheel scrolls, End follows "
+        f"{DIM}In the split view: PgUp/PgDn or the wheel scrolls, End follows "
         f"the output again, Ctrl+G hides the context panel, Ctrl+L clears the "
         f"transcript. Typing during a turn queues your message; Ctrl+S "
         f"interrupts the turn and sends it now. Start with --classic for the "
-        f"single-pane view.{_RESET}",
+        f"single-pane view.{RESET}",
         file=sys.stderr,
     )
     print(file=sys.stderr)
@@ -627,7 +621,7 @@ class _SlashCompleter(Completer):
 
 
 def _print_kv(label: str, value: str) -> None:
-    print(f"  {_DIM}{label:<10}{_RESET} {value}", file=sys.stderr)
+    print(f"  {DIM}{label:<10}{RESET} {value}", file=sys.stderr)
 
 
 def _render_permission_payload(payload: dict[str, Any]) -> None:
@@ -706,7 +700,7 @@ def make_ask_handler(renderer: "ChatRenderer", console: Any = None):
                 if console is not None:
                     panels.print_ask_panel(console, payload)
                 else:
-                    print(f"{_YELLOW}? {panels.headline(payload)}{_RESET}", file=sys.stderr)
+                    print(f"{YELLOW}? {panels.headline(payload)}{RESET}", file=sys.stderr)
                     body = payload.get("body") or payload.get("question") or ""
                     if body:
                         print(f"  {body}", file=sys.stderr)
@@ -718,13 +712,13 @@ def make_ask_handler(renderer: "ChatRenderer", console: Any = None):
             if console is not None:
                 panels.print_ask_panel(console, payload)
             else:
-                print(f"{_YELLOW}▣ {panels.headline(payload)}{_RESET}", file=sys.stderr)
+                print(f"{YELLOW}▣ {panels.headline(payload)}{RESET}", file=sys.stderr)
                 _render_permission_payload(payload)
                 # Offer the allowlist scopes for every task-runner operation type
                 # (matches the daemon's options_for_interrupt). [s]ession /
                 # [p]roject remember the op for the whole workspace so it isn't
                 # re-asked per file/subfolder.
-                print(f"  {_DIM}{panels.options_hint(itype)}{_RESET}", file=sys.stderr)
+                print(f"  {DIM}{panels.options_hint(itype)}{RESET}", file=sys.stderr)
 
             # Re-prompt on a blank / unrecognized line instead of silently
             # rejecting: with several parallel asks under prompt_toolkit, a stray
@@ -742,7 +736,7 @@ def make_ask_handler(renderer: "ChatRenderer", console: Any = None):
                 if token is not None:
                     return token
                 print(
-                    f"  {_DIM}please answer: [y]es / [n]o / [s]ession / [p]roject{_RESET}",
+                    f"  {DIM}please answer: [y]es / [n]o / [s]ession / [p]roject{RESET}",
                     file=sys.stderr,
                 )
             return "reject"
@@ -782,7 +776,7 @@ async def _handle_ask_command(cmd: str, remote: Any) -> bool:
     if head == "/asks":
         pending = remote.list_pending()
         if not pending:
-            print(f"  {_DIM}no pending approvals{_RESET}", file=sys.stderr)
+            print(f"  {DIM}no pending approvals{RESET}", file=sys.stderr)
         else:
             for a in pending:
                 print(f"  {a.get('ask_id', '')[:8]}  {a.get('title', '')}", file=sys.stderr)
@@ -797,7 +791,7 @@ async def _handle_ask_command(cmd: str, remote: Any) -> bool:
         return True
     if head == "/reply":
         if len(parts) < 3:
-            print(f"  {_DIM}usage: /reply <id> <text>{_RESET}", file=sys.stderr)
+            print(f"  {DIM}usage: /reply <id> <text>{RESET}", file=sys.stderr)
             return True
         print(f"  {await remote.answer(parts[1], ' '.join(parts[2:]))}", file=sys.stderr)
         return True
@@ -885,11 +879,11 @@ async def _print_usage_summary(store: Any, thread_id: str, since: float) -> None
     rows = await _usage_rows(store, thread_id, since)
     if not rows:
         print(
-            f"  {_DIM}no recorded model calls yet in this session{_RESET}",
+            f"  {DIM}no recorded model calls yet in this session{RESET}",
             file=sys.stderr,
         )
         return
-    print(f"  {_DIM}session: {_fmt_usage(rows)}{_RESET}", file=sys.stderr)
+    print(f"  {DIM}session: {_fmt_usage(rows)}{RESET}", file=sys.stderr)
     by_model: dict[str, list[Any]] = {}
     for r in rows:
         by_model.setdefault(r.model or "?", []).append(r)
@@ -897,10 +891,10 @@ async def _print_usage_summary(store: Any, thread_id: str, since: float) -> None
         for model, subset in sorted(
             by_model.items(), key=lambda kv: -sum(r.input_tokens for r in kv[1])
         ):
-            print(f"    {_DIM}{model}: {_fmt_usage(subset)}{_RESET}", file=sys.stderr)
+            print(f"    {DIM}{model}: {_fmt_usage(subset)}{RESET}", file=sys.stderr)
     peak = max(r.input_tokens for r in rows)
     print(
-        f"    {_DIM}largest single request: {peak:,} input tokens{_RESET}",
+        f"    {DIM}largest single request: {peak:,} input tokens{RESET}",
         file=sys.stderr,
     )
 
@@ -915,11 +909,11 @@ def _print_skills(layout: Any) -> None:
 
     recalled = last_recalled()
     if recalled:
-        print(f"  {_CYAN}recalled last turn:{_RESET} {', '.join(recalled)}", file=sys.stderr)
+        print(f"  {CYAN}recalled last turn:{RESET} {', '.join(recalled)}", file=sys.stderr)
     else:
         print(
-            f"  {_DIM}nothing recalled yet this session (the block is built per "
-            f"turn from the message text){_RESET}",
+            f"  {DIM}nothing recalled yet this session (the block is built per "
+            f"turn from the message text){RESET}",
             file=sys.stderr,
         )
     try:
@@ -931,12 +925,12 @@ def _print_skills(layout: Any) -> None:
         return
     if not skills:
         return
-    print(f"  {_DIM}available ({len(skills)}):{_RESET}", file=sys.stderr)
+    print(f"  {DIM}available ({len(skills)}):{RESET}", file=sys.stderr)
     for s in sorted(skills, key=lambda s: (s.scope, s.name)):
         mark = "*" if s.name in recalled else " "
-        print(f"   {mark} {_DIM}{s.scope:9}{_RESET} {s.name}", file=sys.stderr)
+        print(f"   {mark} {DIM}{s.scope:9}{RESET} {s.name}", file=sys.stderr)
     print(
-        f"  {_DIM}the agent can also search these itself with sk_search_skill{_RESET}",
+        f"  {DIM}the agent can also search these itself with sk_search_skill{RESET}",
         file=sys.stderr,
     )
 
@@ -958,27 +952,27 @@ def _print_context(thread_id: str, console: Any = None) -> None:
             pass
     if snap is None:
         print(
-            f"  {_DIM}no model call has completed yet — context figures appear "
-            f"after the first one{_RESET}",
+            f"  {DIM}no model call has completed yet — context figures appear "
+            f"after the first one{RESET}",
             file=sys.stderr,
         )
         return
 
     print(
-        f"  {_DIM}window:{_RESET} {snap.used_tokens:,} / "
+        f"  {DIM}window:{RESET} {snap.used_tokens:,} / "
         f"{snap.max_input_tokens:,} ({fmt_pct(snap.used_fraction)})",
         file=sys.stderr,
     )
     for _key, label, tokens in snap.segments():
-        print(f"    {_DIM}{label:<16}{_RESET} ≈{tokens:,}", file=sys.stderr)
+        print(f"    {DIM}{label:<16}{RESET} ≈{tokens:,}", file=sys.stderr)
     print(
-        f"  {_DIM}last call:{_RESET} in {snap.input_tokens:,} · "
+        f"  {DIM}last call:{RESET} in {snap.input_tokens:,} · "
         f"out {snap.output_tokens:,} · "
         f"{fmt_cost(snap.est_cost_usd, snap.priced)}",
         file=sys.stderr,
     )
     print(
-        f"  {_DIM}session:{_RESET} {snap.calls} calls · "
+        f"  {DIM}session:{RESET} {snap.calls} calls · "
         f"in {fmt_tokens(snap.session_input_tokens)} · "
         f"{snap.compactions} compactions · {snap.offloads} offloaded",
         file=sys.stderr,
@@ -1020,42 +1014,42 @@ async def _handle_settings_command(cmd: str, runtime_settings: Any) -> bool:
             await runtime_settings.set_voice(**{key: flag})
         else:
             print(
-                f"  {_DIM}usage: /voice [on|off] | /voice wake on|off | /voice tts on|off{_RESET}",
+                f"  {DIM}usage: /voice [on|off] | /voice wake on|off | /voice tts on|off{RESET}",
                 file=sys.stderr,
             )
             return True
         v = runtime_settings.voice()
-        print(f"  {_DIM}wake word:{_RESET}    {'on' if v.wake_enabled else 'off'}", file=sys.stderr)
-        print(f"  {_DIM}spoken reply:{_RESET} {'on' if v.tts_enabled else 'off'}", file=sys.stderr)
+        print(f"  {DIM}wake word:{RESET}    {'on' if v.wake_enabled else 'off'}", file=sys.stderr)
+        print(f"  {DIM}spoken reply:{RESET} {'on' if v.tts_enabled else 'off'}", file=sys.stderr)
         if not v.wake_enabled:
-            print(f"  {_DIM}(the mic is still yours to use manually){_RESET}", file=sys.stderr)
+            print(f"  {DIM}(the mic is still yours to use manually){RESET}", file=sys.stderr)
         return True
 
     # /subagents [on|off <name>]
     args = parts[1:]
     if args:
         if len(args) != 2 or (flag := _on_off(args[0])) is None:
-            print(f"  {_DIM}usage: /subagents [on|off <name>]{_RESET}", file=sys.stderr)
+            print(f"  {DIM}usage: /subagents [on|off <name>]{RESET}", file=sys.stderr)
             return True
         name = args[1]
         if name in UNDISABLEABLE and not flag:
             print(
-                f"  {_DIM}{name} can't be switched off — the master delegates "
-                f"to it as a fallback{_RESET}",
+                f"  {DIM}{name} can't be switched off — the master delegates "
+                f"to it as a fallback{RESET}",
                 file=sys.stderr,
             )
             return True
         await runtime_settings.set_subagent_enabled(name, flag)
     disabled = runtime_settings.subagents().disabled
     if disabled:
-        print(f"  {_DIM}off:{_RESET} {', '.join(sorted(disabled))}", file=sys.stderr)
+        print(f"  {DIM}off:{RESET} {', '.join(sorted(disabled))}", file=sys.stderr)
     else:
-        print(f"  {_DIM}all dedicated subagents are on{_RESET}", file=sys.stderr)
+        print(f"  {DIM}all dedicated subagents are on{RESET}", file=sys.stderr)
     # This REPL's own roster is just general-purpose (the domain subagents live
     # in the daemon), so say what the toggle actually affects rather than
     # implying a local change that didn't happen.
     print(
-        f"  {_DIM}applies to the daemon's orchestrator, chat and voice agents{_RESET}",
+        f"  {DIM}applies to the daemon's orchestrator, chat and voice agents{RESET}",
         file=sys.stderr,
     )
     return True
@@ -1146,7 +1140,7 @@ class ReplCommands:
         remaining = len(self.remote.list_pending())
         if remaining:
             print(
-                f"  {_DIM}{remaining} more pending — answer with y/n/s/p{_RESET}",
+                f"  {DIM}{remaining} more pending — answer with y/n/s/p{RESET}",
                 file=sys.stderr,
             )
         return True
@@ -1189,8 +1183,8 @@ def _handle_slash(
         _print_banner(session_id=session_id, workspace=workspace, resuming=False)
         return _SLASH_HANDLED
     if head == "/session":
-        print(f"  {_DIM}session:{_RESET}   {session_id}", file=sys.stderr)
-        print(f"  {_DIM}workspace:{_RESET} {workspace}", file=sys.stderr)
+        print(f"  {DIM}session:{RESET}   {session_id}", file=sys.stderr)
+        print(f"  {DIM}workspace:{RESET} {workspace}", file=sys.stderr)
         return _SLASH_HANDLED
     if head == "/ring":
         renderer.print_ring()
@@ -1201,24 +1195,24 @@ def _handle_slash(
             try:
                 k = int(parts[1])
             except ValueError:
-                print(f"{_DIM}/last: expected integer, got {parts[1]!r}{_RESET}", file=sys.stderr)
+                print(f"{DIM}/last: expected integer, got {parts[1]!r}{RESET}", file=sys.stderr)
                 return _SLASH_HANDLED
         renderer.print_last(k)
         return _SLASH_HANDLED
     if head == "/expand":
         if len(parts) < 2:
-            print(f"{_DIM}/expand: usage: /expand <n>{_RESET}", file=sys.stderr)
+            print(f"{DIM}/expand: usage: /expand <n>{RESET}", file=sys.stderr)
             return _SLASH_HANDLED
         try:
             idx = int(parts[1])
         except ValueError:
-            print(f"{_DIM}/expand: expected integer, got {parts[1]!r}{_RESET}", file=sys.stderr)
+            print(f"{DIM}/expand: expected integer, got {parts[1]!r}{RESET}", file=sys.stderr)
             return _SLASH_HANDLED
         renderer.print_entry(idx)
         return _SLASH_HANDLED
     if head == "/new":
         return "new"
-    print(f"{_DIM}unknown command: {head} (try /help){_RESET}", file=sys.stderr)
+    print(f"{DIM}unknown command: {head} (try /help){RESET}", file=sys.stderr)
     return _SLASH_HANDLED
 
 
@@ -1404,10 +1398,10 @@ async def run_chat_repl(
                     # ANSI(...) wrapper: prompt_toolkit otherwise renders the
                     # raw escape bytes as visible characters (^[[36m…).
                     with patch_stdout():
-                        return await prompt_session.prompt_async(ANSI(f"\n{_CYAN}>{_RESET} "))
+                        return await prompt_session.prompt_async(ANSI(f"\n{CYAN}>{RESET} "))
                 # Non-TTY: run blocking input() in a worker thread.
                 loop = asyncio.get_running_loop()
-                return await loop.run_in_executor(None, lambda: input(f"\n{_CYAN}>{_RESET} "))
+                return await loop.run_in_executor(None, lambda: input(f"\n{CYAN}>{RESET} "))
 
             while True:
                 # Flush any background-task events queued during the previous
@@ -1451,7 +1445,7 @@ async def run_chat_repl(
                     await _usage_rows(bundle.usage_store, session.thread_id, turn_started)
                 )
                 if _turn_usage:
-                    print(f"{_DIM}  {_turn_usage}{_RESET}", file=sys.stderr)
+                    print(f"{DIM}  {_turn_usage}{RESET}", file=sys.stderr)
 
             # Loop exited — flush bookkeeping and mark the session done.
             try:
@@ -1486,5 +1480,5 @@ async def run_chat_repl(
                 except Exception:
                     pass
 
-    print(f"{_DIM}— chat closed —{_RESET}", file=sys.stderr)
+    print(f"{DIM}— chat closed —{RESET}", file=sys.stderr)
     return exit_code

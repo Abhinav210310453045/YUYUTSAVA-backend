@@ -11,6 +11,7 @@ import sys
 import time
 from pathlib import Path
 
+from yuyutsava.ansi import BOLD, CYAN, DIM, GREEN, RED, RESET, YELLOW
 from yuyutsava.core.purge import purge_session
 from yuyutsava.storage.sessions import (
     SessionNotFound,
@@ -18,10 +19,10 @@ from yuyutsava.storage.sessions import (
 )
 
 _STATUS_COLOR_CODES = {
-    "running": "\033[32m",
-    "done": "\033[2m",
-    "crashed": "\033[31m",
-    "idle": "\033[33m",
+    "running": f"{GREEN}",
+    "done": f"{DIM}",
+    "crashed": f"{RED}",
+    "idle": f"{YELLOW}",
 }
 
 
@@ -70,11 +71,11 @@ async def print_sessions_table(workspace_filter: Path | None = None) -> int:
         print("(no sessions yet — start one with `uv run yuyutsava <task>`)")
         return 0
 
-    reset = _ansi("\033[0m")
-    dim = _ansi("\033[2m")
-    bold = _ansi("\033[1m")
-    cyan = _ansi("\033[36m")
-    yellow = _ansi("\033[33m")
+    reset = _ansi(f"{RESET}")
+    dim = _ansi(f"{DIM}")
+    bold = _ansi(f"{BOLD}")
+    cyan = _ansi(f"{CYAN}")
+    yellow = _ansi(f"{YELLOW}")
 
     now = time.time()
     scope = "this workspace" if workspace_filter is not None else "all workspaces"

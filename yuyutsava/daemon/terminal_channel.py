@@ -14,6 +14,7 @@ import json
 import sys
 import time
 
+from yuyutsava.ansi import CYAN, DIM, GREEN, MAGENTA, RESET, YELLOW
 from yuyutsava.consent import decision_token, is_permission_ask
 from yuyutsava.ports.channels import (
     AskPrompt,
@@ -40,18 +41,18 @@ class TerminalChannel(UserChannel):
     async def post_event(self, ev: ChannelEvent) -> None:
         match ev.payload:
             case TimelinePayload(line=line) if line:
-                print(f"\033[36m• {line}\033[0m", file=sys.stderr, flush=True)
+                print(f"{CYAN}• {line}{RESET}", file=sys.stderr, flush=True)
             case ToolCallPayload(name=name, args=args):
                 if self._verbose:
                     args_str = ""
                     if args:
                         args_str = " " + json.dumps(dict(args), ensure_ascii=False)[:160]
-                    print(f"\033[33m🔧 {name}{args_str}\033[0m", file=sys.stderr, flush=True)
+                    print(f"{YELLOW}🔧 {name}{args_str}{RESET}", file=sys.stderr, flush=True)
                 else:
-                    print(f"\033[33m🔧 {name}\033[0m", file=sys.stderr, flush=True)
+                    print(f"{YELLOW}🔧 {name}{RESET}", file=sys.stderr, flush=True)
             case ToolResultPayload(name=name, preview=preview) if self._verbose:
                 short = preview[:300].replace("\n", " ") if preview else "(empty)"
-                print(f"\033[32m  ↳ [{name}] {short}\033[0m", file=sys.stderr, flush=True)
+                print(f"{GREEN}  ↳ [{name}] {short}{RESET}", file=sys.stderr, flush=True)
             case TokenPayload(text=text) if self._verbose and text:
                 print(text, end="", flush=True, file=sys.stderr)
             case LogPayload(text=text) if self._verbose:
@@ -60,15 +61,15 @@ class TerminalChannel(UserChannel):
                 pass
 
     async def post_proposal(self, p: Proposal) -> ProposalDecision:
-        print(f"\n\033[35m{_SEP}\033[0m", file=sys.stderr)
-        print(f"\033[35m🟣  PROPOSAL  {p.topic}\033[0m", file=sys.stderr)
-        print(f"\033[35m{_SEP}\033[0m", file=sys.stderr)
+        print(f"\n{MAGENTA}{_SEP}{RESET}", file=sys.stderr)
+        print(f"{MAGENTA}🟣  PROPOSAL  {p.topic}{RESET}", file=sys.stderr)
+        print(f"{MAGENTA}{_SEP}{RESET}", file=sys.stderr)
         print(f"  Event   : {p.summary}", file=sys.stderr)
         print(f"  Proposed: {p.proposed}", file=sys.stderr)
         print(f"  Subagent: {p.subagent}   urgency={p.urgency}", file=sys.stderr)
         ttl = max(0, int(p.expires_ts - time.time()))
         print(f"  Expires : in {ttl}s", file=sys.stderr)
-        print(f"\033[35m{_SEP}\033[0m", file=sys.stderr)
+        print(f"{MAGENTA}{_SEP}{RESET}", file=sys.stderr)
         print("  [a]pprove  [r]emember-approve  [s]kip  [k]eep-skip  [m]odify", file=sys.stderr)
         try:
             answer = await asyncio.wait_for(
@@ -96,18 +97,18 @@ class TerminalChannel(UserChannel):
         options = a.options or []
         is_permission = is_permission_ask(options)
 
-        print(f"\n\033[33m{_SEP}\033[0m", file=sys.stderr)
-        print(f"\033[33m🛑 {a.title}\033[0m", file=sys.stderr)
-        print(f"\033[33m{_SEP}\033[0m", file=sys.stderr)
+        print(f"\n{YELLOW}{_SEP}{RESET}", file=sys.stderr)
+        print(f"{YELLOW}🛑 {a.title}{RESET}", file=sys.stderr)
+        print(f"{YELLOW}{_SEP}{RESET}", file=sys.stderr)
         print(f"  {a.body}", file=sys.stderr)
         if is_permission:
             scope = (
                 " / [s]ession / [p]roject" if ("session" in options or "project" in options) else ""
             )
-            print(f"  \033[2m[y]es / [n]o{scope}\033[0m", file=sys.stderr)
+            print(f"  {DIM}[y]es / [n]o{scope}{RESET}", file=sys.stderr)
         elif options:
             print(f"  Options: {' | '.join(options)}", file=sys.stderr)
-        print(f"\033[33m{_SEP}\033[0m", file=sys.stderr)
+        print(f"{YELLOW}{_SEP}{RESET}", file=sys.stderr)
 
         prompt = "  Allow? [y/N]: " if is_permission else "  Response: "
         answer = await asyncio.to_thread(input, prompt)

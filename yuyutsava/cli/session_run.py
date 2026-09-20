@@ -21,6 +21,7 @@ from pathlib import Path
 
 from langgraph.graph.state import CompiledStateGraph
 
+from yuyutsava.ansi import CYAN, DIM, RESET, YELLOW
 from yuyutsava.cli.render.terminal_stream import astream_agent
 from yuyutsava.conversation.repair import Cause, repair_orphan_tool_calls
 from yuyutsava.conversation.sessions import (
@@ -53,12 +54,12 @@ async def _patch_orphan_cancellations(agent: CompiledStateGraph, thread_id: str)
 def _print_start_banner(session: Session, *, resuming: bool) -> None:
     verb = "resuming" if resuming else "starting"
     cmd = f"uv run yuyutsava --verbose --workspace {session.workspace} --resume {session.id}"
-    print(f"\n\033[36m{_BANNER}\033[0m", file=sys.stderr)
-    print(f"\033[36mYUYUTSAVA — {verb} session\033[0m", file=sys.stderr)
+    print(f"\n{CYAN}{_BANNER}{RESET}", file=sys.stderr)
+    print(f"{CYAN}YUYUTSAVA — {verb} session{RESET}", file=sys.stderr)
     print(f"  session_id : {session.id}", file=sys.stderr)
     print(f"  workspace  : {session.workspace}", file=sys.stderr)
     print(f"  resume cmd : {cmd}", file=sys.stderr)
-    print(f"\033[36m{_BANNER}\033[0m\n", file=sys.stderr)
+    print(f"{CYAN}{_BANNER}{RESET}\n", file=sys.stderr)
 
 
 async def run_session(
@@ -100,14 +101,14 @@ async def run_session(
                     busy_timeout_ms=settings.busy_timeout_ms,
                 )
         except Exception as exc:  # noqa: BLE001
-            print(f"\033[33msessions:\033[0m interrupts store init failed: {exc}", file=sys.stderr)
+            print(f"{YELLOW}sessions:{RESET} interrupts store init failed: {exc}", file=sys.stderr)
             interrupts_store = None
 
     if resuming:
         n_patched = await _patch_orphan_cancellations(agent, session.thread_id)
         if n_patched:
             print(
-                f"\033[33mnote:\033[0m rewrote {n_patched} cancelled tool call(s) "
+                f"{YELLOW}note:{RESET} rewrote {n_patched} cancelled tool call(s) "
                 f"from the previous interrupt as DENIED so the agent doesn't "
                 f"hallucinate success. Re-ask if you wanted that action to run.",
                 file=sys.stderr,
@@ -117,12 +118,12 @@ async def run_session(
                 n_orphaned = await interrupts_store.mark_orphaned_for_session(session.id)
                 if n_orphaned:
                     print(
-                        f"\033[2msessions:\033[0m flagged {n_orphaned} unresolved "
+                        f"{DIM}sessions:{RESET} flagged {n_orphaned} unresolved "
                         f"interrupt(s) from prior run as orphaned.",
                         file=sys.stderr,
                     )
             except Exception as exc:  # noqa: BLE001
-                print(f"\033[33msessions:\033[0m mark_orphaned failed: {exc}", file=sys.stderr)
+                print(f"{YELLOW}sessions:{RESET} mark_orphaned failed: {exc}", file=sys.stderr)
         # Refresh task_preview so the sessions list shows the most recent intent
         # rather than the original prompt from the first run.
         new_preview = (task or "").strip().replace("\n", " ")
@@ -158,4 +159,4 @@ async def run_session(
             )
         except Exception as exc:  # noqa: BLE001
             # Never let bookkeeping mask the original failure.
-            print(f"\033[33msessions:\033[0m bookkeeping failed: {exc}", file=sys.stderr)
+            print(f"{YELLOW}sessions:{RESET} bookkeeping failed: {exc}", file=sys.stderr)

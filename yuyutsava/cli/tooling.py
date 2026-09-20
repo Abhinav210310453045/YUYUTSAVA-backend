@@ -17,6 +17,7 @@ from pathlib import Path
 
 from langgraph.graph.state import CompiledStateGraph
 
+from yuyutsava.ansi import BOLD_RED, DIM, RED, RESET, YELLOW
 from yuyutsava.config.env import env_flag
 from yuyutsava.config.logs import silence_plumbing_loggers
 from yuyutsava.storage.paths import WorkspaceLayout
@@ -43,13 +44,13 @@ def setup_logging(verbose: bool = False, *, debug_plumbing: bool = False) -> Non
 
     class _Fmt(logging.Formatter):
         _COLOURS = {
-            logging.DEBUG: "\033[2m",  # dim
-            logging.INFO: "\033[0m",  # normal
-            logging.WARNING: "\033[33m",  # yellow
-            logging.ERROR: "\033[31m",  # red
-            logging.CRITICAL: "\033[1;31m",  # bold red
+            logging.DEBUG: f"{DIM}",  # dim
+            logging.INFO: f"{RESET}",  # normal
+            logging.WARNING: f"{YELLOW}",  # yellow
+            logging.ERROR: f"{RED}",  # red
+            logging.CRITICAL: f"{BOLD_RED}",  # bold red
         }
-        _RESET = "\033[0m"
+        _RESET = f"{RESET}"
 
         def format(self, record: logging.LogRecord) -> str:
             colour = self._COLOURS.get(record.levelno, "")

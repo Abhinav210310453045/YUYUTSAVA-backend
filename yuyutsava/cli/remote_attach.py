@@ -25,6 +25,7 @@ from typing import Any, AsyncIterator
 
 import httpx
 
+from yuyutsava.ansi import CYAN, DIM, GREEN, RED, RESET, YELLOW
 from yuyutsava.cli.line_reader import read_line
 from yuyutsava.consent import decision_token, is_permission_ask
 
@@ -138,14 +139,14 @@ async def prompt_user_for_ask(frame_data: dict) -> str:
     is_permission = is_permission_ask(options)
 
     tag = " [background]" if agent_path.endswith("#bg") else ""
-    print(f"\n\033[36m▣ {title}{tag}\033[0m  \033[2m(ask={ask_id[:8]})\033[0m", file=sys.stderr)
+    print(f"\n{CYAN}▣ {title}{tag}{RESET}  {DIM}(ask={ask_id[:8]}){RESET}", file=sys.stderr)
     if agent_path:
-        print(f"  \033[2mfrom: {agent_path}\033[0m", file=sys.stderr)
+        print(f"  {DIM}from: {agent_path}{RESET}", file=sys.stderr)
     if body:
         print(f"  {body}", file=sys.stderr)
     if is_permission:
         scope = " / [s]ession / [p]roject" if ("session" in options or "project" in options) else ""
-        print(f"  \033[2m[y]es / [n]o{scope}\033[0m", file=sys.stderr)
+        print(f"  {DIM}[y]es / [n]o{scope}{RESET}", file=sys.stderr)
     elif options:
         print(f"  options: {' / '.join(options)}", file=sys.stderr)
     sys.stderr.flush()
@@ -164,36 +165,36 @@ def render_event_frame(frame_data: dict) -> None:
     kind = frame_data.get("kind") or "?"
     data = frame_data.get("data") or {}
     if kind == "log":
-        print(f"\033[2m• {data.get('text', '')}\033[0m", file=sys.stderr, flush=True)
+        print(f"{DIM}• {data.get('text', '')}{RESET}", file=sys.stderr, flush=True)
     elif kind == "token":
         sys.stdout.write(data.get("text", ""))
         sys.stdout.flush()
     elif kind == "tool_call":
-        print(f"\033[33m🔧 {data.get('name', '?')}\033[0m", file=sys.stderr, flush=True)
+        print(f"{YELLOW}🔧 {data.get('name', '?')}{RESET}", file=sys.stderr, flush=True)
     elif kind == "tool_result":
         preview = (data.get("preview") or "").splitlines()[0][:120]
-        print(f"\033[2m← {data.get('name', '?')}: {preview}\033[0m", file=sys.stderr, flush=True)
+        print(f"{DIM}← {data.get('name', '?')}: {preview}{RESET}", file=sys.stderr, flush=True)
     elif kind == "timeline":
-        print(f"\033[36m• {data.get('line', '')}\033[0m", file=sys.stderr, flush=True)
+        print(f"{CYAN}• {data.get('line', '')}{RESET}", file=sys.stderr, flush=True)
     elif kind == "async_task_started":
         print(
-            f"\033[36m[bg started]\033[0m {data.get('agent_name', '?')}  "
+            f"{CYAN}[bg started]{RESET} {data.get('agent_name', '?')}  "
             f"task={(data.get('task_id') or '')[:8]}",
             file=sys.stderr,
             flush=True,
         )
     elif kind == "async_task_progress":
         print(
-            f"\033[2m[bg progress]\033[0m {data.get('agent_name', '?')}  "
+            f"{DIM}[bg progress]{RESET} {data.get('agent_name', '?')}  "
             f"{data.get('kind_hint', '?')}: {data.get('text', '')}",
             file=sys.stderr,
             flush=True,
         )
     elif kind == "async_task_completed":
         ok = bool(data.get("ok"))
-        colour = "\033[32m" if ok else "\033[31m"
+        colour = f"{GREEN}" if ok else f"{RED}"
         print(
-            f"{colour}[bg done {'OK' if ok else 'FAIL'}]\033[0m "
+            f"{colour}[bg done {'OK' if ok else 'FAIL'}]{RESET} "
             f"{data.get('agent_name', '?')}  {(data.get('summary') or '')[:100]}",
             file=sys.stderr,
             flush=True,

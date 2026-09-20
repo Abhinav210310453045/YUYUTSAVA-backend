@@ -28,6 +28,7 @@ from typing import Any
 
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
 
+from yuyutsava.ansi import BOLD_RED, CYAN, DIM, GREEN, MAGENTA, RED, RESET, YELLOW
 from yuyutsava.core.streaming import drive_graph, last_assistant_text, run_config
 from yuyutsava.core.tool_result import guard_tool_result, is_tool_error
 from yuyutsava.models.interrupts import (
@@ -87,7 +88,7 @@ def _print_scoping_chips(payload: Any, *, colour: str) -> None:
         chips.append(f"agent: {ap}")
     if st:
         chips.append(st)
-    print(f"  \033[2m{'   '.join(chips)}\033[0m", file=sys.stderr)
+    print(f"  {DIM}{'   '.join(chips)}{RESET}", file=sys.stderr)
 
 
 # Accepted yes/no synonyms — also used by the chat REPL's _ask_handler
@@ -166,18 +167,18 @@ async def prompt_permission(
     if interrupt_type == "user_question":
         iv = UserQuestionInterrupt.model_validate(interrupt_value)
 
-        print(f"\n\033[36m{_SEP}\033[0m", file=sys.stderr)
-        print("\033[36m💬  AGENT QUESTION\033[0m", file=sys.stderr)
-        print(f"\033[36m{_SEP}\033[0m", file=sys.stderr)
+        print(f"\n{CYAN}{_SEP}{RESET}", file=sys.stderr)
+        print(f"{CYAN}💬  AGENT QUESTION{RESET}", file=sys.stderr)
+        print(f"{CYAN}{_SEP}{RESET}", file=sys.stderr)
         print(f"  {iv.question}", file=sys.stderr)
         if iv.options:
             print(f"  Options: {' | '.join(iv.options)}", file=sys.stderr)
         _print_scoping_chips(interrupt_value, colour="36")
-        print(f"\033[36m{_SEP}\033[0m", file=sys.stderr)
+        print(f"{CYAN}{_SEP}{RESET}", file=sys.stderr)
 
         answer: str = await asyncio.to_thread(input, "  Your answer: ")
         response = answer.strip() or "no response"
-        print(f"\033[36m  → {response}\033[0m\n", file=sys.stderr)
+        print(f"{CYAN}  → {response}{RESET}\n", file=sys.stderr)
         if interrupts_store is not None and row_id:
             await interrupts_store.resolve(row_id, outcome="answered", user_response=response)
         return response
@@ -187,9 +188,9 @@ async def prompt_permission(
         iv = TaskRunnerPermissionInterrupt.model_validate(interrupt_value)
         path_str = ", ".join(iv.paths)
 
-        print(f"\n\033[35m{_SEP}\033[0m", file=sys.stderr)
-        print("\033[35m🔐  TASK RUNNER PERMISSION REQUEST\033[0m", file=sys.stderr)
-        print(f"\033[35m{_SEP}\033[0m", file=sys.stderr)
+        print(f"\n{MAGENTA}{_SEP}{RESET}", file=sys.stderr)
+        print(f"{MAGENTA}🔐  TASK RUNNER PERMISSION REQUEST{RESET}", file=sys.stderr)
+        print(f"{MAGENTA}{_SEP}{RESET}", file=sys.stderr)
         print(f"  Operation : {iv.operation.upper()}", file=sys.stderr)
         print(f"  Path(s)   : {path_str}", file=sys.stderr)
         print(f"  Zone      : {iv.zone.upper()}", file=sys.stderr)
@@ -200,14 +201,14 @@ async def prompt_permission(
         print(f"  Reason    : {iv.reason}", file=sys.stderr)
         print(f"  Risk      : {iv.risk_level}", file=sys.stderr)
         _print_scoping_chips(interrupt_value, colour="35")
-        print(f"\033[35m{_SEP}\033[0m", file=sys.stderr)
+        print(f"{MAGENTA}{_SEP}{RESET}", file=sys.stderr)
 
         answer = await asyncio.to_thread(input, "  Allow? [y/N]: ")
         decision = _normalize_yes_no(answer)
         if decision == "approve":
-            print("\033[32m  ✅  Approved\033[0m\n", file=sys.stderr)
+            print(f"{GREEN}  ✅  Approved{RESET}\n", file=sys.stderr)
         else:
-            print("\033[31m  🚫  Rejected\033[0m\n", file=sys.stderr)
+            print(f"{RED}  🚫  Rejected{RESET}\n", file=sys.stderr)
         if interrupts_store is not None and row_id:
             await interrupts_store.resolve(row_id, outcome=decision)
         return decision
@@ -226,20 +227,20 @@ async def prompt_permission(
             reason="Potentially dangerous operation",
         )
 
-    print(f"\n\033[33m{_SEP}\033[0m", file=sys.stderr)
-    print("\033[33m🛑  PERMISSION REQUEST\033[0m", file=sys.stderr)
-    print(f"\033[33m{_SEP}\033[0m", file=sys.stderr)
+    print(f"\n{YELLOW}{_SEP}{RESET}", file=sys.stderr)
+    print(f"{YELLOW}🛑  PERMISSION REQUEST{RESET}", file=sys.stderr)
+    print(f"{YELLOW}{_SEP}{RESET}", file=sys.stderr)
     print(f"  Command : {iv2.command}", file=sys.stderr)
     print(f"  Reason  : {iv2.reason}", file=sys.stderr)
     _print_scoping_chips(interrupt_value, colour="33")
-    print(f"\033[33m{_SEP}\033[0m", file=sys.stderr)
+    print(f"{YELLOW}{_SEP}{RESET}", file=sys.stderr)
 
     answer = await asyncio.to_thread(input, "  Allow? [y/N]: ")
     decision = _normalize_yes_no(answer)
     if decision == "approve":
-        print("\033[32m  ✅  Approved — running command\033[0m\n", file=sys.stderr)
+        print(f"{GREEN}  ✅  Approved — running command{RESET}\n", file=sys.stderr)
     else:
-        print("\033[31m  🚫  Rejected — command will not run\033[0m\n", file=sys.stderr)
+        print(f"{RED}  🚫  Rejected — command will not run{RESET}\n", file=sys.stderr)
     if interrupts_store is not None and row_id:
         await interrupts_store.resolve(row_id, outcome=decision)
     return decision
@@ -331,9 +332,9 @@ async def astream_agent(
                 text = flatten_content(chunk.content)
                 if text:
                     if not in_ai_stream:
-                        print(f"\n\033[36m{'─' * 60}\033[0m", file=sys.stderr)
-                        print("\033[36m🤖  AI (streaming)\033[0m", file=sys.stderr)
-                        print(f"\033[36m{'─' * 60}\033[0m", file=sys.stderr)
+                        print(f"\n{CYAN}{'─' * 60}{RESET}", file=sys.stderr)
+                        print(f"{CYAN}🤖  AI (streaming){RESET}", file=sys.stderr)
+                        print(f"{CYAN}{'─' * 60}{RESET}", file=sys.stderr)
                         in_ai_stream = True
                     print(text, end="", flush=True, file=sys.stderr)
                 # Close the AI stream line if a tool call is starting.
@@ -370,7 +371,7 @@ async def astream_agent(
                             json.dumps(args, indent=4) if isinstance(args, dict) else str(args)
                         )
                         logger.info("")
-                        logger.info("\033[33m🔧  TOOL CALL → %s\033[0m", name)
+                        logger.info(f"{YELLOW}🔧  TOOL CALL → %s{RESET}", name)
                         logger.info("    Input:\n%s", _indent(args_str, 4))
 
             elif isinstance(m, ToolMessage):
@@ -385,10 +386,10 @@ async def astream_agent(
                 err = is_tool_error(m, safe_body)
                 logger.info("")
                 if err:
-                    logger.error("\033[1;31m❌  TOOL ERROR ← %s\033[0m", tn)
+                    logger.error(f"{BOLD_RED}❌  TOOL ERROR ← %s{RESET}", tn)
                     logger.error("    %s", preview.replace("\n", "\n    "))
                 else:
-                    logger.info("\033[32m✅  TOOL RESULT ← %s\033[0m", tn)
+                    logger.info(f"{GREEN}✅  TOOL RESULT ← %s{RESET}", tn)
                     logger.info("    %s", preview.replace("\n", "\n    "))
 
         elif kind == "pass_end":

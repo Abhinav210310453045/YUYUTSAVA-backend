@@ -18,6 +18,7 @@ import os
 import sys
 
 from yuyutsava.aio import run as aio_run
+from yuyutsava.ansi import GREEN, MAGENTA, RESET, YELLOW
 from yuyutsava.cli.remote_attach import (
     CliAttachClient,
     prompt_user_for_ask,
@@ -84,7 +85,7 @@ async def _run(args: argparse.Namespace) -> int:
     try:
         info = await client.attach()
         print(
-            f"\033[32mattached\033[0m to {args.daemon_url}  "
+            f"{GREEN}attached{RESET} to {args.daemon_url}  "
             f"channel={info['channel_name']}  newly_attached={info['attached']}",
             file=sys.stderr,
         )
@@ -104,7 +105,7 @@ async def _run(args: argparse.Namespace) -> int:
                 # Tier-1 proposals are out of scope for attach v1.
                 p = frame.data.get("proposal", {})
                 print(
-                    f"\033[35m[proposal] {p.get('instruction', '')[:140]}\033[0m  "
+                    f"{MAGENTA}[proposal] {p.get('instruction', '')[:140]}{RESET}  "
                     "(respond via the Electron renderer for now)",
                     file=sys.stderr,
                     flush=True,
@@ -118,7 +119,7 @@ async def _run(args: argparse.Namespace) -> int:
                 ok = await client.respond_ask(ask_id, reply)
                 if not ok:
                     print(
-                        "\033[33m(reply rejected — ask may have already been answered)\033[0m",
+                        f"{YELLOW}(reply rejected — ask may have already been answered){RESET}",
                         file=sys.stderr,
                         flush=True,
                     )

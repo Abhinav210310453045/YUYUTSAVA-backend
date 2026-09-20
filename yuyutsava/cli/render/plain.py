@@ -3,8 +3,8 @@
 ``ChatRenderer`` + ``RingEntry`` moved verbatim from ``chat_repl.py`` so
 the rich renderer (``render/renderer.py``) can subclass without an
 import cycle. Behavior is unchanged: terse ANSI lines to stderr, prose
-to stdout through ``TokenSmoother``. The ANSI palette lives here and is
-re-imported by ``chat_repl.py``.
+to stdout through ``TokenSmoother``. The palette it draws with lives in
+:mod:`yuyutsava.ansi`, which the daemon's terminal channel shares.
 """
 
 from __future__ import annotations
@@ -18,19 +18,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from yuyutsava.ansi import CYAN, DIM, GREEN, RED, RESET, YELLOW
 from yuyutsava.cli.render import artifact_view as av
 from yuyutsava.cli.render import tool_format as tf
 from yuyutsava.cli.stream_smoother import TokenSmoother
 from yuyutsava.config.env import env_flag, env_float, env_int
 from yuyutsava.core.streaming import StreamEvent
 from yuyutsava.platform import host_profile
-
-_CYAN = "\033[36m"
-_DIM = "\033[2m"
-_YELLOW = "\033[33m"
-_GREEN = "\033[32m"
-_RED = "\033[31m"
-_RESET = "\033[0m"
 
 
 @dataclass
@@ -144,7 +138,7 @@ class ChatRenderer:
         if ev.kind == "token":
             if not self._in_ai_stream:
                 # Open the AI line with a small chip; no big separator block.
-                print(f"\n{_CYAN}🤖{_RESET}  ", end="", flush=True)
+                print(f"\n{CYAN}🤖{RESET}  ", end="", flush=True)
                 self._in_ai_stream = True
             text = ev.data.get("text", "")
             if self._smoother is not None:
@@ -224,16 +218,16 @@ class ChatRenderer:
         if ev.kind == "log":
             text = ev.data.get("text", "")
             if text:
-                print(f"{_YELLOW}{text}{_RESET}", file=sys.stderr, flush=True)
+                print(f"{YELLOW}{text}{RESET}", file=sys.stderr, flush=True)
             return
 
         if ev.kind == "notice":
             text = ev.data.get("text", "")
             if text:
                 level = ev.data.get("level", "info")
-                colour = {"error": _RED, "warning": _YELLOW}.get(level, _DIM)
+                colour = {"error": RED, "warning": YELLOW}.get(level, DIM)
                 mark = {"error": "✗", "warning": "⚠"}.get(level, "·")
-                print(f"  {colour}{mark} {text}{_RESET}", file=sys.stderr, flush=True)
+                print(f"  {colour}{mark} {text}{RESET}", file=sys.stderr, flush=True)
             return
 
         if ev.kind == "final":
@@ -272,30 +266,30 @@ class ChatRenderer:
 
     def print_ring(self) -> None:
         if not self._ring:
-            print(f"{_DIM}(ring empty){_RESET}", file=sys.stderr)
+            print(f"{DIM}(ring empty){RESET}", file=sys.stderr)
             return
-        print(f"{_CYAN}ring (most recent last):{_RESET}", file=sys.stderr)
+        print(f"{CYAN}ring (most recent last):{RESET}", file=sys.stderr)
         for e in self._ring:
             summary = e.full.replace("\n", " ⏎ ")
             if len(summary) > 100:
                 summary = summary[:100] + "…"
             tag = "·" if e.kind == "tool_call" else "↳"
-            print(f"  {_DIM}[#{e.index}] {tag} {e.name}: {summary}{_RESET}", file=sys.stderr)
+            print(f"  {DIM}[#{e.index}] {tag} {e.name}: {summary}{RESET}", file=sys.stderr)
 
     def print_entry(self, idx: int) -> None:
         e = self._find(idx)
         if e is None:
-            print(f"{_DIM}no ring entry #{idx} (try /ring){_RESET}", file=sys.stderr)
+            print(f"{DIM}no ring entry #{idx} (try /ring){RESET}", file=sys.stderr)
             return
         header = f"[#{e.index}] {e.kind} {e.name}"
         if e.truncated:
             header += " (truncated)"
-        print(f"{_CYAN}{header}{_RESET}", file=sys.stderr)
+        print(f"{CYAN}{header}{RESET}", file=sys.stderr)
         print(e.full, file=sys.stderr)
 
     def print_last(self, k: int = 1) -> None:
         if not self._ring:
-            print(f"{_DIM}(ring empty){_RESET}", file=sys.stderr)
+            print(f"{DIM}(ring empty){RESET}", file=sys.stderr)
             return
         k = max(1, k)
         for e in list(self._ring)[-k:]:
@@ -317,14 +311,14 @@ class ChatRenderer:
     def _render_tool_call_compact(self, name: str, args: Any, idx: int) -> None:
         summary = self._compact_summary(args)
         zone_chip = self._zone_chip(name, args)
-        head = f"  {_DIM}·{_RESET} {_CYAN}{name}{_RESET}"
-        body = f"{_DIM}: {summary}{_RESET}" if summary else ""
-        tail = f"{_DIM}  [#{idx}]{_RESET}"
+        head = f"  {DIM}·{RESET} {CYAN}{name}{RESET}"
+        body = f"{DIM}: {summary}{RESET}" if summary else ""
+        tail = f"{DIM}  [#{idx}]{RESET}"
         print(f"{head}{body}{zone_chip}{tail}", file=sys.stderr, flush=True)
 
     def _render_tool_call_verbose(self, name: str, args: Any, idx: int) -> None:
         print(
-            f"\n  {_DIM}·{_RESET} {_CYAN}{name}{_RESET}  {_DIM}[#{idx}]{_RESET}",
+            f"\n  {DIM}·{RESET} {CYAN}{name}{RESET}  {DIM}[#{idx}]{RESET}",
             file=sys.stderr,
         )
         if not isinstance(args, dict) or not args:
@@ -332,18 +326,18 @@ class ChatRenderer:
         for k, v in args.items():
             sval = self._format_arg_value(v)
             if "\n" in sval:
-                print(f"    {_DIM}{k}:{_RESET}", file=sys.stderr)
+                print(f"    {DIM}{k}:{RESET}", file=sys.stderr)
                 for line in sval.splitlines():
                     print(f"      {line}", file=sys.stderr)
             else:
                 if len(sval) > 200:
                     sval = sval[:200] + "…"
-                print(f"    {_DIM}{k}:{_RESET} {sval}", file=sys.stderr)
+                print(f"    {DIM}{k}:{RESET} {sval}", file=sys.stderr)
 
     def _render_tool_result_verbose(self, name: str, body: str, idx: int, is_err: bool) -> None:
-        status = f"{_RED}✗ error{_RESET}" if is_err else f"{_GREEN}← ok{_RESET}"
+        status = f"{RED}✗ error{RESET}" if is_err else f"{GREEN}← ok{RESET}"
         print(
-            f"  {_DIM}↳{_RESET} {_CYAN}{name}{_RESET} {status}  {_DIM}[#{idx}]{_RESET}",
+            f"  {DIM}↳{RESET} {CYAN}{name}{RESET} {status}  {DIM}[#{idx}]{RESET}",
             file=sys.stderr,
         )
         pretty = self._pretty_body(body)
@@ -355,15 +349,15 @@ class ChatRenderer:
     def _render_tool_result_compact_error(self, name: str, body: str, idx: int) -> None:
         short = self._error_message(body)
         if short:
-            tail = f"{_DIM}  [#{idx}]{_RESET}"
+            tail = f"{DIM}  [#{idx}]{RESET}"
             print(
-                f"  {_RED}↳ {name} ✗ {short}{_RESET}{tail}",
+                f"  {RED}↳ {name} ✗ {short}{RESET}{tail}",
                 file=sys.stderr,
                 flush=True,
             )
         else:
             print(
-                f"  {_RED}↳ {name} ✗ error{_RESET}{_DIM}  [#{idx}]{_RESET}",
+                f"  {RED}↳ {name} ✗ error{RESET}{DIM}  [#{idx}]{RESET}",
                 file=sys.stderr,
                 flush=True,
             )
@@ -372,13 +366,13 @@ class ChatRenderer:
         todos = args.get("todos") if isinstance(args, dict) else None
         if not isinstance(todos, list) or not todos:
             print(
-                f"  {_DIM}· write_todos  [#{idx}]{_RESET}",
+                f"  {DIM}· write_todos  [#{idx}]{RESET}",
                 file=sys.stderr,
                 flush=True,
             )
             return
         print(
-            f"\n  {_CYAN}TODO:{_RESET}  {_DIM}[#{idx}]{_RESET}",
+            f"\n  {CYAN}TODO:{RESET}  {DIM}[#{idx}]{RESET}",
             file=sys.stderr,
         )
         for t in todos:
@@ -388,12 +382,12 @@ class ChatRenderer:
             content = str(t.get("content", "")).strip()
             symbol = self._todo_symbol(status)
             if status == "completed":
-                colour = _DIM
+                colour = DIM
             elif status == "in_progress":
-                colour = _GREEN
+                colour = GREEN
             else:
                 colour = ""
-            reset = _RESET if colour else ""
+            reset = RESET if colour else ""
             print(
                 f"    {colour}{symbol} {content}{reset}",
                 file=sys.stderr,
@@ -466,8 +460,8 @@ class ChatRenderer:
         zone = self._classify_zone(path)
         if not zone:
             return ""
-        colour = _YELLOW if zone == "external" else _DIM
-        return f"  {colour}[{zone}]{_RESET}"
+        colour = YELLOW if zone == "external" else DIM
+        return f"  {colour}[{zone}]{RESET}"
 
     def _classify_zone(self, path: str) -> str:
         if self._workspace is not None and path.startswith(str(self._workspace)):

@@ -344,6 +344,33 @@ fallback until a deliberate decision.
 
 ---
 
+**Fixed (W4) — the ANSI palette.** Nine escape codes were written out **157
+times across ten modules**, and only one of them named any. A literal like
+`"\033[33m"` is unreviewable: nothing distinguishes a deliberate yellow from a
+typo'd one, and changing the scheme meant finding every copy.
+
+They now come from `yuyutsava/ansi.py`. That is a **leaf beside
+`yuyutsava.text`, not `cli/render/palette.py` as this finding originally
+proposed** — the daemon's terminal channel writes these too, so a palette under
+`cli` would have made `daemon` import `cli`. The layer test refuses an
+undeclared top-level unit, so `ansi` is registered at L0 in both the map and
+§3 of `01-standards.md`.
+
+`plain.py` had owned the six names and `chat_repl` imported them as privates
+across modules; both now read the public ones, and `plain.py`'s docstring no
+longer claims to own a palette it does not.
+
+**Verification.** `test/test_ansi_palette.py` pins each code's exact bytes (so a
+rename cannot silently recolour anything), that the module imports nothing from
+the package it colours, and that **no other module contains a raw escape** —
+negative-controlled by putting one back.
+
+The risk in a swap like this is a placeholder stranded in a non-f-string, which
+renders as the literal text `{DIM}` and which no linter sees. An AST pass
+confirmed zero such cases, and the rendered output was then checked for real:
+piped CLI output carries actual `ESC[` bytes (`0m`, `2m`, `33m`, `36m`) with no
+`{…}` leak, and neither does the daemon log or the sessions listing.
+
 ## R-DRY-05 — Front-end and builder wiring copied
 
 **Severity** P1 · **Wave** W4 · **Status** Open (legacy `F-D06` partly closed)

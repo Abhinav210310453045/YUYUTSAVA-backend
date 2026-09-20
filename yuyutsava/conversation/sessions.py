@@ -21,6 +21,7 @@ import sys
 import time
 from pathlib import Path
 
+from yuyutsava.ansi import RESET, YELLOW
 from yuyutsava.storage.models import Session
 from yuyutsava.storage.paths import WorkspaceLayout
 from yuyutsava.storage.sessions import SessionNotFound, SessionStore
@@ -112,7 +113,7 @@ async def resolve_session(
             ) from None
         if str(existing.workspace) != str(workspace.resolve()):
             print(
-                f"\033[33mwarning:\033[0m resuming session {resume_id} "
+                f"{YELLOW}warning:{RESET} resuming session {resume_id} "
                 f"whose original workspace was {existing.workspace} "
                 f"(current --workspace is {workspace}). Continuing anyway.",
                 file=sys.stderr,
