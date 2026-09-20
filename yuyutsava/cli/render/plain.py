@@ -11,37 +11,18 @@ from __future__ import annotations
 
 import contextlib
 import json
-import os
 import sys
-from collections import deque
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from yuyutsava.ansi import CYAN, DIM, GREEN, RED, RESET, YELLOW
 from yuyutsava.cli.render import artifact_view as av
 from yuyutsava.cli.render import tool_format as tf
+from yuyutsava.cli.render import zones
+from yuyutsava.cli.render.ring import PayloadRing
 from yuyutsava.cli.stream_smoother import TokenSmoother
-from yuyutsava.config.env import env_flag, env_float, env_int
+from yuyutsava.config.env import env_flag, env_float
 from yuyutsava.core.streaming import StreamEvent
-from yuyutsava.platform import host_profile
-
-
-@dataclass
-class RingEntry:
-    """One captured event with its full untruncated payload.
-
-    Stored in ``ChatRenderer._ring`` so ``/last`` and ``/expand <n>`` can
-    surface payloads the truncated preview hid. Per-entry body is capped
-    by ``YUYUTSAVA_REPL_RING_ENTRY_KB`` (default 100 KB) to keep huge tool
-    outputs from blowing up REPL memory.
-    """
-
-    index: int
-    kind: str  # "tool_call" | "tool_result"
-    name: str  # tool name
-    full: str  # pretty-printed full body (already capped)
-    truncated: bool  # True if the body was clipped to the per-entry cap
 
 
 class ChatRenderer:
@@ -63,10 +44,7 @@ class ChatRenderer:
         self._verbose = verbose
         self._workspace = workspace
         self._in_ai_stream = False
-        ring_size = max(1, env_int("YUYUTSAVA_REPL_RING", default=50))
-        self._entry_cap = max(1024, env_int("YUYUTSAVA_REPL_RING_ENTRY_KB", default=100) * 1024)
-        self._ring: deque[RingEntry] = deque(maxlen=ring_size)
-        self._next_index = 1
+        self.ring = PayloadRing()
         self._smoother = self._make_smoother()
 
     def begin_turn(self) -> None:
@@ -158,7 +136,7 @@ class ChatRenderer:
         if ev.kind == "tool_call":
             name = ev.data.get("name", "?")
             args = ev.data.get("args", {})
-            idx = self._push_ring("tool_call", name, self._pretty(args))
+            idx = self.ring.push("tool_call", name, tf.pretty_args(args))
             if name == "write_todos":
                 self._render_todos(args, idx)
                 return
@@ -172,11 +150,11 @@ class ChatRenderer:
             name = ev.data.get("name", "tool")
             body = ev.data.get("preview", "") or ""
             full = ev.data.get("full", body) or body
-            idx = self._push_ring("tool_result", name, full)
+            idx = self.ring.push("tool_result", name, full)
             # The write_todos call line already reflects the new state.
             if name == "write_todos":
                 return
-            is_err = self._looks_like_error(full or body)
+            is_err = tf.looks_like_error(full or body)
             if self._verbose:
                 self._render_tool_result_verbose(name, full or body, idx, is_err)
             elif is_err:
@@ -246,64 +224,6 @@ class ChatRenderer:
     # Ring buffer + slash command helpers
     # ------------------------------------------------------------------
 
-    def _push_ring(self, kind: str, name: str, full: str) -> int:
-        truncated = False
-        if len(full) > self._entry_cap:
-            full = full[: self._entry_cap] + f"\n…[truncated to {self._entry_cap // 1024}KB]"
-            truncated = True
-        idx = self._next_index
-        self._next_index += 1
-        self._ring.append(
-            RingEntry(index=idx, kind=kind, name=name, full=full, truncated=truncated)
-        )
-        return idx
-
-    def _find(self, idx: int) -> RingEntry | None:
-        for e in self._ring:
-            if e.index == idx:
-                return e
-        return None
-
-    def print_ring(self) -> None:
-        if not self._ring:
-            print(f"{DIM}(ring empty){RESET}", file=sys.stderr)
-            return
-        print(f"{CYAN}ring (most recent last):{RESET}", file=sys.stderr)
-        for e in self._ring:
-            summary = e.full.replace("\n", " ⏎ ")
-            if len(summary) > 100:
-                summary = summary[:100] + "…"
-            tag = "·" if e.kind == "tool_call" else "↳"
-            print(f"  {DIM}[#{e.index}] {tag} {e.name}: {summary}{RESET}", file=sys.stderr)
-
-    def print_entry(self, idx: int) -> None:
-        e = self._find(idx)
-        if e is None:
-            print(f"{DIM}no ring entry #{idx} (try /ring){RESET}", file=sys.stderr)
-            return
-        header = f"[#{e.index}] {e.kind} {e.name}"
-        if e.truncated:
-            header += " (truncated)"
-        print(f"{CYAN}{header}{RESET}", file=sys.stderr)
-        print(e.full, file=sys.stderr)
-
-    def print_last(self, k: int = 1) -> None:
-        if not self._ring:
-            print(f"{DIM}(ring empty){RESET}", file=sys.stderr)
-            return
-        k = max(1, k)
-        for e in list(self._ring)[-k:]:
-            self.print_entry(e.index)
-
-    @staticmethod
-    def _pretty(args: Any) -> str:
-        try:
-            if isinstance(args, (dict, list)):
-                return json.dumps(args, indent=2, default=str)
-        except Exception:
-            pass
-        return str(args)
-
     # ------------------------------------------------------------------
     # Mode-specific renderers
     # ------------------------------------------------------------------
@@ -341,13 +261,13 @@ class ChatRenderer:
             file=sys.stderr,
         )
         pretty = self._pretty_body(body)
-        if len(pretty) > self._entry_cap:
-            pretty = pretty[: self._entry_cap] + f"\n…[truncated; /expand {idx} for full]"
+        if len(pretty) > self.ring.entry_cap:
+            pretty = pretty[: self.ring.entry_cap] + f"\n…[truncated; /expand {idx} for full]"
         for line in pretty.splitlines():
             print(f"      {line}", file=sys.stderr)
 
     def _render_tool_result_compact_error(self, name: str, body: str, idx: int) -> None:
-        short = self._error_message(body)
+        short = tf.error_message(body)
         if short:
             tail = f"{DIM}  [#{idx}]{RESET}"
             print(
@@ -441,36 +361,16 @@ class ChatRenderer:
         return out if len(out) <= 80 else out[:80] + "…"
 
     def _zone_chip(self, name: str, args: Any) -> str:
-        if not (name.startswith("tr_") and isinstance(args, dict)):
+        if not name.startswith("tr_"):
             return ""
-        path: str | None = None
-        for k in ("path", "file_path", "target", "directory"):
-            v = args.get(k)
-            if isinstance(v, str) and v.strip():
-                path = v.strip()
-                break
-        if path is None:
-            paths = args.get("paths")
-            if isinstance(paths, list) and paths:
-                p0 = paths[0]
-                if isinstance(p0, str) and p0.strip():
-                    path = p0.strip()
+        path = zones.path_argument(args)
         if not path:
             return ""
-        zone = self._classify_zone(path)
+        zone = zones.display_zone(path, self._workspace)
         if not zone:
             return ""
         colour = YELLOW if zone == "external" else DIM
         return f"  {colour}[{zone}]{RESET}"
-
-    def _classify_zone(self, path: str) -> str:
-        if self._workspace is not None and path.startswith(str(self._workspace)):
-            return "workspace"
-        if path.startswith(host_profile().temp_zone_prefixes()):
-            return "sandbox"
-        if os.path.isabs(path):
-            return "external"
-        return ""
 
     @staticmethod
     def _format_arg_value(v: Any) -> str:
@@ -500,48 +400,3 @@ class ChatRenderer:
             except Exception:
                 pass
         return body
-
-    @staticmethod
-    def _looks_like_error(body: str) -> bool:
-        if not isinstance(body, str) or not body:
-            return False
-        stripped = body.strip()
-        if stripped.startswith("{"):
-            try:
-                obj = json.loads(stripped)
-                if isinstance(obj, dict):
-                    status = str(obj.get("status", "")).lower()
-                    if status in ("error", "rejected", "fail", "failed"):
-                        return True
-                    err = obj.get("error")
-                    if err:
-                        return True
-            except Exception:
-                pass
-        head = stripped[:200].lower()
-        markers = ("error:", "exception:", "traceback", "failed:", "✗")
-        return any(m in head for m in markers)
-
-    @staticmethod
-    def _error_message(body: str) -> str:
-        if not isinstance(body, str):
-            return ""
-        stripped = body.strip()
-        if stripped.startswith("{"):
-            try:
-                obj = json.loads(stripped)
-                if isinstance(obj, dict):
-                    err = obj.get("error")
-                    if isinstance(err, dict):
-                        msg = err.get("message") or err.get("code")
-                        if msg:
-                            return str(msg)[:120]
-                    elif isinstance(err, str) and err:
-                        return err[:120]
-                    msg = obj.get("message")
-                    if isinstance(msg, str) and msg:
-                        return msg[:120]
-            except Exception:
-                pass
-        first = stripped.splitlines()[0] if stripped else ""
-        return first[:120]

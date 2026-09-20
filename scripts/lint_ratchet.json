@@ -66,9 +66,9 @@
     "S110": 3
   },
   "yuyutsava/cli/render/plain.py": {
-    "BLE001": 6,
+    "BLE001": 3,
     "C901": 1,
-    "S110": 5
+    "S110": 2
   },
   "yuyutsava/cli/render/renderer.py": {
     "C901": 1,

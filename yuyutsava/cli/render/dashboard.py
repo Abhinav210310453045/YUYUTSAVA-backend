@@ -98,6 +98,7 @@ from yuyutsava.cli.render.context_panel import (
     panel_fragments,
     panel_width_for,
 )
+from yuyutsava.cli.render.protocol import ChatRendererProtocol
 from yuyutsava.config.env import env_flag
 from yuyutsava.context.meter import bus
 
@@ -654,12 +655,17 @@ class ChatDashboard:
 
     # -- wiring -------------------------------------------------------------
 
-    def attach_renderer(self, renderer: Any) -> None:
-        """Take the status line from the renderer and repaint when it changes."""
+    def attach_renderer(self, renderer: ChatRendererProtocol) -> None:
+        """Take the status line from the renderer and repaint when it changes.
+
+        The three members used here are the whole of what a dashboard needs
+        from a renderer, which is why they are in the protocol. Assigning
+        ``on_change`` was guarded against ``AttributeError`` while only the
+        rich renderer happened to define it; both declare it now.
+        """
         self._status = lambda: renderer.status_text()
         self._tool = lambda: renderer.tool_in_flight()
-        with contextlib.suppress(AttributeError):
-            renderer.on_change = self._invalidate
+        renderer.on_change = self._invalidate
 
     def set_turn_task(self, task: asyncio.Task | None) -> None:
         """The task Ctrl+C should cancel (the REPL's own, while a turn runs)."""

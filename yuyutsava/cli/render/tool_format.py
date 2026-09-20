@@ -252,6 +252,21 @@ def error_message(body: str) -> str:
     return first[:120]
 
 
+def pretty_args(args: Any) -> str:
+    """A tool call's arguments as indented JSON, for the ring and verbose mode.
+
+    Distinct from :func:`pretty_body`, which is handed an already-serialized
+    result body and has to decide whether it is JSON at all. Here the caller
+    already has the object.
+    """
+    try:
+        if isinstance(args, (dict, list)):
+            return json.dumps(args, indent=2, default=str)
+    except (TypeError, ValueError):
+        pass
+    return str(args)
+
+
 def pretty_body(body: str) -> str:
     if not isinstance(body, str):
         return str(body)

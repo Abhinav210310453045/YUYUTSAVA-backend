@@ -60,6 +60,7 @@ from yuyutsava.cli.render.dashboard import (
     wide_enough,
 )
 from yuyutsava.cli.render.plain import ChatRenderer
+from yuyutsava.cli.render.protocol import ChatRendererProtocol
 from yuyutsava.cli.render.renderer import RichChatRenderer
 from yuyutsava.cli.tooling import cleanup_local_sandbox
 from yuyutsava.config.env import env_flag
@@ -403,7 +404,7 @@ def build_surface(
     if mode == "dashboard":
         dashboard = ChatDashboard(history_path=history_path, completer=_SlashCompleter())
         console = dashboard.console
-        renderer: ChatRenderer = RichChatRenderer(
+        renderer: ChatRendererProtocol = RichChatRenderer(
             verbose=verbose, workspace=workspace, console=console, live=False
         )
         dashboard.attach_renderer(renderer)
@@ -543,9 +544,10 @@ def _suppress_stdio():
 
 
 # ---------------------------------------------------------------------------
-# Renderers live in yuyutsava/cli/render/: ``plain.ChatRenderer`` (imported
-# above) is the ANSI fallback; ``renderer.RichChatRenderer`` subclasses it
-# for TTYs.
+# Renderers live in yuyutsava/cli/render/: ``plain.ChatRenderer`` is the ANSI
+# fallback and ``renderer.RichChatRenderer`` the TTY one. Neither derives from
+# the other — both satisfy ``render.protocol.ChatRendererProtocol``, which is
+# what this module is typed against.
 # ---------------------------------------------------------------------------
 
 
@@ -1187,7 +1189,7 @@ def _handle_slash(
         print(f"  {DIM}workspace:{RESET} {workspace}", file=sys.stderr)
         return _SLASH_HANDLED
     if head == "/ring":
-        renderer.print_ring()
+        renderer.ring.print_all()
         return _SLASH_HANDLED
     if head == "/last":
         k = 1
@@ -1197,7 +1199,7 @@ def _handle_slash(
             except ValueError:
                 print(f"{DIM}/last: expected integer, got {parts[1]!r}{RESET}", file=sys.stderr)
                 return _SLASH_HANDLED
-        renderer.print_last(k)
+        renderer.ring.print_last(k)
         return _SLASH_HANDLED
     if head == "/expand":
         if len(parts) < 2:
@@ -1208,7 +1210,7 @@ def _handle_slash(
         except ValueError:
             print(f"{DIM}/expand: expected integer, got {parts[1]!r}{RESET}", file=sys.stderr)
             return _SLASH_HANDLED
-        renderer.print_entry(idx)
+        renderer.ring.print_one(idx)
         return _SLASH_HANDLED
     if head == "/new":
         return "new"

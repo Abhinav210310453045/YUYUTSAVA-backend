@@ -1,8 +1,11 @@
 """RichChatRenderer — Claude-Code-style transcript renderer.
 
-Subclasses the plain :class:`~yuyutsava.cli.render.plain.ChatRenderer`
-to reuse its ring buffer and slash-command helpers, overriding only the
-display path:
+One of the two renderers behind
+:class:`~yuyutsava.cli.render.protocol.ChatRendererProtocol`, for a TTY. It
+shares the payload ring and the small formatters with the plain renderer by
+composition — :mod:`~yuyutsava.cli.render.ring`,
+:mod:`~yuyutsava.cli.render.tool_format` and
+:mod:`~yuyutsava.cli.render.zones` — and owns its whole display path:
 
 * one transient ``Live`` spinner per turn (``✳ Thinking…`` → ``Running
   <tool>…`` → streaming prose tail), everything else printed *above* it;
@@ -34,8 +37,9 @@ from rich.text import Text
 
 from yuyutsava.cli.render import artifact_view as av
 from yuyutsava.cli.render import tool_format as tf
+from yuyutsava.cli.render import zones
 from yuyutsava.cli.render.markdown_stream import MarkdownStream
-from yuyutsava.cli.render.plain import ChatRenderer
+from yuyutsava.cli.render.ring import PayloadRing
 from yuyutsava.core.streaming import StreamEvent
 
 _SUBAGENT_TOOLS = ("task", "start_async_task")
@@ -44,7 +48,16 @@ _SUBAGENT_TOOLS = ("task", "start_async_task")
 _SUBAGENT_INLINE_CHARS = 4000
 
 
-class RichChatRenderer(ChatRenderer):
+class RichChatRenderer:
+    """The TTY renderer: a Live status region, Markdown prose, Rich panels.
+
+    Satisfies :class:`~yuyutsava.cli.render.protocol.ChatRendererProtocol`
+    without inheriting from the plain renderer. It used to subclass it, which
+    shared a payload ring and three small formatters at the cost of inheriting
+    fifteen helpers it had already replaced — so a fix to one renderer was
+    invisible in the other.
+    """
+
     def __init__(
         self,
         *,
@@ -53,9 +66,10 @@ class RichChatRenderer(ChatRenderer):
         console: Console,
         live: bool = True,
     ) -> None:
-        super().__init__(verbose=verbose, workspace=workspace)
-        # The Live region paces output; the smoother would double-buffer.
-        self._smoother = None
+        self._verbose = verbose
+        self._workspace = workspace
+        #: Shared with the plain renderer by composition, not inheritance.
+        self.ring = PayloadRing()
         self._console = console
         self._md = MarkdownStream(console)
         self._live: Live | None = None
@@ -247,7 +261,7 @@ class RichChatRenderer(ChatRenderer):
             name = ev.data.get("name", "?")
             args = ev.data.get("args", {})
             self._md.flush()
-            idx = self._push_ring("tool_call", name, self._pretty(args))
+            idx = self.ring.push("tool_call", name, tf.pretty_args(args))
             if name == "write_todos":
                 self._print_todos(args, idx)
                 return
@@ -263,7 +277,7 @@ class RichChatRenderer(ChatRenderer):
             name = ev.data.get("name", "tool")
             body = ev.data.get("preview", "") or ""
             full = ev.data.get("full", body) or body
-            idx = self._push_ring("tool_result", name, full)
+            idx = self.ring.push("tool_result", name, full)
             with contextlib.suppress(ValueError):
                 self._in_flight.remove(name)
             if not self._in_flight:
@@ -271,7 +285,7 @@ class RichChatRenderer(ChatRenderer):
             if name == "write_todos":
                 self._refresh()
                 return
-            is_err = self._looks_like_error(full or body)
+            is_err = tf.looks_like_error(full or body)
             if name == "task" and not is_err:
                 self._print_subagent_response(full or body, idx)
             else:
@@ -328,7 +342,7 @@ class RichChatRenderer(ChatRenderer):
         line.append(f"  [#{idx}]", style="chrome")
         self._console.print(line)
         if self._verbose and isinstance(args, dict) and args:
-            pretty = self._pretty(args)
+            pretty = tf.pretty_args(args)
             self._console.print(Padding(Text(pretty, style="chrome"), (0, 0, 0, 6)))
 
     def _print_tool_result(self, name: str, body: str, idx: int, is_err: bool) -> None:
@@ -344,8 +358,8 @@ class RichChatRenderer(ChatRenderer):
         self._console.print(line)
         if self._verbose:
             pretty = tf.pretty_body(body)
-            if len(pretty) > self._entry_cap:
-                pretty = pretty[: self._entry_cap] + f"\n…[truncated; /expand {idx} for full]"
+            if len(pretty) > self.ring.entry_cap:
+                pretty = pretty[: self.ring.entry_cap] + f"\n…[truncated; /expand {idx} for full]"
             self._console.print(Padding(Text(pretty), (0, 0, 0, 6)))
 
     def _print_subagent_call(self, name: str, args: Any, idx: int) -> None:
@@ -426,23 +440,10 @@ class RichChatRenderer(ChatRenderer):
 
     def _zone_name(self, name: str, args: Any) -> str:
         """Zone of the first path-ish arg ('' when not applicable)."""
-        if not (name.startswith("tr_") and isinstance(args, dict)):
+        if not name.startswith("tr_"):
             return ""
-        path: str | None = None
-        for k in ("path", "file_path", "target", "directory"):
-            v = args.get(k)
-            if isinstance(v, str) and v.strip():
-                path = v.strip()
-                break
-        if path is None:
-            paths = args.get("paths")
-            if isinstance(paths, list) and paths:
-                p0 = paths[0]
-                if isinstance(p0, str) and p0.strip():
-                    path = p0.strip()
-        if not path:
-            return ""
-        return self._classify_zone(path)
+        path = zones.path_argument(args)
+        return zones.display_zone(path, self._workspace) if path else ""
 
     @staticmethod
     def _is_subagent_token(data: dict) -> bool:
