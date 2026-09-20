@@ -1,7 +1,7 @@
 """What the REPL prints before the first prompt.
 
-The banner, the one-line status that replaces the silenced start-up logs, and
-the langgraph-api version notice. Separated from the REPL because none of it is
+The banner, the one-line status standing in for the silenced start-up logs,
+and the langgraph-api version notice. Separated from the REPL because none of it is
 the REPL: it is output with no state, which makes it testable without standing
 up a session.
 """

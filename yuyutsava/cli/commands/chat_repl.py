@@ -420,10 +420,10 @@ class SlashCommand:
 
 
 #: Every slash command, once. ``/help`` and the tab-completer are both
-#: generated from this, because they used to be two hand-kept lists and drifted:
-#: the four background-approval commands were offered by completion and missing
-#: from ``/help``, so the only way to find out how to answer a pending ask was
-#: to press Tab and guess.
+#: generated from this, so they cannot disagree. Two hand-kept lists did: the
+#: four background-approval commands were offered by completion and missing
+#: from ``/help``, leaving no way to find out how to answer a pending ask short
+#: of pressing Tab and guessing.
 SLASH_COMMANDS: tuple[SlashCommand, ...] = (
     SlashCommand("/help", "show this help"),
     SlashCommand("/quit", "exit the chat (Ctrl+D also works)", aliases=("/exit", "/q")),
@@ -989,8 +989,8 @@ async def run_chat_repl(
 
             # The split view must be up BEFORE anything is printed: it takes
             # the alternate screen, which wipes whatever is already on the
-            # terminal. The banner used to be drawn first and then erased, so
-            # `yuyutsava chat` opened on a bare screen with a stray Google
+            # terminal. Print the banner first and it is erased, leaving
+            # `yuyutsava chat` open on a bare screen with a stray Google
             # credentials warning at the top.
             if dashboard is not None:
                 await dashboard.start()
@@ -1125,8 +1125,8 @@ async def run_chat_repl(
             await approvals.aclose()
             await runtime_toggles.aclose()
             await bundle.aclose()
-            # After teardown: in docker mode the container is gone, so the
-            # sandbox is no longer anyone's cwd — wipe scratch in either mode.
+            # After teardown the docker container is gone, so nothing has the
+            # sandbox as its cwd — safe to wipe scratch in either mode.
             if bundle.layout is not None:
                 try:
                     cleanup_local_sandbox(bundle.layout)

@@ -17,9 +17,9 @@ logger = logging.getLogger("yuyutsava.cli.usage")
 async def session_usage(store: Any, thread_id: str, since: float) -> list[Any]:
     """This thread's ``llm_usage`` rows since *since*. Never raises.
 
-    ``UsageStore.list`` takes a ``thread_id`` filter now, so this no longer
-    fetches 2,000 rows by time and drops the ones that belong to other
-    conversations — a workaround that silently truncated on a busy machine.
+    Filtered by ``thread_id`` in the query, not afterwards: fetching a window
+    by time and discarding other conversations' rows in Python silently
+    truncates this session's own on a busy machine.
     """
     if store is None or not thread_id:
         return []
