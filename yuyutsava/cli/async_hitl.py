@@ -27,8 +27,8 @@ from collections import deque
 from typing import Any, Deque
 
 from yuyutsava.ansi import CYAN, DIM, GREEN, RED, RESET, YELLOW
-from yuyutsava.cli.line_reader import read_line
-from yuyutsava.consent import decision_token, is_permission_ask
+from yuyutsava.cli.ask_prompt import AskView, permission_keys, prompt_for_ask
+from yuyutsava.consent import is_permission_ask
 from yuyutsava.ports.channels import (
     AskPrompt,
     AsyncTaskAwaitingUserPayload,
@@ -133,12 +133,11 @@ class CliRemoteHitl:
             self._print(f"  {ln}")
         options = a.get("options") or []
         if is_permission_ask(options):
-            # Bare words resolve the active (oldest) ask — no id to type. Scope
-            # words appear only when the daemon offered them (low/medium risk).
-            scope = ""
-            if "session" in options or "project" in options:
-                scope = " / [s]ession / [p]roject"
-            self._print(f"  -> [y]es / [n]o{scope}   (or /approve {aid8} · or answer in the UI)")
+            # Bare words resolve the active (oldest) ask — no id to type. The
+            # keys themselves come from ask_prompt, so this announcement and
+            # the blocking prompt cannot offer different answers.
+            keys = permission_keys(options)
+            self._print(f"  -> {keys}   (or /approve {aid8} · or answer in the UI)")
         elif options:
             self._print(f"  -> /approve {aid8}  |  /reject {aid8}   (or answer in the UI)")
         else:
@@ -218,42 +217,19 @@ class CliHitlBridge:
     async def post_ask(self, ask: AskPrompt) -> str:
         """Block on stdin for a single ask.
 
-        Asks for background subagents flush queued events first so context
-        about which task is asking is visible right above the prompt.
+        Queued events are flushed first, so what the background task was doing
+        is visible right above the question about it.
         """
-
-        # Flush queued events into stderr so the user sees recent context.
         await self._flush_to_stderr()
-        title = ask.title or "Background task question"
-        body = ask.body or ""
-        agent_path = ask.agent_path or ""
-        options = ask.options or []
-        is_permission = is_permission_ask(options)
-
-        prefix = f"\n{CYAN}▣ {title}{RESET}"
-        if agent_path:
-            prefix += f"  {DIM}({agent_path}){RESET}"
-        print(prefix, file=sys.stderr, flush=True)
-        if body:
-            print(f"  {body}", file=sys.stderr, flush=True)
-        if is_permission:
-            scope = (
-                " / [s]ession / [p]roject" if ("session" in options or "project" in options) else ""
+        return await prompt_for_ask(
+            AskView(
+                title=ask.title or "Background task question",
+                body=ask.body or "",
+                options=ask.options or [],
+                agent_path=ask.agent_path or "",
+                ask_id=ask.ask_id or "",
             )
-            print(f"  {DIM}[y]es / [n]o{scope}{RESET}", file=sys.stderr, flush=True)
-        elif options:
-            print(f"  options: {' / '.join(options)}", file=sys.stderr, flush=True)
-
-        # Through the seam, not input(): a background task's approval was
-        # unanswerable under the split-view dashboard, which owns stdin for the
-        # whole session (cli/line_reader.py).
-        prompt = "approve/reject> " if is_permission else "> "
-        line = await read_line(prompt)
-        if line is None:
-            return "reject"
-        if is_permission:
-            return decision_token(line) or "reject"
-        return line or "reject"
+        )
 
     # ------------------------------------------------------------------
     # REPL → bridge

@@ -26,8 +26,7 @@ from typing import Any, AsyncIterator
 import httpx
 
 from yuyutsava.ansi import CYAN, DIM, GREEN, RED, RESET, YELLOW
-from yuyutsava.cli.line_reader import read_line
-from yuyutsava.consent import decision_token, is_permission_ask
+from yuyutsava.cli.ask_prompt import AskView, prompt_for_ask
 
 logger = logging.getLogger("yuyutsava.cli.remote_attach")
 
@@ -129,35 +128,16 @@ class CliAttachClient:
 
 
 async def prompt_user_for_ask(frame_data: dict) -> str:
-    """Print the ask + options to stderr, read a reply from stdin."""
-
-    ask_id = frame_data.get("ask_id") or ""
-    title = frame_data.get("title") or "Question"
-    body = frame_data.get("body") or ""
-    options = frame_data.get("options") or []
-    agent_path = frame_data.get("agent_path") or ""
-    is_permission = is_permission_ask(options)
-
-    tag = " [background]" if agent_path.endswith("#bg") else ""
-    print(f"\n{CYAN}▣ {title}{tag}{RESET}  {DIM}(ask={ask_id[:8]}){RESET}", file=sys.stderr)
-    if agent_path:
-        print(f"  {DIM}from: {agent_path}{RESET}", file=sys.stderr)
-    if body:
-        print(f"  {body}", file=sys.stderr)
-    if is_permission:
-        scope = " / [s]ession / [p]roject" if ("session" in options or "project" in options) else ""
-        print(f"  {DIM}[y]es / [n]o{scope}{RESET}", file=sys.stderr)
-    elif options:
-        print(f"  options: {' / '.join(options)}", file=sys.stderr)
-    sys.stderr.flush()
-
-    prompt = "approve/reject> " if is_permission else "> "
-    line = await read_line(prompt)
-    if line is None:
-        return "reject"
-    if is_permission:
-        return decision_token(line) or "reject"
-    return line or "reject"
+    """Ask the user about one `ask` frame off the daemon's stream."""
+    return await prompt_for_ask(
+        AskView(
+            title=frame_data.get("title") or "Question",
+            body=frame_data.get("body") or "",
+            options=frame_data.get("options") or [],
+            agent_path=frame_data.get("agent_path") or "",
+            ask_id=frame_data.get("ask_id") or "",
+        )
+    )
 
 
 def render_event_frame(frame_data: dict) -> None:

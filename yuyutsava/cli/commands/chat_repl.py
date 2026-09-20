@@ -530,8 +530,12 @@ def make_ask_handler(renderer: "ChatRenderer", console: Any = None):
                 token = _decision_token(raw)
                 if token is not None:
                     return token
+                # The same hint the card printed, not a second spelling of
+                # it: the hardcoded one offered [s]ession and [p]roject for
+                # every interrupt type, including the ones that cannot store
+                # a grant, so it taught keys that do nothing.
                 print(
-                    f"  {DIM}please answer: [y]es / [n]o / [s]ession / [p]roject{RESET}",
+                    f"  {DIM}please answer: {panels.options_hint(itype)}{RESET}",
                     file=sys.stderr,
                 )
             return "reject"
