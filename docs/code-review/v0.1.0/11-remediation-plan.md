@@ -349,7 +349,7 @@ Characterization tests first, for every unit that is split.
 | functions > 100 lines | — | **39** | ≤ 10 |
 | functions > 10 params | 14 | **8** | ≤ 3 |
 | max complexity (approx) | ~130 | **38** | ≤ 25 |
-| classes > 400 lines | 11 | **9** | 0 |
+| classes > 400 lines | 11 | **8** | 0 |
 | `C901` (ruff, the gate) | 19 | **13** | allowlist only shrinks |
 | `PLR0913` | 38 | **31** | allowlist only shrinks |
 | `BLE001` | 68 | **62** | W5 |
@@ -398,12 +398,24 @@ Done so far:
   `InputBroker`, 607 → 438 lines with 40 tests that need no application. It
   stops above 400 deliberately — see `R-SOL-01`.
 
+- **The watcher is a package that routes.** The largest class in the tree, 724
+  lines and thirteen jobs, split between observing (`TaskPoller.classify`
+  returns a verdict) and acting (`InterruptHandler`, `TerminalReporter`), with
+  the watcher deciding which. Verified with background subagents actually
+  switched on: "async watcher: running", ten poll cycles, no faults.
+
 Still open in this wave: `build_daemon` (451), the agent builders in
 `core/engine.py` and `core/agent_stack.py` (297, 281 with 19 parameters, 239,
 211), `_async_main` (224), `_build_parser` (205 — the duplicate definition is
 fixed, the length is not), `run_chat_repl` itself (261) and the rest of its
-module, the `AsyncTaskHealthWatcher` (724) split, the remaining DRY helpers, the provider
-and visual-kind registries, and the 160 history-narration phrases.
+module, the the rest of the `chat_repl` module, the remaining DRY helpers, the provider and
+visual-kind registries, and the 160 history-narration phrases.
+
+Eight classes remain over 400 lines, none of them named by `R-SOL-01`:
+`DockerSandboxBackend` (490), `UnifiedTodoStore` (489), `ConversationService`
+(468), `TaskRunnerAgent` (453), `ChatDashboard` (438, a stated stop),
+`TelegramChannelPlugin` (420), `ConverseConnection` (417) and
+`RichChatRenderer` (407).
 
 **Two departures from the task list, deliberate.**
 

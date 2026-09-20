@@ -13,12 +13,12 @@ user-visible bug. Small helpers exist in up to eighteen disagreeing copies.
 
 ## R-SOL-01 — Classes and modules with many reasons to change
 
-**Severity** P1 · **Wave** W4 · **Status** Partly done — 3 of 6 units closed, 1 partly
+**Severity** P1 · **Wave** W4 · **Status** Partly done — 5 of 6 units closed; `chat_repl.py` partly
 
 | Unit | State |
 |---|---|
 | `TodoExchange` | **Done** (`cad6303`). A facade over `todoboard/services/` — cards, objectives, notes, attachments — with no service importing another; `BoardCore` holds the store, the fault guard, the timeline and the two parent lookups, and `validate.py` the vocabularies. 763 lines and 30 methods → 273 lines of delegation, largest module 229. The public API is unchanged against a signature snapshot, and the error types moved to a leaf first (`9577372`), which made the package acyclic. Characterization first: 40 tests, negative-controlled. |
-| `AsyncTaskHealthWatcher` | Open — now 724 lines, the largest class in the tree |
+| `AsyncTaskHealthWatcher` | **Done** (`ba12ed9`). A package split between observing and acting: `TaskPoller.classify` reports a verdict and decides nothing, `InterruptHandler` and `TerminalReporter` act, and the watcher routes — `_poll_known_tasks` is nine lines. The four shared per-task maps live in `WatcherContext`, because each is an "exactly once" that stops being once if a unit keeps its own. 724 lines → six modules, largest 314; 48 tests written first. |
 | `ChatDashboard` | **Done** (`cb275da`, `0d82259`, `4749e35`), with a stated stop. `StdioCapture` (process-wide output redirection), `ScrollView` (which rows are on screen) and `InputBroker` (whether a line answers a question or starts a turn) are out, each with its own tests that need no application: 607 → **438** lines and 40 new tests. It stops above 400 on purpose. What is left is the application's layout and lifecycle, which is one responsibility; the only 80-line block still extractable is `_build_app`, and pulling it out means a function taking nine callbacks from the object it came from — indirection without decoupling. |
 | `ChatRenderer` | **Done** (`c10aea5`). Not a base class any more: both renderers satisfy `render/protocol.py` and compose `PayloadRing`, so the fifteen helpers the rich one inherited-but-had-replaced are gone from its surface. 501 → 375 lines; `RichChatRenderer` 412 → 409, still over 400 and carried. |
 | `context/meter.py` | **Done** (`c3193db`). A package, one stage per module — `snapshot` → `bus` → `sizing` → `calibration` → `policy`, in the order a reading is built, plus `bounded` for the dict every per-thread map uses. The import path and all 15 exported names are unchanged. |
