@@ -117,10 +117,10 @@ class Keys(_DashboardCase):
         # Submitting means "I am done reading back"; leaving the view parked
         # 200 lines up would hide the reply that is about to arrive.
         self.dash.buffer.write("x\n" * 100)
-        self.dash._scroll = 50
+        self.dash.view.offset = 50
         self.dash._buf.text = "go"
         self.dash.submit()
-        self.assertEqual(self.dash._scroll, 0)
+        self.assertEqual(self.dash.view.offset, 0)
 
     async def test_ctrl_c_cancels_the_registered_turn(self):
         async def _long():
@@ -153,19 +153,19 @@ class Keys(_DashboardCase):
     async def test_scrolling_stays_within_the_transcript(self):
         self.dash.buffer.write("line\n" * 10)
         self.dash.page_up()
-        self.assertGreaterEqual(self.dash._scroll, 0)
+        self.assertGreaterEqual(self.dash.view.offset, 0)
         for _ in range(50):
             self.dash.page_up()
-        self.assertLessEqual(self.dash._scroll, self.dash.buffer.line_count())
+        self.assertLessEqual(self.dash.view.offset, self.dash.buffer.line_count())
         for _ in range(200):
             self.dash.page_down()
-        self.assertEqual(self.dash._scroll, 0)
+        self.assertEqual(self.dash.view.offset, 0)
 
     async def test_end_jumps_back_to_live(self):
         self.dash.buffer.write("line\n" * 200)
-        self.dash._scroll = 90
+        self.dash.view.offset = 90
         self.dash.follow()
-        self.assertEqual(self.dash._scroll, 0)
+        self.assertEqual(self.dash.view.offset, 0)
 
     async def test_ctrl_l_clears_the_transcript(self):
         self.dash.buffer.write("gone\n")
@@ -241,7 +241,7 @@ class VisibleSlice(_DashboardCase):
 
     async def test_scrolling_up_shows_earlier_lines(self):
         self.dash.buffer.write("".join(f"line {i}\n" for i in range(1_000)))
-        self.dash._scroll = 500
+        self.dash.view.offset = 500
         text = "".join(t for _s, t in self.dash._visible_transcript())
         self.assertNotIn("line 999", text)
 
@@ -255,7 +255,7 @@ class VisibleSlice(_DashboardCase):
 
     async def test_the_status_line_reports_being_scrolled_back(self):
         self.dash.buffer.write("line\n" * 200)
-        self.dash._scroll = 30
+        self.dash.view.offset = 30
         text = "".join(t for _s, t in self.dash._status_text())
         self.assertIn("End to follow", text)
 
@@ -318,7 +318,7 @@ class PaneIntegrity(_DashboardCase):
         await self.dash.start()
         self.dash.buffer.write("Z" * 2_000 + "\n")
         self.dash.console.print("R" * 2_000)
-        rows = self.dash._display_rows(500, self.dash.left_width)
+        rows = self.dash.view.display_rows(500, self.dash.left_width)
         widest = max((visible_width(r) for r in rows), default=0)
         self.assertLessEqual(widest, self.dash.left_width)
 
@@ -350,7 +350,7 @@ class PaneIntegrity(_DashboardCase):
         await self.dash.start()
         self.dash.buffer.write("W" * 300 + "\n")
         for width in (200, 120, 60, 30):
-            rows = self.dash._display_rows(200, width)
+            rows = self.dash.view.display_rows(200, width)
             self.assertLessEqual(max(visible_width(r) for r in rows), width, f"width={width}")
 
     async def test_the_panel_never_exceeds_its_height(self):

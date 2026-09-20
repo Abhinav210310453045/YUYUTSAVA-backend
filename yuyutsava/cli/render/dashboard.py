@@ -88,7 +88,6 @@ from prompt_toolkit.output import create_output
 from prompt_toolkit.styles import Style
 
 from yuyutsava.cli.line_reader import clear_line_reader, set_line_reader
-from yuyutsava.cli.render.ansi_wrap import wrap_ansi
 from yuyutsava.cli.render.console import make_console
 from yuyutsava.cli.render.context_panel import (
     MIN_DASHBOARD_COLS,
@@ -96,6 +95,7 @@ from yuyutsava.cli.render.context_panel import (
     panel_width_for,
 )
 from yuyutsava.cli.render.protocol import ChatRendererProtocol
+from yuyutsava.cli.render.scroll_view import ScrollView
 from yuyutsava.cli.render.stdio_capture import (
     DEFAULT_SCROLLBACK,
     StdioCapture,
@@ -205,7 +205,6 @@ class ChatDashboard:
         self._cols = max(MIN_DASHBOARD_COLS, terminal_cols() or MIN_DASHBOARD_COLS)
         self._panel_width = panel_width_for(self._cols)
         self._panel_visible = True
-        self._scroll = 0  # lines above the live tail; 0 == following output
         self._snapshot: Any | None = None
         self._status: Callable[[], str] = lambda: ""
         self._tool: Callable[[], str] = lambda: ""
@@ -219,6 +218,11 @@ class ChatDashboard:
 
         self.buffer = TranscriptBuffer(scrollback, on_write=self._invalidate)
         self.capture = StdioCapture(self.buffer)
+        self.view = ScrollView(
+            lines=self.buffer.lines,
+            width=lambda: self.left_width,
+            height=self._height,
+        )
 
         # The real terminal, captured BEFORE sys.stdout is replaced — otherwise
         # the application would render into its own transcript pane. Overridable
@@ -349,7 +353,7 @@ class ChatDashboard:
         self._buf.reset(append_to_history=bool(text.strip()))
         # A new turn means "follow the output again": leaving the view parked
         # 200 lines up would hide the reply about to arrive.
-        self._scroll = 0
+        self.view.follow()
         # An outstanding question takes the line first. It is not a new turn:
         # queueing it would park the answer behind the very turn that is
         # blocked waiting for it.
@@ -408,21 +412,21 @@ class ChatDashboard:
         self._queue.put_nowait(None)
 
     def follow(self) -> None:
-        self._scroll = 0
+        self.view.follow()
 
     def clear_transcript(self) -> None:
         self.buffer.clear()
-        self._scroll = 0
+        self.view.follow()
 
     def toggle_panel(self) -> None:
         self._panel_visible = not self._panel_visible
         self._sync_width(force=True)
 
     def page_up(self) -> None:
-        self._scroll_by(self._page())
+        self.view.page_up()
 
     def page_down(self) -> None:
-        self._scroll_by(-self._page())
+        self.view.page_down()
 
     def _on_wheel(self, lines: int) -> None:
         """Wheel over the transcript scrolls it.
@@ -431,7 +435,7 @@ class ChatDashboard:
         terminals differ over whether a wheel arrives as a mouse event or as a
         synthetic key, and the wheel is how people actually scroll.
         """
-        self._scroll_by(lines)
+        self.view.scroll_by(lines)
         self._invalidate()
 
     def _key_bindings(self):
@@ -446,11 +450,11 @@ class ChatDashboard:
         bind("pageup", self.page_up)
         bind("pagedown", self.page_down)
         for key in ("s-up", "c-up"):
-            bind(key, lambda: self._scroll_by(1))
+            bind(key, lambda: self.view.scroll_by(1))
         for key in ("s-down", "c-down"):
-            bind(key, lambda: self._scroll_by(-1))
-        bind(Keys.ScrollUp, lambda: self._scroll_by(3))
-        bind(Keys.ScrollDown, lambda: self._scroll_by(-3))
+            bind(key, lambda: self.view.scroll_by(-1))
+        bind(Keys.ScrollUp, lambda: self.view.scroll_by(3))
+        bind(Keys.ScrollDown, lambda: self.view.scroll_by(-3))
         bind("end", self.follow)
         bind("c-l", self.clear_transcript)
         bind("c-g", self.toggle_panel)
@@ -463,46 +467,11 @@ class ChatDashboard:
         info = self._out_window.render_info
         return info.window_height if info is not None else _FALLBACK_HEIGHT
 
-    def _page(self) -> int:
-        return max(1, self._height() - 1)
-
-    def _display_rows(self, need: int, width: int) -> list[str]:
-        """The last *need* display rows, wrapping logical lines from the end.
-
-        Wrapping happens here, not on write, so a narrower terminal re-wraps
-        instead of painting across the panel. Walking backwards keeps the cost
-        proportional to what is on screen rather than to the whole scrollback —
-        which matters at a 5,000-line buffer and several frames a second.
-        """
-        out: list[str] = []
-        for line in reversed(self.buffer.lines()):
-            rows = wrap_ansi(line, width)
-            out.extend(reversed(rows))
-            if len(out) >= need:
-                break
-        out.reverse()
-        return out[-need:] if len(out) > need else out
-
-    def _display_count(self, width: int) -> int:
-        """Total display rows at this width. Only called on a scroll key."""
-        return sum(len(wrap_ansi(line, width)) for line in self.buffer.lines())
-
-    def _scroll_by(self, lines: int) -> None:
-        width = self.left_width
-        limit = max(0, self._display_count(width) - self._height())
-        self._scroll = max(0, min(limit, self._scroll + lines))
-
     def _visible_transcript(self):
-        """The visible rows, wrapped to the pane and converted to fragments."""
-
+        """The visible rows as fragments. The slicing is the view's; turning
+        ANSI into fragments is prompt_toolkit's, and so stays here."""
         self._sync_width()
-        width = self.left_width
-        height = self._height()
-        rows = self._display_rows(height + self._scroll, width)
-        # Scrolled back: drop the rows below the viewport.
-        if self._scroll:
-            rows = rows[: max(0, len(rows) - self._scroll)]
-        visible = rows[-height:] if len(rows) > height else rows
+        visible = self.view.visible()
         if not visible:
             return []
         try:
@@ -548,8 +517,8 @@ class ChatDashboard:
 
     def _status_text(self):
         status = self._safe(self._status)
-        if self._scroll:
-            behind = f"  ↑{self._scroll} lines back · End to follow"
+        if self.view.offset:
+            behind = f"  ↑{self.view.offset} lines back · End to follow"
             return [("class:ctx.warn", (status + behind)[: self.left_width])]
         return [("class:status", status[: self.left_width])]
 
