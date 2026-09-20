@@ -575,3 +575,56 @@ One false lead worth recording: a first pass compared the two lists with a loose
 regex and reported `/results` as advertised-but-missing. It is not a command —
 the string comes from the phrase "tool calls/results" inside `/ring`'s
 description. The test matches the first token of a help line for that reason.
+
+---
+
+## R-BUG-13 — Every CLI turn ends by printing two tracebacks it has already handled
+
+**Severity** P2 · **Wave** W5 · **Status** Open
+
+**Evidence.** Three consecutive one-shot turns, each finishing correctly with
+exit status 0, each ending with this on stderr:
+
+```
+httpcore.ReadError
+  transcript_index.py:184 in _index_items -> embedder.embed(texts, mode="document")
+RuntimeError: PgPool.open() must be called first
+  transcript_index.py:194 in _index_items -> self._pool.connection()
+```
+
+**Consequence.** Both are `logger.warning(..., exc_info=True)` on paths that
+degrade as designed — the first stores NULL embeddings, the second gives up and
+returns 0 — so nothing is broken. But a user reading a terminal cannot tell a
+handled warning from a crash, and these arrive immediately after "task
+complete", which is exactly where a real failure would appear. The cost of the
+noise is that it trains people to ignore tracebacks.
+
+**Cause.** Two separate things, and only the second is the bug.
+
+1. The embedder's endpoint is unreachable in this environment, which is also
+   why `test/memory/test_embedder.py` is red in the standing baseline. Not a
+   code defect.
+2. Transcript indexing is still running when the PG pool closes. `_spawn`
+   (`transcript_index.py:114`) creates the task, adds it to `self._tasks` and
+   drops it on completion — and nothing else in the module touches that set:
+   there is no drain, `gather` or `close`. So whether the write lands before
+   teardown is a race with nothing arbitrating it. A turn whose embedder
+   answers quickly will usually win it, which is why this is visible here and
+   not everywhere: an unreachable embedder has to time out first, and then the
+   write always loses. This is the teardown-ordering defect.
+
+**Fix.** Await or cancel the outstanding index work before closing the pool. The
+containment itself is right and should stay — indexing is an enhancement, never
+a gate, exactly as `NoteService._schedule_index` documents for the board's own
+index. Once the ordering is fixed, an embedder that is merely unreachable should
+log one line, not a traceback, since the handler already knows what it will do
+about it.
+
+**Verification.** A one-shot turn with no embedder configured ends with no
+traceback on stderr, and the transcript chunks for that thread are either
+written with NULL embeddings or absent — never half-written. Negative control:
+force the embed to fail and confirm one warning line and one NULL-row insert.
+
+**Found by** running three real agent turns while verifying the `TodoExchange`
+split. The static gates are green and the suite is at baseline; nothing in the
+test tree exercises process teardown with a live pool.

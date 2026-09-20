@@ -341,6 +341,57 @@ Characterization tests first, for every unit that is split.
 - `history_narration_phrases` 0 after review.
 - Fingerprint byte-identical.
 
+**Progress — in flight.** Measured with `measure_code_health.py`, not estimated.
+
+| Metric | Review | Now | Exit |
+|---|---|---|---|
+| functions > 200 lines | 11 | **8** | 0 |
+| functions > 100 lines | — | **39** | ≤ 10 |
+| functions > 10 params | 14 | **8** | ≤ 3 |
+| max complexity (approx) | ~130 | **38** | ≤ 25 |
+| classes > 400 lines | 11 | **10** | 0 |
+| `C901` (ruff, the gate) | 19 | **13** | allowlist only shrinks |
+| `PLR0913` | 38 | **31** | allowlist only shrinks |
+| history narration | 176 | **168** | 0 |
+
+Done so far:
+
+- **`converse`** 771 → 105 lines: the router accepts the socket and delegates;
+  `converse_session.py` holds the frame types and `converse_connection.py` the
+  connection. (`R-RDB-01`)
+- **Tool factories** are packages, one module per family: `bind_tools` 609 →
+  largest 137, `make_todo_tools` 266 → largest 104, `make_context_tools` 242 →
+  four surfaces preserved.
+- **`MasterDeps`** and **`AppDeps`** replace the 33-, 32- and 25-argument
+  parameter lists; `daemon/web/server.py` and its 25-argument pure forwarder
+  `make_app` are deleted. (`R-RDB-03`)
+- **`TodoExchange`** is a facade over four services — see `R-SOL-01`.
+- **One CLI subcommand registry.** The commands were defined twice, in
+  `_build_parser` and in `main`'s dispatch, so `/help` and the parser could
+  disagree — and did: four commands were missing from one of them
+  (`R-BUG-12`). `SUBCOMMANDS` is now the single definition and generates both.
+- **One terminal palette** (`yuyutsava/ansi.py`): nine escape codes written out
+  157 times across ten modules. A leaf, because the daemon's terminal channel
+  writes them too. (`R-DRY-04`)
+- **One content flattener** (`R-DRY-02`), and the plain renderer no longer
+  drops `image` events (`R-BUG-03`).
+
+Still open in this wave: `build_daemon` (451), the agent builders in
+`core/engine.py` and `core/agent_stack.py` (297, 281 with 19 parameters, 239,
+211), `_async_main` (224), `_build_parser` (205 — the duplicate definition is
+fixed, the length is not), the `chat_repl` module, the
+`AsyncTaskHealthWatcher`/`ChatDashboard`/`ChatRenderer`/`meter.py` splits, the
+remaining DRY helpers, the provider and visual-kind registries, and the 168
+history-narration phrases.
+
+**Bugs found while doing this wave, each fixed in its own commit:** `R-BUG-03`
+(plain renderer dropped visuals), `R-BUG-08` (branch mismatch), `R-BUG-09` (an
+ask race that hung production), `R-BUG-10` (a rename broke every MCP server),
+`R-BUG-11` (whitespace transcript), `R-BUG-12` (`/help` hid four commands), and
+`R-TST-15` (the fingerprint gate could not fire). Four of those were found by
+live testing that the static gates had passed — which is why every commit in
+this wave now ends with a daemon restart and a real turn.
+
 ## W5 — Errors, logging, state, defects
 
 - **Classify the 58 silent handlers** as boundary (log plus reason) or internal (narrow type). (`R-ERR-01`, `R-ERR-02`)
