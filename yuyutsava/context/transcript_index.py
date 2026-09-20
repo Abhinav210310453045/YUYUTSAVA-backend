@@ -41,6 +41,7 @@ from yuyutsava.retrieval.store import VectorStore
 from yuyutsava.retrieval.vector import vector_literal
 from yuyutsava.storage.dialect import ensure_thread
 from yuyutsava.storage.pg.pool import PgPool
+from yuyutsava.text import flatten_content
 
 logger = logging.getLogger("yuyutsava.context.transcript_index")
 
@@ -55,21 +56,6 @@ _TRANSCRIPT_CHUNKS_TABLE = PgVectorTable(
 
 def _mint_chunk_id() -> str:
     return f"tch_{ULID()}"
-
-
-def _flatten_content(content: object) -> str:
-    """Flatten a LangChain message ``content`` (str or block list) to text."""
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        parts: list[str] = []
-        for block in content:
-            if isinstance(block, str):
-                parts.append(block)
-            elif isinstance(block, dict) and block.get("type") == "text":
-                parts.append(str(block.get("text", "")))
-        return "".join(parts)
-    return ""
 
 
 class PgTranscriptIndex(VectorStore):
@@ -159,7 +145,7 @@ class PgTranscriptIndex(VectorStore):
                         data = json.loads(content).get("data", {})
                     except Exception:
                         data = {}
-                text = _flatten_content(data.get("content", "")).strip()
+                text = flatten_content(data.get("content", "")).strip()
                 if not text:
                     continue
                 role = "user" if mtype == "human" else "assistant"
@@ -276,7 +262,7 @@ def _messages_to_items(thread_id: str, messages: Sequence[Any]) -> list[tuple[st
         source_id = getattr(m, "id", None)
         if not source_id:
             continue
-        text = _flatten_content(getattr(m, "content", "")).strip()
+        text = flatten_content(getattr(m, "content", "")).strip()
         if not text:
             continue  # tool-call-only AI turns carry no prose
         role = "user" if mtype == "human" else "assistant"

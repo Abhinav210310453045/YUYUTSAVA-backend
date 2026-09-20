@@ -29,13 +29,6 @@ logger = logging.getLogger("yuyutsava.artifacts.tools")
 _GENERATIVE = {"audio": "audio"}
 
 
-def _thread_id() -> str | None:
-    try:
-        return thread_id_from_runtime()
-    except Exception:  # noqa: BLE001 — best-effort tagging, never fail the tool
-        return None
-
-
 def make_artifact_tools() -> list[BaseTool]:
     """Build the artifact-creation tool family (currently just artifact_create).
 
@@ -77,7 +70,9 @@ def make_artifact_tools() -> list[BaseTool]:
         Returns JSON: {"status":"ok", artifact_id, kind, mime, title, path, url}
         on success, or {"status":"error", "error": ...}.
         """
-        tid = _thread_id()
+        # `thread_id_from_runtime` answers "unknown" rather than raising, which
+        # is the same tag every other surface writes when there is no run.
+        tid = thread_id_from_runtime()
         try:
             if kind in _GENERATIVE:
                 if isinstance(spec, str):
