@@ -238,6 +238,70 @@ class Validation(BoardOffDisk):
         self.assertEqual(self.store.cards, {})
 
 
+class Generation(BoardOffDisk):
+    """`generate_artifact` is the one path behind both the REST generate
+    endpoint and the todo_generate_artifact tool, and the only place a
+    `singleton` block updates a row in place instead of attaching a twin."""
+
+    async def test_an_unknown_block_names_the_available_ones(self) -> None:
+        card = await self._card()
+        with self.assertRaises(TodoValidationError) as caught:
+            await self.ex.generate_artifact(card.card_id, "not-a-block")
+        self.assertIn("journey", str(caught.exception), "the error must list what is available")
+
+    async def test_generating_attaches_the_file_it_wrote(self) -> None:
+        card = await self._card("the card that gets a journey")
+        att = await self.ex.generate_artifact(card.card_id, "journey")
+        self.assertTrue(os.path.isfile(att.path))
+        self.assertEqual((att.meta or {}).get("block"), "journey")
+        # The journey block has its own event kind; a plain attach does not.
+        self.assertIn("journey_generated", self.store.event_kinds(card.card_id))
+
+    async def test_a_context_hungry_block_is_handed_the_card(self) -> None:
+        """`needs_context` blocks are injected on the event loop, because a
+        generator runs in a thread and must never reach the store."""
+        card = await self._card("a distinctive title")
+        att = await self.ex.generate_artifact(card.card_id, "journey")
+        with open(att.path) as fh:
+            self.assertIn("a distinctive title", fh.read())
+
+    async def test_regenerating_a_singleton_updates_one_row(self) -> None:
+        card = await self._card()
+        first = await self.ex.generate_artifact(card.card_id, "journey")
+        second = await self.ex.generate_artifact(card.card_id, "journey")
+        self.assertEqual(second.attachment_id, first.attachment_id, "must not attach a twin")
+        self.assertEqual(len(self.store.attachments), 1)
+        self.assertTrue(os.path.isfile(second.path))
+
+    async def test_the_superseded_file_is_removed(self) -> None:
+        """New file, then the row, then the old file — so a crash mid-way
+        leaves a working attachment rather than a dangling row."""
+        card = await self._card()
+        first = await self.ex.generate_artifact(card.card_id, "journey")
+        second = await self.ex.generate_artifact(card.card_id, "journey")
+        if second.path != first.path:
+            self.assertFalse(os.path.exists(first.path))
+
+    async def test_a_spec_must_be_an_object(self) -> None:
+        card = await self._card()
+        with self.assertRaises(TodoValidationError):
+            await self.ex.generate_artifact(card.card_id, "journey", spec="not a dict")
+
+
+class Recall(BoardOffDisk):
+    async def test_search_is_empty_without_an_index(self) -> None:
+        """Recall is an enhancement: SQLite-only deployments have no index and
+        must get an empty list, not an error."""
+        await self._card(note="something to find")
+        self.assertEqual(await self.ex.search_notes("find"), [])
+
+    async def test_search_validates_its_arguments(self) -> None:
+        with self.assertRaises(TodoValidationError):
+            await self.ex.search_notes("  ")
+        with self.assertRaises(TodoValidationError):
+            await self.ex.search_notes("ok", k=99)
+
+
 class StorageFaults(BoardOffDisk):
     """A backend hiccup must surface as `TodoStorageError`, never as whatever
     the driver raised, and must not leave debris behind."""
