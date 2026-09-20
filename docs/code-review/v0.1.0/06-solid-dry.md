@@ -127,7 +127,7 @@ the dispatcher being asked about it.
 
 ## R-SOL-03 — Substitution and interface width (Liskov, interface segregation)
 
-**Severity** P1 · **Wave** W4 · **Status** Open (legacy `F-S12` closed for stores; recurs here)
+**Severity** P1 · **Wave** W4 · **Status** **Partly done.** The renderer half is closed: `cli/render/protocol.py` defines `ChatRendererProtocol`, neither renderer derives from the other, and `aclose()` is on it — which is what the REPL used to reach past the protocol for (`renderer._smoother`, fixed in `8ce35e2`). A test asserts `chat_repl` touches no `renderer._*` at all. The settings half is open: `LlmSettings` still requires `api_key`/`base_url` that `VertexSettings` and `BedrockSettings` do not have, and `disable_reasoning` is still on every provider's `build`.
 
 **Evidence.**
 
@@ -273,7 +273,7 @@ later, separate `fix:` commit if wanted.
 
 ## R-DRY-02 — Message content flattened four ways
 
-**Severity** P1 · **Wave** W4 · **Status** Open
+**Severity** P1 · **Wave** W4 · **Status** **Partly done** — 3 of 5 copies gone. `yuyutsava/text.py:flatten_content` is the one flattener, with 6 importers; the copies in `context/transcript_index.py`, `policy/adapter.py` and `conversation/repair.py` are gone. `async_subagents/watcher/parsing.py:content_text` remains, joining with `\n`. (`mcp/tool_adapter.py:_flatten_content` is not one of these: it reduces MCP `CallToolResult` content blocks, a different shape.)
 
 **Evidence.**
 
@@ -310,7 +310,7 @@ fallback until a deliberate decision.
 
 ## R-DRY-04 — Terminal rendering helpers copied between renderers
 
-**Severity** P1 · **Wave** W4 · **Status** Open
+**Severity** P1 · **Wave** W4 · **Status** **Partly done.** The palette is one module (`yuyutsava/ansi.py`, a leaf because the daemon's terminal channel writes it too) — nine escape codes written out 157 times across ten modules, now one file still holding raw literals (`cli/commands/chat_repl.py`). The path-extraction loop is shared (`cli/render/zones.py`), so the two chips cannot disagree with each other. Two of the four duplicated helpers are deduped against `tool_format` after proving them identical over 21 inputs; `compact_summary` is deliberately left, because `tool_format`'s version routes through `sanitize`/`truncate` and differs by a character on long values. Six inline truncations remain.
 
 **Evidence.**
 

@@ -16,7 +16,7 @@ Oversized *classes* are a responsibility problem and are stated once, as
 
 ## R-RDB-01 — `converse` is a 771-line endpoint
 
-**Severity** P1 · **Wave** W4 · **Status** Open (legacy `F-S11`, which has grown)
+**Severity** P1 · **Wave** W4 · **Status** **Done** (`W4`). The router accepts the socket, routes `?mode=dictate`, parses the query and delegates: 771 → **105** lines, module 1,099 → 303. The frame types live in `web/services/converse_session.py` and the connection in `converse_connection.py`.
 
 **Claim.** `daemon/web/routers/converse.py:329` `converse` is 771 lines with
 approximate cyclomatic complexity 130. At the 2026-08-08 review it was 740 lines
@@ -232,7 +232,7 @@ fingerprint byte-identical.
 
 ## R-RDB-03 — Parameter lists of 33, 32 and 25
 
-**Severity** P1 · **Wave** W4 · **Status** Open (legacy `F-K02`, grown from 32/30/25/25)
+**Severity** P1 · **Wave** W4 · **Status** **Done** for all three named. `build_cli_deepagent` 33 → **7** and `build_tinker_agent` 32 → **6** behind `MasterDeps`; `create_app` 25 → **3** behind `AppDeps`, and `make_app` — a 25-argument pure forwarder — is deleted with `daemon/web/server.py`. Two wide builders remain (`build_agent_stack` 19, `build_tinker_stack` 12); they are W4's exit criterion rather than this finding's subject.
 
 **Evidence.** 14 functions take more than 10 parameters and 38 take more than 7.
 
@@ -363,7 +363,7 @@ streaming); a dispatch table for chart types.
 
 ## R-KIS-01 — Subcommands dispatched by hand in front of argparse
 
-**Severity** P2 · **Wave** W4 · **Status** Open
+**Severity** P2 · **Wave** W4 · **Status** **Partly done.** The commands were defined in two places that could disagree — and did, hiding four from `/help` (`R-BUG-12`). `SUBCOMMANDS` in `cli/cli.py` is now the single definition and generates both the parser epilog and the dispatch. They are still dispatched in front of argparse rather than by subparsers, which is deliberate: subparsers change which command lines are accepted, and that is a product decision, not a refactor.
 
 **Evidence.** `cli/cli.py:292-308` inspects `argv[0]` for `chat`, `daemon`,
 `attach` and `prefs` before argparse runs. Because argparse never sees them, the
