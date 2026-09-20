@@ -62,11 +62,11 @@ class WatcherCase(unittest.IsolatedAsyncioTestCase):
             launch_index=self.index,
             per_task_timeout_sec=3600.0,
         )
-        self.watcher._client = self.host
+        self.watcher._ctx.client = self.host
 
     async def ingest(self):
         """Discover the thread and return the task the mirror now holds."""
-        await self.watcher._discover_new_threads()
+        await self.watcher._poller.discover_new_threads()
         return next(iter(self.mirror.list_non_terminal()), None)
 
     def payloads(self) -> list[str]:
@@ -85,13 +85,13 @@ class Discovery(WatcherCase):
     async def test_a_thread_is_only_ingested_once(self) -> None:
         await self.ingest()
         before = self.host.called("runs.list")
-        await self.watcher._discover_new_threads()
+        await self.watcher._poller.discover_new_threads()
         self.assertEqual(self.host.called("runs.list"), before, "no second ingest")
 
     async def test_a_host_that_cannot_be_listed_is_not_fatal(self) -> None:
         """The loop must survive a host hiccup and try again next cycle."""
         self.host.fail_on = "threads.search"
-        await self.watcher._discover_new_threads()
+        await self.watcher._poller.discover_new_threads()
         self.assertEqual(list(self.mirror.list_non_terminal()), [])
 
 
@@ -171,7 +171,7 @@ class Timeouts(WatcherCase):
     async def test_a_task_past_its_deadline_is_cancelled_and_completed(self) -> None:
         task = await self.ingest()
         # MirroredTask is frozen, so move the deadline rather than the task.
-        self.watcher._task_timeout = -1.0
+        self.watcher._ctx.task_timeout = -1.0
         await self.watcher._poll_known_tasks()
         self.assertEqual(self.host.cancelled, ["r1"], "the run is cancelled on the host")
         self.assertEqual(self.mirror.get(task.task_id).status, "timeout")
@@ -181,7 +181,7 @@ class Timeouts(WatcherCase):
     async def test_a_host_that_cannot_cancel_still_completes_the_task(self) -> None:
         """Otherwise a task nobody can cancel is polled forever."""
         task = await self.ingest()
-        self.watcher._task_timeout = -1.0
+        self.watcher._ctx.task_timeout = -1.0
         self.host.fail_on = "runs.cancel"
         await self.watcher._poll_known_tasks()
         self.assertEqual(self.mirror.get(task.task_id).status, "timeout")
@@ -249,8 +249,8 @@ class SelfHealing(WatcherCase):
         task = await self.ingest()
         self.host.messages = list(self.ORPHANED)
         thread = await self.host.threads.get("th-1")
-        await self.watcher._heal_orphaned_tool_calls(task, thread)
-        await self.watcher._heal_orphaned_tool_calls(task, thread)
+        await self.watcher._terminal.heal_orphaned_tool_calls(task, thread)
+        await self.watcher._terminal.heal_orphaned_tool_calls(task, thread)
         self.assertEqual(len(self.host.patched), 1, "patched exactly once")
 
     async def test_a_thread_with_no_orphans_is_left_alone(self) -> None:

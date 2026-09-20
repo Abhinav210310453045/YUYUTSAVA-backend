@@ -41,10 +41,14 @@
   "yuyutsava/async_subagents/interrupt_middleware.py": {
     "S110": 2
   },
-  "yuyutsava/async_subagents/watcher.py": {
-    "BLE001": 3,
+  "yuyutsava/async_subagents/watcher/health.py": {
     "PLR0913": 1,
-    "S110": 4
+    "S110": 3,
+    "BLE001": 1
+  },
+  "yuyutsava/async_subagents/watcher/polling.py": {
+    "BLE001": 2,
+    "S110": 1
   },
   "yuyutsava/channels/telegram/channel.py": {
     "S110": 1

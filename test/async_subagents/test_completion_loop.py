@@ -190,12 +190,12 @@ class WatcherCompletionTests(unittest.IsolatedAsyncioTestCase):
             completion_sink=sink,
             launch_index=idx,
         )
-        w._client = _FakeClient()
-        return w, mirror, w._client, calls
+        w._ctx.client = _FakeClient()
+        return w, mirror, w._ctx.client, calls
 
     async def test_ingest_populates_parent_and_origin(self):
         w, mirror, client, _calls = await self._build()
-        await w._discover_new_threads()
+        await w._poller.discover_new_threads()
         t = mirror.get("th-1")
         self.assertIsNotNone(t)
         self.assertEqual(t.parent_thread_id, "T-parent")
@@ -204,7 +204,7 @@ class WatcherCompletionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_completion_sink_fires_once_on_terminal(self):
         w, mirror, client, calls = await self._build()
-        await w._discover_new_threads()  # ingest th-1 (running)
+        await w._poller.discover_new_threads()  # ingest th-1 (running)
         await w._poll_known_tasks()  # still running → no completion
         self.assertEqual(calls, [])
 
