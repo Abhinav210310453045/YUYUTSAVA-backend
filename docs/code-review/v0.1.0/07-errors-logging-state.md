@@ -351,7 +351,7 @@ That also makes `registry.answer_ask` at `:909` — and its comment "No hub (tes
 / embedded): the run-local future is the path" — unreachable.
 
 **Scope.** This cause is confined to callers of `create_app`/`make_app` that omit
-`channels` (`web/server.py` defaults it to `None`) — every test and embedded use.
+`channels` (it defaults to `None` on `AppDeps`) — every test and embedded use.
 The shipped daemon passes both (`bootstrap.py:1576`) and so escapes *this* cause,
 but it is **not** unaffected: it hits a second, independent cause recorded as
 `R-BUG-09`, measured live against the running daemon.

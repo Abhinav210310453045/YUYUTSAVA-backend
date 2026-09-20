@@ -63,9 +63,11 @@ from yuyutsava.daemon.task_submission import TaskSubmissionService
 from yuyutsava.daemon.terminal_channel import TerminalChannel
 from yuyutsava.daemon.triage_loop import OrchestratorTask, TriageLoop
 from yuyutsava.daemon.voice_channel import voice_channel_from_env
+from yuyutsava.daemon.web.app import create_app
+from yuyutsava.daemon.web.app_deps import AppDeps
 from yuyutsava.daemon.web.auth import AuthSettings
-from yuyutsava.daemon.web.server import WebChannel, WebHub, make_app
 from yuyutsava.daemon.web.services.decision_service import DecisionService
+from yuyutsava.daemon.web.services.stream_service import WebChannel, WebHub
 from yuyutsava.events.bus import EventBus
 from yuyutsava.events.config import EventsConfig, SourceConfig
 from yuyutsava.events.registry import SourceRegistry
@@ -1676,32 +1678,34 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         )
         decision_service.set_ask_resume(ask_resume)
 
-        app = make_app(
+        app = create_app(
             web_hub,
             host=daemon_cfg.web_host,
-            skill_registry=skill_registry,
-            config_reload=_hot_reload_events_config,
-            channels=channels,
-            session_origin=session_origin,
-            auth=auth_settings,
-            task_registry=task_registry,
-            task_submission=task_submission,
-            decision_service=decision_service,
-            ask_registry=ask_registry,
-            ask_resume=ask_resume,
-            channel_plugins=channel_plugins,
-            usage_store=usage_store,
-            resource_monitor=resource_monitor,
-            admission_controller=admission,
-            model_router=model_router,
-            memory_store=memory_store,
-            conversation_manager=conversation_manager,
-            voice_store=voice_store,
-            transcript_store=transcript_store,
-            async_subagents=async_subs.available,
-            async_task_watcher=async_subs.watcher,
-            runtime_settings=runtime_settings,
-            subagent_roster=subagents,
+            deps=AppDeps(
+                skill_registry=skill_registry,
+                config_reload=_hot_reload_events_config,
+                channels=channels,
+                session_origin=session_origin,
+                auth=auth_settings,
+                task_registry=task_registry,
+                task_submission=task_submission,
+                decision_service=decision_service,
+                ask_registry=ask_registry,
+                ask_resume=ask_resume,
+                channel_plugins=channel_plugins,
+                usage_store=usage_store,
+                resource_monitor=resource_monitor,
+                admission_controller=admission,
+                model_router=model_router,
+                memory_store=memory_store,
+                conversation_manager=conversation_manager,
+                voice_store=voice_store,
+                transcript_store=transcript_store,
+                async_subagents=async_subs.available,
+                async_task_watcher=async_subs.watcher,
+                runtime_settings=runtime_settings,
+                subagent_roster=subagents,
+            ),
         )
         uvicorn_level = logging.getLevelName(
             logging.getLogger("yuyutsava").getEffectiveLevel()

@@ -18,6 +18,7 @@ import httpx
 from yuyutsava.daemon.resources import ResourceSnapshot
 from yuyutsava.daemon.task_submission import TaskSubmissionService
 from yuyutsava.daemon.web.app import create_app
+from yuyutsava.daemon.web.app_deps import AppDeps
 from yuyutsava.daemon.web.auth import AuthSettings, check_request
 from yuyutsava.daemon.web.services.stream_service import WebHub
 from yuyutsava.storage.models import ConsentRule, Decision
@@ -194,19 +195,21 @@ class V1ContractTests(unittest.IsolatedAsyncioTestCase):
         app = create_app(
             self.hub,
             host="127.0.0.1",
-            task_registry=self.registry,
-            task_submission=submission,
-            channel_plugins=_ChannelPlugins(),
-            usage_store=_UsageStore(),
-            resource_monitor=_Monitor(),
-            admission_controller=SimpleNamespace(
-                max_heavy_tasks=1,
-                heavy_slots_in_use=0,
-                active=lambda: [],
+            deps=AppDeps(
+                task_registry=self.registry,
+                task_submission=submission,
+                channel_plugins=_ChannelPlugins(),
+                usage_store=_UsageStore(),
+                resource_monitor=_Monitor(),
+                admission_controller=SimpleNamespace(
+                    max_heavy_tasks=1,
+                    heavy_slots_in_use=0,
+                    active=lambda: [],
+                ),
+                model_router=SimpleNamespace(enabled=True),
+                memory_store=object(),
+                async_subagents=True,
             ),
-            model_router=SimpleNamespace(enabled=True),
-            memory_store=object(),
-            async_subagents=True,
         )
         self.app = app
         self.client = httpx.AsyncClient(

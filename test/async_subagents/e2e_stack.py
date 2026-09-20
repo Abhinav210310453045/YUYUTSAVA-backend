@@ -120,6 +120,7 @@ async def _main() -> int:
     from yuyutsava.daemon.cli_remote_channel import CliRemoteChannel
     from yuyutsava.daemon.orchestrator_loop import make_ask_handler
     from yuyutsava.daemon.web.app import create_app
+    from yuyutsava.daemon.web.app_deps import AppDeps
     from yuyutsava.daemon.web.services.stream_service import WebChannel, WebHub
     from yuyutsava.storage.events import Store
 
@@ -152,10 +153,7 @@ async def _main() -> int:
     channels.session_origin = session_origin
 
     app = create_app(
-        hub,
-        host="127.0.0.1",
-        channels=channels,
-        session_origin=session_origin,
+        hub, host="127.0.0.1", deps=AppDeps(channels=channels, session_origin=session_origin)
     )
     config = uvicorn.Config(
         app,

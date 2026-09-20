@@ -260,6 +260,31 @@ caller. A misordered or forgotten keyword silently falls back to its default.
 
 ---
 
+**Fixed (W4).** `create_app` took 25 keyword arguments and `make_app` repeated
+all 25 to forward them — three lists (two signatures and the call between them)
+that nothing checked against each other. `AppDeps`
+(`daemon/web/app_deps.py`) replaces them; `create_app` now takes `hub`, `host`
+and `deps`, and both entries leave the `PLR0913` allowlist (35 → 31 across the
+branch; functions over ten parameters 13 → 11).
+
+`make_app` is **deleted rather than converted**, and `web/server.py` with it.
+Its docstring called it a "backwards-compatible alias" for "historical
+imports", but the only importer was this repo's own `bootstrap`, so there was no
+caller to keep compatible — and its `WebChannel` / `WebHub` re-exports now come
+from `services/stream_service`, where they live. That also retires a docstring
+which was four sentences of Phase-2-through-Phase-6 narration (`R-DOC-02`).
+
+`AppDeps` sits beside `web/deps.py` and the two are easy to confuse, so each
+docstring now names the other: this is what the app is *given* at startup, that
+is how a router *asks* for it per request through `app.state`.
+
+**Verification.** 17 call sites were rewritten from the AST so every argument's
+source text carried over verbatim. Live on a restarted daemon: 62 routes
+mounted, and the endpoints that read these dependencies all answer —
+`/v1/settings/runtime` returns the real voice toggles and disabled subagents,
+proving `runtime_settings` and `subagent_roster` reached `app.state` — plus a
+five-turn conversation, which is `conversation_manager` on the same path.
+
 ## R-RDB-04 — Names that mean two things, and things with two names
 
 **Severity** P2 · **Wave** W3 · **Status** Open

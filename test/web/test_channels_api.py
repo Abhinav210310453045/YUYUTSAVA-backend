@@ -18,6 +18,7 @@ from yuyutsava.channels.config import ChannelConfig, ChannelsConfig
 from yuyutsava.channels.registry import ChannelPluginRegistry
 from yuyutsava.daemon.channels import ChannelRouter
 from yuyutsava.daemon.web.app import create_app
+from yuyutsava.daemon.web.app_deps import AppDeps
 from yuyutsava.daemon.web.services.stream_service import WebHub
 
 
@@ -54,7 +55,7 @@ class ChannelsApiTests(unittest.IsolatedAsyncioTestCase):
         app = create_app(
             WebHub(store=_NullStore()),
             host="127.0.0.1",
-            channel_plugins=self.registry,
+            deps=AppDeps(channel_plugins=self.registry),
         )
         self.client = httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app),

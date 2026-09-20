@@ -30,6 +30,7 @@ import httpx
 
 from yuyutsava.context.meter import ContextSnapshot
 from yuyutsava.daemon.web.app import create_app
+from yuyutsava.daemon.web.app_deps import AppDeps
 from yuyutsava.daemon.web.services.stream_service import WebHub
 from yuyutsava.storage.usage import SqliteUsageStore, UsageRow, mint_usage_id
 
@@ -139,9 +140,7 @@ class EndpointContract(unittest.IsolatedAsyncioTestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.store = SqliteUsageStore(Path(self._tmp.name) / "state.db")
         app = create_app(
-            WebHub(store=_Store()),
-            host="127.0.0.1",
-            usage_store=self.store,
+            WebHub(store=_Store()), host="127.0.0.1", deps=AppDeps(usage_store=self.store)
         )
         self.client = httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app),

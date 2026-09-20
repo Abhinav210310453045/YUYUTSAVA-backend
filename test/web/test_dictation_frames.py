@@ -19,6 +19,7 @@ from fastapi.testclient import TestClient
 
 import yuyutsava.daemon.web.routers.converse as converse_router
 from yuyutsava.daemon.web.app import create_app
+from yuyutsava.daemon.web.app_deps import AppDeps
 from yuyutsava.daemon.web.services.stream_service import WebHub
 from yuyutsava.daemon.web.voice_pipeline import TranscriptResult
 from yuyutsava.voice.vad import VadResult
@@ -68,7 +69,9 @@ class _FakeVoice:
 @pytest.fixture
 def app(monkeypatch):
     monkeypatch.setattr(converse_router, "VoicePipeline", _FakeVoice)
-    return create_app(WebHub(store=_RecordingStore()), host="127.0.0.1", conversation_manager=None)
+    return create_app(
+        WebHub(store=_RecordingStore()), host="127.0.0.1", deps=AppDeps(conversation_manager=None)
+    )
 
 
 def _audio(marker: str) -> dict:

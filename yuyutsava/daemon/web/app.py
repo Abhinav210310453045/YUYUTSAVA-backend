@@ -21,6 +21,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from yuyutsava.config.env import env_flag
+from yuyutsava.daemon.web.app_deps import AppDeps
 from yuyutsava.daemon.web.auth import (
     AuthSettings,
     install_auth_middleware,
@@ -99,7 +100,6 @@ from yuyutsava.daemon.web.routers import (
 from yuyutsava.daemon.web.services.decision_service import DecisionService
 from yuyutsava.daemon.web.services.stream_service import StreamEventItem, WebHub
 from yuyutsava.ports.channels import HttpLogPayload
-from yuyutsava.skills.registry import SkillRegistry
 
 ReloadCallback = Callable[[], Awaitable[None]] | None
 
@@ -118,30 +118,32 @@ def create_app(
     hub: WebHub,
     *,
     host: str,
-    skill_registry: SkillRegistry | None = None,
-    config_reload: ReloadCallback = None,
-    channels: "object | None" = None,  # ChannelRouter; duck-typed
-    session_origin: "object | None" = None,  # SessionOriginMap; duck-typed
-    auth: AuthSettings | None = None,
-    task_registry: "object | None" = None,  # TaskRegistry; duck-typed
-    task_submission: "object | None" = None,  # TaskSubmissionService; duck-typed
-    decision_service: "object | None" = None,  # DecisionService; duck-typed
-    ask_registry: "object | None" = None,  # daemon.ask_registry.AskRegistry; duck-typed
-    ask_resume: "object | None" = None,  # daemon.ask_resume.AskResumeService; duck-typed
-    channel_plugins: "object | None" = None,  # ChannelPluginRegistry; duck-typed
-    usage_store: "object | None" = None,  # storage.usage.UsageStore; duck-typed
-    resource_monitor: "object | None" = None,  # daemon.resources.ResourceMonitor; duck-typed
-    admission_controller: "object | None" = None,  # daemon.resources.AdmissionController; duck-typed
-    model_router: "object | None" = None,  # core.model_router.ModelRouter; duck-typed
-    memory_store: "object | None" = None,  # memory.store.MemoryStore; duck-typed
-    conversation_manager: "object | None" = None,  # daemon.conversation_manager.ConversationManager
-    voice_store: "object | None" = None,  # storage.voice_store.VoiceMessageStore; duck-typed
-    transcript_store: "object | None" = None,  # context.transcript_store.TranscriptStore; duck-typed
-    async_subagents: bool = False,  # background subagent host enabled
-    async_task_watcher: "object | None" = None,  # async_subagents.watcher.AsyncTaskHealthWatcher
-    runtime_settings: "object | None" = None,  # prefs.runtime.RuntimeSettings; duck-typed
-    subagent_roster: "dict | None" = None,  # {name: BaseSubAgent} for /settings/subagents
+    deps: AppDeps | None = None,
 ) -> FastAPI:
+    deps = deps or AppDeps()
+    skill_registry = deps.skill_registry
+    config_reload = deps.config_reload
+    auth = deps.auth
+    channels = deps.channels
+    session_origin = deps.session_origin
+    decision_service = deps.decision_service
+    ask_registry = deps.ask_registry
+    ask_resume = deps.ask_resume
+    channel_plugins = deps.channel_plugins
+    task_registry = deps.task_registry
+    task_submission = deps.task_submission
+    async_subagents = deps.async_subagents
+    async_task_watcher = deps.async_task_watcher
+    subagent_roster = deps.subagent_roster
+    usage_store = deps.usage_store
+    memory_store = deps.memory_store
+    voice_store = deps.voice_store
+    transcript_store = deps.transcript_store
+    conversation_manager = deps.conversation_manager
+    resource_monitor = deps.resource_monitor
+    admission_controller = deps.admission_controller
+    model_router = deps.model_router
+    runtime_settings = deps.runtime_settings
     if auth is None:
         auth = AuthSettings.from_env(host=host)
     if not is_loopback_host(host) and not (auth.enforce and auth.token):

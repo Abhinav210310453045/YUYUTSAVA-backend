@@ -173,14 +173,10 @@
   },
   "yuyutsava/daemon/web/app.py": {
     "BLE001": 1,
-    "PLR0913": 1,
     "S110": 1
   },
   "yuyutsava/daemon/web/routers/sessions.py": {
     "C901": 1
-  },
-  "yuyutsava/daemon/web/server.py": {
-    "PLR0913": 1
   },
   "yuyutsava/daemon/web/services/converse_connection.py": {
     "S110": 1

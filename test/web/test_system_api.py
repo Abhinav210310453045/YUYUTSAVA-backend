@@ -18,6 +18,7 @@ from yuyutsava.daemon.resources import (
 )
 from yuyutsava.daemon.triage_loop import OrchestratorTask
 from yuyutsava.daemon.web.app import create_app
+from yuyutsava.daemon.web.app_deps import AppDeps
 from yuyutsava.daemon.web.services.stream_service import WebHub
 
 
@@ -57,8 +58,7 @@ class SystemApiTests(unittest.IsolatedAsyncioTestCase):
         app = create_app(
             WebHub(store=_RecordingStore()),
             host="127.0.0.1",
-            resource_monitor=self.monitor,
-            admission_controller=self.admission,
+            deps=AppDeps(resource_monitor=self.monitor, admission_controller=self.admission),
         )
         self.client = httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app),
@@ -99,7 +99,7 @@ class SystemApiTests(unittest.IsolatedAsyncioTestCase):
         app = create_app(
             WebHub(store=_RecordingStore()),
             host="127.0.0.1",
-            resource_monitor=self.monitor,
+            deps=AppDeps(resource_monitor=self.monitor),
         )
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app),

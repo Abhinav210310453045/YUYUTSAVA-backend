@@ -18,6 +18,7 @@ from pathlib import Path
 import httpx
 
 from yuyutsava.daemon.web.app import create_app
+from yuyutsava.daemon.web.app_deps import AppDeps
 from yuyutsava.daemon.web.services.stream_service import WebHub
 from yuyutsava.storage.usage import SqliteUsageStore, UsageRow, mint_usage_id
 
@@ -62,7 +63,7 @@ class _UsageApiBase(unittest.IsolatedAsyncioTestCase):
         app = create_app(
             WebHub(store=_RecordingStore()),
             host="127.0.0.1",
-            usage_store=self.usage_store,
+            deps=AppDeps(usage_store=self.usage_store),
         )
         self.client = httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app),

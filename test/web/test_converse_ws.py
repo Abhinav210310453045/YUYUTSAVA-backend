@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 from yuyutsava.core.streaming import StreamEvent
 from yuyutsava.daemon.turn_registry import TurnRegistry
 from yuyutsava.daemon.web.app import create_app
+from yuyutsava.daemon.web.app_deps import AppDeps
 from yuyutsava.daemon.web.services.stream_service import WebHub
 
 
@@ -74,9 +75,7 @@ class _FakeManager:
 def _make_app():
     mgr = _FakeManager()
     app = create_app(
-        WebHub(store=_RecordingStore()),
-        host="127.0.0.1",
-        conversation_manager=mgr,
+        WebHub(store=_RecordingStore()), host="127.0.0.1", deps=AppDeps(conversation_manager=mgr)
     )
     return app, mgr
 

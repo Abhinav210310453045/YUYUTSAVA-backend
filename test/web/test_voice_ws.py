@@ -28,6 +28,7 @@ import yuyutsava.daemon.web.routers.converse as converse_router
 from yuyutsava.core.streaming import StreamEvent
 from yuyutsava.daemon.turn_registry import TurnRegistry
 from yuyutsava.daemon.web.app import create_app
+from yuyutsava.daemon.web.app_deps import AppDeps
 from yuyutsava.daemon.web.services.stream_service import WebHub
 from yuyutsava.daemon.web.voice_pipeline import TranscriptResult
 from yuyutsava.voice.vad import VadResult
@@ -126,7 +127,7 @@ def app(monkeypatch):
     return create_app(
         WebHub(store=_RecordingStore()),
         host="127.0.0.1",
-        conversation_manager=_FakeManager(),
+        deps=AppDeps(conversation_manager=_FakeManager()),
     )
 
 

@@ -10,6 +10,7 @@ import unittest
 import httpx
 
 from yuyutsava.daemon.web.app import create_app
+from yuyutsava.daemon.web.app_deps import AppDeps
 from yuyutsava.daemon.web.auth import AuthSettings, check_request
 from yuyutsava.daemon.web.services.stream_service import WebHub
 
@@ -24,7 +25,7 @@ def _client(app, *, peer: str = "127.0.0.1") -> httpx.AsyncClient:
 
 
 def _app(host: str, auth: AuthSettings | None):
-    return create_app(WebHub(store=object()), host=host, auth=auth)
+    return create_app(WebHub(store=object()), host=host, deps=AppDeps(auth=auth))
 
 
 class CheckRequestTests(unittest.TestCase):

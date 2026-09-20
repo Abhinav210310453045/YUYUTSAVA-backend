@@ -14,6 +14,7 @@ import httpx
 
 from yuyutsava.daemon.task_submission import SUBMITTED_TOPIC, TaskSubmissionService
 from yuyutsava.daemon.web.app import create_app
+from yuyutsava.daemon.web.app_deps import AppDeps
 from yuyutsava.daemon.web.services.stream_service import WebChannel, WebHub
 from yuyutsava.ports.channels import ChannelEvent, LogPayload
 from yuyutsava.storage.task_registry import TaskRegistry
@@ -51,8 +52,7 @@ class TasksApiTests(unittest.IsolatedAsyncioTestCase):
         app = create_app(
             self.hub,
             host="127.0.0.1",
-            task_registry=self.registry,
-            task_submission=submission,
+            deps=AppDeps(task_registry=self.registry, task_submission=submission),
         )
         self.client = httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app),
