@@ -277,7 +277,7 @@
   "yuyutsava/todoboard/block_journey.py": {
     "C901": 1
   },
-  "yuyutsava/todoboard/exchange.py": {
+  "yuyutsava/todoboard/services/attachments.py": {
     "PLR0913": 1
   },
   "yuyutsava/voice/announcer.py": {
