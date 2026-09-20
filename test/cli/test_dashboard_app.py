@@ -108,17 +108,17 @@ class BindingTable(_DashboardCase):
 
 class Keys(_DashboardCase):
     async def test_enter_submits_the_line_and_clears_the_buffer(self):
-        self.dash._buf.text = "hello there"
+        self.dash.input.buffer.text = "hello there"
         self.dash.submit()
         self.assertEqual(await asyncio.wait_for(self.dash.read_input(), 2), "hello there")
-        self.assertEqual(self.dash._buf.text, "")
+        self.assertEqual(self.dash.input.buffer.text, "")
 
     async def test_enter_follows_the_output_again(self):
         # Submitting means "I am done reading back"; leaving the view parked
         # 200 lines up would hide the reply that is about to arrive.
         self.dash.buffer.write("x\n" * 100)
         self.dash.view.offset = 50
-        self.dash._buf.text = "go"
+        self.dash.input.buffer.text = "go"
         self.dash.submit()
         self.assertEqual(self.dash.view.offset, 0)
 
@@ -138,15 +138,15 @@ class Keys(_DashboardCase):
 
     async def test_ctrl_c_with_no_turn_clears_the_line(self):
         self.dash.set_turn_task(None)
-        self.dash._buf.text = "half typed"
+        self.dash.input.buffer.text = "half typed"
         self.dash.interrupt()
-        self.assertEqual(self.dash._buf.text, "")
+        self.assertEqual(self.dash.input.buffer.text, "")
 
     async def test_ctrl_d_quits_only_on_an_empty_line(self):
-        self.dash._buf.text = "mid-line"
+        self.dash.input.buffer.text = "mid-line"
         self.dash.request_quit()
-        self.assertTrue(self.dash._queue.empty())
-        self.dash._buf.text = ""
+        self.assertTrue(self.dash.input._queue.empty())
+        self.dash.input.buffer.text = ""
         self.dash.request_quit()
         self.assertIsNone(await asyncio.wait_for(self.dash.read_input(), 2))
 
@@ -183,7 +183,7 @@ class MidTurnMessages(_DashboardCase):
         task = asyncio.create_task(_long())
         self.dash.set_turn_task(task)
         try:
-            self.dash._buf.text = "and also check the logs"
+            self.dash.input.buffer.text = "and also check the logs"
             self.dash.submit()
             self.assertEqual(
                 await asyncio.wait_for(self.dash.read_input(), 2), "and also check the logs"
@@ -197,7 +197,7 @@ class MidTurnMessages(_DashboardCase):
 
     async def test_submitting_with_no_turn_running_says_nothing(self):
         self.dash.set_turn_task(None)
-        self.dash._buf.text = "hello"
+        self.dash.input.buffer.text = "hello"
         self.dash.submit()
         self.assertEqual(self.dash.notices(), [])
 
@@ -446,7 +446,7 @@ class AsksAreReadThroughTheApplication(_DashboardCase):
     async def test_a_submitted_line_answers_the_question(self):
         pending = asyncio.create_task(self.dash.ask())
         await asyncio.sleep(0)
-        self.dash._buf.text = "y"
+        self.dash.input.buffer.text = "y"
         self.dash.submit()
         self.assertEqual(await asyncio.wait_for(pending, 2), "y")
 
@@ -455,7 +455,7 @@ class AsksAreReadThroughTheApplication(_DashboardCase):
         # blocked waiting for it.
         pending = asyncio.create_task(self.dash.ask())
         await asyncio.sleep(0)
-        self.dash._buf.text = "y"
+        self.dash.input.buffer.text = "y"
         self.dash.submit()
         await asyncio.wait_for(pending, 2)
         with self.assertRaises(asyncio.TimeoutError):
@@ -470,7 +470,7 @@ class AsksAreReadThroughTheApplication(_DashboardCase):
         try:
             pending = asyncio.create_task(self.dash.ask())
             await asyncio.sleep(0)
-            self.dash._buf.text = "s"
+            self.dash.input.buffer.text = "s"
             self.dash.submit()
             self.assertEqual(await asyncio.wait_for(pending, 2), "s")
             self.assertEqual(self.dash.notices(), [])
@@ -481,14 +481,14 @@ class AsksAreReadThroughTheApplication(_DashboardCase):
                 await task
 
     async def test_the_prompt_says_what_is_being_asked_then_reverts(self):
-        self.assertEqual(self.dash._prompt, "> ")
+        self.assertEqual(self.dash.input.prompt, "> ")
         pending = asyncio.create_task(self.dash.ask("approve/reject> "))
         await asyncio.sleep(0)
-        self.assertEqual(self.dash._prompt, "approve/reject> ")
-        self.dash._buf.text = "n"
+        self.assertEqual(self.dash.input.prompt, "approve/reject> ")
+        self.dash.input.buffer.text = "n"
         self.dash.submit()
         await asyncio.wait_for(pending, 2)
-        self.assertEqual(self.dash._prompt, "> ")
+        self.assertEqual(self.dash.input.prompt, "> ")
 
     async def test_a_frame_renders_with_the_question_prompt_showing(self):
         # The prompt window is sized from the label; a stale width=2 would
@@ -499,7 +499,7 @@ class AsksAreReadThroughTheApplication(_DashboardCase):
         loop = asyncio.get_running_loop()
         loop.call_later(0.2, lambda: app.exit() if app.is_running else None)
         await asyncio.wait_for(app.run_async(), timeout=10)
-        self.dash._cancel_ask()
+        self.dash.input.cancel_ask()
         self.assertIsNone(await asyncio.wait_for(pending, 2))
 
     async def test_ctrl_c_refuses_rather_than_hanging(self):
@@ -531,7 +531,7 @@ class AsksAreReadThroughTheApplication(_DashboardCase):
     async def test_quitting_refuses_the_question(self):
         pending = asyncio.create_task(self.dash.ask())
         await asyncio.sleep(0)
-        self.dash._buf.text = ""
+        self.dash.input.buffer.text = ""
         self.dash.request_quit()
         self.assertIsNone(await asyncio.wait_for(pending, 2))
 
@@ -549,7 +549,7 @@ class AsksAreReadThroughTheApplication(_DashboardCase):
         second = asyncio.create_task(self.dash.ask("second> "))
         await asyncio.sleep(0)
         self.assertIsNone(await asyncio.wait_for(first, 2))
-        self.dash._buf.text = "y"
+        self.dash.input.buffer.text = "y"
         self.dash.submit()
         self.assertEqual(await asyncio.wait_for(second, 2), "y")
 

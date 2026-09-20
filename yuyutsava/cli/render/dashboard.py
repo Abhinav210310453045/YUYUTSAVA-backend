@@ -66,10 +66,8 @@ from pathlib import Path
 from typing import Any
 
 from prompt_toolkit.application import Application
-from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.formatted_text import ANSI, to_formatted_text
-from prompt_toolkit.history import FileHistory, InMemoryHistory
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.keys import Keys
 from prompt_toolkit.layout import Layout
@@ -94,6 +92,7 @@ from yuyutsava.cli.render.context_panel import (
     panel_fragments,
     panel_width_for,
 )
+from yuyutsava.cli.render.input_broker import InputBroker
 from yuyutsava.cli.render.protocol import ChatRendererProtocol
 from yuyutsava.cli.render.scroll_view import ScrollView
 from yuyutsava.cli.render.stdio_capture import (
@@ -214,10 +213,15 @@ class ChatDashboard:
         self._notices: list[tuple[str, float]] = []
         self._said_unpriced = False
         self._app_task: asyncio.Task | None = None
-        self._queue: asyncio.Queue[str | None] = asyncio.Queue()
 
         self.buffer = TranscriptBuffer(scrollback, on_write=self._invalidate)
         self.capture = StdioCapture(self.buffer)
+        self.input = InputBroker(
+            history_path=history_path,
+            completer=completer,
+            invalidate=self._invalidate,
+            is_closed=lambda: self._app_task is not None and self._app_task.done(),
+        )
         self.view = ScrollView(
             lines=self.buffer.lines,
             width=lambda: self.left_width,
@@ -231,14 +235,6 @@ class ChatDashboard:
         # says it should be.
         self._output = output or create_output(stdout=sys.__stdout__)
         self._input = input
-        #: A question the next submitted line answers *instead* of starting a
-        #: turn. The full-screen application owns stdin in raw mode, so a
-        #: blocking ``input()`` elsewhere in the process can never see a
-        #: keystroke — the permission prompt printed "approve/reject>" into the
-        #: pane and then swallowed every key. Asks have to be read here.
-        self._ask: asyncio.Future[str | None] | None = None
-        self._prompt = "> "
-
         self.console = self._make_console()
         self._build_app(history_path, completer)
 
@@ -254,14 +250,6 @@ class ChatDashboard:
         return max(20, self._cols - self._panel_width - 1)
 
     def _build_app(self, history_path: Path | None, completer: Any | None) -> None:
-        history = FileHistory(str(history_path)) if history_path is not None else InMemoryHistory()
-        self._buf = Buffer(
-            history=history,
-            completer=completer,
-            complete_while_typing=True,
-            multiline=False,
-        )
-
         self._out_control = _ScrollableTextControl(
             self._visible_transcript,
             on_scroll=self._on_wheel,
@@ -288,11 +276,11 @@ class ChatDashboard:
                 VSplit(
                     [
                         Window(
-                            content=FormattedTextControl(self._prompt_text),
-                            width=lambda: len(self._prompt),
+                            content=FormattedTextControl(self.input.prompt_text),
+                            width=lambda: len(self.input.prompt),
                             height=1,
                         ),
-                        Window(content=BufferControl(buffer=self._buf), height=1),
+                        Window(content=BufferControl(buffer=self.input.buffer), height=1),
                     ]
                 ),
             ]
@@ -316,7 +304,7 @@ class ChatDashboard:
         )
 
         self._app = Application(
-            layout=Layout(root, focused_element=self._buf),
+            layout=Layout(root, focused_element=self.input.buffer),
             key_bindings=self._key_bindings(),
             style=Style.from_dict(_STYLE),
             full_screen=True,
@@ -346,24 +334,15 @@ class ChatDashboard:
 
         While a turn is running the REPL is not reading, so the line waits in
         the queue and is picked up the moment the turn ends. That is the safe
-        default — it cannot kill a running tool call — but it used to be
-        invisible, so the panel now says so and offers Ctrl+S to interrupt.
+        default — it cannot kill a running tool call — but it is invisible, so
+        the panel says so and offers Ctrl+S to interrupt.
         """
-        text = self._buf.text
-        self._buf.reset(append_to_history=bool(text.strip()))
-        # A new turn means "follow the output again": leaving the view parked
-        # 200 lines up would hide the reply about to arrive.
+        # Any submission means "follow the output again": leaving the view
+        # parked 200 lines up would hide the reply about to arrive.
         self.view.follow()
-        # An outstanding question takes the line first. It is not a new turn:
-        # queueing it would park the answer behind the very turn that is
-        # blocked waiting for it.
-        ask = self._ask
-        if ask is not None and not ask.done():
-            ask.set_result(text)
-            return
-        self._queue.put_nowait(text)
+        queued = self.input.submit()
         task = self._turn_task
-        if text.strip() and task is not None and not task.done():
+        if queued and queued.strip() and task is not None and not task.done():
             self.notice(
                 "queued — sends when this turn ends. Ctrl+S to interrupt and send it now.",
                 ttl=90.0,
@@ -393,23 +372,23 @@ class ChatDashboard:
         prompt must deny, and cancelling the turn while the prompt still waits
         would leave the tool call hanging on a future nobody resolves.
         """
-        if self._ask is not None and not self._ask.done():
-            self._buf.reset()
-            self._cancel_ask()
+        if self.input.has_pending_ask():
+            self.input.clear_line()
+            self.input.cancel_ask()
             return
         task = self._turn_task
         if task is not None and not task.done():
             task.cancel()
         else:
-            self._buf.reset()
+            self.input.clear_line()
 
     def request_quit(self) -> None:
         """Ctrl+D — but only on an empty line, as in a shell."""
-        if self._buf.text:
+        if self.input.buffer.text:
             return
         # Quitting with a question open is a refusal, not an approval.
-        self._cancel_ask()
-        self._queue.put_nowait(None)
+        self.input.cancel_ask()
+        self.input.close()
 
     def follow(self) -> None:
         self.view.follow()
@@ -605,53 +584,15 @@ class ChatDashboard:
 
     async def read_input(self) -> str | None:
         """Next submitted line, or ``None`` when the user asked to quit."""
-        if self._app_task is not None and self._app_task.done():
-            return None
-        return await self._queue.get()
+        return await self.input.read_line()
 
     async def ask(self, prompt: str = "approve/reject> ") -> str | None:
         """Read one line as the answer to a question, not as a new turn.
 
-        The application has stdin in raw mode for its whole lifetime, so the
-        permission prompt's ``input()`` could never receive a key: the card
-        rendered, "approve/reject>" appeared in the transcript, and typing did
-        nothing. Reading through the application's own buffer is the only way
-        a full-screen front can ask anything.
-
-        Returns the line, or ``None`` if the user cancelled (Ctrl+C) or quit —
-        which callers must treat as a refusal, never as consent.
+        ``None`` means the user cancelled (Ctrl+C) or quit, which callers must
+        treat as a refusal and never as consent.
         """
-        if self._app_task is not None and self._app_task.done():
-            return None
-        loop = asyncio.get_running_loop()
-        mine: asyncio.Future[str | None] = loop.create_future()
-        previous, self._ask = self._ask, mine
-        if previous is not None and not previous.done():
-            # Parallel asks: the older one is no longer answerable, and
-            # leaving it pending would hang its tool call forever.
-            previous.set_result(None)
-        self._prompt = prompt
-        self._invalidate()
-        try:
-            return await mine
-        finally:
-            # Only clear the slot if it is still ours. A superseded ask resumes
-            # *after* its replacement has installed itself, and blindly
-            # clearing here wiped the live future — so the next submitted line
-            # was queued as a new turn instead of answering the question.
-            if self._ask is mine:
-                self._ask = None
-                self._prompt = "> "
-                self._invalidate()
-
-    def _cancel_ask(self) -> None:
-        """Refuse any outstanding question. Used by Ctrl+C and by quit."""
-        ask = self._ask
-        if ask is not None and not ask.done():
-            ask.set_result(None)
-
-    def _prompt_text(self):
-        return [("class:prompt", self._prompt)]
+        return await self.input.ask(prompt)
 
     async def stop(self) -> None:
         # Release stdin before refusing the open question, so nothing new can
@@ -665,7 +606,7 @@ class ChatDashboard:
         # A shutdown with a question still open must not leave its tool call
         # waiting on a future that will never be resolved.
         with contextlib.suppress(Exception):
-            self._cancel_ask()
+            self.input.cancel_ask()
         with contextlib.suppress(Exception):
             if self._app.is_running:
                 self._app.exit()
