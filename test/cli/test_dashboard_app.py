@@ -677,8 +677,8 @@ class StreamCapture(_DashboardCase):
 
     async def test_streams_are_restored_even_if_the_app_was_never_running(self):
         saved = (sys.stdout, sys.stderr)
-        self.dash._install_streams()
-        self.dash._restore_streams()
+        self.dash.capture.install()
+        self.dash.capture.restore()
         self.assertEqual((sys.stdout, sys.stderr), saved)
 
     async def test_an_existing_log_handler_is_retargeted_and_put_back(self):
@@ -690,10 +690,10 @@ class StreamCapture(_DashboardCase):
         root.addHandler(handler)
         try:
             original = handler.stream
-            self.dash._install_streams()
+            self.dash.capture.install()
             self.assertIs(handler.stream, self.dash.buffer)
             logging.getLogger("test.dashboard").error("logged during the app")
-            self.dash._restore_streams()
+            self.dash.capture.restore()
             self.assertIs(handler.stream, original)
         finally:
             root.removeHandler(handler)

@@ -57,13 +57,10 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import io
 import logging
 import os
 import sys
 import time
-import warnings
-from collections import deque
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -99,14 +96,15 @@ from yuyutsava.cli.render.context_panel import (
     panel_width_for,
 )
 from yuyutsava.cli.render.protocol import ChatRendererProtocol
+from yuyutsava.cli.render.stdio_capture import (
+    DEFAULT_SCROLLBACK,
+    StdioCapture,
+    TranscriptBuffer,
+)
 from yuyutsava.config.env import env_flag
 from yuyutsava.context.meter import bus
 
 logger = logging.getLogger("yuyutsava.cli.dashboard")
-
-#: Lines of transcript kept. The alternate screen has no scrollback of its own,
-#: so this IS the history the user can scroll through.
-DEFAULT_SCROLLBACK = 5_000
 
 #: How long a panel notice stays up, and how many can stack.
 _NOTICE_TTL_SEC = 30.0
@@ -167,77 +165,6 @@ def display_mode(*, classic: bool, is_tty: bool, rich: bool, enabled: bool, wide
     return "dashboard"
 
 
-class TranscriptBuffer:
-    """File-like sink holding the transcript as pre-wrapped ANSI lines.
-
-    Rich writes here instead of the terminal, so the left pane can display the
-    result at whatever width it has. Accepts partial writes (Rich emits escape
-    sequences and text separately) and only closes a line on ``\\n``.
-    """
-
-    encoding = "utf-8"
-    errors = "replace"
-
-    def __init__(
-        self,
-        max_lines: int = DEFAULT_SCROLLBACK,
-        on_write: Callable[[], None] | None = None,
-    ) -> None:
-        self._lines: deque[str] = deque(maxlen=max(1, max_lines))
-        self._partial = ""
-        self._on_write = on_write
-
-    # -- file protocol ------------------------------------------------------
-
-    def write(self, s: str) -> int:
-        if not s:
-            return 0
-        text = self._partial + s
-        *complete, self._partial = text.split("\n")
-        self._lines.extend(complete)
-        if self._on_write is not None:
-            with contextlib.suppress(Exception):
-                self._on_write()
-        return len(s)
-
-    def flush(self) -> None:
-        return None
-
-    def isatty(self) -> bool:
-        # Rich checks this; the destination really is a terminal, one pane over.
-        return True
-
-    def fileno(self) -> int:
-        # No descriptor to give. Anything reaching for one (a subprocess wanting
-        # to inherit stdout) must fail loudly rather than write past the pane.
-        raise io.UnsupportedOperation("TranscriptBuffer has no file descriptor")
-
-    def writable(self) -> bool:
-        return True
-
-    def readable(self) -> bool:
-        return False
-
-    def seekable(self) -> bool:
-        return False
-
-    # -- reading ------------------------------------------------------------
-
-    def lines(self) -> list[str]:
-        """Committed lines plus the line still being written."""
-        out = list(self._lines)
-        if self._partial:
-            out.append(self._partial)
-        return out
-
-    def line_count(self) -> int:
-        return len(self._lines) + (1 if self._partial else 0)
-
-    def clear(self) -> None:
-        self._lines.clear()
-        self._partial = ""
-
-
 class _ScrollableTextControl(FormattedTextControl):
     """A text control whose wheel events scroll the owner instead of the window.
 
@@ -284,9 +211,6 @@ class ChatDashboard:
         self._tool: Callable[[], str] = lambda: ""
         self._turn_task: asyncio.Task | None = None
         self._meter_token: int | None = None
-        self._saved_streams: tuple[Any, Any] | None = None
-        self._retargeted: list[tuple[Any, Any]] = []
-        self._saved_showwarning: Any = None
         #: (text, expiry) transient panel lines — see notice().
         self._notices: list[tuple[str, float]] = []
         self._said_unpriced = False
@@ -294,6 +218,7 @@ class ChatDashboard:
         self._queue: asyncio.Queue[str | None] = asyncio.Queue()
 
         self.buffer = TranscriptBuffer(scrollback, on_write=self._invalidate)
+        self.capture = StdioCapture(self.buffer)
 
         # The real terminal, captured BEFORE sys.stdout is replaced — otherwise
         # the application would render into its own transcript pane. Overridable
@@ -678,7 +603,7 @@ class ChatDashboard:
         # against a full-screen application (see cli/line_reader.py).
         set_line_reader(self.ask)
 
-        self._install_streams()
+        self.capture.install()
         self._meter_token = bus().subscribe("", self._on_snapshot)
         self._snapshot = bus().latest()
         self._app_task = asyncio.create_task(self._app.run_async(), name="yuyutsava-dashboard")
@@ -780,82 +705,7 @@ class ChatDashboard:
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await self._app_task
             self._app_task = None
-        self._restore_streams()
-
-    # -- stdout / stderr capture -------------------------------------------
-
-    def _install_streams(self) -> None:
-        """Route every write into the transcript pane.
-
-        One interception instead of editing ~75 print sites — and it also
-        catches the async-HITL notices written straight to stdout from a
-        background task.
-
-        Three separate write paths, all of which reached the real terminal and
-        painted over a full-screen application:
-
-        1. ``sys.stdout`` / ``sys.stderr`` — swapped.
-        2. **``logging``.** ``StreamHandler`` binds its stream at construction,
-           so existing handlers must be retargeted. The first version of this
-           walked only the ROOT logger, and ``cli.tooling.setup_logging``
-           attaches the CLI's handler to the ``yuyutsava`` logger with
-           ``propagate=False`` — so every warning in the tree kept writing to
-           the real stderr, landing on top of the prompt in yellow. Walk every
-           logger that has handlers.
-        3. **``warnings``.** ``warnings.showwarning`` writes to
-           ``sys.stderr`` it captured earlier; Google's
-           ``_CLOUD_SDK_CREDENTIALS_WARNING`` arrived that way and was the
-           first line on screen. Redirected explicitly.
-
-        What is genuinely out of reach: a child process that inherits fd 1/2
-        and writes to the tty directly. It does not arise here because the
-        ``tr_*`` tools capture their subprocess output and return it as a tool
-        result rather than letting it through.
-        """
-        self._saved_streams = (sys.stdout, sys.stderr)
-        old_out, old_err = self._saved_streams
-        sys.stdout = self.buffer  # type: ignore[assignment]
-        sys.stderr = self.buffer  # type: ignore[assignment]
-
-        for logger_obj in self._all_loggers():
-            for handler in list(getattr(logger_obj, "handlers", []) or []):
-                stream = getattr(handler, "stream", None)
-                if stream is old_out or stream is old_err:
-                    self._retargeted.append((handler, stream))
-                    with contextlib.suppress(Exception):
-                        handler.setStream(self.buffer)  # type: ignore[attr-defined]
-
-        self._saved_showwarning = warnings.showwarning
-        warnings.showwarning = self._show_warning
-
-    @staticmethod
-    def _all_loggers() -> list[Any]:
-        """Root plus every configured logger. Placeholders have no handlers."""
-        out: list[Any] = [logging.getLogger()]
-        manager = logging.getLogger().manager
-        for obj in list(getattr(manager, "loggerDict", {}).values()):
-            if isinstance(obj, logging.Logger):
-                out.append(obj)
-        return out
-
-    def _show_warning(self, message, category, filename, lineno, file=None, line=None):
-        """``warnings.showwarning`` replacement that writes into the pane."""
-        with contextlib.suppress(Exception):
-            text = warnings.formatwarning(message, category, filename, lineno, line)
-            self.buffer.write(text if text.endswith("\n") else text + "\n")
-
-    def _restore_streams(self) -> None:
-        if self._saved_showwarning is not None:
-            with contextlib.suppress(Exception):
-                warnings.showwarning = self._saved_showwarning
-            self._saved_showwarning = None
-        for handler, stream in self._retargeted:
-            with contextlib.suppress(Exception):
-                handler.setStream(stream)  # type: ignore[attr-defined]
-        self._retargeted.clear()
-        if self._saved_streams is not None:
-            sys.stdout, sys.stderr = self._saved_streams
-            self._saved_streams = None
+        self.capture.restore()
 
     # -- handing the transcript back ---------------------------------------
 
@@ -866,10 +716,9 @@ class ChatDashboard:
         Reprinting the tail means a user who scrolled back through a long
         session still has it in their terminal afterwards.
         """
-        with contextlib.suppress(Exception):
-            for line in self.buffer.lines():
-                stream.write(line + "\n")
-            stream.flush()
+        self.capture.replay_to(stream)
+
+    # -- handing the transcript back ---------------------------------------
 
 
 __all__ = [
