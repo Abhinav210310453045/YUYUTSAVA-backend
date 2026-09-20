@@ -310,7 +310,9 @@ fallback until a deliberate decision.
 
 ## R-DRY-04 — Terminal rendering helpers copied between renderers
 
-**Severity** P1 · **Wave** W4 · **Status** **Partly done.** The palette is one module (`yuyutsava/ansi.py`, a leaf because the daemon's terminal channel writes it too) — nine escape codes written out 157 times across ten modules, now one file still holding raw literals (`cli/commands/chat_repl.py`). The path-extraction loop is shared (`cli/render/zones.py`), so the two chips cannot disagree with each other. Two of the four duplicated helpers are deduped against `tool_format` after proving them identical over 21 inputs; `compact_summary` is deliberately left, because `tool_format`'s version routes through `sanitize`/`truncate` and differs by a character on long values. Six inline truncations remain.
+**Severity** P1 · **Wave** W4 · **Status** **Done**. One palette (`yuyutsava/ansi.py`, a leaf because the daemon's terminal channel writes it too): nine escape codes written out 157 times across ten modules, and now **zero** raw escapes anywhere outside it — including `CLEAR_SCREEN`, which the gate had been missing because its pattern only matched sequences ending in `m`. All four duplicated helpers are gone from `plain.py` (407 → 363 lines) and so are the nine inline truncations. The argument-path loop is shared (`cli/render/zones.py`), so the two chips cannot disagree.
+
+Deduping `compact_summary` turned out to be a **display-safety fix**, not housekeeping: `tool_format`'s version sanitises and the renderer's copy did not, so a newline in a tool argument broke the one-line-per-call layout and a U+202E override reordered what a reader saw a path to be (`503c5e8`).
 
 **Evidence.**
 
