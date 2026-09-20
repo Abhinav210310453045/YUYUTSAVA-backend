@@ -22,21 +22,16 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import importlib.metadata
-import json
 import logging
 import os
 import sys
 import time
 import traceback
-import urllib.request
-from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path
 from typing import Any
 
-from packaging.version import InvalidVersion, Version
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.formatted_text import ANSI
@@ -49,9 +44,8 @@ from yuyutsava.cli.async_hitl import CliHitlBridge, CliRemoteHitl
 from yuyutsava.cli.commands.options import ChatOptions
 from yuyutsava.cli.line_reader import read_line
 from yuyutsava.cli.remote_attach import CliAttachClient
-from yuyutsava.cli.render import panels
+from yuyutsava.cli.render import panels, reports, startup
 from yuyutsava.cli.render.console import make_console, rich_capable
-from yuyutsava.cli.render.context_panel import context_report, fmt_cost, fmt_pct, fmt_tokens
 from yuyutsava.cli.render.dashboard import (
     ChatDashboard,
     dashboard_enabled,
@@ -63,19 +57,15 @@ from yuyutsava.cli.render.plain import ChatRenderer
 from yuyutsava.cli.render.protocol import ChatRendererProtocol
 from yuyutsava.cli.render.renderer import RichChatRenderer
 from yuyutsava.cli.tooling import cleanup_local_sandbox
+from yuyutsava.cli.usage import format_usage, session_usage
 from yuyutsava.config.env import env_flag
 from yuyutsava.config.logs import silence_plumbing_loggers
 from yuyutsava.consent import decision_token as _decision_token
-from yuyutsava.context.meter import bus
 from yuyutsava.conversation import ConversationService
 from yuyutsava.core.agent_stack import build_agent_stack
 from yuyutsava.daemon.singleton import read_daemon_discovery
-from yuyutsava.llm import tracing as _tracing
 from yuyutsava.llm.quirks.first_chunk_retry import set_retry_listener
 from yuyutsava.prefs.runtime import UNDISABLEABLE, RuntimeSettings
-from yuyutsava.skills.injector import last_recalled
-from yuyutsava.skills.registry import SkillRegistry
-from yuyutsava.storage.backend import StorageSettings
 from yuyutsava.storage.events import Store
 from yuyutsava.storage.paths import state_dir
 from yuyutsava.storage.prefs import PrefsStore
@@ -88,93 +78,6 @@ from yuyutsava.storage.sessions import (
 # ---------------------------------------------------------------------------
 # Banner
 # ---------------------------------------------------------------------------
-
-_BANNER_LINES = [
-    "╦ ╦ ╦ ╦ ╦ ╦ ╦ ╦ ╔╦╗ ╔═╗ ╔═╗ ╦  ╦ ╔═╗",
-    "╚╦╝ ║ ║ ╚╦╝ ║ ║  ║  ╚═╗ ╠═╣ ╚╗╔╝ ╠═╣",
-    " ╩  ╚═╝  ╩  ╚═╝  ╩  ╚═╝ ╩ ╩  ╚╝  ╩ ╩",
-]
-
-
-_LANGGRAPH_API = "langgraph-api"
-
-
-def _print_version_notice(*, full: bool = False) -> None:
-    """Say once, above the banner, when langgraph-api has a newer release.
-
-    langgraph_api has its own check, but it logs from a background thread that
-    lands mid-chat (``AsyncSubagentHost.start`` turns it off with
-    ``LANGGRAPH_NO_VERSION_CHECK``), and calling it directly means private API.
-    This asks PyPI itself, with the same half-second timeout and the same
-    end-of-life rule (:func:`_langgraph_api_is_eol`). A pre-release install is
-    not checked. Best-effort — never breaks start-up.
-
-    ``full=True`` (debug plumbing) also shows the installed version.
-    """
-    try:
-        current = Version(importlib.metadata.version(_LANGGRAPH_API))
-        url = f"https://pypi.org/pypi/{_LANGGRAPH_API}/json"
-        with urllib.request.urlopen(url, timeout=0.5) as resp:
-            payload = json.load(resp)
-        latest = Version(payload["info"]["version"])
-        releases = payload.get("releases") or {}
-    except Exception:  # noqa: BLE001 — not installed, offline, or an odd reply: no notice
-        return
-    if current.is_prerelease or latest <= current:
-        return
-    parts = [f"{_LANGGRAPH_API} update available → {latest}"]
-    if full:
-        parts[0] = f"{_LANGGRAPH_API} {current} → {latest} available"
-    if _langgraph_api_is_eol(current, latest, releases):
-        parts.append("current version is EOL")
-    parts.append(f"pip install -U {_LANGGRAPH_API}")
-    print(f"  {DIM}{YELLOW}⚠ {' · '.join(parts)}{RESET}", file=sys.stderr)
-
-
-def _langgraph_api_is_eol(current: Version, latest: Version, releases: Iterable[str]) -> bool:
-    """langgraph-api's published support rule, applied to an installed version.
-
-    End of life is two or more minor versions behind on the latest major, or
-    an older major, except that while a new major is still at X.0 the last
-    minor of the previous major is supported.
-    """
-    if current.major == latest.major:
-        return current.minor <= latest.minor - 2
-    if current.major == latest.major - 1 and latest.minor == 0:
-        previous = []
-        for raw in releases:
-            try:
-                version = Version(raw)
-            except InvalidVersion:
-                continue
-            if version.major == current.major and not version.is_prerelease:
-                previous.append(version)
-        return not previous or current.minor != max(previous).minor
-    return current.major < latest.major
-
-
-def _print_banner(
-    *,
-    session_id: str,
-    workspace: Path,
-    resuming: bool,
-    status: str | None = None,
-) -> None:
-    print(file=sys.stderr)
-    for line in _BANNER_LINES:
-        print(f"{CYAN}{line}{RESET}", file=sys.stderr)
-    verb = "resumed session" if resuming else "session"
-    print(file=sys.stderr)
-    print(f"  {DIM}{verb}:{RESET}  {session_id}", file=sys.stderr)
-    print(f"  {DIM}workspace:{RESET} {workspace}", file=sys.stderr)
-    if status:
-        print(f"  {DIM}{status}{RESET}", file=sys.stderr)
-    print(
-        f"  {DIM}type /help, /quit, or press Ctrl+D to exit{RESET}",
-        file=sys.stderr,
-    )
-    print(file=sys.stderr)
-
 
 # prompt_toolkit's FileHistory appends forever. It is only the up-arrow
 # buffer — the agent never reads it and it never enters a prompt — but it
@@ -447,65 +350,6 @@ def _rotate_history(path: Path) -> None:
         pass
 
 
-def _startup_status_line(sessions_settings: SessionsSettings) -> str:
-    """One dim line summarizing what the silenced startup logs used to say.
-
-    Replaces the ``pg pool: open`` / ``pg migrations: at vN`` / ``Langfuse not
-    active`` INFO lines with a compact ``storage · tracing · langgraph-api``
-    summary. Best-effort — every probe degrades to a placeholder.
-    """
-    try:
-        tracing_on = _tracing.is_configured() and _tracing.langfuse_reachable()
-    except Exception:
-        tracing_on = False
-    try:
-        lg_version = importlib.metadata.version(_LANGGRAPH_API)
-    except importlib.metadata.PackageNotFoundError:
-        lg_version = "?"
-    # The EFFECTIVE backend, not SessionsSettings.backend. That field reads
-    # YUYUTSAVA_SESSIONS_BACKEND, which only selects the checkpointer's own
-    # default and is almost never set — so the banner announced "sqlite" while
-    # every store and the checkpointer were on Postgres, and a whole session's
-    # analysis started from the wrong assumption about where its data was.
-    try:
-        storage = (
-            "postgres" if StorageSettings.from_env().is_postgres() else sessions_settings.backend
-        )
-    except Exception:
-        storage = sessions_settings.backend
-    return (
-        f"storage: {storage} · "
-        f"tracing: {'on' if tracing_on else 'off'} · "
-        f"langgraph-api {lg_version}"
-    )
-
-
-def _print_help() -> None:
-    print(file=sys.stderr)
-    print(f"{CYAN}Commands:{RESET}", file=sys.stderr)
-    width = max(len(c.signature) for c in SLASH_COMMANDS)
-    group = SLASH_COMMANDS[0].group
-    for cmd in SLASH_COMMANDS:
-        if cmd.group != group:
-            print(file=sys.stderr)
-            group = cmd.group
-        print(f"  {DIM}{cmd.signature:<{width}}{RESET}  {cmd.help}", file=sys.stderr)
-    print(file=sys.stderr)
-    print(
-        f"{DIM}Ctrl+C cancels the current turn but keeps the session open.{RESET}",
-        file=sys.stderr,
-    )
-    print(
-        f"{DIM}In the split view: PgUp/PgDn or the wheel scrolls, End follows "
-        f"the output again, Ctrl+G hides the context panel, Ctrl+L clears the "
-        f"transcript. Typing during a turn queues your message; Ctrl+S "
-        f"interrupts the turn and sends it now. Start with --classic for the "
-        f"single-pane view.{RESET}",
-        file=sys.stderr,
-    )
-    print(file=sys.stderr)
-
-
 # ---------------------------------------------------------------------------
 # Log silencing
 # ---------------------------------------------------------------------------
@@ -622,57 +466,6 @@ class _SlashCompleter(Completer):
 # ---------------------------------------------------------------------------
 
 
-def _print_kv(label: str, value: str) -> None:
-    print(f"  {DIM}{label:<10}{RESET} {value}", file=sys.stderr)
-
-
-def _render_permission_payload(payload: dict[str, Any]) -> None:
-    """Render the typed interrupt body so the user knows what's being asked.
-
-    Mirrors the field layout used by ``prompt_permission`` (non-chat CLI)
-    and the Electron card builder in ``daemon/orchestrator_loop`` so the
-    three surfaces stay consistent.
-    """
-    itype = payload.get("type", "")
-
-    if itype == "task_runner_permission":
-        op = str(payload.get("operation") or "?").upper()
-        paths = payload.get("paths") or []
-        path_str = ", ".join(paths) if isinstance(paths, list) else str(paths)
-        zone = str(payload.get("zone") or "?").upper()
-        reason = payload.get("reason") or ""
-        risk = payload.get("risk_level") or ""
-        agent = payload.get("requesting_agent") or ""
-        parent = payload.get("parent_agent") or ""
-
-        _print_kv("Operation", op)
-        if path_str:
-            _print_kv("Path(s)", path_str)
-        _print_kv("Zone", zone)
-        if agent:
-            line = agent + (f"  (parent: {parent})" if parent else "")
-            _print_kv("Agent", line)
-        if reason:
-            _print_kv("Reason", reason)
-        if risk:
-            _print_kv("Risk", str(risk).upper())
-        return
-
-    if itype == "permission_request":
-        command = payload.get("command") or ""
-        reason = payload.get("reason") or ""
-        if command:
-            _print_kv("Command", command)
-        if reason:
-            _print_kv("Reason", reason)
-        return
-
-    # Unknown / loose payload — best-effort body so something is visible.
-    body = payload.get("body") or payload.get("command") or payload.get("reason") or ""
-    if body:
-        print(f"  {body}", file=sys.stderr)
-
-
 def make_ask_handler(renderer: "ChatRenderer", console: Any = None):
     """Build the REPL's interrupt handler.
 
@@ -715,7 +508,7 @@ def make_ask_handler(renderer: "ChatRenderer", console: Any = None):
                 panels.print_ask_panel(console, payload)
             else:
                 print(f"{YELLOW}▣ {panels.headline(payload)}{RESET}", file=sys.stderr)
-                _render_permission_payload(payload)
+                reports.print_permission_payload(payload)
                 # Offer the allowlist scopes for every task-runner operation type
                 # (matches the daemon's options_for_interrupt). [s]ession /
                 # [p]roject remember the op for the whole workspace so it isn't
@@ -837,148 +630,6 @@ def _on_off(word: str) -> bool | None:
     if w in ("off", "false", "no", "0", "disable", "disabled"):
         return False
     return None
-
-
-async def _usage_rows(store: Any, thread_id: str, since: float) -> list[Any]:
-    """This thread's ``llm_usage`` rows since *since*. Never raises.
-
-    ``UsageStore.list`` takes a ``thread_id`` filter now, so this no longer
-    fetches 2,000 rows by time and drops the ones that belong to other
-    conversations — a workaround that silently truncated on a busy machine.
-    """
-    if store is None or not thread_id:
-        return []
-    try:
-        return await store.list(thread_id=thread_id, since=since, limit=2_000)
-    except Exception:  # noqa: BLE001 — reporting must never break the REPL
-        logging.getLogger("yuyutsava.cli.usage").debug("usage read failed", exc_info=True)
-        return []
-
-
-def _fmt_usage(rows: list[Any]) -> str:
-    """``3 calls · in 41,087 (↺93%) · out 64 · ~$0.0032``.
-
-    Empty when there is nothing to say. The cache share is shown only when the
-    provider actually reported one: a 0 there means "no cache detail
-    reported", which is not the same as a 0 % hit rate.
-    """
-    if not rows:
-        return ""
-    calls = len(rows)
-    tin = sum(r.input_tokens for r in rows)
-    tout = sum(r.output_tokens for r in rows)
-    cost = sum(r.est_cost_usd for r in rows)
-    cached = sum(getattr(r, "cache_read_tokens", 0) for r in rows)
-    cache_note = f" (↺{cached / tin:.0%})" if cached and tin else ""
-    out = f"{calls} call{'s' if calls != 1 else ''} · in {tin:,}{cache_note} · out {tout:,}"
-    # A zero estimate means the model is missing from the price table, which
-    # is not the same as free — say nothing rather than "$0.00".
-    return f"{out} · ~${cost:,.4f}" if cost > 0 else out
-
-
-async def _print_usage_summary(store: Any, thread_id: str, since: float) -> None:
-    """``/usage``: session totals, broken down by model."""
-    rows = await _usage_rows(store, thread_id, since)
-    if not rows:
-        print(
-            f"  {DIM}no recorded model calls yet in this session{RESET}",
-            file=sys.stderr,
-        )
-        return
-    print(f"  {DIM}session: {_fmt_usage(rows)}{RESET}", file=sys.stderr)
-    by_model: dict[str, list[Any]] = {}
-    for r in rows:
-        by_model.setdefault(r.model or "?", []).append(r)
-    if len(by_model) > 1:
-        for model, subset in sorted(
-            by_model.items(), key=lambda kv: -sum(r.input_tokens for r in kv[1])
-        ):
-            print(f"    {DIM}{model}: {_fmt_usage(subset)}{RESET}", file=sys.stderr)
-    peak = max(r.input_tokens for r in rows)
-    print(
-        f"    {DIM}largest single request: {peak:,} input tokens{RESET}",
-        file=sys.stderr,
-    )
-
-
-def _print_skills(layout: Any) -> None:
-    """``/skills``: what was recalled last turn, and what is available at all.
-
-    Retrieval happens inside the graph, so until now there was no way to tell
-    whether a skill reached the prompt — which matters, because a skill the
-    agent never sees is indistinguishable from one that does not exist.
-    """
-
-    recalled = last_recalled()
-    if recalled:
-        print(f"  {CYAN}recalled last turn:{RESET} {', '.join(recalled)}", file=sys.stderr)
-    else:
-        print(
-            f"  {DIM}nothing recalled yet this session (the block is built per "
-            f"turn from the message text){RESET}",
-            file=sys.stderr,
-        )
-    try:
-        registry = (
-            SkillRegistry(workspace_dir=layout.skills) if layout is not None else SkillRegistry()
-        )
-        skills = registry.scan(agent="cli")
-    except Exception:  # noqa: BLE001 — a listing must never break the REPL
-        return
-    if not skills:
-        return
-    print(f"  {DIM}available ({len(skills)}):{RESET}", file=sys.stderr)
-    for s in sorted(skills, key=lambda s: (s.scope, s.name)):
-        mark = "*" if s.name in recalled else " "
-        print(f"   {mark} {DIM}{s.scope:9}{RESET} {s.name}", file=sys.stderr)
-    print(
-        f"  {DIM}the agent can also search these itself with sk_search_skill{RESET}",
-        file=sys.stderr,
-    )
-
-
-def _print_context(thread_id: str, console: Any = None) -> None:
-    """``/context``: what is in the window, and what it has cost.
-
-    Reads the latest snapshot the context meter published for this thread. The
-    dashboard shows a condensed version of the same numbers continuously; this
-    is the view with room to say which of them are estimates and why.
-    """
-
-    snap = bus().latest(thread_id)
-    if console is not None:
-        try:
-            console.print(context_report(snap))
-            return
-        except Exception:  # noqa: BLE001 — fall through to the plain summary
-            pass
-    if snap is None:
-        print(
-            f"  {DIM}no model call has completed yet — context figures appear "
-            f"after the first one{RESET}",
-            file=sys.stderr,
-        )
-        return
-
-    print(
-        f"  {DIM}window:{RESET} {snap.used_tokens:,} / "
-        f"{snap.max_input_tokens:,} ({fmt_pct(snap.used_fraction)})",
-        file=sys.stderr,
-    )
-    for _key, label, tokens in snap.segments():
-        print(f"    {DIM}{label:<16}{RESET} ≈{tokens:,}", file=sys.stderr)
-    print(
-        f"  {DIM}last call:{RESET} in {snap.input_tokens:,} · "
-        f"out {snap.output_tokens:,} · "
-        f"{fmt_cost(snap.est_cost_usd, snap.priced)}",
-        file=sys.stderr,
-    )
-    print(
-        f"  {DIM}session:{RESET} {snap.calls} calls · "
-        f"in {fmt_tokens(snap.session_input_tokens)} · "
-        f"{snap.compactions} compactions · {snap.offloads} offloaded",
-        file=sys.stderr,
-    )
 
 
 async def _handle_settings_command(cmd: str, runtime_settings: Any) -> bool:
@@ -1106,15 +757,15 @@ class ReplCommands:
             await _handle_settings_command(line, await self.runtime_toggles.get())
             return Outcome.HANDLED
         if head == "/usage":
-            await _print_usage_summary(
+            await reports.print_usage_summary(
                 self.bundle.usage_store, self.session.thread_id, self.session.created_at
             )
             return Outcome.HANDLED
         if head == "/context":
-            _print_context(self.session.thread_id, self.console)
+            reports.print_context(self.session.thread_id, self.console)
             return Outcome.HANDLED
         if head == "/skills":
-            _print_skills(self.bundle.layout)
+            reports.print_skills(self.bundle.layout)
             return Outcome.HANDLED
         if head == "/new":
             await self._rotate_session()
@@ -1150,7 +801,7 @@ class ReplCommands:
     async def _rotate_session(self) -> None:
         """``/new``: a brand-new session row and thread_id, in this process."""
         self.session = await self.convo.new_session(task="(interactive chat)")
-        _print_banner(
+        startup.print_banner(
             session_id=self.session.id,
             workspace=self.workspace,
             resuming=False,
@@ -1177,12 +828,12 @@ def _handle_slash(
     if head in ("/quit", "/exit", "/q"):
         return _SLASH_QUIT
     if head == "/help":
-        _print_help()
+        reports.print_help(SLASH_COMMANDS)
         return _SLASH_HANDLED
     if head == "/clear":
         # ANSI clear + redraw banner.
         print("\033[2J\033[H", end="", file=sys.stderr)
-        _print_banner(session_id=session_id, workspace=workspace, resuming=False)
+        startup.print_banner(session_id=session_id, workspace=workspace, resuming=False)
         return _SLASH_HANDLED
     if head == "/session":
         print(f"  {DIM}session:{RESET}   {session_id}", file=sys.stderr)
@@ -1346,9 +997,9 @@ async def run_chat_repl(
 
             # Surface any langgraph-api upgrade/support notice once, cleanly,
             # right above the banner rather than mid-chat.
-            _print_version_notice(full=debug_plumbing)
-            status_line = _startup_status_line(sessions_settings)
-            _print_banner(
+            startup.print_version_notice(full=debug_plumbing)
+            status_line = startup.startup_status_line(sessions_settings)
+            startup.print_banner(
                 session_id=session.id,
                 workspace=workspace,
                 resuming=resuming,
@@ -1443,8 +1094,8 @@ async def run_chat_repl(
                 # input count climbs with the conversation (the whole history
                 # is re-sent every call), and that was invisible from inside a
                 # session until now.
-                _turn_usage = _fmt_usage(
-                    await _usage_rows(bundle.usage_store, session.thread_id, turn_started)
+                _turn_usage = format_usage(
+                    await session_usage(bundle.usage_store, session.thread_id, turn_started)
                 )
                 if _turn_usage:
                     print(f"{DIM}  {_turn_usage}{RESET}", file=sys.stderr)

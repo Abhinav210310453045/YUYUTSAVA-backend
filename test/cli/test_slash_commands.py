@@ -17,6 +17,7 @@ import re
 import unittest
 
 from yuyutsava.cli.commands import chat_repl as cr
+from yuyutsava.cli.render import reports
 
 #: The commands a user can type. Pinned so removing one is a deliberate act.
 EXPECTED = {
@@ -43,7 +44,7 @@ EXPECTED = {
 def _help_text() -> str:
     buf = io.StringIO()
     with contextlib.redirect_stderr(buf):
-        cr._print_help()
+        reports.print_help(cr.SLASH_COMMANDS)
     return buf.getvalue()
 
 

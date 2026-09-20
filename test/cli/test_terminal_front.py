@@ -338,17 +338,17 @@ class InterruptKeepsTheSessionOpen(unittest.TestCase):
 
 class BannerAndNoise(unittest.TestCase):
     def test_banner_reports_the_effective_backend(self):
-        from yuyutsava.cli.commands.chat_repl import _startup_status_line
+        from yuyutsava.cli.render.startup import startup_status_line
         from yuyutsava.storage.sessions import SessionsSettings
 
         settings = SessionsSettings.from_env()
         with mock.patch("yuyutsava.storage.backend.StorageSettings.is_postgres", return_value=True):
-            self.assertIn("storage: postgres", _startup_status_line(settings))
+            self.assertIn("storage: postgres", startup_status_line(settings))
         with mock.patch(
             "yuyutsava.storage.backend.StorageSettings.is_postgres", return_value=False
         ):
             # Falls back to the sessions knob, which is the checkpointer's.
-            self.assertIn(f"storage: {settings.backend}", _startup_status_line(settings))
+            self.assertIn(f"storage: {settings.backend}", startup_status_line(settings))
 
     def test_grpc_verbosity_is_pinned_by_the_entry_points(self):
         import inspect

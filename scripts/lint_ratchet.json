@@ -61,9 +61,9 @@
     "S110": 1
   },
   "yuyutsava/cli/commands/chat_repl.py": {
-    "BLE001": 4,
+    "BLE001": 2,
     "C901": 1,
-    "S110": 3
+    "S110": 2
   },
   "yuyutsava/cli/render/plain.py": {
     "BLE001": 3,
@@ -73,6 +73,12 @@
   "yuyutsava/cli/render/renderer.py": {
     "C901": 1,
     "S110": 1
+  },
+  "yuyutsava/cli/render/reports.py": {
+    "S110": 1
+  },
+  "yuyutsava/cli/render/startup.py": {
+    "BLE001": 2
   },
   "yuyutsava/cli/render/terminal_stream.py": {
     "C901": 1,

@@ -21,11 +21,8 @@ import inspect
 import time
 import unittest
 
-from yuyutsava.cli.commands.chat_repl import (
-    _fmt_usage,
-    _print_usage_summary,
-    _usage_rows,
-)
+from yuyutsava.cli.render.reports import print_usage_summary
+from yuyutsava.cli.usage import format_usage, session_usage
 from yuyutsava.core import agent_stack
 from yuyutsava.core.engine import AgentBundle
 from yuyutsava.policy.builtin.usage import UsagePolicy
@@ -130,24 +127,24 @@ class PolicyTagsTheThread(unittest.IsolatedAsyncioTestCase):
 
 class Reporting(unittest.TestCase):
     def test_footer_shape(self):
-        out = _fmt_usage(
+        out = format_usage(
             [row(tin=41_087, tout=64, cost=0.0032), row(tin=43_617, tout=79, cost=0.0034)]
         )
         self.assertEqual(out, "2 calls · in 84,704 · out 143 · ~$0.0066")
 
     def test_singular_call(self):
-        self.assertTrue(_fmt_usage([row()]).startswith("1 call ·"))
+        self.assertTrue(format_usage([row()]).startswith("1 call ·"))
 
     def test_unknown_price_says_nothing_rather_than_zero(self):
         # "$0.00" would read as free; a missing price table entry is not free.
-        self.assertNotIn("$", _fmt_usage([row(cost=0.0)]))
+        self.assertNotIn("$", format_usage([row(cost=0.0)]))
 
     def test_nothing_to_report_is_empty(self):
-        self.assertEqual(_fmt_usage([]), "")
+        self.assertEqual(format_usage([]), "")
 
     def test_rows_are_filtered_to_this_thread(self):
         store = FakeUsageStore([row("T"), row("OTHER"), row("T")])
-        got = asyncio.run(_usage_rows(store, "T", 0))
+        got = asyncio.run(session_usage(store, "T", 0))
         self.assertEqual(len(got), 2)
 
     def test_the_thread_filter_is_pushed_down_to_the_store(self):
@@ -161,37 +158,37 @@ class Reporting(unittest.TestCase):
                 seen.update(kw)
                 return []
 
-        asyncio.run(_usage_rows(Recording(), "T", 0))
+        asyncio.run(session_usage(Recording(), "T", 0))
         self.assertEqual(seen.get("thread_id"), "T")
 
     def test_cache_share_is_shown_when_the_provider_reported_one(self):
-        out = _fmt_usage([row(tin=1_000, cached=930)])
+        out = format_usage([row(tin=1_000, cached=930)])
         self.assertIn("↺93%", out)
 
     def test_no_cache_detail_shows_no_share_rather_than_zero_percent(self):
         # 0 means "the provider reported no cache detail", which is not the
         # same claim as a 0 % hit rate.
-        self.assertNotIn("↺", _fmt_usage([row(tin=1_000, cached=0)]))
+        self.assertNotIn("↺", format_usage([row(tin=1_000, cached=0)]))
 
     def test_time_window_narrows_the_read(self):
         now = time.time()
         store = FakeUsageStore([row("T", ts=now - 600), row("T", ts=now)])
-        self.assertEqual(len(asyncio.run(_usage_rows(store, "T", now - 60))), 1)
+        self.assertEqual(len(asyncio.run(session_usage(store, "T", now - 60))), 1)
 
     def test_missing_or_broken_store_is_silent(self):
         class Broken(FakeUsageStore):
             async def list(self, **k):
                 raise RuntimeError("down")
 
-        self.assertEqual(asyncio.run(_usage_rows(None, "T", 0)), [])
-        self.assertEqual(asyncio.run(_usage_rows(FakeUsageStore(), "", 0)), [])
-        self.assertEqual(asyncio.run(_usage_rows(Broken(), "T", 0)), [])
+        self.assertEqual(asyncio.run(session_usage(None, "T", 0)), [])
+        self.assertEqual(asyncio.run(session_usage(FakeUsageStore(), "", 0)), [])
+        self.assertEqual(asyncio.run(session_usage(Broken(), "T", 0)), [])
 
     def test_summary_runs_on_empty_and_populated_stores(self):
         # Output goes to stderr; this pins that neither path raises.
-        asyncio.run(_print_usage_summary(FakeUsageStore(), "T", 0))
+        asyncio.run(print_usage_summary(FakeUsageStore(), "T", 0))
         asyncio.run(
-            _print_usage_summary(FakeUsageStore([row("T", model="a"), row("T", model="b")]), "T", 0)
+            print_usage_summary(FakeUsageStore([row("T", model="a"), row("T", model="b")]), "T", 0)
         )
 
 
