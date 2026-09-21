@@ -7,6 +7,7 @@ sandbox. Pulled out of cli.py so the entry-point dispatch stays trivial.
 
 from __future__ import annotations
 
+import contextlib
 import sys
 
 from yuyutsava.cli.commands.options import ChatOptions
@@ -63,25 +64,16 @@ async def run_chat(
             front="terminal",
         )
 
-        # CLI Mode 1 async — if the bundle has a host URL (owned or attached),
-        # stand up the bridge + watcher inside this asyncio context.
-        cli_bridge = None
-        cli_watcher = None
-        if bundle.async_host_url is not None and bundle.async_task_mirror is not None:
-            # Deferred: ~10 ms on every CLI start, needed only when background
-            # subagents run.
-            from yuyutsava.async_subagents.watcher import AsyncTaskHealthWatcher  # noqa: PLC0415
-            from yuyutsava.cli.async_hitl import CliHitlBridge  # noqa: PLC0415
+        # Background approvals reach this run the same way they reach the REPL:
+        # through the daemon when one is running, and only otherwise through a
+        # local watcher. This path used to always start its own, which meant a
+        # one-shot run that had *attached* to a daemon's host put a second
+        # watcher on it — both asking the user, either able to resume.
+        # Deferred: ~10 ms on every CLI start, needed only when background
+        # subagents run.
+        from yuyutsava.cli.background_approvals import BackgroundApprovals  # noqa: PLC0415
 
-            cli_bridge = CliHitlBridge()
-            cli_watcher = AsyncTaskHealthWatcher(
-                mirror=bundle.async_task_mirror,
-                host_url=bundle.async_host_url,
-                ask_handler=cli_bridge.post_ask,
-                event_sink=cli_bridge.post_event,
-                agent_path_root="cli",
-            )
-            await cli_watcher.start()
+        approvals = await BackgroundApprovals.open(bundle)
         try:
             try:
                 final = await run_session(
@@ -120,19 +112,17 @@ async def run_chat(
                 print(final.strip())
 
             # Flush any background-task events emitted during the run.
-            if cli_bridge is not None:
-                await cli_bridge.render_between_turns()
+            await approvals.render_between_turns()
         finally:
-            # Shut down the watcher first (cancels in-flight runs), then the
-            # host (best-effort daemon-thread teardown).
-            if cli_watcher is not None:
-                try:
-                    await cli_watcher.shutdown()
-                except Exception:
-                    pass
+            # Approvals first (this cancels in-flight background runs), then
+            # the host — a best-effort daemon-thread teardown.
+            await approvals.aclose()
             await bundle.aclose()
-            # After teardown: in docker mode the container is gone, so the
-            # sandbox is no longer anyone's cwd — wipe scratch in either mode.
+            # After teardown the docker container is gone, so nothing has the
+            # sandbox as its cwd — safe to wipe scratch in either mode. Guarded
+            # because a failure to tidy up must not become the exit status of a
+            # turn that worked.
             if bundle.layout is not None:
-                cleanup_local_sandbox(bundle.layout)
+                with contextlib.suppress(Exception):
+                    cleanup_local_sandbox(bundle.layout)
     return 0

@@ -60,10 +60,6 @@
     "BLE001": 1,
     "S110": 1
   },
-  "yuyutsava/cli/commands/chat.py": {
-    "BLE001": 1,
-    "S110": 1
-  },
   "yuyutsava/cli/commands/chat_repl.py": {
     "BLE001": 2,
     "C901": 1,

@@ -39,11 +39,9 @@ from prompt_toolkit.history import FileHistory
 from prompt_toolkit.patch_stdout import patch_stdout
 
 from yuyutsava.ansi import CLEAR_SCREEN, CYAN, DIM, RED, RESET, YELLOW
-from yuyutsava.async_subagents.watcher import AsyncTaskHealthWatcher
-from yuyutsava.cli.async_hitl import CliHitlBridge, CliRemoteHitl
+from yuyutsava.cli.background_approvals import BackgroundApprovals
 from yuyutsava.cli.commands.options import ChatOptions
 from yuyutsava.cli.line_reader import read_line
-from yuyutsava.cli.remote_attach import CliAttachClient
 from yuyutsava.cli.render import panels, reports, startup
 from yuyutsava.cli.render.console import make_console, rich_capable
 from yuyutsava.cli.render.dashboard import (
@@ -63,7 +61,6 @@ from yuyutsava.config.logs import silence_plumbing_loggers
 from yuyutsava.consent import decision_token as _decision_token
 from yuyutsava.conversation import ConversationService
 from yuyutsava.core.agent_stack import build_agent_stack
-from yuyutsava.daemon.singleton import read_daemon_discovery
 from yuyutsava.llm.quirks.first_chunk_retry import set_retry_listener
 from yuyutsava.prefs.runtime import UNDISABLEABLE, RuntimeSettings
 from yuyutsava.storage.events import Store
@@ -122,70 +119,6 @@ def quieten_chat_loggers(*, debug_plumbing: bool, verbose: bool) -> None:
                 "yuyutsava.llm.retry",
             ):
                 logging.getLogger(_name).setLevel(logging.ERROR)
-
-
-@dataclass
-class BackgroundApprovals:
-    """How a background subagent's approval request reaches this chat.
-
-    Preferred: when a daemon is running it owns the async host and the single
-    idempotent decision pipeline, so the chat defers to it — consume the
-    daemon's SSE, answer over REST. An approval can then be answered from the
-    CLI *or* the desktop app and stay in sync, and the prompt never freezes,
-    because there is no competing stdin reader and no double-resume.
-
-    Fallback: only when this chat OWNS the host — no daemon running — does it
-    run the in-process watcher that prompts locally.
-    """
-
-    bridge: Any | None = None
-    watcher: Any | None = None
-    remote: Any | None = None
-
-    @classmethod
-    async def open(cls, bundle: Any) -> "BackgroundApprovals":
-        if bundle.async_host_url is None:
-            # Nothing runs in the background, so nothing can ask.
-            return cls()
-        disco = read_daemon_discovery()
-        daemon_web = disco.get("web_url") if isinstance(disco, dict) else None
-        if daemon_web:
-            remote = CliRemoteHitl(
-                CliAttachClient(base_url=_loopback_url(str(daemon_web)), label="yuyutsava-chat")
-            )
-            await remote.start()
-            return cls(remote=remote)
-        if bundle.async_task_mirror is not None:
-            bridge = CliHitlBridge()
-            watcher = AsyncTaskHealthWatcher(
-                mirror=bundle.async_task_mirror,
-                host_url=bundle.async_host_url,
-                ask_handler=bridge.post_ask,
-                event_sink=bridge.post_event,
-                agent_path_root="cli",
-            )
-            await watcher.start()
-            return cls(bridge=bridge, watcher=watcher)
-        return cls()
-
-    async def render_between_turns(self) -> None:
-        """Show what the background did while the user was composing.
-
-        Between turns, not during one: interleaving it with a streaming reply is
-        how the transcript became unreadable.
-        """
-        if self.bridge is None:
-            return
-        with contextlib.suppress(Exception):
-            await self.bridge.render_between_turns()
-
-    async def aclose(self) -> None:
-        if self.watcher is not None:
-            with contextlib.suppress(Exception):
-                await self.watcher.shutdown()
-        if self.remote is not None:
-            with contextlib.suppress(Exception):
-                await self.remote.stop()
 
 
 async def run_one_turn(
@@ -550,15 +483,6 @@ def make_ask_handler(renderer: "ChatRenderer", console: Any = None):
 
 _SLASH_QUIT = object()
 _SLASH_HANDLED = object()
-
-
-def _loopback_url(url: str) -> str:
-    """Rewrite a daemon web URL to loopback so the CLI is auth-exempt.
-
-    The daemon may advertise a non-loopback bind (e.g. ``http://0.0.0.0:7654``)
-    with bearer auth enforced; connecting from 127.0.0.1 is exempt.
-    """
-    return url.replace("://0.0.0.0", "://127.0.0.1").replace("://[::]", "://127.0.0.1")
 
 
 async def _handle_ask_command(cmd: str, remote: Any) -> bool:
