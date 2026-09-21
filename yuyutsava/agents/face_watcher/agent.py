@@ -36,19 +36,11 @@ TODO(future): authorized-user presence gating.
 
 from __future__ import annotations
 
-from langchain_core.tools import BaseTool
-
-from yuyutsava.agents.base_sub_agent import BaseSubAgent
+from yuyutsava.agents.event_driven import EventDrivenSubAgent
 from yuyutsava.agents.face_watcher.prompts import FACE_WATCHER_PROMPT
-from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
-from yuyutsava.config.search import SearchConfig
-from yuyutsava.events.tools import make_fetch_event_tool
-from yuyutsava.mcp.loader import MCPClientManager
-from yuyutsava.skills.registry import SkillRegistry
-from yuyutsava.storage.events import Store
 
 
-class FaceWatcherAgent(BaseSubAgent):
+class FaceWatcherAgent(EventDrivenSubAgent):
     name = "face-watcher"
     description = (
         "Identify the person in a face.frame event using the face-recognition "
@@ -57,33 +49,11 @@ class FaceWatcherAgent(BaseSubAgent):
         "Does not enroll new identities."
     )
 
-    def __init__(
-        self,
-        task_runner: TaskRunnerAgent,
-        store: Store,
-        skill_registry: SkillRegistry | None = None,
-        can_write_skills: bool = False,
-        mcp_manager: MCPClientManager | None = None,
-        search_config: SearchConfig | None = None,
-        cap_enforcer: object | None = None,
-        memory_store: object | None = None,
-        skill_store: object | None = None,
-    ) -> None:
-        super().__init__(
-            task_runner,
-            skill_registry=skill_registry,
-            can_write_skills=can_write_skills,
-            mcp_manager=mcp_manager,
-            search_config=search_config,
-            cap_enforcer=cap_enforcer,
-            memory_store=memory_store,
-            skill_store=skill_store,
-        )
-        self._store = store
+    #: Purely reactive: it identifies a face and does not generalise a
+    #: lesson from doing so. Note the daemon currently passes
+    #: can_write_skills=True explicitly, which overrides this.
+    learns_by_default = False
 
     @property
     def system_prompt(self) -> str:
         return FACE_WATCHER_PROMPT
-
-    def extra_tools(self) -> list[BaseTool]:
-        return [make_fetch_event_tool(self._store)]
