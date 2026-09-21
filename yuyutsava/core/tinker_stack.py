@@ -30,9 +30,9 @@ from yuyutsava.async_subagents.mirror import AsyncTaskMirror
 from yuyutsava.config.env import env, env_flag
 from yuyutsava.config.search import SearchConfig
 from yuyutsava.context.config import ContextSettings
-from yuyutsava.context.tools import make_context_tools
+from yuyutsava.core.async_host import BackgroundStores, build_async_host
 from yuyutsava.core.deps import MasterDeps
-from yuyutsava.core.engine import AgentBundle, build_tinker_agent, context_middleware
+from yuyutsava.core.engine import AgentBundle, build_tinker_agent
 from yuyutsava.core.stores import StoreFactory, build_retrieval_stores
 from yuyutsava.llm.factory import chat_model
 from yuyutsava.llm.settings import LlmSettings, llm_settings_from_env
@@ -129,37 +129,16 @@ async def build_tinker_stack(
         # First-come-wins shared host: inside the daemon this always attaches
         # to the already-running owner instead of starting a second server.
         def _build_host() -> AsyncSubagentHost:
-            # Background graphs get the same context controllers as the
-            # masters (tool-result offload + compaction + ctx_* readback).
-            # Host-only compaction model: host graphs run on the uvicorn loop,
-            # and the bundle's compaction model belongs to this loop — Gemini
-            # SDK clients bind to their first loop (see
-            # llm/quirks/loop_affinity). ``model`` above is already host-only.
-            host_compaction_model = chat_model(llm_settings_from_env("compaction"), temperature=0.0)
-
-            return AsyncSubagentHost.from_subagents(
+            return build_async_host(
                 async_subagents,
                 model=model,
                 checkpointer=checkpointer,
                 allow_blocking=allow_blocking,
-                middleware_factory=lambda sa: context_middleware(
-                    model=model,
+                stores=BackgroundStores(
                     artifact_store=artifact_store,
                     context_settings=context_settings,
                     summary_store=summary_store,
                     memory_store=memory_store,
-                    transcript_store=None,  # bg thread ids are host-minted;
-                    # transcripts serve interactive resume — skip them here.
-                    compaction_model=host_compaction_model,
-                    role=f"{sa.name}-bg",
-                    # Background runs have host-minted thread ids and their own
-                    # message list — they report spend, never the panel's window.
-                    meter_window=False,
-                ),
-                extra_tools_factory=(
-                    (lambda: make_context_tools(artifact_store))
-                    if artifact_store is not None
-                    else None
                 ),
             )
 

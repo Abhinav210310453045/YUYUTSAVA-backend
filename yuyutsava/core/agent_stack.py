@@ -32,9 +32,9 @@ from yuyutsava.config.execution import DockerSettings, LocalSettings
 from yuyutsava.config.search import SearchConfig
 from yuyutsava.consent import ConsentRegistry
 from yuyutsava.context.config import ContextSettings
-from yuyutsava.context.tools import make_context_tools
+from yuyutsava.core.async_host import BackgroundStores, build_async_host
 from yuyutsava.core.deps import MasterDeps
-from yuyutsava.core.engine import AgentBundle, build_cli_deepagent, context_middleware
+from yuyutsava.core.engine import AgentBundle, build_cli_deepagent
 from yuyutsava.core.stores import StoreFactory, build_retrieval_stores
 from yuyutsava.llm.factory import chat_model
 from yuyutsava.llm.pricing import refresh_price_cache
@@ -247,38 +247,16 @@ async def build_agent_stack(
         # already running and owns the LangGraph dev server, attach to its
         # URL instead of starting a second one.
         def _build_host() -> AsyncSubagentHost:
-            # Background graphs get the same context controllers as the
-            # masters (tool-result offload + compaction + ctx_* readback) —
-            # bg runs are the longest and were the only agents without them.
-            # Host-only compaction model: host graphs run on the uvicorn loop,
-            # and the master bundle's compaction model belongs to this loop —
-            # Gemini SDK clients bind to their first loop (see
-            # llm/quirks/loop_affinity). ``model`` above is already host-only.
-            host_compaction_model = chat_model(llm_settings_from_env("compaction"), temperature=0.0)
-
-            return AsyncSubagentHost.from_subagents(
+            return build_async_host(
                 async_subagents,
                 model=model,
                 checkpointer=checkpointer,
                 allow_blocking=allow_blocking,
-                middleware_factory=lambda sa: context_middleware(
-                    model=model,
+                stores=BackgroundStores(
                     artifact_store=artifact_store,
                     context_settings=context_settings,
                     summary_store=summary_store,
                     memory_store=memory_store,
-                    transcript_store=None,  # bg thread ids are host-minted;
-                    # transcripts serve interactive resume — skip them here.
-                    compaction_model=host_compaction_model,
-                    role=f"{sa.name}-bg",
-                    # Background runs have host-minted thread ids and their own
-                    # message list — they report spend, never the panel's window.
-                    meter_window=False,
-                ),
-                extra_tools_factory=(
-                    (lambda: make_context_tools(artifact_store))
-                    if artifact_store is not None
-                    else None
                 ),
             )
 
