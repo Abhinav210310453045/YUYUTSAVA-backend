@@ -386,7 +386,9 @@ piped CLI output carries actual `ESC[` bytes (`0m`, `2m`, `33m`, `36m`) with no
 
 **Severity** P1 · **Wave** W4 · **Status** **Partly done** — the HITL prompt is closed (`32ae54c`). `cli/ask_prompt.py` is the one blocking prompt for both surfaces, which had drifted over whether to show the ask id and mark background askers. Two further spellings turned up: the queued-ask *announcement* is a different rendering and stays, but now takes its answer keys from `permission_keys`; the foreground card's longer wording is deliberate and stays its own. One defect found and fixed on the way — the foreground retry hint hardcoded the scope keys for every interrupt type, teaching `[s]ession`/`[p]roject` for asks that cannot store a grant.
 
-Still open: the background-task event lines (copied text, but over different inputs — a wire dict and a typed payload), the async watcher/bridge wiring in `chat.py` vs `chat_repl.py` (whose teardowns differ), the `_build_host` closure with its `meter_window` drift, the repeated get-state/diagnose/repair in `conversation/service.py`, the two `core/engine.py` repetitions, the identical `search_tools` overrides and `__init__`s, and the start-up environment block.
+The `_build_host` closure is closed too (`ec7ff2a`): `core/async_host.py` is the one builder, with the compaction model built on the host's own loop and the window opt-out no longer a caller's to remember. The `meter_window` drift it had was not the direction this finding recorded — two of the three passed the flag and the CLI chat path did not, so a background subagent there redrew the context panel with its own conversation's shape (`e516057`).
+
+Still open: the background-task event lines (copied text, but over different inputs — a wire dict and a typed payload), the async watcher/bridge wiring in `chat.py` vs `chat_repl.py` (whose teardowns differ), the repeated get-state/diagnose/repair in `conversation/service.py`, the two `core/engine.py` repetitions, the identical `search_tools` overrides and `__init__`s, and the start-up environment block.
 
 **Evidence.**
 
