@@ -26,7 +26,7 @@ import time
 from collections import deque
 from typing import Any, Deque
 
-from yuyutsava.ansi import CYAN, DIM, GREEN, RED, RESET, YELLOW
+from yuyutsava.cli import bg_labels as bg
 from yuyutsava.cli.ask_prompt import AskView, permission_keys, prompt_for_ask
 from yuyutsava.consent import is_permission_ask
 from yuyutsava.ports.channels import (
@@ -262,16 +262,21 @@ class CliHitlBridge:
     def _print_event(self, ev: ChannelEvent) -> None:
         p = ev.payload
         if isinstance(p, AsyncTaskStartedPayload):
-            line = f"{CYAN}[bg started]{RESET} {p.agent_name}  task={p.task_id[:8]}  {p.instruction_preview}"
+            line = f"{bg.started()} {p.agent_name}  task={p.task_id[:8]}  {p.instruction_preview}"
         elif isinstance(p, AsyncTaskProgressPayload):
-            line = f"{DIM}[bg progress]{RESET} {p.agent_name}  task={p.task_id[:8]}  {p.kind_hint}: {p.text}"
+            line = f"{bg.progress()} {p.agent_name}  task={p.task_id[:8]}  {p.kind_hint}: {p.text}"
         elif isinstance(p, AsyncTaskAwaitingUserPayload):
-            line = f"{YELLOW}[bg awaiting user]{RESET} {p.agent_name}  task={p.task_id[:8]}  ask={p.ask_id[:8]}  {p.title}"
+            line = (
+                f"{bg.awaiting_user()} {p.agent_name}  task={p.task_id[:8]}  "
+                f"ask={p.ask_id[:8]}  {p.title}"
+            )
         elif isinstance(p, AsyncTaskCompletedPayload):
-            colour = f"{GREEN}" if p.ok else f"{RED}"
             elapsed = _fmt_elapsed(p.duration_sec)
             summary = (p.summary or "").replace("\n", " ")[:100]
-            line = f"{colour}[bg done {'OK' if p.ok else 'FAIL'}]{RESET} {p.agent_name}  task={p.task_id[:8]}  elapsed={elapsed}  {summary}"
+            line = (
+                f"{bg.done(ok=p.ok)} {p.agent_name}  task={p.task_id[:8]}  "
+                f"elapsed={elapsed}  {summary}"
+            )
         else:
             # Ignore non-async-task events (token/log/etc.) — the REPL has its
             # own streaming display for those.

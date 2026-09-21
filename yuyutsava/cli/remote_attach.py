@@ -25,7 +25,8 @@ from typing import Any, AsyncIterator
 
 import httpx
 
-from yuyutsava.ansi import CYAN, DIM, GREEN, RED, RESET, YELLOW
+from yuyutsava.ansi import CYAN, DIM, RESET, YELLOW
+from yuyutsava.cli import bg_labels as bg
 from yuyutsava.cli.ask_prompt import AskView, prompt_for_ask
 
 logger = logging.getLogger("yuyutsava.cli.remote_attach")
@@ -158,24 +159,21 @@ def render_event_frame(frame_data: dict) -> None:
         print(f"{CYAN}• {data.get('line', '')}{RESET}", file=sys.stderr, flush=True)
     elif kind == "async_task_started":
         print(
-            f"{CYAN}[bg started]{RESET} {data.get('agent_name', '?')}  "
-            f"task={(data.get('task_id') or '')[:8]}",
+            f"{bg.started()} {data.get('agent_name', '?')}  task={(data.get('task_id') or '')[:8]}",
             file=sys.stderr,
             flush=True,
         )
     elif kind == "async_task_progress":
         print(
-            f"{DIM}[bg progress]{RESET} {data.get('agent_name', '?')}  "
+            f"{bg.progress()} {data.get('agent_name', '?')}  "
             f"{data.get('kind_hint', '?')}: {data.get('text', '')}",
             file=sys.stderr,
             flush=True,
         )
     elif kind == "async_task_completed":
         ok = bool(data.get("ok"))
-        colour = f"{GREEN}" if ok else f"{RED}"
         print(
-            f"{colour}[bg done {'OK' if ok else 'FAIL'}]{RESET} "
-            f"{data.get('agent_name', '?')}  {(data.get('summary') or '')[:100]}",
+            f"{bg.done(ok=ok)} {data.get('agent_name', '?')}  {(data.get('summary') or '')[:100]}",
             file=sys.stderr,
             flush=True,
         )
