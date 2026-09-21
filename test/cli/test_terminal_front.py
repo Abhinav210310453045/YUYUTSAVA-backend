@@ -351,6 +351,9 @@ class BannerAndNoise(unittest.TestCase):
             self.assertIn(f"storage: {settings.backend}", startup_status_line(settings))
 
     def test_grpc_verbosity_is_pinned_by_the_entry_points(self):
+        """Each entry point pins it, and the variable and the reason live in one
+        place (`R-DRY-05`). What stays at the entry point is *when* it is
+        called; `test_grpc_env_order.py` covers that window."""
         import inspect
 
         from yuyutsava.cli import cli
@@ -359,13 +362,9 @@ class BannerAndNoise(unittest.TestCase):
         for mod in (cli, daemon_main):
             with self.subTest(module=mod.__name__):
                 src = inspect.getsource(mod)
-                self.assertIn('os.environ.setdefault("GRPC_VERBOSITY", "ERROR")', src)
+                self.assertIn("quiet_grpc_fork_logs()", src)
         # Importing the CLI is enough to set it.
         self.assertEqual(os.environ.get("GRPC_VERBOSITY"), "ERROR")
-
-
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
 
 
 class BuildingTheChatSurface(unittest.TestCase):
@@ -406,3 +405,7 @@ class BuildingTheChatSurface(unittest.TestCase):
             for mode in ("plain", "rich"):
                 with self.subTest(mode=mode):
                     self.assertTrue(hasattr(self._surface(mode, Path(td)).renderer, "render"))
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

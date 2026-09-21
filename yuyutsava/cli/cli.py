@@ -35,21 +35,16 @@ from yuyutsava.cli.tooling import (
     setup_logging,
 )
 from yuyutsava.config.execution import DockerSettings, LocalSettings
+from yuyutsava.config.logs import quiet_grpc_fork_logs
 from yuyutsava.config.search import SearchConfig
 from yuyutsava.core.deps import MasterDeps
 from yuyutsava.core.engine import build_cli_deepagent
 from yuyutsava.llm.settings import llm_settings_from_env
 from yuyutsava.storage.paths import ensure_state_dirs
 
-# gRPC's C core logs at INFO by default, and its fork handlers fire on every
-# subprocess we spawn — so each tr_run_python / tr_execute printed
-# "fork_posix.cc … Other threads are currently calling into gRPC" and
-# "ev_poll_posix.cc … FD from fork parent still in poll list" straight over
-# the renderer. gRPC reads this when it is first imported, which the
-# Gemini/Vertex SDKs do when a model is built — never while the imports above
-# load (test/cli/test_grpc_env_order.py checks). setdefault, so an operator
-# debugging gRPC can still override it.
-os.environ.setdefault("GRPC_VERBOSITY", "ERROR")
+# After the imports and before any model is built — see the function, which
+# explains why that window is the whole requirement.
+quiet_grpc_fork_logs()
 
 
 @dataclass(frozen=True)

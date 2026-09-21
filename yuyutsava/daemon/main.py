@@ -40,7 +40,7 @@ from yuyutsava import platform as yplatform
 from yuyutsava.aio import run as aio_run
 from yuyutsava.async_subagents.host_lock import release_host_lock
 from yuyutsava.config.env import env_flag
-from yuyutsava.config.logs import silence_plumbing_loggers
+from yuyutsava.config.logs import quiet_grpc_fork_logs, silence_plumbing_loggers
 from yuyutsava.daemon.bootstrap import DaemonOptions, DaemonSubsystems, build_daemon
 from yuyutsava.daemon.lifecycle import install_reload_handler, install_signal_handlers
 from yuyutsava.daemon.orchestrator_loop import resume_interrupted_tasks
@@ -57,12 +57,9 @@ from yuyutsava.daemon.wake_bridge import run_wake_bridge
 from yuyutsava.mcp.config import MCPConfig
 from yuyutsava.storage.paths import ensure_state_dirs, state_dir
 
-# gRPC's C core logs at INFO and its fork handlers fire on every subprocess the
-# task runner spawns, filling the daemon log with fork_posix.cc /
-# ev_poll_posix.cc noise. gRPC reads this when it is first imported, which
-# happens when a model is built — never while the imports above load
-# (test/cli/test_grpc_env_order.py checks). setdefault, so it stays overridable.
-os.environ.setdefault("GRPC_VERBOSITY", "ERROR")
+# After the imports and before any model is built — see the function, which
+# explains why that window is the whole requirement.
+quiet_grpc_fork_logs()
 
 logger = logging.getLogger("yuyutsava.daemon")
 

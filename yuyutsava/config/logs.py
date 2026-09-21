@@ -9,6 +9,7 @@ flooded. Both front ends call it; each sets up its own handlers separately.
 from __future__ import annotations
 
 import logging
+import os
 import warnings
 
 # Loggers raised to WARNING by silence_plumbing_loggers — these emit chatty
@@ -88,3 +89,23 @@ def silence_plumbing_loggers() -> None:
         _ensure_null_handler(lg)
     warnings.filterwarnings("ignore", category=DeprecationWarning)
     warnings.filterwarnings("ignore", category=PendingDeprecationWarning)
+
+
+def quiet_grpc_fork_logs() -> None:
+    """Stop gRPC's C core logging over the renderer and the daemon log.
+
+    It logs at INFO by default, and its fork handlers fire on every subprocess
+    the task runner spawns — so each ``tr_run_python`` / ``tr_execute``
+    printed ``fork_posix.cc … Other threads are currently calling into gRPC``
+    and ``ev_poll_posix.cc … FD from fork parent still in poll list`` straight
+    over whatever was on screen.
+
+    **When this is called matters.** gRPC reads the variable when it is first
+    imported, which happens when a model is built — so this only works while
+    importing an entry point does not itself import gRPC.
+    ``test/cli/test_grpc_env_order.py`` checks exactly that, in a fresh
+    interpreter, because the test process may already have gRPC loaded.
+
+    ``setdefault``, so an operator debugging gRPC can still override it.
+    """
+    os.environ.setdefault("GRPC_VERBOSITY", "ERROR")
