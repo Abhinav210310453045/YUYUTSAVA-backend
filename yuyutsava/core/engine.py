@@ -711,6 +711,42 @@ def _retrieval_injection_middleware(
     return [LangChainPolicyAdapter([RetrievalInjectionPolicy(injectors)])]
 
 
+def _subagent_spec(
+    sa: Any,
+    *,
+    context_middleware: "Sequence[Any]",
+    extra_middleware: "Sequence[Any]" = (),
+    model: BaseChatModel | None = None,
+    artifact_store: Any | None = None,
+) -> dict:
+    """One delegation spec, wired the way every builder wires one.
+
+    What is the same everywhere: the filter that hides the master's prefixed
+    tools from a subagent, the context controllers, and the ``ctx_*`` pair a
+    subagent needs to read back its own offloaded results — fresh instances per
+    spec, never shared across graphs.
+
+    What differs is passed in. The orchestrator adds a token budget and usage
+    accounting and names a model; the CLI and tinker builds add neither,
+    because they have no subagent budget configured. Those are ADR-001
+    divergences, so they stay visible at the call site rather than becoming
+    flags here.
+    """
+    spec = sa.as_deepagents_subagent_spec()
+    if model is not None:
+        spec["model"] = model
+    spec["middleware"] = collapse_policy_adapters(
+        [
+            LangChainPolicyAdapter([ToolFilterPolicy()]),
+            *context_middleware,
+            *extra_middleware,
+        ]
+    )
+    if artifact_store is not None:
+        spec["tools"] = list(spec.get("tools") or []) + make_context_tools(artifact_store)
+    return spec
+
+
 def _sync_subagent_specs(
     subagents: "Sequence[Any]",
     *,
@@ -731,30 +767,24 @@ def _sync_subagent_specs(
     None — sync subagent runs live inside the master's turn; transcripts
     serve interactive resume.
     """
-    specs: list[dict] = []
-    for sa in subagents:
-        spec = sa.as_deepagents_subagent_spec()
-        spec["middleware"] = collapse_policy_adapters(
-            [
-                LangChainPolicyAdapter([ToolFilterPolicy()]),
-                *_context_middleware(
-                    model=model,
-                    artifact_store=artifact_store,
-                    context_settings=context_settings,
-                    summary_store=summary_store,
-                    memory_store=memory_store,
-                    transcript_store=None,
-                    compaction_model=compaction_model,
-                    role=sa.name,
-                    meter_window=False,
-                ),
-            ]
+    return [
+        _subagent_spec(
+            sa,
+            context_middleware=_context_middleware(
+                model=model,
+                artifact_store=artifact_store,
+                context_settings=context_settings,
+                summary_store=summary_store,
+                memory_store=memory_store,
+                transcript_store=None,
+                compaction_model=compaction_model,
+                role=sa.name,
+                meter_window=False,
+            ),
+            artifact_store=artifact_store,
         )
-        if artifact_store is not None:
-            # Fresh ctx_* instances per spec — never shared across graphs.
-            spec["tools"] = list(spec.get("tools") or []) + make_context_tools(artifact_store)
-        specs.append(spec)
-    return specs
+        for sa in subagents
+    ]
 
 
 def build_cli_deepagent(
@@ -1198,27 +1228,24 @@ def build_orchestrator(
             )
         ]
 
-    subagent_specs: list[dict] = []
-    for sa in deps.subagents.values():
-        if sa.name in disabled_subagents:
-            continue
-        spec = sa.as_deepagents_subagent_spec()
-        spec["model"] = deps.subagent_model
-        spec["middleware"] = collapse_policy_adapters(
-            [
-                LangChainPolicyAdapter([ToolFilterPolicy()]),
-                *_ctx_mw(deps.subagent_model, sa.name, meter_window=False),
+    subagent_specs: list[dict] = [
+        _subagent_spec(
+            sa,
+            context_middleware=_ctx_mw(deps.subagent_model, sa.name, meter_window=False),
+            # The orchestrator's own: a spend ceiling per subagent, and per-call
+            # cost accounting. ADR-001 — the CLI and tinker builds have neither.
+            extra_middleware=[
                 LangChainPolicyAdapter(
                     [BudgetPolicy(max_input_tokens=deps.subagent_token_budget, role=sa.name)]
                 ),
                 *_usage_mw(deps.subagent_model, sa.name),
-            ]
+            ],
+            model=deps.subagent_model,
+            artifact_store=deps.artifact_store,
         )
-        if deps.artifact_store is not None:
-            # Subagents read their own offloaded results, so the ctx_* pair
-            # must exist in their graphs too (fresh instances per spec).
-            spec["tools"] = list(spec.get("tools") or []) + make_context_tools(deps.artifact_store)
-        subagent_specs.append(spec)
+        for sa in deps.subagents.values()
+        if sa.name not in disabled_subagents
+    ]
 
     # Async (background) subagents — same `subagents=` list; deepagents auto-
     # routes dicts shaped like AsyncSubAgent to AsyncSubAgentMiddleware.
