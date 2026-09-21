@@ -335,6 +335,41 @@ class ConversationService:
             logger.debug("discard_if_unused: delete failed", exc_info=True)
             return False
 
+    async def _inspect_and_repair(
+        self,
+        bundle: AgentBundle,
+        *,
+        close_turn: bool = True,
+        what: str,
+    ) -> tuple[Any | None, int]:
+        """Read this thread's checkpoint, diagnose it, and repair if needed.
+
+        Returns ``(findings, repaired)``. ``findings`` is ``None`` only when
+        the inspection itself failed, which is why the two are returned
+        together: a caller cannot tell "nothing was wrong" from "we could not
+        look" any other way, and they lead to different notices.
+
+        Never raises. Both callers reach this on a path where the user is
+        waiting — before a turn, or after one came back empty — and a failed
+        inspection must not block the turn or swallow the reply.
+        """
+        try:
+            state = await bundle.agent.aget_state({"configurable": {"thread_id": self.thread_id}})
+            messages = state.values.get("messages", []) if state and state.values else []
+            found = diagnose(messages)
+            if not found.any(close_turn=close_turn):
+                return found, 0
+            repaired = await repair_orphan_tool_calls(
+                bundle.agent,
+                self.thread_id,
+                cause=Cause.INTERRUPTED_BY_USER,
+                close_turn=close_turn,
+            )
+            return found, repaired
+        except Exception:  # noqa: BLE001 — see the docstring
+            logger.debug("%s failed", what, exc_info=True)
+            return None, 0
+
     async def _repair_before_turn(
         self,
         bundle: AgentBundle,
@@ -352,21 +387,9 @@ class ConversationService:
         all while the CLI resume path had one.
         """
 
-        try:
-            state = await bundle.agent.aget_state({"configurable": {"thread_id": self.thread_id}})
-            messages = state.values.get("messages", []) if state and state.values else []
-            found = diagnose(messages)
-            if not found.any(close_turn=close_turn):
-                return
-            repaired = await repair_orphan_tool_calls(
-                bundle.agent,
-                self.thread_id,
-                cause=Cause.INTERRUPTED_BY_USER,
-                close_turn=close_turn,
-            )
-        except Exception:  # noqa: BLE001 — a failed repair must not block a turn
-            logger.debug("pre-turn repair failed", exc_info=True)
-            return
+        found, repaired = await self._inspect_and_repair(
+            bundle, close_turn=close_turn, what="pre-turn repair"
+        )
         if repaired:
             await self._emit(
                 on_event,
@@ -422,20 +445,7 @@ class ConversationService:
         """
 
         steps = 0
-        repaired = 0
-        found = None
-        try:
-            state = await bundle.agent.aget_state({"configurable": {"thread_id": self.thread_id}})
-            messages = state.values.get("messages", []) if state and state.values else []
-            found = diagnose(messages)
-            if found.any():
-                repaired = await repair_orphan_tool_calls(
-                    bundle.agent,
-                    self.thread_id,
-                    cause=Cause.INTERRUPTED_BY_USER,
-                )
-        except Exception:  # noqa: BLE001 — recovery must not raise over a reply
-            logger.debug("empty-turn inspection failed", exc_info=True)
+        found, repaired = await self._inspect_and_repair(bundle, what="empty-turn inspection")
 
         if repaired and found is not None:
             await self._emit(
