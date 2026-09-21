@@ -384,7 +384,22 @@ piped CLI output carries actual `ESC[` bytes (`0m`, `2m`, `33m`, `36m`) with no
 
 ## R-DRY-05 — Front-end and builder wiring copied
 
-**Severity** P1 · **Wave** W4 · **Status** **Partly done** — the HITL prompt is closed (`32ae54c`). `cli/ask_prompt.py` is the one blocking prompt for both surfaces, which had drifted over whether to show the ask id and mark background askers. Two further spellings turned up: the queued-ask *announcement* is a different rendering and stays, but now takes its answer keys from `permission_keys`; the foreground card's longer wording is deliberate and stays its own. One defect found and fixed on the way — the foreground retry hint hardcoded the scope keys for every interrupt type, teaching `[s]ession`/`[p]roject` for asks that cannot store a grant.
+**Severity** P1 · **Wave** W4 · **Status** **Done** — eight of the nine listed items closed, one reassigned. Each turned out to be
+more than duplication, and three were defects:
+
+| Item | Outcome |
+|---|---|
+| HITL ask prompt | `cli/ask_prompt.py` (`32ae54c`). The copies disagreed about showing the ask id and marking background askers — for the same approval. **Defect found:** the foreground retry hint hardcoded the scope keys for every interrupt type, teaching `[s]ession`/`[p]roject` for asks that cannot store a grant. |
+| `_build_host` | `core/async_host.py` (`ec7ff2a`). **Defect found** (`e516057`): the drift was the other way round from this finding's claim — two of three passed `meter_window=False` and the CLI chat path did not, so a background subagent there redrew the context panel with its own conversation's shape. |
+| watcher/bridge wiring | `cli/background_approvals.py` (`9c3dd6c`). **Defect found:** not two copies of one thing — the one-shot path lacked the REPL's daemon-deference, so a run started while the daemon was up put a *second watcher on the daemon's host*. Both routing the same interrupt; per-process de-duplication cannot see the other. Proved live in both directions. |
+| `conversation/service.py` repair | `_inspect_and_repair` (`1ef7639`). The `close_turn` branch it threads had no test: repairing an open turn while *resuming* would put words in the assistant's mouth on every approved permission. |
+| `search_tools` overrides | `wants_all_search_tools` (`5e4dacf`). The skill-driven default had no test; flipping it silently hands every subagent every web-search tool. |
+| identical `__init__`s | `EventDrivenSubAgent` (`fb13e03`). PLR0913 31 → 30. |
+| start-up env block | `config.logs.quiet_grpc_fork_logs` (`aa5b007`). Nothing checked the variable was *set*, nor that the `setdefault` stayed overridable. |
+| background-task event lines | **Not** duplication — the two render different vocabularies (eight wire kinds vs four typed payloads). The shared *language* is one place instead (`cli/bg_labels.py`, `5b261b8`). |
+| `core/engine.py` spec wiring | `_subagent_spec` (`1a355dc`). The orchestrator's divergences stay at the call site; two of them had no coverage. |
+
+The docker/local branch repetition this finding also listed belongs to `R-KIS-02` and is tracked there.
 
 The `_build_host` closure is closed too (`ec7ff2a`): `core/async_host.py` is the one builder, with the compaction model built on the host's own loop and the window opt-out no longer a caller's to remember. The `meter_window` drift it had was not the direction this finding recorded — two of the three passed the flag and the CLI chat path did not, so a background subagent there redrew the context panel with its own conversation's shape (`e516057`).
 
