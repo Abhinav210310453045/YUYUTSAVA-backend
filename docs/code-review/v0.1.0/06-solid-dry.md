@@ -388,7 +388,9 @@ piped CLI output carries actual `ESC[` bytes (`0m`, `2m`, `33m`, `36m`) with no
 
 The `_build_host` closure is closed too (`ec7ff2a`): `core/async_host.py` is the one builder, with the compaction model built on the host's own loop and the window opt-out no longer a caller's to remember. The `meter_window` drift it had was not the direction this finding recorded — two of the three passed the flag and the CLI chat path did not, so a background subagent there redrew the context panel with its own conversation's shape (`e516057`).
 
-Still open: the background-task event lines (copied text, but over different inputs — a wire dict and a typed payload), the async watcher/bridge wiring in `chat.py` vs `chat_repl.py` (whose teardowns differ), the repeated get-state/diagnose/repair in `conversation/service.py`, the two `core/engine.py` repetitions, the identical `search_tools` overrides and `__init__`s, and the start-up environment block.
+The watcher/bridge wiring is closed too (`9c3dd6c`), and it was not two copies of one thing: the REPL deferred to a running daemon and the one-shot run always started its own watcher. Since attaching to a daemon's host still hands a process a URL *and* a mirror, a one-shot run started while the daemon was up put a **second watcher on the daemon's host** — both routing the same interrupt, with per-process de-duplication that cannot see the other. Both entry points now go through `cli/background_approvals.py`, and a test refuses a watcher constructed anywhere else under `cli/`. The two teardown differences went with it.
+
+Still open: the background-task event lines (copied text, but over different inputs — a wire dict and a typed payload), the repeated get-state/diagnose/repair in `conversation/service.py`, the two `core/engine.py` repetitions, the identical `search_tools` overrides and `__init__`s, and the start-up environment block.
 
 **Evidence.**
 
