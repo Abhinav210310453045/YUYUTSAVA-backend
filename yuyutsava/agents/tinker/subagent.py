@@ -38,7 +38,6 @@ from yuyutsava.artifacts.tools import make_artifact_tools
 from yuyutsava.storage.paths import blobs_dir
 from yuyutsava.todoboard.exchange import board_workspace_root
 from yuyutsava.todoboard.tools import make_todo_tools
-from yuyutsava.websearch.tools import make_search_tools
 
 _SYSTEM_PROMPT = """\
 You are the **background TinkerAgent** of YUYUTSAVA. The master agent has
@@ -156,18 +155,9 @@ class TinkerSubAgent(BaseSubAgent):
         # trailer in the system prompt + artifact_show on the master).
         return [*make_todo_tools(scope="full", author="tinker"), *make_artifact_tools()]
 
-    def search_tools(self) -> list[BaseTool]:
-        """Tinkering means researching: expose the full ws_* set whenever a
-        provider is configured (the GeneralPurposeAgent rule), merged with any
-        skill-declared tools from the base implementation."""
-        if self._search_config is None:
-            return []
-
-        tools = make_search_tools(self._search_config, cap_enforcer=self._cap_enforcer)
-        by_name = {t.name: t for t in tools}
-        for t in super().search_tools():
-            by_name.setdefault(t.name, t)
-        return list(by_name.values())
+    #: Tinkering means researching, so the full ws_* set rather than
+    #: whatever the visible skills happen to name.
+    wants_all_search_tools = True
 
 
 def make_tinker_subagent(

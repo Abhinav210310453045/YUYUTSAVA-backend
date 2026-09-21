@@ -201,16 +201,37 @@ class BaseSubAgent(ABC):
 
         return make_memory_tools(self._memory_store)
 
-    def search_tools(self) -> list[BaseTool]:
-        """Return ws_* tools required by this subagent's visible skills.
+    #: Whether this subagent gets every configured ws_* tool, or only the ones
+    #: its visible skills ask for. Skill-driven is the default: ``pdf-to-archive``
+    #: declares no ws_* tool, so ``file-organizer`` gets none, and a future skill
+    #: that declares one picks it up without code. An agent whose job is
+    #: researching arbitrary things cannot be anticipated by a skill list, so the
+    #: generalist fallback and the tinker agent set this instead of each writing
+    #: the same override.
+    wants_all_search_tools: bool = False
 
-        The blanket attach from the MVP is gone: a subagent now only sees the
-        ws_* tools that at least one of its visible skills declares via the
-        ``requires_tools`` frontmatter list. ``file-organizer`` reads only
-        ``pdf-to-archive``, which doesn't list any ws_* tools — so it gets
-        zero. A future skill that does list one will pick it up automatically.
+    def search_tools(self) -> list[BaseTool]:
+        """The ws_* tools this subagent may use.
+
+        Deduped by name when both rules apply. ``ToolRegistry`` keys by name
+        anyway, but deduping here keeps ``all_tools()`` clean.
         """
-        if self._search_config is None or self._skill_registry is None:
+        if self._search_config is None:
+            return []
+        declared = self._skill_declared_search_tools()
+        if not self.wants_all_search_tools:
+            return declared
+        by_name = {
+            t.name: t
+            for t in make_search_tools(self._search_config, cap_enforcer=self._cap_enforcer)
+        }
+        for tool in declared:
+            by_name.setdefault(tool.name, tool)
+        return list(by_name.values())
+
+    def _skill_declared_search_tools(self) -> list[BaseTool]:
+        """The ws_* tools at least one visible skill names in ``requires_tools``."""
+        if self._skill_registry is None:
             return []
         wanted: set[str] = set()
         for skill in self._skill_registry.scan(agent=self.name):

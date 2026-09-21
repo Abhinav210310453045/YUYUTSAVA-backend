@@ -12,10 +12,7 @@ to read each tool's schema before calling it.
 
 from __future__ import annotations
 
-from langchain_core.tools import BaseTool
-
 from yuyutsava.agents.base_sub_agent import BaseSubAgent
-from yuyutsava.websearch.tools import make_search_tools
 
 _SYSTEM_PROMPT = """\
 You are the **general-purpose subagent** of YUYUTSAVA. The orchestrator has
@@ -97,21 +94,6 @@ class GeneralPurposeAgent(BaseSubAgent):
     def system_prompt(self) -> str:
         return _SYSTEM_PROMPT
 
-    def search_tools(self) -> list[BaseTool]:
-        """Generalist fallback: always expose every configured ws_* tool.
-
-        Unlike the base class (which only attaches ws_* tools a *visible skill*
-        declares via ``requires_tools``), the general-purpose agent is the
-        orchestrator's capable fallback for internet-search tasks, so it gets
-        the full set whenever a provider is configured. Skill-driven tools from
-        the base impl are merged in too, deduped by name (ToolRegistry keys by
-        name, but we dedupe here so ``all_tools()`` stays clean).
-        """
-        if self._search_config is None:
-            return []
-
-        tools = make_search_tools(self._search_config, cap_enforcer=self._cap_enforcer)
-        by_name = {t.name: t for t in tools}
-        for t in super().search_tools():  # forward-compat: skill-declared ws_* tools
-            by_name.setdefault(t.name, t)
-        return list(by_name.values())
+    #: The orchestrator's capable fallback for internet-search work, so it
+    #: gets the full ws_* set rather than whatever its skills happen to name.
+    wants_all_search_tools = True
