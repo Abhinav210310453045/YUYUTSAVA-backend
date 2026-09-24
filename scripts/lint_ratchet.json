@@ -149,7 +149,6 @@
   },
   "yuyutsava/daemon/main.py": {
     "BLE001": 2,
-    "C901": 1,
     "S110": 1,
     "T201": 13
   },

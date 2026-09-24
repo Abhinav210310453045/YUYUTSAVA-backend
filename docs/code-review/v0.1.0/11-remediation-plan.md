@@ -564,7 +564,15 @@ constructor received and which objects were shared: all 133 are identical
 before and after. Live: a turn deleting a workspace file raised the DELETE
 ask, the approval over the socket resumed it, and the file was gone.
 
-Still open in this wave: `_async_main`.
+**`_async_main` 224 → 72 lines**: env loading, the singleton check,
+discovery, the loops, the wait-and-drain and the ordered teardown are named
+functions; the `try`/`finally` shape is unchanged, so teardown still always
+runs. Verified live: `--status`, a second instance refused (exit 0),
+SIGHUP reloaded MCP config, `--stop` tore down in order to "bye" and removed
+the discovery file, and a restart re-took the lock and answered a turn.
+
+Nothing in W4 is left that does not wait on the owner; see the wave's
+exit-criteria check below.
 
 ## W5 — Errors, logging, state, defects
 
