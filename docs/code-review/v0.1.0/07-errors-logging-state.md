@@ -628,3 +628,40 @@ force the embed to fail and confirm one warning line and one NULL-row insert.
 **Found by** running three real agent turns while verifying the `TodoExchange`
 split. The static gates are green and the suite is at baseline; nothing in the
 test tree exercises process teardown with a live pool.
+
+---
+
+## R-BUG-14 — An explicitly chosen Postgres that is down produces a raw traceback
+
+**Severity** P2 · **Wave** W5 · **Status** Open
+
+**Evidence.** With `YUYUTSAVA_STORAGE_BACKEND=postgres` and the database
+container stopped, `yuyutsava --list-sessions` ends in:
+
+```
+psycopg_pool.PoolTimeout: pool initialization incomplete after 10.0 sec
+```
+
+— a full stack trace, after a ten-second wait, with nothing naming the host,
+the port, or what to do.
+
+**Not a regression.** Found while auditing W4 against the plan's per-wave
+checks, and first mistaken for one: HEAD crashed in the main checkout while
+the end-of-W3 commit ran clean in a separate worktree. The difference was the
+worktree, not the code — `.env` is gitignored, so a fresh worktree has no
+`YUYUTSAVA_STORAGE_BACKEND` and falls back to SQLite. Given the same `.env`,
+the end-of-W3 code crashes identically, and a bisect run without it reports a
+docs-only commit as "first bad", which is how the environment dependence showed
+up.
+
+**Consequence.** Choosing Postgres explicitly is a statement that there is
+nothing to fall back to, so failing is right. Failing *like this* is not: a
+user sees a psycopg internal, and the only clue is buried in the last line.
+
+**Fix.** Catch the pool timeout at the CLI boundary and say which database was
+unreachable and that it was selected explicitly — the same shape the daemon
+already uses for its storage fallback reason.
+
+**Verification.** `--list-sessions` with the explicit backend and the database
+down exits non-zero with one line naming the DSN host and port, and no
+traceback.
