@@ -503,7 +503,7 @@ Then two of the three OCP registries:
   replaces the twelve-branch chain in `llm_settings_from_env`, and the
   "unknown provider" error lists names derived from the table, so it can no
   longer offer a provider that does not exist or omit one that does.
-- **Visual kinds** (this commit): `visuals/render.RENDERERS` maps each kind to
+- **Visual kinds** (`1031bab`): `visuals/render.RENDERERS` maps each kind to
   the module and function that draw it, and `KINDS` is derived from it —
   before, a kind in `KINDS` without a branch in `_load` failed with
   "'NoneType' object is not callable". Renderers are still imported only on
