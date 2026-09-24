@@ -66,7 +66,14 @@ _TOOL_MARKERS: dict[ToolFamily, tuple[str, ...]] = {
 }
 
 # Helpers whose body counts as part of a builder that calls them.
-_INLINED_HELPERS = ("_build_tool_registry_and_tools",)
+#: Helpers a builder delegates to, in the order a helper can name the next —
+#: ``_cli_sandbox`` calls ``_docker_sandbox``, so it must come first.
+_INLINED_HELPERS = (
+    "_build_tool_registry_and_tools",
+    "_cli_middleware",
+    "_cli_sandbox",
+    "_docker_sandbox",
+)
 
 
 def _effective_source(role: str) -> str:
@@ -240,12 +247,9 @@ class PoliciesAreProfileDriven(unittest.TestCase):
     """
 
     def test_no_builder_hand_writes_the_policy_list(self) -> None:
-        import inspect
-
-        from yuyutsava.core import engine
-
-        for fn in ("build_cli_deepagent", "build_orchestrator", "build_tinker_agent"):
-            src = inspect.getsource(getattr(engine, fn))
+        for role, builder in _BUILDERS.items():
+            fn = builder.__name__
+            src = _effective_source(role)
             with self.subTest(builder=fn):
                 self.assertIn(
                     "_policy_middleware(",

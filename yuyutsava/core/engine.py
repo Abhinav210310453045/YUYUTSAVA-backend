@@ -786,256 +786,67 @@ def _sync_subagent_specs(
     ]
 
 
-def build_cli_deepagent(
-    workspace_root: Path,
-    settings: LlmSettings,
-    *,
-    deps: MasterDeps | None = None,
-    execution_mode: Literal["local", "docker"] = "local",
-    docker_settings: DockerSettings | None = None,
-    local_settings: LocalSettings | None = None,
-    front: str = "app",
-) -> AgentBundle:
-    """Build the CLI deepagent.
+def _cli_middleware(deps: MasterDeps, model: BaseChatModel, workspace_root: Path) -> list:
+    """The CLI master's middleware in run order, before any background wiring.
 
-    Distinct factory from :func:`build_orchestrator`: the CLI is a single
-    deepagent (no event-driven Triage, no ChannelRouter, no daemon Store);
-    delegation to specialised subagents happens via deepagents' built-in
-    ``task(subagent_type, ...)`` tool when ``subagents=[…]`` is passed.
+    Pre-policies, then the context layer, then budget and usage — after
+    compaction, so they see post-compaction counts (the ordering itself lives in
+    ``_POLICY_ORDER_POST``). Each of those two attaches only when given its
+    input: usage when a usage store is passed (the CLI and daemon chat stacks
+    pass one), budget when ``budget_tokens`` is (only the orchestrator passes one
+    — a chat's spend is cumulative and never resets). The chat bundle is shared
+    across threads, so usage rows land task-less/thread-less.
 
-    Args:
-        permission_check: When ``True`` (default), attaches ``PermissionPolicy`` so
-            the agent pauses and asks the user before running dangerous shell commands.
-        search_config: When provided, ws_* web search tools are added and made
-            discoverable via the tool catalog (load with tool_search('select:ws_tavily_search')).
-        checkpointer: Optional persistent checkpointer. When omitted, falls back
-            to in-process ``MemorySaver()``.
-        subagents: Optional list of ``BaseSubAgent`` instances. Each is converted
-            via ``as_deepagents_subagent_spec()`` and passed to ``create_deep_agent``.
-            Passing ``GeneralPurposeAgent`` here name-match-overrides deepagents'
-            built-in default (see ``deepagents.graph`` ~line 240-246), so
-            ``task('general-purpose', …)`` calls hit our tighter spec.
-        async_subagents: Local-mode background subagents. Each is converted via
-            ``as_async_subagent_spec(url=async_host_url)`` and added to the same
-            ``subagents=`` list. ``deepagents`` auto-routes by dict shape and
-            attaches ``AsyncSubAgentMiddleware``, which injects ``start_/check_/
-            update_/cancel_/list_async_tasks`` onto the master.
-        async_host_url: Base URL of the in-process LangGraph Agent Protocol
-            server hosting the compiled graphs (typically the
-            ``AsyncSubagentHost``). Required if ``async_subagents`` is provided.
-        remote_async_subagents: ``RemoteAsyncSubagentSpec`` entries whose graphs
-            live on a different Agent Protocol server (e.g. another YUYUTSAVA
-            daemon). Treated as first-class peers of local async subagents.
-        async_task_mirror: ``AsyncTaskMirror`` instance for cross-turn task
-            awareness and the concurrency cap. When provided alongside any
-            async subagents, ``BackgroundTaskCapPolicy`` is installed.
-        async_max_concurrent: Cap for in-flight bg tasks. Defaults to ``8``.
-        async_host: Optional ``AsyncSubagentHost`` reference recorded on the
-            returned bundle so ``AgentBundle.close`` can tear it down.
-        artifact_store / summary_store / memory_store / transcript_store /
-            context_settings / compaction_model: context-controller wiring (see
-            ``yuyutsava.context``). All optional; None disables the layer.
-            ``transcript_store`` persists the full verbatim conversation to the
-            DB (durable beyond checkpoint sweeps); see
-            ``yuyutsava.context.transcript_store``.
-            CLI chat threads are the longest-lived in the system, so the
-            stack factory (``core/agent_stack.py``) wires these by default.
+    Last, per-turn retrieval injection: the CLI is a persistent graph, so it
+    cannot inject at build time the way the daemon orchestrator does. Scoped to
+    "cli" — every master retrieves only its OWN skills plus the shared ones
+    (the store filter is ``agent IS NULL OR agent = <role>``).
     """
-    deps = deps or MasterDeps()
-    bash_timeout_sec = deps.bash_timeout_sec
-    permission_check = deps.permission_check
-    search_config = deps.search_config
-    checkpointer = deps.checkpointer
-    subagents = deps.subagents
-    async_subagents = deps.async_subagents
-    async_host_url = deps.async_host_url
-    remote_async_subagents = deps.remote_async_subagents
-    async_task_mirror = deps.async_task_mirror
-    async_max_concurrent = deps.async_max_concurrent
-    async_host = deps.async_host
-    async_host_attachment = deps.async_host_attachment
-    artifact_store = deps.artifact_store
-    summary_store = deps.summary_store
-    memory_store = deps.memory_store
-    transcript_store = deps.transcript_store
-    context_settings = deps.context_settings
-    compaction_model = deps.compaction_model
-    skill_store = deps.skill_store
-    transcript_index = deps.transcript_index
-    mcp_tools = deps.mcp_tools
-    cap_enforcer = deps.cap_enforcer
-    budget_tokens = deps.budget_tokens
-    usage_store = deps.usage_store
-    prefs_store = deps.prefs_store
-    runtime_settings = deps.runtime_settings
-    extra_tools = deps.extra_tools
-    model = chat_model(settings)
-    checkpointer = checkpointer or MemorySaver()
-    # FilesystemPromptPolicy strips the deepagents "## Filesystem Tools"
-    # block: those built-in tools are filtered out by ToolFilterPolicy and our
-    # own prompt routes filesystem ops through tr_*, so the block only misleads the
-    # model and wastes cache-prefix tokens. Pass replacement="..." to reword instead.
+    # FilesystemPromptPolicy (a pre-policy) strips the deepagents "## Filesystem
+    # Tools" block: those built-in tools are filtered out by ToolFilterPolicy
+    # and our own prompt routes filesystem ops through tr_*, so the block only
+    # misleads the model and wastes cache-prefix tokens.
     middleware = _policy_middleware(
         CLI_PROFILE,
         "pre",
         role="cli",
-        runtime_settings=runtime_settings,
+        runtime_settings=deps.runtime_settings,
     )
     middleware.extend(
         _context_middleware(
             model=model,
-            artifact_store=artifact_store,
-            context_settings=context_settings,
-            summary_store=summary_store,
-            memory_store=memory_store,
-            transcript_store=transcript_store,
-            transcript_index=transcript_index,
-            compaction_model=compaction_model,
+            artifact_store=deps.artifact_store,
+            context_settings=deps.context_settings,
+            summary_store=deps.summary_store,
+            memory_store=deps.memory_store,
+            transcript_store=deps.transcript_store,
+            transcript_index=deps.transcript_index,
+            compaction_model=deps.compaction_model,
             role="cli",
         )
     )
-    # Absolute spend ceiling + passive accounting, after compaction (the
-    # orchestrator's ordering rule). Each attaches only when given its input:
-    # usage when a usage store is passed (the CLI and daemon chat stacks pass
-    # one), budget when budget_tokens is (only the orchestrator passes one —
-    # a chat's spend is cumulative and never resets).
-    # Budget + usage sit AFTER compaction so they see post-compaction counts;
-    # the ordering lives in _POLICY_ORDER_POST, not here. The chat bundle is
-    # shared across threads, so usage rows land task-less/thread-less.
     middleware.extend(
         _policy_middleware(
             CLI_PROFILE,
             "post",
             role="cli",
-            budget_tokens=budget_tokens,
-            usage_store=usage_store,
+            budget_tokens=deps.budget_tokens,
+            usage_store=deps.usage_store,
             model=model,
             workspace_root=workspace_root,
-            permission_check=permission_check,
+            permission_check=deps.permission_check,
         )
     )
-
-    # Per-turn retrieval injection: surface the memory + skills relevant to the
-    # user's latest message into the prompt (the CLI is a persistent graph, so
-    # it can't inject at build time the way the daemon orchestrator does).
-    # Scoped to "cli" — every master retrieves only its OWN skills plus the
-    # shared ones. The store filter is ``agent IS NULL OR agent = <role>``, so
-    # scoping keeps globally-authored skills available and excludes skills
-    # another agent wrote for itself. This was previously unscoped, letting the
-    # CLI master pull tinker/orchestrator-specific skills into its context.
     middleware.extend(
         _retrieval_injection_middleware(
-            memory_store=memory_store,
-            skill_store=skill_store,
+            memory_store=deps.memory_store,
+            skill_store=deps.skill_store,
             skill_scope="cli",
-            transcript_index=transcript_index,
-            prefs_store=prefs_store,
+            transcript_index=deps.transcript_index,
+            prefs_store=deps.prefs_store,
         )
     )
-
-    loc = local_settings or LocalSettings()
-    layout = WorkspaceLayout.for_workspace(
-        workspace_root,
-        sandbox_override=loc.sandbox_dir,
-        outputs_override=loc.output_dir,
-    )
-    ws, sandbox_root, output_dir = layout.root, layout.sandbox, layout.outputs
-
-    context_tools, agent_memory_block = _shared_master_tools(
-        profile=CLI_PROFILE,
-        artifact_store=artifact_store,
-        memory_store=memory_store,
-        transcript_store=transcript_store,
-        output_dir=output_dir,
-        mcp_tools=mcp_tools,
-        extra_tools=extra_tools,
-    )
-
-    skill_registry = SkillRegistry(workspace_dir=layout.skills)
-
-    subagent_specs: list[dict] = []
-    if subagents:
-        subagent_specs.extend(
-            _sync_subagent_specs(
-                subagents,
-                model=model,
-                artifact_store=artifact_store,
-                context_settings=context_settings,
-                summary_store=summary_store,
-                memory_store=memory_store,
-                compaction_model=compaction_model,
-            )
-        )
-
-    _async_specs, _async_mw = _async_subagent_wiring(
-        role="build_cli_deepagent",
-        async_subagents=async_subagents,
-        async_host_url=async_host_url,
-        remote_async_subagents=remote_async_subagents,
-        async_task_mirror=async_task_mirror,
-        async_max_concurrent=async_max_concurrent,
-    )
-    subagent_specs.extend(_async_specs)
-    middleware.extend(_async_mw)
-
-    # The one thing execution_mode decides: where files and `execute` go, and
-    # therefore which prompt describes them. Tools, middleware and subagents
-    # are the same agent in both modes.
-    docker_backend: DockerSandboxBackend | None = None
-    exec_backend: DockerExecBackend | None = None
-    if execution_mode == "docker":
-        docker_cfg = docker_settings or DockerSettings()
-        docker_backend = _docker_sandbox(docker_cfg, layout, sandbox_root, bash_timeout_sec)
-        # tr_execute_in_sandbox / tr_run_python run INSIDE the container; every
-        # other tr_* tool stays host-side (the bind mounts share the files).
-        exec_backend = DockerExecBackend(docker_backend, layout)
-        # Virtual root = /yuyutsava, so "/tmp/large_tool_results" is
-        # <ws>/.yuyutsava/tmp/large_tool_results on the host.
-        backend = _scratch_root_backend(docker_backend, "/tmp")
-    else:
-        backend = _scratch_root_backend(
-            _local_shell_backend(workspace_root, bash_timeout_sec),
-            _SCRATCH_ROOT,
-        )
-
-    startup_tools, _registry = _build_tool_registry_and_tools(
-        _bind_task_runner_tools(ws, sandbox_root, exec_backend=exec_backend),
-        search_config,
-        skill_registry,
-        extra_tools=context_tools,
-        skill_store=skill_store,
-        agent_name="cli",
-        cap_enforcer=cap_enforcer,
-    )
-    if docker_backend is not None:
-        _prompt = docker_system_prompt(
-            layout, docker_cfg.export_dir, _registry.catalog_block(), front=front
-        )
-    else:
-        _prompt = local_system_prompt(layout, _registry.catalog_block(), front=front)
-    if agent_memory_block:
-        _prompt = f"{_prompt}\n\n{agent_memory_block}"
-    graph = create_deep_agent(
-        model=model,
-        tools=startup_tools,
-        backend=backend,
-        system_prompt=_prompt,
-        checkpointer=checkpointer,
-        middleware=collapse_policy_adapters(middleware),
-        subagents=subagent_specs or None,
-        debug=False,
-    )
-    return AgentBundle(
-        agent=graph,
-        docker_backend=docker_backend,
-        sandbox_root=sandbox_root,
-        output_dir=output_dir,
-        layout=layout,
-        async_host=async_host,
-        async_host_url=async_host_url,
-        async_host_attachment=async_host_attachment,
-        async_task_mirror=async_task_mirror,
-    )
+    return middleware
 
 
 def _docker_sandbox(
@@ -1069,6 +880,163 @@ def _docker_sandbox(
             layout.state,
         )
     return backend
+
+
+@dataclass(frozen=True)
+class _CliSandbox:
+    """Where the CLI agent's files and ``execute`` go."""
+
+    backend: CompositeBackend
+    #: Runs tr_execute_in_sandbox / tr_run_python; ``None`` means on the host.
+    exec_backend: DockerExecBackend | None = None
+    #: The container, which the bundle stops on close; ``None`` in local mode.
+    docker: DockerSandboxBackend | None = None
+    export_dir: Path | None = None
+
+
+def _cli_sandbox(
+    execution_mode: str,
+    docker_settings: DockerSettings | None,
+    layout: WorkspaceLayout,
+    workspace_root: Path,
+    timeout: int,
+) -> _CliSandbox:
+    """The one thing ``execution_mode`` decides.
+
+    Where files and ``execute`` go, and therefore which prompt describes them.
+    Tools, middleware and subagents are the same agent in both modes.
+    """
+    if execution_mode != "docker":
+        return _CliSandbox(
+            backend=_scratch_root_backend(
+                _local_shell_backend(workspace_root, timeout),
+                _SCRATCH_ROOT,
+            )
+        )
+    docker_cfg = docker_settings or DockerSettings()
+    docker_backend = _docker_sandbox(docker_cfg, layout, layout.sandbox, timeout)
+    return _CliSandbox(
+        # Virtual root = /yuyutsava, so "/tmp/large_tool_results" is
+        # <ws>/.yuyutsava/tmp/large_tool_results on the host.
+        backend=_scratch_root_backend(docker_backend, "/tmp"),
+        # tr_execute_in_sandbox / tr_run_python run INSIDE the container; every
+        # other tr_* tool stays host-side (the bind mounts share the files).
+        exec_backend=DockerExecBackend(docker_backend, layout),
+        docker=docker_backend,
+        export_dir=docker_cfg.export_dir,
+    )
+
+
+def build_cli_deepagent(
+    workspace_root: Path,
+    settings: LlmSettings,
+    *,
+    deps: MasterDeps | None = None,
+    execution_mode: Literal["local", "docker"] = "local",
+    docker_settings: DockerSettings | None = None,
+    local_settings: LocalSettings | None = None,
+    front: str = "app",
+) -> AgentBundle:
+    """Build the CLI deepagent.
+
+    Distinct factory from :func:`build_orchestrator`: the CLI is a single
+    deepagent (no event-driven Triage, no ChannelRouter, no daemon Store);
+    delegation to specialised subagents happens via deepagents' built-in
+    ``task(subagent_type, ...)`` tool when ``deps.subagents`` is set.
+
+    ``deps`` carries every optional dependency (see :class:`MasterDeps`); what
+    stays a parameter is what only this agent has — where it runs and who reads
+    its output.
+    """
+    deps = deps or MasterDeps()
+    model = chat_model(settings)
+    checkpointer = deps.checkpointer or MemorySaver()
+    middleware = _cli_middleware(deps, model, workspace_root)
+
+    loc = local_settings or LocalSettings()
+    layout = WorkspaceLayout.for_workspace(
+        workspace_root,
+        sandbox_override=loc.sandbox_dir,
+        outputs_override=loc.output_dir,
+    )
+    ws, sandbox_root, output_dir = layout.root, layout.sandbox, layout.outputs
+
+    context_tools, agent_memory_block = _shared_master_tools(
+        profile=CLI_PROFILE,
+        artifact_store=deps.artifact_store,
+        memory_store=deps.memory_store,
+        transcript_store=deps.transcript_store,
+        output_dir=output_dir,
+        mcp_tools=deps.mcp_tools,
+        extra_tools=deps.extra_tools,
+    )
+    skill_registry = SkillRegistry(workspace_dir=layout.skills)
+
+    subagent_specs: list[dict] = []
+    if deps.subagents:
+        subagent_specs.extend(
+            _sync_subagent_specs(
+                deps.subagents,
+                model=model,
+                artifact_store=deps.artifact_store,
+                context_settings=deps.context_settings,
+                summary_store=deps.summary_store,
+                memory_store=deps.memory_store,
+                compaction_model=deps.compaction_model,
+            )
+        )
+    _async_specs, _async_mw = _async_subagent_wiring(
+        role="build_cli_deepagent",
+        async_subagents=deps.async_subagents,
+        async_host_url=deps.async_host_url,
+        remote_async_subagents=deps.remote_async_subagents,
+        async_task_mirror=deps.async_task_mirror,
+        async_max_concurrent=deps.async_max_concurrent,
+    )
+    subagent_specs.extend(_async_specs)
+    middleware.extend(_async_mw)
+
+    sandbox = _cli_sandbox(
+        execution_mode, docker_settings, layout, workspace_root, deps.bash_timeout_sec
+    )
+    startup_tools, _registry = _build_tool_registry_and_tools(
+        _bind_task_runner_tools(ws, sandbox_root, exec_backend=sandbox.exec_backend),
+        deps.search_config,
+        skill_registry,
+        extra_tools=context_tools,
+        skill_store=deps.skill_store,
+        agent_name="cli",
+        cap_enforcer=deps.cap_enforcer,
+    )
+    if sandbox.docker is not None:
+        _prompt = docker_system_prompt(
+            layout, sandbox.export_dir, _registry.catalog_block(), front=front
+        )
+    else:
+        _prompt = local_system_prompt(layout, _registry.catalog_block(), front=front)
+    if agent_memory_block:
+        _prompt = f"{_prompt}\n\n{agent_memory_block}"
+    graph = create_deep_agent(
+        model=model,
+        tools=startup_tools,
+        backend=sandbox.backend,
+        system_prompt=_prompt,
+        checkpointer=checkpointer,
+        middleware=collapse_policy_adapters(middleware),
+        subagents=subagent_specs or None,
+        debug=False,
+    )
+    return AgentBundle(
+        agent=graph,
+        docker_backend=sandbox.docker,
+        sandbox_root=sandbox_root,
+        output_dir=output_dir,
+        layout=layout,
+        async_host=deps.async_host,
+        async_host_url=deps.async_host_url,
+        async_host_attachment=deps.async_host_attachment,
+        async_task_mirror=deps.async_task_mirror,
+    )
 
 
 # NOTE: the ``build_agent`` back-compat alias was removed once its two real
