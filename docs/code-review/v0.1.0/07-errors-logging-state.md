@@ -665,3 +665,45 @@ already uses for its storage fallback reason.
 **Verification.** `--list-sessions` with the explicit backend and the database
 down exits non-zero with one line naming the DSN host and port, and no
 traceback.
+
+---
+
+## R-BUG-15 — A background task that finishes mid-turn wakes the orchestrator onto a thread still being written
+
+**Severity** P1 · **Wave** W5 · **Status** Open
+
+**Evidence.** Found while verifying the `build_async_subagents` split live
+(2026-09-25). A chat turn starts a background task on `general-purpose`
+(`start_async_task`); when the task finishes, the watcher's completion sink
+enqueues a `subagent_completed` `OrchestratorTask` on the chat's own thread,
+and the orchestrator loop runs it there. On the main daemon, twice out of
+three:
+
+```
+orchestrator task failed: … INVALID_ARGUMENT
+details = "Requests ending with a model turn are not supported."
+```
+
+In both failures the wake-up started **while that chat's turn was still
+running** (turn `e847777d3bd1` ran 01:26:49–01:27:22; the orchestrator failed
+at 01:27:13). The run that succeeded had finished its turn first. Four runs
+on isolated daemons — two on the code before this wave's orchestrator and
+streaming changes, two after — all happened not to overlap and all succeeded.
+The completion sink moved verbatim, so this is the timing, not the refactor.
+
+**Consequence.** Two graphs write one checkpoint thread at once. The
+conversation manager's per-thread turn gate (`TurnRegistry`) exists for
+exactly this — "a LangGraph checkpoint is single-writer per thread" — but the
+orchestrator loop does not go through it. With `gemini-3.8-flash` the
+interleaved history is rejected outright, so the user is never told the
+background task finished; other providers may accept it and produce
+duplicated or out-of-order turns instead.
+
+**Fix.** Route a `subagent_completed` wake-up for a conversation thread
+through that thread's turn gate: queue it behind the running turn (or deliver
+it as the conversation's next turn) instead of running a second graph on the
+thread concurrently.
+
+**Verification.** A background task that completes while its launching turn
+is still streaming is reported after that turn ends, every time — a test with
+a gated fake turn, and live with a task shorter than the turn.

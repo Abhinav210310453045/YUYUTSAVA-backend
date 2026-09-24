@@ -1027,161 +1027,147 @@ class AsyncSubagentSubsystem:
         return self.host_url is not None
 
 
+def _completion_sink(
+    task_queue: "asyncio.Queue[OrchestratorTask]",
+    launch_index: LaunchIndex,
+    mirror: AsyncTaskMirror,
+) -> Callable[["MirroredTask", bool, str], Awaitable[None]]:
+    """What the watcher calls when a background subagent finishes."""
+
+    async def _wake_master_on_completion(task: "MirroredTask", ok: bool, summary: str) -> None:
+        """Re-enter the orchestrator queue when a bg subagent finishes.
+
+        Resolves the launching conversation (so the master continues that
+        thread and the reply routes to the right surface) and enqueues a
+        ``subagent_completed`` wake-up. When no parent is known we leave the
+        task un-notified so ``mirror.render_block`` surfaces it on the next
+        organic turn instead.
+        """
+        rec = launch_index.get(task.task_id)
+        parent = task.parent_thread_id or (rec.parent_thread_id if rec else None)
+        origin = task.origin or (rec.origin if rec else None) or ""
+        if not parent:
+            return
+        # A subagent that produced showable artifacts ends its summary with an
+        # "ARTIFACTS: id, id" trailer (see the tinker subagent prompt). Lift the
+        # ids so the master can re-show them inline via artifact_show.
+        artifact_ids = _parse_artifact_ids(summary)
+        await task_queue.put(
+            OrchestratorTask(
+                proposal_id="",
+                event_id="",
+                topic="subagent_completion",
+                summary=f"{task.agent_name} {'ok' if ok else 'failed'}",
+                instruction="",
+                subagent_hint="",
+                urgency=2,
+                kind="subagent_completed",
+                origin=origin,
+                parent_thread_id=parent,
+                completion={
+                    "task_id": task.task_id,
+                    "agent_name": task.agent_name,
+                    "ok": ok,
+                    "summary": summary,
+                    "artifacts": artifact_ids,
+                },
+            )
+        )
+        await mirror.mark_notified(task.task_id)
+
+    return _wake_master_on_completion
+
+
 async def build_async_subagents(
     *,
     bg_subagent_list: list,
     subagent_settings: LlmSettings,
     checkpointer: object,
-    artifact_store: object | None,
-    context_settings: ContextSettings,
-    summary_store: object | None,
-    memory_store: object | None,
+    stores: BackgroundStores,
     channels: ChannelRouter,
     task_queue: "asyncio.Queue[OrchestratorTask]",
     launch_index: LaunchIndex,
 ) -> AsyncSubagentSubsystem:
     """Start (or attach to) the background-subagent host.
 
-    Opt-in via ``YUYUTSAVA_ASYNC_SUBAGENTS=1``. Returns an all-``None`` bundle
-    with ``enabled=False`` otherwise, so callers branch on one flag.
+    Opt-in via ``YUYUTSAVA_ASYNC_SUBAGENTS=1``; subagents are exposed as
+    ``<name>-bg`` peers alongside their sync entries. Returns an all-``None``
+    bundle with ``enabled=False`` otherwise, so callers branch on one flag.
 
     ``task_queue`` and ``launch_index`` are inputs rather than outputs because
-    the completion sink defined here enqueues master wake-ups onto that queue —
-    the queue must exist before the watcher starts.
+    the completion sink enqueues master wake-ups onto that queue — the queue
+    must exist before the watcher starts.
     """
-    # ── async (background) subagent host + mirror + watcher --------------
-    # Gated by env so this is opt-in for v1. To enable:
-    #   export YUYUTSAVA_ASYNC_SUBAGENTS=1
-    # Subagents are exposed as `<name>-bg` peers alongside their sync entries.
-    # (``os`` is already imported at module scope — a second local import here
-    # made ``os`` function-local, breaking its earlier use in the voice block.)
-    async_host = None
-    async_host_url: str | None = None
-    async_mirror = None
-    async_watcher = None
-    async_host_attachment = None
-    enabled = env_flag("YUYUTSAVA_ASYNC_SUBAGENTS", true=("1", "true", "yes"))
-    if enabled:
-        logger.info("  async subs: enabled (YUYUTSAVA_ASYNC_SUBAGENTS=1)")
-
-        # First-come-wins shared host. If another process (typically a CLI
-        # chat started before the daemon) already owns the LangGraph dev
-        # server, attach to it instead of starting a second one.
-        # Permissive (warn-only) by default. Strict mode (blockbuster) is NOT yet
-        # viable as a default: the events Store (yuyutsava/storage/events/store.py)
-        # is a synchronous sqlite3 store driven on the event loop (writer loop +
-        # consent/prefs reads), and the task_runner path canonicalization
-        # (agents/task_runner/zones.py: os.path.realpath → os.readlink) runs inside
-        # subagent tools — both raise under blockbuster. Set YUYUTSAVA_ALLOW_BLOCKING=0
-        # to opt into strict mode (e.g. to hunt remaining blocking calls in dev);
-        # the bootstrap/web/resource paths are already wrapped for that.
-        allow_blocking = resolve_allow_blocking(default=True)
-
-        def _build_host() -> AsyncSubagentHost:
-            # Host-only model instance: the host graphs run on the uvicorn
-            # loop in their own thread, and a Gemini client binds to the
-            # first loop that uses it (llm/quirks/loop_affinity).
-            host_subagent_model = chat_model(subagent_settings, temperature=0.1)
-
-            return build_async_host(
-                bg_subagent_list,
-                model=host_subagent_model,
-                checkpointer=checkpointer,
-                allow_blocking=allow_blocking,
-                stores=BackgroundStores(
-                    artifact_store=artifact_store,
-                    context_settings=context_settings,
-                    summary_store=summary_store,
-                    memory_store=memory_store,
-                ),
-            )
-
-        # NOTE: once the host owner starts, it installs blockbuster (unless
-        # allow_blocking). From here on, any synchronous blocking I/O run on this
-        # event loop (os.replace/mkdir/scandir/socket/sqlite) raises BlockingError
-        # — wrap such calls in asyncio.to_thread.
-        attachment = await asyncio.to_thread(acquire_or_attach_host, factory=_build_host)
-        async_host_attachment = attachment
-        async_host_url = attachment.url
-        async_host = attachment.host  # None when attaching to another owner
-        register_host_cleanup(attachment)
-
-        if attachment.host is not None:
-            logger.info(
-                "  async host: %s (owner; graphs=%s)", attachment.url, attachment.host.graph_ids
-            )
-        else:
-            logger.info("  async host: %s (attached to running owner)", attachment.url)
-
-        async_mirror = AsyncTaskMirror()
-
-        async def _wake_master_on_completion(task: "MirroredTask", ok: bool, summary: str) -> None:
-            """Re-enter the orchestrator queue when a bg subagent finishes.
-
-            Resolves the launching conversation (so the master continues that
-            thread and the reply routes to the right surface) and enqueues a
-            ``subagent_completed`` wake-up. When no parent is known we leave the
-            task un-notified so ``mirror.render_block`` surfaces it on the next
-            organic turn instead.
-            """
-            rec = launch_index.get(task.task_id)
-            parent = task.parent_thread_id or (rec.parent_thread_id if rec else None)
-            origin = task.origin or (rec.origin if rec else None) or ""
-            if not parent:
-                return
-            # A subagent that produced showable artifacts ends its summary with an
-            # "ARTIFACTS: id, id" trailer (see the tinker subagent prompt). Lift the
-            # ids so the master can re-show them inline via artifact_show.
-            artifact_ids = _parse_artifact_ids(summary)
-            await task_queue.put(
-                OrchestratorTask(
-                    proposal_id="",
-                    event_id="",
-                    topic="subagent_completion",
-                    summary=f"{task.agent_name} {'ok' if ok else 'failed'}",
-                    instruction="",
-                    subagent_hint="",
-                    urgency=2,
-                    kind="subagent_completed",
-                    origin=origin,
-                    parent_thread_id=parent,
-                    completion={
-                        "task_id": task.task_id,
-                        "agent_name": task.agent_name,
-                        "ok": ok,
-                        "summary": summary,
-                        "artifacts": artifact_ids,
-                    },
-                )
-            )
-            await async_mirror.mark_notified(task.task_id)
-
-        async_watcher = AsyncTaskHealthWatcher(
-            mirror=async_mirror,
-            host_url=async_host_url,
-            # The watcher builds a fully-formatted AskPrompt (clean title/body via
-            # the shared interrupt formatter) and hands it straight to the channel
-            # router. (make_ask_handler is for the orchestrator's streaming loop,
-            # where the interrupt arrives as a raw dict — passing an AskPrompt to
-            # it would stringify the object into the body.)
-            ask_handler=channels.post_ask,
-            event_sink=channels.post_event,
-            agent_path_root="orchestrator",
-            completion_sink=_wake_master_on_completion,
-            launch_index=launch_index,
-        )
-        await async_watcher.start()
-        logger.info("  async watcher: running")
-    else:
+    if not env_flag("YUYUTSAVA_ASYNC_SUBAGENTS", true=("1", "true", "yes")):
         logger.info("  async subs: disabled (set YUYUTSAVA_ASYNC_SUBAGENTS=1 to enable)")
+        return AsyncSubagentSubsystem(
+            enabled=False, host=None, host_url=None, mirror=None, watcher=None, attachment=None
+        )
+    logger.info("  async subs: enabled (YUYUTSAVA_ASYNC_SUBAGENTS=1)")
 
+    # Permissive (warn-only) by default. Strict mode (blockbuster) is NOT yet
+    # viable as a default: the events Store (yuyutsava/storage/events/store.py)
+    # is a synchronous sqlite3 store driven on the event loop (writer loop +
+    # consent/prefs reads), and the task_runner path canonicalization
+    # (agents/task_runner/zones.py: os.path.realpath → os.readlink) runs inside
+    # subagent tools — both raise under blockbuster. Set YUYUTSAVA_ALLOW_BLOCKING=0
+    # to opt into strict mode (e.g. to hunt remaining blocking calls in dev);
+    # the bootstrap/web/resource paths are already wrapped for that.
+    allow_blocking = resolve_allow_blocking(default=True)
+
+    def _build_host() -> AsyncSubagentHost:
+        # Host-only model instance: the host graphs run on the uvicorn
+        # loop in their own thread, and a Gemini client binds to the
+        # first loop that uses it (llm/quirks/loop_affinity).
+        return build_async_host(
+            bg_subagent_list,
+            model=chat_model(subagent_settings, temperature=0.1),
+            checkpointer=checkpointer,
+            allow_blocking=allow_blocking,
+            stores=stores,
+        )
+
+    # First-come-wins shared host: if another process (typically a CLI chat
+    # started before the daemon) already owns the LangGraph dev server, attach
+    # to it instead of starting a second one.
+    #
+    # NOTE: once the host owner starts, it installs blockbuster (unless
+    # allow_blocking). From here on, any synchronous blocking I/O run on this
+    # event loop (os.replace/mkdir/scandir/socket/sqlite) raises BlockingError
+    # — wrap such calls in asyncio.to_thread.
+    attachment = await asyncio.to_thread(acquire_or_attach_host, factory=_build_host)
+    register_host_cleanup(attachment)
+    if attachment.host is not None:
+        logger.info(
+            "  async host: %s (owner; graphs=%s)", attachment.url, attachment.host.graph_ids
+        )
+    else:
+        logger.info("  async host: %s (attached to running owner)", attachment.url)
+
+    mirror = AsyncTaskMirror()
+    watcher = AsyncTaskHealthWatcher(
+        mirror=mirror,
+        host_url=attachment.url,
+        # The watcher builds a fully-formatted AskPrompt (clean title/body via
+        # the shared interrupt formatter) and hands it straight to the channel
+        # router. (make_ask_handler is for the orchestrator's streaming loop,
+        # where the interrupt arrives as a raw dict — passing an AskPrompt to
+        # it would stringify the object into the body.)
+        ask_handler=channels.post_ask,
+        event_sink=channels.post_event,
+        agent_path_root="orchestrator",
+        completion_sink=_completion_sink(task_queue, launch_index, mirror),
+        launch_index=launch_index,
+    )
+    await watcher.start()
+    logger.info("  async watcher: running")
     return AsyncSubagentSubsystem(
-        enabled=enabled,
-        host=async_host,
-        host_url=async_host_url,
-        mirror=async_mirror,
-        watcher=async_watcher,
-        attachment=async_host_attachment,
+        enabled=True,
+        host=attachment.host,  # None when attaching to another owner
+        host_url=attachment.url,
+        mirror=mirror,
+        watcher=watcher,
+        attachment=attachment,
     )
 
 
@@ -1433,10 +1419,12 @@ async def build_boot_state(opts: DaemonOptions) -> BootState:
         bg_subagent_list=subs.background,
         subagent_settings=models.subagent_settings,
         checkpointer=ret.checkpointer,
-        artifact_store=st.artifact_store,
-        context_settings=models.context_settings,
-        summary_store=st.summary_store,
-        memory_store=st.memory_store,
+        stores=BackgroundStores(
+            artifact_store=st.artifact_store,
+            context_settings=models.context_settings,
+            summary_store=st.summary_store,
+            memory_store=st.memory_store,
+        ),
         channels=chans.router,
         task_queue=task_queue,
         launch_index=launch_index,

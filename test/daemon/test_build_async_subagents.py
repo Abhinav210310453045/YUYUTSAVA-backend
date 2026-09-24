@@ -48,10 +48,7 @@ class DisabledPath(unittest.IsolatedAsyncioTestCase):
             bg_subagent_list=[],
             subagent_settings=None,  # never touched on the disabled path
             checkpointer=None,
-            artifact_store=None,
-            context_settings=None,
-            summary_store=None,
-            memory_store=None,
+            stores=None,
             channels=None,
             task_queue=asyncio.Queue(),
             launch_index=LaunchIndex(),

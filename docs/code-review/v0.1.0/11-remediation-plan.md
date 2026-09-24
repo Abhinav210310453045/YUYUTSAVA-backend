@@ -615,6 +615,8 @@ constructors.
   - `R-BUG-05` `/clear` in the dashboard, reproduced first;
   - `R-BUG-06` one-shot turns through `ConversationService`;
   - `R-BUG-07` a daemon started from the app serves its API.
+  - `R-BUG-15` a background completion waits for the thread's running turn
+    (found live in W4; two writers on one checkpoint).
   - `R-BUG-08` an answered inline ask resumes the turn — **landed early, in W4**
     (`7babeca`): it blocked W4's own characterization tests, so it could not wait.
   - `R-BUG-09` an answer that beats its waiter is held — **landed early, in W4**
