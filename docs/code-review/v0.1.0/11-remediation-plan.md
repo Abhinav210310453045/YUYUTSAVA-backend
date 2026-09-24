@@ -480,6 +480,28 @@ Functions over 200 lines 8 (target 0), over 100 lines 38 (≤ 10), over ten
 parameters 8 (≤ 3), highest approximate complexity 38 (≤ 25), classes over 400
 lines 8 (0), history narration 159 (0).
 
+**Back in plan order after the audit.** The three remaining DRY bullets are
+done, and two of them were defects:
+
+- **WAV I/O and the sample-rate constant** (`bfc7b55`): `yuyutsava/wav.py`
+  writes, `voice/pcm.py` holds the 16 kHz speech format. The writer's rate is
+  required — a TTS engine writes at its own rate and a wrong one raises
+  nothing, it only plays back at the wrong pitch. Verified with a real engine:
+  `say` at 22,050 Hz stays 22,050 Hz.
+- **One duration humanizer** (`a36cdc7`): `text.humanize_duration`. The
+  sessions table's "2h ago" and `daemon status` keep their own shapes; they
+  answer different questions.
+- **`classify_provider_busy`** (`eca8afb`) — **a defect.** Three surfaces
+  guessed the status from the class name. The retry predicate also retries
+  `DeadlineExceeded` and `Aborted` (504 and 409), so a timeout was announced
+  as "provider busy (503)", and the guesses disagreed with each other about
+  subclasses. It now reads the status the SDK attaches.
+
+Still open in this wave, in plan order: the three OCP registries
+(provider alias→settings, visual kinds, tool→event), the docker/local
+branch, `build_daemon`/`_async_main` (waiting on the `BootContext` decision),
+the rest of `run_chat_repl`, and the docstring sweep.
+
 ## W5 — Errors, logging, state, defects
 
 - **Classify the 58 silent handlers** as boundary (log plus reason) or internal (narrow type). (`R-ERR-01`, `R-ERR-02`)
