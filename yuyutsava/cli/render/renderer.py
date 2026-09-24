@@ -41,6 +41,7 @@ from yuyutsava.cli.render import zones
 from yuyutsava.cli.render.markdown_stream import MarkdownStream
 from yuyutsava.cli.render.ring import PayloadRing
 from yuyutsava.core.streaming import StreamEvent
+from yuyutsava.llm.quirks.first_chunk_retry import classify_provider_busy
 
 _SUBAGENT_TOOLS = ("task", "start_async_task")
 
@@ -101,7 +102,7 @@ class RichChatRenderer:
         still alive. This keeps it to one line of spinner text that names the
         wait, and it clears itself as soon as real output arrives.
         """
-        code = "429" if "ResourceExhausted" in type(exc).__name__ else "503"
+        code = classify_provider_busy(exc)
         self._retry_note = f"provider busy ({code}) · retry {attempt}/{retries} · {delay:.0f}s"
         self._refresh()
 

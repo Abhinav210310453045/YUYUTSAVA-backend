@@ -77,6 +77,55 @@ def _notify(model: str, attempt: int, retries: int, delay: float, exc: BaseExcep
         logger.debug("retry listener raised", exc_info=True)
 
 
+#: gRPC status names the raw ``grpc.aio`` errors report, as the HTTP code the
+#: google-api-core wrappers carry for the same condition.
+_GRPC_TO_HTTP = {
+    "RESOURCE_EXHAUSTED": "429",
+    "UNAVAILABLE": "503",
+    "DEADLINE_EXCEEDED": "504",
+    "ABORTED": "409",
+}
+
+#: The two capacity errors by class name, for errors that arrive without a
+#: status — a stand-in, or an SDK that names them the same way.
+_BUSY_BY_NAME = {"ResourceExhausted": "429", "ServiceUnavailable": "503"}
+
+
+def classify_provider_busy(exc: BaseException) -> str:
+    """The status to show a user for a provider error, e.g. ``"429"``.
+
+    Read from the exception, never guessed from its class name. A name-based
+    guess gets two things wrong: :func:`_is_transient` also retries
+    ``DeadlineExceeded`` and ``Aborted``, which the SDK reports as 504 and 409
+    and a guess would announce as "provider busy (503)"; and a subclass either
+    matches a name test or does not depending on whether it is a substring or
+    exact test, so two surfaces can disagree about the same error.
+
+    google-api-core exceptions carry the HTTP status as ``code``; raw
+    ``grpc.aio`` errors carry a ``code()`` method returning a gRPC status; an
+    error with neither is matched on its exact class name. Anything else reads
+    ``"503"``.
+    """
+    code = getattr(exc, "code", None)
+    if code is not None and not callable(code):
+        try:
+            return str(int(code))
+        except (TypeError, ValueError):
+            pass
+    if callable(code):
+        try:
+            status = code()
+        except Exception:  # noqa: BLE001 — a label must never raise over an error
+            status = None
+        name = getattr(status, "name", None)
+        if name in _GRPC_TO_HTTP:
+            return _GRPC_TO_HTTP[name]
+    # Last resort, for an error that carries no status at all: its exact class
+    # name. Exact, not a substring, and in this one place, so every surface
+    # reaches the same answer for the same error.
+    return _BUSY_BY_NAME.get(type(exc).__name__, "503")
+
+
 def _is_transient(exc: BaseException) -> bool:
     """Google/gRPC errors that a fresh attempt can reasonably clear.
 

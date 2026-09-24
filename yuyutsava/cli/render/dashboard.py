@@ -102,6 +102,7 @@ from yuyutsava.cli.render.stdio_capture import (
 )
 from yuyutsava.config.env import env_flag
 from yuyutsava.context.meter import bus
+from yuyutsava.llm.quirks.first_chunk_retry import classify_provider_busy
 
 logger = logging.getLogger("yuyutsava.cli.dashboard")
 
@@ -576,7 +577,7 @@ class ChatDashboard:
         self, model: str, attempt: int, retries: int, delay: float, exc: BaseException
     ) -> None:
         """Provider-busy retries as a panel notice as well as a status line."""
-        code = "429" if "ResourceExhausted" in type(exc).__name__ else "503"
+        code = classify_provider_busy(exc)
         self.notice(
             f"provider busy ({code}) — retry {attempt}/{retries} in {delay:.0f}s",
             ttl=max(5.0, delay + 5.0),

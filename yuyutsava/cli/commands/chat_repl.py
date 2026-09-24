@@ -61,7 +61,7 @@ from yuyutsava.config.logs import silence_plumbing_loggers
 from yuyutsava.consent import decision_token as _decision_token
 from yuyutsava.conversation import ConversationService
 from yuyutsava.core.agent_stack import build_agent_stack
-from yuyutsava.llm.quirks.first_chunk_retry import set_retry_listener
+from yuyutsava.llm.quirks.first_chunk_retry import classify_provider_busy, set_retry_listener
 from yuyutsava.prefs.runtime import UNDISABLEABLE, RuntimeSettings
 from yuyutsava.storage.events import Store
 from yuyutsava.storage.paths import state_dir
@@ -184,7 +184,7 @@ def _report_turn_failure(exc: BaseException) -> None:
         # Provider capacity is not a bug in this program, and its traceback is
         # 30 frames of SDK internals that say nothing the user can act on. One
         # line, and the session stays open so the message can simply be resent.
-        code = "429" if type(exc).__name__ == "ResourceExhausted" else "503"
+        code = classify_provider_busy(exc)
         print(
             f"{RED}provider busy ({code}){RESET} — retries gave up. "
             f"{DIM}Resend to try again; VERTEX_RETRY_BUDGET_SEC (default 90) "
