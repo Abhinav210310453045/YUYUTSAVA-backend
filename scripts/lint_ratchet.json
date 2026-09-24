@@ -77,7 +77,6 @@
     "BLE001": 2
   },
   "yuyutsava/cli/render/terminal_stream.py": {
-    "C901": 1,
     "PLR0913": 1
   },
   "yuyutsava/cli/render/tool_format.py": {

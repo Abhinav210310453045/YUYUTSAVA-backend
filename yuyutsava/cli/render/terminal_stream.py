@@ -246,6 +246,78 @@ async def prompt_permission(
     return decision
 
 
+class _AiStreamLine:
+    """The streamed-AI block on stderr: opened by the first token, closed by
+    anything else the turn prints."""
+
+    def __init__(self) -> None:
+        self.open = False
+
+    def write(self, text: str) -> None:
+        if not self.open:
+            print(f"\n{CYAN}{'─' * 60}{RESET}", file=sys.stderr)
+            print(f"{CYAN}🤖  AI (streaming){RESET}", file=sys.stderr)
+            print(f"{CYAN}{'─' * 60}{RESET}", file=sys.stderr)
+            self.open = True
+        print(text, end="", flush=True, file=sys.stderr)
+
+    def close(self) -> None:
+        if self.open:
+            print("\n", file=sys.stderr)
+            self.open = False
+
+
+def _on_chunk(line: _AiStreamLine, chunk: Any) -> None:
+    """Stream an AI chunk's text; a tool call or tool message ends the line."""
+    if isinstance(chunk, AIMessageChunk):
+        text = flatten_content(chunk.content)
+        if text:
+            line.write(text)
+        # Close the AI stream line if a tool call is starting.
+        if chunk.tool_calls or getattr(chunk, "tool_call_chunks", None):
+            line.close()
+    elif isinstance(chunk, ToolMessage):
+        line.close()
+
+
+def _log_ai_message(m: AIMessage) -> None:
+    """Token usage at DEBUG, then each tool call with its arguments."""
+    usage = getattr(m, "usage_metadata", None)
+    if usage:
+        parts_u: list[str] = []
+        for k in ("input_tokens", "output_tokens", "total_tokens"):
+            v = usage.get(k) if isinstance(usage, dict) else getattr(usage, k, None)
+            if v is not None:
+                parts_u.append(f"{k.replace('_tokens', '')}: {v}")
+        if parts_u:
+            logger.debug("    Tokens  %s", " | ".join(parts_u))
+    for tc in m.tool_calls or ():
+        name = tc.get("name", "?") if isinstance(tc, dict) else getattr(tc, "name", "?")
+        args = tc.get("args", {}) if isinstance(tc, dict) else getattr(tc, "args", {})
+        args_str = json.dumps(args, indent=4) if isinstance(args, dict) else str(args)
+        logger.info("")
+        logger.info(f"{YELLOW}🔧  TOOL CALL → %s{RESET}", name)
+        logger.info("    Input:\n%s", _indent(args_str, 4))
+
+
+def _log_tool_message(m: ToolMessage) -> None:
+    """The tool result, guarded for size (the message is rewritten too) and
+    previewed; logged as an error when the tool reported one."""
+    tn = getattr(m, "name", "tool") or "tool"
+    body = m.content if isinstance(m.content, str) else str(m.content)
+    safe_body = guard_tool_result(body, tn)
+    if safe_body is not body:
+        m.content = safe_body
+    preview = safe_body if len(safe_body) <= 600 else safe_body[:600] + "\n    … [truncated]"
+    logger.info("")
+    if is_tool_error(m, safe_body):
+        logger.error(f"{BOLD_RED}❌  TOOL ERROR ← %s{RESET}", tn)
+        logger.error("    %s", preview.replace("\n", "\n    "))
+    else:
+        logger.info(f"{GREEN}✅  TOOL RESULT ← %s{RESET}", tn)
+        logger.info("    %s", preview.replace("\n", "\n    "))
+
+
 async def astream_agent(
     agent: Agent,
     task: str,
@@ -278,10 +350,8 @@ async def astream_agent(
         thread_id=_tid,
         recursion_limit=recursion_limit,
         agent_path=agent_path,
-        # The CLI is a typed surface. Seeded explicitly rather than left absent,
-        # which is what it was before the drivers were merged — a middleware
-        # asking "is this voice?" got no key at all here and the key on the
-        # daemon path.
+        # The CLI is a typed surface, and says so: a middleware asking "is this
+        # voice?" gets the same key on every path.
         modality="text",
         trace_name="cli",
         trace_tags=["mode:cli"],
@@ -295,7 +365,7 @@ async def astream_agent(
 
     final_messages: list[Any] = []
     # Explicit stable id so the message round-trips the checkpoint unchanged
-    # (see the note in astream_agent_iter — prevents duplicate transcript rows).
+    # (see the note in core.streaming — prevents duplicate transcript rows).
     first_input: Any = {"messages": [HumanMessage(content=task, id=str(uuid.uuid4()))]}
 
     async def _ask(value: Any) -> str:
@@ -307,15 +377,8 @@ async def astream_agent(
             invocation_mode=invocation_mode,
         )
 
-    in_ai_stream = False
+    line = _AiStreamLine()
     steps_last_pass = 0
-
-    def _close_stream() -> None:
-        nonlocal in_ai_stream
-        if in_ai_stream:
-            print("\n", file=sys.stderr)
-            in_ai_stream = False
-
     async for kind, item in drive_graph(
         agent,
         first_input,
@@ -324,78 +387,19 @@ async def astream_agent(
         collected=final_messages,
     ):
         if kind == "interrupt_seen":
-            _close_stream()
-
+            line.close()
         elif kind == "chunk":
-            chunk, _meta = item
-            if isinstance(chunk, AIMessageChunk):
-                text = flatten_content(chunk.content)
-                if text:
-                    if not in_ai_stream:
-                        print(f"\n{CYAN}{'─' * 60}{RESET}", file=sys.stderr)
-                        print(f"{CYAN}🤖  AI (streaming){RESET}", file=sys.stderr)
-                        print(f"{CYAN}{'─' * 60}{RESET}", file=sys.stderr)
-                        in_ai_stream = True
-                    print(text, end="", flush=True, file=sys.stderr)
-                # Close the AI stream line if a tool call is starting.
-                if chunk.tool_calls or getattr(chunk, "tool_call_chunks", None):
-                    _close_stream()
-            elif isinstance(chunk, ToolMessage):
-                _close_stream()
-
+            _on_chunk(line, item[0])
         elif kind == "message":
-            _close_stream()
-            m = item
-            if isinstance(m, AIMessage):
-                usage = getattr(m, "usage_metadata", None)
-                if usage:
-                    parts_u: list[str] = []
-                    for k in ("input_tokens", "output_tokens", "total_tokens"):
-                        v = usage.get(k) if isinstance(usage, dict) else getattr(usage, k, None)
-                        if v is not None:
-                            parts_u.append(f"{k.replace('_tokens', '')}: {v}")
-                    if parts_u:
-                        logger.debug("    Tokens  %s", " | ".join(parts_u))
-
-                if m.tool_calls:
-                    for tc in m.tool_calls:
-                        name = (
-                            tc.get("name", "?")
-                            if isinstance(tc, dict)
-                            else getattr(tc, "name", "?")
-                        )
-                        args = (
-                            tc.get("args", {}) if isinstance(tc, dict) else getattr(tc, "args", {})
-                        )
-                        args_str = (
-                            json.dumps(args, indent=4) if isinstance(args, dict) else str(args)
-                        )
-                        logger.info("")
-                        logger.info(f"{YELLOW}🔧  TOOL CALL → %s{RESET}", name)
-                        logger.info("    Input:\n%s", _indent(args_str, 4))
-
-            elif isinstance(m, ToolMessage):
-                tn = getattr(m, "name", "tool") or "tool"
-                body = m.content if isinstance(m.content, str) else str(m.content)
-                safe_body = guard_tool_result(body, tn)
-                if safe_body is not body:
-                    m.content = safe_body
-                preview = (
-                    safe_body if len(safe_body) <= 600 else safe_body[:600] + "\n    … [truncated]"
-                )
-                err = is_tool_error(m, safe_body)
-                logger.info("")
-                if err:
-                    logger.error(f"{BOLD_RED}❌  TOOL ERROR ← %s{RESET}", tn)
-                    logger.error("    %s", preview.replace("\n", "\n    "))
-                else:
-                    logger.info(f"{GREEN}✅  TOOL RESULT ← %s{RESET}", tn)
-                    logger.info("    %s", preview.replace("\n", "\n    "))
-
+            line.close()
+            if isinstance(item, AIMessage):
+                _log_ai_message(item)
+            elif isinstance(item, ToolMessage):
+                _log_tool_message(item)
         elif kind == "pass_end":
-            # End of this stream pass — close any dangling AI output line.
-            if in_ai_stream:
-                print("\n", file=sys.stderr)
+            # A pass that ends mid-line ended without an interrupt, so it is the
+            # last one: nothing streams after it.
+            line.close()
             steps_last_pass = item
             # Fire the progress hook once per pass so the runner can coalesce
             # touches. Doing it here (not per-message) keeps the engine ignorant
