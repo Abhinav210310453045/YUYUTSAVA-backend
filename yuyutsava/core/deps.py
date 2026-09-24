@@ -37,21 +37,36 @@ class MasterDeps:
 
     # -- execution ---------------------------------------------------------
     bash_timeout_sec: int = 120
+    #: Attach ``PermissionPolicy``, which asks before dangerous shell commands.
     permission_check: bool = True
+    #: Adds the ws_* web search tools to the discoverable catalog.
     search_config: SearchConfig | None = None
+    #: Persists the graph; ``None`` falls back to an in-process ``MemorySaver``.
     checkpointer: BaseCheckpointSaver | None = None
 
     # -- delegation --------------------------------------------------------
+    #: ``BaseSubAgent`` instances reached through deepagents' ``task`` tool. A
+    #: ``GeneralPurposeAgent`` here replaces deepagents' built-in one by name.
     subagents: list[Any] | None = None
+    #: Background subagents hosted at ``async_host_url``; deepagents then adds
+    #: the ``start_/check_/update_/cancel_/list_async_tasks`` tools.
     async_subagents: list[Any] | None = None
+    #: The Agent Protocol server hosting them; required with ``async_subagents``.
     async_host_url: str | None = None
+    #: Background subagents on another server (e.g. a peer daemon).
     remote_async_subagents: list[Any] | None = None
+    #: Cross-turn task awareness; with any background subagent it also installs
+    #: the concurrency cap (``async_max_concurrent``).
     async_task_mirror: Any | None = None
     async_max_concurrent: int = 8
+    #: Recorded on the bundle so closing it tears the host down.
     async_host: Any | None = None
     async_host_attachment: Any | None = None
 
     # -- stores ------------------------------------------------------------
+    # The context layer (see ``yuyutsava.context``); each is optional and
+    # ``None`` disables what it backs. ``transcript_store`` keeps the verbatim
+    # conversation beyond checkpoint sweeps.
     artifact_store: Any | None = None
     summary_store: Any | None = None
     memory_store: Any | None = None
