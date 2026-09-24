@@ -418,7 +418,14 @@ root, exec binding, prompt, and that tools, middleware and subagents match
 local mode. Both modes' prompt, tools and backend were byte-identical before
 and after, and a real turn ran `uname -s; pwd` in each: `Linux` and
 `/yuyutsava/sandbox` in the container, `Darwin` and the host sandbox locally.
-The TTS, `exit_code`, strip/split and policy items are open.
+The TTS item is closed (`8d26cce`, a `fix:`): ElevenLabs writes once, at the
+path it was given. `exit_code` is gone (`return 0`). The input is parsed once:
+`CommandLine.parse` splits the line into a lower-cased head and case-kept
+arguments, and each handler reads that instead of stripping and splitting
+again; `_handle_slash` lost its unreachable `/new` branch. `dispatch` had no
+behavioural test — only a source-text one — so `test/cli/test_repl_dispatch.py`
+came first and passes unchanged on the old code. Only the two policy items are
+open; they need a decision (see below).
 
 **Evidence.**
 

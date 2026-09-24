@@ -485,17 +485,33 @@ _SLASH_QUIT = object()
 _SLASH_HANDLED = object()
 
 
-async def _handle_ask_command(cmd: str, remote: Any) -> bool:
+@dataclass(frozen=True)
+class CommandLine:
+    """A line that starts with ``/``, split once for every handler to read.
+
+    ``head`` is lower-cased so commands are case-insensitive; ``args`` keep
+    their case, since a reply's text or an ask id is the user's own.
+    """
+
+    head: str
+    args: tuple[str, ...]
+
+    @classmethod
+    def parse(cls, line: str) -> CommandLine | None:
+        """The command in *line*, or ``None`` when it is a message."""
+        parts = line.split()
+        if not parts or not parts[0].startswith("/"):
+            return None
+        return cls(head=parts[0].lower(), args=tuple(parts[1:]))
+
+
+async def _handle_ask_command(cmd: CommandLine, remote: Any) -> bool:
     """Handle background-approval slash commands against the daemon (async).
 
     Returns True if *cmd* was an ask command (and was handled), else False so
     the caller falls through to the normal slash handler / agent turn.
     """
-    c = cmd.strip()
-    if not c.startswith("/"):
-        return False
-    parts = c.split()
-    head = parts[0].lower()
+    head, args = cmd.head, cmd.args
     if head == "/asks":
         pending = remote.list_pending()
         if not pending:
@@ -508,15 +524,15 @@ async def _handle_ask_command(cmd: str, remote: Any) -> bool:
         # No id → answer the active (oldest) pending ask. The id is resolved in
         # code so the user never has to type it; an explicit id still works for
         # answering out of order.
-        target = parts[1] if len(parts) >= 2 else ""
+        target = args[0] if args else ""
         resp = "approve" if head == "/approve" else "reject"
         print(f"  {await remote.answer(target, resp)}", file=sys.stderr)
         return True
     if head == "/reply":
-        if len(parts) < 3:
+        if len(args) < 2:
             print(f"  {DIM}usage: /reply <id> <text>{RESET}", file=sys.stderr)
             return True
-        print(f"  {await remote.answer(parts[1], ' '.join(parts[2:]))}", file=sys.stderr)
+        print(f"  {await remote.answer(args[0], ' '.join(args[1:]))}", file=sys.stderr)
         return True
     return False
 
@@ -560,7 +576,7 @@ def _on_off(word: str) -> bool | None:
     return None
 
 
-async def _handle_settings_command(cmd: str, runtime_settings: Any) -> bool:
+async def _handle_settings_command(cmd: CommandLine, runtime_settings: Any) -> bool:
     """Handle ``/voice`` and ``/subagents`` (async — they hit ``state.db``).
 
     These write the same ``user_prefs`` rows the daemon and the desktop app
@@ -570,18 +586,14 @@ async def _handle_settings_command(cmd: str, runtime_settings: Any) -> bool:
 
     Returns True when *cmd* was one of these commands (and was handled).
     """
-    c = cmd.strip()
-    if not c.startswith("/"):
-        return False
-    parts = c.split()
-    head = parts[0].lower()
+    head = cmd.head
     if head not in ("/voice", "/subagents"):
         return False
 
     await runtime_settings.refresh(force=True)
 
     if head == "/voice":
-        args = [p.lower() for p in parts[1:]]
+        args = [a.lower() for a in cmd.args]
         # /voice on|off              → both switches
         # /voice wake on | tts off   → one switch
         if not args:
@@ -607,7 +619,7 @@ async def _handle_settings_command(cmd: str, runtime_settings: Any) -> bool:
         return True
 
     # /subagents [on|off <name>]
-    args = parts[1:]
+    args = cmd.args
     if args:
         if len(args) != 2 or (flag := _on_off(args[0])) is None:
             print(f"  {DIM}usage: /subagents [on|off <name>]{RESET}", file=sys.stderr)
@@ -670,19 +682,20 @@ class ReplCommands:
 
     async def dispatch(self, text: str) -> Outcome:
         line = text.strip()
+        cmd = CommandLine.parse(line)
         if self.remote is not None:
-            if await _handle_ask_command(line, self.remote):
+            if cmd is not None and await _handle_ask_command(cmd, self.remote):
                 return Outcome.HANDLED
             if await self._answered_a_pending_ask(line):
                 return Outcome.HANDLED
-        if not line.startswith("/"):
+        if cmd is None:
             return Outcome.NOT_A_COMMAND
-        head = line.split()[0].lower()
+        head = cmd.head
         if head in ("/voice", "/subagents"):
             # Async because they read and write state.db, which every other
             # surface reads too. Reached only for these two so a normal message
             # never opens the prefs store.
-            await _handle_settings_command(line, await self.runtime_toggles.get())
+            await _handle_settings_command(cmd, await self.runtime_toggles.get())
             return Outcome.HANDLED
         if head == "/usage":
             await reports.print_usage_summary(
@@ -699,7 +712,7 @@ class ReplCommands:
             await self._rotate_session()
             return Outcome.HANDLED
         result = _handle_slash(
-            line,
+            cmd,
             session_id=self.session.id,
             workspace=self.workspace,
             renderer=self.renderer,
@@ -738,21 +751,16 @@ class ReplCommands:
 
 
 def _handle_slash(
-    cmd: str,
+    cmd: CommandLine,
     *,
     session_id: str,
     workspace: Path,
     renderer: "ChatRenderer",
 ) -> Any:
-    """Return _SLASH_QUIT to exit, _SLASH_HANDLED if handled in-place,
-    None if the input isn't a slash command, or a string "new" sentinel
-    for /new (so the caller can rotate the thread_id).
+    """The commands that need only the terminal: ``_SLASH_QUIT`` to exit,
+    otherwise ``_SLASH_HANDLED`` — an unknown command included, after saying so.
     """
-    c = cmd.strip()
-    if not c.startswith("/"):
-        return None
-    parts = c.split()
-    head = parts[0].lower()
+    head, args = cmd.head, cmd.args
     if head in ("/quit", "/exit", "/q"):
         return _SLASH_QUIT
     if head == "/help":
@@ -772,27 +780,25 @@ def _handle_slash(
         return _SLASH_HANDLED
     if head == "/last":
         k = 1
-        if len(parts) > 1:
+        if args:
             try:
-                k = int(parts[1])
+                k = int(args[0])
             except ValueError:
-                print(f"{DIM}/last: expected integer, got {parts[1]!r}{RESET}", file=sys.stderr)
+                print(f"{DIM}/last: expected integer, got {args[0]!r}{RESET}", file=sys.stderr)
                 return _SLASH_HANDLED
         renderer.ring.print_last(k)
         return _SLASH_HANDLED
     if head == "/expand":
-        if len(parts) < 2:
+        if not args:
             print(f"{DIM}/expand: usage: /expand <n>{RESET}", file=sys.stderr)
             return _SLASH_HANDLED
         try:
-            idx = int(parts[1])
+            idx = int(args[0])
         except ValueError:
-            print(f"{DIM}/expand: expected integer, got {parts[1]!r}{RESET}", file=sys.stderr)
+            print(f"{DIM}/expand: expected integer, got {args[0]!r}{RESET}", file=sys.stderr)
             return _SLASH_HANDLED
         renderer.ring.print_one(idx)
         return _SLASH_HANDLED
-    if head == "/new":
-        return "new"
     print(f"{DIM}unknown command: {head} (try /help){RESET}", file=sys.stderr)
     return _SLASH_HANDLED
 
@@ -841,7 +847,6 @@ async def run_chat_repl(
     surface = build_surface(workspace, history_path=history_path, verbose=verbose, classic=classic)
     console, dashboard, renderer = surface.console, surface.dashboard, surface.renderer
     ask_handler = make_ask_handler(renderer, console)
-    exit_code = 0
 
     # Provider retries (429/503) speak through the renderer, not the log. The
     # SDK's own retry logger emits several structlog lines per attempt, which
@@ -1061,4 +1066,4 @@ async def run_chat_repl(
                     pass
 
     print(f"{DIM}— chat closed —{RESET}", file=sys.stderr)
-    return exit_code
+    return 0

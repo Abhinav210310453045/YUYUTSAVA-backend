@@ -528,9 +528,13 @@ its reply on reload, with the id the live turn streamed.
 The **docker/local branch** is built once (`R-KIS-02`): characterization
 first, since the fingerprint never built docker mode.
 
-Still open in this wave, in plan order: the rest of `R-KIS-02` (TTS written
-twice, `exit_code`, repeated strip/split; the two policy items need a
-decision), `build_daemon`/`_async_main` (waiting on the `BootContext` decision),
+The rest of `R-KIS-02` except the policy items: TTS written once
+(`8d26cce`), and the REPL parses a command line once (`CommandLine`), with
+behavioural dispatch tests first. Verified live in a piped REPL: every
+command answered as before, and a real turn replied.
+
+Still open in this wave, in plan order: the two `R-KIS-02` policy items
+(need a decision), `build_daemon`/`_async_main` (waiting on the `BootContext` decision),
 the rest of `run_chat_repl`, and the docstring sweep.
 
 ## W5 — Errors, logging, state, defects
