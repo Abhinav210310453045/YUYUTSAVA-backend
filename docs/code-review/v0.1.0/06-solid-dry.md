@@ -125,6 +125,14 @@ The bodies of the four handlers are untouched. What changed is that the loop no
 longer knows any of their conventions, so a new command cannot be added without
 the dispatcher being asked about it.
 
+Providers (`da8eadd`): `llm_settings_from_env` looks the alias up in
+`SETTINGS_BY_PROVIDER`; its error names come from the same table. The context
+budget and the price lookup are not in it yet — that is `R-BUG-01` in W5.
+
+Visual kinds: one `RENDERERS` table in `visuals/render.py`, `KINDS` derived
+from it. The tool half stays one `@tool` per kind, because each tool's argument
+schema is what the model reads.
+
 ## R-SOL-03 — Substitution and interface width (Liskov, interface segregation)
 
 **Severity** P1 · **Wave** W4 · **Status** **Partly done.** The renderer half is closed: `cli/render/protocol.py` defines `ChatRendererProtocol`, neither renderer derives from the other, and `aclose()` is on it — which is what the REPL used to reach past the protocol for (`renderer._smoother`, fixed in `8ce35e2`). A test asserts `chat_repl` touches no `renderer._*` at all. The settings half is open: `LlmSettings` still requires `api_key`/`base_url` that `VertexSettings` and `BedrockSettings` do not have, and `disable_reasoning` is still on every provider's `build`.

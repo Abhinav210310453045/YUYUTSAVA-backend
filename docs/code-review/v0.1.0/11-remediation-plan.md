@@ -497,9 +497,25 @@ done, and two of them were defects:
   as "provider busy (503)", and the guesses disagreed with each other about
   subclasses. It now reads the status the SDK attaches.
 
-Still open in this wave, in plan order: the three OCP registries
-(provider alias→settings, visual kinds, tool→event), the docker/local
-branch, `build_daemon`/`_async_main` (waiting on the `BootContext` decision),
+Then two of the three OCP registries:
+
+- **Provider alias→settings** (`da8eadd`): `llm/settings.SETTINGS_BY_PROVIDER`
+  replaces the twelve-branch chain in `llm_settings_from_env`, and the
+  "unknown provider" error lists names derived from the table, so it can no
+  longer offer a provider that does not exist or omit one that does.
+- **Visual kinds** (this commit): `visuals/render.RENDERERS` maps each kind to
+  the module and function that draw it, and `KINDS` is derived from it —
+  before, a kind in `KINDS` without a branch in `_load` failed with
+  "'NoneType' object is not callable". Renderers are still imported only on
+  first use; a test proves building the tools does not load matplotlib. The
+  `vis_*` tools stay one per kind: each has its own argument schema the model
+  reads, so folding them into the table would change the agent's tool surface
+  (and the fingerprint) for no gain. A new kind is one row plus its tool.
+  Verified live: all six kinds rendered to PNG through `POST /visuals/render`
+  on a restarted daemon, and an unknown kind got a 400 naming the six.
+
+Still open in this wave, in plan order: the tool→event registry, the
+docker/local branch, `build_daemon`/`_async_main` (waiting on the `BootContext` decision),
 the rest of `run_chat_repl`, and the docstring sweep.
 
 ## W5 — Errors, logging, state, defects

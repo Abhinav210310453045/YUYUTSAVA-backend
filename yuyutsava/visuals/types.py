@@ -9,9 +9,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-# The set of renderable families. Keep in sync with render.render() dispatch.
-KINDS = ("chart", "diagram", "table", "code", "math", "timeline")
-
 
 @dataclass(frozen=True)
 class RenderResult:
@@ -24,7 +21,7 @@ class RenderResult:
 
     image_bytes: bytes
     mime: str  # "image/png" | "image/svg+xml"
-    kind: str  # one of KINDS
+    kind: str  # one of render.KINDS
     title: str | None = None
     width: int | None = None
     height: int | None = None

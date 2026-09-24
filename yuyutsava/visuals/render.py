@@ -6,44 +6,35 @@ delivery layer never needs to know which renderer module handles a kind.
 
 from __future__ import annotations
 
-from typing import Any
+from importlib import import_module
+from typing import Any, Callable
 
-from .types import KINDS, RenderResult, VisualError
+from .types import RenderResult, VisualError
+
+#: Each renderable kind, and the module and function that draw it. Named rather
+#: than imported so ``import yuyutsava.visuals.tools`` (done at engine/subagent
+#: build time) does not pull matplotlib: the heavy deps load only when a visual
+#: is actually rendered, and a missing ``visuals`` extra surfaces as a clean
+#: error at call time instead of breaking agent startup.
+#:
+#: A new kind is one row here; the list the error message offers follows.
+RENDERERS: dict[str, tuple[str, str]] = {
+    "chart": (".charts", "render_chart"),
+    "diagram": (".diagrams", "render_diagram"),
+    "table": (".tables", "render_table"),
+    "code": (".code_image", "render_code"),
+    "math": (".latex", "render_math"),
+    "timeline": (".timeline", "render_timeline"),
+}
+
+#: The renderable kinds, in the order they are offered.
+KINDS = tuple(RENDERERS)
 
 
-def _load(kind: str):
-    """Import the renderer for *kind* lazily.
-
-    Keeps ``import yuyutsava.visuals.tools`` (done at engine/subagent build time)
-    from eagerly pulling matplotlib — the heavy deps load only when a visual is
-    actually rendered, and a missing ``visuals`` extra surfaces as a clean error
-    at call time instead of breaking agent startup.
-    """
-    if kind == "chart":
-        from .charts import render_chart  # noqa: PLC0415 — needs the visuals extra
-
-        return render_chart
-    if kind == "diagram":
-        from .diagrams import render_diagram  # noqa: PLC0415 — needs the visuals extra
-
-        return render_diagram
-    if kind == "table":
-        from .tables import render_table  # noqa: PLC0415 — needs the visuals extra
-
-        return render_table
-    if kind == "code":
-        from .code_image import render_code  # noqa: PLC0415 — needs the visuals extra
-
-        return render_code
-    if kind == "math":
-        from .latex import render_math  # noqa: PLC0415 — needs the visuals extra
-
-        return render_math
-    if kind == "timeline":
-        from .timeline import render_timeline  # noqa: PLC0415 — needs the visuals extra
-
-        return render_timeline
-    return None
+def _load(kind: str) -> Callable[[dict[str, Any]], RenderResult]:
+    """Import the renderer for *kind*. Raises ``ImportError`` without the extra."""
+    module, name = RENDERERS[kind]
+    return getattr(import_module(module, __package__), name)
 
 
 def render(kind: str, spec: dict[str, Any]) -> RenderResult:
