@@ -97,3 +97,21 @@ def flatten_content(content: object) -> str:
                 parts.append(str(block.get("text", "")))
         return "".join(parts)
     return ""
+
+
+def humanize_duration(seconds: float) -> str:
+    """A span of time as a short label: ``42s``, ``3m05s``, ``2h07m``.
+
+    For *how long* something has run — a background task's elapsed time. Past
+    an hour the seconds are dropped, because at that scale they are noise.
+
+    Two neighbours deliberately do not use it. The sessions table answers
+    *when* ("2h ago", with days), where a single coarse unit reads better in a
+    column; ``daemon status`` prints a fixed ``HhMMmSSs`` readout. Different
+    questions, so different shapes — this is the one for elapsed time.
+    """
+    if seconds < 60:
+        return f"{seconds:.0f}s"
+    if seconds < 3600:
+        return f"{int(seconds // 60)}m{int(seconds % 60):02d}s"
+    return f"{int(seconds // 3600)}h{int((seconds % 3600) // 60):02d}m"

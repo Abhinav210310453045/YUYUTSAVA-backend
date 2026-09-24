@@ -37,6 +37,7 @@ from yuyutsava.ports.channels import (
     AsyncTaskStartedPayload,
     ChannelEvent,
 )
+from yuyutsava.text import humanize_duration
 
 logger = logging.getLogger("yuyutsava.cli.async_hitl")
 
@@ -181,14 +182,6 @@ class CliRemoteHitl:
             print(line, file=self._out, flush=True)
 
 
-def _fmt_elapsed(seconds: float) -> str:
-    if seconds < 60:
-        return f"{seconds:.0f}s"
-    if seconds < 3600:
-        return f"{int(seconds // 60)}m{int(seconds % 60):02d}s"
-    return f"{int(seconds // 3600)}h{int((seconds % 3600) // 60):02d}m"
-
-
 class CliHitlBridge:
     """Stdin/stdout bridge for Mode 1 async-subagent HITL.
 
@@ -271,7 +264,7 @@ class CliHitlBridge:
                 f"ask={p.ask_id[:8]}  {p.title}"
             )
         elif isinstance(p, AsyncTaskCompletedPayload):
-            elapsed = _fmt_elapsed(p.duration_sec)
+            elapsed = humanize_duration(p.duration_sec)
             summary = (p.summary or "").replace("\n", " ")[:100]
             line = (
                 f"{bg.done(ok=p.ok)} {p.agent_name}  task={p.task_id[:8]}  "

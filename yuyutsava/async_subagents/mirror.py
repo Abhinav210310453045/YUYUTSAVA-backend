@@ -22,6 +22,8 @@ import time
 from dataclasses import dataclass, replace
 from typing import Iterable, Literal
 
+from yuyutsava.text import humanize_duration
+
 MirrorStatus = Literal[
     "queued",
     "running",
@@ -60,14 +62,6 @@ class MirroredTask:
 
     def is_terminal(self) -> bool:
         return self.status in TERMINAL_STATUSES
-
-
-def _fmt_elapsed(seconds: float) -> str:
-    if seconds < 60:
-        return f"{seconds:.0f}s"
-    if seconds < 3600:
-        return f"{int(seconds // 60)}m{int(seconds % 60):02d}s"
-    return f"{int(seconds // 3600)}h{int((seconds % 3600) // 60):02d}m"
 
 
 class AsyncTaskMirror:
@@ -181,7 +175,7 @@ class AsyncTaskMirror:
             non_terminal.sort(key=lambda t: t.started_at)
             lines.append("Background tasks in flight:")
             for t in non_terminal[:max_lines]:
-                elapsed = _fmt_elapsed(now - t.started_at)
+                elapsed = humanize_duration(now - t.started_at)
                 tail = ""
                 if t.status == "awaiting_user" and t.pending_ask_id:
                     tail = f"   (Ask {t.pending_ask_id[:8]} pending)"
