@@ -63,6 +63,27 @@ _EC_RULE_DENIED = "TR004"
 _EC_EXEC_ERROR = "TR005"
 
 
+def _shell_result(raw: dict) -> ShellResult:
+    return ShellResult(stdout=raw["stdout"], stderr=raw["stderr"], exit_code=raw["exit_code"])
+
+
+def _max_entries(ctx: dict) -> int:
+    value = ctx.get("max_entries", 500)
+    return int(value) if isinstance(value, (int, float, str)) else 500
+
+
+def _list_result(path: Path, pattern: str | None, data: dict) -> ListResult:
+    entries = [DirEntry(**e) for e in data["entries"]]
+    return ListResult(
+        root=str(path),
+        pattern=pattern,
+        entries=entries,
+        returned=len(entries),
+        total=data["total"],
+        has_more=data["has_more"],
+    )
+
+
 class TaskRunnerAgent:
     """
     Permission gateway for all filesystem operations.
@@ -352,138 +373,99 @@ class TaskRunnerAgent:
 
         match request.operation:
             case OperationType.READ:
-                offset = int(ctx.get("offset", 0))
-                limit = ctx.get("limit")
-                limit = int(limit) if limit is not None else None
-                data = await _exec.execute_read(path, offset=offset, limit=limit)
-
-                notice = None
-                if data["has_more"]:
-                    notice = SuppressedContentNotice.file_too_large(
-                        tool="tr_read_file",
-                        path=str(path),
-                        original_size_chars=len(data["content"]),
-                        total_lines=data["total_lines"],
-                        shown_lines=data["offset"] + data["returned_lines"],
-                    )
-
-                return ReadResult(
-                    content=data["content"],
-                    offset=data["offset"],
-                    limit=limit,
-                    returned_lines=data["returned_lines"],
-                    total_lines=data["total_lines"],
-                    has_more=data["has_more"],
-                    truncation_notice=notice,
-                )
-
+                return await self._read(path, ctx)
             case OperationType.WRITE | OperationType.CREATE:
                 content = str(ctx.get("content", ""))
                 await _exec.execute_write(path, content, append=bool(ctx.get("append", False)))
                 return WriteResult(written_to=str(path))
-
             case OperationType.DELETE:
                 await _exec.execute_delete(path)
                 return DeleteResult(deleted=str(path))
-
             case OperationType.EXECUTE:
-                # tr_grep / tr_fetch_url route pure-Python ops through EXECUTE so
-                # the zone/permission path is byte-identical to a shell command;
-                # the executor implementation is selected by additional_context.
-                if "search" in ctx:
-                    sc = ctx["search"]
-                    raw = await _exec.execute_grep(
-                        str(sc["pattern"]),
-                        Path(str(sc["path"])),
-                        context_lines=int(sc.get("context_lines", 3)),
-                        case_insensitive=bool(sc.get("case_insensitive", False)),
-                        max_matches=int(sc.get("max_matches", 100)),
-                    )
-                    return ShellResult(
-                        stdout=raw["stdout"],
-                        stderr=raw["stderr"],
-                        exit_code=raw["exit_code"],
-                    )
-                if "fetch" in ctx:
-                    fc = ctx["fetch"]
-                    raw = await _exec.execute_fetch(
-                        str(fc["url"]),
-                        Path(str(fc["dest"])),
-                        user_agent=str(fc["user_agent"]),
-                        timeout=int(fc.get("timeout", 120)),
-                    )
-                    return ShellResult(
-                        stdout=raw["stdout"],
-                        stderr=raw["stderr"],
-                        exit_code=raw["exit_code"],
-                    )
-                if "python" in ctx:
-                    pc = ctx["python"]
-                    # tr_run_python: the exec backend decides WHERE (host or
-                    # the Docker container); cwd is always the sandbox.
-                    raw = await self.exec_backend.run_python(
-                        Path(str(pc["script_path"])),
-                        Path(str(pc.get("cwd", self.sandbox_root))),
-                        int(pc.get("timeout", 120)),
-                    )
-                    return ShellResult(
-                        stdout=raw["stdout"],
-                        stderr=raw["stderr"],
-                        exit_code=raw["exit_code"],
-                    )
-                command = str(ctx.get("command", ""))
-                _timeout = ctx.get("timeout", 120)
-                timeout = int(_timeout) if isinstance(_timeout, (int, float, str)) else 120
-                _cwd = ctx.get("cwd")
-                cwd = Path(str(_cwd)) if _cwd is not None else self.sandbox_root
-                elevated = bool(ctx.get("elevated", False))
-                if ctx.get("sandboxed") and not elevated:
-                    # tr_execute_in_sandbox: sandbox-cwd shell command — the
-                    # exec backend decides WHERE it runs.
-                    raw = await self.exec_backend.run(command, cwd, timeout)
-                else:
-                    # tr_execute: the host's native shell (L3 channel), and any
-                    # elevated run — host-side by definition.
-                    raw = await _exec.execute_run(command, cwd, timeout, elevated=elevated)
-                return ShellResult(
-                    stdout=raw["stdout"],
-                    stderr=raw["stderr"],
-                    exit_code=raw["exit_code"],
-                )
-
+                return _shell_result(await self._run_execute(ctx))
             case OperationType.LIST:
-                _max = ctx.get("max_entries", 500)
-                max_entries = int(_max) if isinstance(_max, (int, float, str)) else 500
-                data = await _exec.execute_list(path, max_entries=max_entries)
-                entries = [DirEntry(**e) for e in data["entries"]]
-                return ListResult(
-                    root=str(path),
-                    pattern=None,
-                    entries=entries,
-                    returned=len(entries),
-                    total=data["total"],
-                    has_more=data["has_more"],
-                )
-
+                data = await _exec.execute_list(path, max_entries=_max_entries(ctx))
+                return _list_result(path, None, data)
             case OperationType.GLOB:
                 pattern = str(ctx.get("pattern", "*"))
-                _max = ctx.get("max_entries", 500)
-                max_entries = int(_max) if isinstance(_max, (int, float, str)) else 500
-                data = await _exec.execute_glob(path, pattern, max_entries=max_entries)
-                entries = [DirEntry(**e) for e in data["entries"]]
-                return ListResult(
-                    root=str(path),
-                    pattern=pattern,
-                    entries=entries,
-                    returned=len(entries),
-                    total=data["total"],
-                    has_more=data["has_more"],
-                )
-
+                data = await _exec.execute_glob(path, pattern, max_entries=_max_entries(ctx))
+                return _list_result(path, pattern, data)
             case _:
                 raise NotImplementedError(
                     f"Operation '{request.operation.value}' execution not implemented."
                 )
+
+    async def _read(self, path: Path, ctx: dict) -> ReadResult:
+        """A window of the file, with a notice when more remains."""
+        offset = int(ctx.get("offset", 0))
+        limit = ctx.get("limit")
+        limit = int(limit) if limit is not None else None
+        data = await _exec.execute_read(path, offset=offset, limit=limit)
+
+        notice = None
+        if data["has_more"]:
+            notice = SuppressedContentNotice.file_too_large(
+                tool="tr_read_file",
+                path=str(path),
+                original_size_chars=len(data["content"]),
+                total_lines=data["total_lines"],
+                shown_lines=data["offset"] + data["returned_lines"],
+            )
+        return ReadResult(
+            content=data["content"],
+            offset=data["offset"],
+            limit=limit,
+            returned_lines=data["returned_lines"],
+            total_lines=data["total_lines"],
+            has_more=data["has_more"],
+            truncation_notice=notice,
+        )
+
+    async def _run_execute(self, ctx: dict) -> dict:
+        """Run an EXECUTE request; ``additional_context`` says what it is.
+
+        tr_grep / tr_fetch_url route pure-Python ops through EXECUTE so the
+        zone/permission path is byte-identical to a shell command.
+        """
+        if "search" in ctx:
+            sc = ctx["search"]
+            return await _exec.execute_grep(
+                str(sc["pattern"]),
+                Path(str(sc["path"])),
+                context_lines=int(sc.get("context_lines", 3)),
+                case_insensitive=bool(sc.get("case_insensitive", False)),
+                max_matches=int(sc.get("max_matches", 100)),
+            )
+        if "fetch" in ctx:
+            fc = ctx["fetch"]
+            return await _exec.execute_fetch(
+                str(fc["url"]),
+                Path(str(fc["dest"])),
+                user_agent=str(fc["user_agent"]),
+                timeout=int(fc.get("timeout", 120)),
+            )
+        if "python" in ctx:
+            pc = ctx["python"]
+            # tr_run_python: the exec backend decides WHERE (host or the Docker
+            # container); cwd is always the sandbox.
+            return await self.exec_backend.run_python(
+                Path(str(pc["script_path"])),
+                Path(str(pc.get("cwd", self.sandbox_root))),
+                int(pc.get("timeout", 120)),
+            )
+        command = str(ctx.get("command", ""))
+        _timeout = ctx.get("timeout", 120)
+        timeout = int(_timeout) if isinstance(_timeout, (int, float, str)) else 120
+        _cwd = ctx.get("cwd")
+        cwd = Path(str(_cwd)) if _cwd is not None else self.sandbox_root
+        elevated = bool(ctx.get("elevated", False))
+        if ctx.get("sandboxed") and not elevated:
+            # tr_execute_in_sandbox: sandbox-cwd shell command — the exec
+            # backend decides WHERE it runs.
+            return await self.exec_backend.run(command, cwd, timeout)
+        # tr_execute: the host's native shell (L3 channel), and any elevated
+        # run — host-side by definition.
+        return await _exec.execute_run(command, cwd, timeout, elevated=elevated)
 
     # ------------------------------------------------------------------
     # Response helpers
