@@ -359,68 +359,75 @@ class StorageSubsystem:
     fallback_reason: str | None = None
 
 
-async def build_storage(opts: DaemonOptions) -> StorageSubsystem:
-    """Open the backend, run migrations, and construct every domain store.
+async def _open_backend() -> tuple[StorageSettings, PgPool | None, str | None]:
+    """The storage settings in force, the Postgres pool if it came up, and why not.
 
-    Extracted verbatim from ``build_daemon``. The only change is that its
-    outputs are returned as a record instead of left as locals for the next 600
-    lines to read.
+    Opened before everything that persists: the checkpointer and the
+    context/memory stores dispatch on whether the pool came up. A dead Postgres
+    falls back to SQLite loudly (a timeline event once channels exist) unless
+    ``YUYUTSAVA_STORAGE_REQUIRE=1``, which refuses to boot instead.
     """
-    # ── storage backend (sqlite default / postgres) ------------------------
-    # Opened before everything that persists: the checkpointer and the
-    # context/memory stores dispatch on whether the pool came up. A dead
-    # Postgres falls back to SQLite loudly (timeline event after channels
-    # exist) unless YUYUTSAVA_STORAGE_REQUIRE=1.
     storage = StorageSettings.from_env()
-    pg_pool: PgPool | None = None
-    storage_fallback_reason: str | None = None
-    if storage.is_postgres():
-        try:
-            pg_pool = PgPool(storage)
-            await pg_pool.open()
-            await pg_migrations.apply(pg_pool)
-            logger.info("  storage   : postgres")
-        except Exception as exc:
-            if storage.require:
-                logger.error(
-                    "storage: postgres unavailable and YUYUTSAVA_STORAGE_REQUIRE=1 "
-                    "— refusing to boot"
-                )
-                raise
-            storage_fallback_reason = (
-                f"Postgres unavailable ({exc}); using SQLite for this run. "
-                "Checkpoints/artifacts written now are INVISIBLE to Postgres."
-            )
-            logger.error("storage: %s", storage_fallback_reason)
-            if pg_pool is not None:
-                await pg_pool.close()
-            pg_pool = None
-
-            storage = _dc_replace(storage, backend="sqlite")
-    else:
+    if not storage.is_postgres():
         logger.info(
             "  storage   : sqlite (set YUYUTSAVA_STORAGE_BACKEND=postgres for durable mode)"
         )
+        return storage, None, None
+    pg_pool: PgPool | None = None
+    try:
+        pg_pool = PgPool(storage)
+        await pg_pool.open()
+        await pg_migrations.apply(pg_pool)
+        logger.info("  storage   : postgres")
+        return storage, pg_pool, None
+    except Exception as exc:
+        if storage.require:
+            logger.error(
+                "storage: postgres unavailable and YUYUTSAVA_STORAGE_REQUIRE=1 — refusing to boot"
+            )
+            raise
+        reason = (
+            f"Postgres unavailable ({exc}); using SQLite for this run. "
+            "Checkpoints/artifacts written now are INVISIBLE to Postgres."
+        )
+        logger.error("storage: %s", reason)
+        if pg_pool is not None:
+            await pg_pool.close()
+        return _dc_replace(storage, backend="sqlite"), None, reason
+
+
+def _install_rest_stores(stores: StoreFactory, has_spillover: bool) -> None:
+    """Point the visual, feedback and todo default stores at Postgres-with-spillover.
+
+    These are the REST-path stores written OUTSIDE a checkpointed turn (the
+    👍/👎 endpoint, the /visuals API, the board), so a raised error would lose
+    the write outright. Spillover is a declared policy (storage/domains.py:
+    Failover): the factory wraps exactly the domains that ask for it, an outage
+    buffers to SQLite, and the Reconciler drains it back on recovery. On the
+    SQLite backend the getters fall back to the twins lazily.
+    """
+    if not has_spillover:
+        return
+    set_default_visual_store(stores.visuals())
+    set_default_feedback_store(stores.feedback())
+    set_default_todo_store(stores.todos())
+
+
+async def build_storage(opts: DaemonOptions) -> StorageSubsystem:
+    """Open the backend, run migrations, and construct every domain store."""
+    storage, pg_pool, storage_fallback_reason = await _open_backend()
 
     # ── embedder (shared by memory, skills, and the artifact recall index) --
-    # Built here, before the stores, so PgArtifactStore can opt into the
-    # semantic index (Context REPL) when Postgres + an embedder are live. One
-    # embedder per process; memory/skills below reuse this same instance.
+    # Built before the stores, so the Postgres artifact store can opt into the
+    # semantic index when Postgres + an embedder are live. One embedder per
+    # process; memory and skills reuse this same instance.
     mem_settings = MemorySettings.from_env(default_enabled=pg_pool is not None)
     embedder: Embedder | None = Embedder(mem_settings) if pg_pool is not None else None
     _semantic_recall = ContextSettings.from_env().semantic_recall
 
     # ── stores -------------------------------------------------------------
-    # One StoreFactory resolves "Postgres or SQLite" ONCE (ADR-002 step 2.6).
-    # This block used to re-decide it inline for every store — thirteen separate
-    # `if pg_pool is not None` branches — and separately wrapped three of them
-    # in RoutedStore with nothing recording why. Both now live in
-    # yuyutsava/core/stores.py, with failover declared per domain in
-    # storage/domains.py.
-    #
-    # storage_health is built below (it needs pg_pool), so the factory is
-    # created with it in a moment; the stores that want spillover are requested
-    # after that point.
+    # One StoreFactory resolves "Postgres or SQLite" ONCE (ADR-002), with
+    # failover declared per domain in storage/domains.py.
     storage_health = StorageHealth(pg_pool) if pg_pool is not None else None
     stores = StoreFactory(
         storage,
@@ -434,49 +441,29 @@ async def build_storage(opts: DaemonOptions) -> StorageSubsystem:
     transcript_store = stores.transcripts()
     voice_store = stores.voice()
     if pg_pool is not None:
-        # Sessions move to Postgres too (migration v6). Inject the shared pool
+        # Sessions live in Postgres too (migration v6). Inject the shared pool
         # so the web router's get_default_session_store() reuses it; migrations
-        # already ran above, so the store skips its own lazy schema-ensure.
+        # already ran, so the store skips its own lazy schema-ensure.
         set_default_session_store(PgSessionStore(storage, pool=pg_pool))
 
-    # ── task registry (first-class task tracking) --------------------------
     task_registry = TaskRegistry(stores.tasks())
-
-    # ── usage accounting + model routing ----------------------------------
     usage_store: UsageStore = stores.usage()
     model_router = ModelRouter.from_env()
     if model_router.enabled:
         logger.info("  routing   : complexity-based model routing enabled")
-
-    # ── semantic memory (default-on when postgres is live) -----------------
-    # mem_settings + embedder were built above (shared with the artifact recall
-    # index); memory and skills reuse the same embedder instance.
+    # Semantic memory, default-on when Postgres is live. The orchestrator
+    # recalls it per turn (RetrievalInjectionPolicy), not at build time.
     memory_store: MemoryStore | None = stores.memory(mem_settings)
-    # (Memory recall for the orchestrator master moved into build_orchestrator
-    # as a per-turn RetrievalInjectionPolicy — no build-time injector here.)
 
-    # ── store (events DB: postgres-primary + sqlite spillover buffer) ------
-    # On the Postgres backend each domain becomes a RoutedStore that fails over
-    # to a SQLite buffer when Postgres is unreachable; the health probe drains
-    # the buffer back on recovery (storage/routing). SQLite mode keeps the
-    # SQLite twins as the permanent primary.
+    # ── events DB: Postgres-primary + SQLite spillover buffer --------------
+    # On the Postgres backend each domain is a RoutedStore that fails over to a
+    # SQLite buffer when Postgres is unreachable; the health probe drains the
+    # buffer back on recovery (storage/routing). SQLite mode keeps the SQLite
+    # twins as the permanent primary.
     store = stores.events()
     await store.start()
 
-    # ── visuals + feedback default stores (Postgres-primary, spillover) ----
-    # These are the REST-path stores written OUTSIDE a checkpointed turn (the
-    # 👍/👎 endpoint, the /visuals API), so a Postgres blip here would otherwise
-    # lose the write. Wrap the Pg store + SQLite twin in the shared RoutedStore
-    # so an outage buffers to SQLite and the Reconciler (below) drains it back on
-    # recovery. On the SQLite backend the getters fall back to the twins lazily.
-    if pg_pool is not None and storage_health is not None:
-        # Spillover is now a DECLARED policy (storage/domains.py: Failover),
-        # not a wiring accident. The factory wraps exactly the domains that ask
-        # for it; these three are the REST-path stores written OUTSIDE a
-        # checkpointed turn, where a raised error loses the write outright.
-        set_default_visual_store(stores.visuals())
-        set_default_feedback_store(stores.feedback())
-        set_default_todo_store(stores.todos())
+    _install_rest_stores(stores, pg_pool is not None and storage_health is not None)
 
     return StorageSubsystem(
         settings=storage,
