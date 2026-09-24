@@ -549,8 +549,9 @@ no cost line; not reproduced, and the usage row is written inline in
 fixed. 106 files, comments and docstrings only — proven by comparing each
 file's AST, docstrings stripped, with the previous commit.
 
-Still open in this wave, both waiting on a decision: the two `R-KIS-02`
-policy items, and `build_daemon`/`_async_main` (`BootContext`).
+The `R-KIS-02` placeholder policies are deleted (a `fix:`); the refusal
+fields are carried (see Carried). Still open in this wave:
+`build_daemon`/`_async_main`.
 
 ## W5 — Errors, logging, state, defects
 
@@ -666,4 +667,5 @@ Deliberately not fixed in this remediation, each with its reason:
 | **Schema centralization** (F-D04) — `CREATE TABLE` in 16 modules | Moving schema ownership needs a migration-version plan and a live-Postgres verification pass of its own. | A dedicated plan after W8. |
 | **Constructing half of F-T03** | A second agent constructor is a strategic choice, not a code-quality fix; a test pins the gap. | Revisit when a second framework is actually needed. |
 | **C3** — interrupt/resume tripwire | Needs a scripted interrupt round-trip against the real graph runtime. | Add alongside the next change to the ask/resume path. |
+| **A rejected tool ends the turn** (`R-KIS-02`, the `Denied.status`/`named` split) | The owner's call (2026-09-24): when the user rejects a tool, stop the turn — the REPL stays open, the UI session stays open, and the user's next message decides what happens. Today the agent carries on by itself (seen live). Policies cannot end a turn yet, so it is new behaviour, not a cleanup. | After this review: a policy result that ends the turn, applied to approval asks; decide background tasks then. |
 | **Renaming `yuyutsava/platform`, `yuyutsava/mcp`** (`R-PLC-12`) | `platform` has 16 package-root importers and carries OS invariance; `mcp` is contained by `test/mcp_layer`. The benefit is small next to the churn. | One rename-only change each, if ever. |

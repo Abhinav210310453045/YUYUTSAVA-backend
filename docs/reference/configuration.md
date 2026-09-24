@@ -236,8 +236,7 @@ prompt and so quota-bound tools (web search) get a daily cap.
 - `policy`:
   - `auto_approve` — skip the prompt for matching `tr_*` calls.
   - `propose` (default) — current behaviour; user sees a prompt.
-  - `queue_for_user`, `refuse_when_no_ui` — recognised but treated as
-    `propose` until the Phase-2 notification work lands.
+  - Any other value is warned about at load and treated as `propose`.
 - `daily_cap` — only meaningful for tools that pass through the cap enforcer
   (today: `ws_*`). The counter is keyed by UTC date and lives in
   `~/.yuyutsava/state.db.tool_call_counters`; the 4th call after the cap is

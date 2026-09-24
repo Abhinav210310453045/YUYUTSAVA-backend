@@ -407,8 +407,8 @@ and the bare task path.
 
 ## R-KIS-02 — Work done and then undone, and structure without a use
 
-**Severity** P2 · **Wave** W4 · **Status** **Partly done.** The renderer item
-closed with `R-SOL-03`: `RichChatRenderer` no longer subclasses `ChatRenderer`,
+**Severity** P2 · **Wave** W4 · **Status** **Done** (the refusal fields are
+carried — see the last paragraph). The renderer item closed with `R-SOL-03`: `RichChatRenderer` no longer subclasses `ChatRenderer`,
 so there is no smoother to build and discard. The engine item is closed: the
 docker and local paths share one build, and `execution_mode` only picks the
 backend, the exec backend and the prompt (`_docker_sandbox` builds the
@@ -424,8 +424,19 @@ path it was given. `exit_code` is gone (`return 0`). The input is parsed once:
 arguments, and each handler reads that instead of stripping and splitting
 again; `_handle_slash` lost its unreachable `/new` branch. `dispatch` had no
 behavioural test — only a source-text one — so `test/cli/test_repl_dispatch.py`
-came first and passes unchanged on the old code. Only the two policy items are
-open; they need a decision (see below).
+came first and passes unchanged on the old code.
+
+The placeholder policies are deleted (a `fix:`): `permissions.json` accepted
+`queue_for_user` and `refuse_when_no_ui` silently while treating both as
+`propose`. They now get the same load-time warning as any unknown name
+(`test/policy/test_permission_file_policies.py`, red before the change; a live
+daemon booted with a file using one logged the warning and kept its rules).
+
+The refusal fields (`Denied.status`/`named`, and `ModelCall.has_system_prompt`)
+are **carried** by the owner's decision: rather than pick one of the two
+existing shapes, a rejected tool should end the turn while the session stays
+open for the next message. That is new behaviour, scheduled after this review
+(see Carried in `11-remediation-plan.md`).
 
 **Evidence.**
 

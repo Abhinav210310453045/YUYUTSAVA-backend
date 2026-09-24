@@ -22,9 +22,7 @@ Supported policies
     resets at the next UTC midnight (cheap and predictable; no per-user
     timezone math).
 
-Future policies — ``queue_for_user`` and ``refuse_when_no_ui`` — are
-recognised but treated as ``propose`` until the §3.4 notification work
-lands.
+Any other name is warned about at load and read as ``propose``.
 
 Schema
 ------
@@ -64,8 +62,6 @@ _KNOWN_POLICIES: frozenset[str] = frozenset(
     {
         "auto_approve",
         "propose",
-        "queue_for_user",
-        "refuse_when_no_ui",
     }
 )
 
