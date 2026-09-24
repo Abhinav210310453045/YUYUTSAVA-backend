@@ -1,6 +1,6 @@
 """Single implementation of proposal/ask response resolution.
 
-Extracted from ``routers/proposals.py`` (Phase 3) so the HTTP endpoints and
+Shared so the HTTP endpoints and
 the channel-plugin :class:`~yuyutsava.channels.plugin.InboundSink` resolve
 user decisions through ONE code path: flip the proposal's persisted status,
 then wake whichever channel is blocked awaiting the decision.
@@ -22,7 +22,7 @@ from typing import MutableMapping
 
 from yuyutsava.ports.channels import DecisionConflictError, ProposalDecision
 
-# Narrowed from `object` in Phase 2 step 2.7: this service approves and skips
+# A narrow role, not the Store: this service approves and skips
 # proposals, which is two methods of the events Store, not the whole surface.
 from yuyutsava.storage.events.roles import ProposalWriter
 
@@ -106,8 +106,8 @@ class DecisionService:
     ) -> RespondOutcome:
         """Persist the decision and wake the channel awaiting it.
 
-        Raises :class:`DecisionConflictError` when the proposal is no longer
-        pending, ``ValueError`` for an unknown decision string.
+        Raises :class:`DecisionConflictError` when the proposal is not pending,
+        ``ValueError`` for an unknown decision string.
         """
         if decision not in RESPONDABLE_DECISIONS:
             raise ValueError(f"invalid decision {decision!r}")
@@ -150,8 +150,9 @@ class DecisionService:
         #
         # The daemon may have restarted since the ask was raised, leaving the
         # agent parked on its checkpointed interrupt; the answer then has to be
-        # delivered by re-entering the graph rather than by waking a future that
-        # no longer exists. Asks never expire, so this is normal, not an edge.
+        # delivered by re-entering the graph rather than by waking a future
+        # that died with the old process. Asks never expire, so this is normal,
+        # not an edge.
         if self._ask_resume is not None:
             resumed = await self._ask_resume.resume(ask_id, response)
             if resumed:

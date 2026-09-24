@@ -42,13 +42,12 @@ class ChannelRouter:
       2. Otherwise fall back to ``primary_name``-first (default: ``web``).
       3. Channels that raise ``NotImplementedError`` are skipped.
 
-    TODO(phase2-§3.4): when ``yuyutsava/daemon/push_channel.py`` (pync-backed
+    TODO: when ``yuyutsava/daemon/push_channel.py`` (pync-backed
     macOS notifications) is added for ``--no-ui`` mode, this constructor
     must assert that ``PushChannel`` is not present alongside ``WebChannel``.
     The Electron renderer already shows focus-aware OS banners via
     ``notify:show`` IPC; pairing both would double-banner the user. Pick
     one channel based on ``DaemonConfig.headless`` at boot — never both.
-    See PHASE_2_PLAN §3.4 and the new-risks section.
     """
 
     channels: list[UserChannel] = dataclasses.field(default_factory=list)
@@ -172,7 +171,7 @@ class ChannelRouter:
             # The asking turn was cancelled (Stop button, barge-in) — on either
             # path. Nobody is waiting for this answer any more, so retire the
             # record: leaving it 'pending' would strand a card in the Inbox
-            # that can never be answered and whose agent no longer exists.
+            # that can never be answered and whose agent is gone.
             # Detached because we are unwinding a cancellation and must not
             # await here.
             if self.ask_registry is not None:

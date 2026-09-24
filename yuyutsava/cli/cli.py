@@ -3,8 +3,7 @@ YUYUTSAVA — command-line AI agent that executes natural language tasks.
 
 This file is the entry-point: build the argparse parser, dispatch to the
 handler in ``cli/commands/*``. All the actual work lives in those handlers
-(chat, sessions, prefs, scenarios). Procedural by design — see
-RESTRUCTURE_HANDOFF.md §5 / plan §11.1 for why we do not make this a class.
+(chat, sessions, prefs, scenarios). Procedural by design: parse, then hand off.
 """
 
 from __future__ import annotations
@@ -52,9 +51,7 @@ class Subcommand:
     """One ``yuyutsava <name>`` command.
 
     ``summary`` is what ``--help`` prints, so the help text and the dispatch
-    read the same list. They used to be two — a sentence in the parser
-    description and an if-chain in ``main`` — agreeing only by luck, which is
-    exactly how `/help` came to hide four working commands (`R-BUG-12`).
+    read the same list; two lists would agree only by luck (`R-BUG-12`).
     """
 
     name: str

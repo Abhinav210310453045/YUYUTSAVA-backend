@@ -1,8 +1,8 @@
 """``StoreFactory`` — resolve the backend once, build every store uniformly.
 
-Phase 2 step 2.6 (ADR-002), closing findings ``F-S04`` and ``F-S07``.
+ADR-002; findings ``F-S04`` and ``F-S07``.
 
-Before this, ``build_daemon`` re-decided "Postgres or SQLite" independently for
+Without it, ``build_daemon`` re-decides "Postgres or SQLite" independently for
 every store, inline, thirteen times::
 
     artifact_store = pg_artifact_store(...) if pg else sqlite_artifact_store(...)
@@ -197,11 +197,9 @@ class StoreFactory:
     def context_stores(self, *, semantic_recall: bool = True) -> "ContextStores":
         """The four stores every agent stack needs, selected once.
 
-        Phase 3 step 3.5. The CLI, the tinker bundle and the daemon each wrote
-        out the same ``if pg_pool is not None:`` branch over
-        artifacts/summaries/transcripts, plus a separate two-condition guard for
-        the transcript index. Three copies of one decision, and the daemon's copy
-        already lived here — so the other two now call this instead.
+        The CLI, the tinker bundle and the daemon all call this, so the
+        ``if pg_pool is not None:`` choice over artifacts/summaries/transcripts,
+        and the two-condition guard for the transcript index, are made once.
 
         These stay PG-primary / SQLite-fallback-at-boot rather than
         ``RoutedStore``: they are written only INSIDE a checkpointed turn, and
@@ -351,8 +349,8 @@ async def build_retrieval_stores(skill_registry: SkillRegistry):
 
     # Re-embed any rows that landed without a vector. Both stores declare
     # backfill_embeddings unconditionally since ADR-002 step 2.5b — it returns 0
-    # on a backend with no vectors — so this no longer probes with getattr. That
-    # form was duck-typed, and a call site that forgot the guard raised
+    # on a backend with no vectors — so this calls it directly rather than
+    # probing with getattr, where a call site that forgot the guard would raise
     # AttributeError on SQLite only, in production only.
     if pg_pool is not None and embedder is not None:
         for store in (memory_store, skill_store):

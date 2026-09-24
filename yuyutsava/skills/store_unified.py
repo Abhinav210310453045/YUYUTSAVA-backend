@@ -1,10 +1,9 @@
 """One ``skills`` implementation, both backends — with the asymmetry declared.
 
-Phase 2 step 2.5b (ADR-002), playbook order 9. The first domain where the twins
-were **not** the same algorithm in two dialects, so it is worth being explicit
-about what unifying does and does not mean here.
+ADR-002. The backends do **not** run the same algorithm in two dialects, so it
+is worth being explicit about what one store does and does not mean here.
 
-Shared (was duplicated, now written once):
+Shared, written once:
 
 * ``upsert`` — the same nine columns, the same ON CONFLICT update list;
 * ``all_names`` — identical.

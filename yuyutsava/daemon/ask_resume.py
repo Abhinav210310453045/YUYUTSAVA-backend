@@ -10,7 +10,7 @@ That is the whole job of this service. :class:`DecisionService` calls it when a
 response arrives for an ask with no live waiter, and it routes by the ownership
 recorded on the ask:
 
-* a conversation (chat / voice / tinker) → a detached run on the Phase 2
+* a conversation (chat / voice / tinker) → a detached run on the
   :class:`~yuyutsava.daemon.turn_registry.TurnRegistry` that re-enters with
   ``Command(resume=<decision>)``, so the answer streams to whoever is watching
   that thread;

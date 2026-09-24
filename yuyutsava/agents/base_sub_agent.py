@@ -75,8 +75,8 @@ class BaseSubAgent(ABC):
         can_write_skills: bool = True,
         search_config: SearchConfig | None = None,
         mcp_manager: MCPClientManager | None = None,
-        # Typed against yuyutsava.ports (a leaf), so these no longer need the
-        # `object | None` + comment workaround the import cycle forced.
+        # Typed against yuyutsava.ports, a leaf, so the types are real despite
+        # agents and the store packages importing each other.
         cap_enforcer: CapEnforcer | None = None,
         memory_store: MemoryStore | None = None,
         skill_store: object | None = None,  # skills.store.SkillStore; for dual-write indexing
@@ -159,11 +159,13 @@ class BaseSubAgent(ABC):
         return f"{base}\n\n{self.workspace_context_block()}\n\n{host_profile().prompt_block()}"
 
     def task_runner_tools(self) -> list[BaseTool]:
-        """Return the four tr_* tools bound to this agent's TaskRunnerAgent.
+        """Return the tr_* tools bound to this agent's TaskRunnerAgent.
+
+        Every family ``bind_tools`` builds, not a fixed subset.
 
         ``self.name`` is threaded into each tool so HITL interrupts carry the
         subagent's identity in their ``agent_path`` (e.g. ``orchestrator/file-organizer``).
-        The sandbox is passed through too: dropping it used to bind every
+        The sandbox is passed through too: dropping it would bind every
         subagent to the default sandbox even when its TaskRunnerAgent was built
         with another one (the background tinker's, deliberately outside the
         board root).
@@ -177,8 +179,8 @@ class BaseSubAgent(ABC):
     def skill_tools(self) -> list[BaseTool]:
         """Return skill tools based on the can_write_skills flag.
 
-        When can_write_skills=True (opt-in), returns both sk_read_skill and
-        sk_write_skill. Default (False) returns read-only access.
+        With ``can_write_skills`` (the default, True) returns both sk_read_skill
+        and sk_write_skill; with it off, read-only access.
         """
         if self._skill_registry is None:
             return []

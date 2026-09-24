@@ -38,10 +38,10 @@ class SourceContext:
 
     name: str
     bus: EventBus
-    # Narrowed from the whole events Store (Phase 2 step 2.7): a source
+    # A narrow role, not the whole events Store: a source
     # publishes payloads and does nothing else with it. Every EventSource
-    # subclass receives this context, so the wide type advertised ~30 methods
-    # to code that needs one.
+    # subclass receives this context, and the Store would advertise ~30
+    # methods to code that needs one.
     store: EventPayloadWriter
     params: dict[str, Any]
     cancelled: asyncio.Event

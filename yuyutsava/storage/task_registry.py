@@ -68,11 +68,11 @@ class TaskRecord:
     status: str  # one of TASK_STATUSES
     created_ts: float
     thread_id: str | None = None
-    complexity: int | None = None  # filled by Phase 4 routing
-    model: str | None = None  # chosen model name (Phase 4 routing)
+    complexity: int | None = None  # filled by model routing
+    model: str | None = None  # chosen model name (model routing)
     started_ts: float | None = None
     finished_ts: float | None = None
-    deferred_ms: int = 0  # filled by Phase 5 admission control
+    deferred_ms: int = 0  # filled by resource admission control
     result_summary: str | None = None
     error: str | None = None
 
@@ -209,7 +209,7 @@ class TaskRegistry:
         complexity: int | None = None,
         model: str | None = None,
     ) -> None:
-        """``complexity`` and ``model`` (Phase 4 routing) are recorded when
+        """``complexity`` and ``model`` (model routing) are recorded when
         known — the audit join ``llm_usage × tasks`` depends on them."""
         fields: dict[str, Any] = {
             "status": "running",

@@ -1,7 +1,5 @@
 """Refuse ``start_async_task`` when too many background tasks are already running.
 
-Phase 4 step 4.4, second migration (was ``BackgroundTaskCapMiddleware``).
-
 The cap is a soft one, enforced *before* launch. The alternative — letting the
 launch succeed and killing it afterwards — costs a whole subagent startup to
 learn something the mirror already knows.

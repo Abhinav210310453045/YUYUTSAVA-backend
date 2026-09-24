@@ -3,8 +3,8 @@
 The agent's working memory is the LangGraph checkpoint, which the
 :class:`~yuyutsava.storage.sweeper.UnifiedSweeper` deletes ~1h after a thread is
 minted. The verbatim transcript (``transcript_messages`` / ``voice_messages``)
-lives ~7 days, so a resumed session *displays* history the agent no longer
-remembers. This index closes that gap: it embeds each human/assistant turn into
+lives ~7 days, so a resumed session *displays* history the agent has already
+forgotten. This index closes that gap: it embeds each human/assistant turn into
 ``transcript_chunks`` (migration v13) and lets a per-turn injector recall the
 chunks relevant to the user's latest message, scoped to *this* thread — so the
 agent recalls prior topics even after its checkpoint is gone.

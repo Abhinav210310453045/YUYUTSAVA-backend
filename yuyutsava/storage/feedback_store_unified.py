@@ -1,8 +1,7 @@
 """One ``message_feedback`` implementation, both backends.
 
-Phase 2 step 2.5b (ADR-002), playbook order 11. Replaces
-``SqliteFeedbackStore`` and ``PgFeedbackStore`` — 192 lines that agreed on
-almost everything and disagreed on two things that mattered.
+One store over :mod:`yuyutsava.storage.dialect` (ADR-002). Two behaviours the
+backends once disagreed on are settled here.
 
 **Fixed: the returned record did not match the stored row.** ``upsert`` builds a
 ``MessageFeedback`` with ``created_ts=time.time()`` and hands it back to the
@@ -14,12 +13,10 @@ two disagreed forever with nothing raising. Same root cause as finding AE
 sweeper. The column is now written explicitly on both.
 
 **Fixed: re-rating was DELETE-then-INSERT.** Two statements, correct only
-because both twins wrapped them in a transaction — and the Postgres one did not
-until Phase 2 made ``PgPool.transaction`` available, which was one of the six
-pre-existing bugs that work surfaced. Both backends carry a unique index on
-``(thread_id, message_ref)``, so a single ``ON CONFLICT ... DO UPDATE`` does the
-same job with no window in which the row is absent and no dependence on the
-surrounding transaction.
+when wrapped in a transaction, which the Postgres side at first was not. Both
+backends carry a unique index on ``(thread_id, message_ref)``, so a single
+``ON CONFLICT ... DO UPDATE`` does the same job with no window in which the row
+is absent and no dependence on the surrounding transaction.
 
 Re-rating deliberately mints a **new** ``feedback_id`` and ``created_ts``: a
 changed verdict is a new judgement, not an edit of the old one, and the upsert
@@ -150,8 +147,8 @@ class UnifiedFeedbackStore(FeedbackStore):
 
         async def _do(conn):
             # One statement, not DELETE-then-INSERT: there is no instant in
-            # which the message has no rating, and correctness no longer rests
-            # on the caller's transaction.
+            # which the message has no rating, and correctness does not rest on
+            # the caller's transaction.
             #
             # feedback_id and created_ts are overwritten from EXCLUDED because a
             # re-rating is a NEW judgement — the caller is handed `rec`, and the

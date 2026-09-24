@@ -1,15 +1,12 @@
 """The ``Policy`` contract — a YUYUTSAVA cross-cutting concern, in our own types.
 
-Phase 4 step 4.2, [ADR-004](../../docs/architecture/review/adr/ADR-004-framework-boundary.md)
+[ADR-004](../../docs/architecture/review/adr/ADR-004-framework-boundary.md)
 item 1, addressing [`F-T01`](../../docs/architecture/review/04-findings-thirdparty-coupling.md#f-t01).
 
-Fourteen classes implementing this system's own policies — permissions, budget
-ceilings, cost accounting, tool filtering, transcript persistence, skill
-retrieval — subclass ``langchain.agents.middleware.AgentMiddleware`` directly.
-None of those is a LangChain concern. All of them are LangChain subclasses, and
-the practical consequence is that **testing one means constructing framework
-objects**, which is why this project avoids those tests and why the policy layer
-is effectively uncovered.
+This system's own policies — permissions, budget ceilings, cost accounting,
+tool filtering, transcript persistence, skill retrieval — are not LangChain
+concerns. Written as ``AgentMiddleware`` subclasses, **testing one would mean
+constructing framework objects**.
 
 A :class:`Policy` is a plain object. It is constructed, called, and asserted on
 without a graph, a model, or an import of any framework.
@@ -26,14 +23,11 @@ The adapter also asks :meth:`handles_before` / :meth:`handles_after` so an
 unimplemented hook costs nothing per tool call. Overriding a hook is what
 enables it — there is no separate registration to forget.
 
-## Scope of this step
+## Hooks
 
-Tool-call hooks only, deliberately. Six of the fourteen policies are tool
-policies, they include the hardest one (``PermissionMiddleware``, the only class
-in the codebase carrying ``# type: ignore[misc]`` because the framework's base
-contract does not fit it), and ADR-004's own risk table says to migrate that one
-first: *"if the adapter handles that one, it handles the rest"*. Model-call hooks
-follow once this shape is proven against live traffic.
+Tool calls (:meth:`before_tool`, :meth:`after_tool`), model calls
+(:meth:`revise_model_call`, :meth:`before_model`, :meth:`after_model`) and the
+end of a run (:meth:`after_agent`).
 """
 
 from __future__ import annotations

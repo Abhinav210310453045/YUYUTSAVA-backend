@@ -1,6 +1,8 @@
-"""CLI HITL bridge for Mode 1 (standalone CLI deepagent, no daemon).
+"""How the chat REPL answers background-subagent asks.
 
-When the CLI hosts its own ``AsyncSubagentHost``, the ``AsyncTaskHealthWatcher``
+:class:`CliRemoteHitl` is the preferred path: a running daemon owns the async
+host, and the REPL observes and answers over its API. :class:`CliHitlBridge` is
+the fallback, when the CLI hosts its own ``AsyncSubagentHost``, the ``AsyncTaskHealthWatcher``
 needs the same two callables the daemon's ``ChannelRouter`` provides:
 
   * an ``ask_handler(AskPrompt) -> str`` that blocks until the user replies, and

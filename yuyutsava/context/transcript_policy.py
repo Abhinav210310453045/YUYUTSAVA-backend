@@ -1,7 +1,5 @@
 """Persist conversation messages to the transcript store as they appear.
 
-Phase 4 step 4.8, eleventh migration (was ``TranscriptRecorderMiddleware``).
-
 The checkpointer sweeps old turns, so without this the full conversation is only
 ever in memory. Recording on **every** phase — before a model call, after one,
 and once the agent finishes — is what makes the transcript complete regardless of

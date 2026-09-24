@@ -13,7 +13,7 @@ works and to tune prompts. Two consequences shape the schema:
     fact/preference memories survive a purge.
 
 Keyed by ``(thread_id, message_ref)`` with an upsert so re-rating a message
-replaces the prior rating rather than piling up rows.
+overwrites the prior rating rather than piling up rows.
 
 SQLite-only for now (the CLI/daemon share ``state.db`` via WAL); a Postgres
 twin can follow the ``voice_store.py`` pattern if/when needed.

@@ -2,13 +2,11 @@
 
 Why this exists
 ---------------
-The MVP used :class:`langgraph.checkpoint.memory.MemorySaver` so a daemon
-restart lost every mid-conversation thread. Phase 2 swapped in
-:class:`langgraph.checkpoint.sqlite.aio.AsyncSqliteSaver` backed by
-``~/.yuyutsava/checkpoints.db``. The context-controller work added an
-``AsyncPostgresSaver`` branch keyed off ``YUYUTSAVA_STORAGE_BACKEND`` so
-checkpoints can live in the durable Postgres store alongside artifacts,
-summaries, and memories.
+An in-memory saver would lose every mid-conversation thread on a daemon
+restart. So checkpoints are durable: :class:`AsyncSqliteSaver` backed by
+``~/.yuyutsava/checkpoints.db``, or ``AsyncPostgresSaver`` when
+``YUYUTSAVA_STORAGE_BACKEND`` selects Postgres, so checkpoints live beside
+artifacts, summaries and memories.
 
 Fallback contract: when Postgres is configured but unreachable, ``start()``
 falls back to SQLite and records :attr:`fallback_reason` — bootstrap turns

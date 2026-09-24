@@ -64,9 +64,8 @@ def sessions_db_path() -> Path:
 def state_db_path() -> Path:
     """SQLite file backing events, proposals, decisions, rules, quotas, prefs.
 
-    Currently owned by ``yuyutsava.events.store.Store``; in Step 2 the stores
-    split into ``storage/events/`` and ``storage/prefs.py`` but the DB file
-    stays the same so existing data is preserved.
+    Shared by the events stores (``storage/events/``) and the prefs store
+    (``storage/prefs.py``).
     """
     raw = os.environ.get("YUYUTSAVA_STATE_DB", "").strip()
     return Path(raw).expanduser() if raw else state_dir() / "state.db"

@@ -13,7 +13,7 @@ import json
 
 from langchain_core.tools import BaseTool, tool
 
-# Each tool declares only what it reads (Phase 2 step 2.7).
+# Each tool declares only what it reads.
 from yuyutsava.storage.events.roles import EventPayloadReader, RecallReader
 
 

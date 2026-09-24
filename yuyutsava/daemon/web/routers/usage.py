@@ -1,4 +1,4 @@
-"""LLM spend aggregates (Phase 4 cost tracking).
+"""LLM spend aggregates (cost tracking).
 
 One endpoint over the ``llm_usage`` table the ``UsagePolicy``
 fills: per-task, per-model, per-day or per-thread sums of tokens and estimated

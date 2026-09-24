@@ -1,7 +1,5 @@
 """Heal orphaned tool calls on a background thread before interrupting it.
 
-Phase 4 step 4.4, fifth migration (was ``AsyncTaskInterruptPatchMiddleware``).
-
 When the master calls ``update_async_task`` or ``cancel_async_task``, the remote
 subagent's thread may have an ``AIMessage`` carrying tool_calls that no
 ``ToolMessage`` ever answered. Interrupting on top of that leaves the thread in a

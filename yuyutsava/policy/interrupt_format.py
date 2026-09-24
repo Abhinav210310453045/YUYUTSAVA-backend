@@ -50,7 +50,7 @@ def body_for_interrupt(iv: dict) -> str:
         return "\n".join(lines)
     if t == "user_question":
         return iv.get("question", "")
-    # PermissionMiddleware (raw execute) — show both command and reason so
+    # PermissionPolicy (raw execute) — show both command and reason so
     # the Electron card carries the same "what / why" that the CLI prompts
     # already include.
     if t == "permission_request":

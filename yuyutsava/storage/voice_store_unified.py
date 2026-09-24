@@ -1,7 +1,7 @@
 """One ``VoiceMessageStore`` over both backends — third domain on the adapter.
 
-Phase 2 step 2.5b. Chosen third because, like visuals, it has an on-disk side
-effect (``audio_blob_path``) — but unlike visuals the blobs are **not** owned by
+Like visuals, it has an on-disk side effect (``audio_blob_path``) — but unlike
+visuals the blobs are **not** owned by
 this store: they are written and removed by :mod:`yuyutsava.storage.voice_blobs`, and
 ``purge_session`` deletes them in its own step. The store holds only the path.
 

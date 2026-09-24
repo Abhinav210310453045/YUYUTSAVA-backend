@@ -13,7 +13,7 @@ matching ``ToolMessage``. The next agent tick fails inside
 thread for every unresolved ``tool_call_id``, so the subsequent interrupt + new
 run sees a clean message list and validates fine.
 
-Since Phase 4 this module holds no middleware. The *decision* — which tool calls
+This module holds no middleware. The *decision* — which tool calls
 warrant a patch, and against which thread — is
 :class:`~yuyutsava.async_subagents.interrupt_patch_policy.AsyncTaskInterruptPatchPolicy`.
 What stays here is the SDK client that carries it out, plus
@@ -41,7 +41,7 @@ _INTERRUPT_TOOLS = frozenset({"update_async_task", "cancel_async_task"})
 # Content used for synthetic ToolMessages that heal an orphaned tool call.
 SYNTHETIC_TOOL_CONTENT = "[interrupted by user update — tool was cancelled mid-run]"
 
-# Run statuses that mean the run is no longer executing (so a dangling
+# Run statuses that mean the run has stopped executing (so a dangling
 # tool_call, if any, is now committed to thread state and safe to patch).
 _SETTLED_RUN_STATUSES = frozenset({"success", "error", "interrupted", "cancelled", "timeout"})
 
@@ -49,12 +49,9 @@ _SETTLED_RUN_STATUSES = frozenset({"success", "error", "interrupted", "cancelled
 class RemoteThreadPatcher:
     """Talks to a background subagent's Agent Protocol server to heal its thread.
 
-    Split out of ``AsyncTaskInterruptPatchMiddleware`` in Phase 4: none of this is
-    policy. It is an SDK client that settles a run and injects synthetic
-    ToolMessages, and it is shared verbatim between the middleware (until it is
-    deleted) and ``AsyncTaskInterruptPatchPolicy``. Holding it, rather than
-    reaching into a middleware's private members, is what keeps one copy of the
-    settle/patch logic.
+    None of this is policy: it is an SDK client that settles a run and injects
+    synthetic ToolMessages, which ``AsyncTaskInterruptPatchPolicy`` holds rather
+    than carrying the settle/patch logic itself.
 
     Parameters
     ----------

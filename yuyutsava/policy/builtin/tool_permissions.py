@@ -7,8 +7,8 @@ operations skip the prompt.
 The daemon is its only user today. It lives with the other built-in policies and
 imports only storage, so the CLI could apply the same rules without the daemon.
 
-Supported policies (Phase 2, step 1)
-------------------------------------
+Supported policies
+------------------
 ``auto_approve``
     Skip the prompt entirely. Used to flip PROMPT → ALLOW for a class of
     tools (e.g. ``tr_read_*`` always auto-approves out-of-workspace reads).

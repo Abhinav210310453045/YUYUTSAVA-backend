@@ -1,7 +1,5 @@
 """The absolute cumulative-spend ceiling for one task.
 
-Phase 4 step 4.8, twelfth migration (was ``BudgetMiddleware``).
-
 Compaction keeps a single prompt inside the model\'s context window; this caps
 what a whole task may spend. When the running input-token total crosses the cap,
 the model is told — once — to stop calling tools and wrap up. It is a directive

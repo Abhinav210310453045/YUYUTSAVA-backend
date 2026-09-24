@@ -1,9 +1,8 @@
 """Session objects behind the ``/ws/converse`` socket.
 
 The router's job is to accept a connection and hand it to one of these; the
-session owns the frame loop and the state that loop mutates. `R-RDB-01`: every
-frame type used to be a branch inside one 801-line function, so a change to one
-frame's handling meant reading all of them and none could be tested alone.
+session owns the frame loop and the state that loop mutates, one handler per
+frame type (`R-RDB-01`), so each can be read and tested alone.
 
 :class:`DictationSession` is the first one moved. Dictation genuinely is its own
 session type — it opens no conversation, runs no turn, and has no asks or
@@ -666,9 +665,8 @@ class FrameDeps:
 class ConverseFrames:
     """The inbound frame protocol for a conversation socket.
 
-    One handler per frame type (`R-RDB-01`): every type used to be a branch
-    inside one 771-line function, so changing the handling of one meant reading
-    all of them, and none could be exercised on its own.
+    One handler per frame type (`R-RDB-01`), so changing the handling of one
+    means reading only that one, and each can be exercised on its own.
 
     The loop itself only parses and dispatches. Anything a frame *does* — start
     a turn, resolve an ask, route an utterance — belongs to a collaborator, so

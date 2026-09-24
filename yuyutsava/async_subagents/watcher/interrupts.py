@@ -171,7 +171,7 @@ class InterruptHandler:
         The restart path: an ask raised before the daemon went down has no
         in-memory waiter left, but the run itself is still checkpointed and
         interrupted on the subagent host. Answering it means re-entering the
-        run directly rather than waking a future that no longer exists.
+        run directly rather than waking a future that is already gone.
         """
         task = self._ctx.mirror.get(task_id)
         if task is None:

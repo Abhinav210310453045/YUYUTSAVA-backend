@@ -45,16 +45,14 @@ logger = logging.getLogger("yuyutsava.agents.orchestrator")
 class OrchestratorDeps:
     """Bag of dependencies the orchestrator and its tools need at call time.
 
-    The ``async_*`` fields stay duck-typed (``object | None``) so this module
-    does not pull ``async_subagents`` — and transitively ``langgraph_api`` —
-    when background subagents are off. That one is a genuine optional-dependency
-    concern, not a cycle workaround.
+    The ``async_*`` fields are plain values or :mod:`yuyutsava.ports` protocols
+    (``TaskMirror``), so this module does not pull ``async_subagents`` — and
+    transitively ``langgraph_api`` — when background subagents are off.
 
-    The store fields, by contrast, are now typed against
-    :mod:`yuyutsava.ports`. They used to be ``object | None`` with the real type
-    in a comment because ``agents`` and ``context``/``memory`` import each
-    other; ``ports`` is a leaf both sides can depend on, so the types are real
-    again and a wrong store no longer type-checks (finding ``F-S05``).
+    The store fields, by contrast, are typed against :mod:`yuyutsava.ports`:
+    ``agents`` and ``context``/``memory`` import each other, and ``ports`` is a
+    leaf both sides can depend on, so the types are real and a wrong store
+    fails to type-check (finding ``F-S05``).
 
     - ``async_subagents``: ``list[BaseSubAgent]`` whose graphs are hosted by
       ``async_host``. Optional.
@@ -109,7 +107,7 @@ class OrchestratorDeps:
     context_settings: ContextTuning | None = None
     compaction_model: BaseChatModel | None = None
 
-    # Phase 4 cost tracking: storage.usage.UsageStore — when set, every
+    # Cost tracking: storage.usage.UsageStore — when set, every
     # master/subagent model call writes one llm_usage row (UsagePolicy).
     usage_store: UsageStore | None = None
 

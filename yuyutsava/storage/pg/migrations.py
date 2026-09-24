@@ -83,7 +83,7 @@ MIGRATIONS: list[tuple[int, str]] = [
     ),
     (
         2,
-        # Phase 2: first-class task tracking (POST /tasks + GET /tasks).
+        # First-class task tracking (POST /tasks + GET /tasks).
         # Timestamps were epoch-seconds DOUBLE PRECISION here; v20 converted
         # them to TIMESTAMPTZ along with the other 16. Kept as written for the
         # historical record — never edit an applied migration.
@@ -112,7 +112,7 @@ MIGRATIONS: list[tuple[int, str]] = [
     ),
     (
         3,
-        # Phase 4: model routing + cost tracking. One llm_usage row per
+        # Model routing + cost tracking. One llm_usage row per
         # model call; tasks gains the chosen-model column so the
         # "complexity-1 tasks that burned 50k tokens" audit join works.
         # Same convention as tasks (v2); both converted to TIMESTAMPTZ in v20.
@@ -136,7 +136,7 @@ MIGRATIONS: list[tuple[int, str]] = [
     ),
     (
         4,
-        # Phase 7: the `threads` relational hub. A canonical parent row unifies
+        # The `threads` relational hub. A canonical parent row unifies
         # the previously FK-less islands (tasks/llm_usage/artifacts/
         # thread_summaries/memories, joined only by a loose thread_id TEXT) and
         # anchors the bridge to Langfuse — langfuse_session_id == thread_id ==
@@ -194,7 +194,7 @@ MIGRATIONS: list[tuple[int, str]] = [
     ),
     (
         5,
-        # Phase 7: wire the foreign keys onto the threads hub. ADD CONSTRAINT
+        # Wire the foreign keys onto the threads hub. ADD CONSTRAINT
         # ... NOT VALID skips the full-table scan at creation; VALIDATE
         # CONSTRAINT then checks existing rows under a lighter lock. New writes
         # are enforced immediately either way — every Pg child store calls
@@ -243,7 +243,7 @@ MIGRATIONS: list[tuple[int, str]] = [
     ),
     (
         6,
-        # Phase 7: move CLI sessions off the standalone sessions.db SQLite file
+        # Move CLI sessions off the standalone sessions.db SQLite file
         # into Postgres so the session index JOINs the rest of the relational
         # model (sessions.thread_id -> threads -> tasks/llm_usage/...). Mirrors
         # SqliteSessionStore._SCHEMA_SQL (storage/sessions/sqlite_impl.py) with
@@ -337,7 +337,7 @@ MIGRATIONS: list[tuple[int, str]] = [
     ),
     (
         9,
-        # Phase 2: give the events DB (events/store.py) and the interrupts audit
+        # Give the events DB (events/store.py) and the interrupts audit
         # log (storage/interrupts.py) a Postgres home so the SQLite-only tables
         # can fail over to a SQLite *buffer* and drain back here on recovery
         # (storage/routing). Mirrors the SQLite DDL exactly so the two backends

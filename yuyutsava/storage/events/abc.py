@@ -1,10 +1,8 @@
 """Per-domain store ABCs for the events database.
 
-The monolithic :class:`~yuyutsava.storage.events.store.Store` historically owned
-every table on one SQLite connection. Phase 2 splits it into one ABC per
-logical domain, each with a SQLite twin (``sqlite_stores``) and a Postgres twin
-(``pg_stores``) — mirroring the artifacts twin
-(:mod:`yuyutsava.context.artifacts`) and memory
+One ABC per logical domain of the events database, each with a SQLite twin
+(``sqlite_stores``) and a Postgres twin (``pg_stores``) — mirroring the
+artifacts twin (:mod:`yuyutsava.context.artifacts`) and memory
 (:mod:`yuyutsava.memory.store`) patterns.
 
 Every method is ``async`` so the two backends share one signature and a

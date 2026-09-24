@@ -213,7 +213,7 @@ async def prompt_permission(
             await interrupts_store.resolve(row_id, outcome=decision)
         return decision
 
-    # ── PermissionMiddleware: raw execute call triggered a pattern check ───
+    # ── PermissionPolicy: raw execute call triggered a pattern check ───────
     if isinstance(interrupt_value, dict):
         iv2 = PermissionRequestInterrupt.model_validate(
             {

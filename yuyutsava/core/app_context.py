@@ -1,6 +1,6 @@
 """``AppContext`` — explicit store handles, instead of process globals.
 
-Phase 3 step 3.4 (ADR-003), addressing finding ``F-S08``.
+ADR-003; finding ``F-S08``.
 
 Five stores plus two policy objects are installed into module-level globals at
 boot and fetched later through ``get_default_*()``. That is a service locator,

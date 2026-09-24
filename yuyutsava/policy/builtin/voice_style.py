@@ -1,7 +1,5 @@
 """Speak like a person when the turn came in by voice.
 
-Phase 4 step 4.6, seventh migration (was ``VoiceStyleMiddleware``).
-
 A voice turn and a typed turn share one agent and one system prompt. This
 appends a spoken-style addendum on voice turns only, so the text path is
 completely unaffected — the addendum never enters the prompt it would otherwise

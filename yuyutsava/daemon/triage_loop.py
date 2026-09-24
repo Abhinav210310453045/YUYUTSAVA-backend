@@ -55,7 +55,7 @@ class OrchestratorTask:
     # empty for organic events — the orchestrator loop mints one so every
     # run is visible to ``GET /tasks``.
     task_id: str = ""
-    # 1-5 complexity score (Phase 4 model routing). Triage self-scores
+    # 1-5 complexity score (model routing). Triage self-scores
     # organic events; direct submissions are scored at submit time.
     complexity: int = 3
     # Durable resume after a daemon reload: when set, this task is a re-run of
@@ -169,7 +169,7 @@ class TriageLoop:
         self._triage = triage
         # Callable, not a string: the roster changes at runtime (the user can
         # switch a dedicated subagent off), and a block captured at boot would
-        # keep offering an agent that is no longer there.
+        # keep offering an agent that has been switched off.
         self._capabilities_block = capabilities_block
         self._runtime_settings = runtime_settings
         self._task_queue = task_queue

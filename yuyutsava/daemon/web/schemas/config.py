@@ -24,7 +24,7 @@ class EventsConfigOut(BaseModel):
 
 
 class EventsConfigPatchIn(BaseModel):
-    """Partial replacement: any source key replaces the entire source entry."""
+    """Partial replacement: any source key given overwrites that whole source entry."""
 
     sources: dict[str, SourceDTO]
 

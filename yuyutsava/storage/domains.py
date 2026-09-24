@@ -1,9 +1,9 @@
 """The registry of persisted domains — one declaration per table.
 
-Phase 2 step 2.4 (ADR-002). Session deletion and TTL sweeping used to be driven
-by hand-maintained table lists inside :mod:`yuyutsava.core.purge`. Adding a
-persisted domain meant remembering to edit a list in an unrelated module, and
-**forgetting was silent** — the rows simply survived a deletion the user asked
+ADR-002. Session deletion and TTL sweeping read this registry rather than
+hand-maintained table lists in :mod:`yuyutsava.core.purge`, where adding a
+persisted domain would mean remembering to edit a list in an unrelated module,
+and **forgetting would be silent** — the rows simply survived a deletion the user asked
 for.
 
 That is not hypothetical. Two domains were found missing on 2026-08-08:

@@ -5,9 +5,8 @@ closures over a workspace, so importing one directly would give you a tool with
 nothing to act on.
 
 The twelve tools are grouped by what they touch — :mod:`files`, :mod:`search`,
-:mod:`shell`, :mod:`web`, :mod:`host` and :mod:`ask` — because they used to be twelve closures
-in one 609-line function (`R-RDB-02`), where finding the one you wanted meant
-scrolling past the other eleven.
+:mod:`shell`, :mod:`web`, :mod:`host` and :mod:`ask` (`R-RDB-02`), so finding
+one never means scrolling past the other eleven.
 
 Every tool returns a JSON string (``OperationResponse.model_dump_json()``) so
 the calling model sees a structured, parseable result in its ToolMessage.

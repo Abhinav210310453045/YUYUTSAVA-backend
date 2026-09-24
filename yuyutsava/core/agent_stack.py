@@ -134,11 +134,10 @@ async def build_agent_stack(
     # YUYUTSAVA_MEMORY_ENABLED=0 still disables it.
     memory_store, skill_store, pg_pool, embedder = await build_retrieval_stores(skill_registry)
 
-    # Context-controller stores, selected ONCE by StoreFactory (Phase 3 step
-    # 3.5). The CLI, the tinker bundle and the daemon each used to write this
-    # `if pg_pool is not None:` branch out in full; the factory owns it now, so
-    # they cannot drift. See StoreFactory.context_stores for why these stay
-    # PG-primary / SQLite-fallback rather than RoutedStore.
+    # Context-controller stores, selected ONCE by StoreFactory — the same
+    # selection the tinker bundle and the daemon make, so they cannot drift.
+    # See StoreFactory.context_stores for why these stay PG-primary /
+    # SQLite-fallback rather than RoutedStore.
     _factory = StoreFactory(StorageSettings.from_env(), pg_pool=pg_pool, embedder=embedder)
     _ctx = _factory.context_stores(semantic_recall=context_settings.semantic_recall)
     artifact_store = _ctx.artifacts
@@ -320,5 +319,5 @@ async def build_agent_stack(
     return bundle
 
 
-# Back-compat alias: the stack is no longer CLI-only (the daemon hosts text +
-# voice conversations on the same builder), but existing imports keep working.
+# Back-compat alias: the stack is not CLI-only (the daemon hosts text + voice
+# conversations on the same builder), but existing imports keep working.

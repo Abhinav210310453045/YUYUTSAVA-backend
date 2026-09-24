@@ -70,7 +70,7 @@ def _bash_timeout_sec() -> int:
 # Compaction is the correct control here and is always on: it bounds the
 # context instead of bounding the conversation. The orchestrator keeps its own
 # BudgetPolicy, where the cap is per *task* and exhausting it genuinely means
-# the task is over-spending. ``YUYUTSAVA_CHAT_BUDGET_TOKENS`` no longer exists.
+# the task is over-spending. There is no chat budget setting.
 
 
 class ConversationManager:
@@ -135,9 +135,9 @@ class ConversationManager:
         self._build_locks: dict[str, asyncio.Lock] = {}
         # Every in-flight conversation turn, owned by the daemon and addressed
         # by thread_id — NOT by the socket that asked for it. Sockets attach as
-        # viewers, so closing a tinker pane or reloading the renderer no longer
-        # kills the agent mid-node. It doubles as the per-thread turn gate the
-        # WS handler used to keep in a bare set: a LangGraph checkpoint is
+        # viewers, so closing a tinker pane or reloading the renderer does not
+        # kill the agent mid-node. It doubles as the per-thread turn gate: a
+        # LangGraph checkpoint is
         # single-writer per thread, and two turns streaming the same thread
         # concurrently interleave message writes (duplicate leading human
         # message, empty messages the model 400s on — duplicated bubbles and

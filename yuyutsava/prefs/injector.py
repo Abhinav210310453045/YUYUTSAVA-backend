@@ -1,6 +1,6 @@
-"""Build the USER PREFERENCES block injected into the orchestrator system prompt.
+"""Build the USER PREFERENCES block injected into each master's system prompt.
 
-Design constraints from PHASE_2_PLAN §8.4 / §8.7:
+Design constraints:
 
 - Only keys in the *whitelist* are injected (default: ``interaction.style``,
   ``media.tone``).  Spotify, face-watcher, and other agent-specific prefs

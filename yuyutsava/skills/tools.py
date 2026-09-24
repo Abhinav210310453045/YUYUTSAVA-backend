@@ -2,7 +2,7 @@
 LangChain tools that expose the SkillRegistry to agents.
 
 read_skill  — load a full SKILL.md body on demand (agent-invoked)
-write_skill — save a compact pattern to personal scope (orchestrator-only)
+write_skill — save a compact pattern (each master, and subagents allowed to write skills)
 
 When a :class:`~yuyutsava.skills.store.SkillStore` is supplied, ``sk_write_skill``
 dual-writes: the on-disk ``SKILL.md`` stays the source of truth, and the store is

@@ -80,10 +80,9 @@ logger = logging.getLogger("yuyutsava.daemon.web.routers.todos")
 def board(request: Request) -> TodoExchange:
     """The TODO board for this request.
 
-    Phase 3 step 3.4. Nineteen handlers in this module each called
-    ``get_default_exchange()`` in their body — a service locator invoked once
-    per request, so the dependency appeared in no signature and no handler could
-    be exercised against a different board.
+    A FastAPI dependency rather than ``get_default_exchange()`` inside each
+    handler, so the board appears in every handler's signature and a test can
+    exercise one against a different board.
 
     As a FastAPI dependency it resolves from ``app.state`` when the daemon
     installed one and falls back to the process global otherwise, which keeps

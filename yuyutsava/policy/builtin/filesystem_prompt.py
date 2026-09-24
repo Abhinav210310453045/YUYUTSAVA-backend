@@ -1,13 +1,11 @@
 """Strip the filesystem block deepagents appends to every system prompt.
 
-Phase 4 step 4.6, eighth migration (was ``FilesystemPromptOverrideMiddleware``).
-
 ``FilesystemMiddleware`` is required middleware inside ``create_deep_agent``, and
 it appends a "## Filesystem Tools" block describing ``read_file``/``write_file``/
 ``execute``. This system replaces those with zone-checked ``tr_*`` equivalents,
 so the block contradicts our own prompt and has to go.
 
-## This is a Phase 0 silent-failure seam
+## This is a silent-failure seam
 
 The match is against *deepagents' wording*. If an upgrade rewords the block,
 moves ``FILESYSTEM_SYSTEM_PROMPT``, or changes the heading, the matcher finds

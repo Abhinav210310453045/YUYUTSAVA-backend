@@ -68,7 +68,7 @@ def get_decision_service(request: Request):
 
 
 def get_usage_store(request: Request):
-    """The ``llm_usage`` store (Phase 4 cost tracking)."""
+    """The ``llm_usage`` store (cost tracking)."""
     store = getattr(request.app.state, "usage_store", None)
     if store is None:
         raise ServiceUnavailableError("usage store not initialized")
@@ -76,7 +76,7 @@ def get_usage_store(request: Request):
 
 
 def get_resource_monitor(request: Request):
-    """The ``ResourceMonitor`` (Phase 5 system metrics)."""
+    """The ``ResourceMonitor`` (system metrics)."""
     monitor = getattr(request.app.state, "resource_monitor", None)
     if monitor is None:
         raise ServiceUnavailableError("resource monitor not initialized")

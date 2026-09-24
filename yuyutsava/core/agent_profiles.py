@@ -13,12 +13,10 @@ diffable over time.
 
 Status
 ------
-This module is **descriptive, not yet prescriptive**. It is transcribed from the
-three builders and verified against them by
-``test/core/test_agent_profiles.py``; the builders do not consume it yet. That
-happens when the composition pipeline lands (ADR-001), at which point these
-profiles become the single source of truth and the transcription test is
-replaced by the builders reading these values directly.
+Partly prescriptive. The builders read each profile's policy list and shared
+tool families; the other fields describe the builders and are verified against
+them by ``test/core/test_agent_profiles.py``. The composition pipeline
+(ADR-001) would make every field prescriptive.
 
 Do not "fix" a divergence by editing this file alone — that would make the
 matrix lie. Change the builder, then update the profile (the conformance test
@@ -46,9 +44,9 @@ class PolicyKind(str, Enum):
     SUBAGENT_GATE = "SubagentGatePolicy"
     BUDGET = "BudgetPolicy"
     USAGE = "UsagePolicy"
-    # Phase 4: migrated to a plain policy behind LangChainPolicyAdapter. The
-    # value is the name the assembled stack reports, which is now the policy's
-    # rather than a middleware class's — see ADR-004 and PROGRESS finding AX.
+    # A plain policy behind LangChainPolicyAdapter. The value is the name the
+    # assembled stack reports, which is the policy's rather than a middleware
+    # class's — see ADR-004 and PROGRESS finding AX.
     PERMISSION = "PermissionPolicy"
 
 
@@ -351,7 +349,7 @@ REVIEWED_DIVERGENCES: dict[str, DivergenceNote] = {
 #
 #   skill_injector_scope   -> every master now scopes to its OWN skills. The store
 #                             filter is `agent IS NULL OR agent = <role>`, so each
-#                             agent keeps shared skills and no longer pulls skills
+#                             agent keeps shared skills and never pulls skills
 #                             another agent authored for itself.
 #   supports_remote_async  -> tinker may delegate to subagents for any task, sync
 #                             or async, local or on a peer daemon.

@@ -1,4 +1,4 @@
-"""Pydantic schemas for the system-metrics endpoint (Phase 5)."""
+"""Pydantic schemas for the system-metrics endpoint."""
 
 from __future__ import annotations
 

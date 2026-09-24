@@ -1,4 +1,4 @@
-"""Server identity + capability flags (Phase 6 mobile contract).
+"""Server identity + capability flags (the mobile contract).
 
 One read-only endpoint the mobile app hits after the /health probe to learn
 what this daemon can do, so a client built against the full /v1 contract

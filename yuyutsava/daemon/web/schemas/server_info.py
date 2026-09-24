@@ -1,4 +1,4 @@
-"""Pydantic schemas for the server-info endpoint (Phase 6).
+"""Pydantic schemas for the server-info endpoint.
 
 The mobile app calls ``GET /v1/server-info`` once after connecting and
 degrades gracefully: capability flags gate UI affordances (model routing

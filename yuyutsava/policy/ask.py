@@ -1,8 +1,8 @@
 """Delivering a policy's question — the two ways it can be answered.
 
-Phase 4 step 4.3. See :mod:`yuyutsava.ports.ask` for why the port exists.
+See :mod:`yuyutsava.ports.ask` for why the port exists.
 
-:class:`LangGraphAskUser` is one of the few places in the migrated policy layer
+:class:`LangGraphAskUser` is one of the few places in the policy layer
 that imports the framework at all. That is the whole point: ``interrupt()`` moves
 out of the policy and into an adapter, so the policy's *decision* — refuse, ask,
 allow — can be exercised without a graph.

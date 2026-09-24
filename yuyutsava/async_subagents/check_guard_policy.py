@@ -1,7 +1,6 @@
 """Stop ``check_async_task`` poll-loops and compact the errors it returns.
 
-Phase 4 step 4.4, fourth migration (was ``CheckAsyncTaskGuardMiddleware``), and
-**the policy that justifies the** :class:`~yuyutsava.policy.types.Raw` **escape
+**The policy that justifies the** :class:`~yuyutsava.policy.types.Raw` **escape
 hatch** ADR-004 predicted would be needed.
 
 deepagents' ``check_async_task`` always re-hits the server and returns the raw

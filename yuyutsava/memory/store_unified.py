@@ -1,8 +1,7 @@
 """One ``memories`` implementation, both backends.
 
-Phase 2 step 2.5b (ADR-002), playbook order 12. Replaces ``PgMemoryStore`` and
-``SqliteMemoryStore`` — 191 lines — following the pattern established for skills
-(finding AF): the *storage* is shared, the *retrieval* is not, and the
+One store over :mod:`yuyutsava.storage.dialect` (ADR-002), on the pattern of
+skills (finding AF): the *storage* is shared, the *retrieval* is not, and the
 difference is a **declared capability** rather than something callers probe for.
 
 **This is the migration that removes the last ``getattr`` probes.**

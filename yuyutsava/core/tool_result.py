@@ -36,7 +36,7 @@ def guard_tool_result(content: str, tool_name: str) -> str:
     injected into the result JSON so the LLM gets actionable recovery hints
     rather than a blind truncation.
 
-    For any other tool a minimal notice replaces the bulk payload.
+    For any other tool a minimal notice stands in for the bulk payload.
     """
     if len(content) <= LIMITS.max_tool_result_chars:
         return content

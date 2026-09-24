@@ -1,7 +1,6 @@
 """Refuse delegation to subagents the user has switched off.
 
-Phase 4 step 4.6, tenth migration (was ``SubagentGateMiddleware``), and the only
-**hybrid** — it uses both hook families, which is why it went last:
+The only **hybrid** policy — it uses both hook families:
 
 * :meth:`revise_model_call` tells the model which subagents are off, so it
   routes around them instead of trying and being refused;

@@ -174,7 +174,7 @@ class OrchestratorLoop:
         else:
             resume = bool(task.resume_thread_id)
             thread_id = task.resume_thread_id or _mint_thread_id("orch")
-        # Resource governor (Phase 5): heavy tasks (complexity ≥ threshold or
+        # Resource governor: heavy tasks (complexity ≥ threshold or
         # a configured heavy subagent_hint) wait inside the slot for a free
         # heavy-task semaphore + an unloaded system before anything starts;
         # a critically full disk raises DiskCriticalError, which the failure
@@ -197,9 +197,9 @@ class OrchestratorLoop:
                     # user to cancel — honor it before the graph starts.
                     await self._cancel_before_start(task_id)
                     return
-                # Complexity-based model routing (Phase 4): fresh graph per
-                # task makes per-task selection free. Router absent or flag
-                # off → the role models the daemon booted with, as before.
+                # Complexity-based model routing: fresh graph per task makes
+                # per-task selection free. Router absent or flag off → the role
+                # models the daemon booted with.
                 model, deps = self._select_models(task)
                 if self._registry is not None and task_id:
                     await self._registry.mark_running(
@@ -208,7 +208,7 @@ class OrchestratorLoop:
                         complexity=task.complexity,
                         model=model_name_of(model) or None,
                     )
-                # Origin-aware ask routing (Phase 3): when the task came in
+                # Origin-aware ask routing: when the task came in
                 # through a channel plugin (origin == a registered channel
                 # name, e.g. "telegram"), map this run's thread_id to that
                 # channel so Tier-2 asks prefer the submitting surface.

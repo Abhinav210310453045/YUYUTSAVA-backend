@@ -462,7 +462,20 @@ up to 5,000 scrollback lines on every scroll event.
 
 ## R-DOC-01 — Comments and docstrings that contradict the code
 
-**Severity** P1 · **Wave** W4 · **Status** Open
+**Severity** P1 · **Wave** W4 · **Status** **Done.** Every row below was
+re-checked against the tree after W3's moves. Still wrong and now fixed: "four
+tr_* tools"; `can_write_skills` "Default (False)" (it is True); the profiles
+"descriptive, not yet prescriptive" (the builders read their policy lists and
+tool families); budget/usage "daemon-only" (usage attaches wherever a usage
+store is passed, budget only for the orchestrator); every `PermissionMiddleware`
+and `_prompt_permission` reference; the orchestrator's "duck-typed" async
+fields; `async_hitl` "no daemon"; the prefs block "orchestrator-only" and its
+missing `PHASE_2_PLAN`; `RESTRUCTURE_HANDOFF.md`; the palette "in
+chat_repl.py"; `write_skill` "orchestrator-only". Already right by then: the
+provider docstring, the converse ask frame, `meter`'s lazy import, the
+scenario paths, the run-config sentence. Not changed: the "40,000 chars" in
+`ctx_read_artifact`'s description equals `MAX_SLICE_CHARS` today, and it is
+text the model reads.
 
 **Claim.** At least fifteen docstrings or comments describe behaviour the code
 does not have.
@@ -501,7 +514,17 @@ with a description or a test (STD-DOC-5).
 
 ## R-DOC-02 — Project history narrated in the code
 
-**Severity** P2 · **Wave** W4 · **Status** Open
+**Severity** P2 · **Wave** W4 · **Status** **Done.** 159 → 2
+(`scripts/measure_code_health.py`), and the two left are reviewed: they are in
+agent prompts (`agents/tinker/prompts.py:74`, `agents/file_organizer/prompts.py:48`)
+and say "no longer exists" about the present, so changing them would change
+what the model reads for no gain. Migration labels ("Phase 4 step 4.6, eighth
+migration (was …)") were removed or replaced by what the code does; the
+reasoning they carried stays. Several narrations had gone stale on the way —
+module docstrings describing twin stores, a middleware and a plan document
+that no longer exist — and now describe the code as it is. Every one of the
+106 files was proven to differ from the previous commit only in comments and
+docstrings (an AST comparison with docstrings stripped).
 
 **Claim.** 176 phrases across 108 files narrate how the code got here ("Phase 4
 step 4.2", "Step 2.5b", "was:", "no longer", "used to be") instead of what it does.

@@ -7,9 +7,8 @@ once a transcript store is wired; semantic recall appears only when the store
 maintains an index for it.
 
 Grouped by what each family touches — :mod:`artifacts`, :mod:`compaction`,
-:mod:`history` and :mod:`recall` — because they used to be seven closures and
-nine helpers around one 242-line function (`R-RDB-02`). They need no shared
-context object: each family closes over a different thing, or over nothing.
+:mod:`history` and :mod:`recall` (`R-RDB-02`). They need no shared context
+object: each family closes over a different thing, or over nothing.
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""System load metrics (Phase 5 resource governor).
+"""System load metrics (the resource governor).
 
 One endpoint over the :class:`~yuyutsava.daemon.resources.ResourceMonitor`
 ring buffer plus the admission controller's per-task attribution — the

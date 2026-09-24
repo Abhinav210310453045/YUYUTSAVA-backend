@@ -4,7 +4,7 @@ Wires routers, attaches daemon singletons to ``app.state`` for ``Depends``,
 registers exception handlers, and exposes Swagger UI / ReDoc at ``/docs``
 and ``/redoc``.
 
-Bind policy (Phase 2): loopback binds stay unauthenticated (the Electron
+Bind policy: loopback binds stay unauthenticated (the Electron
 renderer is single-user and local). Non-loopback binds — e.g. a Tailscale
 address for the mobile app — are allowed **iff** bearer-token auth is
 active; the factory refuses to build an unauthenticated network-exposed
@@ -247,7 +247,7 @@ def create_app(
             pass
         return response
 
-    # Phase 6: every API router is mounted twice — canonical under /v1
+    # Every API router is mounted twice — canonical under /v1
     # (what /openapi.json documents; the mobile TS client generates from
     # it) and unprefixed as a legacy alias (hidden from the schema) so the
     # Electron renderer keeps working untouched. Static assets stay

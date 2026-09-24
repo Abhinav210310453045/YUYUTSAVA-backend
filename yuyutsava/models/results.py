@@ -10,8 +10,8 @@ discriminated union so callers always know exactly what fields are available.
   ReadResult    — text content from tr_read_file (supports pagination)
   ListResult    — directory entries from tr_ls / tr_glob
 
-When a result field would overflow the LLM context, the system replaces the
-bulk content with a ``SuppressedContentNotice`` (see models/tool_messages.py).
+When a result field would overflow the LLM context, the bulk content is swapped
+for a ``SuppressedContentNotice`` (see models/tool_messages.py).
 The notice is embedded in the same JSON structure so the LLM always gets a
 consistent, actionable response — never a silent truncation.
 """

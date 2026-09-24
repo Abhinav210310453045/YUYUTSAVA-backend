@@ -20,8 +20,6 @@ logger = logging.getLogger("yuyutsava.policy.builtin.usage")
 class UsagePolicy(Policy):
     """Write one ``llm_usage`` row per model call.
 
-    Phase 4 step 4.8, fourteenth and last migration (was ``UsageRecorder``).
-
     Constructed per agent build with the routed model's name and the task's join
     keys — the orchestrator builds a fresh graph per task, so these are fixed for
     the policy's lifetime.

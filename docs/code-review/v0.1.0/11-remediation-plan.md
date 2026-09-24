@@ -544,9 +544,13 @@ for W5, not caused by this change: once in four runs the first turn printed
 no cost line; not reproduced, and the usage row is written inline in
 `after_model`, so the cause is not yet known.
 
-Still open in this wave, in plan order: the two `R-KIS-02` policy items
-(need a decision), `build_daemon`/`_async_main` (waiting on the `BootContext` decision),
-and the docstring sweep.
+**Docstring sweep** (`R-DOC-01`, `R-DOC-02`): history narration 159 → 2
+(both in agent prompts, reviewed), and every contradiction still present
+fixed. 106 files, comments and docstrings only — proven by comparing each
+file's AST, docstrings stripped, with the previous commit.
+
+Still open in this wave, both waiting on a decision: the two `R-KIS-02`
+policy items, and `build_daemon`/`_async_main` (`BootContext`).
 
 ## W5 — Errors, logging, state, defects
 

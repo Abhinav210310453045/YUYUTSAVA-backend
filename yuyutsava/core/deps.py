@@ -27,7 +27,7 @@ class MasterDeps:
     """Everything both master-agent builders need.
 
     Frozen: a bundle is built once from these, and a field rewritten afterwards
-    would describe an agent that no longer matches the one running.
+    would describe a different agent from the one running.
 
     Every field defaults to "absent", and absent is meaningful — no memory
     store means no memory tools, no checkpointer means the graph does not

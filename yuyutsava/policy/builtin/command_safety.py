@@ -17,10 +17,8 @@ Everything here is a pure function over a command string: no framework, no I/O,
 no user interaction. Applying these rules — asking the user, refusing the call —
 is :class:`~yuyutsava.policy.builtin.permission.PermissionPolicy`.
 
-That split arrived with Phase 4 (ADR-004). Before it, ``PermissionMiddleware``
-lived at the bottom of this file, subclassed ``AgentMiddleware`` and called
-``langgraph.types.interrupt()`` inline, so exercising *any* of it meant running a
-graph. The rules were always framework-free; only their delivery was not.
+The split is ADR-004's: the rules here are framework-free and testable without
+a graph; only their delivery (asking, via ``interrupt()``) needs one.
 """
 
 from __future__ import annotations

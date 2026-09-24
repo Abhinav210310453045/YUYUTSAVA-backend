@@ -1,4 +1,4 @@
-"""Channel plugin management endpoints (Phase 3).
+"""Channel plugin management endpoints.
 
 ``GET /channels`` lists known plugins with config + live state;
 ``POST /channels/{name}/enable|disable`` persists the flag to

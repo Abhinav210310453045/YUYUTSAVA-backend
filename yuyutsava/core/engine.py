@@ -642,10 +642,9 @@ def _async_subagent_wiring(
             )
         )
 
-    # One adapter per policy, each at the position its middleware held. Phase 4
-    # step 4.4 migrates the policies; collapsing the adapters into one is a
-    # separate step (4.7) so that the ordering change can be proven on its own
-    # rather than riding along with five behavioural rewrites.
+    # One adapter per policy, in stack order; collapse_policy_adapters later
+    # merges them into one adapter placed after every non-adapter entry, which
+    # keeps each hook chain's order.
     async_specs = [s for s in specs if "graph_id" in s and "url" in s]
     middleware.append(LangChainPolicyAdapter([AsyncTaskInterruptPatchPolicy(async_specs)]))
     middleware.append(LangChainPolicyAdapter([CheckAsyncTaskGuardPolicy()]))
@@ -805,7 +804,7 @@ def build_cli_deepagent(
     ``task(subagent_type, ...)`` tool when ``subagents=[…]`` is passed.
 
     Args:
-        permission_check: When ``True`` (default), attaches ``PermissionMiddleware`` so
+        permission_check: When ``True`` (default), attaches ``PermissionPolicy`` so
             the agent pauses and asks the user before running dangerous shell commands.
         search_config: When provided, ws_* web search tools are added and made
             discoverable via the tool catalog (load with tool_search('select:ws_tavily_search')).
@@ -896,9 +895,10 @@ def build_cli_deepagent(
         )
     )
     # Absolute spend ceiling + passive accounting, after compaction (the
-    # orchestrator's ordering rule). Both daemon-wired: the standalone CLI
-    # passes neither and keeps its historical unbounded behavior. Lazy
-    # imports: daemon-only modules.
+    # orchestrator's ordering rule). Each attaches only when given its input:
+    # usage when a usage store is passed (the CLI and daemon chat stacks pass
+    # one), budget when budget_tokens is (only the orchestrator passes one —
+    # a chat's spend is cumulative and never resets).
     # Budget + usage sit AFTER compaction so they see post-compaction counts;
     # the ordering lives in _POLICY_ORDER_POST, not here. The chat bundle is
     # shared across threads, so usage rows land task-less/thread-less.
@@ -1195,7 +1195,7 @@ def build_orchestrator(
         )
 
     def _usage_mw(agent_model: BaseChatModel, role: str) -> list:
-        """Per-call cost accounting (Phase 4); [] when no store is wired."""
+        """Per-call cost accounting; [] when no store is wired."""
         usage_store = getattr(deps, "usage_store", None)
         if usage_store is None:
             return []
@@ -1471,8 +1471,8 @@ def build_tinker_agent(
             )
         )
     # Tinker delegates freely: any task, sync or async, local or on a peer
-    # daemon. ``remote_async_subagents`` used to be omitted here, which silently
-    # denied it cross-daemon background work its siblings could do.
+    # daemon. Omitting ``remote_async_subagents`` here would silently deny it
+    # cross-daemon background work its siblings can do.
     _async_specs, _async_mw = _async_subagent_wiring(
         role="build_tinker_agent",
         async_subagents=async_subagents,

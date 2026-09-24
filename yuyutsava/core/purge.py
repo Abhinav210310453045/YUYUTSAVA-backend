@@ -103,7 +103,7 @@ async def purge_session(
     """Remove every row + file tied to ``session_id``. Raises ``SessionNotFound``.
 
     Pass ``ctx`` to supply the stores explicitly; omit it and they come from the
-    process globals exactly as before (Phase 3 step 3.4, finding ``F-S08``).
+    process globals (finding ``F-S08``).
 
     The explicit form matters because this function's one-argument signature hid
     that it touches **four** stores — sessions, visuals, feedback and the events

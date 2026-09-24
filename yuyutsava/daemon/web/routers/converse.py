@@ -10,7 +10,7 @@ The socket is a **viewer, not the owner**. Turns are created by the daemon's
 :class:`~yuyutsava.daemon.turn_registry.TurnRegistry` and addressed by
 ``thread_id``; this handler attaches to that thread on connect, streams its
 frames, and merely *detaches* on disconnect. Closing a tinker pane, switching
-TODO cards or reloading the renderer no longer kills the agent — explicit
+TODO cards or reloading the renderer does not kill the agent — explicit
 cancellation (``interrupt`` / ``POST /conversations/{thread_id}/cancel``) is
 the only thing that does.
 
@@ -98,11 +98,11 @@ logger = logging.getLogger("yuyutsava.daemon.web.routers.converse")
 
 router = APIRouter(tags=["converse"])
 
-# NOTE: conversation asks used to auto-reject after 300 s. They no longer
-# expire at all — an ask is a durable record (daemon/ask_registry.py) that the
-# user can answer from the owning chat, the Inbox or the always-on-top overlay,
-# whenever they get to it. Silently rejecting on the user's behalf because they
-# stepped away was never the right answer to "the agent is waiting".
+# NOTE: conversation asks never expire — an ask is a durable record
+# (daemon/ask_registry.py) that the user can answer from the owning chat, the
+# Inbox or the always-on-top overlay, whenever they get to it. Silently
+# rejecting on the user's behalf because they stepped away was never the right
+# answer to "the agent is waiting".
 
 
 # Grace window after the agent starts speaking during which VAD speech onsets are

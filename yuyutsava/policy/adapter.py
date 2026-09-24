@@ -1,15 +1,15 @@
 """The one place this system knows about ``AgentMiddleware``.
 
-Phase 4 step 4.2, [ADR-004](../../docs/architecture/review/adr/ADR-004-framework-boundary.md)
-item 1. Fourteen framework subclasses collapse to one adapter; a hook-signature
-change becomes a one-file change instead of a fourteen-file change.
+[ADR-004](../../docs/architecture/review/adr/ADR-004-framework-boundary.md)
+item 1. Every policy reaches the framework through this one adapter, so a
+hook-signature change is a one-file change.
 
 ## Ordering
 
 Middleware nests: the first entry in the stack is outermost, and each wraps the
 next via ``handler``. Before-hooks therefore run outermost-first and after-hooks
 outermost-**last**. Collapsing several policies into one adapter means that
-nesting is no longer done by the framework, so this class reproduces it
+nesting is not done by the framework, so this class reproduces it
 explicitly — :meth:`awrap_tool_call` runs ``before_tool`` in list order and
 ``after_tool`` in reverse.
 
@@ -271,9 +271,8 @@ class LangChainPolicyAdapter(AgentMiddleware):  # type: ignore[misc]
         stopping destructive commands.
 
         Nothing in this codebase invokes a graph synchronously (verified: no
-        ``.invoke()``/``.stream()`` on any agent or graph), and
-        ``PermissionMiddleware`` was already async-only before the migration. So
-        this is unreachable today. If it ever becomes reachable, a loud failure
+        ``.invoke()``/``.stream()`` on any agent or graph), so this is
+        unreachable today. If it ever becomes reachable, a loud failure
         naming the cause beats a safety layer that quietly stopped running.
         """
         raise RuntimeError(
@@ -323,11 +322,9 @@ class LangChainPolicyAdapter(AgentMiddleware):  # type: ignore[misc]
 def collapse_policy_adapters(middleware: list[Any]) -> list[Any]:
     """Merge every :class:`LangChainPolicyAdapter` in *middleware* into one.
 
-    Phase 4 step 4.7. Each policy was migrated with its own adapter at the exact
-    position its middleware held, so that every cutover diff was one entry
-    swapped in place and provable on its own. That leaves N wrap layers on the
-    hot path where one will do — the indirection cost ADR-004 flagged as the
-    thing to watch.
+    The engine builds one adapter per policy, in stack order; left alone that
+    is N wrap layers on the hot path where one will do — the indirection cost
+    ADR-004 flagged as the thing to watch.
 
     **Placement: after every non-adapter entry.** Order *within* a hook chain is
     decided by list position; order *between* chains is decided by the agent

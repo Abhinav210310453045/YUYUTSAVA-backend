@@ -1,13 +1,9 @@
 """Offload oversized tool results to the artifact store — before state.
 
-Phase 4 step 4.4, third migration (was ``ToolResultOffloadMiddleware``), and the
-first policy to use the ``after_tool`` hook.
-
-This is the root-cause fix for context rot. The old path
-(``core/streaming.py`` → ``guard_tool_result``) mutated the *streamed copy* of a
-ToolMessage after the checkpointer had already persisted the full blob; it
-protected the display, not the context. Rewriting the result here means the
-digest is what enters graph state, the checkpoint, and every later model call.
+A policy on the ``after_tool`` hook, because that is before state: the digest
+is what enters graph state, the checkpoint, and every later model call.
+Rewriting the *streamed copy* instead would protect the display, not the
+context — the checkpointer would already hold the full blob.
 ``guard_tool_result`` stays in place as a display-side backstop for non-wrapped
 paths.
 

@@ -80,7 +80,7 @@ class TaskSubmissionService:
         (``ChannelRouter.session_origin``) can prefer the submitting channel
         for Tier-2 prompts.
 
-        ``complexity`` (Phase 4): direct submissions skip triage, so no LLM
+        ``complexity``: direct submissions skip triage, so no LLM
         self-scores them. A client-supplied 1-5 override wins; otherwise one
         short light-tier scoring call runs when a scorer is wired (model
         routing enabled). The scorer never raises — any failure scores 3.

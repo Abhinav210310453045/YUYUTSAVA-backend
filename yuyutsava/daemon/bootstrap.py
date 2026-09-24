@@ -209,24 +209,24 @@ class DaemonSubsystems:
     triage_loop: TriageLoop
     orch_loop: OrchestratorLoop
 
-    # task gateway (Phase 2). Both are borrowed by the web app; the
+    # task gateway. Both are borrowed by the web app; the
     # registry's stores ride the same backends torn down above (pg_pool /
     # per-call sqlite connections), so neither needs its own teardown.
     task_registry: TaskRegistry
     task_submission: TaskSubmissionService
 
-    # channel plugins (Phase 3). ``channel_plugins`` owns running plugin
+    # channel plugins. ``channel_plugins`` owns running plugin
     # instances — main.py calls stop_all() before channels.shutdown().
     decision_service: DecisionService
     channel_plugins: ChannelPluginRegistry
 
-    # model routing + cost tracking (Phase 4). Borrowed by the web app and
+    # model routing + cost tracking. Borrowed by the web app and
     # the orchestrator loop; the usage store rides the same backends torn
     # down above (pg_pool / per-call sqlite), so no teardown of its own.
     usage_store: UsageStore
     model_router: ModelRouter
 
-    # resource governor (Phase 5). The monitor is a loop main.py schedules
+    # resource governor. The monitor is a loop main.py schedules
     # alongside triage/orchestrator (joins on stop_event — no teardown hook);
     # the admission controller is borrowed by the orchestrator loop + web app.
     resource_monitor: ResourceMonitor
@@ -329,14 +329,11 @@ def _build_initial_events_config(opts: DaemonOptions, daemon_cfg: DaemonConfig) 
 class StorageSubsystem:
     """Everything the persistence layer produces, as one explicit record.
 
-    Phase 3 step 3.3 (ADR-003). ``build_daemon`` was a 927-line function whose
-    only description of how the system fits together was *statement order inside
-    one body* — unverifiable by any tool, unholdable in one head.
-
-    This is the first slice pulled out. It has explicit inputs (options) and
-    explicit outputs (this record), so it can be built and inspected without
-    constructing a daemon, and the load order it depends on is visible in a
-    signature rather than implied by position.
+    ADR-003. How the daemon fits together is stated by records like this one,
+    not by *statement order inside one body*, which no tool can check. It has
+    explicit inputs (options) and explicit outputs (this record), so it can be
+    built and inspected without constructing a daemon, and the load order it
+    depends on is visible in a signature rather than implied by position.
     """
 
     settings: StorageSettings
@@ -442,10 +439,10 @@ async def build_storage(opts: DaemonOptions) -> StorageSubsystem:
         # already ran above, so the store skips its own lazy schema-ensure.
         set_default_session_store(PgSessionStore(storage, pool=pg_pool))
 
-    # ── task registry (Phase 2: first-class task tracking) -----------------
+    # ── task registry (first-class task tracking) --------------------------
     task_registry = TaskRegistry(stores.tasks())
 
-    # ── usage accounting + model routing (Phase 4) --------------------------
+    # ── usage accounting + model routing ----------------------------------
     usage_store: UsageStore = stores.usage()
     model_router = ModelRouter.from_env()
     if model_router.enabled:
@@ -505,7 +502,7 @@ async def build_storage(opts: DaemonOptions) -> StorageSubsystem:
 class PolicySubsystem:
     """User preferences, permission rules and consent grants.
 
-    Phase 3 step 3.3, second slice. Cohesive because all three read from the
+    Cohesive because all three read from the
     same events store and all three answer one question: *what is this agent
     allowed to do?* Extracted together rather than split, because separating
     them would produce three builders that each take ``store`` and are never
@@ -524,10 +521,8 @@ async def build_policy(store: Store) -> PolicySubsystem:
     """Load preferences, permission rules and consent grants.
 
     NOTE: still calls ``set_default_policy`` / ``set_default_consent``, which
-    install process-global singletons (finding ``F-S08``). Those are Phase 3
-    step 3.4; leaving them here keeps this extraction behaviour-preserving, and
-    the globals are now at least confined to one named function instead of
-    being buried mid-way through a 900-line body.
+    install process-global singletons (finding ``F-S08``, ``R-GLB-01``). They
+    are confined to this one named function until injection replaces them.
     """
     # ── user prefs store --------------------------------------------------
     prefs_store = PrefsStore(store)
@@ -572,7 +567,7 @@ async def build_policy(store: Store) -> PolicySubsystem:
 class RetentionSubsystem:
     """Checkpointing and the TTL sweeper — what keeps disk bounded.
 
-    Phase 3 step 3.3, third slice. The checkpointer and sweeper belong together:
+    The checkpointer and sweeper belong together:
     the sweeper needs the saver to age out stale threads, and both answer
     "what gets kept, and for how long?".
     """
@@ -592,9 +587,8 @@ async def build_retention(
 ) -> RetentionSubsystem:
     """Start the checkpointer and assemble the unified TTL sweeper.
 
-    Inputs are explicit rather than read from enclosing scope — which is the
-    point of the extraction. The sweeper's dependency on the artifact store and
-    the health handle used to be invisible; now it is in the signature.
+    Inputs are explicit rather than read from enclosing scope, so the sweeper's
+    dependency on the artifact store and the health handle is in the signature.
     """
     # ── checkpointer (sqlite or postgres; sweeper handles stale threads) --
     checkpointer_saver = CheckpointerSaver(db_path=checkpoints_db_path(), storage=storage)
@@ -656,14 +650,11 @@ async def build_retention(
 class RetrievalSubsystem:
     """Semantic recall: the skills index and the TODO-board note index.
 
-    Phase 3 step 3.3, fourth slice — and the one that closes a real coverage
-    gap. The note index is built inside
+    The note index is built inside
     ``if pg_pool is not None and embedder is not None``, a **Postgres-only**
-    branch that no test could reach while it lived inside ``build_daemon``
-    (which starts servers and never returns). That is exactly the branch where
-    finding Y's ``NameError`` hid.
-
-    Extracted, it is directly testable on a live Postgres.
+    branch — the kind where finding Y's ``NameError`` hid. As its own builder
+    it is directly testable on a live Postgres, which ``build_daemon`` (it
+    starts servers and never returns) is not.
     """
 
     skill_registry: SkillRegistry
@@ -737,10 +728,9 @@ async def build_retrieval(
 class EventsSubsystem:
     """The event bus, its live sources, and the config hot-reload hook.
 
-    Phase 3 step 3.3, fifth slice. ``reload`` is returned as a callable rather
-    than left as a closure in ``build_daemon``'s body: the SIGHUP handler needs
-    it, and a returned function is visible in a signature where a closure buried
-    600 lines up was not.
+    ``reload`` is returned as a callable rather than left as a closure in
+    ``build_daemon``'s body: the SIGHUP handler needs it, and a returned function
+    is visible in a signature where a buried closure is not.
     """
 
     bus: EventBus
@@ -1007,10 +997,8 @@ async def build_channels(
 class AsyncSubagentSubsystem:
     """The background-subagent host, its task mirror and its health watcher.
 
-    Phase 3 step 3.3, sixth slice — the **largest** block in ``build_daemon``
-    (152 lines) and the one with the most tangled outputs: five names, all of
-    which stay ``None`` when the feature is off, every one of them read again
-    hundreds of lines further down.
+    Five names, all of which stay ``None`` when the feature is off, and every one
+    of them read again far from where it is built.
 
     Bundling them means "async subagents are disabled" is a single fact
     (``enabled``) rather than five independent ``is not None`` checks that could
@@ -1203,7 +1191,7 @@ async def build_async_subagents(
 class SubagentSubsystem:
     """The daemon's subagent roster, sync and background.
 
-    Phase 3 step 3.3, seventh slice. Two lists rather than one because they are
+    Two lists rather than one because they are
     genuinely different sets: ``sync`` is what the orchestrator may delegate to
     inline, ``background`` adds the TinkerAgent, which exists **only** as an
     async peer. Keeping them apart here is what stops a caller accidentally
@@ -1271,7 +1259,7 @@ def build_subagents(
         GeneralPurposeAgent(task_runner, **common),
     ]
 
-    # Background TinkerAgent (Phase 6): an ASYNC peer of the master only — "tinker
+    # Background TinkerAgent: an ASYNC peer of the master only — "tinker
     # on card X in the background" from any chat/voice surface. Deliberately NOT
     # in the sync roster: interactive tinkering has its own per-card bundle
     # (ConversationManager), so the master delegates long jobs rather than
@@ -1387,7 +1375,7 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     log_bridge = chans.log_bridge
     web_server: uvicorn.Server | None = None
 
-    # ── resource governor (Phase 5) ----------------------------------------
+    # ── resource governor ------------------------------------------------
     # Monitor samples psutil into a ring (main.py schedules its run loop);
     # admission gates heavy tasks (complexity ≥ threshold / heavy hints)
     # behind a semaphore + load check in OrchestratorLoop._run_task. The
@@ -1502,7 +1490,7 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     triage = TriageAgent(triage_model)
     # task_queue + launch_index created above (before the async block).
 
-    # ── task submission (POST /tasks; channel plugins in Phase 3) ---------
+    # ── task submission (POST /tasks and channel plugins) ------------------
     # Direct submissions skip triage, so a light-tier call scores their
     # complexity — only when routing is on (a score nobody routes on is
     # wasted spend). The scorer resolves its model lazily and never raises.
@@ -1533,7 +1521,7 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     # Transcript RAG for the orchestrator master (Postgres only): the same
     # per-turn ConversationInjector recall the chat/tinker masters get, so a
     # resumed orchestrator thread remembers its own swept turns.
-    # Same selection the CLI and tinker stacks use (Phase 3 step 3.5) — the
+    # Same selection the CLI and tinker stacks use — the
     # two-condition guard lives in StoreFactory, not in three call sites.
     orch_transcript_index = stores.transcript_index()
 
@@ -1577,7 +1565,7 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         launch_index=launch_index,
     )
 
-    # ── channel plugins (Phase 3) ------------------------------------------
+    # ── channel plugins --------------------------------------------------
     # One DecisionService resolves proposal/ask responses for every surface:
     # the HTTP routers and any plugin's inbound loop land on the same code
     # path. Waiter maps are registered per surface (WebHub + InboundSink).

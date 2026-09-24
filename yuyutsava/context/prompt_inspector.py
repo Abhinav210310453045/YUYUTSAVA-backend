@@ -5,9 +5,8 @@ does nothing unless ``YUYUTSAVA_DEBUG_PROMPT`` is truthy. It runs as the last
 ``before_model`` hook so it reports the message list *after* offload and
 compaction have done their work — i.e. what the LLM actually receives.
 
-Phase 4 step 4.8, thirteenth migration: a plain
-:class:`~yuyutsava.policy.base.Policy` rather than an ``AgentMiddleware``
-subclass. Nothing about the report changed.
+A plain :class:`~yuyutsava.policy.base.Policy`, not an ``AgentMiddleware``
+subclass.
 
 This is the answer to "is the content really reduced, or just copied into a
 table too?". For each model call it logs one line per message with its byte
@@ -95,9 +94,8 @@ class PromptInspectorPolicy(Policy):
             preview = preview[:80].replace("\n", " ")
             lines.append(f"    [{i:>2}] {label:<22} {size:>7,}c{tag}  {preview!r}")
 
-        # One counter for every number this codebase reports (context/tokens.py):
-        # this used to be `total // 4`, which disagreed with both the compaction
-        # trigger and the context meter — three estimators, no two alike.
+        # One counter for every number this codebase reports (context/tokens.py),
+        # so this report, the compaction trigger and the context meter agree.
         approx = approx_tokens(messages)
         header = (
             f"\n┌─ PROMPT INSPECT [{self._role}] call#{self._call} ─ "

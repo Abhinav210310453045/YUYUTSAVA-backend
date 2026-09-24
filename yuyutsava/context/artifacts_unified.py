@@ -1,8 +1,7 @@
 """One ``artifacts`` implementation, both backends.
 
-Phase 2 step 2.5b (ADR-002), playbook order 13. Replaces
-``SqliteArtifactStore`` and ``PgArtifactStore`` — 194 lines — following the
-pattern from skills and memory: shared storage, declared capability for the
+One store over :mod:`yuyutsava.storage.dialect` (ADR-002), on the pattern of
+skills and memory: shared storage, and a declared capability for the
 pgvector-only part.
 
 Artifacts are the offload target for oversized tool results, so ``put`` sits on

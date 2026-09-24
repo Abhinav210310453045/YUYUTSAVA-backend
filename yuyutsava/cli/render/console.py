@@ -17,7 +17,7 @@ from rich.theme import Theme
 
 from yuyutsava.config.env import env_flag
 
-# Mirrors the ANSI palette in chat_repl.py so both renderers look related.
+# Mirrors the ANSI palette in yuyutsava/ansi.py so both renderers look related.
 _THEME = Theme(
     {
         "accent": "cyan",

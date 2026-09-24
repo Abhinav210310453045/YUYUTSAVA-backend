@@ -1,9 +1,9 @@
 """SQL dialect adapters — the seam that lets one store serve both backends.
 
-Phase 2 step 2.2 (ADR-002). Every persisted domain is currently written twice:
-a SQLite class and a Postgres class implementing the same contract in two SQL
-dialects. That is ~8,000 duplicated lines, the source of the drift the
-conformance suite keeps finding, and why adding one field costs ~12 edits.
+ADR-002. Without it, every persisted domain is written twice — a SQLite class
+and a Postgres class implementing one contract in two SQL dialects — which is
+where the drift the conformance suite finds comes from, and why adding one
+field would cost ~12 edits.
 
 The twins are *parallel*, not divergent — same method names, same order, same
 contracts — which is exactly the shape a dialect adapter collapses. What

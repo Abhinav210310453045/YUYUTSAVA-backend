@@ -1,15 +1,15 @@
 """Unified events-domain stores — one implementation per domain, both backends.
 
-Phase 2 step 2.5b, the ``events:*`` batch. These seven domains differ from the
-ones migrated before them: they share **one** ``SqliteEventsBackend`` (a single
+The ``events:*`` domains. These seven differ from the other unified stores:
+they share **one** ``SqliteEventsBackend`` (a single
 persistent connection with eager schema) rather than each owning a
 ``BaseSqliteStore``. :class:`~yuyutsava.storage.dialect.EventsSqliteDialect`
 bridges that; everything else follows the established pattern.
 
 **All seven events domains are migrated**: ``EventStore``, ``ProposalStore``,
 ``DecisionStore``, ``ConsentRuleStore``, ``ConsentGrantStore``,
-``ToolCounterStore``, ``PendingAskStore``. The events package no longer has a
-single hand-written twin pair.
+``ToolCounterStore``, ``PendingAskStore``. The events package has no
+hand-written twin pair.
 
 Two non-dialect differences had to be resolved rather than papered over:
 

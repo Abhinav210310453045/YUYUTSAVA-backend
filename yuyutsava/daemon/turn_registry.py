@@ -1,16 +1,12 @@
 """Daemon-owned conversation turns, addressed by ``thread_id``.
 
-A conversation turn used to be an :class:`asyncio.Task` held in the WebSocket
-handler's local scope: only that one connection could see it, and the handler's
-``finally`` cancelled it. Closing a tinker pane, switching TODO cards or
-reloading the renderer therefore killed the agent mid-node — while *background*
-agents, owned by a daemon-lifetime task and addressed by a persisted id, were
-never affected by a UI event at all.
-
-This module gives conversations that same ownership model. A :class:`TurnRun`
-is created **by the daemon** and addressed by its ``thread_id``; sockets attach
-as *viewers* and detach on disconnect without touching the run. Explicit
-cancellation (the Stop button / ``interrupt`` frame /
+Conversations get the ownership model *background* agents have: a turn is not
+an :class:`asyncio.Task` in one WebSocket handler's scope, which only that
+connection could see and whose ``finally`` would cancel it — so closing a
+tinker pane, switching TODO cards or reloading the renderer cannot kill the
+agent mid-node. A :class:`TurnRun` is created **by the daemon** and addressed by
+its ``thread_id``; sockets attach as *viewers* and detach on disconnect without
+touching the run. Explicit cancellation (the Stop button / ``interrupt`` frame /
 ``POST /conversations/{thread_id}/cancel``) stays the only way to kill a turn.
 
 Modelled directly on the per-task replay ring already in

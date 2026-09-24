@@ -180,9 +180,9 @@ class BaseSqliteStore:
         behind. The per-process ``asyncio.Lock`` prevents the retry loop from
         fighting itself when many tasks write concurrently.
 
-        The rollback used to be implicit — the connection was simply closed and
-        SQLite discarded the open transaction. That worked, but it relied on
-        driver close semantics rather than stating the intent, and it left the
+        The rollback is explicit rather than left to closing the connection
+        (SQLite would discard the open transaction): relying on driver close
+        semantics would not state the intent, and it left the
         retry path re-entering with the previous attempt's partial work only
         *probably* gone. It is explicit now.
         """

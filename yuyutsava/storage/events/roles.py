@@ -34,8 +34,8 @@ What this buys, concretely:
 * a signature states its blast radius — ``store: DecisionWriter`` says "writes
   decisions", where ``store: Store`` said "could touch anything";
 * a test double satisfies 1–3 methods instead of 30;
-* a change to consent-grant storage no longer has 22 modules in its
-  type-level blast radius when only two use it.
+* a change to consent-grant storage has only its two users in its type-level
+  blast radius, not every module that holds a Store.
 
 Grouping follows *observed* usage rather than invented taxonomy: every Protocol
 here exists because at least one real consumer needs exactly that set.
@@ -99,9 +99,8 @@ class EventPayloadWriter(Protocol):
 class EventPayloadReader(Protocol):
     """Used by ``ev_fetch_event``: read one payload back, nothing else.
 
-    The reader half of :class:`EventPayloadWriter`. Added in Phase 2 step 2.7
-    when the tool that needed it was narrowed — the pair had a writer and a
-    sweeper but no reader, so the only available annotation was the whole Store.
+    The reader half of :class:`EventPayloadWriter`; without it the tool's only
+    available annotation would be the whole Store.
     """
 
     async def get_event_payload(self, event_id: str) -> Any: ...

@@ -1,4 +1,4 @@
-"""Resource-aware execution (Phase 5): monitor + admission control.
+"""Resource-aware execution: monitor + admission control.
 
 Two cooperating pieces:
 

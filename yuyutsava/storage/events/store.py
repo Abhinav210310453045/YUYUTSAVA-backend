@@ -1,11 +1,10 @@
 """Composition facade over the per-domain events stores.
 
-Historically one monolithic ``Store`` owned every table on a single SQLite
-connection. Phase 2 split each table into an ABC (:mod:`abc`) with a SQLite
-twin (:mod:`sqlite_backend`) and a Postgres twin (:mod:`pg_stores`). This
-:class:`Store` keeps the *old method names* and threads them to the right
-domain store so call sites barely change — but every DB method is now ``async``
-(a Postgres call must never block the loop) with one exception:
+Each table is an ABC (:mod:`abc`) with a SQLite twin (:mod:`sqlite_backend`)
+and a Postgres twin (:mod:`pg_stores`). This :class:`Store` is the facade over
+them: it keeps one set of method names and threads each to the right domain
+store. Every DB method is ``async`` (a Postgres call must never block the
+loop) with one exception:
 :meth:`list_consent_grants`, pinned synchronous by the ``ConsentStore``
 Protocol and served from a cache filled at :meth:`start`.
 

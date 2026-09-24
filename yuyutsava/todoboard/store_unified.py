@@ -1,23 +1,18 @@
 """One TODO-board implementation, both backends.
 
-Phase 2 step 2.5b (ADR-002), playbook order 15 — the **last** twin pair, and the
-largest: 804 lines, 20 methods, 5 tables.
+ADR-002. 20 methods over 5 tables.
 
-The contract was validated against the *existing* twins before a line of this
-file was written: all 43 behaviours in
-``test/storage/test_todo_store_parity.py`` pass against ``SqliteTodoStore`` and
-``PgTodoStore`` unchanged. So the tests describe what the board already does,
-not what this rewrite happens to do — and four wrong assumptions of mine
-(``"doing"`` is not a card status, ``assign_note`` takes ``updated_ts``,
-``list_all_attachments`` returns bare attachments, ``"building"`` is not an
-objective phase) were caught by that step rather than by shipping.
+``test/storage/test_todo_store_parity.py`` holds the board's 43 behaviours on
+both backends. Easy to get wrong: ``"doing"`` is not a card status,
+``assign_note`` takes ``updated_ts``, ``list_all_attachments`` returns bare
+attachments, and ``"building"`` is not an objective phase.
 
 **Child deletion is now explicit on both backends.** Postgres had four
 ``ON DELETE CASCADE`` foreign keys; SQLite deleted the same four tables by hand,
 because ``PRAGMA foreign_keys`` is off on that connection. Two mechanisms for
 one behaviour. The unified store deletes children explicitly and lets the
 Postgres foreign keys stand as a **safety net rather than the mechanism**, so
-what happens no longer depends on which backend is underneath — or on a
+what happens does not depend on which backend is underneath — or on a
 constraint quietly losing its ``ON DELETE``. Same for the ``SET NULL`` on a
 note's ``objective_id`` when its objective is deleted.
 

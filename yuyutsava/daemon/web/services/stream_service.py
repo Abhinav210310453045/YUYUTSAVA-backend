@@ -318,7 +318,7 @@ class WebChannel(UserChannel):
         except asyncio.TimeoutError:
             return ProposalDecision(decision="expired")
         finally:
-            # Tell every surface the proposal is no longer pending (answered
+            # Tell every surface the proposal is not pending any more (answered
             # here or elsewhere, or expired) so cards/prompts clear in sync.
             await self._hub.resolve_proposal(p.proposal_id, p.session_id)
 

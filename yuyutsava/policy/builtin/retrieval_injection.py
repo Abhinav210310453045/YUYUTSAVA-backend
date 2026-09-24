@@ -1,7 +1,5 @@
 """Inject retrieved memory, skills and preferences into the system prompt.
 
-Phase 4 step 4.6, ninth migration (was ``RetrievalInjectionMiddleware``).
-
 Each injector builds one block from the current task text — semantic memory,
 matching skills, past conversation, user preferences, board notes — and the
 blocks are appended to the system message once per turn.

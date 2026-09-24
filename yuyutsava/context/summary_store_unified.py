@@ -1,9 +1,7 @@
 """One ``ThreadSummaryStore`` over both backends — second domain on the adapter.
 
-Phase 2 step 2.5b. Follows ``visuals/store_unified.py``; chosen next because it
-is the smallest remaining pair (108 lines) and, unlike visuals, has **no on-disk
-side effect** — so it tests whether the dialect seam generalises to a plain
-row-only domain rather than only to the case it was designed against.
+A plain row-only domain over :mod:`yuyutsava.storage.dialect`: unlike visuals,
+it has **no on-disk side effect**.
 
 Version allocation, and a bug the parity suite exposed
 ------------------------------------------------------

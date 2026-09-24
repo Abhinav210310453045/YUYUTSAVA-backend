@@ -1,6 +1,6 @@
 """Proposal and ask decision endpoints.
 
-Thin HTTP veneer over :class:`DecisionService` (Phase 3 extraction) — the
+Thin HTTP veneer over :class:`DecisionService` — the
 same service instance backs the channel-plugin ``InboundSink``, so a
 decision arriving over HTTP or from a Telegram button takes one code path.
 """

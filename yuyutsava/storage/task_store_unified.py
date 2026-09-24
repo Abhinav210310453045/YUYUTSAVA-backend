@@ -1,8 +1,7 @@
 """One ``tasks`` implementation, both backends.
 
-Phase 2 step 2.5b (ADR-002), playbook order 10. Replaces ``SqliteTaskStore`` and
-``PgTaskStore`` — 181 lines whose only real differences were the placeholder
-style and Postgres's thread-hub foreign key.
+One store over :mod:`yuyutsava.storage.dialect` (ADR-002). The backends differ
+only in placeholder style and Postgres's thread-hub foreign key.
 
 Two things worth knowing before editing this file.
 

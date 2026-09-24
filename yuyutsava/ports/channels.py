@@ -114,7 +114,7 @@ class AppLogPayload:
 
 @dataclass(frozen=True)
 class SystemMetricsPayload:
-    """System load reading (Phase 5 ResourceMonitor).
+    """System load reading (the ResourceMonitor).
 
     Emitted at most once per ``ResourceSettings.emit_sec`` while any
     orchestrator task is running, so mobile/web clients get a live load

@@ -1,15 +1,7 @@
 """One ``VisualStore`` implementation over both backends — the ADR-002 proof.
 
-Phase 2 step 2.3. Visuals were chosen as the first migration for the reasons
-ADR-002 gives: small (two twins, ~210 lines together), already wrapped in
-``RoutedStore``, and carrying an **on-disk side effect** (the row holds an
-absolute path to a PNG) so any hidden assumption surfaces immediately rather
-than in a domain where a raw table delete would look fine.
-
-What this replaces
-------------------
-``SqliteVisualStore`` (126 lines) + ``PgVisualStore`` (85 lines) = 211 lines of
-parallel implementation. Below is one implementation of the same six methods,
+Wrapped in ``RoutedStore``, and carrying an **on-disk side effect** (the row
+holds an absolute path to a PNG). One implementation of six methods,
 parameterised by a :class:`~yuyutsava.storage.dialect.Dialect`.
 
 The business rules are stated **once**:
@@ -20,14 +12,9 @@ The business rules are stated **once**:
   delete the rows, then unlink — a raw table delete would orphan the PNGs;
 * the parent thread row is ensured before insert on backends with the FK.
 
-Schema still lives per-backend (SQLite ``_SCHEMA_SQL``, Postgres migrations) —
-unifying DDL is a separate step and is not required for the read/write paths to
-collapse.
-
-This module ships **alongside** the twins, not instead of them. The switchover
-happens once ``test/storage/test_visual_store_parity.py`` shows identical
-behaviour against both live backends; keeping both available is what makes the
-migration reversible.
+Schema lives per-backend (SQLite ``_SCHEMA_SQL``, Postgres migrations).
+``test/storage/test_visual_store_parity.py`` holds both backends to the same
+behaviour.
 """
 
 from __future__ import annotations

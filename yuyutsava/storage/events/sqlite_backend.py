@@ -1,6 +1,6 @@
 """SQLite backend + per-domain twins for the events database.
 
-Per the Phase 2 decision, these twins do NOT use ``BaseSqliteStore``'s
+By design, these twins do NOT use ``BaseSqliteStore``'s
 lazy-per-call connection model. Instead a single :class:`SqliteEventsBackend`
 holds **one** persistent ``aiosqlite`` connection, opened once with the schema
 created **eagerly** at ``Store.start()`` (no first-call latency) and closed at

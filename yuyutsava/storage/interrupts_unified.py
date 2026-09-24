@@ -1,8 +1,6 @@
 """One ``interrupts`` implementation, both backends.
 
-Phase 2 step 2.5b (ADR-002), playbook order 14. Replaces
-``SqliteInterruptsStore`` and ``PgInterruptsStore`` — 307 lines, the largest
-pair migrated so far outside the todo board.
+One store over :mod:`yuyutsava.storage.dialect` (ADR-002).
 
 ``interrupts`` is the HITL audit log: every permission prompt and question put
 to the user, and what they answered. Its defining property is that the write

@@ -1,14 +1,14 @@
 """The ``threads`` relational hub: the parent every context table points to.
 
-Phase 7 unified the previously FK-less islands — ``tasks``, ``llm_usage``,
-``artifacts``, ``thread_summaries``, ``memories`` — under a single ``threads``
-row keyed by ``thread_id`` (the same id LangGraph checkpoints and Langfuse
-sessions use). :func:`~yuyutsava.storage.dialect.ensure_thread` is the
-idempotent upsert every child write calls *first*, so the foreign keys added in
-migration v5 are always satisfied no matter which subsystem observes a thread
-first. It lives in :mod:`yuyutsava.storage.dialect`, beside
-``PostgresDialect.ensure_parent``, so the dialect layer does not import this
-package; this module adds the pool-level convenience.
+The context tables — ``tasks``, ``llm_usage``, ``artifacts``,
+``thread_summaries``, ``memories`` — share a single parent ``threads`` row keyed
+by ``thread_id`` (the same id LangGraph checkpoints and Langfuse sessions use).
+:func:`~yuyutsava.storage.dialect.ensure_thread` is the idempotent upsert every
+child write calls *first*, so the foreign keys added in migration v5 are always
+satisfied no matter which subsystem observes a thread first. It lives in
+:mod:`yuyutsava.storage.dialect`, beside ``PostgresDialect.ensure_parent``, so
+the dialect layer does not import this package; this module adds the pool-level
+convenience.
 
 ``langfuse_session_id`` is seeded to the ``thread_id`` itself: tracing wires
 Langfuse ``session_id = thread_id`` (see :mod:`yuyutsava.llm.tracing`), so the

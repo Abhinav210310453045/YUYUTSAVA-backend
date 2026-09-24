@@ -121,7 +121,7 @@ it out in full, and never invent a value you are unsure of: it can be looked
 up.
 """
 
-# Appended to the summary that replaces the evicted turns, so the surviving
+# Appended to the summary that stands in for the evicted turns, so the surviving
 # state itself says where the rest went. Without this the model has a summary
 # and no reason to believe anything more is available.
 _READBACK_FOOTER = (

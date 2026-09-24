@@ -39,7 +39,7 @@ class AskRegistry:
     """Persisted pending asks + an in-memory mirror of them."""
 
     def __init__(self, store: PendingAskRegistry) -> None:
-        # Narrowed from `Any` in Phase 2 step 2.7. This class needs exactly
+        # A narrow Protocol, not the Store: this class needs exactly
         # three of the events Store's ~30 methods; the Protocol says so, and
         # says it without importing the Store (which would close a cycle).
         self._store = store

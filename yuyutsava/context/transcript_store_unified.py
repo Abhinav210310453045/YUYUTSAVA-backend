@@ -1,11 +1,7 @@
 """One ``transcript_messages`` implementation, both backends.
 
-Phase 2 step 2.5b (ADR-002), playbook order 8. Replaces
-``SqliteTranscriptStore`` and ``PgTranscriptStore`` — 159 lines of near-duplicate
-SQL — with one store over :mod:`yuyutsava.storage.dialect`.
-
-This is the first domain that needs *every* capability the dialect offers, which
-is a useful proof that the abstraction is the right size:
+One store over :mod:`yuyutsava.storage.dialect` (ADR-002). It needs *every*
+capability the dialect offers:
 
 ============  ====================================================
 ``json_param``/``json_value``  ``content`` is ``jsonb`` on PG, TEXT on SQLite

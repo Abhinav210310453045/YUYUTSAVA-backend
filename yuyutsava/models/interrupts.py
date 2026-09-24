@@ -1,12 +1,12 @@
 """
 Typed interrupt payload models passed to LangGraph's interrupt().
 
-Every call to interrupt() in this system uses one of these three models.
-engine._prompt_permission() dispatches on the `type` discriminator field.
+Every call to interrupt() in this system uses one of these three models;
+surfaces dispatch on the `type` discriminator field.
 
   UserQuestionInterrupt         — agent asks the user a free-text question (tr_ask_user)
   TaskRunnerPermissionInterrupt — gateway asks user to approve a filesystem operation
-  PermissionRequestInterrupt    — PermissionMiddleware asks user to approve a raw execute call
+  PermissionRequestInterrupt    — PermissionPolicy asks user to approve a raw execute call
 """
 
 from __future__ import annotations
@@ -50,7 +50,7 @@ class TaskRunnerPermissionInterrupt(BaseModel):
 
 
 class PermissionRequestInterrupt(BaseModel):
-    """Payload produced by PermissionMiddleware when a raw execute call triggers a check."""
+    """Payload produced by PermissionPolicy when a raw execute call triggers a check."""
 
     type: Literal["permission_request"] = "permission_request"
     command: str

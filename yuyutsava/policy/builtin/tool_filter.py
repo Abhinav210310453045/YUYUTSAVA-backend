@@ -1,7 +1,5 @@
 """Hide tool schemas the model should not see up front.
 
-Phase 4 step 4.6, sixth migration (was ``ToolFilterMiddleware``).
-
 Two suppression layers:
 
 1. Named deepagents built-ins (read_file, write_file, edit_file, execute, grep,

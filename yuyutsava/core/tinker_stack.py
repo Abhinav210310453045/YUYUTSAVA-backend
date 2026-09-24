@@ -86,7 +86,7 @@ async def build_tinker_stack(
     # otherwise. The bundle owns the pool/embedder and closes them in aclose.
     memory_store, skill_store, pg_pool, embedder = await build_retrieval_stores(skill_registry)
 
-    # One selection, shared with the CLI and the daemon (Phase 3 step 3.5).
+    # One selection, shared with the CLI and the daemon.
     _ctx = StoreFactory(
         StorageSettings.from_env(), pg_pool=pg_pool, embedder=embedder
     ).context_stores(semantic_recall=context_settings.semantic_recall)

@@ -1,12 +1,7 @@
 """The fallback safety layer for raw ``execute`` calls, as a plain policy.
 
-Phase 4 step 4.4, first migration. ADR-004's risk table names this one to go
-first: *"migrate the most demanding policy first — ``PermissionMiddleware``,
-which already carries ``# type: ignore[misc]`` because the base contract does not
-fit it. If the adapter handles that one, it handles the rest."*
-
-It is the demanding case for three reasons, and each is a thing the adapter had
-to be able to express:
+The most demanding policy (ADR-004's risk table), for three reasons, each a
+thing the adapter has to be able to express:
 
 1. it **refuses** a call outright (system-critical paths — no prompt, ever);
 2. it **asks the user** and refuses on anything but approval, which is why

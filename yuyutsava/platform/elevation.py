@@ -15,7 +15,7 @@ Design goals (per the warden architecture doc):
   :func:`get_elevation_provider` and calls ``run_elevated`` — no TaskRunner
   coupling.
 * **Backend-swappable.** Every OS impl satisfies :class:`ElevationProvider`.
-  A future persistent privileged helper (deferred Phase 2) can implement the
+  A persistent privileged helper (not built) could implement the
   same interface behind hardened IPC without touching callers.
 * **Auditable.** Every elevated run returns an :class:`ElevationResult`
   carrying the mechanism used, so the consent/audit trail is uniform.

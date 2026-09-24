@@ -34,7 +34,7 @@ left column and cannot cross into the panel.
 The same sink is installed as ``sys.stdout``/``sys.stderr`` for the app's
 lifetime, which is why none of the ~75 ``print(..., file=sys.stderr)`` calls in
 ``chat_repl`` had to change, and why ``CliRemoteHitl``'s mid-turn stdout writes
-no longer land on top of a repainting region.
+never land on top of a repainting region.
 
 ## Control flow
 

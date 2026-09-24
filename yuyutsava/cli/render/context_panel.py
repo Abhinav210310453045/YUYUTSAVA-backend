@@ -243,7 +243,7 @@ def panel_fragments(
 
     # Transient notices, newest last. The user asked for these here rather than
     # over the transcript; they are also the only place a provider retry or an
-    # unpriced model gets said now that the log no longer paints on screen.
+    # unpriced model gets said, since the log does not paint on screen.
     for text in notices:
         row(_P_NOTICE)
         for line in _wrap_plain(f" {text}", w):
