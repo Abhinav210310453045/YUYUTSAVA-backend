@@ -447,6 +447,19 @@ def _split_overrides(overrides: dict[str, Any], **base: Any):
 
 
 def fingerprint_cli(**overrides: Any) -> dict[str, Any]:
+    return fingerprint_from_kwargs(capture_cli(**overrides)[1])
+
+
+def capture_cli(
+    *,
+    execution_mode: str = "local",
+    docker_settings: Any = None,
+    local_settings: Any = None,
+    **overrides: Any,
+) -> tuple[Any, dict[str, Any]]:
+    """Build the CLI agent offline: its ``AgentBundle`` and the captured
+    ``create_deep_agent`` kwargs. Docker mode needs ``DockerSandboxBackend``
+    patched on ``engine`` by the caller — this never starts a container."""
     from yuyutsava.agents.general_purpose.agent import GeneralPurposeAgent
     from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
     from yuyutsava.config.execution import LocalSettings
@@ -468,15 +481,16 @@ def fingerprint_cli(**overrides: Any) -> dict[str, Any]:
     )
     kwargs: dict[str, Any] = {}
     with _fake_chat_model(), _capture_deep_agent_kwargs(kwargs):
-        engine.build_cli_deepagent(
+        bundle = engine.build_cli_deepagent(
             ws,
             AnthropicSettings(api_key="sk-fake", model="claude-haiku-4-5-20251001"),
             deps=deps,
-            execution_mode="local",
-            local_settings=LocalSettings(),
+            execution_mode=execution_mode,
+            docker_settings=docker_settings,
+            local_settings=local_settings or LocalSettings(),
             **rest,
         )
-    return fingerprint_from_kwargs(kwargs)
+    return bundle, kwargs
 
 
 def fingerprint_tinker(**overrides: Any) -> dict[str, Any]:

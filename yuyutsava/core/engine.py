@@ -978,81 +978,28 @@ def build_cli_deepagent(
     subagent_specs.extend(_async_specs)
     middleware.extend(_async_mw)
 
-    final_subagent_specs = subagent_specs or None
-
+    # The one thing execution_mode decides: where files and `execute` go, and
+    # therefore which prompt describes them. Tools, middleware and subagents
+    # are the same agent in both modes.
+    docker_backend: DockerSandboxBackend | None = None
+    exec_backend: DockerExecBackend | None = None
     if execution_mode == "docker":
         docker_cfg = docker_settings or DockerSettings()
-        export = docker_cfg.export_dir.resolve() if docker_cfg.export_dir else None
-        # The container's read-write mount is the workspace's .yuyutsava
-        # (sandbox, scripts, outputs, tmp) — it is also the deepagents virtual
-        # root; the workspace itself is mounted read-only beside it.
-        docker_backend = DockerSandboxBackend(
-            image=docker_cfg.image,
-            workspace_host=layout.state,
-            container_workdir=CONTAINER_STATE_MOUNT,
-            extra_mounts=[(layout.root, CONTAINER_WORKSPACE_MOUNT, True)],
-            export_host=export,
-            network=docker_cfg.network,
-            timeout=bash_timeout_sec,
-            memory=docker_cfg.memory,
-            cpus=docker_cfg.cpus,
-            pids_limit=docker_cfg.pids_limit,
-        )
-        if not sandbox_root.is_relative_to(layout.state):
-            logger.warning(
-                "docker: sandbox %s is outside %s and is not mounted in the "
-                "container — tr_execute_in_sandbox / tr_run_python will fail; "
-                "drop the sandbox override in docker mode",
-                sandbox_root,
-                layout.state,
-            )
+        docker_backend = _docker_sandbox(docker_cfg, layout, sandbox_root, bash_timeout_sec)
         # tr_execute_in_sandbox / tr_run_python run INSIDE the container; every
         # other tr_* tool stays host-side (the bind mounts share the files).
         exec_backend = DockerExecBackend(docker_backend, layout)
-        startup_tools, _registry = _build_tool_registry_and_tools(
-            _bind_task_runner_tools(ws, sandbox_root, exec_backend=exec_backend),
-            search_config,
-            skill_registry,
-            extra_tools=context_tools,
-            skill_store=skill_store,
-            agent_name="cli",
-            cap_enforcer=cap_enforcer,
-        )
-        _prompt = docker_system_prompt(
-            layout, docker_cfg.export_dir, _registry.catalog_block(), front=front
-        )
-        if agent_memory_block:
-            _prompt = f"{_prompt}\n\n{agent_memory_block}"
-        graph = create_deep_agent(
-            model=model,
-            tools=startup_tools,
-            # Virtual root = /yuyutsava, so "/tmp/large_tool_results" is
-            # <ws>/.yuyutsava/tmp/large_tool_results on the host.
-            backend=_scratch_root_backend(docker_backend, "/tmp"),
-            system_prompt=_prompt,
-            checkpointer=checkpointer,
-            middleware=collapse_policy_adapters(middleware),
-            subagents=final_subagent_specs,
-            debug=False,
-        )
-        return AgentBundle(
-            agent=graph,
-            docker_backend=docker_backend,
-            sandbox_root=sandbox_root,
-            output_dir=output_dir,
-            layout=layout,
-            async_host=async_host,
-            async_host_url=async_host_url,
-            async_host_attachment=async_host_attachment,
-            async_task_mirror=async_task_mirror,
+        # Virtual root = /yuyutsava, so "/tmp/large_tool_results" is
+        # <ws>/.yuyutsava/tmp/large_tool_results on the host.
+        backend = _scratch_root_backend(docker_backend, "/tmp")
+    else:
+        backend = _scratch_root_backend(
+            _local_shell_backend(workspace_root, bash_timeout_sec),
+            _SCRATCH_ROOT,
         )
 
-    backend = _scratch_root_backend(
-        _local_shell_backend(workspace_root, bash_timeout_sec),
-        _SCRATCH_ROOT,
-    )
     startup_tools, _registry = _build_tool_registry_and_tools(
-        _bind_task_runner_tools(ws, sandbox_root),
+        _bind_task_runner_tools(ws, sandbox_root, exec_backend=exec_backend),
         search_config,
         skill_registry,
         extra_tools=context_tools,
@@ -1060,7 +1007,12 @@ def build_cli_deepagent(
         agent_name="cli",
         cap_enforcer=cap_enforcer,
     )
-    _prompt = local_system_prompt(layout, _registry.catalog_block(), front=front)
+    if docker_backend is not None:
+        _prompt = docker_system_prompt(
+            layout, docker_cfg.export_dir, _registry.catalog_block(), front=front
+        )
+    else:
+        _prompt = local_system_prompt(layout, _registry.catalog_block(), front=front)
     if agent_memory_block:
         _prompt = f"{_prompt}\n\n{agent_memory_block}"
     graph = create_deep_agent(
@@ -1070,12 +1022,12 @@ def build_cli_deepagent(
         system_prompt=_prompt,
         checkpointer=checkpointer,
         middleware=collapse_policy_adapters(middleware),
-        subagents=final_subagent_specs,
+        subagents=subagent_specs or None,
         debug=False,
     )
     return AgentBundle(
         agent=graph,
-        docker_backend=None,
+        docker_backend=docker_backend,
         sandbox_root=sandbox_root,
         output_dir=output_dir,
         layout=layout,
@@ -1084,6 +1036,39 @@ def build_cli_deepagent(
         async_host_attachment=async_host_attachment,
         async_task_mirror=async_task_mirror,
     )
+
+
+def _docker_sandbox(
+    cfg: DockerSettings, layout: WorkspaceLayout, sandbox_root: Path, timeout: int
+) -> DockerSandboxBackend:
+    """The CLI agent's sandbox container.
+
+    Its read-write mount is the workspace's ``.yuyutsava`` (sandbox, scripts,
+    outputs, tmp) — also the deepagents virtual root; the workspace itself is
+    mounted read-only beside it. A sandbox override outside that state dir is
+    not mounted, which is worth a warning rather than a silent failure later.
+    """
+    backend = DockerSandboxBackend(
+        image=cfg.image,
+        workspace_host=layout.state,
+        container_workdir=CONTAINER_STATE_MOUNT,
+        extra_mounts=[(layout.root, CONTAINER_WORKSPACE_MOUNT, True)],
+        export_host=cfg.export_dir.resolve() if cfg.export_dir else None,
+        network=cfg.network,
+        timeout=timeout,
+        memory=cfg.memory,
+        cpus=cfg.cpus,
+        pids_limit=cfg.pids_limit,
+    )
+    if not sandbox_root.is_relative_to(layout.state):
+        logger.warning(
+            "docker: sandbox %s is outside %s and is not mounted in the "
+            "container — tr_execute_in_sandbox / tr_run_python will fail; "
+            "drop the sandbox override in docker mode",
+            sandbox_root,
+            layout.state,
+        )
+    return backend
 
 
 # NOTE: the ``build_agent`` back-compat alias was removed once its two real

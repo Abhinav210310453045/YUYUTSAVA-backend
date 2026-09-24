@@ -525,7 +525,12 @@ Verified live: 189 real session histories are byte-identical before and after,
 and in an isolated daemon a real turn's `artifact_create` came back attached to
 its reply on reload, with the id the live turn streamed.
 
-Still open in this wave, in plan order: the docker/local branch, `build_daemon`/`_async_main` (waiting on the `BootContext` decision),
+The **docker/local branch** is built once (`R-KIS-02`): characterization
+first, since the fingerprint never built docker mode.
+
+Still open in this wave, in plan order: the rest of `R-KIS-02` (TTS written
+twice, `exit_code`, repeated strip/split; the two policy items need a
+decision), `build_daemon`/`_async_main` (waiting on the `BootContext` decision),
 the rest of `run_chat_repl`, and the docstring sweep.
 
 ## W5 — Errors, logging, state, defects

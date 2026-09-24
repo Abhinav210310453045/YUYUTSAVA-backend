@@ -407,7 +407,18 @@ and the bare task path.
 
 ## R-KIS-02 — Work done and then undone, and structure without a use
 
-**Severity** P2 · **Wave** W4 · **Status** Open
+**Severity** P2 · **Wave** W4 · **Status** **Partly done.** The renderer item
+closed with `R-SOL-03`: `RichChatRenderer` no longer subclasses `ChatRenderer`,
+so there is no smoother to build and discard. The engine item is closed: the
+docker and local paths share one build, and `execution_mode` only picks the
+backend, the exec backend and the prompt (`_docker_sandbox` builds the
+container). Docker mode had no test at all — the fingerprint builds local mode
+only — so `test/core/test_execution_modes.py` pins it first: mounts, scratch
+root, exec binding, prompt, and that tools, middleware and subagents match
+local mode. Both modes' prompt, tools and backend were byte-identical before
+and after, and a real turn ran `uname -s; pwd` in each: `Linux` and
+`/yuyutsava/sandbox` in the container, `Darwin` and the host sandbox locally.
+The TTS, `exit_code`, strip/split and policy items are open.
 
 **Evidence.**
 
