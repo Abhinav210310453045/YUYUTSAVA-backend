@@ -127,23 +127,34 @@ class TheOrchestratorKeepsItsDivergences(unittest.TestCase):
     checkpointer and twenty dependencies, and what is being checked is one
     call's shape."""
 
-    def _orchestrator_spec_call(self) -> ast.Call:
+    #: Where the orchestrator builds its subagent specs; build_orchestrator
+    #: calls it (test_the_builder_uses_it).
+    _SPEC_BUILDER = "_orchestrator_subagents"
+
+    def _function(self, name: str) -> ast.FunctionDef:
         tree = ast.parse(ENGINE.read_text())
-        fn = next(
-            n
-            for n in ast.walk(tree)
-            if isinstance(n, ast.FunctionDef) and n.name == "build_orchestrator"
-        )
+        return next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == name)
+
+    def _orchestrator_spec_call(self) -> ast.Call:
+        fn = self._function(self._SPEC_BUILDER)
         for node in ast.walk(fn):
             if isinstance(node, ast.Call):
                 name = getattr(node.func, "id", "")
                 if name == "_subagent_spec":
                     return node
-        raise AssertionError("build_orchestrator no longer builds a spec through _subagent_spec")
+        raise AssertionError("the orchestrator no longer builds a spec through _subagent_spec")
 
     def test_the_call_is_found_at_all(self) -> None:
         """So a rename cannot make the assertions below vacuous."""
         self.assertIsInstance(self._orchestrator_spec_call(), ast.Call)
+
+    def test_the_builder_uses_it(self) -> None:
+        calls = {
+            getattr(n.func, "id", "")
+            for n in ast.walk(self._function("build_orchestrator"))
+            if isinstance(n, ast.Call)
+        }
+        self.assertIn(self._SPEC_BUILDER, calls)
 
     def test_it_passes_a_spend_ceiling_and_cost_accounting(self) -> None:
         call = self._orchestrator_spec_call()
@@ -160,12 +171,7 @@ class TheOrchestratorKeepsItsDivergences(unittest.TestCase):
     def test_a_switched_off_subagent_is_skipped(self) -> None:
         """An operator turning one off must stop it being delegated to, not
         merely stop it being advertised."""
-        tree = ast.parse(ENGINE.read_text())
-        fn = next(
-            n
-            for n in ast.walk(tree)
-            if isinstance(n, ast.FunctionDef) and n.name == "build_orchestrator"
-        )
+        fn = self._function(self._SPEC_BUILDER)
         comprehensions = [
             ast.unparse(n)
             for n in ast.walk(fn)
@@ -173,7 +179,7 @@ class TheOrchestratorKeepsItsDivergences(unittest.TestCase):
         ]
         self.assertTrue(comprehensions, "no spec comprehension found")
         self.assertTrue(
-            any("disabled_subagents" in c for c in comprehensions),
+            any("not in disabled" in c for c in comprehensions),
             "the disabled-subagent guard is gone",
         )
 

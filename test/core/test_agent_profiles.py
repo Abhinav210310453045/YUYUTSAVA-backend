@@ -72,6 +72,8 @@ _INLINED_HELPERS = (
     "_build_tool_registry_and_tools",
     "_master_middleware",
     "_master_subagents",
+    "_orchestrator_tools",
+    "_orchestrator_subagents",
     "_cli_sandbox",
     "_docker_sandbox",
 )

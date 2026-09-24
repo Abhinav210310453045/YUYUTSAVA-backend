@@ -1071,6 +1071,172 @@ def build_cli_deepagent(
 # Use ``build_cli_deepagent``.
 
 
+def _disabled_subagents(runtime_settings: Any | None) -> frozenset[str]:
+    """Dedicated subagents the user switched off; empty when unknown.
+
+    A fresh orchestrator graph is built per task, so reading the toggle at build
+    time is both free and complete: a disabled subagent is absent from the
+    prompt AND from the roster.
+    """
+    if runtime_settings is None:
+        return frozenset()
+    try:
+        return runtime_settings.subagents().disabled
+    except Exception:  # noqa: BLE001 — a toggle never blocks a build
+        logger.debug("orchestrator: subagent toggle read failed", exc_info=True)
+        return frozenset()
+
+
+def _orchestrator_tools(
+    deps: "OrchestratorDeps",
+    skill_registry: "SkillRegistry | None",
+    skill_store: Any | None,
+) -> tuple[list, str]:
+    """The orchestrator's tools, and the catalog block its prompt lists them in.
+
+    What it does NOT get: no vis_*, no tr_*, no db_* — the orchestrator is a
+    plain router that delegates execution to subagents, and those absences are
+    recorded as by-design divergences in core/agent_profiles.py. No spawn tool
+    either, by decision: it delegates dynamic work to the ``general-purpose``
+    subagent rather than minting ad-hoc ones. A boundary, not an omission —
+    don't add one back.
+    """
+    master_tools: list = [
+        make_ask_user_tool(deps.channels),
+        make_recall_tool(deps.store),
+    ]
+    if skill_registry:
+        master_tools.extend(
+            make_skill_tools(skill_registry, skill_store, agent_name="orchestrator")
+        )
+    if deps.search_config is not None:
+        master_tools.extend(make_search_tools(deps.search_config, cap_enforcer=deps.cap_enforcer))
+    # Shared families, selected by ORCHESTRATOR_PROFILE. The returned um_* index
+    # block is discarded on purpose: the daemon loop injects it per task
+    # alongside prefs and memory, so the build-time snapshot would be stale.
+    shared, _ = _shared_master_tools(
+        profile=ORCHESTRATOR_PROFILE,
+        artifact_store=deps.artifact_store,
+        memory_store=deps.memory_store,
+        transcript_store=getattr(deps, "transcript_store", None),
+        mcp_tools=(
+            deps.mcp_manager.tools_for("orchestrator") if deps.mcp_manager is not None else None
+        ),
+    )
+    master_tools.extend(shared)
+
+    # Lazy discovery: ToolFilterPolicy hides the prefixed master tools
+    # (sk_/ws_/mem_/…) from the model. Register them so the model can pull a
+    # schema on demand via tool_search, and surface the always-visible name
+    # catalog in the system prompt so it knows what exists.
+    registry = ToolRegistry()
+    registry.register_many(master_tools)
+    master_tools = [registry.make_tool_search_tool(), *master_tools]
+    # This registry is assembled by hand rather than through the shared
+    # helper, so the meter has to be told here too or the orchestrator's "tool
+    # schemas" row reads zero. (Do not name that helper here:
+    # test_agent_profiles derives a builder's "effective source" by
+    # substring-matching helper names and splicing their bodies in, so a
+    # mention in a comment makes this builder appear to wire tool families it
+    # does not have.)
+    note_bound_tools("orchestrator", registry, master_tools)
+    return master_tools, registry.catalog_block()
+
+
+def _orchestrator_context_mw(
+    deps: "OrchestratorDeps", agent_model: BaseChatModel, role: str, *, meter_window: bool = True
+) -> list:
+    """The context layer for the orchestrator or one of its subagents."""
+    return _context_middleware(
+        model=agent_model,
+        artifact_store=deps.artifact_store,
+        context_settings=deps.context_settings,
+        summary_store=deps.summary_store,
+        memory_store=deps.memory_store,
+        transcript_store=getattr(deps, "transcript_store", None),
+        compaction_model=deps.compaction_model,
+        role=role,
+        meter_window=meter_window,
+    )
+
+
+def _orchestrator_subagents(
+    deps: "OrchestratorDeps", disabled: frozenset[str], usage_context: Any | None
+) -> tuple[list[dict], list]:
+    """The orchestrator's subagent specs, and the middleware background ones need.
+
+    Each sync subagent gets the orchestrator's own additions: a spend ceiling
+    per subagent, and per-call cost accounting when a usage store is wired.
+    ADR-001 — the CLI and tinker builds have neither.
+    """
+    usage_store = getattr(deps, "usage_store", None)
+
+    def _usage_mw(role: str) -> list:
+        if usage_store is None:
+            return []
+        return [
+            LangChainPolicyAdapter(
+                [
+                    UsagePolicy(
+                        usage_store,
+                        role=role,
+                        model_name=model_name_of(deps.subagent_model),
+                        task_id=getattr(usage_context, "task_id", ""),
+                        thread_id=getattr(usage_context, "thread_id", ""),
+                    )
+                ]
+            )
+        ]
+
+    specs: list[dict] = [
+        _subagent_spec(
+            sa,
+            context_middleware=_orchestrator_context_mw(
+                deps, deps.subagent_model, sa.name, meter_window=False
+            ),
+            extra_middleware=[
+                LangChainPolicyAdapter(
+                    [BudgetPolicy(max_input_tokens=deps.subagent_token_budget, role=sa.name)]
+                ),
+                *_usage_mw(sa.name),
+            ],
+            model=deps.subagent_model,
+            artifact_store=deps.artifact_store,
+        )
+        for sa in deps.subagents.values()
+        if sa.name not in disabled
+    ]
+    # Background subagents join the same list; deepagents routes dicts shaped
+    # like AsyncSubAgent to AsyncSubAgentMiddleware.
+    async_specs, async_mw = _async_subagent_wiring(
+        role="build_orchestrator",
+        async_subagents=getattr(deps, "async_subagents", None),
+        async_host_url=getattr(deps, "async_host_url", None),
+        remote_async_subagents=getattr(deps, "remote_async_subagents", None),
+        async_task_mirror=getattr(deps, "async_task_mirror", None),
+        async_max_concurrent=getattr(deps, "async_max_concurrent", 8),
+        # Only the orchestrator filters its async roster by the runtime toggle.
+        disabled=disabled,
+    )
+    specs.extend(async_specs)
+    return specs, async_mw
+
+
+def _orchestrator_backend(deps: "OrchestratorDeps") -> Any:
+    """A tight, isolated shell: the orchestrator runs unattended.
+
+    An instance, not a factory closure — see _local_shell_backend. A shorter
+    timeout than a chat's, and it does NOT inherit the user's environment.
+    """
+    workspace_root = str(deps.workspace_root.resolve()) if deps.workspace_root else "/"
+    backend: Any = _local_shell_backend(workspace_root, bash_timeout_sec=10, inherit_env=False)
+    if deps.workspace_root:
+        # deepagents scratch (large_tool_results/, conversation_history/) goes
+        # under <ws>/.yuyutsava/tmp — the dirs the daemon's sweeper TTL-sweeps.
+        backend = _scratch_root_backend(backend, _SCRATCH_ROOT)
+    return backend
+
+
 def build_orchestrator(
     *,
     model: BaseChatModel,
@@ -1084,32 +1250,21 @@ def build_orchestrator(
 ) -> CompiledStateGraph:
     """Build the daemon orchestrator: master deepagent + pre-registered subagents.
 
-    Moved here from ``yuyutsava/agents/orchestrator/agent.py`` so all master
-    agents are built from the shared engine. ``OrchestratorDeps`` and the
-    ``make_ask_user_tool`` helper still live in that module — they are agent
-    *definition*, not build mechanics.
-
-    ``usage_context`` (``yuyutsava.storage.usage.UsageContext``) carries the
-    task's join keys; when ``deps.usage_store`` is set, a ``UsagePolicy``
-    rides every agent in the graph and writes one ``llm_usage`` row per
-    model call.
+    ``OrchestratorDeps`` and ``make_ask_user_tool`` live in
+    ``yuyutsava/agents/orchestrator/agent.py`` — they are agent *definition*,
+    not build mechanics. ``usage_context`` (``yuyutsava.storage.usage.UsageContext``)
+    carries the task's join keys; when ``deps.usage_store`` is set, a
+    ``UsagePolicy`` rides every agent in the graph and writes one ``llm_usage``
+    row per model call.
     """
-    # Dedicated subagents the user switched off. A fresh orchestrator graph is
-    # built per task, so reading the toggle here is both free and complete: a
-    # disabled subagent is absent from the prompt AND from the roster below.
-    _runtime_settings = getattr(deps, "runtime_settings", None)
-    disabled_subagents: frozenset[str] = frozenset()
-    if _runtime_settings is not None:
-        try:
-            disabled_subagents = _runtime_settings.subagents().disabled
-        except Exception:  # noqa: BLE001 — a toggle never blocks a build
-            logger.debug("orchestrator: subagent toggle read failed", exc_info=True)
+    runtime_settings = getattr(deps, "runtime_settings", None)
+    disabled = _disabled_subagents(runtime_settings)
 
     capabilities = render_capabilities_block(
         list(deps.subagents.values()),
         async_subagents=getattr(deps, "async_subagents", None),
         remote_async_subagents=getattr(deps, "remote_async_subagents", None),
-        disabled=disabled_subagents,
+        disabled=disabled,
     )
     # When a semantic skill store is wired, the SkillInjector adds only the
     # task-relevant skills at runtime (via prefs_block), so suppress the static
@@ -1123,141 +1278,11 @@ def build_orchestrator(
     system_prompt = render_system_prompt(
         capabilities, skills_index=skills_index, prefs_block=prefs_block
     )
+    master_tools, catalog = _orchestrator_tools(deps, skill_registry, skill_store)
+    if catalog:
+        system_prompt = f"{system_prompt}\n\n## AVAILABLE TOOLS (load a schema with tool_search before calling)\n{catalog}"
 
-    master_tools: list = [
-        make_ask_user_tool(deps.channels),
-        make_recall_tool(deps.store),
-        # No spawn tool here, by decision: the orchestrator delegates dynamic
-        # work to the `general-purpose` subagent rather than minting ad-hoc
-        # ones. A boundary, not an omission — don't add one back.
-    ]
-    if skill_registry:
-        master_tools.extend(
-            make_skill_tools(skill_registry, skill_store, agent_name="orchestrator")
-        )
-    if deps.search_config is not None:
-        master_tools.extend(make_search_tools(deps.search_config, cap_enforcer=deps.cap_enforcer))
-    # Shared families, selected by ORCHESTRATOR_PROFILE. Note what it does NOT
-    # get: no vis_*, no tr_*, no db_* — the orchestrator is a plain router that
-    # delegates execution to subagents, and those absences are recorded as
-    # by-design divergences in core/agent_profiles.py.
-    #
-    # The returned um_* index block is discarded here on purpose: the daemon
-    # loop injects it per task alongside prefs and memory, so the build-time
-    # snapshot would be stale.
-    _shared, _ = _shared_master_tools(
-        profile=ORCHESTRATOR_PROFILE,
-        artifact_store=deps.artifact_store,
-        memory_store=deps.memory_store,
-        transcript_store=getattr(deps, "transcript_store", None),
-        mcp_tools=(
-            deps.mcp_manager.tools_for("orchestrator") if deps.mcp_manager is not None else None
-        ),
-    )
-    master_tools.extend(_shared)
-
-    # Lazy discovery: ToolFilterPolicy hides the prefixed master tools
-    # (sk_/ws_/mem_/…) from the model. Register them so the model can pull a
-    # schema on demand via tool_search, and surface the always-visible name
-    # catalog in the system prompt so it knows what exists.
-    _master_registry = ToolRegistry()
-    _master_registry.register_many(master_tools)
-    master_tools = [_master_registry.make_tool_search_tool(), *master_tools]
-    # This builder assembles its registry by hand rather than through the
-    # shared helper, so the meter has to be told here too or the
-    # orchestrator's "tool schemas" row reads zero.
-    #
-    # (Do not name that helper here: test_agent_profiles derives a builder's
-    # "effective source" by substring-matching its name and splicing the
-    # helper's body in, so a mention in a comment makes this builder appear to
-    # wire tool families it does not have.)
-    note_bound_tools("orchestrator", _master_registry, master_tools)
-    _catalog = _master_registry.catalog_block()
-    if _catalog:
-        system_prompt = f"{system_prompt}\n\n## AVAILABLE TOOLS (load a schema with tool_search before calling)\n{_catalog}"
-
-    def _ctx_mw(agent_model: BaseChatModel, role: str, *, meter_window: bool = True) -> list:
-        return _context_middleware(
-            model=agent_model,
-            artifact_store=deps.artifact_store,
-            context_settings=deps.context_settings,
-            summary_store=deps.summary_store,
-            memory_store=deps.memory_store,
-            transcript_store=getattr(deps, "transcript_store", None),
-            compaction_model=deps.compaction_model,
-            role=role,
-            meter_window=meter_window,
-        )
-
-    def _usage_mw(agent_model: BaseChatModel, role: str) -> list:
-        """Per-call cost accounting; [] when no store is wired."""
-        usage_store = getattr(deps, "usage_store", None)
-        if usage_store is None:
-            return []
-        return [
-            LangChainPolicyAdapter(
-                [
-                    UsagePolicy(
-                        usage_store,
-                        role=role,
-                        model_name=model_name_of(agent_model),
-                        task_id=getattr(usage_context, "task_id", ""),
-                        thread_id=getattr(usage_context, "thread_id", ""),
-                    )
-                ]
-            )
-        ]
-
-    subagent_specs: list[dict] = [
-        _subagent_spec(
-            sa,
-            context_middleware=_ctx_mw(deps.subagent_model, sa.name, meter_window=False),
-            # The orchestrator's own: a spend ceiling per subagent, and per-call
-            # cost accounting. ADR-001 — the CLI and tinker builds have neither.
-            extra_middleware=[
-                LangChainPolicyAdapter(
-                    [BudgetPolicy(max_input_tokens=deps.subagent_token_budget, role=sa.name)]
-                ),
-                *_usage_mw(deps.subagent_model, sa.name),
-            ],
-            model=deps.subagent_model,
-            artifact_store=deps.artifact_store,
-        )
-        for sa in deps.subagents.values()
-        if sa.name not in disabled_subagents
-    ]
-
-    # Async (background) subagents — same `subagents=` list; deepagents auto-
-    # routes dicts shaped like AsyncSubAgent to AsyncSubAgentMiddleware.
-    # Specs are collected here but the middleware is appended further down,
-    # after master_middleware exists — hence computing both up front.
-    _async_specs, _async_mw = _async_subagent_wiring(
-        role="build_orchestrator",
-        async_subagents=getattr(deps, "async_subagents", None),
-        async_host_url=getattr(deps, "async_host_url", None),
-        remote_async_subagents=getattr(deps, "remote_async_subagents", None),
-        async_task_mirror=getattr(deps, "async_task_mirror", None),
-        async_max_concurrent=getattr(deps, "async_max_concurrent", 8),
-        # Only the orchestrator filters its async roster by the runtime toggle.
-        disabled=disabled_subagents,
-    )
-    subagent_specs.extend(_async_specs)
-
-    budget = LangChainPolicyAdapter(
-        [BudgetPolicy(max_input_tokens=budget_tokens, role="orchestrator")]
-    )
-    workspace_root = str(deps.workspace_root.resolve()) if deps.workspace_root else "/"
-
-    # Instance, not a factory closure — see _local_shell_backend. The
-    # orchestrator runs unattended, so it takes a tighter timeout and does NOT
-    # inherit the user's environment.
-    orchestrator_backend: Any = _local_shell_backend(
-        workspace_root, bash_timeout_sec=10, inherit_env=False
-    )
-    if deps.workspace_root:
-        # deepagents scratch (large_tool_results/, conversation_history/) goes
-        # under <ws>/.yuyutsava/tmp — the dirs the daemon's sweeper TTL-sweeps.
-        orchestrator_backend = _scratch_root_backend(orchestrator_backend, _SCRATCH_ROOT)
+    subagent_specs, async_mw = _orchestrator_subagents(deps, disabled, usage_context)
 
     # Order: tool filter → offload (tool path) → compaction (model path) →
     # budget (absolute ceiling, must see post-compaction usage last) →
@@ -1272,11 +1297,19 @@ def build_orchestrator(
             ORCHESTRATOR_PROFILE,
             "pre",
             role="orchestrator",
-            runtime_settings=_runtime_settings,
+            runtime_settings=runtime_settings,
         ),
-        *_ctx_mw(model, "orchestrator"),
-        budget,
-        *_usage_mw(model, "orchestrator"),
+        *_orchestrator_context_mw(deps, model, "orchestrator"),
+        *_policy_middleware(
+            ORCHESTRATOR_PROFILE,
+            "post",
+            role="orchestrator",
+            budget_tokens=budget_tokens,
+            usage_store=getattr(deps, "usage_store", None),
+            model=model,
+            usage_task_id=getattr(usage_context, "task_id", ""),
+            usage_thread_id=getattr(usage_context, "thread_id", ""),
+        ),
     ]
 
     # Per-turn retrieval injection — memory/skills recalled against the
@@ -1295,13 +1328,12 @@ def build_orchestrator(
             transcript_index=getattr(deps, "transcript_index", None),
         )
     )
-
-    master_middleware.extend(_async_mw)
+    master_middleware.extend(async_mw)
 
     return create_deep_agent(
         model=model,
         tools=master_tools,
-        backend=orchestrator_backend,
+        backend=_orchestrator_backend(deps),
         system_prompt=system_prompt,
         checkpointer=checkpointer if checkpointer is not None else MemorySaver(),
         middleware=collapse_policy_adapters(master_middleware),
