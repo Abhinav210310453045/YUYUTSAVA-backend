@@ -441,6 +441,45 @@ ask race that hung production), `R-BUG-10` (a rename broke every MCP server),
 live testing that the static gates had passed — which is why every commit in
 this wave now ends with a daemon restart and a real turn.
 
+**Audit against the plan — 2026-09-24.** Asked whether this wave was
+following the plan, the honest answer was *in direction, not in sequence*.
+
+*Verification.* Three per-commit or per-wave checks had not been run all wave.
+All three were run and pass: `verify_framework_contract.py` (8 of 8 contracts,
+including the general-purpose override that the `_subagent_spec` and
+`search_tools` changes could have broken), `verify_loop_affinity.py` (16
+passed; the Postgres checks skip because the database container is stopped),
+and `--print-tools`. `verify_imports --compare` had no baseline to compare
+against, but it compares import *success* only, and with no module failing,
+the plain run already catches that. Import *time* was never gated after W2;
+measured by hand, median of five fresh interpreters against the end of W3, the
+entry points are about 4% slower, and all 43 extra modules are first-party —
+the per-file cost of splitting god-classes into packages, not a dependency
+creeping onto the startup path.
+
+*Sequence.* Work followed the review's findings more than this wave's task
+list. `R-DRY-05` was worked through all nine of its sub-items, though this list
+names two of them; three of the nine turned out to be defects, so that time
+was not wasted, but while it was spent these named items stayed untouched: WAV
+I/O and the sample-rate constant, one duration humanizer,
+`classify_provider_busy`, the visual-kind and tool→event registries, the
+provider alias→settings registry (the *builder* dispatch is a registry since
+W2; `llm_settings_from_env` is still a ten-branch `if` chain), and the
+docker/local branch.
+
+*Two departures that were not recorded when they were made:*
+
+- **No `ReplLoop` class.** `run_chat_repl` went 504 → 261 lines behind
+  `ReplCommands` and an `Outcome` enum instead. It is still 261 lines, so the
+  task this bullet was for is not finished.
+- **No `TaskRunnerTools` class.** `bind_tools` became a package with one module
+  per family, which is what the class was for, but as functions.
+
+*Exit criteria.* Only one of six is met: the fingerprint is byte-identical.
+Functions over 200 lines 8 (target 0), over 100 lines 38 (≤ 10), over ten
+parameters 8 (≤ 3), highest approximate complexity 38 (≤ 25), classes over 400
+lines 8 (0), history narration 159 (0).
+
 ## W5 — Errors, logging, state, defects
 
 - **Classify the 58 silent handlers** as boundary (log plus reason) or internal (narrow type). (`R-ERR-01`, `R-ERR-02`)
