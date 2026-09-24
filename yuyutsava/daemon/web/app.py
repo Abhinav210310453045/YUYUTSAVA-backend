@@ -13,6 +13,7 @@ app.
 
 from __future__ import annotations
 
+import dataclasses
 import os
 import time
 from typing import Awaitable, Callable
@@ -114,36 +115,8 @@ def _cors_kwargs() -> dict:
     return {"allow_origin_regex": r"http://(localhost|127\.0\.0\.1)(:\d+)?"}
 
 
-def create_app(
-    hub: WebHub,
-    *,
-    host: str,
-    deps: AppDeps | None = None,
-) -> FastAPI:
-    deps = deps or AppDeps()
-    skill_registry = deps.skill_registry
-    config_reload = deps.config_reload
-    auth = deps.auth
-    channels = deps.channels
-    session_origin = deps.session_origin
-    decision_service = deps.decision_service
-    ask_registry = deps.ask_registry
-    ask_resume = deps.ask_resume
-    channel_plugins = deps.channel_plugins
-    task_registry = deps.task_registry
-    task_submission = deps.task_submission
-    async_subagents = deps.async_subagents
-    async_task_watcher = deps.async_task_watcher
-    subagent_roster = deps.subagent_roster
-    usage_store = deps.usage_store
-    memory_store = deps.memory_store
-    voice_store = deps.voice_store
-    transcript_store = deps.transcript_store
-    conversation_manager = deps.conversation_manager
-    resource_monitor = deps.resource_monitor
-    admission_controller = deps.admission_controller
-    model_router = deps.model_router
-    runtime_settings = deps.runtime_settings
+def _checked_auth(host: str, auth: AuthSettings | None) -> AuthSettings:
+    """The auth settings to enforce, refusing an unauthenticated network bind."""
     if auth is None:
         auth = AuthSettings.from_env(host=host)
     if not is_loopback_host(host) and not (auth.enforce and auth.token):
@@ -153,70 +126,11 @@ def create_app(
             "~/.yuyutsava/api_token) — the API must never be network-exposed "
             "unauthenticated."
         )
+    return auth
 
-    app = FastAPI(
-        title="YUYUTSAVA daemon",
-        version="0.2.0",
-        description=(
-            "HTTP API for the YUYUTSAVA daemon. Proposals, consent "
-            "rules, decisions, skills, tasks, and live event stream. "
-            "Loopback binds are unauthenticated; network binds require "
-            "'Authorization: Bearer <token>'."
-        ),
-        docs_url="/docs",
-        redoc_url="/redoc",
-        openapi_url="/openapi.json",
-    )
 
-    # When the daemon didn't pass a shared DecisionService (tests, embedded
-    # use), build a hub-local one so the proposal/ask endpoints keep working
-    # exactly as before the Phase-3 extraction.
-    if decision_service is None:
-        decision_service = DecisionService(hub.store)
-        decision_service.add_waiters(
-            proposals=hub.pending_proposals,
-            asks=hub.pending_asks,
-        )
-
-    # State for Depends(...) accessors.
-    app.state.hub = hub
-    app.state.store = hub.store
-    app.state.skill_registry = skill_registry
-    app.state.config_reload = config_reload
-    app.state.channels = channels
-    app.state.session_origin = session_origin
-    app.state.task_registry = task_registry
-    app.state.task_submission = task_submission
-    app.state.decision_service = decision_service
-    app.state.channel_plugins = channel_plugins
-    app.state.usage_store = usage_store
-    app.state.resource_monitor = resource_monitor
-    app.state.admission_controller = admission_controller
-    app.state.model_router = model_router
-    app.state.memory_store = memory_store
-    app.state.conversation_manager = conversation_manager
-    app.state.ask_registry = ask_registry
-    app.state.ask_resume = ask_resume
-    app.state.voice_store = voice_store
-    app.state.transcript_store = transcript_store
-    app.state.async_subagents = async_subagents
-    app.state.async_task_watcher = async_task_watcher
-    app.state.runtime_settings = runtime_settings
-    app.state.subagent_roster = subagent_roster
-
-    # Auth first so CORSMiddleware (added after → wraps outside) answers
-    # preflight OPTIONS before the bearer check can 401 them.
-    install_auth_middleware(app, auth)
-
-    app.add_middleware(
-        CORSMiddleware,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-        **_cors_kwargs(),
-    )
-
-    register_exception_handlers(app)
+def _install_http_log(app: FastAPI, hub: WebHub) -> None:
+    """Broadcast one ``HttpLogPayload`` per request to the live stream."""
 
     @app.middleware("http")
     async def _broadcast_http_log(request: Request, call_next):
@@ -247,11 +161,15 @@ def create_app(
             pass
         return response
 
-    # Every API router is mounted twice — canonical under /v1
-    # (what /openapi.json documents; the mobile TS client generates from
-    # it) and unprefixed as a legacy alias (hidden from the schema) so the
-    # Electron renderer keeps working untouched. Static assets stay
-    # unprefixed only.
+
+def _mount_routers(app: FastAPI) -> None:
+    """Mount every API router twice, and the static assets once.
+
+    Canonical under /v1 (what /openapi.json documents; the mobile TS client
+    generates from it) and unprefixed as a legacy alias (hidden from the
+    schema) so the Electron renderer keeps working untouched. Static assets
+    stay unprefixed only.
+    """
     api_routers = [
         health_router.router,
         server_info_router.router,
@@ -285,4 +203,62 @@ def create_app(
 
     app.include_router(static_router.router)
 
+
+def create_app(
+    hub: WebHub,
+    *,
+    host: str,
+    deps: AppDeps | None = None,
+) -> FastAPI:
+    """The daemon's HTTP API over *hub*, with what the routers read on ``app.state``.
+
+    Every :class:`AppDeps` field lands on ``app.state`` under its own name,
+    where the ``Depends(...)`` accessors find it — except ``auth``, which only
+    the middleware reads. A non-loopback *host* without bearer auth is refused.
+    """
+    deps = deps or AppDeps()
+    auth = _checked_auth(host, deps.auth)
+
+    app = FastAPI(
+        title="YUYUTSAVA daemon",
+        version="0.2.0",
+        description=(
+            "HTTP API for the YUYUTSAVA daemon. Proposals, consent "
+            "rules, decisions, skills, tasks, and live event stream. "
+            "Loopback binds are unauthenticated; network binds require "
+            "'Authorization: Bearer <token>'."
+        ),
+        docs_url="/docs",
+        redoc_url="/redoc",
+        openapi_url="/openapi.json",
+    )
+
+    app.state.hub = hub
+    app.state.store = hub.store
+    for field in dataclasses.fields(deps):
+        if field.name != "auth":
+            setattr(app.state, field.name, getattr(deps, field.name))
+    # Without a shared DecisionService (tests, embedded use), a hub-local one
+    # keeps the proposal/ask endpoints working.
+    if deps.decision_service is None:
+        decision_service = DecisionService(hub.store)
+        decision_service.add_waiters(
+            proposals=hub.pending_proposals,
+            asks=hub.pending_asks,
+        )
+        app.state.decision_service = decision_service
+
+    # Auth first so CORSMiddleware (added after → wraps outside) answers
+    # preflight OPTIONS before the bearer check can 401 them.
+    install_auth_middleware(app, auth)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+        **_cors_kwargs(),
+    )
+    register_exception_handlers(app)
+    _install_http_log(app, hub)
+    _mount_routers(app)
     return app

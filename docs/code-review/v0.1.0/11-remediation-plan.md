@@ -597,6 +597,9 @@ Of the 34 over 100 lines, nine are tool factories (`make_shell_tools`,
 `make_visual_tools`, …) whose length is the sum of the `@tool` functions
 nested in them — the text each tool shows the model. Splitting those further
 moves tool definitions between files without making any one easier to read.
+**Owner's decision (2026-09-25): the tool factories are accepted as they are**;
+the pass continues with the tangled functions and the >10-parameter
+constructors.
 
 ## W5 — Errors, logging, state, defects
 
