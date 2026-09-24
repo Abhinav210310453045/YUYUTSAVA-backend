@@ -16,7 +16,6 @@ zero-config macOS ``say``/pyttsx3 fallback otherwise) and writes a mono
 from __future__ import annotations
 
 import asyncio
-import wave
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +25,7 @@ from yuyutsava.todoboard.block_registry import ArtifactBlock, file_validator
 from yuyutsava.todoboard.errors import TodoValidationError
 from yuyutsava.voice.backends.tts import tts_from_env
 from yuyutsava.voice.synth import synthesize_pcm
+from yuyutsava.wav import write_pcm16
 
 # What the multipart endpoint accepts. Rendering is broader — the frontend
 # block claims any audio/* mime and plays it through Web Audio decoding.
@@ -57,13 +57,9 @@ def _generate_audio(spec: dict[str, Any], out_dir: Path) -> tuple[Path, str]:
     pcm, rate = asyncio.run(synthesize_pcm(tts_from_env(), text))
     if not pcm:
         raise TodoValidationError("TTS produced no audio for the given text")
-    out_dir.mkdir(parents=True, exist_ok=True)
-    path = out_dir / f"tts_{ULID()}.wav"
-    with wave.open(str(path), "wb") as wf:  # write_voice_wav pattern
-        wf.setnchannels(1)
-        wf.setsampwidth(2)  # 16-bit
-        wf.setframerate(int(rate))
-        wf.writeframes(pcm)
+    # The engine's own rate, not the speech-capture one: TTS output written at
+    # 16 kHz would play back at the wrong pitch, with no error to say so.
+    path = write_pcm16(out_dir / f"tts_{ULID()}.wav", pcm, sample_rate=rate)
     return path, "audio/wav"
 
 

@@ -43,6 +43,7 @@ LAYERS: dict[str, int] = {
     "config": 0,
     "ansi": 0,
     "text": 0,
+    "wav": 0,
     # L1 — foundations
     "storage.paths": 1,
     "storage.ids": 1,

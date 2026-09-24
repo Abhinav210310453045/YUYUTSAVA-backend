@@ -14,10 +14,10 @@ import logging
 import wave
 from pathlib import Path
 
-logger = logging.getLogger("yuyutsava.voice.backends.device")
+from yuyutsava.voice.pcm import CHANNELS, SAMPLE_RATE
+from yuyutsava.wav import write_pcm16
 
-SAMPLE_RATE = 16_000
-CHANNELS = 1
+logger = logging.getLogger("yuyutsava.voice.backends.device")
 
 
 class AudioUnavailableError(RuntimeError):
@@ -72,12 +72,7 @@ async def capture_wav(path: Path, duration_sec: float, sample_rate: int = SAMPLE
         return data.tobytes()
 
     raw = await loop.run_in_executor(None, _record)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with wave.open(str(path), "wb") as wf:
-        wf.setnchannels(CHANNELS)
-        wf.setsampwidth(2)
-        wf.setframerate(sample_rate)
-        wf.writeframes(raw)
+    write_pcm16(path, raw, sample_rate=sample_rate, channels=CHANNELS)
 
 
 async def play_wav(path: Path) -> None:

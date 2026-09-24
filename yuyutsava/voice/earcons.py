@@ -24,13 +24,12 @@ from __future__ import annotations
 import math
 import os
 import struct
-import wave
 from pathlib import Path
 
 from yuyutsava.storage.paths import state_dir
+from yuyutsava.voice.pcm import SAMPLE_RATE
+from yuyutsava.wav import write_pcm16
 
-# Match the capture/playback sample rate used elsewhere (io/audio.SAMPLE_RATE).
-_SAMPLE_RATE = 16_000
 _AMPLITUDE = 0.35  # headroom so earcons aren't jarringly loud
 
 # Canonical earcon vocabulary. The renderer mirrors these names.
@@ -66,22 +65,18 @@ def _synthesize_wav(tones: list[tuple[float, float]], out_path: Path) -> None:
     """Render a tone sequence to a 16-bit mono WAV with a short fade envelope."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
     frames = bytearray()
-    fade = int(_SAMPLE_RATE * 0.008)  # ~8ms attack/decay to avoid clicks
+    fade = int(SAMPLE_RATE * 0.008)  # ~8ms attack/decay to avoid clicks
     for freq, dur in tones:
-        n = int(_SAMPLE_RATE * dur)
+        n = int(SAMPLE_RATE * dur)
         for i in range(n):
             env = 1.0
             if i < fade:
                 env = i / fade
             elif i > n - fade:
                 env = max(0.0, (n - i) / fade)
-            sample = _AMPLITUDE * env * math.sin(2.0 * math.pi * freq * (i / _SAMPLE_RATE))
+            sample = _AMPLITUDE * env * math.sin(2.0 * math.pi * freq * (i / SAMPLE_RATE))
             frames += struct.pack("<h", int(sample * 32767))
-    with wave.open(str(out_path), "wb") as wf:
-        wf.setnchannels(1)
-        wf.setsampwidth(2)
-        wf.setframerate(_SAMPLE_RATE)
-        wf.writeframes(bytes(frames))
+    write_pcm16(out_path, bytes(frames), sample_rate=SAMPLE_RATE)
 
 
 def earcon_path(name: str) -> Path:

@@ -24,10 +24,10 @@ import logging
 from dataclasses import dataclass
 
 from yuyutsava.config.env import env_float, env_int
+from yuyutsava.voice.pcm import SAMPLE_RATE
 
 logger = logging.getLogger("yuyutsava.voice.vad")
 
-_SAMPLE_RATE = 16_000
 _BYTES_PER_SAMPLE = 2
 
 
@@ -125,7 +125,7 @@ class VadSegmenter:
         barge_start_frames: int = 15,
         barge_energy_threshold: float = 4000.0,
     ) -> None:
-        self._frame_bytes = int(_SAMPLE_RATE * frame_ms / 1000) * _BYTES_PER_SAMPLE
+        self._frame_bytes = int(SAMPLE_RATE * frame_ms / 1000) * _BYTES_PER_SAMPLE
         self._frame_ms = frame_ms
         self._start_frames = start_frames
         self._silence_frames = max(1, silence_ms // frame_ms)
@@ -168,13 +168,13 @@ class VadSegmenter:
                 return False
             if self._vad is not None:
                 try:
-                    return self._vad.is_speech(frame, _SAMPLE_RATE)
+                    return self._vad.is_speech(frame, SAMPLE_RATE)
                 except Exception:  # noqa: BLE001 — bad frame size etc.
                     return True  # already cleared the loud-energy gate
             return True
         if self._vad is not None:
             try:
-                return self._vad.is_speech(frame, _SAMPLE_RATE)
+                return self._vad.is_speech(frame, SAMPLE_RATE)
             except Exception:  # noqa: BLE001 — bad frame size etc.
                 return self._rms(frame) >= self._energy_threshold
         return self._rms(frame) >= self._energy_threshold

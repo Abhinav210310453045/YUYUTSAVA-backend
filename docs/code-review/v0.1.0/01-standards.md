@@ -92,7 +92,7 @@ root injects the implementation.
 
 | Layer | Packages |
 |---|---|
-| **L0** — leaves | `ports`, `models`, `aio`, `platform`, `config` (environment helpers and dependency-free settings), `text` (text helpers), `ansi` (the terminal palette) |
+| **L0** — leaves | `ports`, `models`, `aio`, `platform`, `config` (environment helpers and dependency-free settings), `text`, `wav` (text helpers), `ansi` (the terminal palette) |
 | **L1** — foundations | `storage.paths`, `storage.ids`, `storage.dialect`, `llm`, `run_context` (the active run's thread and agent path) |
 | **L2** — domains and stores | `storage`, `retrieval`, `memory`, `skills`, `prefs`, `visuals`, `artifacts`, `events`, `voice` (backends plus the pipeline built on them), `websearch` (the `ws_*` tools), `discovery` (imports nothing else from the package; `skills` builds on it) |
 | **L3** — agent capabilities | `policy`, `context`, `mcp`, `consent`, `docker_sandbox` |

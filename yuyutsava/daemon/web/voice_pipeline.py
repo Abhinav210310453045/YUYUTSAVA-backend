@@ -20,22 +20,22 @@ import asyncio
 import logging
 import shutil
 import tempfile
-import wave
 from pathlib import Path
 from typing import Callable
 
 from yuyutsava.voice.backends.stt import STT, TranscriptResult, stt_from_env
 from yuyutsava.voice.backends.tts import TTS, tts_from_env
+from yuyutsava.voice.pcm import SAMPLE_RATE
 from yuyutsava.voice.synth import synthesize_pcm
 from yuyutsava.voice.vad import VadResult, VadSegmenter
+from yuyutsava.wav import write_pcm16
 
 logger = logging.getLogger("yuyutsava.daemon.web.voice_pipeline")
 
-_SAMPLE_RATE = 16_000
 # Backstop: ignore utterances shorter than this much audio. The VAD already
 # drops noise blips, but this guards against any path that hands us a tiny clip
 # (which faster-whisper would otherwise "transcribe" into hallucinated text).
-_MIN_TRANSCRIBE_BYTES = int(_SAMPLE_RATE * 0.30) * 2  # ~300 ms of 16 kHz int16
+_MIN_TRANSCRIBE_BYTES = int(SAMPLE_RATE * 0.30) * 2  # ~300 ms of 16 kHz int16
 
 
 class VoicePipeline:
@@ -157,10 +157,5 @@ class VoicePipeline:
         return self._tts
 
 
-def _write_wav(path: Path, pcm: bytes, sample_rate: int = _SAMPLE_RATE) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with wave.open(str(path), "wb") as wf:
-        wf.setnchannels(1)
-        wf.setsampwidth(2)
-        wf.setframerate(sample_rate)
-        wf.writeframes(pcm)
+def _write_wav(path: Path, pcm: bytes, sample_rate: int = SAMPLE_RATE) -> None:
+    write_pcm16(path, pcm, sample_rate=sample_rate)

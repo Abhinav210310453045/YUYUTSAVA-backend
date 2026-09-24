@@ -15,10 +15,10 @@ from __future__ import annotations
 
 import logging
 import uuid
-import wave
 from pathlib import Path
 
 from yuyutsava.storage.paths import blobs_dir
+from yuyutsava.wav import write_pcm16
 
 logger = logging.getLogger("yuyutsava.storage.voice_blobs")
 
@@ -42,15 +42,8 @@ def write_voice_wav(thread_id: str, pcm: bytes, sample_rate: int) -> str:
     Synchronous stdlib I/O — callers on the event loop should wrap in
     ``asyncio.to_thread``.
     """
-    d = _thread_dir(thread_id)
-    d.mkdir(parents=True, exist_ok=True)
-    path = d / f"{uuid.uuid4().hex}.wav"
-    with wave.open(str(path), "wb") as wf:
-        wf.setnchannels(1)
-        wf.setsampwidth(2)  # 16-bit
-        wf.setframerate(int(sample_rate))
-        wf.writeframes(pcm)
-    return str(path)
+    path = _thread_dir(thread_id) / f"{uuid.uuid4().hex}.wav"
+    return str(write_pcm16(path, pcm, sample_rate=sample_rate))
 
 
 def delete_thread_voice_blobs(thread_id: str) -> int:
