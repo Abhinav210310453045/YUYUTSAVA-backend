@@ -128,17 +128,8 @@ def _subcommand_help() -> str:
     return "subcommands:\n" + "\n".join(f"  {c.name:<{width}}  {c.summary}" for c in SUBCOMMANDS)
 
 
-def _build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(
-        prog="yuyutsava",
-        description=(
-            "YUYUTSAVA: AI agent for natural language tasks. Runs tools on the "
-            "host or in a Docker sandbox. Set LLM_PROVIDER and the matching API "
-            "key in .env — see .env.example for the supported providers."
-        ),
-        epilog=_subcommand_help(),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
+def _add_task_args(p: argparse.ArgumentParser) -> None:
+    """What to run, and where."""
     p.add_argument(
         "task",
         nargs="*",
@@ -179,6 +170,10 @@ def _build_parser() -> argparse.ArgumentParser:
         default=120,
         help="Seconds before execute() kills the subprocess (default: 120).",
     )
+
+
+def _add_display_args(p: argparse.ArgumentParser) -> None:
+    """How much the terminal shows."""
     p.add_argument(
         "--verbose",
         "-v",
@@ -204,6 +199,10 @@ def _build_parser() -> argparse.ArgumentParser:
             "this keeps them. Also honoured via YUYUTSAVA_REPL_DASHBOARD=0."
         ),
     )
+
+
+def _add_session_args(p: argparse.ArgumentParser) -> None:
+    """Listing, deleting and resuming sessions."""
     p.add_argument(
         "--list-sessions",
         action="store_true",
@@ -232,6 +231,10 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Resume the most recently-updated session for the current --workspace.",
     )
+
+
+def _add_graph_args(p: argparse.ArgumentParser) -> None:
+    """Exporting the agent graph as an image."""
     p.add_argument(
         "--generate_agent_graph",
         action="store_true",
@@ -247,6 +250,10 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="DIR",
         help="Directory for State_Graph_v*.png (default: current working directory).",
     )
+
+
+def _add_docker_args(p: argparse.ArgumentParser) -> None:
+    """Where tools run, and the Docker sandbox's limits."""
     p.add_argument(
         "--execution",
         choices=("local", "docker"),
@@ -294,6 +301,10 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="N",
         help="Container max process count (default: YUYUTSAVA_DOCKER_PIDS_LIMIT or 100).",
     )
+
+
+def _add_run_args(p: argparse.ArgumentParser) -> None:
+    """Permission prompts, and the directories a run reads and writes."""
     p.add_argument(
         "--no-permission-check",
         action="store_true",
@@ -332,6 +343,26 @@ def _build_parser() -> argparse.ArgumentParser:
             "or <workspace>/.yuyutsava/outputs)."
         ),
     )
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    """The CLI's arguments, in the order ``--help`` lists them."""
+    p = argparse.ArgumentParser(
+        prog="yuyutsava",
+        description=(
+            "YUYUTSAVA: AI agent for natural language tasks. Runs tools on the "
+            "host or in a Docker sandbox. Set LLM_PROVIDER and the matching API "
+            "key in .env — see .env.example for the supported providers."
+        ),
+        epilog=_subcommand_help(),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    _add_task_args(p)
+    _add_display_args(p)
+    _add_session_args(p)
+    _add_graph_args(p)
+    _add_docker_args(p)
+    _add_run_args(p)
     return p
 
 
