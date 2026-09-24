@@ -21,16 +21,20 @@ Two things here are easy to get wrong and are therefore not left to callers:
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from typing import Any
 
 from langchain_core.language_models import BaseChatModel
 
-from yuyutsava.async_subagents.host import AsyncSubagentHost
+from yuyutsava.async_subagents.host import AsyncSubagentHost, resolve_allow_blocking
+from yuyutsava.async_subagents.host_lock import acquire_or_attach_host
+from yuyutsava.async_subagents.mirror import AsyncTaskMirror
+from yuyutsava.config.env import env_flag
 from yuyutsava.context.tools import make_context_tools
 from yuyutsava.core.engine import context_middleware
 from yuyutsava.llm.factory import chat_model
-from yuyutsava.llm.settings import llm_settings_from_env
+from yuyutsava.llm.settings import LlmSettings, llm_settings_from_env
 
 
 @dataclass(frozen=True)
@@ -89,3 +93,55 @@ def build_async_host(
 
 
 __all__ = ["BackgroundStores", "build_async_host"]
+
+
+def async_subagents_enabled() -> bool:
+    """Whether background subagents are on (``YUYUTSAVA_ASYNC_SUBAGENTS``)."""
+    return env_flag("YUYUTSAVA_ASYNC_SUBAGENTS", true=("1", "true", "yes"))
+
+
+@dataclass(frozen=True)
+class Background:
+    """The background-subagent host a stack uses; all ``None`` when off."""
+
+    subagents: list[Any] | None = None
+    host_url: str | None = None
+    #: ``None`` when attached to a host another process owns.
+    host: AsyncSubagentHost | None = None
+    attachment: Any | None = None
+    mirror: AsyncTaskMirror | None = None
+
+
+async def start_background(
+    settings: LlmSettings,
+    checkpointer: Any,
+    subagents: list[Any],
+    stores: BackgroundStores,
+) -> Background:
+    """Own or attach to the shared background-subagent host.
+
+    First-come-wins: if a daemon (or another chat) already runs the LangGraph
+    dev server, attach to its URL instead of starting a second one — inside the
+    daemon that is always the case. Permissive (warn-only) about blocking I/O
+    by default; ``YUYUTSAVA_ALLOW_BLOCKING`` still overrides.
+    """
+    model = chat_model(settings)
+    allow_blocking = resolve_allow_blocking(default=True)
+
+    def _build_host() -> AsyncSubagentHost:
+        return build_async_host(
+            subagents,
+            model=model,
+            checkpointer=checkpointer,
+            allow_blocking=allow_blocking,
+            stores=stores,
+        )
+
+    attachment = await asyncio.to_thread(acquire_or_attach_host, factory=_build_host)
+    return Background(
+        subagents=subagents,
+        host_url=attachment.url,
+        host=attachment.host,
+        attachment=attachment,
+        mirror=AsyncTaskMirror(),
+    )

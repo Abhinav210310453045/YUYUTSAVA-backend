@@ -24,28 +24,22 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 
 from yuyutsava.agents.general_purpose.agent import GeneralPurposeAgent
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
-from yuyutsava.async_subagents.host import AsyncSubagentHost, resolve_allow_blocking
-from yuyutsava.async_subagents.host_lock import acquire_or_attach_host
-from yuyutsava.async_subagents.mirror import AsyncTaskMirror
-from yuyutsava.config.env import env, env_flag
 from yuyutsava.config.search import SearchConfig
-from yuyutsava.context.config import ContextSettings
-from yuyutsava.core.async_host import BackgroundStores, build_async_host
+from yuyutsava.core.async_host import (
+    Background,
+    BackgroundStores,
+    async_subagents_enabled,
+    start_background,
+)
 from yuyutsava.core.deps import MasterDeps
 from yuyutsava.core.engine import AgentBundle, build_tinker_agent
-from yuyutsava.core.stores import StoreFactory, build_retrieval_stores
-from yuyutsava.llm.factory import chat_model
-from yuyutsava.llm.settings import LlmSettings, llm_settings_from_env
+from yuyutsava.core.stores import build_master_stores
+from yuyutsava.llm.settings import LlmSettings
 from yuyutsava.skills.registry import SkillRegistry
-from yuyutsava.storage.backend import StorageSettings
 from yuyutsava.storage.paths import WorkspaceLayout
 from yuyutsava.todoboard.recall import get_default_note_index
 
 logger = logging.getLogger("yuyutsava.agents.tinker")
-
-
-def _async_enabled() -> bool:
-    return env_flag("YUYUTSAVA_ASYNC_SUBAGENTS", true=("1", "true", "yes"))
 
 
 async def build_tinker_stack(
@@ -72,28 +66,12 @@ async def build_tinker_stack(
     gets the user-configured MCP tools scoped to ``"tinker"``, same wiring as
     the orchestrator master.
     """
-    context_settings = ContextSettings.from_env(
-        "tinker",
-        provider=env("LLM_PROVIDER", None, "groq"),
-    )
-    compaction_model = chat_model(llm_settings_from_env("compaction"), temperature=0.0)
-
     skill_registry = SkillRegistry(workspace_dir=WorkspaceLayout.for_workspace(workspace).skills)
-
-    # Same retrieval wiring as the conversational stack: pgvector stores when
-    # Postgres is up (the sync inside also indexes the bundled tinker skills,
-    # agent-tagged by their bundled/tinker/ dir), SQLite keyword twins
-    # otherwise. The bundle owns the pool/embedder and closes them in aclose.
-    memory_store, skill_store, pg_pool, embedder = await build_retrieval_stores(skill_registry)
-
-    # One selection, shared with the CLI and the daemon.
-    _ctx = StoreFactory(
-        StorageSettings.from_env(), pg_pool=pg_pool, embedder=embedder
-    ).context_stores(semantic_recall=context_settings.semantic_recall)
-    artifact_store = _ctx.artifacts
-    summary_store = _ctx.summaries
-    transcript_store = _ctx.transcripts
-    transcript_index = _ctx.transcript_index
+    # Same wiring as the conversational stack (the retrieval sync also indexes
+    # the bundled tinker skills, agent-tagged by their bundled/tinker/ dir).
+    # The bundle owns the pool/embedder and closes them in aclose.
+    stores = await build_master_stores("tinker", skill_registry)
+    memory_store, skill_store = stores.memory_store, stores.skill_store
 
     # The general-purpose subagent works inside the SAME card workspace, so a
     # delegated research/build step lands its files on the card. Consent rides
@@ -115,43 +93,25 @@ async def build_tinker_stack(
         skill_store=skill_store,
     )
 
-    async_subagents = None
-    async_host_url = None
-    async_host = None
-    async_host_attachment = None
-    async_mirror = None
-
-    if _async_enabled():
-        model = chat_model(settings)
-        async_subagents = [general_purpose]
-        allow_blocking = resolve_allow_blocking(default=True)
-
-        # First-come-wins shared host: inside the daemon this always attaches
-        # to the already-running owner instead of starting a second server.
-        def _build_host() -> AsyncSubagentHost:
-            return build_async_host(
-                async_subagents,
-                model=model,
-                checkpointer=checkpointer,
-                allow_blocking=allow_blocking,
-                stores=BackgroundStores(
-                    artifact_store=artifact_store,
-                    context_settings=context_settings,
-                    summary_store=summary_store,
-                    memory_store=memory_store,
-                ),
-            )
-
-        attachment = await asyncio.to_thread(acquire_or_attach_host, factory=_build_host)
-        async_host_attachment = attachment
-        async_host_url = attachment.url
-        async_host = attachment.host  # None when attached to another owner
-        async_mirror = AsyncTaskMirror()
+    background = Background()
+    if async_subagents_enabled():
+        # Inside the daemon this always attaches to the running owner.
+        background = await start_background(
+            settings,
+            checkpointer,
+            [general_purpose],
+            BackgroundStores(
+                artifact_store=stores.context.artifacts,
+                context_settings=stores.context_settings,
+                summary_store=stores.context.summaries,
+                memory_store=memory_store,
+            ),
+        )
         logger.info(
             "tinker[%s]: async host %s @ %s",
             card_id,
-            "owner" if attachment.host is not None else "attached",
-            async_host_url,
+            "owner" if background.host is not None else "attached",
+            background.host_url,
         )
 
     # User-configured MCP servers (scope "tinker") + board-note recall. Both
@@ -171,19 +131,19 @@ async def build_tinker_stack(
             search_config=search_config,
             checkpointer=checkpointer,
             subagents=[general_purpose],
-            async_subagents=async_subagents,
-            async_host_url=async_host_url,
-            async_task_mirror=async_mirror,
-            async_host=async_host,
-            async_host_attachment=async_host_attachment,
-            artifact_store=artifact_store,
-            summary_store=summary_store,
+            async_subagents=background.subagents,
+            async_host_url=background.host_url,
+            async_task_mirror=background.mirror,
+            async_host=background.host,
+            async_host_attachment=background.attachment,
+            artifact_store=stores.context.artifacts,
+            summary_store=stores.context.summaries,
             memory_store=memory_store,
-            transcript_store=transcript_store,
-            context_settings=context_settings,
-            compaction_model=compaction_model,
+            transcript_store=stores.context.transcripts,
+            context_settings=stores.context_settings,
+            compaction_model=stores.compaction_model,
             skill_store=skill_store,
-            transcript_index=transcript_index,
+            transcript_index=stores.context.transcript_index,
             usage_store=usage_store,
             mcp_tools=mcp_tools,
             prefs_store=prefs_store,
@@ -195,6 +155,6 @@ async def build_tinker_stack(
         skill_registry=skill_registry,
         note_index=note_index,
     )
-    bundle.pg_pool = pg_pool
-    bundle.embedder = embedder
+    bundle.pg_pool = stores.pg_pool
+    bundle.embedder = stores.embedder
     return bundle

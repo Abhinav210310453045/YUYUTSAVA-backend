@@ -41,10 +41,14 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from yuyutsava.config.env import env
 from yuyutsava.context.artifacts_unified import pg_artifact_store, sqlite_artifact_store
+from yuyutsava.context.config import ContextSettings
 from yuyutsava.context.summary_store_unified import pg_summary_store, sqlite_summary_store
 from yuyutsava.context.transcript_index import PgTranscriptIndex
 from yuyutsava.context.transcript_store_unified import pg_transcript_store, sqlite_transcript_store
+from yuyutsava.llm.factory import chat_model
+from yuyutsava.llm.settings import llm_settings_from_env
 from yuyutsava.memory.config import MemorySettings
 from yuyutsava.memory.embedder import Embedder
 from yuyutsava.memory.store_unified import pg_memory_store, sqlite_memory_store
@@ -362,3 +366,43 @@ async def build_retrieval_stores(skill_registry: SkillRegistry):
                 logger.warning("CLI: embedding backfill failed", exc_info=True)
 
     return memory_store, skill_store, pg_pool, embedder
+
+
+@dataclass(frozen=True)
+class MasterStores:
+    """What a master agent's stack stores and remembers with."""
+
+    context_settings: Any
+    compaction_model: Any
+    memory_store: Any
+    skill_store: Any
+    pg_pool: Any
+    embedder: Any
+    factory: StoreFactory
+    context: ContextStores
+
+
+async def build_master_stores(role: str, skill_registry: SkillRegistry) -> MasterStores:
+    """Context settings, the compaction model, and every store a master uses.
+
+    Retrieval (memory + skills) gets *semantic* recall via pgvector when
+    Postgres is up — the stack owns that pool — and the SQLite keyword twins
+    otherwise. The context-controller stores are selected ONCE by
+    :class:`StoreFactory`, the same selection the daemon makes, so they cannot
+    drift; see :meth:`StoreFactory.context_stores` for why they stay
+    PG-primary / SQLite-fallback rather than RoutedStore.
+    """
+    context_settings = ContextSettings.from_env(role, provider=env("LLM_PROVIDER", None, "groq"))
+    compaction_model = chat_model(llm_settings_from_env("compaction"), temperature=0.0)
+    memory_store, skill_store, pg_pool, embedder = await build_retrieval_stores(skill_registry)
+    factory = StoreFactory(StorageSettings.from_env(), pg_pool=pg_pool, embedder=embedder)
+    return MasterStores(
+        context_settings=context_settings,
+        compaction_model=compaction_model,
+        memory_store=memory_store,
+        skill_store=skill_store,
+        pg_pool=pg_pool,
+        embedder=embedder,
+        factory=factory,
+        context=factory.context_stores(semantic_recall=context_settings.semantic_recall),
+    )

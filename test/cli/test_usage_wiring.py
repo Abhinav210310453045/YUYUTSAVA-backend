@@ -72,7 +72,7 @@ class StackWiresAUsageStore(unittest.TestCase):
     def test_standalone_builds_its_own_store(self):
         src = inspect.getsource(agent_stack.build_agent_stack)
         self.assertIn("if usage_store is None:", src)
-        self.assertIn("_factory.usage()", src)
+        self.assertIn("stores.factory.usage()", src)
 
     def test_store_reaches_the_bundle_for_reporting(self):
         src = inspect.getsource(agent_stack.build_agent_stack)
