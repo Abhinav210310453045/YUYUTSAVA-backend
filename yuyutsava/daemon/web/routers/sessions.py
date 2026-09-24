@@ -21,7 +21,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 
-from yuyutsava.artifacts.events import artifact_event_from_result
+from yuyutsava.artifacts.events import ARTIFACT_EVENT
 from yuyutsava.core.app_context import AppContext
 from yuyutsava.core.purge import purge_session
 from yuyutsava.daemon.web.schemas.session import SessionOut
@@ -139,8 +139,8 @@ async def get_session_messages(session_id: str, request: Request) -> dict:
         for m in rows:
             data = m.content.get("data", {}) if isinstance(m.content, dict) else {}
             if m.type == "tool":
-                if data.get("name") in ("artifact_create", "artifact_show"):
-                    art = artifact_event_from_result(_extract_text(data.get("content", "")))
+                if ARTIFACT_EVENT.matches(str(data.get("name", ""))):
+                    art = ARTIFACT_EVENT.extract(_extract_text(data.get("content", "")))
                     if art is not None:
                         pending_artifacts.append(art)
                 continue

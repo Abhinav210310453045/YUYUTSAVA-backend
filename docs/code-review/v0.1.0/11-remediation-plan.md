@@ -514,8 +514,18 @@ Then two of the three OCP registries:
   Verified live: all six kinds rendered to PNG through `POST /visuals/render`
   on a restarted daemon, and an unknown kind got a 400 naming the six.
 
-Still open in this wave, in plan order: the tool→event registry, the
-docker/local branch, `build_daemon`/`_async_main` (waiting on the `BootContext` decision),
+The third, **tool→event**, was already a registry: `ports/tool_events` since
+`1525f2c` (W3), with the rules beside their tools (`visuals/events.IMAGE_EVENT`,
+`artifacts/events.ARTIFACT_EVENT`). One consumer had kept its own copy of the
+artifact tool names — the history replay in `daemon/web/routers/sessions.py` —
+so a tool added to the rule would have shown its artifact live and lost it on
+reload. It now asks `ARTIFACT_EVENT`. Nothing tested the replay; four
+characterization tests came first (`test/web/test_session_history_artifacts.py`).
+Verified live: 189 real session histories are byte-identical before and after,
+and in an isolated daemon a real turn's `artifact_create` came back attached to
+its reply on reload, with the id the live turn streamed.
+
+Still open in this wave, in plan order: the docker/local branch, `build_daemon`/`_async_main` (waiting on the `BootContext` decision),
 the rest of `run_chat_repl`, and the docstring sweep.
 
 ## W5 — Errors, logging, state, defects
