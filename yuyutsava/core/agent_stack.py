@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
@@ -54,6 +55,129 @@ logger = logging.getLogger("yuyutsava.core.agent_stack")
 
 def _async_enabled() -> bool:
     return env_flag("YUYUTSAVA_ASYNC_SUBAGENTS", true=("1", "true", "yes"))
+
+
+def _install_board_stores(pg_pool: Any | None, embedder: Any | None) -> None:
+    """Point the process-wide board, visual and note stores at Postgres.
+
+    The todo_* capture tools must use the SAME board the daemon serves. With a
+    pool the Pg store is primary (``get_default_todo_store()`` would otherwise
+    lazily fall back to the SQLite twin and split the board); without one the
+    lazy SQLite fallback is correct, so nothing is set.
+    """
+    if pg_pool is None:
+        return
+    set_default_todo_store(pg_todo_store(pg_pool))
+    # Same split, same fix, for vis_* images: without this the lazy getter
+    # falls back to the SQLite twin, so a chart made in the CLI lands in
+    # state.db while the daemon and the app read visual_artifacts in
+    # Postgres — and vis_list_artifacts shows two different worlds.
+    set_default_visual_store(pg_visual_store(pg_pool))
+    # Board-note recall: embed-on-write for notes authored through this
+    # stack + todo_recall searches. Boot backfill is the daemon's job —
+    # a CLI start stays light.
+    if embedder is not None:
+        set_default_note_index(TodoNoteIndex(pg_pool, embedder=embedder))
+
+
+async def _refresh_prices(settings: LlmSettings) -> None:
+    """Cache the active model's live price so the cost ledger is not $0.
+
+    Fetched from the provider into ``~/.yuyutsava/model_prices.json`` (and so
+    Langfuse prices it too). Off the loop, TTL-cached, never fatal.
+    """
+    try:
+        await asyncio.to_thread(refresh_price_cache, settings)
+    except Exception:  # noqa: BLE001 — pricing must never block a stack build
+        logger.debug("price cache refresh failed", exc_info=True)
+
+
+@dataclass(frozen=True)
+class _Background:
+    """The background-subagent host this stack uses; all ``None`` when off."""
+
+    subagents: list[Any] | None = None
+    host_url: str | None = None
+    #: ``None`` when attached to a host another process owns.
+    host: AsyncSubagentHost | None = None
+    attachment: Any | None = None
+    mirror: AsyncTaskMirror | None = None
+
+
+async def _start_background(
+    settings: LlmSettings,
+    checkpointer: BaseCheckpointSaver,
+    subagents: list[Any],
+    stores: BackgroundStores,
+) -> _Background:
+    """Own or attach to the shared background-subagent host.
+
+    First-come-wins: if a daemon (or another chat) already runs the LangGraph
+    dev server, attach to its URL instead of starting a second one. The
+    interactive CLI REPL has its own (intentional) blocking I/O, so it stays
+    permissive by default; ``YUYUTSAVA_ALLOW_BLOCKING`` still overrides.
+    """
+    model = chat_model(settings)
+    allow_blocking = resolve_allow_blocking(default=True)
+
+    def _build_host() -> AsyncSubagentHost:
+        return build_async_host(
+            subagents,
+            model=model,
+            checkpointer=checkpointer,
+            allow_blocking=allow_blocking,
+            stores=stores,
+        )
+
+    attachment = await asyncio.to_thread(acquire_or_attach_host, factory=_build_host)
+    if attachment.host is not None:
+        logger.info(
+            "CLI async host: owner @ %s graphs=%s",
+            attachment.url,
+            attachment.host.graph_ids,
+        )
+    else:
+        logger.info("CLI async host: attached to running owner @ %s", attachment.url)
+    return _Background(
+        subagents=subagents,
+        host_url=attachment.url,
+        host=attachment.host,
+        attachment=attachment,
+        mirror=AsyncTaskMirror(),
+    )
+
+
+def _general_purpose_agent(
+    workspace: Path,
+    layout: WorkspaceLayout,
+    skill_registry: SkillRegistry,
+    search_config: SearchConfig,
+    memory_store: Any | None,
+    skill_store: Any | None,
+) -> tuple[GeneralPurposeAgent, ConsentRegistry]:
+    """The general-purpose subagent, and the consent registry its tools ask.
+
+    Passing it makes deepagents name-match-override its built-in
+    general-purpose with our tighter prompt and lazy tool discovery. Consent is
+    session-scoped here (no events store; PROJECT grants persist only in the
+    daemon path) and is installed as the process default for the tr_* tools.
+    """
+    consent_registry = ConsentRegistry()
+    set_default_consent(consent_registry)
+    task_runner = TaskRunnerAgent(
+        workspace_root=workspace,
+        sandbox_root=layout.sandbox,
+        consent=consent_registry,
+    )
+    general_purpose = GeneralPurposeAgent(
+        task_runner=task_runner,
+        skill_registry=skill_registry,
+        can_write_skills=True,
+        search_config=search_config,
+        memory_store=memory_store,
+        skill_store=skill_store,
+    )
+    return general_purpose, consent_registry
 
 
 async def build_agent_stack(
@@ -97,16 +221,9 @@ async def build_agent_stack(
     daemon tools (e.g. orch_submit).
 
     The CLI REPL and the daemon-hosted text/voice conversations build this same
-    stack (see :class:`yuyutsava.conversation.ConversationService`).
-
-    The current sync subagent list is just ``GeneralPurposeAgent`` — passing
-    it causes deepagents to name-match-override its built-in default with our
-    tighter prompt + lazy tool discovery via ToolRegistry.
-
-    When ``YUYUTSAVA_ASYNC_SUBAGENTS=1``: also stand up an in-process
-    ``AsyncSubagentHost`` hosting the same subagent(s) under ``-bg`` names,
-    plus an ``AsyncTaskMirror``, an ``AsyncTaskHealthWatcher``, and a
-    ``CliHitlBridge`` for routing interrupts to stdin.
+    stack (see :class:`yuyutsava.conversation.ConversationService`). With
+    ``YUYUTSAVA_ASYNC_SUBAGENTS=1`` it also owns or attaches to the background
+    host (:func:`_start_background`).
     """
     # Context controller: CLI chat threads are the longest-lived in the
     # system, so offload + compaction are always on.
@@ -126,11 +243,10 @@ async def build_agent_stack(
     )
     skill_registry = SkillRegistry(workspace_dir=layout.skills)
 
-    # Long-term memory + skill retrieval. On the Postgres backend the CLI owns
-    # its own pool (the daemon owns one; the CLI didn't until now) so memory and
-    # skills get *semantic* recall via pgvector; otherwise both fall back to the
-    # SQLite keyword twins. Memory defaults ON in the CLI — these are the
-    # longest-lived threads in the system — but an explicit
+    # Long-term memory + skill retrieval. On the Postgres backend this stack
+    # owns its own pool, so memory and skills get *semantic* recall via
+    # pgvector; otherwise both use the SQLite keyword twins. Memory defaults ON
+    # here — the longest-lived threads in the system — but
     # YUYUTSAVA_MEMORY_ENABLED=0 still disables it.
     memory_store, skill_store, pg_pool, embedder = await build_retrieval_stores(skill_registry)
 
@@ -144,40 +260,14 @@ async def build_agent_stack(
     summary_store = _ctx.summaries
     transcript_store = _ctx.transcripts
 
-    # Token accounting. The kwarg exists for the daemon to pass its own store,
-    # but nothing filled it in standalone mode, so a CLI session wrote zero
-    # llm_usage rows — the 12 Sep post-mortem had to reconstruct 4M input
-    # tokens from usage_metadata on recorded messages, and only because the
-    # transcript happened to be on. The rows are the same table the daemon
-    # writes, so /usage and the daemon's ledger agree.
+    # Token accounting. The daemon passes its own store; standalone, build one,
+    # or a CLI session writes no llm_usage rows at all. The rows are the same
+    # table the daemon writes, so /usage and the daemon's ledger agree.
     if usage_store is None:
         usage_store = _factory.usage()
 
-    # TODO board: point the todo_* capture tools at the SAME board the daemon
-    # serves. With a pool the Pg store is primary (get_default_todo_store()
-    # would otherwise lazily fall back to the SQLite twin and split the board);
-    # without one the lazy SQLite fallback is correct, so leave it unset.
-    if pg_pool is not None:
-        set_default_todo_store(pg_todo_store(pg_pool))
-        # Same split, same fix, for vis_* images: without this the lazy getter
-        # falls back to the SQLite twin, so a chart made in the CLI lands in
-        # state.db while the daemon and the app read visual_artifacts in
-        # Postgres — and vis_list_artifacts shows two different worlds.
-        set_default_visual_store(pg_visual_store(pg_pool))
-        # Board-note recall: embed-on-write for notes authored through this
-        # stack + todo_recall searches. Boot backfill is the daemon's job —
-        # a CLI start stays light.
-        if embedder is not None:
-            set_default_note_index(TodoNoteIndex(pg_pool, embedder=embedder))
-
-    # Best-effort: fetch the active model's live price from its provider and cache
-    # it into ~/.yuyutsava/model_prices.json so the cost ledger (and Langfuse)
-    # price this model correctly instead of falling to $0. Off the loop, TTL-cached,
-    # never fatal.
-    try:
-        await asyncio.to_thread(refresh_price_cache, settings)
-    except Exception:  # noqa: BLE001 — pricing must never block a stack build
-        logger.debug("price cache refresh failed", exc_info=True)
+    _install_board_stores(pg_pool, embedder)
+    await _refresh_prices(settings)
 
     # Per-conversation transcript recall (Postgres only): index each turn so a
     # resumed session recalls prior topics after its checkpoint is swept. None on
@@ -188,22 +278,8 @@ async def build_agent_stack(
     # Idempotent, so the daemon's ConversationManager building this same stack
     # lazily is harmless.
     await asyncio.to_thread(layout.ensure)
-    # Consent (allowlist) registry — session-scoped only in standalone CLI mode
-    # (no events store here; PROJECT grants persist only in the daemon path).
-    consent_registry = ConsentRegistry()
-    set_default_consent(consent_registry)
-    task_runner = TaskRunnerAgent(
-        workspace_root=workspace,
-        sandbox_root=layout.sandbox,
-        consent=consent_registry,
-    )
-    general_purpose = GeneralPurposeAgent(
-        task_runner=task_runner,
-        skill_registry=skill_registry,
-        can_write_skills=True,
-        search_config=search_config,
-        memory_store=memory_store,
-        skill_store=skill_store,
+    general_purpose, consent_registry = _general_purpose_agent(
+        workspace, layout, skill_registry, search_config, memory_store, skill_store
     )
 
     # MCP: the daemon passes its manager; standalone, start our own from the
@@ -214,14 +290,8 @@ async def build_agent_stack(
         owned_mcp = await start_manager_for_workspace(workspace, factory=mcp_manager_factory)
         mcp_manager = owned_mcp
 
-    async_subagents = None
-    async_host_url = None
-    async_host = None
-    async_host_attachment = None
-    async_mirror = None
-
+    background = _Background()
     if _async_enabled():
-        model = chat_model(settings)
         # The background TinkerAgent rides along as an async-only peer so the
         # conversational master can delegate "tinker on card X in the
         # background" — async-only: interactive tinkering has its own per-card
@@ -236,42 +306,17 @@ async def build_agent_stack(
             mcp_manager=mcp_manager,
             consent=consent_registry,
         )
-        async_subagents = [general_purpose, tinker_sub]
-
-        # The interactive CLI REPL has its own (intentional) blocking I/O, so it
-        # stays permissive by default; YUYUTSAVA_ALLOW_BLOCKING still overrides.
-        allow_blocking = resolve_allow_blocking(default=True)
-
-        # First-come-wins shared host. If a daemon (or another chat) is
-        # already running and owns the LangGraph dev server, attach to its
-        # URL instead of starting a second one.
-        def _build_host() -> AsyncSubagentHost:
-            return build_async_host(
-                async_subagents,
-                model=model,
-                checkpointer=checkpointer,
-                allow_blocking=allow_blocking,
-                stores=BackgroundStores(
-                    artifact_store=artifact_store,
-                    context_settings=context_settings,
-                    summary_store=summary_store,
-                    memory_store=memory_store,
-                ),
-            )
-
-        attachment = await asyncio.to_thread(acquire_or_attach_host, factory=_build_host)
-        async_host_attachment = attachment
-        async_host_url = attachment.url
-        async_host = attachment.host  # None when attached to another owner
-        async_mirror = AsyncTaskMirror()
-        if attachment.host is not None:
-            logger.info(
-                "CLI async host: owner @ %s graphs=%s",
-                async_host_url,
-                attachment.host.graph_ids,
-            )
-        else:
-            logger.info("CLI async host: attached to running owner @ %s", async_host_url)
+        background = await _start_background(
+            settings,
+            checkpointer,
+            [general_purpose, tinker_sub],
+            BackgroundStores(
+                artifact_store=artifact_store,
+                context_settings=context_settings,
+                summary_store=summary_store,
+                memory_store=memory_store,
+            ),
+        )
 
     bundle = build_cli_deepagent(
         workspace,
@@ -282,11 +327,11 @@ async def build_agent_stack(
             search_config=search_config,
             checkpointer=checkpointer,
             subagents=[general_purpose, *(extra_subagents or [])],
-            async_subagents=async_subagents,
-            async_host_url=async_host_url,
-            async_task_mirror=async_mirror,
-            async_host=async_host,
-            async_host_attachment=async_host_attachment,
+            async_subagents=background.subagents,
+            async_host_url=background.host_url,
+            async_task_mirror=background.mirror,
+            async_host=background.host,
+            async_host_attachment=background.attachment,
             artifact_store=artifact_store,
             summary_store=summary_store,
             memory_store=memory_store,
