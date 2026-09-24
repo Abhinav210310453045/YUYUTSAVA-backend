@@ -82,7 +82,7 @@ class StateDirHygiene(unittest.TestCase):
 
 class RegistryKey(unittest.TestCase):
     def test_default_sandbox_shares_the_cached_agent(self) -> None:
-        from yuyutsava.agents.task_runner.tools import _get_or_create_agent
+        from yuyutsava.agents.task_runner.tools.support import _get_or_create_agent
 
         with tempfile.TemporaryDirectory() as tmp:
             ws = Path(tmp).resolve()

@@ -31,7 +31,6 @@ from yuyutsava.context.meter.bus import (
 from yuyutsava.context.meter.calibration import reset_thread_state
 from yuyutsava.context.meter.policy import ContextMeterPolicy
 from yuyutsava.context.meter.sizing import (
-    catalog_chars,
     note_bound_tools,
     note_tool_registry,
     reset_sizing_caches,
@@ -46,7 +45,6 @@ __all__ = [
     "ContextSnapshot",
     "MeterBus",
     "bus",
-    "catalog_chars",
     "counters",
     "note_bound_tools",
     "note_compaction",
