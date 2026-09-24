@@ -14,6 +14,7 @@ import contextlib
 import dataclasses
 import logging
 import uuid
+from typing import Any
 
 from langchain_core.language_models import BaseChatModel
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -308,17 +309,40 @@ class OrchestratorLoop:
     ) -> None:
         model = model if model is not None else self._model
         deps = deps if deps is not None else self._deps
+        graph = await self._build_graph(model, deps, task_id=task_id, thread_id=thread_id)
+        message = self._task_message(task, deps)
+        await self._channels.post_event(
+            ChannelEvent(
+                payload=LogPayload(text=f"[orch] task {task.event_id[:8]}…\n"),
+                task_id=task_id or None,
+                session_id=thread_id,
+            )
+        )
+        final_text, cancelled = await self._stream(
+            graph, message, task_id=task_id, thread_id=thread_id, resume=resume, origin=origin
+        )
+        if cancelled:
+            await self._finish_cancelled(task, task_id=task_id, thread_id=thread_id)
+        else:
+            await self._finish_done(
+                task, deps, task_id=task_id, thread_id=thread_id, final_text=final_text
+            )
+
+    async def _build_graph(
+        self, model: BaseChatModel, deps: OrchestratorDeps, *, task_id: str, thread_id: str
+    ) -> Any:
+        """A fresh orchestrator graph for this task (per-task selection is free)."""
         # Build-time snapshot keeps only the NON-similarity blocks (prefs +
         # the um_* standing-awareness index). Memory/skill/conversation recall
-        # is per-turn now — RetrievalInjectionPolicy inside
-        # build_orchestrator matches them to the task message itself.
+        # is per-turn — RetrievalInjectionPolicy inside build_orchestrator
+        # matches them to the task message itself.
         prefs_block = await self._prefs_injector.build_block() if self._prefs_injector else ""
         # Per-agent user-behavior memory: the MEMORY.md index of what this
         # orchestrator has learned about the user (um_note). Unconditional
         # (not similarity-gated) — the whole point is standing awareness.
         agent_mem_block = await asyncio.to_thread(AgentMemoryStore("orchestrator").read_index_block)
         blocks = "\n\n".join(b for b in (prefs_block, agent_mem_block) if b)
-        graph = build_orchestrator(
+        return build_orchestrator(
             model=model,
             deps=deps,
             budget_tokens=self._budget,
@@ -328,26 +352,34 @@ class OrchestratorLoop:
             prefs_block=blocks,
             usage_context=UsageContext(task_id=task_id, thread_id=thread_id),
         )
-        message = task.render_to_message()
 
-        # Inject in-flight background tasks at the start of every turn so the
-        # master is aware of bg work across fresh ``thread_id``s and across
-        # context compactions. Empty when no async subagents are configured
-        # or no tasks are currently running.
+    @staticmethod
+    def _task_message(task: OrchestratorTask, deps: OrchestratorDeps) -> str:
+        """The task as the master reads it, led by any in-flight background work.
+
+        Injected at the start of every turn so the master is aware of bg work
+        across fresh ``thread_id``s and across context compactions. Empty when
+        no async subagents are configured or none are running.
+        """
+        message = task.render_to_message()
         mirror = getattr(deps, "async_task_mirror", None)
         if mirror is not None:
             block = mirror.render_block()
             if block:
                 message = f"{block}\n\n{message}" if isinstance(message, str) else message
+        return message
 
-        await self._channels.post_event(
-            ChannelEvent(
-                payload=LogPayload(text=f"[orch] task {task.event_id[:8]}…\n"),
-                task_id=task_id or None,
-                session_id=thread_id,
-            )
-        )
-
+    async def _stream(
+        self,
+        graph: Any,
+        message: str,
+        *,
+        task_id: str,
+        thread_id: str,
+        resume: bool,
+        origin: str | None,
+    ) -> tuple[str, bool]:
+        """Run the turn, broadcasting each event; ``(final_text, cancelled)``."""
         # Route subagent interrupts (tr_* permission prompts, tr_ask_user, and
         # any background AsyncTaskHealthWatcher asks) through the daemon's
         # channel router so the user sees them in the Electron renderer.
@@ -356,9 +388,7 @@ class OrchestratorLoop:
             default_session_id=thread_id,
             default_agent_path="orchestrator",
         )
-
         final_text = ""
-        cancelled = False
         async for ev in astream_agent_iter(
             graph,
             message,
@@ -379,30 +409,40 @@ class OrchestratorLoop:
             # in-flight LLM/tool call always finishes; the run stops at the
             # next event boundary.
             if self._registry is not None and task_id and self._registry.cancel_requested(task_id):
-                cancelled = True
-                break
+                return final_text, True
+        return final_text, False
 
-        if cancelled:
-            await self._registry.mark_cancelled(task_id, note="cancelled by user")
-            if task.proposal_id:
-                await self._store.put_decision(
-                    proposal_id=task.proposal_id,
-                    event_id=task.event_id,
-                    outcome="orchestrator_cancelled",
-                    action_summary="cancelled by user",
-                )
-            await self._channels.post_event(
-                ChannelEvent(
-                    payload=TimelinePayload(
-                        line=f"task {task_id}: cancelled by user",
-                        cls="event-decision-skipped",
-                    ),
-                    task_id=task_id or None,
-                    session_id=thread_id,
-                )
+    async def _finish_cancelled(
+        self, task: OrchestratorTask, *, task_id: str, thread_id: str
+    ) -> None:
+        await self._registry.mark_cancelled(task_id, note="cancelled by user")
+        if task.proposal_id:
+            await self._store.put_decision(
+                proposal_id=task.proposal_id,
+                event_id=task.event_id,
+                outcome="orchestrator_cancelled",
+                action_summary="cancelled by user",
             )
-            return
+        await self._channels.post_event(
+            ChannelEvent(
+                payload=TimelinePayload(
+                    line=f"task {task_id}: cancelled by user",
+                    cls="event-decision-skipped",
+                ),
+                task_id=task_id or None,
+                session_id=thread_id,
+            )
+        )
 
+    async def _finish_done(
+        self,
+        task: OrchestratorTask,
+        deps: OrchestratorDeps,
+        *,
+        task_id: str,
+        thread_id: str,
+        final_text: str,
+    ) -> None:
         # Decisions exist only for proposal-born tasks. Wake-ups
         # (subagent_completed), direct submissions, and resumes carry an empty
         # proposal_id — recording one would violate decisions_proposal_fk on

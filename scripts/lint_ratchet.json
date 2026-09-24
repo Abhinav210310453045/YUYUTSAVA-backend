@@ -134,7 +134,7 @@
     "BLE001": 1
   },
   "yuyutsava/daemon/bootstrap.py": {
-    "PLR0913": 2
+    "PLR0913": 1
   },
   "yuyutsava/daemon/checkpointing.py": {
     "BLE001": 1,
