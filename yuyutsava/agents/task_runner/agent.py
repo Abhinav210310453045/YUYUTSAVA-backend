@@ -181,15 +181,11 @@ class TaskRunnerAgent:
                 error_code=_EC_RULE_DENIED,
                 zone=None,
             )
-
         primary_path = request.paths[0]
 
-        # 1. Classify zone (canonicalizes internally)
+        # 1. Classify zone (canonicalizes internally), 2. apply the rule table.
         zone = classify_zone(primary_path, self.workspace_root, self.sandbox_root)
-
-        # 2. Apply rule table
         action = decide(zone, request.operation)
-
         logger.debug(
             "TaskRunner | %s | zone=%s | action=%s | path=%s",
             request.operation.value.upper(),
@@ -212,92 +208,107 @@ class TaskRunnerAgent:
                     f"'{zone.value}' zone."
                 )
                 code = _EC_RULE_DENIED
+            return self._deny(request, operation_id, zone, action, error_msg, code)
 
-            self._log_denied(request, zone, action, error_msg)
-            return self._denied(
-                request,
-                operation_id,
-                error=error_msg,
-                error_code=code,
-                zone=zone,
-                alternatives=get_alternatives(zone, request.operation),
-            )
-
-        # 4. PROMPT — ask the user via LangGraph interrupt()
+        # 4. PROMPT — policy, a standing grant, or the user decides
         if action == PermissionAction.PROMPT:
-            # Elevated (admin/root) commands are CRITICAL: never satisfied by a
-            # policy auto_approve or a cached consent grant — always ask fresh,
-            # and never widen a grant afterwards.
-            elevated = bool((request.additional_context or {}).get("elevated"))
-            # Tier-1.5 policy override: a matching ``auto_approve`` entry in
-            # ~/.yuyutsava/permissions.json bypasses the prompt entirely.
-            if self._policy is not None and not elevated:
-                tool_name = self._policy_tool_name(request.operation)
-                if self._policy.policy_for(tool_name) == "auto_approve":  # type: ignore[attr-defined]
-                    logger.info(
-                        "TaskRunner | POLICY auto_approve | %s | %s",
-                        request.operation.value.upper(),
-                        primary_path,
-                    )
-                    action = PermissionAction.ALLOW  # fall through to execute
-            # Allowlist (consent) check: a prior "allow for session/project" grant
-            # covering this op+zone+directory skips the prompt entirely. This is
-            # what stops the per-file re-approval storm.
-            if action == PermissionAction.PROMPT and self._consent is not None and not elevated:
-                verdict = self._consent_verdict(request, zone)
-                if verdict == "allow":
-                    logger.info(
-                        "TaskRunner | CONSENT allow (grant) | %s | %s",
-                        request.operation.value.upper(),
-                        primary_path,
-                    )
-                    action = PermissionAction.ALLOW
-                elif verdict == "deny":
-                    error_msg = (
-                        f"A standing rule denies {request.operation.value.upper()} "
-                        f"on '{primary_path}'."
-                    )
-                    self._log_denied(request, zone, action, error_msg, user_decision="reject")
-                    return self._denied(
-                        request,
-                        operation_id,
-                        error=error_msg,
-                        error_code=_EC_USER_DENIED,
-                        zone=zone,
-                        alternatives=get_alternatives(zone, request.operation),
-                    )
-            if action == PermissionAction.PROMPT:
-                payload = build_interrupt_payload(request, zone)
-                decision: str = interrupt(payload.to_interrupt_dict())
+            refusal = await self._resolve_prompt(request, operation_id, zone)
+            if refusal is not None:
+                return refusal
 
-                # The resume token carries both the verdict and the scope the user
-                # chose (once / session / project). Record a grant when asked.
-                allow, scope = _parse_consent_decision(decision)
-                if not allow:
-                    error_msg = (
-                        f"User denied permission for {request.operation.value.upper()} "
-                        f"on '{primary_path}'."
-                    )
-                    self._log_denied(request, zone, action, error_msg, user_decision="reject")
-                    return self._denied(
-                        request,
-                        operation_id,
-                        error=error_msg,
-                        error_code=_EC_USER_DENIED,
-                        zone=zone,
-                        alternatives=get_alternatives(zone, request.operation),
-                    )
-                if scope is not None and self._consent is not None and not elevated:
-                    await self._record_consent_grant(request, zone, scope)
+        # 5. ALLOW (or approved) — execute
+        return await self._run(request, operation_id, zone)
 
-                logger.info(
-                    "TaskRunner | APPROVED by user (%s) | %s | %s",
-                    scope or "once",
-                    request.operation.value.upper(),
-                    primary_path,
+    def _deny(
+        self,
+        request: OperationRequest,
+        operation_id: str,
+        zone: FilesystemZone,
+        action: PermissionAction,
+        error_msg: str,
+        code: str,
+        *,
+        user_decision: str | None = None,
+    ) -> OperationResponse:
+        """Log the refusal, and answer with the zone's alternatives."""
+        self._log_denied(request, zone, action, error_msg, user_decision=user_decision)
+        return self._denied(
+            request,
+            operation_id,
+            error=error_msg,
+            error_code=code,
+            zone=zone,
+            alternatives=get_alternatives(zone, request.operation),
+        )
+
+    async def _resolve_prompt(
+        self, request: OperationRequest, operation_id: str, zone: FilesystemZone
+    ) -> OperationResponse | None:
+        """Decide a PROMPT operation: a refusal to return, or ``None`` to run it.
+
+        In order: the policy file's ``auto_approve``, then a standing consent
+        grant (allow or deny), then the user via LangGraph ``interrupt()``. An
+        elevated (admin/root) request is CRITICAL: neither the policy nor a
+        cached grant can satisfy it — it always asks fresh — and approving it
+        never records a grant.
+        """
+        primary_path = request.paths[0]
+        op = request.operation.value.upper()
+        elevated = bool((request.additional_context or {}).get("elevated"))
+
+        # Tier-1.5 policy override: a matching ``auto_approve`` entry in
+        # ~/.yuyutsava/permissions.json bypasses the prompt entirely.
+        if self._policy is not None and not elevated:
+            tool_name = self._policy_tool_name(request.operation)
+            if self._policy.policy_for(tool_name) == "auto_approve":  # type: ignore[attr-defined]
+                logger.info("TaskRunner | POLICY auto_approve | %s | %s", op, primary_path)
+                return None
+
+        # Allowlist (consent) check: a prior "allow for session/project" grant
+        # covering this op+zone+directory skips the prompt entirely. This is
+        # what stops the per-file re-approval storm.
+        if self._consent is not None and not elevated:
+            verdict = self._consent_verdict(request, zone)
+            if verdict == "allow":
+                logger.info("TaskRunner | CONSENT allow (grant) | %s | %s", op, primary_path)
+                return None
+            if verdict == "deny":
+                return self._deny(
+                    request,
+                    operation_id,
+                    zone,
+                    PermissionAction.PROMPT,
+                    f"A standing rule denies {op} on '{primary_path}'.",
+                    _EC_USER_DENIED,
+                    user_decision="reject",
                 )
 
-        # 5. ALLOW (or user-approved) — execute
+        payload = build_interrupt_payload(request, zone)
+        decision: str = interrupt(payload.to_interrupt_dict())
+        # The resume token carries both the verdict and the scope the user
+        # chose (once / session / project). Record a grant when asked.
+        allow, scope = _parse_consent_decision(decision)
+        if not allow:
+            return self._deny(
+                request,
+                operation_id,
+                zone,
+                PermissionAction.PROMPT,
+                f"User denied permission for {op} on '{primary_path}'.",
+                _EC_USER_DENIED,
+                user_decision="reject",
+            )
+        if scope is not None and self._consent is not None and not elevated:
+            await self._record_consent_grant(request, zone, scope)
+        logger.info(
+            "TaskRunner | APPROVED by user (%s) | %s | %s", scope or "once", op, primary_path
+        )
+        return None
+
+    async def _run(
+        self, request: OperationRequest, operation_id: str, zone: FilesystemZone
+    ) -> OperationResponse:
+        """Execute an allowed operation; an executor exception is an error response."""
         try:
             result = await self._execute(request)
         except Exception as exc:
@@ -317,7 +328,7 @@ class TaskRunnerAgent:
             "TaskRunner | SUCCESS | %s | zone=%s | path=%s",
             request.operation.value.upper(),
             zone.value if zone else "?",
-            primary_path,
+            request.paths[0],
         )
         return OperationResponse(
             request_id=request.request_id,
