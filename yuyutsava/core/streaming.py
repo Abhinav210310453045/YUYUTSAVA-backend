@@ -269,6 +269,126 @@ async def drive_graph(
         current_input = _resume_command(decisions)
 
 
+async def _first_input(
+    agent: Agent,
+    cfg: RunnableConfig,
+    task: str,
+    *,
+    resume: bool,
+    resume_value: Any | None,
+) -> Any:
+    """What the graph is entered with: a new turn, a resume, or an old answer."""
+    if resume_value is not None:
+        # Answering an interrupt raised by a PREVIOUS process. The graph is
+        # still parked at its checkpointed ``interrupt()``, so we re-enter with
+        # the decision instead of starting a turn — no new user message, and
+        # the agent carries on from exactly where it stopped.
+        return Command(resume=resume_value)
+    if resume:
+        # Continue this thread from its last committed checkpoint. If the
+        # checkpoint is missing or lives in an incompatible backend (e.g. the
+        # storage backend was switched on reload), fall back to a fresh run.
+        if await _has_resumable_state(agent, cfg):
+            return None
+        logger.warning(
+            "resume requested for thread %s but no checkpoint state found; starting a fresh run",
+            cfg["configurable"]["thread_id"],
+        )
+    # Explicit stable id: a HumanMessage created with id=None gets a fresh id
+    # re-minted by add_messages on every reload of the thread, which breaks the
+    # transcript recorder's id-based dedup — the same user turn is written again
+    # under a new id each subsequent turn, so the chat history (and the UI that
+    # hydrates from it) shows duplicate user bubbles. Pinning the id at creation
+    # makes it round-trip through the checkpoint unchanged.
+    return {"messages": [HumanMessage(content=task, id=str(uuid.uuid4()))]}
+
+
+def _token_event(chunk: Any, meta: Any) -> StreamEvent | None:
+    """A streamed AI chunk as a ``token`` event, or ``None`` if it carries no text.
+
+    node/ns let renderers tell main-agent prose from LLM calls nested inside the
+    tools node (subagents). ns mirrors langgraph's own namespace derivation:
+    ``langgraph_checkpoint_ns`` minus its last segment, so top-level nodes yield
+    "". Additive keys — consumers that only read "text" are unaffected.
+    """
+    if not isinstance(chunk, AIMessageChunk):
+        return None
+    text = flatten_content(chunk.content)
+    if not text:
+        return None
+    node = ""
+    ns = ""
+    if isinstance(meta, dict):
+        node = str(meta.get("langgraph_node") or "")
+        raw_ns = str(meta.get("langgraph_checkpoint_ns") or "")
+        if "|" in raw_ns:
+            ns = raw_ns.rsplit("|", 1)[0]
+    return StreamEvent("token", {"text": text, "node": node, "ns": ns})
+
+
+def _message_events(m: Any, *, keep_full_payloads: bool) -> list[StreamEvent]:
+    """The events one completed message produces: tool calls, or a tool result.
+
+    A tool result is guarded against size before anything sees it (the message
+    itself is rewritten, so the transcript keeps the guarded body too), then
+    previewed; the owning package's rule may add an ``image``/``artifact`` event.
+    """
+    if isinstance(m, AIMessage) and m.tool_calls:
+        events = []
+        for tc in m.tool_calls:
+            name = tc.get("name", "?") if isinstance(tc, dict) else getattr(tc, "name", "?")
+            args = tc.get("args", {}) if isinstance(tc, dict) else getattr(tc, "args", {})
+            events.append(StreamEvent("tool_call", {"name": name, "args": args}))
+        return events
+    if not isinstance(m, ToolMessage):
+        return []
+    tn = getattr(m, "name", "tool") or "tool"
+    body = m.content if isinstance(m.content, str) else str(m.content)
+    safe_body = guard_tool_result(body, tn)
+    if safe_body is not body:
+        m.content = safe_body
+    preview = safe_body if len(safe_body) <= 600 else safe_body[:600] + " …[truncated]"
+    payload: dict = {"name": tn, "preview": preview}
+    if keep_full_payloads:
+        payload["full"] = safe_body
+    events = [StreamEvent("tool_result", payload)]
+    extra = _TOOL_EVENTS.event_for(tn, safe_body)
+    if extra is not None:
+        events.append(StreamEvent(*extra))
+    return events
+
+
+def _empty_turn_notice(
+    final_text: str, steps_last_pass: int, recursion_limit: int
+) -> StreamEvent | None:
+    """A notice when a turn ends without assistant text; ``None`` otherwise.
+
+    These are notices, not logs. As logs the app dropped them — it attaches a
+    log to the streaming bubble, and a turn that streamed nothing has no bubble
+    — so consecutive dead turns reached the user as silence.
+    """
+    if final_text:
+        return None
+    if steps_last_pass == 0:
+        return StreamEvent(
+            "notice",
+            {
+                "level": "error",
+                "text": (
+                    f"Agent produced no output — possible recursion limit hit "
+                    f"(limit={recursion_limit}) or graph exited unexpectedly."
+                ),
+            },
+        )
+    return StreamEvent(
+        "notice",
+        {
+            "level": "warning",
+            "text": "Task ended with no assistant text. The agent may have stopped mid-task.",
+        },
+    )
+
+
 async def astream_agent_iter(
     agent: Agent,
     task: str,
@@ -319,43 +439,17 @@ async def astream_agent_iter(
 
     Yields events; the final yielded event is always ``StreamEvent("final", {"text": ...})``.
     """
-    _tid = thread_id or str(uuid.uuid4())
     cfg = run_config(
-        thread_id=_tid,
+        thread_id=thread_id or str(uuid.uuid4()),
         recursion_limit=recursion_limit,
         agent_path=agent_path,
         modality=modality,
         trace_name=run_name,
         trace_tags=["mode:daemon", f"agent:{agent_path}"],
     )
+    first_input = await _first_input(agent, cfg, task, resume=resume, resume_value=resume_value)
 
     final_messages: list[Any] = []
-    # Explicit stable id: a HumanMessage created with id=None gets a fresh id
-    # re-minted by add_messages on every reload of the thread, which breaks the
-    # transcript recorder's id-based dedup — the same user turn is written again
-    # under a new id each subsequent turn, so the chat history (and the UI that
-    # hydrates from it) shows duplicate user bubbles. Pinning the id at creation
-    # makes it round-trip through the checkpoint unchanged.
-    first_input: Any = {"messages": [HumanMessage(content=task, id=str(uuid.uuid4()))]}
-    if resume_value is not None:
-        # Answering an interrupt raised by a PREVIOUS process. The graph is
-        # still parked at its checkpointed ``interrupt()``, so we re-enter with
-        # the decision instead of starting a turn — no new user message, and
-        # the agent carries on from exactly where it stopped.
-        first_input = Command(resume=resume_value)
-    elif resume:
-        # Continue this thread from its last committed checkpoint. If the
-        # checkpoint is missing or lives in an incompatible backend (e.g. the
-        # storage backend was switched on reload), fall back to a fresh run.
-        if await _has_resumable_state(agent, cfg):
-            first_input = None
-        else:
-            logger.warning(
-                "resume requested for thread %s but no checkpoint state found; "
-                "starting a fresh run",
-                _tid,
-            )
-
     steps_last_pass = 0
     async for kind, item in drive_graph(
         agent,
@@ -365,75 +459,19 @@ async def astream_agent_iter(
         collected=final_messages,
     ):
         if kind == "chunk":
-            chunk, meta = item
-            if not isinstance(chunk, AIMessageChunk):
-                continue
-            text = flatten_content(chunk.content)
-            if not text:
-                continue
-            # node/ns let renderers tell main-agent prose from LLM calls nested
-            # inside the tools node (subagents). ns mirrors langgraph's own
-            # namespace derivation: ``langgraph_checkpoint_ns`` minus its last
-            # segment, so top-level nodes yield "". Additive keys — consumers
-            # that only read "text" are unaffected.
-            node = ""
-            ns = ""
-            if isinstance(meta, dict):
-                node = str(meta.get("langgraph_node") or "")
-                raw_ns = str(meta.get("langgraph_checkpoint_ns") or "")
-                if "|" in raw_ns:
-                    ns = raw_ns.rsplit("|", 1)[0]
-            yield StreamEvent("token", {"text": text, "node": node, "ns": ns})
-
+            event = _token_event(*item)
+            if event is not None:
+                yield event
         elif kind == "message":
-            m = item
-            if isinstance(m, AIMessage) and m.tool_calls:
-                for tc in m.tool_calls:
-                    name = tc.get("name", "?") if isinstance(tc, dict) else getattr(tc, "name", "?")
-                    args = tc.get("args", {}) if isinstance(tc, dict) else getattr(tc, "args", {})
-                    yield StreamEvent("tool_call", {"name": name, "args": args})
-            elif isinstance(m, ToolMessage):
-                tn = getattr(m, "name", "tool") or "tool"
-                body = m.content if isinstance(m.content, str) else str(m.content)
-                safe_body = guard_tool_result(body, tn)
-                if safe_body is not body:
-                    m.content = safe_body
-                preview = safe_body if len(safe_body) <= 600 else safe_body[:600] + " …[truncated]"
-                payload: dict = {"name": tn, "preview": preview}
-                if keep_full_payloads:
-                    payload["full"] = safe_body
-                yield StreamEvent("tool_result", payload)
-                extra = _TOOL_EVENTS.event_for(tn, safe_body)
-                if extra is not None:
-                    yield StreamEvent(*extra)
-
+            for event in _message_events(item, keep_full_payloads=keep_full_payloads):
+                yield event
         elif kind == "pass_end":
             steps_last_pass = item
-
         elif kind == "ask_failed":
             yield StreamEvent("log", {"text": f"ask_handler raised: {item}; rejecting"})
 
     final_text = last_assistant_text(final_messages)
-    # These are notices, not logs. As logs the app dropped them — it attaches a
-    # log to the streaming bubble, and a turn that streamed nothing has no
-    # bubble — so four consecutive dead turns reached the user as silence.
-    if not final_text and steps_last_pass == 0:
-        yield StreamEvent(
-            "notice",
-            {
-                "level": "error",
-                "text": (
-                    f"Agent produced no output — possible recursion limit hit "
-                    f"(limit={recursion_limit}) or graph exited unexpectedly."
-                ),
-            },
-        )
-    elif not final_text:
-        yield StreamEvent(
-            "notice",
-            {
-                "level": "warning",
-                "text": "Task ended with no assistant text. The agent may have stopped mid-task.",
-            },
-        )
+    notice = _empty_turn_notice(final_text, steps_last_pass, recursion_limit)
+    if notice is not None:
+        yield notice
     yield StreamEvent("final", {"text": final_text})

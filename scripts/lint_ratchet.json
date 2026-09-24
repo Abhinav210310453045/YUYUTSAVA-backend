@@ -125,7 +125,7 @@
     "BLE001": 1
   },
   "yuyutsava/core/streaming.py": {
-    "C901": 2,
+    "C901": 1,
     "PLR0913": 1
   },
   "yuyutsava/core/tinker_stack.py": {
