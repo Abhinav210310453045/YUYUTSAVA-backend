@@ -571,8 +571,32 @@ runs. Verified live: `--status`, a second instance refused (exit 0),
 SIGHUP reloaded MCP config, `--stop` tore down in order to "bye" and removed
 the discovery file, and a restart re-took the lock and answered a turn.
 
-Nothing in W4 is left that does not wait on the owner; see the wave's
-exit-criteria check below.
+**Exit-criteria pass (2026-09-25).** The wave's task list was done, but its
+measured exit criteria were not, so work continued against them:
+
+- Every function over 200 lines is split — `build_cli_deepagent`,
+  `build_tinker_agent` (both now share `_master_middleware` and
+  `_master_subagents`), `build_orchestrator` (whose budget/usage now come from
+  its profile, as the plan asked), `build_agent_stack`, `_build_parser`
+  (six argument groups; help and parses byte-identical), `build_daemon` and
+  `_async_main`. Each was gated on the fingerprint or a before/after probe
+  and checked live.
+- The three package inits that W4's splits had given logic are clean again
+  (`inits_with_logic` 3 → 0, unused re-exports 3 → 0).
+
+| Criterion | Target | W4 start | Now |
+|---|---|---|---|
+| Functions > 200 lines | 0 | 11 | **0** |
+| Functions > 100 lines | ≤ 10 | 38 | 34 |
+| Functions > 10 params | ≤ 3 | 14 | 8 |
+| Highest complexity | ≤ 25 | ≈130 | 38 (8 over 25) |
+| Classes > 400 lines | 0 | 8 | 8 |
+| History narration | 0 (reviewed) | 176 | 2, reviewed |
+
+Of the 34 over 100 lines, nine are tool factories (`make_shell_tools`,
+`make_visual_tools`, …) whose length is the sum of the `@tool` functions
+nested in them — the text each tool shows the model. Splitting those further
+moves tool definitions between files without making any one easier to read.
 
 ## W5 — Errors, logging, state, defects
 
