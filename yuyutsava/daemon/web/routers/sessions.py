@@ -76,6 +76,99 @@ def _extract_text(content: object) -> str:
     return ""
 
 
+def _bubble(role: str, text: str, seq: int, ts: float) -> dict:
+    """One text chat bubble, in the shape the UI maps straight onto a bubble."""
+    return {
+        "role": role,
+        "text": text,
+        "modality": "text",
+        "has_audio": False,
+        "audio_url": None,
+        "seq": seq,
+        "ts": ts,
+    }
+
+
+def _voice_history(session_id: str, rows: list) -> list[dict]:
+    """A voice session's turns, each stored clip addressable by URL."""
+    return [
+        {
+            "role": m.role,
+            "text": m.text,
+            "modality": m.modality,
+            "has_audio": m.has_audio,
+            "audio_url": (f"/sessions/{session_id}/audio/{m.seq}" if m.has_audio else None),
+            "seq": m.seq,
+            "ts": m.created_ts,
+        }
+        for m in rows
+    ]
+
+
+def _transcript_history(rows: list) -> list[dict]:
+    """A text session's human and assistant prose, with artifacts attached.
+
+    Artifacts made by tool calls attach to the assistant prose that FOLLOWS
+    them — mirroring the live stream, where the ``artifact`` event lands on the
+    turn's streaming bubble alongside its final text. When the producing turn
+    had no prose, they get a text-less assistant bubble of their own rather
+    than being misattributed to a later turn.
+    """
+    messages: list[dict] = []
+    pending: list[dict] = []
+
+    def _flush(seq: int, ts: float) -> None:
+        nonlocal pending
+        messages.append({**_bubble("assistant", "", seq, ts), "artifacts": pending})
+        pending = []
+
+    for m in rows:
+        data = m.content.get("data", {}) if isinstance(m.content, dict) else {}
+        if m.type == "tool":
+            if ARTIFACT_EVENT.matches(str(data.get("name", ""))):
+                art = ARTIFACT_EVENT.extract(_extract_text(data.get("content", "")))
+                if art is not None:
+                    pending.append(art)
+            continue
+        if m.type not in ("human", "ai"):
+            continue  # skip system messages — not chat bubbles
+        text = _extract_text(data.get("content", ""))
+        if m.type == "human" and pending:
+            _flush(m.seq, m.created_ts)
+        if not text.strip():
+            continue  # tool-call-only ai turns carry no prose
+        row = _bubble("user" if m.type == "human" else "assistant", text, m.seq, m.created_ts)
+        if m.type == "ai" and pending:
+            row["artifacts"] = pending
+            pending = []
+        messages.append(row)
+    if pending and rows:
+        _flush(rows[-1].seq, rows[-1].created_ts)
+    return messages
+
+
+def _attach_voice_clips(messages: list[dict], voice_rows: list, session_id: str) -> None:
+    """Give each assistant bubble its stored spoken reply back.
+
+    Mixed text+voice chats (a tinker card, the master chat with the mic) keep
+    their prose in the transcript but their spoken replies in voice_messages.
+    Matched by the turn's final text, each clip used once, in order, so a
+    reopened thread can still ▶ replay what the agent said.
+    """
+    for v in voice_rows:
+        if v.role != "assistant" or not v.has_audio:
+            continue
+        vtext = (v.text or "").strip()
+        if not vtext:
+            continue  # never match the text-less artifact-only rows
+        for m in messages:
+            if m["role"] == "assistant" and not m["has_audio"] and m["text"].strip() == vtext:
+                m["has_audio"] = True
+                m["audio_url"] = f"/sessions/{session_id}/audio/{v.seq}"
+                m["modality"] = "audio"
+                break
+
+
 @router.get("/sessions/{session_id}/messages", summary="Conversation history for resume/replay")
 async def get_session_messages(session_id: str, request: Request) -> dict:
     """Return the ordered conversation turns so a resumed chat re-renders.
@@ -95,104 +188,18 @@ async def get_session_messages(session_id: str, request: Request) -> dict:
     voice_store = getattr(request.app.state, "voice_store", None)
     transcript_store = getattr(request.app.state, "transcript_store", None)
     messages: list[dict] = []
-
     if session.origin == "voice" and voice_store is not None:
-        rows = await voice_store.list_messages(thread_id)
-        for m in rows:
-            messages.append(
-                {
-                    "role": m.role,
-                    "text": m.text,
-                    "modality": m.modality,
-                    "has_audio": m.has_audio,
-                    "audio_url": (f"/sessions/{session_id}/audio/{m.seq}" if m.has_audio else None),
-                    "seq": m.seq,
-                    "ts": m.created_ts,
-                }
-            )
+        messages = _voice_history(session_id, await voice_store.list_messages(thread_id))
     elif transcript_store is not None:
-        rows = await transcript_store.list_messages(thread_id)
-        # Artifacts made by tool calls attach to the assistant prose that
-        # FOLLOWS them — mirroring the live stream, where the `artifact` event
-        # lands on the turn's streaming bubble alongside its final text.
-        pending_artifacts: list[dict] = []
-
-        def _flush_artifact_row(seq: int, ts: float) -> None:
-            # The producing ai turn had no prose — give the artifacts their own
-            # text-less assistant bubble instead of misattributing them to a
-            # later turn.
-            nonlocal pending_artifacts
-            messages.append(
-                {
-                    "role": "assistant",
-                    "text": "",
-                    "modality": "text",
-                    "has_audio": False,
-                    "audio_url": None,
-                    "seq": seq,
-                    "ts": ts,
-                    "artifacts": pending_artifacts,
-                }
-            )
-            pending_artifacts = []
-
-        for m in rows:
-            data = m.content.get("data", {}) if isinstance(m.content, dict) else {}
-            if m.type == "tool":
-                if ARTIFACT_EVENT.matches(str(data.get("name", ""))):
-                    art = ARTIFACT_EVENT.extract(_extract_text(data.get("content", "")))
-                    if art is not None:
-                        pending_artifacts.append(art)
-                continue
-            if m.type not in ("human", "ai"):
-                continue  # skip system messages — not chat bubbles
-            text = _extract_text(data.get("content", ""))
-            if m.type == "human" and pending_artifacts:
-                _flush_artifact_row(m.seq, m.created_ts)
-            if not text.strip():
-                continue  # tool-call-only ai turns carry no prose
-            row = {
-                "role": "user" if m.type == "human" else "assistant",
-                "text": text,
-                "modality": "text",
-                "has_audio": False,
-                "audio_url": None,
-                "seq": m.seq,
-                "ts": m.created_ts,
-            }
-            if m.type == "ai" and pending_artifacts:
-                row["artifacts"] = pending_artifacts
-                pending_artifacts = []
-            messages.append(row)
-        if pending_artifacts and rows:
-            _flush_artifact_row(rows[-1].seq, rows[-1].created_ts)
-        # Mixed text+voice chats (a tinker card, the master chat with the mic)
-        # keep their prose in the transcript but their spoken replies in
-        # voice_messages — reattach each stored clip to its transcript bubble
-        # (matched by the turn's final text, each clip used once, in order) so
-        # a reopened thread can still ▶ replay what the agent said. Best-effort:
-        # history renders text-only if the voice surface is unavailable.
+        messages = _transcript_history(await transcript_store.list_messages(thread_id))
+        # Best-effort: history renders text-only if the voice surface is
+        # unavailable.
         if voice_store is not None:
             try:
-                vrows = await voice_store.list_messages(thread_id)
+                voice_rows = await voice_store.list_messages(thread_id)
             except Exception:  # noqa: BLE001
-                vrows = []
-            for v in vrows:
-                if v.role != "assistant" or not v.has_audio:
-                    continue
-                vtext = (v.text or "").strip()
-                if not vtext:
-                    continue  # never match the text-less artifact-only rows
-                for m in messages:
-                    if (
-                        m["role"] == "assistant"
-                        and not m["has_audio"]
-                        and m["text"].strip() == vtext
-                    ):
-                        m["has_audio"] = True
-                        m["audio_url"] = f"/sessions/{session_id}/audio/{v.seq}"
-                        m["modality"] = "audio"
-                        break
+                voice_rows = []
+            _attach_voice_clips(messages, voice_rows, session_id)
 
     return {"session_id": session_id, "origin": session.origin, "messages": messages}
 
