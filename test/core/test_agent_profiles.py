@@ -70,7 +70,8 @@ _TOOL_MARKERS: dict[ToolFamily, tuple[str, ...]] = {
 #: ``_cli_sandbox`` calls ``_docker_sandbox``, so it must come first.
 _INLINED_HELPERS = (
     "_build_tool_registry_and_tools",
-    "_cli_middleware",
+    "_master_middleware",
+    "_master_subagents",
     "_cli_sandbox",
     "_docker_sandbox",
 )

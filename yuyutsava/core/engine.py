@@ -786,30 +786,42 @@ def _sync_subagent_specs(
     ]
 
 
-def _cli_middleware(deps: MasterDeps, model: BaseChatModel, workspace_root: Path) -> list:
-    """The CLI master's middleware in run order, before any background wiring.
+def _master_middleware(
+    profile: AgentProfile,
+    deps: MasterDeps,
+    model: BaseChatModel,
+    workspace_root: Path,
+    *,
+    usage_ids: tuple[str | None, str | None] = (None, None),
+    note_index: Any | None = None,
+) -> list:
+    """A master's middleware in run order, before any background wiring.
 
     Pre-policies, then the context layer, then budget and usage — after
     compaction, so they see post-compaction counts (the ordering itself lives in
     ``_POLICY_ORDER_POST``). Each of those two attaches only when given its
-    input: usage when a usage store is passed (the CLI and daemon chat stacks
-    pass one), budget when ``budget_tokens`` is (only the orchestrator passes one
-    — a chat's spend is cumulative and never resets). The chat bundle is shared
-    across threads, so usage rows land task-less/thread-less.
+    input: usage when a usage store is passed, budget when
+    ``deps.budget_tokens`` is. ``usage_ids`` pins usage rows to a task and
+    thread — the tinker graph IS one conversation; the chat bundle is shared
+    across threads, so its rows land task-less and thread-less.
 
-    Last, per-turn retrieval injection: the CLI is a persistent graph, so it
-    cannot inject at build time the way the daemon orchestrator does. Scoped to
-    "cli" — every master retrieves only its OWN skills plus the shared ones
-    (the store filter is ``agent IS NULL OR agent = <role>``).
+    Last, per-turn retrieval injection: a master's graph is persistent, so it
+    cannot inject at build time the way the daemon orchestrator does. Skills are
+    scoped to the master's own role plus the shared ones (the store filter is
+    ``agent IS NULL OR agent = <role>``). ``note_index`` recalls board notes
+    across all cards; only the tinker agent has one.
     """
+    role = profile.role
     # FilesystemPromptPolicy (a pre-policy) strips the deepagents "## Filesystem
     # Tools" block: those built-in tools are filtered out by ToolFilterPolicy
     # and our own prompt routes filesystem ops through tr_*, so the block only
-    # misleads the model and wastes cache-prefix tokens.
+    # misleads the model and wastes cache-prefix tokens. The subagent gate is a
+    # pre-policy too; a tinker bundle is cached per card and can outlive a
+    # toggle change, so without it a disabled subagent would stay reachable.
     middleware = _policy_middleware(
-        CLI_PROFILE,
+        profile,
         "pre",
-        role="cli",
+        role=role,
         runtime_settings=deps.runtime_settings,
     )
     middleware.extend(
@@ -822,31 +834,67 @@ def _cli_middleware(deps: MasterDeps, model: BaseChatModel, workspace_root: Path
             transcript_store=deps.transcript_store,
             transcript_index=deps.transcript_index,
             compaction_model=deps.compaction_model,
-            role="cli",
+            role=role,
         )
     )
+    usage_task_id, usage_thread_id = usage_ids
     middleware.extend(
         _policy_middleware(
-            CLI_PROFILE,
+            profile,
             "post",
-            role="cli",
+            role=role,
             budget_tokens=deps.budget_tokens,
             usage_store=deps.usage_store,
             model=model,
             workspace_root=workspace_root,
             permission_check=deps.permission_check,
+            usage_task_id=usage_task_id,
+            usage_thread_id=usage_thread_id,
         )
     )
     middleware.extend(
         _retrieval_injection_middleware(
             memory_store=deps.memory_store,
             skill_store=deps.skill_store,
-            skill_scope="cli",
+            skill_scope=role,
             transcript_index=deps.transcript_index,
+            note_index=note_index,
             prefs_store=deps.prefs_store,
         )
     )
     return middleware
+
+
+def _master_subagents(deps: MasterDeps, model: BaseChatModel, role: str) -> tuple[list, list]:
+    """A master's subagent specs, and the middleware background ones need.
+
+    Every master delegates freely: any task, sync or async, local or on a peer
+    daemon. Omitting ``remote_async_subagents`` would silently deny a master
+    cross-daemon background work its siblings can do.
+    """
+    specs: list[dict] = []
+    if deps.subagents:
+        specs.extend(
+            _sync_subagent_specs(
+                deps.subagents,
+                model=model,
+                artifact_store=deps.artifact_store,
+                context_settings=deps.context_settings,
+                summary_store=deps.summary_store,
+                memory_store=deps.memory_store,
+                compaction_model=deps.compaction_model,
+            )
+        )
+    async_specs, async_mw = _async_subagent_wiring(
+        role=role,
+        async_subagents=deps.async_subagents,
+        async_host_url=deps.async_host_url,
+        remote_async_subagents=deps.remote_async_subagents,
+        async_task_mirror=deps.async_task_mirror,
+        async_max_concurrent=deps.async_max_concurrent,
+    )
+    specs.extend(async_specs)
+    return specs, async_mw
 
 
 def _docker_sandbox(
@@ -951,7 +999,7 @@ def build_cli_deepagent(
     deps = deps or MasterDeps()
     model = chat_model(settings)
     checkpointer = deps.checkpointer or MemorySaver()
-    middleware = _cli_middleware(deps, model, workspace_root)
+    middleware = _master_middleware(CLI_PROFILE, deps, model, workspace_root)
 
     loc = local_settings or LocalSettings()
     layout = WorkspaceLayout.for_workspace(
@@ -972,29 +1020,8 @@ def build_cli_deepagent(
     )
     skill_registry = SkillRegistry(workspace_dir=layout.skills)
 
-    subagent_specs: list[dict] = []
-    if deps.subagents:
-        subagent_specs.extend(
-            _sync_subagent_specs(
-                deps.subagents,
-                model=model,
-                artifact_store=deps.artifact_store,
-                context_settings=deps.context_settings,
-                summary_store=deps.summary_store,
-                memory_store=deps.memory_store,
-                compaction_model=deps.compaction_model,
-            )
-        )
-    _async_specs, _async_mw = _async_subagent_wiring(
-        role="build_cli_deepagent",
-        async_subagents=deps.async_subagents,
-        async_host_url=deps.async_host_url,
-        remote_async_subagents=deps.remote_async_subagents,
-        async_task_mirror=deps.async_task_mirror,
-        async_max_concurrent=deps.async_max_concurrent,
-    )
-    subagent_specs.extend(_async_specs)
-    middleware.extend(_async_mw)
+    subagent_specs, async_mw = _master_subagents(deps, model, "build_cli_deepagent")
+    middleware.extend(async_mw)
 
     sandbox = _cli_sandbox(
         execution_mode, docker_settings, layout, workspace_root, deps.bash_timeout_sec
@@ -1294,7 +1321,7 @@ def build_tinker_agent(
     """Build the TinkerAgent — third factory, sibling of :func:`build_cli_deepagent`
     and :func:`build_orchestrator`.
 
-    ``mcp_tools`` are the user-configured MCP server tools already scoped to
+    ``deps.mcp_tools`` are the user-configured MCP server tools already scoped to
     this agent (``mcp_manager.tools_for("tinker")`` — the same wiring the
     orchestrator master uses); they join the ToolRegistry so schemas load
     lazily via tool_search. ``note_index``
@@ -1320,152 +1347,56 @@ def build_tinker_agent(
     exactly like the CLI factory — no spawn-subagent tool.
     """
     deps = deps or MasterDeps()
-    bash_timeout_sec = deps.bash_timeout_sec
-    permission_check = deps.permission_check
-    search_config = deps.search_config
-    checkpointer = deps.checkpointer
-    subagents = deps.subagents
-    async_subagents = deps.async_subagents
-    async_host_url = deps.async_host_url
-    remote_async_subagents = deps.remote_async_subagents
-    async_task_mirror = deps.async_task_mirror
-    async_max_concurrent = deps.async_max_concurrent
-    async_host = deps.async_host
-    async_host_attachment = deps.async_host_attachment
-    artifact_store = deps.artifact_store
-    summary_store = deps.summary_store
-    memory_store = deps.memory_store
-    transcript_store = deps.transcript_store
-    context_settings = deps.context_settings
-    compaction_model = deps.compaction_model
-    skill_store = deps.skill_store
-    transcript_index = deps.transcript_index
-    mcp_tools = deps.mcp_tools
-    cap_enforcer = deps.cap_enforcer
-    budget_tokens = deps.budget_tokens
-    usage_store = deps.usage_store
-    prefs_store = deps.prefs_store
-    runtime_settings = deps.runtime_settings
-    extra_tools = deps.extra_tools
-    if budget_tokens is None:
-        budget_tokens = TINKER_BUDGET_TOKENS
+    if deps.budget_tokens is None:
+        deps = deps.replace(budget_tokens=TINKER_BUDGET_TOKENS)
 
     model = chat_model(settings)
-    checkpointer = checkpointer or MemorySaver()
+    checkpointer = deps.checkpointer or MemorySaver()
     layout = WorkspaceLayout.for_workspace(card_workspace)
     ws, sandbox_root, output_dir = layout.root, layout.sandbox, layout.outputs
 
-    # Tinker honours the same subagent toggle as its siblings: a bundle is
-    # cached per card and can outlive a toggle change, so without the gate a
-    # disabled subagent stays reachable from the board after it was switched off.
-    middleware: list = _policy_middleware(
+    middleware = _master_middleware(
         TINKER_PROFILE,
-        "pre",
-        role="tinker",
-        runtime_settings=runtime_settings,
-    )
-    middleware.extend(
-        _context_middleware(
-            model=model,
-            artifact_store=artifact_store,
-            context_settings=context_settings,
-            summary_store=summary_store,
-            memory_store=memory_store,
-            transcript_store=transcript_store,
-            transcript_index=transcript_index,
-            compaction_model=compaction_model,
-            role="tinker",
-        )
-    )
-    # Spend ceiling + accounting, after compaction. Unlike the chat bundle, a
-    # tinker graph IS one conversation, so usage rows are pinned to the card.
-    middleware.extend(
-        _policy_middleware(
-            TINKER_PROFILE,
-            "post",
-            role="tinker",
-            budget_tokens=budget_tokens,
-            usage_store=usage_store,
-            model=model,
-            workspace_root=ws,
-            permission_check=permission_check,
-            usage_task_id=f"tinker:{card_id}",
-            usage_thread_id=f"todo:{card_id}",
-        )
-    )
-
-    # Per-turn retrieval injection — the tinker graph is as persistent as the
-    # CLI's, so memory/skills/transcript recall must be per-turn, and the
-    # skills search is scoped to the tinker namespace (agent column).
-    # note_index is tinker-only: board-wide note recall across ALL cards, not
-    # just the one this bundle is pinned to.
-    middleware.extend(
-        _retrieval_injection_middleware(
-            memory_store=memory_store,
-            skill_store=skill_store,
-            skill_scope="tinker",
-            transcript_index=transcript_index,
-            note_index=note_index,
-            prefs_store=prefs_store,
-        )
+        deps,
+        model,
+        ws,
+        usage_ids=(f"tinker:{card_id}", f"todo:{card_id}"),
+        note_index=note_index,
     )
 
     # todo_author="tinker": the board's full editing set, with notes attributed
     # to the tinker agent rather than the user.
     context_tools, agent_memory_block = _shared_master_tools(
         profile=TINKER_PROFILE,
-        artifact_store=artifact_store,
-        memory_store=memory_store,
-        transcript_store=transcript_store,
+        artifact_store=deps.artifact_store,
+        memory_store=deps.memory_store,
+        transcript_store=deps.transcript_store,
         output_dir=output_dir,
-        mcp_tools=mcp_tools,
-        extra_tools=extra_tools,
+        mcp_tools=deps.mcp_tools,
+        extra_tools=deps.extra_tools,
         todo_author="tinker",
     )
-
     skill_registry = skill_registry or SkillRegistry()
 
-    subagent_specs: list[dict] = []
-    if subagents:
-        subagent_specs.extend(
-            _sync_subagent_specs(
-                subagents,
-                model=model,
-                artifact_store=artifact_store,
-                context_settings=context_settings,
-                summary_store=summary_store,
-                memory_store=memory_store,
-                compaction_model=compaction_model,
-            )
-        )
-    # Tinker delegates freely: any task, sync or async, local or on a peer
-    # daemon. Omitting ``remote_async_subagents`` here would silently deny it
-    # cross-daemon background work its siblings can do.
-    _async_specs, _async_mw = _async_subagent_wiring(
-        role="build_tinker_agent",
-        async_subagents=async_subagents,
-        async_host_url=async_host_url,
-        remote_async_subagents=remote_async_subagents,
-        async_task_mirror=async_task_mirror,
-        async_max_concurrent=async_max_concurrent,
-    )
-    subagent_specs.extend(_async_specs)
-    middleware.extend(_async_mw)
+    subagent_specs, async_mw = _master_subagents(deps, model, "build_tinker_agent")
+    middleware.extend(async_mw)
 
-    backend = _scratch_root_backend(_local_shell_backend(ws, bash_timeout_sec), _SCRATCH_ROOT)
+    backend = _scratch_root_backend(_local_shell_backend(ws, deps.bash_timeout_sec), _SCRATCH_ROOT)
     startup_tools, _registry = _build_tool_registry_and_tools(
         _bind_task_runner_tools(ws, sandbox_root, agent_name="tinker"),
-        search_config,
+        deps.search_config,
         skill_registry,
         extra_tools=context_tools,
-        skill_store=skill_store,
+        skill_store=deps.skill_store,
         agent_name="tinker",
-        cap_enforcer=cap_enforcer,
+        cap_enforcer=deps.cap_enforcer,
     )
 
     # Semantic store present → SkillInjector surfaces the relevant modes per
     # turn; static index only as the keyword-less fallback (orchestrator rule).
-    skills_index = "" if skill_store is not None else skill_registry.index_block(agent="tinker")
+    skills_index = (
+        "" if deps.skill_store is not None else skill_registry.index_block(agent="tinker")
+    )
     graph = create_deep_agent(
         model=model,
         tools=startup_tools,
@@ -1488,10 +1419,10 @@ def build_tinker_agent(
         sandbox_root=sandbox_root,
         output_dir=output_dir,
         layout=layout,
-        async_host=async_host,
-        async_host_url=async_host_url,
-        async_host_attachment=async_host_attachment,
-        async_task_mirror=async_task_mirror,
+        async_host=deps.async_host,
+        async_host_url=deps.async_host_url,
+        async_host_attachment=deps.async_host_attachment,
+        async_task_mirror=deps.async_task_mirror,
     )
 
 
