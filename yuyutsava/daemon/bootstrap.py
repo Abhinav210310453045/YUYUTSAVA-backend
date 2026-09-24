@@ -1022,9 +1022,7 @@ class AsyncSubagentSubsystem:
         """Whether background delegation can actually be offered.
 
         Reads ``host_url``, not ``host``: an attached process has no host object
-        but can still submit runs. ``build_daemon`` made this distinction
-        correctly in three places by writing ``async_host_url is not None`` — a
-        subtle enough invariant to deserve a name.
+        but can still submit runs — a subtle enough invariant to deserve a name.
         """
         return self.host_url is not None
 
@@ -1294,15 +1292,76 @@ def build_subagents(
     )
 
 
-async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
-    """Wire every daemon subsystem and return them as a populated record.
+@dataclass(frozen=True)
+class ResourceSubsystem:
+    """The resource governor: a load monitor and the heavy-task admission gate."""
 
-    Boot order matches the original ``daemon/main.py``: store → prefs →
-    policy → MCP → checkpointer → sweeper → bus → sources → channels →
-    models → skills → search → subagents → triage agent → loops. The
-    caller is responsible for installing signal handlers, scheduling the
-    loop tasks, and ordered shutdown.
+    monitor: ResourceMonitor
+    admission: AdmissionController
+
+
+def build_resources(channels: ChannelRouter, task_registry: TaskRegistry) -> ResourceSubsystem:
+    """Sample system load and gate heavy tasks behind it.
+
+    The monitor samples psutil into a ring (main.py schedules its run loop);
+    admission gates heavy tasks (complexity ≥ threshold / heavy hints) behind a
+    semaphore + load check in ``OrchestratorLoop._run_task``. The activity probe
+    is assigned after construction because the controller it asks "is anything
+    running?" needs the monitor first.
     """
+    res_settings = ResourceSettings.from_env()
+    monitor = ResourceMonitor(res_settings, event_sink=channels.post_event)
+    admission = AdmissionController(
+        monitor,
+        res_settings,
+        registry=task_registry,
+        event_sink=channels.post_event,
+    )
+    monitor.activity_probe = lambda: bool(admission.active())
+    logger.info(
+        "  resources : cpu<%.0f%% mem>%dMB disk>%.0fGB, heavy=complexity≥%d (max %d)",
+        res_settings.cpu_high_pct,
+        res_settings.mem_min_mb,
+        res_settings.disk_min_gb,
+        res_settings.heavy_complexity,
+        res_settings.max_heavy_tasks,
+    )
+    return ResourceSubsystem(monitor=monitor, admission=admission)
+
+
+@dataclass(frozen=True)
+class BootState:
+    """Everything boot has built before the loops, the plugins and the web app.
+
+    One read-only record of the subsystem records, so each later builder takes
+    it whole and reads what it needs, instead of a dozen loose arguments. The
+    order of the fields is the order they were built in.
+    """
+
+    workspace: Path
+    home: Path
+    daemon_cfg: DaemonConfig
+    storage: StorageSubsystem
+    policy: PolicySubsystem
+    mcp_manager: MCPClientManager
+    retention: RetentionSubsystem
+    events: EventsSubsystem
+    channels: ChannelsSubsystem
+    resources: ResourceSubsystem
+    models: ModelsSubsystem
+    retrieval: RetrievalSubsystem
+    search_config: SearchConfig
+    subagents: SubagentSubsystem
+    #: The orchestrator's work queue, and the index that links a background
+    #: task back to the conversation that started it. Created before the async
+    #: block so the watcher's completion sink can enqueue master wake-ups.
+    task_queue: asyncio.Queue[OrchestratorTask]
+    launch_index: LaunchIndex
+    async_subagents: AsyncSubagentSubsystem
+
+
+async def build_boot_state(opts: DaemonOptions) -> BootState:
+    """Build storage through the background-subagent host, in boot order."""
     workspace = opts.workspace.resolve()
     home = state_dir()
     # Materialize <ws>/.yuyutsava — the only place the daemon writes inside
@@ -1312,122 +1371,41 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     daemon_cfg = DaemonConfig.from_env()
     events_cfg = _build_initial_events_config(opts, daemon_cfg)
 
-    # ── storage (extracted: build_storage) ---------------------------------
-    _st = await build_storage(opts)
-    storage = _st.settings
-    pg_pool = _st.pg_pool
-    storage_health = _st.storage_health
-    stores = _st.stores
-    embedder = _st.embedder
-    mem_settings = _st.mem_settings
-    artifact_store = _st.artifact_store
-    summary_store = _st.summary_store
-    transcript_store = _st.transcript_store
-    voice_store = _st.voice_store
-    memory_store = _st.memory_store
-    usage_store = _st.usage_store
-    task_registry = _st.task_registry
-    store = _st.events
-    model_router = _st.model_router
-    storage_fallback_reason = _st.fallback_reason
-
-    # ── policy / consent / prefs (extracted: build_policy) -----------------
-    _pol = await build_policy(store)
-    prefs_store = _pol.prefs_store
-    prefs_injector = _pol.prefs_injector
-    runtime_settings = _pol.runtime_settings
-    policy = _pol.policy
-    cap_enforcer = _pol.cap_enforcer
-    consent_registry = _pol.consent_registry
-
+    st = await build_storage(opts)
+    pol = await build_policy(st.events)
     mcp_manager = await build_mcp(workspace)
-
-    # ── retention: checkpointer + TTL sweeper (extracted: build_retention) --
-    _ret = await build_retention(
+    ret = await build_retention(
         workspace=workspace,
-        storage=storage,
-        store=store,
-        artifact_store=artifact_store,
-        storage_health=storage_health,
+        storage=st.settings,
+        store=st.events,
+        artifact_store=st.artifact_store,
+        storage_health=st.storage_health,
     )
-    checkpointer_saver = _ret.checkpointer_saver
-    checkpointer = _ret.checkpointer
-    sweeper = _ret.sweeper
-
-    # ── events: bus + sources + hot reload (extracted: build_events) -------
-    _ev = await build_events(
+    ev = await build_events(
         events_cfg=events_cfg,
         daemon_cfg=daemon_cfg,
-        store=store,
-        runtime_settings=runtime_settings,
+        store=st.events,
+        runtime_settings=pol.runtime_settings,
     )
-    bus = _ev.bus
-    registry = _ev.registry
-    events_cfg = _ev.events_cfg
-    _hot_reload_events_config = _ev.reload
-
-    fallback_reasons = (storage_fallback_reason, checkpointer_saver.fallback_reason)
-    chans = await build_channels(opts, store, fallbacks=fallback_reasons)
-    channels = chans.router
-    ask_registry = chans.ask_registry
-    session_origin = chans.session_origin
-    web_hub = chans.web_hub
-    log_bridge = chans.log_bridge
-    web_server: uvicorn.Server | None = None
-
-    # ── resource governor ------------------------------------------------
-    # Monitor samples psutil into a ring (main.py schedules its run loop);
-    # admission gates heavy tasks (complexity ≥ threshold / heavy hints)
-    # behind a semaphore + load check in OrchestratorLoop._run_task. The
-    # activity probe is assigned after construction because the controller
-    # it asks "is anything running?" needs the monitor first.
-    res_settings = ResourceSettings.from_env()
-    resource_monitor = ResourceMonitor(res_settings, event_sink=channels.post_event)
-    admission = AdmissionController(
-        resource_monitor,
-        res_settings,
-        registry=task_registry,
-        event_sink=channels.post_event,
-    )
-    resource_monitor.activity_probe = lambda: bool(admission.active())
-    logger.info(
-        "  resources : cpu<%.0f%% mem>%dMB disk>%.0fGB, heavy=complexity≥%d (max %d)",
-        res_settings.cpu_high_pct,
-        res_settings.mem_min_mb,
-        res_settings.disk_min_gb,
-        res_settings.heavy_complexity,
-        res_settings.max_heavy_tasks,
-    )
-
+    fallback_reasons = (st.fallback_reason, ret.checkpointer_saver.fallback_reason)
+    chans = await build_channels(opts, st.events, fallbacks=fallback_reasons)
+    res = build_resources(chans.router, st.task_registry)
     models = await build_models()
-    triage_settings = models.triage_settings
-    orchestrator_settings = models.orchestrator_settings
-    subagent_settings = models.subagent_settings
-    triage_model = models.triage
-    orchestrator_model = models.orchestrator
-    subagent_model = models.subagent
-    compaction_model = models.compaction
-    context_settings = models.context_settings
-
-    # ── retrieval: skills + TODO-note indexes (extracted: build_retrieval) --
-    _rtv = await build_retrieval(
+    rtv = await build_retrieval(
         workspace=workspace,
         home=home,
-        stores=stores,
-        mem_settings=mem_settings,
-        pg_pool=pg_pool,
-        embedder=embedder,
+        stores=st.stores,
+        mem_settings=st.mem_settings,
+        pg_pool=st.pg_pool,
+        embedder=st.embedder,
     )
-    skill_registry = _rtv.skill_registry
-    skill_store = _rtv.skill_store
-
     wire_spillover_recovery(
-        storage_health,
-        pg_pool,
-        store,
-        channels,
-        memory_store=memory_store,
-        skill_store=skill_store,
+        st.storage_health,
+        st.pg_pool,
+        st.events,
+        chans.router,
+        memory_store=st.memory_store,
+        skill_store=rtv.skill_store,
     )
 
     # ── search config (ws_* tools) ---------------------------------------
@@ -1436,42 +1414,70 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
     if any(available.values()):
         logger.info("  search    : %s", ", ".join(p for p, ok in available.items() if ok))
 
-    # ── subagents ---------------------------------------------------------
     subs = build_subagents(
         workspace=workspace,
-        policy=policy,
-        consent=consent_registry,
-        store=store,
-        skill_registry=skill_registry,
+        policy=pol.policy,
+        consent=pol.consent_registry,
+        store=st.events,
+        skill_registry=rtv.skill_registry,
         search_config=search_config,
         mcp_manager=mcp_manager,
-        cap_enforcer=cap_enforcer,
-        memory_store=memory_store,
-        skill_store=skill_store,
+        cap_enforcer=pol.cap_enforcer,
+        memory_store=st.memory_store,
+        skill_store=rtv.skill_store,
     )
-    subagents = subs.sync
-    bg_subagent_list = subs.background
-
-    # Orchestrator work queue + the launch index that links a background task
-    # back to the conversation that started it. Created before the async block so
-    # the watcher's completion sink can enqueue master wake-ups onto the queue.
     task_queue: asyncio.Queue[OrchestratorTask] = asyncio.Queue()
     launch_index = LaunchIndex()
-
-    # ── async (background) subagent host + mirror + watcher --------------
     # Opt-in via YUYUTSAVA_ASYNC_SUBAGENTS=1; see build_async_subagents.
     async_subs = await build_async_subagents(
-        bg_subagent_list=bg_subagent_list,
-        subagent_settings=subagent_settings,
-        checkpointer=checkpointer,
-        artifact_store=artifact_store,
-        context_settings=context_settings,
-        summary_store=summary_store,
-        memory_store=memory_store,
-        channels=channels,
+        bg_subagent_list=subs.background,
+        subagent_settings=models.subagent_settings,
+        checkpointer=ret.checkpointer,
+        artifact_store=st.artifact_store,
+        context_settings=models.context_settings,
+        summary_store=st.summary_store,
+        memory_store=st.memory_store,
+        channels=chans.router,
         task_queue=task_queue,
         launch_index=launch_index,
     )
+    return BootState(
+        workspace=workspace,
+        home=home,
+        daemon_cfg=daemon_cfg,
+        storage=st,
+        policy=pol,
+        mcp_manager=mcp_manager,
+        retention=ret,
+        events=ev,
+        channels=chans,
+        resources=res,
+        models=models,
+        retrieval=rtv,
+        search_config=search_config,
+        subagents=subs,
+        task_queue=task_queue,
+        launch_index=launch_index,
+        async_subagents=async_subs,
+    )
+
+
+@dataclass(frozen=True)
+class LoopSubsystem:
+    """How work arrives: triage for events, direct submission, the orchestrator."""
+
+    task_submission: TaskSubmissionService
+    triage_loop: TriageLoop
+    orch_loop: OrchestratorLoop
+
+
+def build_loops(boot: BootState) -> LoopSubsystem:
+    """The triage loop, the task-submission service and the orchestrator loop."""
+    st, pol, models, subs = boot.storage, boot.policy, boot.models, boot.subagents
+    async_subs = boot.async_subagents
+    channels = boot.channels.router
+    skill_registry = boot.retrieval.skill_registry
+    background = subs.background if async_subs.available else None
 
     def capabilities_block() -> str:
         """The subagent roster as triage should see it *right now*.
@@ -1481,95 +1487,107 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         immediately (the orchestrator would only refuse the delegation later).
         """
         return render_capabilities_block(
-            list(subagents.values()),
-            async_subagents=bg_subagent_list if async_subs.available else None,
-            disabled=runtime_settings.subagents().disabled,
+            list(subs.sync.values()),
+            async_subagents=background,
+            disabled=pol.runtime_settings.subagents().disabled,
         )
 
-    # ── triage agent + loop ----------------------------------------------
-    triage = TriageAgent(triage_model)
-    # task_queue + launch_index created above (before the async block).
+    triage = TriageAgent(models.triage)
 
-    # ── task submission (POST /tasks and channel plugins) ------------------
     # Direct submissions skip triage, so a light-tier call scores their
-    # complexity — only when routing is on (a score nobody routes on is
-    # wasted spend). The scorer resolves its model lazily and never raises.
+    # complexity — only when routing is on (a score nobody routes on is wasted
+    # spend). The scorer resolves its model lazily and never raises.
+    model_router = st.model_router
     complexity_scorer = (
         ComplexityScorer(lambda: model_router.tier_model("light")) if model_router.enabled else None
     )
     task_submission = TaskSubmissionService(
-        registry=task_registry,
-        task_queue=task_queue,
-        store=store,
-        bus=bus,
-        proposal_expiry_sec=daemon_cfg.proposal_expiry_sec,
+        registry=st.task_registry,
+        task_queue=boot.task_queue,
+        store=st.events,
+        bus=boot.events.bus,
+        proposal_expiry_sec=boot.daemon_cfg.proposal_expiry_sec,
         complexity_scorer=complexity_scorer,
     )
-
     triage_loop = TriageLoop(
-        bus=bus,
-        store=store,
+        bus=boot.events.bus,
+        store=st.events,
         channels=channels,
         triage=triage,
         capabilities_block=capabilities_block,
-        task_queue=task_queue,
-        proposal_expiry_sec=daemon_cfg.proposal_expiry_sec,
+        task_queue=boot.task_queue,
+        proposal_expiry_sec=boot.daemon_cfg.proposal_expiry_sec,
         skill_registry=skill_registry,
-        runtime_settings=runtime_settings,
+        runtime_settings=pol.runtime_settings,
     )
 
     # Transcript RAG for the orchestrator master (Postgres only): the same
     # per-turn ConversationInjector recall the chat/tinker masters get, so a
-    # resumed orchestrator thread remembers its own swept turns.
-    # Same selection the CLI and tinker stacks use — the
-    # two-condition guard lives in StoreFactory, not in three call sites.
-    orch_transcript_index = stores.transcript_index()
-
+    # resumed orchestrator thread remembers its own swept turns. Same selection
+    # the CLI and tinker stacks use — the two-condition guard lives in
+    # StoreFactory, not in three call sites.
+    orch_transcript_index = st.stores.transcript_index()
     orch_deps = OrchestratorDeps(
-        subagents=subagents,
-        subagent_model=subagent_model,
+        subagents=subs.sync,
+        subagent_model=models.subagent,
         channels=channels,
-        store=store,
-        subagent_token_budget=daemon_cfg.subagent_token_budget,
+        store=st.events,
+        subagent_token_budget=boot.daemon_cfg.subagent_token_budget,
         skill_registry=skill_registry,
-        workspace_root=workspace,
-        mcp_manager=mcp_manager,
-        search_config=search_config,
-        cap_enforcer=cap_enforcer,
-        async_subagents=bg_subagent_list if async_subs.available else None,
+        workspace_root=boot.workspace,
+        mcp_manager=boot.mcp_manager,
+        search_config=boot.search_config,
+        cap_enforcer=pol.cap_enforcer,
+        async_subagents=background,
         async_host_url=async_subs.host_url,
         async_task_mirror=async_subs.mirror,
-        artifact_store=artifact_store,
-        summary_store=summary_store,
-        memory_store=memory_store,
-        transcript_store=transcript_store,
+        artifact_store=st.artifact_store,
+        summary_store=st.summary_store,
+        memory_store=st.memory_store,
+        transcript_store=st.transcript_store,
         transcript_index=orch_transcript_index,
-        context_settings=context_settings,
-        compaction_model=compaction_model,
-        usage_store=usage_store,
-        runtime_settings=runtime_settings,
+        context_settings=models.context_settings,
+        compaction_model=models.compaction,
+        usage_store=st.usage_store,
+        runtime_settings=pol.runtime_settings,
     )
     orch_loop = OrchestratorLoop(
-        task_queue=task_queue,
+        task_queue=boot.task_queue,
         channels=channels,
-        store=store,
-        orchestrator_model=orchestrator_model,
+        store=st.events,
+        orchestrator_model=models.orchestrator,
         deps=orch_deps,
-        orchestrator_token_budget=daemon_cfg.orchestrator_token_budget,
-        checkpointer=checkpointer,
-        prefs_injector=prefs_injector,
-        skill_store=skill_store,
-        task_registry=task_registry,
+        orchestrator_token_budget=boot.daemon_cfg.orchestrator_token_budget,
+        checkpointer=boot.retention.checkpointer,
+        prefs_injector=pol.prefs_injector,
+        skill_store=boot.retrieval.skill_store,
+        task_registry=st.task_registry,
         model_router=model_router,
-        admission=admission,
-        launch_index=launch_index,
+        admission=boot.resources.admission,
+        launch_index=boot.launch_index,
+    )
+    return LoopSubsystem(
+        task_submission=task_submission, triage_loop=triage_loop, orch_loop=orch_loop
     )
 
-    # ── channel plugins --------------------------------------------------
-    # One DecisionService resolves proposal/ask responses for every surface:
-    # the HTTP routers and any plugin's inbound loop land on the same code
-    # path. Waiter maps are registered per surface (WebHub + InboundSink).
-    decision_service = DecisionService(store)
+
+@dataclass(frozen=True)
+class PluginSubsystem:
+    """Channel plugins, and the one service that resolves every decision."""
+
+    decision_service: DecisionService
+    channel_plugins: ChannelPluginRegistry
+
+
+async def build_plugins(boot: BootState, loops: LoopSubsystem) -> PluginSubsystem:
+    """Start the channel plugins behind one :class:`DecisionService`.
+
+    One DecisionService resolves proposal/ask responses for every surface: the
+    HTTP routers and any plugin's inbound loop land on the same code path.
+    Waiter maps are registered per surface (WebHub + InboundSink).
+    """
+    web_hub = boot.channels.web_hub
+    decision_service = DecisionService(boot.storage.events)
     if web_hub is not None:
         decision_service.add_waiters(
             proposals=web_hub.pending_proposals,
@@ -1578,15 +1596,15 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
 
     def _daemon_status() -> str:
         return (
-            f"daemon: running — web http://{daemon_cfg.web_host}:"
-            f"{daemon_cfg.web_port}/ · subagents: {', '.join(subagents)}"
+            f"daemon: running — web http://{boot.daemon_cfg.web_host}:"
+            f"{boot.daemon_cfg.web_port}/ · subagents: {', '.join(boot.subagents.sync)}"
         )
 
     inbound_sink = InboundSink(
-        task_submission=task_submission,
+        task_submission=loops.task_submission,
         decision_service=decision_service,
-        task_registry=task_registry,
-        prefs_store=prefs_store,
+        task_registry=boot.storage.task_registry,
+        prefs_store=boot.policy.prefs_store,
         status_provider=_daemon_status,
     )
     decision_service.add_waiters(
@@ -1594,154 +1612,178 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         asks=inbound_sink.pending_asks,
     )
     channel_plugins = ChannelPluginRegistry(
-        router=channels,
+        router=boot.channels.router,
         sink=inbound_sink,
         config=ChannelsConfig.from_file(),
     )
     await channel_plugins.start_all()
+    return PluginSubsystem(decision_service=decision_service, channel_plugins=channel_plugins)
 
-    # ── web server -------------------------------------------------------
-    if web_hub is not None:
-        # from_env may mkdir + write the api_token file on a non-loopback bind →
-        # off-loop (this runs after the subagent host activates blockbuster).
-        auth_settings = await asyncio.to_thread(AuthSettings.from_env, host=daemon_cfg.web_host)
-        if auth_settings.enforce:
-            logger.info(
-                "  web auth  : bearer token enforced (non-loopback bind %s)", daemon_cfg.web_host
-            )
-        # Lazy host for interactive text/voice conversations (Electron/mobile).
-        # Builds its shared deepagent bundle on first /ws/converse use and
-        # attaches to this daemon's async-subagent host (no second host).
-        # Fresh subagent instances for the chat master's sync roster — the
-        # orchestrator's own instances stay on its graph (specs must not
-        # share tool/middleware objects across graphs). GeneralPurposeAgent
-        # is built inside build_agent_stack; these two join it.
-        chat_extra_subagents = subs.make_peers()
-        conversation_manager = ConversationManager(
-            workspace=workspace,
-            checkpointer=checkpointer,
-            settings=orchestrator_settings,
-            search_config=search_config,
-            voice_store=voice_store,
-            usage_store=usage_store,
-            mcp_manager=mcp_manager,
-            launch_index=launch_index,
-            prefs_store=prefs_store,
-            runtime_settings=runtime_settings,
-            cap_enforcer=cap_enforcer,
-            task_submission=task_submission,
-            extra_subagents=chat_extra_subagents,
-        )
 
-        # An ask answered after a restart has no waiter left to wake — the
-        # agent is parked on a checkpointed interrupt, so the answer has to
-        # re-enter the graph. Built here because it needs both the conversation
-        # manager (for conversation-owned asks) and the watcher (for background
-        # ones), and handed to the DecisionService every responder goes through.
-        ask_resume = AskResumeService(
-            registry=ask_registry,
+async def build_web(
+    boot: BootState, loops: LoopSubsystem, plugins: PluginSubsystem
+) -> uvicorn.Server | None:
+    """The web app and its server, or ``None`` without a web hub (``--no-ui``)."""
+    web_hub = boot.channels.web_hub
+    if web_hub is None:
+        return None
+    st, pol, async_subs = boot.storage, boot.policy, boot.async_subagents
+    cfg = boot.daemon_cfg
+    # from_env may mkdir + write the api_token file on a non-loopback bind →
+    # off-loop (this runs after the subagent host activates blockbuster).
+    auth_settings = await asyncio.to_thread(AuthSettings.from_env, host=cfg.web_host)
+    if auth_settings.enforce:
+        logger.info("  web auth  : bearer token enforced (non-loopback bind %s)", cfg.web_host)
+    # Lazy host for interactive text/voice conversations (Electron/mobile).
+    # Builds its shared deepagent bundle on first /ws/converse use and
+    # attaches to this daemon's async-subagent host (no second host).
+    # Fresh subagent instances for the chat master's sync roster — the
+    # orchestrator's own instances stay on its graph (specs must not
+    # share tool/middleware objects across graphs). GeneralPurposeAgent
+    # is built inside build_agent_stack; these two join it.
+    conversation_manager = ConversationManager(
+        workspace=boot.workspace,
+        checkpointer=boot.retention.checkpointer,
+        settings=boot.models.orchestrator_settings,
+        search_config=boot.search_config,
+        voice_store=st.voice_store,
+        usage_store=st.usage_store,
+        mcp_manager=boot.mcp_manager,
+        launch_index=boot.launch_index,
+        prefs_store=pol.prefs_store,
+        runtime_settings=pol.runtime_settings,
+        cap_enforcer=pol.cap_enforcer,
+        task_submission=loops.task_submission,
+        extra_subagents=boot.subagents.make_peers(),
+    )
+
+    # An ask answered after a restart has no waiter left to wake — the
+    # agent is parked on a checkpointed interrupt, so the answer has to
+    # re-enter the graph. Built here because it needs both the conversation
+    # manager (for conversation-owned asks) and the watcher (for background
+    # ones), and handed to the DecisionService every responder goes through.
+    ask_resume = AskResumeService(
+        registry=boot.channels.ask_registry,
+        conversation_manager=conversation_manager,
+        watcher=async_subs.watcher,
+        channels=boot.channels.router,
+    )
+    plugins.decision_service.set_ask_resume(ask_resume)
+
+    app = create_app(
+        web_hub,
+        host=cfg.web_host,
+        deps=AppDeps(
+            skill_registry=boot.retrieval.skill_registry,
+            config_reload=boot.events.reload,
+            channels=boot.channels.router,
+            session_origin=boot.channels.session_origin,
+            auth=auth_settings,
+            task_registry=st.task_registry,
+            task_submission=loops.task_submission,
+            decision_service=plugins.decision_service,
+            ask_registry=boot.channels.ask_registry,
+            ask_resume=ask_resume,
+            channel_plugins=plugins.channel_plugins,
+            usage_store=st.usage_store,
+            resource_monitor=boot.resources.monitor,
+            admission_controller=boot.resources.admission,
+            model_router=st.model_router,
+            memory_store=st.memory_store,
             conversation_manager=conversation_manager,
-            watcher=async_subs.watcher,
-            channels=channels,
-        )
-        decision_service.set_ask_resume(ask_resume)
+            voice_store=st.voice_store,
+            transcript_store=st.transcript_store,
+            async_subagents=async_subs.available,
+            async_task_watcher=async_subs.watcher,
+            runtime_settings=pol.runtime_settings,
+            subagent_roster=boot.subagents.sync,
+        ),
+    )
+    uvicorn_level = logging.getLevelName(logging.getLogger("yuyutsava").getEffectiveLevel()).lower()
+    config = uvicorn.Config(
+        app,
+        host=cfg.web_host,
+        port=cfg.web_port,
+        log_level=uvicorn_level,
+        lifespan="on",
+        # uvicorn's access log records full request lines including the
+        # query string — which carries ?token= on /stream when auth is
+        # enforced. Drop it off-loopback; the in-app HTTP log middleware
+        # (path-only) still covers observability.
+        access_log=not auth_settings.enforce,
+    )
+    return uvicorn.Server(config)
 
-        app = create_app(
-            web_hub,
-            host=daemon_cfg.web_host,
-            deps=AppDeps(
-                skill_registry=skill_registry,
-                config_reload=_hot_reload_events_config,
-                channels=channels,
-                session_origin=session_origin,
-                auth=auth_settings,
-                task_registry=task_registry,
-                task_submission=task_submission,
-                decision_service=decision_service,
-                ask_registry=ask_registry,
-                ask_resume=ask_resume,
-                channel_plugins=channel_plugins,
-                usage_store=usage_store,
-                resource_monitor=resource_monitor,
-                admission_controller=admission,
-                model_router=model_router,
-                memory_store=memory_store,
-                conversation_manager=conversation_manager,
-                voice_store=voice_store,
-                transcript_store=transcript_store,
-                async_subagents=async_subs.available,
-                async_task_watcher=async_subs.watcher,
-                runtime_settings=runtime_settings,
-                subagent_roster=subagents,
-            ),
-        )
-        uvicorn_level = logging.getLevelName(
-            logging.getLogger("yuyutsava").getEffectiveLevel()
-        ).lower()
-        config = uvicorn.Config(
-            app,
-            host=daemon_cfg.web_host,
-            port=daemon_cfg.web_port,
-            log_level=uvicorn_level,
-            lifespan="on",
-            # uvicorn's access log records full request lines including the
-            # query string — which carries ?token= on /stream when auth is
-            # enforced. Drop it off-loopback; the in-app HTTP log middleware
-            # (path-only) still covers observability.
-            access_log=not auth_settings.enforce,
-        )
-        web_server = uvicorn.Server(config)
 
-    # A wildcard bind (0.0.0.0 / ::) is not an openable address; show loopback
-    # for the local web window. Remote clients use the host's tailnet IP.
-    _display_host = daemon_cfg.web_host
-    if _display_host in ("0.0.0.0", "::", ""):
-        _display_host = "127.0.0.1"
-    web_url = f"http://{_display_host}:{daemon_cfg.web_port}/"
+def _web_url(cfg: DaemonConfig) -> str:
+    """The local web window's address.
 
+    A wildcard bind (0.0.0.0 / ::) is not an openable address; show loopback
+    for the local web window. Remote clients use the host's tailnet IP.
+    """
+    host = cfg.web_host
+    if host in ("0.0.0.0", "::", ""):
+        host = "127.0.0.1"
+    return f"http://{host}:{cfg.web_port}/"
+
+
+async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
+    """Wire every daemon subsystem and return them as a populated record.
+
+    Boot order: store → prefs/policy → MCP → checkpointer/sweeper → bus and
+    sources → channels → resources → models → skills → search → subagents →
+    background host → loops → channel plugins → web app. The caller is
+    responsible for installing signal handlers, scheduling the loop tasks, and
+    ordered shutdown.
+    """
+    boot = await build_boot_state(opts)
+    loops = build_loops(boot)
+    plugins = await build_plugins(boot, loops)
+    web_server = await build_web(boot, loops, plugins)
+    st, chans, async_subs = boot.storage, boot.channels, boot.async_subagents
     return DaemonSubsystems(
-        daemon_cfg=daemon_cfg,
-        home=home,
-        workspace=workspace,
-        store=store,
-        prefs_store=prefs_store,
-        runtime_settings=runtime_settings,
-        bus=bus,
-        registry=registry,
-        channels=channels,
-        web_hub=web_hub,
-        log_bridge=log_bridge,
+        daemon_cfg=boot.daemon_cfg,
+        home=boot.home,
+        workspace=boot.workspace,
+        store=st.events,
+        prefs_store=boot.policy.prefs_store,
+        runtime_settings=boot.policy.runtime_settings,
+        bus=boot.events.bus,
+        registry=boot.events.registry,
+        channels=chans.router,
+        web_hub=chans.web_hub,
+        log_bridge=chans.log_bridge,
         web_server=web_server,
-        web_url=web_url,
-        mcp_manager=mcp_manager,
-        checkpointer_saver=checkpointer_saver,
-        sweeper=sweeper,
-        pg_pool=pg_pool,
-        storage_health=storage_health,
-        artifact_store=artifact_store,
-        summary_store=summary_store,
-        transcript_store=transcript_store,
-        memory_store=memory_store,
-        embedder=embedder,
-        task_queue=task_queue,
-        triage_loop=triage_loop,
-        orch_loop=orch_loop,
-        task_registry=task_registry,
-        task_submission=task_submission,
-        decision_service=decision_service,
-        channel_plugins=channel_plugins,
-        usage_store=usage_store,
-        model_router=model_router,
-        resource_monitor=resource_monitor,
-        admission=admission,
-        skill_registry=skill_registry,
-        triage_settings=triage_settings,
-        orchestrator_settings=orchestrator_settings,
-        subagent_names=tuple(subagents.keys()),
+        web_url=_web_url(boot.daemon_cfg),
+        mcp_manager=boot.mcp_manager,
+        checkpointer_saver=boot.retention.checkpointer_saver,
+        sweeper=boot.retention.sweeper,
+        pg_pool=st.pg_pool,
+        storage_health=st.storage_health,
+        artifact_store=st.artifact_store,
+        summary_store=st.summary_store,
+        transcript_store=st.transcript_store,
+        memory_store=st.memory_store,
+        embedder=st.embedder,
+        task_queue=boot.task_queue,
+        triage_loop=loops.triage_loop,
+        orch_loop=loops.orch_loop,
+        task_registry=st.task_registry,
+        task_submission=loops.task_submission,
+        decision_service=plugins.decision_service,
+        channel_plugins=plugins.channel_plugins,
+        usage_store=st.usage_store,
+        model_router=st.model_router,
+        resource_monitor=boot.resources.monitor,
+        admission=boot.resources.admission,
+        skill_registry=boot.retrieval.skill_registry,
+        triage_settings=boot.models.triage_settings,
+        orchestrator_settings=boot.models.orchestrator_settings,
+        subagent_names=tuple(boot.subagents.sync.keys()),
         async_host=async_subs.host,
         async_task_mirror=async_subs.mirror,
         async_task_watcher=async_subs.watcher,
-        session_origin=session_origin,
+        session_origin=chans.session_origin,
         async_host_attachment=async_subs.attachment,
-        hot_reload_events_config=_hot_reload_events_config,
+        hot_reload_events_config=boot.events.reload,
     )

@@ -550,8 +550,21 @@ fixed. 106 files, comments and docstrings only — proven by comparing each
 file's AST, docstrings stripped, with the previous commit.
 
 The `R-KIS-02` placeholder policies are deleted (a `fix:`); the refusal
-fields are carried (see Carried). Still open in this wave:
-`build_daemon`/`_async_main`.
+fields are carried (see Carried).
+
+**`build_daemon` 451 → ~55 lines** (owner: "up to you"). It runs four stages —
+`build_boot_state` (storage through the background host, in boot order),
+`build_loops`, `build_plugins`, `build_web` — plus `build_resources`, which
+had been inline. The later stages take one frozen `BootState`: a record of the
+subsystem records already built, not a bag of loose fields, because a loops
+builder would otherwise need ~16 parameters and the PLR0913 ratchet caps them.
+Nothing tested the wiring end to end, so a probe booted the real daemon in
+isolation (scratch home and Postgres database) and recorded what every
+constructor received and which objects were shared: all 133 are identical
+before and after. Live: a turn deleting a workspace file raised the DELETE
+ask, the approval over the socket resumed it, and the file was gone.
+
+Still open in this wave: `_async_main`.
 
 ## W5 — Errors, logging, state, defects
 

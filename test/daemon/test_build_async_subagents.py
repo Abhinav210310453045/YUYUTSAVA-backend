@@ -155,7 +155,17 @@ class BuildDaemonUsesTheProperty(unittest.TestCase):
 
         from yuyutsava.daemon import bootstrap
 
-        src = inspect.getsource(bootstrap.build_daemon)
+        # The boot pipeline: build_daemon and the stages it runs.
+        src = "".join(
+            inspect.getsource(fn)
+            for fn in (
+                bootstrap.build_daemon,
+                bootstrap.build_boot_state,
+                bootstrap.build_loops,
+                bootstrap.build_plugins,
+                bootstrap.build_web,
+            )
+        )
         self.assertNotIn(
             "async_host_url is not None",
             src,
