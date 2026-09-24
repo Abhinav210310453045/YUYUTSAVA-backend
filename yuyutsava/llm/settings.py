@@ -415,6 +415,43 @@ class CohereSettings:
         return cls(api_key=key, model=model)
 
 
+#: Every accepted ``LLM_PROVIDER`` value and the settings class it selects.
+#: Adding a provider is one row here — not a branch in a chain plus a name in an
+#: error message that the chain could drift away from. The first alias of each
+#: class is its canonical name, which is what an error lists.
+SETTINGS_BY_PROVIDER: dict[str, type] = {
+    # OpenAI-compatible providers (the ChatOpenAI path)
+    "groq": GroqSettings,
+    "openrouter": OpenRouterSettings,
+    "ollama": OllamaSettings,
+    "openai": OpenAISettings,
+    "openai_compatible": OpenAICompatibleSettings,
+    "custom": OpenAICompatibleSettings,
+    # Native-SDK providers (a dedicated factory, lazily imported)
+    "anthropic": AnthropicSettings,
+    "google": GoogleSettings,
+    "gemini": GoogleSettings,
+    "vertex": VertexSettings,
+    "bedrock": BedrockSettings,
+    "aws": BedrockSettings,
+    "azure": AzureOpenAISettings,
+    "azure_openai": AzureOpenAISettings,
+    "mistral": MistralSettings,
+    "cohere": CohereSettings,
+}
+
+
+def _canonical_names() -> list[str]:
+    """One name per provider, in table order: the first alias of each class."""
+    seen: set[type] = set()
+    names: list[str] = []
+    for name, cls in SETTINGS_BY_PROVIDER.items():
+        if cls not in seen:
+            seen.add(cls)
+            names.append(name)
+    return names
+
+
 def llm_settings_from_env(role: str | None = None) -> LlmSettings:
     """Pick provider via ``<ROLE>_LLM_PROVIDER`` (falls back to ``LLM_PROVIDER``).
 
@@ -425,34 +462,9 @@ def llm_settings_from_env(role: str | None = None) -> LlmSettings:
     """
     effective_role = None if role in (None, "main") else role
     provider = env("LLM_PROVIDER", effective_role, "groq").lower()
-    # OpenAI-compatible providers (default ChatOpenAI path)
-    if provider == "groq":
-        return GroqSettings.from_env(effective_role)
-    if provider == "openrouter":
-        return OpenRouterSettings.from_env(effective_role)
-    if provider == "ollama":
-        return OllamaSettings.from_env(effective_role)
-    if provider == "openai":
-        return OpenAISettings.from_env(effective_role)
-    if provider in ("openai_compatible", "custom"):
-        return OpenAICompatibleSettings.from_env(effective_role)
-    # Native-SDK providers (dedicated factory branch, lazy-imported package)
-    if provider == "anthropic":
-        return AnthropicSettings.from_env(effective_role)
-    if provider in ("google", "gemini"):
-        return GoogleSettings.from_env(effective_role)
-    if provider == "vertex":
-        return VertexSettings.from_env(effective_role)
-    if provider in ("bedrock", "aws"):
-        return BedrockSettings.from_env(effective_role)
-    if provider in ("azure", "azure_openai"):
-        return AzureOpenAISettings.from_env(effective_role)
-    if provider == "mistral":
-        return MistralSettings.from_env(effective_role)
-    if provider == "cohere":
-        return CohereSettings.from_env(effective_role)
-    raise RuntimeError(
-        f"Unknown LLM_PROVIDER={provider!r}; use one of: groq, openrouter, ollama, "
-        "openai, openai_compatible, anthropic, google, vertex, bedrock, azure, "
-        "mistral, cohere."
-    )
+    cls = SETTINGS_BY_PROVIDER.get(provider)
+    if cls is None:
+        raise RuntimeError(
+            f"Unknown LLM_PROVIDER={provider!r}; use one of: {', '.join(_canonical_names())}."
+        )
+    return cls.from_env(effective_role)
