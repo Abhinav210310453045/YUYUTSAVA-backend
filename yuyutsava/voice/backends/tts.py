@@ -106,12 +106,9 @@ class ElevenLabsTTS(TTS):
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(url, json=body, headers=headers)
             resp.raise_for_status()
-        # Save as .mp3 regardless of output_path suffix — the bytes are MP3.
-        mp3_path = output_path.with_suffix(".mp3")
-        mp3_path.write_bytes(resp.content)
-        # Overwrite output_path with bytes so callers using output_path work too.
-        if mp3_path != output_path:
-            output_path.write_bytes(resp.content)
+        # MP3 bytes whatever the suffix: callers read *output_path*, and
+        # synth._decode_to_pcm sniffs the format rather than trusting the name.
+        output_path.write_bytes(resp.content)
 
     @classmethod
     def from_env(cls) -> ElevenLabsTTS:
