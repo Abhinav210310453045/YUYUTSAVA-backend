@@ -533,9 +533,20 @@ The rest of `R-KIS-02` except the policy items: TTS written once
 behavioural dispatch tests first. Verified live in a piped REPL: every
 command answered as before, and a real turn replied.
 
+**`run_chat_repl` 261 → 108 lines**, with the `ReplLoop` the plan named: the
+loop (read, dispatch, turn, cost line) is a class with its own tests
+(`test/cli/test_repl_loop.py`), and the input reader, session start, retry
+listener and teardown are functions beside it. A deterministic piped REPL
+session was byte-identical before and after; real turns across `/new`
+behaved the same on the old and new code, and the session rows confirm the
+rotation (the post-`/new` session holds only its own turn). One observation
+for W5, not caused by this change: once in four runs the first turn printed
+no cost line; not reproduced, and the usage row is written inline in
+`after_model`, so the cause is not yet known.
+
 Still open in this wave, in plan order: the two `R-KIS-02` policy items
 (need a decision), `build_daemon`/`_async_main` (waiting on the `BootContext` decision),
-the rest of `run_chat_repl`, and the docstring sweep.
+and the docstring sweep.
 
 ## W5 — Errors, logging, state, defects
 

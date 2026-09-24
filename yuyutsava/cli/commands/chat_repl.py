@@ -30,7 +30,7 @@ import traceback
 from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import Completer, Completion
@@ -808,6 +808,198 @@ def _handle_slash(
 # ---------------------------------------------------------------------------
 
 
+def make_input_reader(dashboard: Any, history_path: Path) -> Callable[[], Awaitable[str]]:
+    """Where the REPL's next line comes from, for this terminal.
+
+    The dashboard owns its own input line inside the application layout (same
+    history file and completer), so it needs no session here — a
+    PromptSession would fight it for the terminal. A TTY gets prompt_toolkit;
+    piped input (tests, automation) falls back to plain blocking ``input()``
+    in a thread so the REPL still works. Raises ``EOFError`` on Ctrl+D.
+    """
+    # wrap_lines=True + full-width input area: the input editor spans the
+    # whole terminal column count and wraps long lines instead of scrolling
+    # horizontally inside a narrow gutter.
+    prompt_session: PromptSession[str] | None = (
+        PromptSession(
+            history=FileHistory(str(history_path)),
+            multiline=False,
+            wrap_lines=True,
+            completer=_SlashCompleter(),
+            complete_while_typing=True,
+        )
+        if sys.stdin.isatty() and dashboard is None
+        else None
+    )
+
+    async def _read_input() -> str:
+        if dashboard is not None:
+            line = await dashboard.read_input()
+            if line is None:
+                raise EOFError  # Ctrl+D: the existing clean-exit path
+            return line
+        if prompt_session is not None:
+            # ANSI(...) wrapper: prompt_toolkit otherwise renders the
+            # raw escape bytes as visible characters (^[[36m…).
+            with patch_stdout():
+                return await prompt_session.prompt_async(ANSI(f"\n{CYAN}>{RESET} "))
+        # Non-TTY: run blocking input() in a worker thread.
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, lambda: input(f"\n{CYAN}>{RESET} "))
+
+    return _read_input
+
+
+@dataclass
+class ReplLoop:
+    """Read a line, run it as a command or as a turn, until told to stop.
+
+    Stops on ``/quit`` (and its aliases), and on Ctrl+D or Ctrl+C at the
+    prompt. The session is read from ``commands`` each time, because ``/new``
+    replaces it.
+    """
+
+    commands: ReplCommands
+    convo: Any
+    renderer: Any
+    ask_handler: Any
+    dashboard: Any
+    approvals: Any
+    usage_store: Any
+    read_input: Callable[[], Awaitable[str]]
+
+    async def run(self) -> None:
+        while True:
+            # Flush any background-task events queued during the previous
+            # turn so the user sees them before composing the next message.
+            await self.approvals.render_between_turns()
+            try:
+                user_input = await self.read_input()
+            except (EOFError, KeyboardInterrupt):
+                print(file=sys.stderr)
+                return
+            user_input = (user_input or "").strip()
+            if not user_input:
+                continue
+            outcome = await self.commands.dispatch(user_input)
+            if outcome is Outcome.QUIT:
+                return
+            if outcome is Outcome.NOT_A_COMMAND:
+                await self._turn(user_input)
+
+    async def _turn(self, text: str) -> None:
+        started = time.time()
+        if not await run_one_turn(
+            self.convo,
+            text,
+            renderer=self.renderer,
+            ask_handler=self.ask_handler,
+            dashboard=self.dashboard,
+        ):
+            return
+        # What the turn cost, from the rows the graph just wrote. The input
+        # count climbs with the conversation (the whole history is re-sent
+        # every call), and that was invisible from inside a session until now.
+        line = format_usage(
+            await session_usage(self.usage_store, self.commands.session.thread_id, started)
+        )
+        if line:
+            print(f"{DIM}  {line}{RESET}", file=sys.stderr)
+
+
+def _install_retry_listener(renderer: Any, dashboard: Any) -> None:
+    """Provider retries (429/503) speak through the renderer, not the log.
+
+    The SDK's own retry logger emits several structlog lines per attempt,
+    which printed straight through the Live region and still left the user
+    unable to tell whether the turn was alive. The status line is transient
+    and easy to miss during a long wait; the panel keeps the notice up for the
+    length of the backoff. Neither writes into the transcript. Cleared by
+    :func:`_close_chat`.
+    """
+
+    def _on_retry(model, attempt, retries, delay, exc):
+        renderer.note_retry(model, attempt, retries, delay, exc)
+        if dashboard is not None:
+            dashboard.note_retry(model, attempt, retries, delay, exc)
+
+    set_retry_listener(_on_retry)
+
+
+async def _start_session(
+    opts: ChatOptions,
+    store: Any,
+    bundle: Any,
+    dashboard: Any,
+    sessions_settings: Any,
+    *,
+    debug_plumbing: bool,
+) -> tuple[ConversationService, str]:
+    """Resolve the session (--resume / --continue / fresh) and show the banner.
+
+    The terminal is one IO adapter over ``ConversationService`` — the daemon's
+    text and voice chats are others. Returns the service and the status line
+    the banner showed, which ``/new`` shows again.
+    """
+    convo, resuming = await ConversationService.resolve(
+        store=store,
+        bundle=bundle,
+        workspace=opts.workspace,
+        origin="cli",
+        resume_id=opts.resume_id,
+        continue_latest=opts.continue_latest,
+        agent_path="cli",
+        recursion_limit=opts.recursion_limit,
+        task="(interactive chat)",
+    )
+    # The split view must be up BEFORE anything is printed: it takes the
+    # alternate screen, which wipes whatever is already on the terminal. Print
+    # the banner first and it is erased, leaving `yuyutsava chat` open on a
+    # bare screen with a stray Google credentials warning at the top.
+    if dashboard is not None:
+        await dashboard.start()
+    # Surface any langgraph-api upgrade/support notice once, cleanly, right
+    # above the banner rather than mid-chat.
+    startup.print_version_notice(full=debug_plumbing)
+    status_line = startup.startup_status_line(sessions_settings)
+    startup.print_banner(
+        session_id=convo.session.id,
+        workspace=opts.workspace,
+        resuming=resuming,
+        status=status_line,
+    )
+    return convo, status_line
+
+
+async def _close_chat(
+    *, dashboard: Any, renderer: Any, approvals: Any, runtime_toggles: Any, bundle: Any
+) -> None:
+    """Tear the chat down in order, whatever state it ended in."""
+    # The listener is process-global; a renderer that outlives this REPL
+    # would keep drawing on a dead Live region.
+    with contextlib.suppress(Exception):
+        set_retry_listener(None)
+    if dashboard is not None:
+        # Leave the alternate screen first, then hand the transcript back: the
+        # app takes the session's output with it when it exits, and a user who
+        # just spent an hour in here should not find an empty terminal.
+        with contextlib.suppress(Exception):
+            await dashboard.stop()
+        dashboard.replay_to(sys.stderr)
+    with contextlib.suppress(Exception):
+        await renderer.aclose()
+    await approvals.aclose()
+    await runtime_toggles.aclose()
+    await bundle.aclose()
+    # After teardown the docker container is gone, so nothing has the sandbox
+    # as its cwd — safe to wipe scratch in either mode.
+    if bundle.layout is not None:
+        try:
+            cleanup_local_sandbox(bundle.layout)
+        except Exception:
+            pass
+
+
 async def run_chat_repl(
     opts: ChatOptions,
     *,
@@ -820,17 +1012,6 @@ async def run_chat_repl(
     surface's own: how much the terminal shows, not what the agent is.
     """
     workspace = opts.workspace
-    settings = opts.settings
-    execution_mode = opts.execution_mode
-    docker_settings = opts.docker_settings
-    local_settings = opts.local_settings
-    search_config = opts.search_config
-    bash_timeout_sec = opts.bash_timeout_sec
-    recursion_limit = opts.recursion_limit
-    permission_check = opts.permission_check
-    resume_id = opts.resume_id
-    continue_latest = opts.continue_latest
-    verbose = opts.verbose
     if not debug_plumbing:
         debug_plumbing = env_flag("YUYUTSAVA_DEBUG_PLUMBING", true=("1", "true", "yes"))
     if not debug_plumbing:
@@ -844,41 +1025,25 @@ async def run_chat_repl(
     history_path = state_dir() / "chat_history"
     _rotate_history(history_path)
 
-    surface = build_surface(workspace, history_path=history_path, verbose=verbose, classic=classic)
+    surface = build_surface(
+        workspace, history_path=history_path, verbose=opts.verbose, classic=classic
+    )
     console, dashboard, renderer = surface.console, surface.dashboard, surface.renderer
-    ask_handler = make_ask_handler(renderer, console)
-
-    # Provider retries (429/503) speak through the renderer, not the log. The
-    # SDK's own retry logger emits several structlog lines per attempt, which
-    # printed straight through the Live region and still left the user unable
-    # to tell whether the turn was alive. Cleared in the finally block below.
-    def _on_retry(model, attempt, retries, delay, exc):
-        """Retries speak on the status line AND in the panel's notices.
-
-        The status line is transient and easy to miss during a long wait; the
-        panel keeps it up for the length of the backoff. Neither writes into
-        the transcript, which is what the user asked for.
-        """
-        renderer.note_retry(model, attempt, retries, delay, exc)
-        if dashboard is not None:
-            dashboard.note_retry(model, attempt, retries, delay, exc)
-
-    set_retry_listener(_on_retry)
-
-    quieten_chat_loggers(debug_plumbing=debug_plumbing, verbose=verbose)
+    _install_retry_listener(renderer, dashboard)
+    quieten_chat_loggers(debug_plumbing=debug_plumbing, verbose=opts.verbose)
 
     async with build_checkpointer(sessions_settings) as checkpointer:
         # Build the agent stack ONCE. Swallow the LangGraph host's startup
         # banner unless the user asked for the firehose.
         builder = build_agent_stack(
             workspace,
-            settings,
-            bash_timeout_sec=bash_timeout_sec,
-            execution_mode=execution_mode,  # type: ignore[arg-type]
-            docker_settings=docker_settings,
-            local_settings=local_settings,
-            permission_check=permission_check,
-            search_config=search_config,
+            opts.settings,
+            bash_timeout_sec=opts.bash_timeout_sec,
+            execution_mode=opts.execution_mode,  # type: ignore[arg-type]
+            docker_settings=opts.docker_settings,
+            local_settings=opts.local_settings,
+            permission_check=opts.permission_check,
+            search_config=opts.search_config,
             checkpointer=checkpointer,
             # This reply is going to a terminal, not the desktop app: no
             # Artifacts tab, no card to click, HTML unreadable.
@@ -902,43 +1067,9 @@ async def run_chat_repl(
         runtime_toggles = _LazyRuntimeSettings()
 
         try:
-            # Resolve initial session (--resume / --continue / fresh) and wrap
-            # it in the shared conversation engine. The terminal is just one IO
-            # adapter over ConversationService — the daemon's text/voice chats
-            # are others. ``ChatRenderer`` + ``_ask_handler`` below are this
-            # adapter's output + HITL bridge.
-            convo, resuming = await ConversationService.resolve(
-                store=store,
-                bundle=bundle,
-                workspace=workspace,
-                origin="cli",
-                resume_id=resume_id,
-                continue_latest=continue_latest,
-                agent_path="cli",
-                recursion_limit=recursion_limit,
-                task="(interactive chat)",
+            convo, status_line = await _start_session(
+                opts, store, bundle, dashboard, sessions_settings, debug_plumbing=debug_plumbing
             )
-            session = convo.session
-
-            # The split view must be up BEFORE anything is printed: it takes
-            # the alternate screen, which wipes whatever is already on the
-            # terminal. Print the banner first and it is erased, leaving
-            # `yuyutsava chat` open on a bare screen with a stray Google
-            # credentials warning at the top.
-            if dashboard is not None:
-                await dashboard.start()
-
-            # Surface any langgraph-api upgrade/support notice once, cleanly,
-            # right above the banner rather than mid-chat.
-            startup.print_version_notice(full=debug_plumbing)
-            status_line = startup.startup_status_line(sessions_settings)
-            startup.print_banner(
-                session_id=session.id,
-                workspace=workspace,
-                resuming=resuming,
-                status=status_line,
-            )
-
             commands = ReplCommands(
                 workspace=workspace,
                 console=console,
@@ -947,123 +1078,33 @@ async def run_chat_repl(
                 convo=convo,
                 runtime_toggles=runtime_toggles,
                 status_line=status_line,
-                session=session,
+                session=convo.session,
                 remote=approvals.remote,
             )
-
-            # prompt_toolkit needs a TTY on stdin; when run with piped input
-            # (tests, automation), fall back to plain blocking `input()` in a
-            # thread so the REPL still works.
-            is_tty = sys.stdin.isatty()
-            # wrap_lines=True + full-width input area: the input editor spans
-            # the whole terminal column count and wraps long lines instead of
-            # scrolling horizontally inside a narrow gutter.
-            #
-            # The dashboard owns its own input line inside the application
-            # layout (same history file and completer), so it needs no session
-            # here — a PromptSession would fight it for the terminal.
-            prompt_session: PromptSession[str] | None = (
-                PromptSession(
-                    history=FileHistory(str(history_path)),
-                    multiline=False,
-                    wrap_lines=True,
-                    completer=_SlashCompleter(),
-                    complete_while_typing=True,
-                )
-                if is_tty and dashboard is None
-                else None
-            )
-
-            async def _read_input() -> str:
-                if dashboard is not None:
-                    line = await dashboard.read_input()
-                    if line is None:
-                        raise EOFError  # Ctrl+D: the existing clean-exit path
-                    return line
-                if prompt_session is not None:
-                    # ANSI(...) wrapper: prompt_toolkit otherwise renders the
-                    # raw escape bytes as visible characters (^[[36m…).
-                    with patch_stdout():
-                        return await prompt_session.prompt_async(ANSI(f"\n{CYAN}>{RESET} "))
-                # Non-TTY: run blocking input() in a worker thread.
-                loop = asyncio.get_running_loop()
-                return await loop.run_in_executor(None, lambda: input(f"\n{CYAN}>{RESET} "))
-
-            while True:
-                # Flush any background-task events queued during the previous
-                # turn so the user sees them before composing the next message.
-                await approvals.render_between_turns()
-
-                try:
-                    user_input = await _read_input()
-                except (EOFError, KeyboardInterrupt):
-                    # Ctrl+D or Ctrl+C at the empty prompt: clean exit.
-                    print(file=sys.stderr)
-                    break
-
-                user_input = (user_input or "").strip()
-                if not user_input:
-                    continue
-
-                outcome = await commands.dispatch(user_input)
-                if outcome is Outcome.QUIT:
-                    break
-                if outcome is Outcome.HANDLED:
-                    # `/new` may have rotated the session out from under us.
-                    session = commands.session
-                    continue
-
-                turn_started = time.time()
-                if not await run_one_turn(
-                    convo,
-                    user_input,
-                    renderer=renderer,
-                    ask_handler=ask_handler,
-                    dashboard=dashboard,
-                ):
-                    continue
-
-                # What the turn cost, from the rows the graph just wrote. The
-                # input count climbs with the conversation (the whole history
-                # is re-sent every call), and that was invisible from inside a
-                # session until now.
-                _turn_usage = format_usage(
-                    await session_usage(bundle.usage_store, session.thread_id, turn_started)
-                )
-                if _turn_usage:
-                    print(f"{DIM}  {_turn_usage}{RESET}", file=sys.stderr)
+            await ReplLoop(
+                commands=commands,
+                convo=convo,
+                renderer=renderer,
+                ask_handler=make_ask_handler(renderer, console),
+                dashboard=dashboard,
+                approvals=approvals,
+                usage_store=bundle.usage_store,
+                read_input=make_input_reader(dashboard, history_path),
+            ).run()
 
             # Loop exited — flush bookkeeping and mark the session done.
             try:
                 await convo.finish("done")
             except Exception:
                 pass
-
         finally:
-            # The listener is process-global; a renderer that outlives this
-            # REPL would keep drawing on a dead Live region.
-            with contextlib.suppress(Exception):
-                set_retry_listener(None)
-            if dashboard is not None:
-                # Leave the alternate screen first, then hand the transcript
-                # back: the app takes the session's output with it when it
-                # exits, and a user who just spent an hour in here should not
-                # find an empty terminal.
-                with contextlib.suppress(Exception):
-                    await dashboard.stop()
-                dashboard.replay_to(sys.stderr)
-            with contextlib.suppress(Exception):
-                await renderer.aclose()
-            await approvals.aclose()
-            await runtime_toggles.aclose()
-            await bundle.aclose()
-            # After teardown the docker container is gone, so nothing has the
-            # sandbox as its cwd — safe to wipe scratch in either mode.
-            if bundle.layout is not None:
-                try:
-                    cleanup_local_sandbox(bundle.layout)
-                except Exception:
-                    pass
+            await _close_chat(
+                dashboard=dashboard,
+                renderer=renderer,
+                approvals=approvals,
+                runtime_toggles=runtime_toggles,
+                bundle=bundle,
+            )
 
     print(f"{DIM}— chat closed —{RESET}", file=sys.stderr)
     return 0

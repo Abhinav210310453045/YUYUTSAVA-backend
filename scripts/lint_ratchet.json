@@ -59,7 +59,6 @@
   },
   "yuyutsava/cli/commands/chat_repl.py": {
     "BLE001": 2,
-    "C901": 1,
     "S110": 2
   },
   "yuyutsava/cli/render/plain.py": {
