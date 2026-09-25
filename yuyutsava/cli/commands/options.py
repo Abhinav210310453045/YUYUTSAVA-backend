@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from yuyutsava.config.execution import DockerSettings, LocalSettings
+from yuyutsava.config.execution import DockerSettings, ExecutionSettings, LocalSettings
 from yuyutsava.config.search import SearchConfig
 from yuyutsava.llm.settings import LlmSettings
 
@@ -39,3 +39,10 @@ class ChatOptions:
     resume_id: str | None
     continue_latest: bool
     verbose: bool
+
+    @property
+    def execution(self) -> ExecutionSettings:
+        """Where this chat's tools run."""
+        return ExecutionSettings(
+            mode=self.execution_mode, docker=self.docker_settings, local=self.local_settings
+        )

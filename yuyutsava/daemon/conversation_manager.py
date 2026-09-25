@@ -33,10 +33,11 @@ from typing import Any
 
 from yuyutsava.async_subagents.launch_index import parse_async_task_id
 from yuyutsava.config.env import env_int
-from yuyutsava.config.execution import DockerSettings, LocalSettings
+from yuyutsava.config.execution import DockerSettings, ExecutionSettings, LocalSettings
 from yuyutsava.config.search import SearchConfig
 from yuyutsava.conversation import ConversationService
 from yuyutsava.core.agent_stack import build_agent_stack
+from yuyutsava.core.deps import StackWiring
 from yuyutsava.core.engine import AgentBundle
 from yuyutsava.core.tinker_stack import build_tinker_stack
 from yuyutsava.daemon.submit_tool import make_orch_submit_tool
@@ -203,20 +204,22 @@ class ConversationManager:
         return await build_agent_stack(
             self._workspace,
             self._resolved_settings(),
+            execution=ExecutionSettings(
+                mode="local", docker=DockerSettings.from_env(), local=LocalSettings.from_env()
+            ),
             bash_timeout_sec=_bash_timeout_sec(),
-            execution_mode="local",
-            docker_settings=DockerSettings.from_env(),
-            local_settings=LocalSettings.from_env(),
             permission_check=True,
             search_config=self._resolved_search(),
             checkpointer=self._checkpointer,
-            mcp_manager=self._mcp_manager,
-            usage_store=self._usage_store,
-            prefs_store=self._prefs_store,
-            runtime_settings=self._runtime_settings,
-            cap_enforcer=self._cap_enforcer,
-            extra_subagents=self._extra_subagents,
-            extra_tools=self._orch_submit_tools("chat"),
+            wiring=StackWiring(
+                mcp_manager=self._mcp_manager,
+                usage_store=self._usage_store,
+                prefs_store=self._prefs_store,
+                runtime_settings=self._runtime_settings,
+                cap_enforcer=self._cap_enforcer,
+                extra_subagents=self._extra_subagents,
+                extra_tools=self._orch_submit_tools("chat"),
+            ),
         )
 
     async def _build_tinker_bundle(self, card_id: str) -> AgentBundle:
@@ -237,11 +240,13 @@ class ConversationManager:
             bash_timeout_sec=_bash_timeout_sec(),
             search_config=self._resolved_search(),
             checkpointer=self._checkpointer,
-            usage_store=self._usage_store,
-            mcp_manager=self._mcp_manager,
-            prefs_store=self._prefs_store,
-            cap_enforcer=self._cap_enforcer,
-            extra_tools=self._orch_submit_tools("tinker"),
+            wiring=StackWiring(
+                usage_store=self._usage_store,
+                mcp_manager=self._mcp_manager,
+                prefs_store=self._prefs_store,
+                cap_enforcer=self._cap_enforcer,
+                extra_tools=self._orch_submit_tools("tinker"),
+            ),
         )
 
     # ------------------------------------------------------------------ #

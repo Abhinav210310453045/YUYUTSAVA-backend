@@ -18,7 +18,6 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
-from typing import Any
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 
@@ -31,7 +30,7 @@ from yuyutsava.core.async_host import (
     async_subagents_enabled,
     start_background,
 )
-from yuyutsava.core.deps import MasterDeps
+from yuyutsava.core.deps import MasterDeps, StackWiring
 from yuyutsava.core.engine import AgentBundle, build_tinker_agent
 from yuyutsava.core.stores import build_master_stores
 from yuyutsava.llm.settings import LlmSettings
@@ -51,21 +50,19 @@ async def build_tinker_stack(
     bash_timeout_sec: int,
     search_config: SearchConfig,
     checkpointer: BaseCheckpointSaver,
-    usage_store: Any | None = None,
-    mcp_manager: Any | None = None,
-    prefs_store: Any | None = None,
-    cap_enforcer: Any | None = None,
-    extra_tools: "list[Any] | None" = None,
+    wiring: StackWiring | None = None,
 ) -> AgentBundle:
     """Build one card's TinkerAgent bundle.
 
     ``workspace`` is the daemon/CLI workspace (skill discovery scope);
     ``card_workspace`` is the card's blob dir — the agent's actual WORKSPACE
-    zone, where tr_* and vis_* output lands. ``mcp_manager`` is the daemon's
-    :class:`~yuyutsava.mcp.loader.MCPClientManager`; when present the tinker
+    zone, where tr_* and vis_* output lands. ``wiring`` is what the daemon
+    supplies (see :class:`StackWiring`); with its ``mcp_manager`` the tinker
     gets the user-configured MCP tools scoped to ``"tinker"``, same wiring as
     the orchestrator master.
     """
+    wiring = wiring or StackWiring()
+    mcp_manager = wiring.mcp_manager
     skill_registry = SkillRegistry(workspace_dir=WorkspaceLayout.for_workspace(workspace).skills)
     # Same wiring as the conversational stack (the retrieval sync also indexes
     # the bundled tinker skills, agent-tagged by their bundled/tinker/ dir).
@@ -144,11 +141,11 @@ async def build_tinker_stack(
             compaction_model=stores.compaction_model,
             skill_store=skill_store,
             transcript_index=stores.context.transcript_index,
-            usage_store=usage_store,
+            usage_store=wiring.usage_store,
             mcp_tools=mcp_tools,
-            prefs_store=prefs_store,
-            cap_enforcer=cap_enforcer,
-            extra_tools=extra_tools,
+            prefs_store=wiring.prefs_store,
+            cap_enforcer=wiring.cap_enforcer,
+            extra_tools=wiring.extra_tools,
             # budget_tokens deliberately unset — build_tinker_agent supplies
             # TINKER_BUDGET_TOKENS, which is what this call has always got.
         ),

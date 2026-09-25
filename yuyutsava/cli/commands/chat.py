@@ -37,9 +37,7 @@ async def run_chat(
     """Drive one CLI task end-to-end. Returns process exit code."""
     workspace = opts.workspace
     settings = opts.settings
-    execution_mode = opts.execution_mode
     docker_settings = opts.docker_settings
-    local_settings = opts.local_settings
     search_config = opts.search_config
     bash_timeout_sec = opts.bash_timeout_sec
     recursion_limit = opts.recursion_limit
@@ -54,10 +52,8 @@ async def run_chat(
         bundle = await build_agent_stack(
             workspace,
             settings,
+            execution=opts.execution,
             bash_timeout_sec=bash_timeout_sec,
-            execution_mode=execution_mode,
-            docker_settings=docker_settings,
-            local_settings=local_settings,
             permission_check=permission_check,
             search_config=search_config,
             checkpointer=checkpointer,

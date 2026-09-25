@@ -96,9 +96,34 @@ class MasterDeps:
         return dataclass_replace(self, **changes)
 
 
+@dataclass(frozen=True)
+class StackWiring:
+    """What a daemon hands a chat or tinker stack that a standalone CLI does not.
+
+    Every field defaults to absent, which is the standalone CLI: it starts its
+    own MCP manager from the workspace config and builds its own usage store.
+    ``runtime_settings`` carries the user's dedicated-subagent switches (the
+    chat bundle is cached across conversations, so the toggle is enforced per
+    call rather than baked into the roster); ``extra_subagents`` join the sync
+    ``task`` roster beside general-purpose; ``extra_tools`` are one-off daemon
+    tools (e.g. orch_submit); ``mcp_manager_factory`` is the test seam for the
+    manager a standalone stack starts.
+    """
+
+    mcp_manager: Any | None = None
+    mcp_manager_factory: Any | None = None
+    usage_store: Any | None = None
+    budget_tokens: int | None = None
+    prefs_store: Any | None = None
+    runtime_settings: Any | None = None
+    cap_enforcer: Any | None = None
+    extra_subagents: list[Any] | None = None
+    extra_tools: list[Any] | None = None
+
+
 #: The tinker agent's own budget. It works a single TODO card, so its context is
 #: bounded by that card rather than by an open-ended conversation, and a cap
 #: keeps a runaway think loop from spending the session.
 TINKER_BUDGET_TOKENS = 60_000
 
-__all__ = ["TINKER_BUDGET_TOKENS", "MasterDeps"]
+__all__ = ["TINKER_BUDGET_TOKENS", "MasterDeps", "StackWiring"]

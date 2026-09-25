@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
@@ -69,3 +69,12 @@ class LocalSettings:
             sandbox_dir=Path(raw_sandbox) if raw_sandbox else None,
             output_dir=Path(raw_output) if raw_output else None,
         )
+
+
+@dataclass(frozen=True)
+class ExecutionSettings:
+    """Where an agent's tools run: the host, or a Docker sandbox with its limits."""
+
+    mode: Literal["local", "docker"] = "local"
+    docker: DockerSettings = field(default_factory=DockerSettings)
+    local: LocalSettings = field(default_factory=LocalSettings)

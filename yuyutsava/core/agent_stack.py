@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 
@@ -24,7 +24,7 @@ from yuyutsava.agents.general_purpose.agent import GeneralPurposeAgent
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
 from yuyutsava.agents.task_runner.tools import set_default_consent
 from yuyutsava.agents.tinker.subagent import make_tinker_subagent
-from yuyutsava.config.execution import DockerSettings, LocalSettings
+from yuyutsava.config.execution import ExecutionSettings
 from yuyutsava.config.search import SearchConfig
 from yuyutsava.consent import ConsentRegistry
 from yuyutsava.core.async_host import (
@@ -33,7 +33,7 @@ from yuyutsava.core.async_host import (
     async_subagents_enabled,
     start_background,
 )
-from yuyutsava.core.deps import MasterDeps
+from yuyutsava.core.deps import MasterDeps, StackWiring
 from yuyutsava.core.engine import AgentBundle, build_cli_deepagent
 from yuyutsava.core.stores import build_master_stores
 from yuyutsava.llm.pricing import refresh_price_cache
@@ -122,54 +122,39 @@ async def build_agent_stack(
     workspace: Path,
     settings: LlmSettings,
     *,
+    execution: ExecutionSettings,
     bash_timeout_sec: int,
-    execution_mode: Literal["local", "docker"],
-    docker_settings: DockerSettings,
-    local_settings: LocalSettings,
     permission_check: bool,
     search_config: SearchConfig,
     checkpointer: BaseCheckpointSaver,
-    mcp_manager: Any | None = None,
-    mcp_manager_factory: Any | None = None,
-    usage_store: Any | None = None,
-    budget_tokens: int | None = None,
-    prefs_store: Any | None = None,
-    runtime_settings: Any | None = None,
-    cap_enforcer: Any | None = None,
-    extra_subagents: "list[Any] | None" = None,
-    extra_tools: "list[Any] | None" = None,
+    wiring: StackWiring | None = None,
     front: str = "app",
 ) -> AgentBundle:
     """Build the conversational deepagent + its subagent stack.
 
-    The trailing keyword group is daemon-supplied wiring (all default to
-    None, keeping the standalone CLI's behavior unchanged): ``mcp_manager``
-    scopes user-configured MCP tools to ``"cli"`` — when the daemon passes
-    none, the stack starts its OWN from the merged global + workspace
-    ``mcp_config.json`` (``start_manager_for_workspace``; ``None`` when
+    ``wiring`` is what the daemon supplies (see :class:`StackWiring`); absent,
+    this is the standalone CLI. Without an ``mcp_manager`` the stack starts its
+    OWN from the merged global + workspace ``mcp_config.json`` (``None`` when
     nothing is configured) and hands it to the bundle, which stops it in
-    ``aclose``; ``mcp_manager_factory`` is that helper's test seam; ``usage_store`` /
-    ``budget_tokens`` attach the orchestrator's UsagePolicy/BudgetPolicy pair;
-    ``prefs_store`` adds the per-turn USER PREFERENCES injector;
-    ``runtime_settings`` carries the user's dedicated-subagent switches (this
-    bundle is cached across conversations, so the toggle is enforced per call
-    rather than baked into the roster); ``cap_enforcer`` rate-caps ws_*
-    searches; ``extra_subagents`` join the sync ``task`` roster next to
-    general-purpose; ``extra_tools`` are one-off
-    daemon tools (e.g. orch_submit).
+    ``aclose``. ``usage_store`` / ``budget_tokens`` attach the UsagePolicy /
+    BudgetPolicy pair; ``prefs_store`` adds the per-turn USER PREFERENCES
+    injector; ``cap_enforcer`` rate-caps ws_* searches.
 
     The CLI REPL and the daemon-hosted text/voice conversations build this same
     stack (see :class:`yuyutsava.conversation.ConversationService`). With
     ``YUYUTSAVA_ASYNC_SUBAGENTS=1`` it also owns or attaches to the background
     host (:func:`yuyutsava.core.async_host.start_background`).
     """
+    wiring = wiring or StackWiring()
+    mcp_manager = wiring.mcp_manager
+    usage_store = wiring.usage_store
     # Every per-workspace path (sandbox, outputs, skills, scratch) comes from
     # the one layout helper; the explicit --sandbox-dir/--output-dir overrides
     # ride through it rather than around it.
     layout = WorkspaceLayout.for_workspace(
         workspace,
-        sandbox_override=local_settings.sandbox_dir,
-        outputs_override=local_settings.output_dir,
+        sandbox_override=execution.local.sandbox_dir,
+        outputs_override=execution.local.output_dir,
     )
     skill_registry = SkillRegistry(workspace_dir=layout.skills)
     # CLI chat threads are the longest-lived in the system, so offload and
@@ -201,7 +186,7 @@ async def build_agent_stack(
     # bundle owns — and stops — only the one started here.
     owned_mcp = None
     if mcp_manager is None:
-        owned_mcp = await start_manager_for_workspace(workspace, factory=mcp_manager_factory)
+        owned_mcp = await start_manager_for_workspace(workspace, factory=wiring.mcp_manager_factory)
         mcp_manager = owned_mcp
 
     background = Background()
@@ -248,7 +233,7 @@ async def build_agent_stack(
             permission_check=permission_check,
             search_config=search_config,
             checkpointer=checkpointer,
-            subagents=[general_purpose, *(extra_subagents or [])],
+            subagents=[general_purpose, *(wiring.extra_subagents or [])],
             async_subagents=background.subagents,
             async_host_url=background.host_url,
             async_task_mirror=background.mirror,
@@ -265,16 +250,16 @@ async def build_agent_stack(
             # SQLite fallback, which the middleware treats as a no-op.
             transcript_index=stores.context.transcript_index,
             mcp_tools=(mcp_manager.tools_for("cli") if mcp_manager is not None else None),
-            cap_enforcer=cap_enforcer,
-            budget_tokens=budget_tokens,
+            cap_enforcer=wiring.cap_enforcer,
+            budget_tokens=wiring.budget_tokens,
             usage_store=usage_store,
-            prefs_store=prefs_store,
-            runtime_settings=runtime_settings,
-            extra_tools=extra_tools,
+            prefs_store=wiring.prefs_store,
+            runtime_settings=wiring.runtime_settings,
+            extra_tools=wiring.extra_tools,
         ),
-        execution_mode=execution_mode,
-        docker_settings=docker_settings,
-        local_settings=local_settings,
+        execution_mode=execution.mode,
+        docker_settings=execution.docker,
+        local_settings=execution.local,
         front=front,
     )
     # Hand the CLI-owned pool + embedder (+ MCP manager, when this stack started

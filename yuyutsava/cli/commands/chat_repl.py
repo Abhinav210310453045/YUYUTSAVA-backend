@@ -1038,10 +1038,8 @@ async def run_chat_repl(
         builder = build_agent_stack(
             workspace,
             opts.settings,
+            execution=opts.execution,
             bash_timeout_sec=opts.bash_timeout_sec,
-            execution_mode=opts.execution_mode,  # type: ignore[arg-type]
-            docker_settings=opts.docker_settings,
-            local_settings=opts.local_settings,
             permission_check=opts.permission_check,
             search_config=opts.search_config,
             checkpointer=checkpointer,
