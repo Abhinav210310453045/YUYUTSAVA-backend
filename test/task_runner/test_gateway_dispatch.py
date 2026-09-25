@@ -1,6 +1,6 @@
 """What each operation runs once the gateway allows it.
 
-``TaskRunnerAgent._execute`` dispatches by operation, and EXECUTE further by
+``dispatch.run_operation`` dispatches by operation, and EXECUTE further by
 what the tool put in ``additional_context``: a grep, a fetch, a Python script,
 or a shell command — sandboxed (the exec backend decides where) or on the host.
 Driven through ``handle`` in zones that need no prompt, with a stand-in exec
@@ -17,6 +17,7 @@ from typing import Any
 from unittest import mock
 
 from yuyutsava.agents.task_runner import agent as agent_mod
+from yuyutsava.agents.task_runner import executor
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
 from yuyutsava.models.operations import OperationRequest, OperationType
 
@@ -67,7 +68,7 @@ class DispatchCase(unittest.TestCase):
             return RAW
 
         with (
-            mock.patch.object(agent_mod._exec, "execute_run", fake_run),
+            mock.patch.object(executor, "execute_run", fake_run),
             mock.patch.object(agent_mod, "interrupt", lambda payload: "approve"),
         ):
             return asyncio.run(asyncio.wait_for(self.agent.handle(request), 20))
@@ -143,7 +144,7 @@ class Execute(DispatchCase):
             calls.append((url, dest, user_agent, timeout))
             return RAW
 
-        with mock.patch.object(agent_mod._exec, "execute_fetch", fake_fetch):
+        with mock.patch.object(executor, "execute_fetch", fake_fetch):
             self._shell(fetch={"url": "https://x", "dest": "d.bin", "user_agent": "ua"})
         self.assertEqual(calls, [("https://x", Path("d.bin"), "ua", 120)])
 

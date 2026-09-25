@@ -634,6 +634,15 @@ frame tests pass (the one known failure excepted); the recovery tests are
 negative-controlled. A live chat turn on the daemon replied and titled its
 session. Classes over 400 lines: **5**.
 
+**`TaskRunnerAgent` 425 → 320 lines.** The gateway decides *whether* an
+operation runs; `task_runner/dispatch.run_operation` decides *what* runs:
+one executor call per operation type, and for EXECUTE a grep, fetch, script
+or shell command. It takes the exec backend and sandbox root at call time, so
+a backend swapped in after construction still applies. The characterization
+tests written earlier in W4 drive it through `handle`, and they are
+negative-controlled. Live: a read, a listing and a sandboxed command went
+through the gateway on the daemon. Classes over 400 lines: **4**.
+
 ## W5 — Errors, logging, state, defects
 
 - **Classify the 58 silent handlers** as boundary (log plus reason) or internal (narrow type). (`R-ERR-01`, `R-ERR-02`)
