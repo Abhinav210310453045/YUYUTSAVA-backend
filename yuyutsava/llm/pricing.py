@@ -121,11 +121,26 @@ def resolve_model_price(settings: object) -> Price | None:
 # --------------------------------------------------------------------------- #
 
 
+class _UnreadableFile(Exception):
+    """The file exists but does not hold a JSON object."""
+
+
 def _read_json(path: Path) -> dict:
-    try:
-        return json.loads(path.read_text())
-    except Exception:
+    """The JSON object in *path*; ``{}`` when there is no file.
+
+    An existing file that cannot be read or parsed, or holds something other
+    than an object, raises :class:`_UnreadableFile` — "missing" is safe to
+    write over, "unreadable" is not.
+    """
+    if not path.exists():
         return {}
+    try:
+        obj = json.loads(path.read_text())
+    except (OSError, ValueError) as exc:
+        raise _UnreadableFile(str(exc)) from exc
+    if not isinstance(obj, dict):
+        raise _UnreadableFile(f"expected a JSON object, found {type(obj).__name__}")
+    return obj
 
 
 def _write_json_atomic(path: Path, obj: dict) -> None:
@@ -146,8 +161,9 @@ def refresh_price_cache(
     Skips the network when a fresh (< ``ttl_sec``) price for this exact model is
     already cached *and* present in the price file. Merges into the file rather
     than overwriting it, so a hand-authored entry is preserved on the next
-    ``load_price_table`` (file entries win by the same key). Never raises;
-    returns the ``(in, out)`` price now in effect, or None.
+    ``load_price_table`` (file entries win by the same key); a file it cannot
+    read is left untouched. Never raises; returns the ``(in, out)`` price now in
+    effect, or None.
     """
     try:
         model = str(getattr(settings, "model", "") or "")
@@ -156,8 +172,22 @@ def refresh_price_cache(
         base = dir_path or state_dir()
         price_path = base / PRICE_FILE
         meta_path = base / _META_FILE
-        prices = _read_json(price_path)
-        meta = _read_json(meta_path)
+        try:
+            prices = _read_json(price_path)
+        except _UnreadableFile as exc:
+            # Writing now would replace every hand-authored price with one
+            # entry. Leave the file for the user; the built-in table serves.
+            logger.warning(
+                "pricing: %s is unreadable (%s) — leaving it untouched; fix or "
+                "delete it to cache live prices",
+                price_path,
+                exc,
+            )
+            return None
+        try:
+            meta = _read_json(meta_path)
+        except _UnreadableFile:
+            meta = {}  # our own cache of fetch times: safe to rebuild
         now = time.time()
 
         cached = meta.get(model)

@@ -220,7 +220,9 @@ resolved provider, not by string.
 
 ## R-BUG-02 — A corrupt price file is overwritten with one entry
 
-**Severity** P1 · **Wave** W5 (`fix:` commit) · **Status** Open
+**Severity** P1 · **Wave** W5 (`fix:` commit) · **Status** **Fixed** (2026-09-25).
+A missing file is created; an unreadable file, or one that is not a JSON
+object, is left byte-for-byte with a warning naming it.
 
 **Claim.** `refresh_price_cache` treats an unreadable price file as empty, then
 atomically writes back only the newly fetched model.
