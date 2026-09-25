@@ -47,6 +47,7 @@ from yuyutsava.config.search import SearchConfig
 from yuyutsava.consent import ConsentRegistry
 from yuyutsava.context.config import ContextSettings
 from yuyutsava.core.async_host import BackgroundStores, build_async_host
+from yuyutsava.core.deps import StackWiring
 from yuyutsava.core.model_router import ComplexityScorer, ModelRouter
 from yuyutsava.core.stores import StoreFactory
 from yuyutsava.daemon.ask_registry import AskRegistry
@@ -1622,14 +1623,16 @@ async def build_web(
         settings=boot.models.orchestrator_settings,
         search_config=boot.search_config,
         voice_store=st.voice_store,
-        usage_store=st.usage_store,
-        mcp_manager=boot.mcp_manager,
         launch_index=boot.launch_index,
-        prefs_store=pol.prefs_store,
-        runtime_settings=pol.runtime_settings,
-        cap_enforcer=pol.cap_enforcer,
         task_submission=loops.task_submission,
-        extra_subagents=boot.subagents.make_peers(),
+        wiring=StackWiring(
+            usage_store=st.usage_store,
+            mcp_manager=boot.mcp_manager,
+            prefs_store=pol.prefs_store,
+            runtime_settings=pol.runtime_settings,
+            cap_enforcer=pol.cap_enforcer,
+            extra_subagents=boot.subagents.make_peers(),
+        ),
     )
 
     # An ask answered after a restart has no waiter left to wake — the

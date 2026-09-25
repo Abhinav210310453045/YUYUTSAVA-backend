@@ -46,6 +46,28 @@ class ChatBundleHasNoBudget(unittest.TestCase):
         self.assertIn(PolicyKind.BUDGET, ORCHESTRATOR_PROFILE.policies)
 
 
+class ManagerRefusesABudget(unittest.TestCase):
+    """The source checks above cover the manager's own code; a budget could
+    still arrive inside the wiring it is given, so the constructor refuses."""
+
+    def test_wiring_with_a_budget_is_refused(self):
+        from pathlib import Path
+
+        from yuyutsava.core.deps import StackWiring
+
+        with self.assertRaisesRegex(ValueError, "no budget"):
+            cm.ConversationManager(
+                workspace=Path("."), checkpointer=None, wiring=StackWiring(budget_tokens=1000)
+            )
+
+    def test_wiring_without_one_is_accepted(self):
+        from pathlib import Path
+
+        from yuyutsava.core.deps import StackWiring
+
+        cm.ConversationManager(workspace=Path("."), checkpointer=None, wiring=StackWiring())
+
+
 class TinkerBundleUnchanged(unittest.TestCase):
     def test_tinker_build_is_untouched_by_this_change(self):
         src = inspect.getsource(cm.ConversationManager._build_tinker_bundle)

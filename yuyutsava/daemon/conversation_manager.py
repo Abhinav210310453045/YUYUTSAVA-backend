@@ -26,6 +26,7 @@ orchestrator the CLI uses.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import functools
 import logging
 from pathlib import Path
@@ -87,15 +88,25 @@ class ConversationManager:
         recursion_limit: int = 1000,
         store: SessionStore | None = None,
         voice_store: Any | None = None,
-        usage_store: Any | None = None,
-        mcp_manager: Any | None = None,
         launch_index: Any | None = None,
-        prefs_store: Any | None = None,
-        runtime_settings: Any | None = None,
-        cap_enforcer: Any | None = None,
         task_submission: Any | None = None,
-        extra_subagents: Any | None = None,
+        wiring: StackWiring | None = None,
     ) -> None:
+        """``wiring`` is what every conversation bundle is built with.
+
+        Its ``runtime_settings`` (the dedicated-subagent switches) ride along
+        rather than being baked into a roster: the master bundle is built once
+        and reused by every conversation, so the toggle is enforced per call by
+        SubagentGatePolicy. It must carry no budget — a chat's spend is
+        cumulative and never resets, so a cap would eventually refuse every
+        turn.
+        """
+        wiring = wiring or StackWiring()
+        if wiring.budget_tokens is not None:
+            raise ValueError(
+                "conversation bundles take no budget: a chat's spend is cumulative "
+                "and never resets, so a cap would eventually refuse every turn"
+            )
         self._workspace = workspace
         self._checkpointer = checkpointer
         self._settings = settings
@@ -103,27 +114,12 @@ class ConversationManager:
         self._recursion_limit = recursion_limit
         self._store = store
         self.voice_store = voice_store  # storage.voice_store.VoiceMessageStore | None
-        self._usage_store = (
-            usage_store  # storage.usage.UsageStore | None (chat + tinker accounting)
+        self._wiring = dataclasses.replace(
+            wiring, extra_subagents=list(wiring.extra_subagents or [])
         )
-        self._mcp_manager = (
-            mcp_manager  # mcp.loader.MCPClientManager | None (chat + tinker MCP tools)
-        )
-        self._prefs_store = (
-            prefs_store  # storage.prefs.PrefsStore | None (per-turn prefs injection)
-        )
-        # prefs.runtime.RuntimeSettings | None — the dedicated-subagent switches.
-        # The master bundle below is built once and reused by every conversation,
-        # so the toggle can't be baked into its roster; it rides along and is
-        # enforced per model/tool call by SubagentGatePolicy.
-        self._runtime_settings = runtime_settings
-        self._cap_enforcer = cap_enforcer  # websearch.tools._CapEnforcer | None (ws_* rate cap)
         self._task_submission = (
             task_submission  # daemon.task_submission.TaskSubmissionService | None
         )
-        self._extra_subagents = list(
-            extra_subagents or []
-        )  # extra sync task roster (file-organizer, …)
         # async_subagents.launch_index.LaunchIndex | None — links bg tasks a
         # conversation launches back to its thread, so the watcher's completion
         # bridge can wake the master on THIS conversation (the orchestrator loop
@@ -211,15 +207,7 @@ class ConversationManager:
             permission_check=True,
             search_config=self._resolved_search(),
             checkpointer=self._checkpointer,
-            wiring=StackWiring(
-                mcp_manager=self._mcp_manager,
-                usage_store=self._usage_store,
-                prefs_store=self._prefs_store,
-                runtime_settings=self._runtime_settings,
-                cap_enforcer=self._cap_enforcer,
-                extra_subagents=self._extra_subagents,
-                extra_tools=self._orch_submit_tools("chat"),
-            ),
+            wiring=dataclasses.replace(self._wiring, extra_tools=self._orch_submit_tools("chat")),
         )
 
     async def _build_tinker_bundle(self, card_id: str) -> AgentBundle:
@@ -240,11 +228,13 @@ class ConversationManager:
             bash_timeout_sec=_bash_timeout_sec(),
             search_config=self._resolved_search(),
             checkpointer=self._checkpointer,
+            # The tinker gets the stores, MCP tools and rate cap, but neither
+            # the subagent switches nor the chat's extra roster.
             wiring=StackWiring(
-                usage_store=self._usage_store,
-                mcp_manager=self._mcp_manager,
-                prefs_store=self._prefs_store,
-                cap_enforcer=self._cap_enforcer,
+                usage_store=self._wiring.usage_store,
+                mcp_manager=self._wiring.mcp_manager,
+                prefs_store=self._wiring.prefs_store,
+                cap_enforcer=self._wiring.cap_enforcer,
                 extra_tools=self._orch_submit_tools("tinker"),
             ),
         )
