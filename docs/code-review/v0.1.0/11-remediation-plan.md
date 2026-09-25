@@ -613,6 +613,17 @@ download errors, `exec_argv`) are identical before and after. A live
 docker-mode turn wrote through the `/output` mount. Functions over ten
 parameters: **2**; classes over 400 lines: **7**.
 
+**`UnifiedTodoStore` 489 → 399 lines.** Every INSERT's values now come from
+its column list (`_column_values`), so the values can no longer drift out of
+column order. There is one per-column placeholder rule (`_param`) where there
+were three copies, and `update_note`/`assign_note` share their
+refetch-bump-return tail. The card and summary row mappers sit with the other
+mappers. Checked by a trace of every statement, parameter and result across
+all 20 methods on both backends: byte-identical, and negative-controlled.
+The 87-case parity suite also passes on both backends, against a scratch
+database rather than the board's, and a live board round trip passed on the
+daemon. Classes over 400 lines: **6**.
+
 ## W5 — Errors, logging, state, defects
 
 - **Classify the 58 silent handlers** as boundary (log plus reason) or internal (narrow type). (`R-ERR-01`, `R-ERR-02`)

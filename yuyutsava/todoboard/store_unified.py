@@ -117,11 +117,23 @@ def _select(d: Dialect, cols: tuple[str, ...], prefix: str = "") -> str:
     return ", ".join(out)
 
 
-def _values(d: Dialect, cols: tuple[str, ...]) -> str:
-    """Placeholder list matching *cols*, with the right cast per column kind."""
-    return ", ".join(
-        d.ts_param() if c in _TS else d.json_param() if c in _JSON else d.ph() for c in cols
-    )
+def _param(d: Dialect, col: str) -> str:
+    """The placeholder for *col*, with the cast its kind needs."""
+    return d.ts_param() if col in _TS else d.json_param() if col in _JSON else d.ph()
+
+
+def _insert_sql(d: Dialect, table: str, cols: tuple[str, ...]) -> str:
+    placeholders = ", ".join(_param(d, c) for c in cols)
+    return f"INSERT INTO {table} ({', '.join(cols)}) VALUES ({placeholders})"  # noqa: S608
+
+
+def _column_values(record: Any, cols: tuple[str, ...], **encoded: Any) -> tuple:
+    """*record*'s fields in *cols* order; *encoded* replaces the ones stored differently.
+
+    Built from the column list, so the values can never drift out of the order
+    the INSERT names its columns in.
+    """
+    return tuple(encoded[c] if c in encoded else getattr(record, c) for c in cols)
 
 
 class TodoSchema(BaseSqliteStore):
@@ -274,6 +286,39 @@ def _attachment(r: Any, d: Dialect) -> TodoAttachmentV1:
     )
 
 
+def _card(r: Any, d: Dialect, objs: list, notes: list, atts: list) -> TodoCardV1:
+    return TodoCardV1(
+        card_id=r["card_id"],
+        title=r["title"],
+        status=r["status"],
+        # INTEGER on both backends; callers get a bool.
+        pinned=bool(r["pinned"]),
+        tags=_json_list(d, r["tags"]),
+        workspace_path=r["workspace_path"],
+        created_ts=float(r["created_ts"]),
+        updated_ts=float(r["updated_ts"]),
+        objectives=[_objective(o, d) for o in objs],
+        notes=[_note(n, d) for n in notes],
+        attachments=[_attachment(a, d) for a in atts],
+    )
+
+
+def _summary(r: Any, d: Dialect) -> TodoCardSummaryV1:
+    return TodoCardSummaryV1(
+        card_id=r["card_id"],
+        title=r["title"],
+        status=r["status"],
+        pinned=bool(r["pinned"]),
+        tags=_json_list(d, r["tags"]),
+        note_count=r["note_count"],
+        attachment_count=r["attachment_count"],
+        objective_count=r["objective_count"],
+        objective_done_count=r["objective_done_count"],
+        created_ts=float(r["created_ts"]),
+        updated_ts=float(r["updated_ts"]),
+    )
+
+
 def _json_dict(d: Dialect, raw: Any) -> dict:
     """jsonb parses to a dict; TEXT needs decoding. Malformed degrades to {}."""
     val = d.json_value(raw)
@@ -298,17 +343,9 @@ class UnifiedTodoStore(TodoStore):
 
         async def _do(conn):
             await conn.execute(
-                f"INSERT INTO todo_cards ({', '.join(_CARD_COLS)}) "
-                f"VALUES ({_values(d, _CARD_COLS)})",
-                (
-                    card.card_id,
-                    card.title,
-                    card.status,
-                    int(card.pinned),
-                    _tags_json(card.tags),
-                    card.workspace_path,
-                    card.created_ts,
-                    card.updated_ts,
+                _insert_sql(d, "todo_cards", _CARD_COLS),
+                _column_values(
+                    card, _CARD_COLS, pinned=int(card.pinned), tags=_tags_json(card.tags)
                 ),
             )
 
@@ -324,38 +361,12 @@ class UnifiedTodoStore(TodoStore):
             row = await cur.fetchone()
             if row is None:
                 return None
-            cur = await conn.execute(
-                f"SELECT {_select(d, _OBJ_COLS)} FROM todo_objectives "
-                f"WHERE card_id = {d.ph()} ORDER BY order_idx, created_ts",
-                (card_id,),
+            objs = await self._children(
+                conn, "todo_objectives", _OBJ_COLS, card_id, "order_idx, created_ts"
             )
-            objs = await cur.fetchall()
-            cur = await conn.execute(
-                f"SELECT {_select(d, _NOTE_COLS)} FROM todo_notes "
-                f"WHERE card_id = {d.ph()} ORDER BY created_ts",
-                (card_id,),
-            )
-            notes = await cur.fetchall()
-            cur = await conn.execute(
-                f"SELECT {_select(d, _ATT_COLS)} FROM todo_attachments "
-                f"WHERE card_id = {d.ph()} ORDER BY created_ts",
-                (card_id,),
-            )
-            atts = await cur.fetchall()
-        return TodoCardV1(
-            card_id=row["card_id"],
-            title=row["title"],
-            status=row["status"],
-            # INTEGER on both backends; callers get a bool.
-            pinned=bool(row["pinned"]),
-            tags=_json_list(d, row["tags"]),
-            workspace_path=row["workspace_path"],
-            created_ts=float(row["created_ts"]),
-            updated_ts=float(row["updated_ts"]),
-            objectives=[_objective(o, d) for o in objs],
-            notes=[_note(n, d) for n in notes],
-            attachments=[_attachment(a, d) for a in atts],
-        )
+            notes = await self._children(conn, "todo_notes", _NOTE_COLS, card_id)
+            atts = await self._children(conn, "todo_attachments", _ATT_COLS, card_id)
+        return _card(row, d, objs, notes, atts)
 
     async def update_card(self, card_id: str, fields: dict[str, Any]) -> bool:
         # Whitelist first: keys are interpolated into the SQL below, so this is
@@ -369,10 +380,7 @@ class UnifiedTodoStore(TodoStore):
         if "tags" in cols:
             cols["tags"] = _tags_json(cols["tags"])
         d = self._d
-        sets = ", ".join(
-            f"{k} = {d.ts_param() if k in _TS else d.json_param() if k in _JSON else d.ph()}"
-            for k in cols
-        )
+        sets = ", ".join(f"{k} = {_param(d, k)}" for k in cols)
 
         async def _do(conn):
             cur = await conn.execute(
@@ -386,14 +394,9 @@ class UnifiedTodoStore(TodoStore):
     async def delete_card(self, card_id: str) -> bool:
         """Drop the card and its four child tables.
 
-        Children are deleted **explicitly**, not left to a cascade. Postgres has
-        ``ON DELETE CASCADE`` and SQLite has no foreign keys at all on these
-        tables, so relying on the constraint would mean two mechanisms for one
-        behaviour — and a constraint that quietly lost its ``ON DELETE`` would
-        change what happens on one backend only. The Postgres keys remain as a
-        safety net.
-
-        Blob-dir cleanup is the exchange's job; it knows ``workspace_path``.
+        Children are deleted explicitly on both backends, not left to Postgres's
+        cascade (the module docstring says why). Blob-dir cleanup is the
+        exchange's job; it knows ``workspace_path``.
         """
         d = self._d
 
@@ -428,22 +431,7 @@ class UnifiedTodoStore(TodoStore):
                 params,
             )
             rows = await cur.fetchall()
-        return [
-            TodoCardSummaryV1(
-                card_id=r["card_id"],
-                title=r["title"],
-                status=r["status"],
-                pinned=bool(r["pinned"]),
-                tags=_json_list(d, r["tags"]),
-                note_count=r["note_count"],
-                attachment_count=r["attachment_count"],
-                objective_count=r["objective_count"],
-                objective_done_count=r["objective_done_count"],
-                created_ts=float(r["created_ts"]),
-                updated_ts=float(r["updated_ts"]),
-            )
-            for r in rows
-        ]
+        return [_summary(r, d) for r in rows]
 
     async def list_card_ids(self) -> list[str]:
         async with self._d.reading() as conn:
@@ -472,6 +460,28 @@ class UnifiedTodoStore(TodoStore):
             (ts, card_id),
         )
 
+    async def _children(
+        self, conn, table: str, cols: tuple[str, ...], card_id: str, order: str = "created_ts"
+    ) -> list:
+        cur = await conn.execute(
+            f"SELECT {_select(self._d, cols)} FROM {table} "  # noqa: S608
+            f"WHERE card_id = {self._d.ph()} ORDER BY {order}",
+            (card_id,),
+        )
+        return await cur.fetchall()
+
+    async def _retouched_note(
+        self, conn, cur, note_id: str, updated_ts: float
+    ) -> TodoNoteV1 | None:
+        """After an UPDATE of one note: the note as stored, its card bumped."""
+        if (cur.rowcount or 0) == 0:
+            return None
+        row = await self._fetch_one(conn, "todo_notes", "note_id", _NOTE_COLS, note_id)
+        if row is None:
+            return None
+        await self._bump(conn, row["card_id"], updated_ts)
+        return _note(row, self._d)
+
     async def _fetch_one(self, conn, table: str, id_col: str, cols, ident: str):
         cur = await conn.execute(
             f"SELECT {_select(self._d, cols)} FROM {table} "  # noqa: S608
@@ -489,18 +499,7 @@ class UnifiedTodoStore(TodoStore):
             if not await self._card_exists(conn, note.card_id):
                 return False
             await conn.execute(
-                f"INSERT INTO todo_notes ({', '.join(_NOTE_COLS)}) "
-                f"VALUES ({_values(d, _NOTE_COLS)})",
-                (
-                    note.note_id,
-                    note.card_id,
-                    note.body,
-                    note.author,
-                    note.objective_id,
-                    note.phase,
-                    note.created_ts,
-                    note.updated_ts,
-                ),
+                _insert_sql(d, "todo_notes", _NOTE_COLS), _column_values(note, _NOTE_COLS)
             )
             await self._bump(conn, note.card_id, note.updated_ts)
             return True
@@ -516,13 +515,7 @@ class UnifiedTodoStore(TodoStore):
                 f"updated_ts = {d.ts_param()} WHERE note_id = {d.ph()}",
                 (body, updated_ts, note_id),
             )
-            if (cur.rowcount or 0) == 0:
-                return None
-            row = await self._fetch_one(conn, "todo_notes", "note_id", _NOTE_COLS, note_id)
-            if row is None:
-                return None
-            await self._bump(conn, row["card_id"], updated_ts)
-            return _note(row, d)
+            return await self._retouched_note(conn, cur, note_id, updated_ts)
 
         return await d.write(_do)
 
@@ -550,13 +543,7 @@ class UnifiedTodoStore(TodoStore):
                 f"updated_ts = {d.ts_param()} WHERE note_id = {d.ph()}",
                 (objective_id, phase, updated_ts, note_id),
             )
-            if (cur.rowcount or 0) == 0:
-                return None
-            row = await self._fetch_one(conn, "todo_notes", "note_id", _NOTE_COLS, note_id)
-            if row is None:
-                return None
-            await self._bump(conn, row["card_id"], updated_ts)
-            return _note(row, d)
+            return await self._retouched_note(conn, cur, note_id, updated_ts)
 
         return await d.write(_do)
 
@@ -569,19 +556,7 @@ class UnifiedTodoStore(TodoStore):
             if not await self._card_exists(conn, obj.card_id):
                 return False
             await conn.execute(
-                f"INSERT INTO todo_objectives ({', '.join(_OBJ_COLS)}) "
-                f"VALUES ({_values(d, _OBJ_COLS)})",
-                (
-                    obj.objective_id,
-                    obj.card_id,
-                    obj.title,
-                    obj.phase,
-                    obj.order_idx,
-                    obj.reason,
-                    obj.outcome,
-                    obj.created_ts,
-                    obj.updated_ts,
-                ),
+                _insert_sql(d, "todo_objectives", _OBJ_COLS), _column_values(obj, _OBJ_COLS)
             )
             await self._bump(conn, obj.card_id, obj.updated_ts)
             return True
@@ -603,7 +578,7 @@ class UnifiedTodoStore(TodoStore):
         if not cols:
             return await self.get_objective(objective_id)
         d = self._d
-        sets = ", ".join(f"{k} = {d.ts_param() if k in _TS else d.ph()}" for k in cols)
+        sets = ", ".join(f"{k} = {_param(d, k)}" for k in cols)
 
         async def _do(conn):
             cur = await conn.execute(
@@ -661,19 +636,8 @@ class UnifiedTodoStore(TodoStore):
             if not await self._card_exists(conn, att.card_id):
                 return False
             await conn.execute(
-                f"INSERT INTO todo_attachments ({', '.join(_ATT_COLS)}) "
-                f"VALUES ({_values(d, _ATT_COLS)})",
-                (
-                    att.attachment_id,
-                    att.card_id,
-                    att.kind,
-                    att.path,
-                    att.url,
-                    att.mime,
-                    att.title,
-                    json.dumps(att.meta or {}),
-                    att.created_ts,
-                ),
+                _insert_sql(d, "todo_attachments", _ATT_COLS),
+                _column_values(att, _ATT_COLS, meta=json.dumps(att.meta or {})),
             )
             await self._bump(conn, att.card_id, att.created_ts)
             return True
@@ -749,17 +713,8 @@ class UnifiedTodoStore(TodoStore):
 
         async def _do(conn):
             await conn.execute(
-                f"INSERT INTO todo_events ({', '.join(_EVENT_COLS)}) "
-                f"VALUES ({_values(d, _EVENT_COLS)})",
-                (
-                    ev.event_id,
-                    ev.card_id,
-                    ev.objective_id,
-                    ev.kind,
-                    json.dumps(ev.payload or {}),
-                    ev.actor,
-                    ev.created_ts,
-                ),
+                _insert_sql(d, "todo_events", _EVENT_COLS),
+                _column_values(ev, _EVENT_COLS, payload=json.dumps(ev.payload or {})),
             )
 
         await d.write(_do)
