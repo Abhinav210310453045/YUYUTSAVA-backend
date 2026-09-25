@@ -10,8 +10,8 @@ Mounts (set up by ``core.engine``'s docker branch):
 * ``extra_mounts`` — the workspace itself at ``/workspace``, read-only, so a
   container process can read project files but can only write under
   ``/yuyutsava``.
-* optional ``export_host`` → ``/output`` (legacy; deliverables now land in
-  ``/yuyutsava/outputs`` = ``<ws>/.yuyutsava/outputs`` on the host).
+* optional ``DockerSettings.export_dir`` → ``/output`` (deliverables normally
+  land in ``/yuyutsava/outputs`` = ``<ws>/.yuyutsava/outputs`` on the host).
 
 ``tr_execute_in_sandbox`` / ``tr_run_python`` reach the container through
 :meth:`DockerSandboxBackend.exec_argv` (see
@@ -30,7 +30,6 @@ import tempfile
 import uuid
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Literal
 
 from deepagents.backends.protocol import (
     EditResult,
@@ -42,6 +41,7 @@ from deepagents.backends.protocol import (
 )
 from deepagents.backends.sandbox import BaseSandbox
 
+from yuyutsava.config.execution import DockerSettings
 from yuyutsava.config.limits import LIMITS, TIMING
 from yuyutsava.storage.paths import CONTAINER_WORKSPACE_MOUNT
 
@@ -56,45 +56,66 @@ def _host_path_for_docker(p: Path) -> str:
     return str(p.resolve())
 
 
+def _empty_command() -> ExecuteResponse:
+    return ExecuteResponse(
+        output="Error: Command must be a non-empty string.", exit_code=1, truncated=False
+    )
+
+
+def _timed_out(seconds: int, *, custom: bool) -> ExecuteResponse:
+    if custom:
+        msg = (
+            f"Error: Command timed out after {seconds} seconds "
+            "(custom timeout). The command may be stuck or require more time."
+        )
+    else:
+        msg = (
+            f"Error: Command timed out after {seconds} seconds. "
+            "For long-running commands, re-run using the timeout parameter."
+        )
+    return ExecuteResponse(output=msg, exit_code=124, truncated=False)
+
+
+def _failed(e: Exception) -> ExecuteResponse:
+    return ExecuteResponse(
+        output=f"Error executing command ({type(e).__name__}): {e}", exit_code=1, truncated=False
+    )
+
+
 class DockerSandboxBackend(BaseSandbox):
     """``SandboxBackendProtocol`` backed by ``docker run`` + ``docker exec``."""
 
     def __init__(
         self,
+        settings: DockerSettings,
         *,
-        image: str,
         workspace_host: Path,
         container_workdir: str = CONTAINER_WORKSPACE_MOUNT,
-        export_host: Path | None = None,
         container_export_path: str = "/output",
-        network: Literal["bridge", "none"] = "bridge",
         timeout: int = DEFAULT_DOCKER_TIMEOUT,
         max_output_bytes: int = DEFAULT_MAX_OUTPUT_BYTES,
-        memory: str = "512m",
-        cpus: str = "1.0",
-        pids_limit: int = 100,
         extra_mounts: Sequence[tuple[Path, str, bool]] = (),
     ) -> None:
-        """``extra_mounts`` are ``(host_dir, container_path, read_only)`` bind
-        mounts added verbatim to ``docker run`` alongside the workspace mount."""
+        """Start the container ``settings`` describes.
+
+        ``extra_mounts`` are ``(host_dir, container_path, read_only)`` bind
+        mounts added verbatim to ``docker run`` alongside the workspace mount;
+        ``settings.export_dir``, when set, is mounted at ``container_export_path``.
+        """
         if timeout <= 0:
             msg = f"timeout must be positive, got {timeout}"
             raise ValueError(msg)
-        self._image = image
+        self._settings = settings
         self._workspace_host = workspace_host.resolve()
         self._container_workdir = container_workdir
         self._extra_mounts: list[tuple[Path, str, bool]] = [
             (Path(host).resolve(), cpath, bool(read_only))
             for host, cpath, read_only in extra_mounts
         ]
-        self._export_host = export_host.resolve() if export_host else None
+        self._export_host = settings.export_dir.resolve() if settings.export_dir else None
         self._container_export_path = container_export_path
-        self._network = network
         self._default_timeout = timeout
         self._max_output_bytes = max_output_bytes
-        self._memory = memory
-        self._cpus = cpus
-        self._pids_limit = pids_limit
         self._container_id: str | None = None
         self._sandbox_id = f"docker-{uuid.uuid4().hex[:12]}"
         self._start_container()
@@ -160,8 +181,8 @@ class DockerSandboxBackend(BaseSandbox):
     def _docker_cmd(self, *args: str) -> list[str]:
         return ["docker", *args]
 
-    def _start_container(self) -> None:
-        # Host-side mkdir so the mount source is owned by the host user, not
+    def _volumes(self) -> list[str]:
+        # Host-side mkdir so a mount source is owned by the host user, not
         # created by the Docker daemon as root.
         self._workspace_host.mkdir(parents=True, exist_ok=True)
         ws = _host_path_for_docker(self._workspace_host)
@@ -173,22 +194,26 @@ class DockerSandboxBackend(BaseSandbox):
             exp = _host_path_for_docker(self._export_host)
             self._export_host.mkdir(parents=True, exist_ok=True)
             vols.extend(["-v", f"{exp}:{self._container_export_path}"])
+        return vols
 
-        run_cmd = self._docker_cmd(
+    def _run_args(self) -> list[str]:
+        """``docker run`` for an idle, locked-down container to exec into."""
+        cfg = self._settings
+        return self._docker_cmd(
             "run",
             "-d",
             "--rm",
-            *vols,
+            *self._volumes(),
             "-w",
             self._container_workdir,
             "--network",
-            self._network,
+            cfg.network,
             "--memory",
-            self._memory,
+            cfg.memory,
             "--cpus",
-            self._cpus,
+            cfg.cpus,
             "--pids-limit",
-            str(self._pids_limit),
+            str(cfg.pids_limit),
             "--read-only",
             # The rootfs is read-only; give scripts a writable /tmp so
             # tempfile/pip/etc. work without loosening anything else.
@@ -196,13 +221,15 @@ class DockerSandboxBackend(BaseSandbox):
             "/tmp:rw,size=64m",
             "--security-opt",
             "no-new-privileges",
-            self._image,
+            cfg.image,
             "sleep",
             "infinity",
         )
+
+    def _start_container(self) -> None:
         try:
             proc = subprocess.run(  # noqa: S603
-                run_cmd,
+                self._run_args(),
                 check=True,
                 capture_output=True,
                 text=True,
@@ -221,7 +248,9 @@ class DockerSandboxBackend(BaseSandbox):
             msg = "docker run returned empty container id"
             raise RuntimeError(msg)
         self._container_id = cid
-        _slog.info("[SANDBOX LOG] Container started  id=%s  image=%s", cid[:12], self._image)
+        _slog.info(
+            "[SANDBOX LOG] Container started  id=%s  image=%s", cid[:12], self._settings.image
+        )
 
     @property
     def id(self) -> str:
@@ -270,6 +299,43 @@ class DockerSandboxBackend(BaseSandbox):
     def __exit__(self, *_: object) -> None:
         self.stop()
 
+    def _stdin_exec_argv(self) -> list[str]:
+        """``docker exec`` running a shell script fed on stdin."""
+        return self._docker_cmd(
+            "exec", "-i", "-w", self._container_workdir, self.container_id, "sh", "-s"
+        )
+
+    def _effective_timeout(self, timeout: int | None) -> int:
+        effective = timeout if timeout is not None else self._default_timeout
+        if effective <= 0:
+            msg = f"timeout must be positive, got {effective}"
+            raise ValueError(msg)
+        return effective
+
+    def _response(self, stdout: str, stderr: str, returncode: int, op: str) -> ExecuteResponse:
+        """One command's result as the agent sees it.
+
+        stdout, then each stderr line tagged ``[stderr]``; cut at
+        ``max_output_bytes``; a non-zero exit code appended.
+        """
+        parts: list[str] = [stdout] if stdout else []
+        if stderr:
+            parts.extend(f"[stderr] {line}" for line in stderr.strip().split("\n"))
+        output = "\n".join(parts) if parts else "<no output>"
+
+        truncated = False
+        if len(output) > self._max_output_bytes:
+            output = output[: self._max_output_bytes]
+            output += f"\n\n... Output truncated at {self._max_output_bytes} bytes."
+            truncated = True
+
+        if returncode != 0:
+            output = f"{output.rstrip()}\n\nExit code: {returncode}"
+            _slog.warning("[SANDBOX LOG] %s exit_code=%d", op, returncode)
+        else:
+            _slog.info("[SANDBOX LOG] %s exit_code=0  output_len=%d", op, len(output))
+        return ExecuteResponse(output=output, exit_code=returncode, truncated=truncated)
+
     def execute(
         self,
         command: str,
@@ -277,27 +343,10 @@ class DockerSandboxBackend(BaseSandbox):
         timeout: int | None = None,
     ) -> ExecuteResponse:
         if not command or not isinstance(command, str):
-            return ExecuteResponse(
-                output="Error: Command must be a non-empty string.",
-                exit_code=1,
-                truncated=False,
-            )
-        cid = self.container_id
+            return _empty_command()
+        exec_cmd = self._stdin_exec_argv()
         _slog.info("[SANDBOX LOG] execute  cmd=%s", command[:120].replace("\n", " "))
-        effective_timeout = timeout if timeout is not None else self._default_timeout
-        if effective_timeout <= 0:
-            msg = f"timeout must be positive, got {effective_timeout}"
-            raise ValueError(msg)
-
-        exec_cmd = self._docker_cmd(
-            "exec",
-            "-i",
-            "-w",
-            self._container_workdir,
-            cid,
-            "sh",
-            "-s",
-        )
+        effective_timeout = self._effective_timeout(timeout)
         try:
             proc = subprocess.run(  # noqa: S603
                 exec_cmd,
@@ -309,51 +358,11 @@ class DockerSandboxBackend(BaseSandbox):
             )
         except subprocess.TimeoutExpired:
             _slog.warning("[SANDBOX LOG] execute TIMEOUT after %ds", effective_timeout)
-            if timeout is not None:
-                msg = (
-                    f"Error: Command timed out after {effective_timeout} seconds "
-                    "(custom timeout). The command may be stuck or require more time."
-                )
-            else:
-                msg = (
-                    f"Error: Command timed out after {effective_timeout} seconds. "
-                    "For long-running commands, re-run using the timeout parameter."
-                )
-            return ExecuteResponse(output=msg, exit_code=124, truncated=False)
+            return _timed_out(effective_timeout, custom=timeout is not None)
         except Exception as e:  # noqa: BLE001
             _slog.error("[SANDBOX LOG] execute ERROR  %s: %s", type(e).__name__, e)
-            return ExecuteResponse(
-                output=f"Error executing command ({type(e).__name__}): {e}",
-                exit_code=1,
-                truncated=False,
-            )
-
-        output_parts: list[str] = []
-        if proc.stdout:
-            output_parts.append(proc.stdout)
-        if proc.stderr:
-            stderr_lines = proc.stderr.strip().split("\n")
-            output_parts.extend(f"[stderr] {line}" for line in stderr_lines)
-
-        output = "\n".join(output_parts) if output_parts else "<no output>"
-
-        truncated = False
-        if len(output) > self._max_output_bytes:
-            output = output[: self._max_output_bytes]
-            output += f"\n\n... Output truncated at {self._max_output_bytes} bytes."
-            truncated = True
-
-        if proc.returncode != 0:
-            output = f"{output.rstrip()}\n\nExit code: {proc.returncode}"
-            _slog.warning("[SANDBOX LOG] execute exit_code=%d", proc.returncode)
-        else:
-            _slog.info("[SANDBOX LOG] execute exit_code=0  output_len=%d", len(output))
-
-        return ExecuteResponse(
-            output=output,
-            exit_code=proc.returncode,
-            truncated=truncated,
-        )
+            return _failed(e)
+        return self._response(proc.stdout, proc.stderr, proc.returncode, "execute")
 
     async def aexecute(
         self,
@@ -363,30 +372,10 @@ class DockerSandboxBackend(BaseSandbox):
     ) -> ExecuteResponse:
         """True async execute via asyncio.create_subprocess_exec() — does not block the event loop."""
         if not command or not isinstance(command, str):
-            return ExecuteResponse(
-                output="Error: Command must be a non-empty string.",
-                exit_code=1,
-                truncated=False,
-            )
-
-        cid = self.container_id
-        effective_timeout = timeout if timeout is not None else self._default_timeout
-        if effective_timeout <= 0:
-            msg = f"timeout must be positive, got {effective_timeout}"
-            raise ValueError(msg)
-
+            return _empty_command()
+        exec_argv = self._stdin_exec_argv()
+        effective_timeout = self._effective_timeout(timeout)
         _slog.info("[SANDBOX LOG] aexecute  cmd=%s", command[:120].replace("\n", " "))
-
-        exec_argv = [
-            "docker",
-            "exec",
-            "-i",
-            "-w",
-            self._container_workdir,
-            cid,
-            "sh",
-            "-s",
-        ]
 
         proc: asyncio.subprocess.Process | None = None
         try:
@@ -408,144 +397,85 @@ class DockerSandboxBackend(BaseSandbox):
                 except ProcessLookupError:
                     pass
             _slog.warning("[SANDBOX LOG] aexecute TIMEOUT after %ds", effective_timeout)
-            msg = (
-                f"Error: Command timed out after {effective_timeout} seconds. "
-                "For long-running commands, re-run using the timeout parameter."
-            )
-            return ExecuteResponse(output=msg, exit_code=124, truncated=False)
+            return _timed_out(effective_timeout, custom=False)
         except Exception as e:  # noqa: BLE001
             _slog.error("[SANDBOX LOG] aexecute ERROR  %s: %s", type(e).__name__, e)
-            return ExecuteResponse(
-                output=f"Error executing command ({type(e).__name__}): {e}",
-                exit_code=1,
-                truncated=False,
-            )
+            return _failed(e)
 
-        stdout = stdout_bytes.decode(errors="replace") if stdout_bytes else ""
-        stderr_text = stderr_bytes.decode(errors="replace") if stderr_bytes else ""
-
-        output_parts: list[str] = []
-        if stdout:
-            output_parts.append(stdout)
-        if stderr_text:
-            stderr_lines = stderr_text.strip().split("\n")
-            output_parts.extend(f"[stderr] {line}" for line in stderr_lines)
-
-        output = "\n".join(output_parts) if output_parts else "<no output>"
-
-        truncated = False
-        if len(output) > self._max_output_bytes:
-            output = output[: self._max_output_bytes]
-            output += f"\n\n... Output truncated at {self._max_output_bytes} bytes."
-            truncated = True
-
-        returncode = proc.returncode if proc.returncode is not None else 0
-        if returncode != 0:
-            output = f"{output.rstrip()}\n\nExit code: {returncode}"
-            _slog.warning("[SANDBOX LOG] aexecute exit_code=%d", returncode)
-        else:
-            _slog.info("[SANDBOX LOG] aexecute exit_code=0  output_len=%d", len(output))
-
-        return ExecuteResponse(
-            output=output,
-            exit_code=returncode,
-            truncated=truncated,
+        return self._response(
+            stdout_bytes.decode(errors="replace") if stdout_bytes else "",
+            stderr_bytes.decode(errors="replace") if stderr_bytes else "",
+            proc.returncode if proc.returncode is not None else 0,
+            "aexecute",
         )
 
     def upload_files(self, files: list[tuple[str, bytes]]) -> list[FileUploadResponse]:
         cid = self.container_id
         _slog.info("[SANDBOX LOG] upload_files  count=%d", len(files))
-        results: list[FileUploadResponse] = []
-        for path, data in files:
-            if not path.startswith("/"):
-                results.append(
-                    FileUploadResponse(path=path, error="invalid_path"),
-                )
-                continue
-            cpath = self._real_path(path)
-            parent = os.path.dirname(cpath) or "/"
-            mk = self.execute(f"mkdir -p {shlex.quote(parent)}")
-            if mk.exit_code != 0:
-                results.append(
-                    FileUploadResponse(path=path, error="permission_denied"),
-                )
-                continue
-            tmp_path: Path | None = None
-            try:
-                with tempfile.NamedTemporaryFile(delete=False) as tf:
-                    tf.write(data)
-                    tmp_path = Path(tf.name)
-                dest = f"{cid}:{cpath}"
-                cp = subprocess.run(  # noqa: S603
-                    self._docker_cmd("cp", str(tmp_path), dest),
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                    timeout=300,
-                )
-                if cp.returncode != 0:
-                    err_msg = (cp.stderr or cp.stdout or "").strip()
-                    results.append(
-                        FileUploadResponse(
-                            path=path,
-                            error="permission_denied"
-                            if "Permission" in err_msg
-                            else "invalid_path",
-                        ),
-                    )
-                else:
-                    results.append(FileUploadResponse(path=path, error=None))
-            except OSError:
-                results.append(FileUploadResponse(path=path, error="permission_denied"))
-            finally:
-                if tmp_path is not None and tmp_path.is_file():
-                    tmp_path.unlink(missing_ok=True)
-        return results
+        return [self._upload_one(cid, path, data) for path, data in files]
+
+    def _upload_one(self, cid: str, path: str, data: bytes) -> FileUploadResponse:
+        if not path.startswith("/"):
+            return FileUploadResponse(path=path, error="invalid_path")
+        cpath = self._real_path(path)
+        parent = os.path.dirname(cpath) or "/"
+        if self.execute(f"mkdir -p {shlex.quote(parent)}").exit_code != 0:
+            return FileUploadResponse(path=path, error="permission_denied")
+        tmp_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(delete=False) as tf:
+                tf.write(data)
+                tmp_path = Path(tf.name)
+            cp = subprocess.run(  # noqa: S603
+                self._docker_cmd("cp", str(tmp_path), f"{cid}:{cpath}"),
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+            if cp.returncode == 0:
+                return FileUploadResponse(path=path, error=None)
+            err_msg = (cp.stderr or cp.stdout or "").strip()
+            return FileUploadResponse(
+                path=path,
+                error="permission_denied" if "Permission" in err_msg else "invalid_path",
+            )
+        except OSError:
+            return FileUploadResponse(path=path, error="permission_denied")
+        finally:
+            if tmp_path is not None and tmp_path.is_file():
+                tmp_path.unlink(missing_ok=True)
 
     def download_files(self, paths: list[str]) -> list[FileDownloadResponse]:
         cid = self.container_id
         _slog.info("[SANDBOX LOG] download_files  paths=%s", paths)
-        results: list[FileDownloadResponse] = []
-        for path in paths:
-            if not path.startswith("/"):
-                results.append(
-                    FileDownloadResponse(path=path, content=None, error="invalid_path"),
-                )
-                continue
-            cpath = self._real_path(path)
-            tmp_path: Path | None = None
-            try:
-                with tempfile.NamedTemporaryFile(delete=False) as tf:
-                    tmp_path = Path(tf.name)
-                src = f"{cid}:{cpath}"
-                cp = subprocess.run(  # noqa: S603
-                    self._docker_cmd("cp", src, str(tmp_path)),
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                    timeout=300,
-                )
-                if cp.returncode != 0:
-                    err = (cp.stderr or cp.stdout or "").strip().lower()
-                    if "directory" in err:
-                        results.append(
-                            FileDownloadResponse(path=path, content=None, error="is_directory"),
-                        )
-                    else:
-                        results.append(
-                            FileDownloadResponse(path=path, content=None, error="file_not_found"),
-                        )
-                    continue
-                content = tmp_path.read_bytes()
-                results.append(FileDownloadResponse(path=path, content=content, error=None))
-            except OSError:
-                results.append(
-                    FileDownloadResponse(path=path, content=None, error="permission_denied"),
-                )
-            finally:
-                if tmp_path is not None and tmp_path.is_file():
-                    tmp_path.unlink(missing_ok=True)
-        return results
+        return [self._download_one(cid, path) for path in paths]
+
+    def _download_one(self, cid: str, path: str) -> FileDownloadResponse:
+        if not path.startswith("/"):
+            return FileDownloadResponse(path=path, content=None, error="invalid_path")
+        cpath = self._real_path(path)
+        tmp_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(delete=False) as tf:
+                tmp_path = Path(tf.name)
+            cp = subprocess.run(  # noqa: S603
+                self._docker_cmd("cp", f"{cid}:{cpath}", str(tmp_path)),
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+            if cp.returncode != 0:
+                err = (cp.stderr or cp.stdout or "").strip().lower()
+                error = "is_directory" if "directory" in err else "file_not_found"
+                return FileDownloadResponse(path=path, content=None, error=error)
+            return FileDownloadResponse(path=path, content=tmp_path.read_bytes(), error=None)
+        except OSError:
+            return FileDownloadResponse(path=path, content=None, error="permission_denied")
+        finally:
+            if tmp_path is not None and tmp_path.is_file():
+                tmp_path.unlink(missing_ok=True)
 
 
 def pull_virtual_paths_to_host(

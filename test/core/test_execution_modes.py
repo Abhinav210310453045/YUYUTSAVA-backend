@@ -23,13 +23,15 @@ from test.core.agent_fingerprint import capture_cli, fingerprint_from_kwargs
 from yuyutsava.agents.task_runner.exec_backend import DockerExecBackend
 from yuyutsava.config.execution import DockerSettings, LocalSettings
 from yuyutsava.core import engine
+from yuyutsava.docker_sandbox.backend import DockerSandboxBackend
 from yuyutsava.storage.paths import CONTAINER_STATE_MOUNT, CONTAINER_WORKSPACE_MOUNT
 
 
 class _Sandbox:
     """Stands in for ``DockerSandboxBackend``; records how it was made."""
 
-    def __init__(self, **kwargs: Any) -> None:
+    def __init__(self, settings: DockerSettings, **kwargs: Any) -> None:
+        self.settings = settings
         self.kwargs = kwargs
         self.stopped = False
 
@@ -77,17 +79,17 @@ class DockerModeRunsInTheContainer(unittest.TestCase):
         self.assertEqual(made["workspace_host"], layout.state)
         self.assertEqual(made["container_workdir"], CONTAINER_STATE_MOUNT)
         self.assertEqual(made["extra_mounts"], [(layout.root, CONTAINER_WORKSPACE_MOUNT, True)])
-        self.assertIsNone(made["export_host"])
-        self.assertEqual(
-            {k: made[k] for k in ("image", "network", "memory", "cpus", "pids_limit")},
-            {"image": "img:x", "network": "none", "memory": "1g", "cpus": "2", "pids_limit": 7},
-        )
+        self.assertIs(bundle.docker_backend.settings, settings)
 
     def test_an_export_dir_is_mounted_resolved(self) -> None:
-        bundle, _ = _docker(docker_settings=DockerSettings(export_dir=Path("relative/out")))
-        self.assertEqual(
-            bundle.docker_backend.kwargs["export_host"], Path("relative/out").resolve()
-        )
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            mock.patch.object(DockerSandboxBackend, "_start_container"),
+        ):
+            backend = DockerSandboxBackend(
+                DockerSettings(export_dir=Path("relative/out")), workspace_host=Path(tmp)
+            )
+        self.assertEqual(backend._export_host, Path("relative/out").resolve())
 
     def test_the_bundle_stops_the_container_on_close(self) -> None:
         bundle, _ = _docker()

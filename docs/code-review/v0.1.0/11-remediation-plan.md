@@ -601,6 +601,18 @@ moves tool definitions between files without making any one easier to read.
 the pass continues with the tangled functions and the >10-parameter
 constructors.
 
+**`DockerSandboxBackend` 490 → 394 lines, 12 → 8 parameters.** It takes the
+`DockerSettings` it runs instead of six of its fields. `execute` and
+`aexecute` share one response builder, and `docker run` gets its own
+`_run_args`. Upload and download work one file at a time. Two differences
+between the sync and async paths are kept as they were: `aexecute` never uses
+the custom-timeout wording, and `execute` alone passes the environment.
+Checked against a real container: 22 checks (outputs, stderr tagging,
+truncation, exit codes, both timeout messages, path mapping, upload and
+download errors, `exec_argv`) are identical before and after. A live
+docker-mode turn wrote through the `/output` mount. Functions over ten
+parameters: **2**; classes over 400 lines: **7**.
+
 ## W5 — Errors, logging, state, defects
 
 - **Classify the 58 silent handlers** as boundary (log plus reason) or internal (narrow type). (`R-ERR-01`, `R-ERR-02`)

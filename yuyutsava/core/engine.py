@@ -906,16 +906,11 @@ def _docker_sandbox(
     not mounted, which is worth a warning rather than a silent failure later.
     """
     backend = DockerSandboxBackend(
-        image=cfg.image,
+        cfg,
         workspace_host=layout.state,
         container_workdir=CONTAINER_STATE_MOUNT,
         extra_mounts=[(layout.root, CONTAINER_WORKSPACE_MOUNT, True)],
-        export_host=cfg.export_dir.resolve() if cfg.export_dir else None,
-        network=cfg.network,
         timeout=timeout,
-        memory=cfg.memory,
-        cpus=cfg.cpus,
-        pids_limit=cfg.pids_limit,
     )
     if not sandbox_root.is_relative_to(layout.state):
         logger.warning(
