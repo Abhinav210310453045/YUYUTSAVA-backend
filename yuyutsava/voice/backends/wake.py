@@ -17,6 +17,7 @@ import time
 from abc import ABC, abstractmethod
 
 from yuyutsava.config.env import env_flag
+from yuyutsava.voice.optional import INSTALL_HINT, require
 
 logger = logging.getLogger("yuyutsava.voice.backends.wake")
 
@@ -105,15 +106,10 @@ class OpenWakeWordDetector(WakeWordDetector):
 
     def _load(self):
         if self._model is None:
-            try:
-                # Optional dependency (the voice extra).
-                import openwakeword  # type: ignore  # noqa: PLC0415
-                from openwakeword import utils as oww_utils  # type: ignore  # noqa: PLC0415
-                from openwakeword.model import Model  # type: ignore  # noqa: PLC0415
-            except ImportError as exc:
-                raise RuntimeError(
-                    "openwakeword not installed — run: uv pip install 'yuyutsava[voice]'"
-                ) from exc
+            missing = f"openwakeword not installed — {INSTALL_HINT}"
+            openwakeword = require("openwakeword", missing)
+            oww_utils = require("openwakeword.utils", missing)
+            Model = require("openwakeword.model", missing).Model  # noqa: N806
             # Validate against the official model catalog before we try to load
             # anything, so a bad wake word degrades to the default instead of
             # crash-looping the voice subprocess.

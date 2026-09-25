@@ -1,7 +1,7 @@
 """PortAudio capture/playback via sounddevice + soundfile.
 
 All audio I/O goes through this module so VoiceChannel never imports
-sounddevice or soundfile directly.  Raises ``AudioUnavailableError`` when
+sounddevice or soundfile directly.  Raises ``VoiceDependencyMissing`` when
 the optional voice extras are not installed.
 
 Install: uv pip install 'yuyutsava[voice]'
@@ -14,45 +14,23 @@ import logging
 import wave
 from pathlib import Path
 
+from yuyutsava.voice.optional import INSTALL_HINT, VoiceDependencyMissing, require
 from yuyutsava.voice.pcm import CHANNELS, SAMPLE_RATE
 from yuyutsava.wav import write_pcm16
 
 logger = logging.getLogger("yuyutsava.voice.backends.device")
 
 
-class AudioUnavailableError(RuntimeError):
-    """Raised when sounddevice / soundfile / numpy are not installed."""
-
-
 def _require_sd():
-    try:
-        import sounddevice as sd  # type: ignore  # noqa: PLC0415 — optional dependency
-
-        return sd
-    except ImportError as exc:
-        raise AudioUnavailableError(
-            "sounddevice not installed — run: uv pip install 'yuyutsava[voice]'"
-        ) from exc
+    return require("sounddevice", f"sounddevice not installed — {INSTALL_HINT}")
 
 
 def _require_np():
-    try:
-        import numpy as np  # type: ignore  # noqa: PLC0415 — optional dependency
-
-        return np
-    except ImportError as exc:
-        raise AudioUnavailableError("numpy not installed") from exc
+    return require("numpy", "numpy not installed")
 
 
 def _require_sf():
-    try:
-        import soundfile as sf  # type: ignore  # noqa: PLC0415 — optional dependency
-
-        return sf
-    except ImportError as exc:
-        raise AudioUnavailableError(
-            "soundfile not installed — run: uv pip install 'yuyutsava[voice]'"
-        ) from exc
+    return require("soundfile", f"soundfile not installed — {INSTALL_HINT}")
 
 
 async def capture_wav(path: Path, duration_sec: float, sample_rate: int = SAMPLE_RATE) -> None:
@@ -101,6 +79,6 @@ def stop_playback() -> None:
     """
     try:
         sd = _require_sd()
-    except AudioUnavailableError:
+    except VoiceDependencyMissing:
         return
     sd.stop()

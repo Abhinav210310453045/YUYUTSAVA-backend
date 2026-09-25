@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from yuyutsava.config.env import env_float
+from yuyutsava.voice.optional import INSTALL_HINT, require
 
 logger = logging.getLogger("yuyutsava.voice.backends.stt")
 
@@ -94,14 +95,8 @@ class FasterWhisperSTT(STT):
 
     def _load(self):
         if self._model is None:
-            try:
-                # Optional dependency.
-                from faster_whisper import WhisperModel  # type: ignore  # noqa: PLC0415
-            except ImportError as exc:
-                raise RuntimeError(
-                    "faster-whisper not installed — run: uv pip install 'yuyutsava[voice]'"
-                ) from exc
-            self._model = WhisperModel(self._model_size, device="cpu", compute_type="int8")
+            whisper = require("faster_whisper", f"faster-whisper not installed — {INSTALL_HINT}")
+            self._model = whisper.WhisperModel(self._model_size, device="cpu", compute_type="int8")
         return self._model
 
     def _decode(self, wav_path: Path) -> TranscriptResult:
@@ -177,10 +172,7 @@ class GroqWhisperSTT(STT):
         self._model = model
 
     async def transcribe(self, wav_path: Path) -> str:
-        try:
-            from groq import Groq  # type: ignore  # noqa: PLC0415 — optional dependency
-        except ImportError as exc:
-            raise RuntimeError("groq package not installed — run: uv pip install groq") from exc
+        Groq = require("groq", "groq package not installed — run: uv pip install groq").Groq  # noqa: N806
 
         loop = asyncio.get_running_loop()
 

@@ -40,9 +40,10 @@ from yuyutsava.ports.channels import (
 )
 from yuyutsava.storage.events import Proposal
 from yuyutsava.voice import Announcer
-from yuyutsava.voice.backends.device import AudioUnavailableError, capture_wav
+from yuyutsava.voice.backends.device import capture_wav
 from yuyutsava.voice.backends.stt import STT, stt_from_env
 from yuyutsava.voice.backends.tts import tts_from_env
+from yuyutsava.voice.optional import VoiceDependencyMissing
 
 logger = logging.getLogger("yuyutsava.daemon.voice_channel")
 
@@ -93,7 +94,7 @@ class VoiceChannel(UserChannel):
         try:
             await capture_wav(wav, duration_sec)
             return await self._stt.transcribe(wav)
-        except AudioUnavailableError:
+        except VoiceDependencyMissing:
             logger.debug("audio unavailable for STT capture")
             return ""
         except Exception:

@@ -29,9 +29,10 @@ from pathlib import Path
 from typing import Callable
 
 from yuyutsava.aio.tasks import cancel_and_reap
-from yuyutsava.voice.backends.device import AudioUnavailableError, play_wav, stop_playback
+from yuyutsava.voice.backends.device import play_wav, stop_playback
 from yuyutsava.voice.backends.tts import TTS, tts_from_env
 from yuyutsava.voice.earcons import earcon_path
+from yuyutsava.voice.optional import VoiceDependencyMissing
 
 logger = logging.getLogger("yuyutsava.voice.announcer")
 
@@ -145,13 +146,13 @@ class Announcer:
         try:
             await tts.synthesize(text, out)
             await play_wav(out)
-        except AudioUnavailableError:
+        except VoiceDependencyMissing:
             logger.debug("Announcer: audio unavailable — silent")
 
     async def _play_earcon(self, name: str) -> None:
         try:
             await play_wav(earcon_path(name))
-        except AudioUnavailableError:
+        except VoiceDependencyMissing:
             logger.debug("Announcer: audio unavailable — earcon silent")
         except KeyError:
             logger.warning("Announcer: unknown earcon %r", name)

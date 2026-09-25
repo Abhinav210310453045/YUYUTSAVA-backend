@@ -19,6 +19,7 @@ import wave
 from pathlib import Path
 
 from yuyutsava.voice.backends.tts import TTS
+from yuyutsava.voice.optional import INSTALL_HINT, require
 
 logger = logging.getLogger("yuyutsava.voice.synth")
 
@@ -53,13 +54,9 @@ def _decode_to_pcm(path: Path) -> tuple[bytes, int]:
     except wave.Error:
         pass  # not a PCM WAV — try soundfile (mp3/flac/ogg)
 
-    try:
-        import numpy as np  # type: ignore  # noqa: PLC0415 — optional dependency
-        import soundfile as sf  # type: ignore  # noqa: PLC0415 — optional dependency
-    except ImportError as exc:  # pragma: no cover - depends on optional extra
-        raise RuntimeError(
-            "non-WAV TTS output needs soundfile — run: uv pip install 'yuyutsava[voice]'"
-        ) from exc
+    missing = f"non-WAV TTS output needs soundfile — {INSTALL_HINT}"
+    np = require("numpy", missing)
+    sf = require("soundfile", missing)
 
     data, rate = sf.read(str(path), dtype="int16", always_2d=False)
     if getattr(data, "ndim", 1) == 2:  # stereo -> mono
@@ -100,13 +97,11 @@ def _to_mono16_fallback(raw: bytes, channels: int, width: int) -> bytes:
             samples = mono
         return samples.tobytes()
 
-    try:
-        import numpy as np  # type: ignore  # noqa: PLC0415 — optional dependency
-    except ImportError as exc:  # pragma: no cover - depends on optional extra
-        raise RuntimeError(
-            f"cannot decode {width * 8}-bit audio without `audioop` (Python <3.13) "
-            "or numpy — install: uv pip install 'yuyutsava[voice]'"
-        ) from exc
+    np = require(
+        "numpy",
+        f"cannot decode {width * 8}-bit audio without `audioop` (Python <3.13) "
+        "or numpy — install: uv pip install 'yuyutsava[voice]'",
+    )
 
     dtype = {1: np.uint8, 4: np.int32}.get(width)
     if dtype is None:
