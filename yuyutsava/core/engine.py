@@ -332,8 +332,7 @@ def _policy_middleware(
     model: Any | None = None,
     workspace_root: Path | None = None,
     permission_check: bool = False,
-    usage_task_id: str | None = None,
-    usage_thread_id: str | None = None,
+    usage_ids: tuple[str | None, str | None] = (None, None),
 ) -> list:
     """Build one phase of a master's policy middleware, from its profile.
 
@@ -380,6 +379,7 @@ def _policy_middleware(
             # conversation — the tinker graph is per-card. The chat bundle is
             # shared across threads, so its rows land task-less/thread-less,
             # which the store supports.
+            usage_task_id, usage_thread_id = usage_ids
             extra = {}
             if usage_task_id is not None:
                 extra["task_id"] = usage_task_id
@@ -837,7 +837,6 @@ def _master_middleware(
             role=role,
         )
     )
-    usage_task_id, usage_thread_id = usage_ids
     middleware.extend(
         _policy_middleware(
             profile,
@@ -848,8 +847,7 @@ def _master_middleware(
             model=model,
             workspace_root=workspace_root,
             permission_check=deps.permission_check,
-            usage_task_id=usage_task_id,
-            usage_thread_id=usage_thread_id,
+            usage_ids=usage_ids,
         )
     )
     middleware.extend(
@@ -1307,8 +1305,10 @@ def build_orchestrator(
             budget_tokens=budget_tokens,
             usage_store=getattr(deps, "usage_store", None),
             model=model,
-            usage_task_id=getattr(usage_context, "task_id", ""),
-            usage_thread_id=getattr(usage_context, "thread_id", ""),
+            usage_ids=(
+                getattr(usage_context, "task_id", ""),
+                getattr(usage_context, "thread_id", ""),
+            ),
         ),
     ]
 
