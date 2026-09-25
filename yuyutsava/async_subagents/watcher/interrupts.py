@@ -69,13 +69,21 @@ class InterruptHandler:
             except Exception:
                 logger.exception("threads.get failed during interrupt handling")
                 return
-        interrupts_map: dict[str, list[Any]] = {}
+        pending = self._fresh_interrupts(task, thread)
+        if not pending:
+            # Status says interrupted but no fresh interrupts — record state
+            # and try again next cycle.
+            await self._ctx.mirror.set_status(task.task_id, "interrupted")
+            return
+        replies = await self._ask_each(task, pending)
+        await self._resume_with(task, replies)
+
+    def _fresh_interrupts(self, task: MirroredTask, thread: Any) -> list[tuple[str, Any]]:
+        """``(interrupt_id, value)`` for each interrupt not yet asked about."""
         if isinstance(thread, dict):
             interrupts_map = thread.get("interrupts") or {}
         else:
             interrupts_map = getattr(thread, "interrupts", {}) or {}
-
-        # Flatten and de-dupe by id.
         already = self._ctx.handled_interrupts.setdefault(task.task_id, set())
         pending: list[tuple[str, Any]] = []
         for _task_id_in_thread, ilist in (
@@ -87,26 +95,16 @@ class InterruptHandler:
                     continue
                 value = it.get("value") if isinstance(it, dict) else getattr(it, "value", {})
                 pending.append((it_id, value))
+        return pending
 
-        if not pending:
-            # Status says interrupted but no fresh interrupts — record state
-            # and try again next cycle.
-            await self._ctx.mirror.set_status(task.task_id, "interrupted")
-            return
-
-        # Ask the user for each pending interrupt, then resume ONCE with a map
-        # keyed by interrupt id. LangGraph requires the keyed form whenever more
-        # than one interrupt is pending (a bare ``{"resume": value}`` raises
-        # "you must specify the interrupt id when resuming").
+    async def _ask_each(self, task: MirroredTask, pending: list[tuple[str, Any]]) -> dict[str, str]:
+        """Ask about each interrupt in turn; an ask that raises is a rejection."""
+        already = self._ctx.handled_interrupts.setdefault(task.task_id, set())
         replies: dict[str, str] = {}
         for it_id, value in pending:
             ask_id = str(uuid.uuid4())
             ask = self._build_ask(task, ask_id, it_id, value)
-            await self._ctx.mirror.set_status(
-                task.task_id,
-                "awaiting_user",
-                pending_ask_id=ask_id,
-            )
+            await self._ctx.mirror.set_status(task.task_id, "awaiting_user", pending_ask_id=ask_id)
             await self._ctx.emit(
                 ChannelEvent(
                     payload=AsyncTaskAwaitingUserPayload(
@@ -125,7 +123,16 @@ class InterruptHandler:
                 reply = "reject"
             already.add(it_id)
             replies[it_id] = reply
+        return replies
 
+    async def _resume_with(self, task: MirroredTask, replies: dict[str, str]) -> None:
+        """Resume the run ONCE with every reply, keyed by interrupt id.
+
+        LangGraph requires the keyed form whenever more than one interrupt is
+        pending (a bare ``{"resume": value}`` raises "you must specify the
+        interrupt id when resuming"). A resume that fails finishes the task
+        rather than leaving it awaiting a user who has already answered.
+        """
         try:
             await self._ctx.client.runs.create(
                 thread_id=task.sub_thread_id,
@@ -153,13 +160,14 @@ class InterruptHandler:
             await self._ctx.notify_complete(updated or task, False, "resume_failed")
             return
         await self._ctx.mirror.set_status(task.task_id, "running", pending_ask_id=None)
+        n = len(replies)
         await self._ctx.emit(
             ChannelEvent(
                 payload=AsyncTaskProgressPayload(
                     task_id=task.task_id,
                     agent_name=task.agent_name,
                     kind_hint="resumed",
-                    text=f"resumed after {len(replies)} user repl{'y' if len(replies) == 1 else 'ies'}",
+                    text=f"resumed after {n} user repl{'y' if n == 1 else 'ies'}",
                     ts=time.time(),
                 )
             )
