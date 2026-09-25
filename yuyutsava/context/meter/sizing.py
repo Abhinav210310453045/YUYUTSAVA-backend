@@ -201,10 +201,10 @@ def split_system_chars(text: str) -> dict[str, int]:
     return out
 
 
-def injected_block_chars() -> dict[str, int]:
-    """Sizes of the blocks the retrieval injectors last rendered."""
+def injected_block_chars(thread_id: str) -> dict[str, int]:
+    """Sizes of the blocks the retrieval injectors last rendered on *thread_id*."""
     try:
-        return last_block_chars()
+        return last_block_chars(thread_id)
     except Exception:  # noqa: BLE001
         return {}
 

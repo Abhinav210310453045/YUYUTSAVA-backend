@@ -604,18 +604,45 @@ class InjectedBlocksAreCounted(unittest.TestCase):
         from yuyutsava.retrieval import injector as ri
 
         ri._last_blocks.clear()
-        ri._last_blocks[SKILLS_BLOCK_PREFIX] = 4_000
+        ri._record("t", SKILLS_BLOCK_PREFIX, 4_000)
         policy = ContextMeterPolicy(settings=ContextSettings(max_input_tokens=1_000), role="cli")
         run(policy.before_model(Turn(messages=(SystemMessage(content="base"),), thread_id="t")))
         run(policy.revise_model_call(model_call()))
         self.assertGreater(self.seen[-1].skills_tokens, 0)
         ri._last_blocks.clear()
 
+    def test_another_threads_block_does_not_land_here(self):
+        """R-GLB-02: the record was keyed by injector only, so with two
+        conversations in one daemon each read whichever rendered last."""
+        from yuyutsava.retrieval import injector as ri
+
+        ri._last_blocks.clear()
+        ri._record("someone-else", SKILLS_BLOCK_PREFIX, 4_000)
+        policy = ContextMeterPolicy(settings=ContextSettings(max_input_tokens=1_000), role="cli")
+        run(policy.before_model(Turn(messages=(SystemMessage(content="base"),), thread_id="t")))
+        run(policy.revise_model_call(model_call()))
+        self.assertEqual(self.seen[-1].skills_tokens, 0)
+        ri._last_blocks.clear()
+
+    def test_the_record_forgets_the_oldest_threads(self):
+        from yuyutsava.retrieval import injector as ri
+
+        ri._last_blocks.clear()
+        for i in range(ri._MAX_THREADS + 5):
+            ri._record(f"t{i}", SKILLS_BLOCK_PREFIX, i)
+        self.assertEqual(len(ri._last_blocks), ri._MAX_THREADS)
+        self.assertEqual(ri.last_block_chars("t0"), {})
+        self.assertEqual(
+            ri.last_block_chars(f"t{ri._MAX_THREADS + 4}"),
+            {SKILLS_BLOCK_PREFIX: ri._MAX_THREADS + 4},
+        )
+        ri._last_blocks.clear()
+
     def test_nothing_recalled_reports_zero_not_last_turns_number(self):
         from yuyutsava.retrieval import injector as ri
 
         ri._last_blocks.clear()
-        ri._last_blocks[SKILLS_BLOCK_PREFIX] = 0
+        ri._record("t", SKILLS_BLOCK_PREFIX, 0)
         policy = ContextMeterPolicy(settings=ContextSettings(max_input_tokens=1_000), role="cli")
         run(policy.before_model(Turn(messages=(SystemMessage(content="base"),), thread_id="t")))
         run(policy.revise_model_call(model_call()))

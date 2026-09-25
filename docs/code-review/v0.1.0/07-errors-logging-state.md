@@ -141,7 +141,25 @@ process share state. What a function depends on is invisible from its signature.
 
 ## R-GLB-02 — Hidden channels between components
 
-**Severity** P2 · **Wave** W5 · **Status** Open
+**Severity** P2 · **Wave** W5 · **Status** Two fixed, the rest kept by decision
+(2026-09-25):
+
+- **Fixed: one retry-listener slot.** `add_retry_listener` keeps a list and
+  returns each owner's remover, so the last registration no longer wins.
+- **Fixed: the injected-block sizes were process-global.** They are now keyed
+  by thread (and bounded), so one conversation's meter never reads another's
+  blocks. It still reads its own thread's *previous* block: the meter sits
+  before the injection in the chain, and moving it would change the pinned
+  middleware order.
+- **Kept:**
+  - The `ctx_compact` flag is keyed by thread and cleared when consumed. A
+    shared object would thread through four builders for no behaviour change.
+  - Tracing's client and reachability cache are genuinely one per process.
+  - `skills.injector.last_recalled` is a diagnostic only the CLI's `/skills`
+    reads.
+  - The meter's per-thread state is module-level on purpose. The masters,
+    subagents and per-task orchestrator graphs must all see one thread's
+    state, which a per-policy instance could not.
 
 **Evidence.**
 - **`context/compaction.py:54` `_FORCE_COMPACT`:** a module-level set that the

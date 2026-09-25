@@ -18,7 +18,7 @@ than a call: whichever front owns the terminal installs its reader once, and
 every prompt goes through :func:`read_line`.
 
 Process-global and synchronous to install — the same shape as
-``llm.quirks.first_chunk_retry.set_retry_listener`` and the context meter's
+``llm.quirks.first_chunk_retry.add_retry_listener`` and the context meter's
 bus. There is only ever one owner of a terminal, so there is nothing to thread
 through three constructors.
 

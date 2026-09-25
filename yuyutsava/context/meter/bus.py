@@ -32,7 +32,7 @@ Subscriber = Callable[[ContextSnapshot], None]
 class MeterBus:
     """Fan-out of snapshots to whoever is displaying them.
 
-    Same shape as ``llm.quirks.first_chunk_retry.set_retry_listener``: process
+    Same shape as ``llm.quirks.first_chunk_retry.add_retry_listener``: process
     global, synchronous, and defensive. Callbacks run inside the agent's model
     step, so they must be cheap and non-blocking — repaint requests and queue
     puts, not I/O. A raising subscriber is logged and dropped from that publish,

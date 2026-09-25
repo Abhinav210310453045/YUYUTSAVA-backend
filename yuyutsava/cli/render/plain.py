@@ -77,7 +77,7 @@ class ChatRenderer:
     ) -> None:
         """Report a provider retry (429/503) in the renderer's own voice.
 
-        Registered with ``llm.quirks.first_chunk_retry.set_retry_listener``.
+        Registered with ``llm.quirks.first_chunk_retry.add_retry_listener``.
         The provider's own retry logger writes several structlog lines per
         attempt, which in the rich renderer tore straight through the Live
         region and told the user nothing they could act on; here it is one

@@ -20,6 +20,7 @@ are existing ``ChatVertexAI`` fields — so the mixin carries no state of its ow
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import random
@@ -55,26 +56,33 @@ def _budget_sec() -> float:
 
 #: Called on every retry with ``(model, attempt, retries, delay, exc)``.
 #: The terminal front registers one so a 429 storm shows up as spinner text
-#: instead of a wall of provider log lines. Process-global and best-effort:
-#: a listener that raises is dropped, never propagated into a model call.
+#: instead of a wall of provider log lines. Best-effort: a listener that raises
+#: is logged and skipped, never propagated into a model call.
 RetryListener = Callable[[str, int, int, float, BaseException], None]
-_listener: RetryListener | None = None
+_listeners: list[RetryListener] = []
 
 
-def set_retry_listener(callback: RetryListener | None) -> None:
-    """Install (or clear, with ``None``) the retry notification hook."""
-    global _listener
-    _listener = callback
+def add_retry_listener(callback: RetryListener) -> Callable[[], None]:
+    """Register *callback* for retry notices; returns the function that removes it.
+
+    A list rather than one slot, so a second registration cannot silently
+    replace the first, and each owner removes only its own.
+    """
+    _listeners.append(callback)
+
+    def _remove() -> None:
+        with contextlib.suppress(ValueError):
+            _listeners.remove(callback)
+
+    return _remove
 
 
 def _notify(model: str, attempt: int, retries: int, delay: float, exc: BaseException) -> None:
-    cb = _listener
-    if cb is None:
-        return
-    try:
-        cb(model, attempt, retries, delay, exc)
-    except Exception:  # noqa: BLE001 — a broken listener must not fail the call
-        logger.debug("retry listener raised", exc_info=True)
+    for cb in list(_listeners):
+        try:
+            cb(model, attempt, retries, delay, exc)
+        except Exception:  # noqa: BLE001 — a broken listener must not fail the call
+            logger.debug("retry listener raised", exc_info=True)
 
 
 #: gRPC status names the raw ``grpc.aio`` errors report, as the HTTP code the
@@ -301,4 +309,4 @@ def first_chunk_retry(base: type) -> type:
     return type(f"FirstChunkRetry{base.__name__}", (_FirstChunkRetryMixin, base), {})
 
 
-__all__ = ["first_chunk_retry", "set_retry_listener", "RetryListener"]
+__all__ = ["first_chunk_retry", "add_retry_listener", "RetryListener"]

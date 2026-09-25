@@ -128,7 +128,7 @@ class ContextMeterPolicy(Policy):
             # Blocks the retrieval injectors append at model-call time. They are
             # real prompt bytes but are added after every before_model hook has
             # run, so counting the message list alone under-reports the prompt.
-            for prefix, chars in injected_block_chars().items():
+            for prefix, chars in injected_block_chars(snap.thread_id).items():
                 key = self._segment_for_prefix(prefix)
                 system_chars[key] = system_chars.get(key, 0) + chars
 

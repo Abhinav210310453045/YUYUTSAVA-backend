@@ -244,12 +244,19 @@ class RetryBudgetTests(unittest.TestCase):
 class RetryListenerTests(unittest.TestCase):
     """The front needs to say "provider busy, retrying" in its own voice."""
 
+    def setUp(self):
+        self._removers = []
+
     def tearDown(self):
-        fcr.set_retry_listener(None)
+        for remove in self._removers:
+            remove()
+
+    def _listen(self, callback):
+        self._removers.append(fcr.add_retry_listener(callback))
 
     def test_listener_is_called_per_retry(self):
         seen = []
-        fcr.set_retry_listener(lambda *a: seen.append(a))
+        self._listen(lambda *a: seen.append(a))
         m = Retrying(fail_first=2)
         with _NoSleep():
             _collect(m)
@@ -264,27 +271,33 @@ class RetryListenerTests(unittest.TestCase):
 
     def test_listener_is_not_called_when_nothing_is_retried(self):
         seen = []
-        fcr.set_retry_listener(lambda *a: seen.append(a))
+        self._listen(lambda *a: seen.append(a))
         with _NoSleep():
             _collect(Retrying())
         self.assertEqual(seen, [])
 
-    def test_a_broken_listener_never_breaks_the_call(self):
+    def test_a_broken_listener_never_breaks_the_call_or_the_others(self):
         def boom(*_a):
             raise RuntimeError("listener bug")
 
-        fcr.set_retry_listener(boom)
+        seen = []
+        self._listen(boom)
+        self._listen(lambda *a: seen.append(a))
         m = Retrying(fail_first=1)
         with _NoSleep():
             self.assertEqual(_collect(m), ["a", "b", "c"])
+        self.assertEqual(len(seen), 1)
 
-    def test_clearing_the_listener_works(self):
-        seen = []
-        fcr.set_retry_listener(lambda *a: seen.append(a))
-        fcr.set_retry_listener(None)
+    def test_removing_a_listener_leaves_the_others(self):
+        """Two owners: one removing its listener must not silence the other —
+        the single slot this replaced let the last registration win."""
+        first, second = [], []
+        remove_first = fcr.add_retry_listener(lambda *a: first.append(a))
+        self._listen(lambda *a: second.append(a))
+        remove_first()
         with _NoSleep():
             _collect(Retrying(fail_first=1))
-        self.assertEqual(seen, [])
+        self.assertEqual((len(first), len(second)), (0, 1))
 
 
 class QuirkOwnsTheLadderTests(unittest.TestCase):

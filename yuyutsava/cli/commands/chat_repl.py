@@ -61,7 +61,7 @@ from yuyutsava.config.logs import silence_plumbing_loggers
 from yuyutsava.consent import decision_token as _decision_token
 from yuyutsava.conversation import ConversationService
 from yuyutsava.core.agent_stack import build_agent_stack
-from yuyutsava.llm.quirks.first_chunk_retry import classify_provider_busy, set_retry_listener
+from yuyutsava.llm.quirks.first_chunk_retry import add_retry_listener, classify_provider_busy
 from yuyutsava.prefs.runtime import UNDISABLEABLE, RuntimeSettings
 from yuyutsava.storage.events import Store
 from yuyutsava.storage.paths import state_dir
@@ -909,15 +909,15 @@ class ReplLoop:
             print(f"{DIM}  {line}{RESET}", file=sys.stderr)
 
 
-def _install_retry_listener(renderer: Any, dashboard: Any) -> None:
+def _install_retry_listener(renderer: Any, dashboard: Any) -> Callable[[], None]:
     """Provider retries (429/503) speak through the renderer, not the log.
 
     The SDK's own retry logger emits several structlog lines per attempt,
     which printed straight through the Live region and still left the user
     unable to tell whether the turn was alive. The status line is transient
     and easy to miss during a long wait; the panel keeps the notice up for the
-    length of the backoff. Neither writes into the transcript. Cleared by
-    :func:`_close_chat`.
+    length of the backoff. Neither writes into the transcript. Returns the
+    remover, which :func:`_close_chat` calls.
     """
 
     def _on_retry(model, attempt, retries, delay, exc):
@@ -925,7 +925,7 @@ def _install_retry_listener(renderer: Any, dashboard: Any) -> None:
         if dashboard is not None:
             dashboard.note_retry(model, attempt, retries, delay, exc)
 
-    set_retry_listener(_on_retry)
+    return add_retry_listener(_on_retry)
 
 
 async def _start_session(
@@ -974,13 +974,17 @@ async def _start_session(
 
 
 async def _close_chat(
-    *, dashboard: Any, renderer: Any, approvals: Any, runtime_toggles: Any, bundle: Any
+    *,
+    dashboard: Any,
+    renderer: Any,
+    approvals: Any,
+    runtime_toggles: Any,
+    bundle: Any,
+    stop_retry_notices: Callable[[], None],
 ) -> None:
     """Tear the chat down in order, whatever state it ended in."""
-    # The listener is process-global; a renderer that outlives this REPL
-    # would keep drawing on a dead Live region.
-    with contextlib.suppress(Exception):
-        set_retry_listener(None)
+    # A renderer that outlived this REPL would keep drawing on a dead Live region.
+    stop_retry_notices()
     if dashboard is not None:
         # Leave the alternate screen first, then hand the transcript back: the
         # app takes the session's output with it when it exits, and a user who
@@ -1031,7 +1035,7 @@ async def run_chat_repl(
         workspace, history_path=history_path, verbose=opts.verbose, classic=classic
     )
     console, dashboard, renderer = surface.console, surface.dashboard, surface.renderer
-    _install_retry_listener(renderer, dashboard)
+    stop_retry_notices = _install_retry_listener(renderer, dashboard)
     quieten_chat_loggers(debug_plumbing=debug_plumbing, verbose=opts.verbose)
 
     async with build_checkpointer(sessions_settings) as checkpointer:
@@ -1104,6 +1108,7 @@ async def run_chat_repl(
                 approvals=approvals,
                 runtime_toggles=runtime_toggles,
                 bundle=bundle,
+                stop_retry_notices=stop_retry_notices,
             )
 
     print(f"{DIM}— chat closed —{RESET}", file=sys.stderr)
