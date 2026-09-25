@@ -220,43 +220,8 @@ class TriageLoop:
         async with self._sem:
             try:
                 # 1. consent_rules first — auto-approve / auto-skip without LLM.
-                rule = (await self._consent.evaluate(ev)).rule
-                if rule and rule.decision == "auto_skip":
-                    await self._store.put_decision(
-                        proposal_id=None,
-                        event_id=ev.event_id,
-                        outcome="skipped_by_rule",
-                        action_summary=f"rule:{rule.rule_id}",
-                    )
-                    await self._channels.post_event(
-                        ChannelEvent(
-                            payload=TimelinePayload(
-                                ts=ev.ts,
-                                line=f"auto-skipped: {ev.summary}",
-                                cls="event-decision-skipped",
-                            ),
-                        )
-                    )
+                if await self._apply_rule(ev):
                     return
-
-                if rule and rule.decision == "auto_approve":
-                    # No triage call; synthesise a proper instruction from event
-                    # metadata so the subagent gets an unambiguous path, not just
-                    # the raw summary string.
-                    proposed_instruction = _build_fs_instruction(ev)
-                    decision = TriageDecision(
-                        action="propose",
-                        subagent_hint=self._hint("file-organizer"),
-                        proposed_instruction=proposed_instruction,
-                        reason="auto_approve rule",
-                        urgency=1,
-                        # No LLM here; a rule-approved single-file move is the
-                        # prompt's anchored complexity-1 example.
-                        complexity=1,
-                    )
-                    await self._auto_approve_path(ev, decision, rule_id=rule.rule_id)
-                    return
-
                 # 2. LLM triage — include skills index if available.
                 skills_index = (
                     self._skill_registry.index_block(agent="triage") if self._skill_registry else ""
@@ -264,74 +229,96 @@ class TriageLoop:
                 decision = await self._triage.classify(
                     ev, self._capabilities(), skills_index=skills_index
                 )
-
                 if decision.action == "drop":
-                    # Record it. Every other outcome — logged, skipped_by_rule,
-                    # auto_approved — writes a decision row and a timeline line;
-                    # `drop` alone used to `return` in silence, and that made a
-                    # deliberate "not worth acting on" indistinguishable from a
-                    # broken daemon.
-                    #
-                    # It matters most for `mode=triage` submissions: the task
-                    # registry row stays `queued` (coarse v1, see
-                    # task_submission.submit_via_triage), so with no decision
-                    # recorded the user saw a task sit queued forever with no
-                    # explanation anywhere. Found by submitting one and watching
-                    # nothing happen.
-                    await self._store.put_decision(
-                        proposal_id=None,
-                        event_id=ev.event_id,
-                        outcome="dropped",
-                        action_summary=decision.reason,
-                    )
-                    await self._channels.post_event(
-                        ChannelEvent(
-                            payload=TimelinePayload(
-                                ts=ev.ts,
-                                line=f"dropped: {ev.summary} — {decision.reason}",
-                                cls="event-decision-skipped",
-                            ),
-                        )
+                    # Recorded like every other outcome: a silent drop is
+                    # indistinguishable from a broken daemon, most of all for a
+                    # mode=triage submission whose registry row stays queued.
+                    await self._record_outcome(
+                        ev,
+                        "dropped",
+                        decision.reason,
+                        f"dropped: {ev.summary} — {decision.reason}",
+                        cls="event-decision-skipped",
                     )
                     return
                 if decision.action == "log":
-                    await self._store.put_decision(
-                        proposal_id=None,
-                        event_id=ev.event_id,
-                        outcome="logged",
-                        action_summary=decision.reason,
-                    )
-                    await self._channels.post_event(
-                        ChannelEvent(
-                            payload=TimelinePayload(
-                                ts=ev.ts,
-                                line=f"logged: {ev.summary} — {decision.reason}",
-                            ),
-                        )
+                    await self._record_outcome(
+                        ev, "logged", decision.reason, f"logged: {ev.summary} — {decision.reason}"
                     )
                     return
-
                 # 3. action == "propose": Tier-1 consent.
-                proposal = Proposal.new(
-                    event_id=ev.event_id,
-                    topic=ev.topic,
-                    summary=ev.summary,
-                    proposed=decision.proposed_instruction or ev.summary,
-                    subagent=self._hint(decision.subagent_hint),
-                    urgency=decision.urgency,
-                    expiry_sec=self._proposal_expiry_sec,
-                )
-                await self._store.put_proposal(proposal)
-
-                user_decision: ProposalDecision = await self._channels.post_proposal(proposal)
-                await self._handle_user_decision(
-                    ev,
-                    proposal,
-                    user_decision,
-                    complexity=decision.complexity,
-                )
+                await self._propose(ev, decision)
             except Exception:
                 logger.exception("triage handler crashed for %s", ev.event_id)
+
+    async def _record_outcome(
+        self,
+        ev: EventEnvelope,
+        outcome: str,
+        summary: str,
+        line: str,
+        *,
+        cls: str = "",
+    ) -> None:
+        """A decision row and a timeline line for an event nobody acts on."""
+        await self._store.put_decision(
+            proposal_id=None,
+            event_id=ev.event_id,
+            outcome=outcome,
+            action_summary=summary,
+        )
+        await self._channels.post_event(
+            ChannelEvent(payload=TimelinePayload(ts=ev.ts, line=line, cls=cls))
+        )
+
+    async def _apply_rule(self, ev: EventEnvelope) -> bool:
+        """Settle *ev* by a consent rule, without the model; whether one did."""
+        rule = (await self._consent.evaluate(ev)).rule
+        if rule and rule.decision == "auto_skip":
+            await self._record_outcome(
+                ev,
+                "skipped_by_rule",
+                f"rule:{rule.rule_id}",
+                f"auto-skipped: {ev.summary}",
+                cls="event-decision-skipped",
+            )
+            return True
+        if rule and rule.decision == "auto_approve":
+            # No triage call; synthesise a proper instruction from event
+            # metadata so the subagent gets an unambiguous path, not just the
+            # raw summary string. A rule-approved single-file move is the
+            # prompt's anchored complexity-1 example.
+            decision = TriageDecision(
+                action="propose",
+                subagent_hint=self._hint("file-organizer"),
+                proposed_instruction=_build_fs_instruction(ev),
+                reason="auto_approve rule",
+                urgency=1,
+                complexity=1,
+            )
+            await self._auto_approve_path(ev, decision, rule_id=rule.rule_id)
+            return True
+        return False
+
+    async def _propose(self, ev: EventEnvelope, decision: TriageDecision) -> None:
+        """Ask the user about the proposed action, then act on their answer."""
+        proposal = Proposal.new(
+            event_id=ev.event_id,
+            topic=ev.topic,
+            summary=ev.summary,
+            proposed=decision.proposed_instruction or ev.summary,
+            subagent=self._hint(decision.subagent_hint),
+            urgency=decision.urgency,
+            expiry_sec=self._proposal_expiry_sec,
+        )
+        await self._store.put_proposal(proposal)
+        user_decision: ProposalDecision = await self._channels.post_proposal(proposal)
+        await self._handle_user_decision(
+            ev,
+            proposal,
+            user_decision,
+            complexity=decision.complexity,
+        )
 
     async def _auto_approve_path(
         self, ev: EventEnvelope, decision: TriageDecision, *, rule_id: str
