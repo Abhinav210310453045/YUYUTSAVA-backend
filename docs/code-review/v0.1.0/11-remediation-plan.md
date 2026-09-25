@@ -584,14 +584,25 @@ measured exit criteria were not, so work continued against them:
 - The three package inits that W4's splits had given logic are clean again
   (`inits_with_logic` 3 → 0, unused re-exports 3 → 0).
 
-| Criterion | Target | W4 start | Now |
+| Criterion | Target | W4 start | Now (2026-09-25) |
 |---|---|---|---|
-| Functions > 200 lines | 0 | 11 | **0** |
-| Functions > 100 lines | ≤ 10 | 38 | 34 |
-| Functions > 10 params | ≤ 3 | 14 | 8 |
-| Highest complexity | ≤ 25 | ≈130 | 38 (8 over 25) |
-| Classes > 400 lines | 0 | 8 | 8 |
-| History narration | 0 (reviewed) | 176 | 2, reviewed |
+| Functions > 200 lines | 0 | 11 | **0** ✓ |
+| Functions > 100 lines | ≤ 10 | 38 | 16; **8** without the accepted tool factories ✓ |
+| Functions > 10 params | ≤ 3 | 14 | **2** ✓ |
+| Highest complexity | ≤ 25 | ≈130 | **25** ✓ (0 over 25) |
+| Classes > 400 lines | 0 | 8 | **2**, both deliberate stops |
+| History narration | 0 (reviewed) | 176 | **2**, both reviewed prompt strings ✓ |
+
+The table was first written when the criteria were far off, and the Now
+column was kept current through the wave. The eight still over 100 lines
+are the orchestration builders (`build_agent_stack` 153, `build_tinker_agent`
+115, `build_tinker_stack` 114, `astream_agent` 113, `run_chat_repl` 106,
+`build_orchestrator` 104, `build_boot_state` 102) and the face-watcher's
+subprocess `main` (137), which the owner has put off limits. The two classes
+over 400 are `ChatDashboard` (438, stopped under `R-SOL-01`) and
+`RichChatRenderer` (408, carried). Splitting either further would only move
+lines. **W4 is closed on these terms**; the fingerprint stayed byte-identical
+throughout.
 
 Of the 34 over 100 lines, nine are tool factories (`make_shell_tools`,
 `make_visual_tools`, …) whose length is the sum of the `@tool` functions
