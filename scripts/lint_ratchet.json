@@ -71,12 +71,6 @@
   "yuyutsava/conversation/service.py": {
     "PLR0913": 3
   },
-  "yuyutsava/conversation/sessions.py": {
-    "T201": 1
-  },
-  "yuyutsava/core/agent_profiles.py": {
-    "T201": 5
-  },
   "yuyutsava/core/agent_stack.py": {
     "PLR0913": 1
   },
@@ -103,8 +97,7 @@
     "PLR0913": 1
   },
   "yuyutsava/daemon/main.py": {
-    "BLE001": 1,
-    "T201": 13
+    "BLE001": 1
   },
   "yuyutsava/daemon/orchestrator_loop.py": {
     "BLE001": 1,
@@ -112,9 +105,6 @@
   },
   "yuyutsava/daemon/resources.py": {
     "BLE001": 1
-  },
-  "yuyutsava/daemon/terminal_channel.py": {
-    "T201": 22
   },
   "yuyutsava/daemon/triage_loop.py": {
     "PLR0913": 1

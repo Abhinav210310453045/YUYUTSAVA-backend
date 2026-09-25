@@ -13,6 +13,8 @@ import asyncio
 import json
 import sys
 import time
+from collections.abc import Callable
+from typing import TextIO
 
 from yuyutsava.ansi import CYAN, DIM, GREEN, MAGENTA, RESET, YELLOW
 from yuyutsava.consent import decision_token, is_permission_ask
@@ -33,47 +35,72 @@ _SEP = "━" * 60
 
 
 class TerminalChannel(UserChannel):
+    """Renders to a text stream and reads answers line by line.
+
+    ``out`` defaults to stderr (stdout stays free for anything piped) and
+    ``ask`` to :func:`input`, which runs off the loop in a thread; both are
+    parameters so the channel can be driven without a terminal.
+    """
+
     name = "terminal"
 
-    def __init__(self, *, verbose: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        verbose: bool = False,
+        out: TextIO | None = None,
+        ask: Callable[[str], str] | None = None,
+    ) -> None:
         self._verbose = verbose
+        self._out = out
+        self._ask = ask
+
+    async def _read(self, prompt: str) -> str:
+        # Off the loop: input() blocks. Resolved per call, like ``out``.
+        return await asyncio.to_thread(self._ask or input, prompt)
+
+    def _line(self, text: str = "", *, end: str = "\n") -> None:
+        # Resolved per call: the dashboard and tests swap sys.stderr.
+        out = self._out if self._out is not None else sys.stderr
+        out.write(text + end)
+        out.flush()
 
     async def post_event(self, ev: ChannelEvent) -> None:
         match ev.payload:
             case TimelinePayload(line=line) if line:
-                print(f"{CYAN}• {line}{RESET}", file=sys.stderr, flush=True)
+                self._line(f"{CYAN}• {line}{RESET}")
             case ToolCallPayload(name=name, args=args):
                 if self._verbose:
                     args_str = ""
                     if args:
                         args_str = " " + json.dumps(dict(args), ensure_ascii=False)[:160]
-                    print(f"{YELLOW}🔧 {name}{args_str}{RESET}", file=sys.stderr, flush=True)
+                    self._line(f"{YELLOW}🔧 {name}{args_str}{RESET}")
                 else:
-                    print(f"{YELLOW}🔧 {name}{RESET}", file=sys.stderr, flush=True)
+                    self._line(f"{YELLOW}🔧 {name}{RESET}")
             case ToolResultPayload(name=name, preview=preview) if self._verbose:
                 short = preview[:300].replace("\n", " ") if preview else "(empty)"
-                print(f"{GREEN}  ↳ [{name}] {short}{RESET}", file=sys.stderr, flush=True)
+                self._line(f"{GREEN}  ↳ [{name}] {short}{RESET}")
             case TokenPayload(text=text) if self._verbose and text:
-                print(text, end="", flush=True, file=sys.stderr)
+                self._line(text, end="")
             case LogPayload(text=text) if self._verbose:
-                print(text, file=sys.stderr, flush=True)
+                self._line(text)
             case _:
                 pass
 
     async def post_proposal(self, p: Proposal) -> ProposalDecision:
-        print(f"\n{MAGENTA}{_SEP}{RESET}", file=sys.stderr)
-        print(f"{MAGENTA}🟣  PROPOSAL  {p.topic}{RESET}", file=sys.stderr)
-        print(f"{MAGENTA}{_SEP}{RESET}", file=sys.stderr)
-        print(f"  Event   : {p.summary}", file=sys.stderr)
-        print(f"  Proposed: {p.proposed}", file=sys.stderr)
-        print(f"  Subagent: {p.subagent}   urgency={p.urgency}", file=sys.stderr)
+        self._line(f"\n{MAGENTA}{_SEP}{RESET}")
+        self._line(f"{MAGENTA}🟣  PROPOSAL  {p.topic}{RESET}")
+        self._line(f"{MAGENTA}{_SEP}{RESET}")
+        self._line(f"  Event   : {p.summary}")
+        self._line(f"  Proposed: {p.proposed}")
+        self._line(f"  Subagent: {p.subagent}   urgency={p.urgency}")
         ttl = max(0, int(p.expires_ts - time.time()))
-        print(f"  Expires : in {ttl}s", file=sys.stderr)
-        print(f"{MAGENTA}{_SEP}{RESET}", file=sys.stderr)
-        print("  [a]pprove  [r]emember-approve  [s]kip  [k]eep-skip  [m]odify", file=sys.stderr)
+        self._line(f"  Expires : in {ttl}s")
+        self._line(f"{MAGENTA}{_SEP}{RESET}")
+        self._line("  [a]pprove  [r]emember-approve  [s]kip  [k]eep-skip  [m]odify")
         try:
             answer = await asyncio.wait_for(
-                asyncio.to_thread(input, "  Decision: "),
+                self._read("  Decision: "),
                 timeout=max(1.0, p.expires_ts - time.time()),
             )
         except asyncio.TimeoutError:
@@ -86,7 +113,7 @@ class TerminalChannel(UserChannel):
         if ans == "k":
             return ProposalDecision(decision="skip_remember")
         if ans == "m":
-            edit = await asyncio.to_thread(input, "  New instruction: ")
+            edit = await self._read("  New instruction: ")
             return ProposalDecision(decision="modify", edited_instruction=edit.strip() or None)
         return ProposalDecision(decision="skip")
 
@@ -97,21 +124,21 @@ class TerminalChannel(UserChannel):
         options = a.options or []
         is_permission = is_permission_ask(options)
 
-        print(f"\n{YELLOW}{_SEP}{RESET}", file=sys.stderr)
-        print(f"{YELLOW}🛑 {a.title}{RESET}", file=sys.stderr)
-        print(f"{YELLOW}{_SEP}{RESET}", file=sys.stderr)
-        print(f"  {a.body}", file=sys.stderr)
+        self._line(f"\n{YELLOW}{_SEP}{RESET}")
+        self._line(f"{YELLOW}🛑 {a.title}{RESET}")
+        self._line(f"{YELLOW}{_SEP}{RESET}")
+        self._line(f"  {a.body}")
         if is_permission:
             scope = (
                 " / [s]ession / [p]roject" if ("session" in options or "project" in options) else ""
             )
-            print(f"  {DIM}[y]es / [n]o{scope}{RESET}", file=sys.stderr)
+            self._line(f"  {DIM}[y]es / [n]o{scope}{RESET}")
         elif options:
-            print(f"  Options: {' | '.join(options)}", file=sys.stderr)
-        print(f"{YELLOW}{_SEP}{RESET}", file=sys.stderr)
+            self._line(f"  Options: {' | '.join(options)}")
+        self._line(f"{YELLOW}{_SEP}{RESET}")
 
         prompt = "  Allow? [y/N]: " if is_permission else "  Response: "
-        answer = await asyncio.to_thread(input, prompt)
+        answer = await self._read(prompt)
         if is_permission:
             return decision_token(answer) or "reject"
         return (answer or "").strip() or "reject"

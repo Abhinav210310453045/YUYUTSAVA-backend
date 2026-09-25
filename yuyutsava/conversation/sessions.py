@@ -17,14 +17,15 @@ one it belongs to, and the name collided with :mod:`yuyutsava.storage.sessions`
 from __future__ import annotations
 
 import asyncio
-import sys
+import logging
 import time
 from pathlib import Path
 
-from yuyutsava.ansi import RESET, YELLOW
 from yuyutsava.storage.models import Session
 from yuyutsava.storage.paths import WorkspaceLayout
 from yuyutsava.storage.sessions import SessionNotFound, SessionStore
+
+logger = logging.getLogger("yuyutsava.conversation.sessions")
 
 _TICK_COALESCE_SEC = 0.5
 
@@ -112,11 +113,12 @@ async def resolve_session(
                 f"No session with id {resume_id!r}. Run with --list-sessions to see available ids."
             ) from None
         if str(existing.workspace) != str(workspace.resolve()):
-            print(
-                f"{YELLOW}warning:{RESET} resuming session {resume_id} "
-                f"whose original workspace was {existing.workspace} "
-                f"(current --workspace is {workspace}). Continuing anyway.",
-                file=sys.stderr,
+            logger.warning(
+                "resuming session %s whose original workspace was %s "
+                "(current --workspace is %s). Continuing anyway.",
+                resume_id,
+                existing.workspace,
+                workspace,
             )
         await store.update_status(resume_id, "running")
         return existing, True

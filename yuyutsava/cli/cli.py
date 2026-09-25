@@ -22,6 +22,7 @@ except ImportError:
     load_dotenv = None  # type: ignore[assignment, misc]
 
 from yuyutsava.aio import run as aio_run
+from yuyutsava.cli.commands import daemon_ctl
 from yuyutsava.cli.commands.attach import run_attach
 from yuyutsava.cli.commands.chat import run_chat
 from yuyutsava.cli.commands.options import ChatOptions
@@ -66,6 +67,9 @@ class Subcommand:
 
 def _run_daemon(argv: list[str]) -> int:
     """Hand off to the always-on daemon; the rest of argv is the daemon's own."""
+    handled = daemon_ctl.run_control(argv)
+    if handled is not None:
+        return handled
     # Deferred: the daemon adds ~195 modules (~120 ms) no other command needs.
     from yuyutsava.daemon.main import main as daemon_main  # noqa: PLC0415
 
