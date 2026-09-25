@@ -195,6 +195,24 @@ async def cancel_conversation(thread_id: str, request: Request) -> OkOut:
     return OkOut(ok=True, note="turn cancellation requested")
 
 
+async def _refuse(ws: WebSocket, message: str) -> None:
+    """Tell the client why, and close."""
+    await ws.send_text(json.dumps({"type": "error", "message": message}))
+    await ws.close()
+
+
+def _ask_surface(agent: str, card_id: str | None, origin: str) -> tuple[str, str]:
+    """Which surface *owns* an ask raised in this conversation, and its label.
+
+    The only thing that decides where such an ask is allowed to render.
+    """
+    if agent == "tinker" and card_id:
+        return "tinker", "TinkerAgent"
+    if origin == "voice":
+        return "voice", "Voice"
+    return "chat", "Chat"
+
+
 @router.websocket("/ws/converse")
 async def converse(ws: WebSocket) -> None:
     manager = getattr(ws.app.state, "conversation_manager", None)
@@ -205,56 +223,30 @@ async def converse(ws: WebSocket) -> None:
         await _dictate(ws)
         return
     if manager is None:
-        await ws.send_text(
-            json.dumps({"type": "error", "message": "conversation manager not initialized"})
-        )
-        await ws.close()
+        await _refuse(ws, "conversation manager not initialized")
         return
 
-    # Voice turns persist a replayable conversation surface (Phase 6b). None in
-    # zero-config setups where the manager wasn't given a store.
-    voice_store = getattr(manager, "voice_store", None)
-
-    origin = ws.query_params.get("origin", "cli")
-    resume_id = ws.query_params.get("resume_id") or None
-    continue_latest = ws.query_params.get("continue", "").lower() in ("1", "true", "yes")
+    q = ws.query_params
+    origin = q.get("origin", "cli")
+    resume_id = q.get("resume_id") or None
     # agent=tinker&card=<card_id> routes to the card-bound TinkerAgent bundle;
     # resume_id picks one of the card's chats (todo:<card_id>[:<suffix>]),
     # no resume_id starts a fresh one. Default is the shared master deepagent.
-    agent = ws.query_params.get("agent", "master")
-    card_id = ws.query_params.get("card") or None
-
+    agent = q.get("agent", "master")
+    card_id = q.get("card") or None
     try:
         convo, resuming = await manager.open(
             agent=agent,
             card_id=card_id,
             origin=origin,
             resume_id=resume_id,
-            continue_latest=continue_latest,
+            continue_latest=q.get("continue", "").lower() in ("1", "true", "yes"),
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("converse: failed to open conversation", exc_info=True)
-        await ws.send_text(json.dumps({"type": "error", "message": str(exc)}))
-        await ws.close()
+        await _refuse(ws, str(exc))
         return
 
-    # HITL goes through the daemon's shared channel router, so a conversation
-    # ask is the same durable record as a background one: it gets an ask_id, is
-    # persisted before broadcast, and can be answered from the Inbox or the
-    # overlay as well as inline here. ``decisions`` resolves an inline answer
-    # through that one code path instead of a socket-local future.
-    channels = getattr(ws.app.state, "channels", None)
-    decisions = getattr(ws.app.state, "decision_service", None)
-    # Which surface *owns* an ask raised in this conversation — the only thing
-    # that decides where it is allowed to render.
-    if agent == "tinker" and card_id:
-        surface, agent_label = "tinker", "TinkerAgent"
-    elif origin == "voice":
-        surface, agent_label = "voice", "Voice"
-    else:
-        surface, agent_label = "chat", "Chat"
-
-    _voice_toggles = getattr(ws.app.state, "runtime_settings", None)
     logger.info(
         "converse: WS open agent=%s card=%s origin=%s resume_id=%s → session=%s "
         "resuming=%s voice_barge_in=%s (post_speak_grace=%.1fs)",
@@ -267,7 +259,7 @@ async def converse(ws: WebSocket) -> None:
         _BARGE_IN_ENABLED,
         _POST_SPEAK_GRACE_SEC,
     )
-
+    surface, agent_label = _ask_surface(agent, card_id, origin)
     await ConverseConnection(
         ws,
         ConverseSpec(
@@ -279,10 +271,16 @@ async def converse(ws: WebSocket) -> None:
             surface=surface,
             agent_label=agent_label,
             resuming=resuming,
-            channels=channels,
-            decisions=decisions,
-            voice_store=voice_store,
-            voice_toggles=_voice_toggles,
+            # HITL goes through the daemon's shared channel router, so a
+            # conversation ask is the same durable record as a background one:
+            # it gets an ask_id, is persisted before broadcast, and can be
+            # answered from the Inbox or the overlay as well as inline here.
+            # ``decisions`` resolves an inline answer through that one path.
+            channels=getattr(ws.app.state, "channels", None),
+            decisions=getattr(ws.app.state, "decision_service", None),
+            # A replayable spoken-reply surface; None in zero-config setups.
+            voice_store=getattr(manager, "voice_store", None),
+            voice_toggles=getattr(ws.app.state, "runtime_settings", None),
         ),
         since_seq=_since_seq(ws),
         # A lambda, not the class: both WS test files patch ``VoicePipeline`` on
