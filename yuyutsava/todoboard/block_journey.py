@@ -121,9 +121,123 @@ def _note_html(n: dict[str, Any]) -> str:
     )
 
 
+def _header_html(card: dict[str, Any]) -> list[str]:
+    status = card.get("status", "inbox")
+    return [
+        f"<h1>{_esc(card.get('title'))}</h1>",
+        "<div class='meta'>"
+        f"<span class='pill' style='color:#8fb8ff;border-color:#8fb8ff'>{_esc(status)}</span>"
+        + "".join(f"<span class='tag'>#{_esc(t)}</span>" for t in card.get("tags") or [])
+        + "</div>",
+        f"<div class='meta'>created {_when(card.get('created_ts'))} · "
+        f"last activity {_when(card.get('updated_ts'))} · "
+        f"journey compiled {datetime.now().strftime('%Y-%m-%d %H:%M')}</div>",
+    ]
+
+
+def _reflections(notes: list[dict]) -> list[dict]:
+    """The tinker's reflection notes — the hybrid's narrative half."""
+    return [
+        n
+        for n in notes
+        if n.get("author") == "tinker"
+        and str(n.get("body", "")).lstrip().startswith(REFLECTION_MARKER)
+    ]
+
+
+def _reflection_html(reflections: list[dict]) -> list[str]:
+    if not reflections:
+        return []
+    out = ["<h2>Reflection</h2>"]
+    for n in reflections:
+        body = str(n.get("body", "")).lstrip()[len(REFLECTION_MARKER) :].strip()
+        out.append(
+            f"<div class='reflection'><span class='a' style='color:#7a828c;"
+            f"font-size:11px'>tinker · {_when(n.get('updated_ts'))}</span>\n"
+            f"{_esc(body)}</div>"
+        )
+    return out
+
+
+def _objective_html(o: dict, phase: str, color: str, notes: list[dict]) -> list[str]:
+    out = [
+        "<div class='obj'>",
+        f"<span class='pill' style='color:{color};border-color:{color}'>"
+        f"{phase}</span><span class='t'>{_esc(o.get('title'))}</span>",
+    ]
+    if o.get("reason"):
+        out.append(f"<div class='why'>why: {_esc(o['reason'])}</div>")
+    if o.get("outcome"):
+        out.append(f"<div class='won'>outcome: {_esc(o['outcome'])}</div>")
+    out.extend(_note_html(n) for n in notes)
+    out.append("</div>")
+    return out
+
+
+def _objectives_html(objectives: list[dict], notes: list[dict]) -> list[str]:
+    """Objectives grouped by phase, each with the notes assigned to it."""
+    if not objectives:
+        return []
+    done = sum(1 for o in objectives if o.get("phase") == "completed")
+    out = [f"<h2>Objectives — {done}/{len(objectives)} completed</h2>"]
+    by_objective: dict[str, list[dict]] = {}
+    for n in notes:
+        if n.get("objective_id"):
+            by_objective.setdefault(n["objective_id"], []).append(n)
+    for phase in _PHASE_ORDER:
+        in_phase = [o for o in objectives if o.get("phase") == phase]
+        if not in_phase:
+            continue
+        color = _PHASE_COLOR.get(phase, "#8a8f98")
+        out.append(f"<div class='phase-h' style='color:{color}'>{phase}</div>")
+        for o in in_phase:
+            out.extend(
+                _objective_html(o, phase, color, by_objective.get(o.get("objective_id"), []))
+            )
+    return out
+
+
+def _general_notes_html(notes: list[dict], reflections: list[dict]) -> list[str]:
+    """Notes on no objective, reflections excluded — they are shown above."""
+    shown = {id(n) for n in reflections}
+    general = [n for n in notes if not n.get("objective_id") and id(n) not in shown]
+    if not general:
+        return []
+    return ["<h2>General notes</h2>", *(_note_html(n) for n in general)]
+
+
+def _timeline_html(events: list[dict]) -> list[str]:
+    if not events:
+        return []
+    return [
+        "<h2>Journey timeline</h2><ul class='tl'>",
+        *(
+            f"<li><span class='ts'>{_when(e.get('created_ts'))}</span>"
+            f"[{_esc(e.get('actor'))}] {_esc(_humanize(e))}</li>"
+            for e in events
+        ),
+        "</ul>",
+    ]
+
+
+def _gallery_html(attachments: list[dict]) -> list[str]:
+    """The card's artifacts by name — the files live on the card."""
+    listable = [a for a in attachments if (a.get("meta") or {}).get("block") != "journey"]
+    if not listable:
+        return []
+    return [
+        "<h2>Artifacts on this card</h2><ul class='gallery'>",
+        *(
+            f"<li>[{_esc(a.get('kind'))}] "
+            f"{_esc(a.get('title') or Path(str(a.get('path') or a.get('url') or '')).name)}</li>"
+            for a in listable
+        ),
+        "</ul>",
+    ]
+
+
 def _generate_journey(spec: dict[str, Any], out_dir: Path) -> tuple[Path, str]:
     """Compile the injected card + events into ``journey_<ULID>.html``."""
-
     card = spec.get("card")
     if not isinstance(card, dict):
         raise TodoValidationError(
@@ -131,109 +245,21 @@ def _generate_journey(spec: dict[str, Any], out_dir: Path) -> tuple[Path, str]:
             "todo_generate_artifact / the generate endpoint, not with a raw spec"
         )
     events = [e for e in spec.get("events") or [] if isinstance(e, dict)]
-    objectives = card.get("objectives") or []
     notes = card.get("notes") or []
-    attachments = card.get("attachments") or []
-
+    reflections = _reflections(notes)
     out: list[str] = [
         "<!doctype html><html><head><meta charset='utf-8'>",
         f"<title>Journey — {_esc(card.get('title'))}</title>",
         f"<style>{_CSS}</style></head><body>",
-    ]
-
-    # ── header ──
-    status = card.get("status", "inbox")
-    out.append(f"<h1>{_esc(card.get('title'))}</h1>")
-    out.append(
-        "<div class='meta'>"
-        f"<span class='pill' style='color:#8fb8ff;border-color:#8fb8ff'>{_esc(status)}</span>"
-        + "".join(f"<span class='tag'>#{_esc(t)}</span>" for t in card.get("tags") or [])
-        + "</div>"
-    )
-    out.append(
-        f"<div class='meta'>created {_when(card.get('created_ts'))} · "
-        f"last activity {_when(card.get('updated_ts'))} · "
-        f"journey compiled {datetime.now().strftime('%Y-%m-%d %H:%M')}</div>"
-    )
-
-    # ── tinker's reflection (the hybrid's narrative half) ──
-    reflections = [
-        n
-        for n in notes
-        if n.get("author") == "tinker"
-        and str(n.get("body", "")).lstrip().startswith(REFLECTION_MARKER)
-    ]
-    if reflections:
-        out.append("<h2>Reflection</h2>")
-        for n in reflections:
-            body = str(n.get("body", "")).lstrip()[len(REFLECTION_MARKER) :].strip()
-            out.append(
-                f"<div class='reflection'><span class='a' style='color:#7a828c;"
-                f"font-size:11px'>tinker · {_when(n.get('updated_ts'))}</span>\n"
-                f"{_esc(body)}</div>"
-            )
-
-    # ── objectives by phase ──
-    if objectives:
-        done = sum(1 for o in objectives if o.get("phase") == "completed")
-        out.append(f"<h2>Objectives — {done}/{len(objectives)} completed</h2>")
-        by_note_obj: dict[str, list[dict]] = {}
-        for n in notes:
-            if n.get("objective_id"):
-                by_note_obj.setdefault(n["objective_id"], []).append(n)
-        for phase in _PHASE_ORDER:
-            in_phase = [o for o in objectives if o.get("phase") == phase]
-            if not in_phase:
-                continue
-            color = _PHASE_COLOR.get(phase, "#8a8f98")
-            out.append(f"<div class='phase-h' style='color:{color}'>{phase}</div>")
-            for o in in_phase:
-                out.append("<div class='obj'>")
-                out.append(
-                    f"<span class='pill' style='color:{color};border-color:{color}'>"
-                    f"{phase}</span><span class='t'>{_esc(o.get('title'))}</span>"
-                )
-                if o.get("reason"):
-                    out.append(f"<div class='why'>why: {_esc(o['reason'])}</div>")
-                if o.get("outcome"):
-                    out.append(f"<div class='won'>outcome: {_esc(o['outcome'])}</div>")
-                for n in by_note_obj.get(o.get("objective_id"), []):
-                    out.append(_note_html(n))
-                out.append("</div>")
-
-    # ── general notes (reflections excluded — already shown above) ──
-    shown = {id(n) for n in reflections}
-    general = [n for n in notes if not n.get("objective_id") and id(n) not in shown]
-    if general:
-        out.append("<h2>General notes</h2>")
-        out.extend(_note_html(n) for n in general)
-
-    # ── activity timeline ──
-    if events:
-        out.append("<h2>Journey timeline</h2><ul class='tl'>")
-        for e in events:
-            out.append(
-                f"<li><span class='ts'>{_when(e.get('created_ts'))}</span>"
-                f"[{_esc(e.get('actor'))}] {_esc(_humanize(e))}</li>"
-            )
-        out.append("</ul>")
-
-    # ── artifact gallery (names only — the files live on the card) ──
-    listable = [a for a in attachments if (a.get("meta") or {}).get("block") != "journey"]
-    if listable:
-        out.append("<h2>Artifacts on this card</h2><ul class='gallery'>")
-        out.extend(
-            f"<li>[{_esc(a.get('kind'))}] "
-            f"{_esc(a.get('title') or Path(str(a.get('path') or a.get('url') or '')).name)}</li>"
-            for a in listable
-        )
-        out.append("</ul>")
-
-    out.append(
+        *_header_html(card),
+        *_reflection_html(reflections),
+        *_objectives_html(card.get("objectives") or [], notes),
+        *_general_notes_html(notes, reflections),
+        *_timeline_html(events),
+        *_gallery_html(card.get("attachments") or []),
         f"<div class='footer'>journey of {_esc(card.get('card_id'))} — "
-        "compiled from the card's think flow by the TODO board</div></body></html>"
-    )
-
+        "compiled from the card's think flow by the TODO board</div></body></html>",
+    ]
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"journey_{ULID()}.html"
     path.write_text("\n".join(out), encoding="utf-8")
