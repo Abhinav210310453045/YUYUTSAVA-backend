@@ -57,7 +57,7 @@ from yuyutsava.daemon.checkpointing import CheckpointerSaver
 from yuyutsava.daemon.config import DaemonConfig
 from yuyutsava.daemon.conversation_manager import ConversationManager
 from yuyutsava.daemon.log_bridge import LogBridge
-from yuyutsava.daemon.orchestrator_loop import OrchestratorLoop
+from yuyutsava.daemon.orchestrator_loop import LoopServices, OrchestratorLoop
 from yuyutsava.daemon.resources import AdmissionController, ResourceMonitor, ResourceSettings
 from yuyutsava.daemon.task_submission import TaskSubmissionService
 from yuyutsava.daemon.terminal_channel import TerminalChannel
@@ -1537,10 +1537,12 @@ def build_loops(boot: BootState) -> LoopSubsystem:
         checkpointer=boot.retention.checkpointer,
         prefs_injector=pol.prefs_injector,
         skill_store=boot.retrieval.skill_store,
-        task_registry=st.task_registry,
-        model_router=model_router,
-        admission=boot.resources.admission,
-        launch_index=boot.launch_index,
+        services=LoopServices(
+            task_registry=st.task_registry,
+            model_router=model_router,
+            admission=boot.resources.admission,
+            launch_index=boot.launch_index,
+        ),
     )
     return LoopSubsystem(
         task_submission=task_submission, triage_loop=triage_loop, orch_loop=orch_loop

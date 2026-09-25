@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 from yuyutsava.async_subagents.session_origin import SessionOriginMap
 from yuyutsava.daemon.channels import ChannelRouter
-from yuyutsava.daemon.orchestrator_loop import OrchestratorLoop
+from yuyutsava.daemon.orchestrator_loop import LoopServices, OrchestratorLoop
 from yuyutsava.ports.channels import ChannelEvent, UserChannel
 
 
@@ -58,7 +58,7 @@ def make_loop(origin: str, *, with_channel: bool, with_origin_map: bool = True):
         orchestrator_model=None,
         deps=None,
         orchestrator_token_budget=0,
-        task_registry=_FakeRegistry(origin),
+        services=LoopServices(task_registry=_FakeRegistry(origin)),
     )
     return loop, router
 

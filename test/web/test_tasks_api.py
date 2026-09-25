@@ -159,7 +159,7 @@ class TasksApiTests(unittest.IsolatedAsyncioTestCase):
 
         from yuyutsava.core.streaming import StreamEvent
         from yuyutsava.daemon.channels import ChannelRouter
-        from yuyutsava.daemon.orchestrator_loop import OrchestratorLoop
+        from yuyutsava.daemon.orchestrator_loop import LoopServices, OrchestratorLoop
 
         r = await self.client.post("/tasks", json={"instruction": "do it"})
         task_id = r.json()["task_id"]
@@ -175,7 +175,7 @@ class TasksApiTests(unittest.IsolatedAsyncioTestCase):
                 memory_store=None,
             ),
             orchestrator_token_budget=1000,
-            task_registry=self.registry,
+            services=LoopServices(task_registry=self.registry),
         )
 
         async def fake_stream(graph, message, **kw):

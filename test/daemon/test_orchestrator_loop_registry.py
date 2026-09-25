@@ -17,7 +17,7 @@ from unittest import mock
 
 from yuyutsava.core.streaming import StreamEvent
 from yuyutsava.daemon.channels import ChannelRouter
-from yuyutsava.daemon.orchestrator_loop import OrchestratorLoop
+from yuyutsava.daemon.orchestrator_loop import LoopServices, OrchestratorLoop
 from yuyutsava.daemon.triage_loop import OrchestratorTask
 from yuyutsava.ports.channels import UserChannel
 from yuyutsava.storage.task_registry import TaskRegistry
@@ -78,7 +78,7 @@ class OrchestratorLoopRegistryTests(unittest.IsolatedAsyncioTestCase):
                 memory_store=None,
             ),
             orchestrator_token_budget=1000,
-            task_registry=self.registry,
+            services=LoopServices(task_registry=self.registry),
         )
 
     async def asyncTearDown(self) -> None:

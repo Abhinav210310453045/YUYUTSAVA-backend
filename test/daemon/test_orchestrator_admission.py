@@ -20,7 +20,7 @@ from unittest import mock
 
 from yuyutsava.core.streaming import StreamEvent
 from yuyutsava.daemon.channels import ChannelRouter
-from yuyutsava.daemon.orchestrator_loop import OrchestratorLoop
+from yuyutsava.daemon.orchestrator_loop import LoopServices, OrchestratorLoop
 from yuyutsava.daemon.resources import (
     AdmissionController,
     ResourceMonitor,
@@ -105,8 +105,7 @@ class OrchestratorAdmissionTests(unittest.IsolatedAsyncioTestCase):
                 memory_store=None,
             ),
             orchestrator_token_budget=1000,
-            task_registry=self.registry,
-            admission=admission,
+            services=LoopServices(task_registry=self.registry, admission=admission),
         )
 
     def _admission(

@@ -15,7 +15,7 @@ from unittest import mock
 from yuyutsava.agents.orchestrator.agent import OrchestratorDeps
 from yuyutsava.core.streaming import StreamEvent
 from yuyutsava.daemon.channels import ChannelRouter
-from yuyutsava.daemon.orchestrator_loop import OrchestratorLoop
+from yuyutsava.daemon.orchestrator_loop import LoopServices, OrchestratorLoop
 from yuyutsava.daemon.triage_loop import OrchestratorTask
 from yuyutsava.ports.channels import UserChannel
 from yuyutsava.storage.task_registry import TaskRegistry
@@ -102,8 +102,7 @@ class OrchestratorRoutingTests(unittest.IsolatedAsyncioTestCase):
             orchestrator_model=self.role_model,
             deps=self.deps,
             orchestrator_token_budget=1000,
-            task_registry=self.registry,
-            model_router=self.router,
+            services=LoopServices(task_registry=self.registry, model_router=self.router),
         )
         self.build_calls: list[dict] = []
 
@@ -178,7 +177,7 @@ class OrchestratorRoutingTests(unittest.IsolatedAsyncioTestCase):
                 memory_store=None,
             ),
             orchestrator_token_budget=1000,
-            task_registry=self.registry,
+            services=LoopServices(task_registry=self.registry),
         )
         self._patch_stream()
         task_id = self.registry.mint_task_id()

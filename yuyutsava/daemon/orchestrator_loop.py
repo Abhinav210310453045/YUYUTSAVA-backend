@@ -14,6 +14,7 @@ import contextlib
 import dataclasses
 import logging
 import uuid
+from dataclasses import dataclass
 from typing import Any
 
 from langchain_core.language_models import BaseChatModel
@@ -91,6 +92,22 @@ def make_ask_handler(
     return ask_handler
 
 
+@dataclass(frozen=True)
+class LoopServices:
+    """What the loop records each task in and governs it by; each optional.
+
+    Without a registry nothing is recorded; without a router every task uses
+    the model the daemon booted with; without admission heavy tasks are not
+    gated; without a launch index a background task cannot wake the
+    conversation that started it.
+    """
+
+    task_registry: object | None = None  # yuyutsava.storage.task_registry.TaskRegistry
+    model_router: object | None = None  # yuyutsava.core.model_router.ModelRouter
+    admission: object | None = None  # yuyutsava.daemon.resources.AdmissionController
+    launch_index: object | None = None  # yuyutsava.async_subagents.launch_index.LaunchIndex
+
+
 class OrchestratorLoop:
     def __init__(
         self,
@@ -104,11 +121,13 @@ class OrchestratorLoop:
         checkpointer: BaseCheckpointSaver | None = None,
         prefs_injector: object | None = None,  # yuyutsava.prefs.injector.PrefsInjector
         skill_store: object | None = None,  # yuyutsava.skills.store.SkillStore (dual-write)
-        task_registry: object | None = None,  # yuyutsava.storage.task_registry.TaskRegistry
-        model_router: object | None = None,  # yuyutsava.core.model_router.ModelRouter
-        admission: object | None = None,  # yuyutsava.daemon.resources.AdmissionController
-        launch_index: object | None = None,  # yuyutsava.async_subagents.launch_index.LaunchIndex
+        services: LoopServices | None = None,
     ) -> None:
+        services = services or LoopServices()
+        task_registry = services.task_registry
+        model_router = services.model_router
+        admission = services.admission
+        launch_index = services.launch_index
         self._queue = task_queue
         self._channels = channels
         self._store = store
