@@ -306,7 +306,13 @@ buffer — written first, and expected to fail.
 
 ## R-BUG-06 — One-shot turns skip repair and empty-turn recovery
 
-**Severity** P2 · **Wave** W5 (`fix:` commit) · **Status** Open
+**Severity** P2 · **Wave** W5 (`fix:` commit) · **Status** **Fixed** (2026-09-25).
+Fixed differently from the stated fix, deliberately. The one-shot path keeps
+its own terminal printer and inline permission prompts, and it now calls the
+same `conversation.recovery` functions the service uses: `repair_before_turn`,
+then `recover_empty_turn`, which continues from the checkpoint with no new
+message. Moving the whole path onto `ConversationService` would have changed
+the one-shot UX to close a gap that was only these two steps.
 
 **Evidence.** `R-PLC-06`: `sessions/runner.py` drives one-shot turns without the
 pre-turn repair of interrupted tool calls, and without the empty-turn retry, that

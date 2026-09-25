@@ -345,7 +345,7 @@ def _log_tool_message(m: ToolMessage) -> None:
 
 async def astream_agent(
     agent: Agent,
-    task: str,
+    task: str | None,
     *,
     thread_id: str | None = None,
     recursion_limit: int = 1000,
@@ -365,6 +365,8 @@ async def astream_agent(
     - Tool calls and results are logged at INFO with clear labels.
     - ``interrupt()`` pauses and asks the user on stdin, then resumes.
     - Returns the final assistant text.
+    - ``task`` of ``None`` sends no new message: the graph continues from its
+      checkpoint (the empty-turn retry, whose user message is already there).
     - ``on_tick`` (optional): awaited with the count of new messages observed
       after each graph step batch. Used by ``yuyutsava.cli.session_run`` to
       coalesce ``store.touch`` updates without coupling the engine to the
@@ -385,13 +387,15 @@ async def astream_agent(
     logger.info(_SEP)
     logger.info("YUYUTSAVA  starting task  thread_id=%s", cfg["configurable"]["thread_id"])
     logger.info(_SEP)
-    logger.info("Task: %s", task)
+    logger.info("Task: %s", task if task is not None else "(continuing from the checkpoint)")
     logger.info(_SEP)
 
     final_messages: list[Any] = []
     # Explicit stable id so the message round-trips the checkpoint unchanged
     # (see the note in core.streaming — prevents duplicate transcript rows).
-    first_input: Any = {"messages": [HumanMessage(content=task, id=str(uuid.uuid4()))]}
+    first_input: Any = (
+        None if task is None else {"messages": [HumanMessage(content=task, id=str(uuid.uuid4()))]}
+    )
 
     async def _ask(value: Any) -> str:
         return await prompt_permission(

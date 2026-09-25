@@ -7,11 +7,11 @@ process left cancelled: a permission prompt dies with its terminal, and the
 agent coming back would otherwise read the cancelled result as success.
 
 Everything here is the CLI's own surface — it prints to stderr and owns no
-policy anyone else needs. The multi-turn fronts (the REPL, the app, voice) run
-:class:`~yuyutsava.conversation.service.ConversationService`, which repairs
-interrupted turns and retries empty ones; this path does neither, so W5 of the
-code review moves it onto the service as a behaviour change of its own
-(R-PLC-06).
+policy anyone else needs. Like the multi-turn fronts (the REPL, the app, voice),
+a turn here first repairs a history the model would not continue from and never
+ends in silence: both come from :mod:`yuyutsava.conversation.recovery`, the
+same functions :class:`~yuyutsava.conversation.service.ConversationService`
+uses (R-BUG-06).
 """
 
 from __future__ import annotations
@@ -21,14 +21,16 @@ from pathlib import Path
 
 from langgraph.graph.state import CompiledStateGraph
 
-from yuyutsava.ansi import CYAN, DIM, RESET, YELLOW
+from yuyutsava.ansi import CYAN, DIM, RED, RESET, YELLOW
 from yuyutsava.cli.render.terminal_stream import astream_agent
+from yuyutsava.conversation.recovery import recover_empty_turn, repair_before_turn
 from yuyutsava.conversation.repair import Cause, repair_orphan_tool_calls
 from yuyutsava.conversation.sessions import (
     CoalescedTicker,
     count_memory_files,
     resolve_session,
 )
+from yuyutsava.core.streaming import StreamEvent
 from yuyutsava.storage.interrupts import InterruptsStore
 from yuyutsava.storage.interrupts_unified import sqlite_interrupts_store
 from yuyutsava.storage.models import Session
@@ -49,6 +51,14 @@ async def _patch_orphan_cancellations(agent: CompiledStateGraph, thread_id: str)
     previous process, so consent was never given.
     """
     return await repair_orphan_tool_calls(agent, thread_id, cause=Cause.SESSION_ENDED)
+
+
+def _print_notice(ev: StreamEvent) -> None:
+    """A recovery notice, in the terminal's own voice."""
+    level = ev.data.get("level", "info")
+    colour = {"error": RED, "warning": YELLOW}.get(level, DIM)
+    mark = {"error": "✗", "warning": "⚠"}.get(level, "·")
+    print(f"  {colour}{mark} {ev.data.get('text', '')}{RESET}", file=sys.stderr)
 
 
 def _print_start_banner(session: Session, *, resuming: bool) -> None:
@@ -135,11 +145,10 @@ async def run_session(
     async def _on_tick(steps: int) -> None:
         await ticker.tick(steps)
 
-    completed = False
-    try:
-        final = await astream_agent(
+    async def _drive(user_text: str | None, _resume: object | None) -> tuple[str, int]:
+        final_text = await astream_agent(
             agent,
-            task,
+            user_text,
             thread_id=session.thread_id,
             recursion_limit=recursion_limit,
             on_tick=_on_tick,
@@ -148,6 +157,16 @@ async def run_session(
             interrupts_store=interrupts_store,
             invocation_mode="cli",
         )
+        return final_text, 1
+
+    completed = False
+    try:
+        # No turn starts from a history the model will not continue from — the
+        # same guarantee every other front gets from ConversationService.
+        await repair_before_turn(agent, session.thread_id, _print_notice)
+        final, _ = await _drive(task, None)
+        if not final:
+            final, _ = await recover_empty_turn(agent, session.thread_id, _print_notice, _drive)
         completed = True
         return final
     finally:
