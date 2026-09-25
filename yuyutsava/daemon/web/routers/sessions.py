@@ -57,8 +57,8 @@ async def get_session(session_id: str) -> SessionOut:
     store = get_default_session_store()
     try:
         return SessionOut.from_session(await store.get(session_id))
-    except SessionNotFound:
-        raise HTTPException(status_code=404, detail=f"no session with id {session_id!r}")
+    except SessionNotFound as exc:
+        raise HTTPException(status_code=404, detail=f"no session with id {session_id!r}") from exc
 
 
 def _extract_text(content: object) -> str:
@@ -181,8 +181,8 @@ async def get_session_messages(session_id: str, request: Request) -> dict:
     store = get_default_session_store()
     try:
         session = await store.get(session_id)
-    except SessionNotFound:
-        raise HTTPException(status_code=404, detail=f"no session with id {session_id!r}")
+    except SessionNotFound as exc:
+        raise HTTPException(status_code=404, detail=f"no session with id {session_id!r}") from exc
 
     thread_id = session.thread_id
     voice_store = getattr(request.app.state, "voice_store", None)
@@ -209,8 +209,8 @@ async def get_session_audio(session_id: str, seq: int, request: Request) -> File
     store = get_default_session_store()
     try:
         session = await store.get(session_id)
-    except SessionNotFound:
-        raise HTTPException(status_code=404, detail=f"no session with id {session_id!r}")
+    except SessionNotFound as exc:
+        raise HTTPException(status_code=404, detail=f"no session with id {session_id!r}") from exc
 
     voice_store = getattr(request.app.state, "voice_store", None)
     if voice_store is None:
@@ -236,8 +236,8 @@ async def delete_session(session_id: str, request: Request) -> dict[str, int]:
     ctx = AppContext(events_store=getattr(request.app.state, "store", None))
     try:
         report = await purge_session(session_id, ctx=ctx)
-    except SessionNotFound:
-        raise HTTPException(status_code=404, detail=f"no session with id {session_id!r}")
+    except SessionNotFound as exc:
+        raise HTTPException(status_code=404, detail=f"no session with id {session_id!r}") from exc
     return {
         "deleted": 1,
         "rows_purged": report.total_rows,

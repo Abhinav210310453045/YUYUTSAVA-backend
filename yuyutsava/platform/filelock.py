@@ -27,7 +27,7 @@ logger = logging.getLogger("yuyutsava.platform.filelock")
 
 try:  # preferred cross-platform backend
     import portalocker as _portalocker
-except ImportError:  # pragma: no cover - exercised only on unsynced envs
+except ImportError as exc:  # pragma: no cover - exercised only on unsynced envs
     _portalocker = None
     if sys.platform != "win32":
         import fcntl as _fcntl
@@ -35,7 +35,7 @@ except ImportError:  # pragma: no cover - exercised only on unsynced envs
         raise ImportError(
             "portalocker is required on Windows for cross-process file locks "
             "(run `uv sync` to install it)"
-        )
+        ) from exc
 
 
 def _try_lock(fh) -> bool:

@@ -43,8 +43,8 @@ def _validate_events_config(cfg: EventsConfig) -> None:
     coalesce = fs.params.get("coalesce_window_ms", 750)
     try:
         coalesce_int = int(coalesce)
-    except (TypeError, ValueError):
-        raise ValidationError("coalesce_window_ms must be an integer")
+    except (TypeError, ValueError) as exc:
+        raise ValidationError("coalesce_window_ms must be an integer") from exc
     if not (50 <= coalesce_int <= 60_000):
         raise ValidationError("coalesce_window_ms must be in [50, 60000]")
     for r in fs.params.get("roots") or []:

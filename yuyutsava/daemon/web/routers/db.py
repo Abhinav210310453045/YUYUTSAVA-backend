@@ -43,7 +43,7 @@ async def get_tables(db: str) -> list[TableInfo]:
     try:
         return [TableInfo(**t) for t in await list_tables(db)]
     except DbApiError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.get(
@@ -55,7 +55,7 @@ async def get_schema(db: str, table: str) -> list[ColumnInfo]:
     try:
         return [ColumnInfo(**c) for c in await table_schema(db, table)]
     except DbApiError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.post("/db/{db}/query", response_model=QueryOut, summary="Run a read-only SELECT/PRAGMA")
@@ -68,5 +68,5 @@ async def post_query(db: str, body: QueryIn) -> QueryOut:
             limit=body.limit,
         )
     except DbApiError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     return QueryOut(**result)

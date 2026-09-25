@@ -29,7 +29,7 @@ class MigrationV9Tests(unittest.IsolatedAsyncioTestCase):
         try:
             self.pool = await _open_pool()
         except Exception as exc:  # noqa: BLE001 — no Postgres in this environment
-            raise unittest.SkipTest(f"no Postgres reachable: {exc}")
+            raise unittest.SkipTest(f"no Postgres reachable: {exc}") from exc
 
     async def asyncTearDown(self) -> None:
         await self.pool.close()

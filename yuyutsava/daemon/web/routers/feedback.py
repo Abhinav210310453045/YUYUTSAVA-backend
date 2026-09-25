@@ -32,8 +32,10 @@ async def submit_feedback(body: FeedbackIn) -> FeedbackOut:
         raise HTTPException(status_code=400, detail=f"rating must be one of {list(RATINGS)}")
     try:
         session = await get_default_session_store().get(body.session_id)
-    except SessionNotFound:
-        raise HTTPException(status_code=404, detail=f"no session with id {body.session_id!r}")
+    except SessionNotFound as exc:
+        raise HTTPException(
+            status_code=404, detail=f"no session with id {body.session_id!r}"
+        ) from exc
     # session.workspace is a Path; stringify so psycopg/sqlite can adapt it.
     ws = getattr(session, "workspace", None)
     rec = await get_default_feedback_store().upsert(
@@ -58,8 +60,10 @@ async def list_feedback(
     if session_id:
         try:
             session = await get_default_session_store().get(session_id)
-        except SessionNotFound:
-            raise HTTPException(status_code=404, detail=f"no session with id {session_id!r}")
+        except SessionNotFound as exc:
+            raise HTTPException(
+                status_code=404, detail=f"no session with id {session_id!r}"
+            ) from exc
         records = await store.list_for_thread(session.thread_id, limit=limit)
     else:
         records = await store.list_all(limit=limit)

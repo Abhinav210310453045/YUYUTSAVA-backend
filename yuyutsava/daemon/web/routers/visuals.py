@@ -40,8 +40,8 @@ router = APIRouter(tags=["visuals"])
 async def list_session_visuals(session_id: str) -> list[VisualOut]:
     try:
         session = await get_default_session_store().get(session_id)
-    except SessionNotFound:
-        raise HTTPException(status_code=404, detail=f"no session with id {session_id!r}")
+    except SessionNotFound as exc:
+        raise HTTPException(status_code=404, detail=f"no session with id {session_id!r}") from exc
     records = await get_default_visual_store().list_for_thread(session.thread_id)
     return [VisualOut.from_record(r) for r in records]
 
@@ -73,6 +73,6 @@ async def render_visual(body: RenderIn) -> VisualOut:
     try:
         result = render(body.kind, body.spec)
     except VisualError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     rec = await get_default_visual_store().save(result, body.thread_id)
     return VisualOut.from_record(rec)
