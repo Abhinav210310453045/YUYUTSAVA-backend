@@ -183,54 +183,9 @@ async def _has_fk(conn: aiosqlite.Connection, table: str) -> bool:
     return bool(rows)
 
 
-async def _add_foreign_keys_v5(conn: aiosqlite.Connection) -> None:
-    """Give ``proposals`` and ``decisions`` the FKs Postgres already had.
-
-    Schema v5, closing finding AC. SQLite has no ``ALTER TABLE ADD CONSTRAINT``,
-    so the only way to add a foreign key to an existing table is to rebuild it:
-    create, copy, drop, rename — the procedure in the SQLite docs.
-
-    **Gated on the actual schema, not the version anchor.** A fresh database
-    gets the constraints straight from ``SCHEMA_SQL`` yet still reports
-    ``current = 0`` (its ``schema_meta`` row is written at the end of this
-    function), so a version-only gate would rebuild two tables that were already
-    correct on every first boot. ``PRAGMA foreign_key_list`` answers the question
-    that actually matters.
-
-    **Rows that would violate the new constraint are resolved, not left to
-    fail.** An existing database can hold proposals whose ``event_payloads`` row
-    was already swept — that is precisely the divergence being closed. Since
-    ``proposals.event_id`` is ``NOT NULL`` they cannot be orphan-nulled, so they
-    are dropped, which is exactly what Postgres did to its equivalent rows via
-    the cascade. ``decisions.proposal_id`` *is* nullable, so those are nulled
-    instead: the decision is an audit record and must survive.
-
-    Each table is gated independently on ``PRAGMA foreign_key_list``. There was
-    briefly an outer "both present -> return early" fast path as well; it was
-    removed because no negative control could detect its loss — the per-table
-    gates already skip everything it skipped, so it was a second mechanism
-    guarding nothing, and a gate that cannot be shown to work is not a gate.
-
-    The caller must have foreign-key enforcement OFF (it is off by default, and
-    ``SqliteEventsBackend.open`` only turns it on after migrating) — a rebuild
-    with enforcement on would trip over its own intermediate states.
-    """
-    # proposals first: decisions' new FK points at it, so it must be final
-    # before decisions is rebuilt.
-    if not await _has_fk(conn, "proposals"):
-        cur = await conn.execute(
-            "SELECT count(*) FROM proposals WHERE event_id NOT IN "
-            "(SELECT event_id FROM event_payloads)"
-        )
-        orphans = (await cur.fetchone())[0]
-        await cur.close()
-        if orphans:
-            logger.warning(
-                "events schema v5: dropping %d proposal(s) whose event payload "
-                "was already swept — Postgres had removed these via cascade",
-                orphans,
-            )
-        await conn.executescript("""
+#: Rebuild ``proposals`` with its FK to ``event_payloads``, keeping only rows
+#: whose event payload still exists.
+_PROPOSALS_V5_REBUILD = """
             CREATE TABLE proposals_v5 (
                 proposal_id  TEXT PRIMARY KEY,
                 event_id     TEXT NOT NULL REFERENCES event_payloads(event_id) ON DELETE CASCADE,
@@ -254,10 +209,11 @@ async def _add_foreign_keys_v5(conn: aiosqlite.Connection) -> None:
             ALTER TABLE proposals_v5 RENAME TO proposals;
             CREATE INDEX IF NOT EXISTS idx_proposals_status ON proposals(status, expires_ts);
             CREATE INDEX IF NOT EXISTS idx_proposals_session ON proposals(session_id);
-        """)
+        """
 
-    if not await _has_fk(conn, "decisions"):
-        await conn.executescript("""
+#: Rebuild ``decisions`` with its FK to ``proposals``, nulling (not dropping)
+#: references to proposals that no longer exist — a decision is an audit record.
+_DECISIONS_V5_REBUILD = """
             CREATE TABLE decisions_v5 (
                 decision_id    TEXT PRIMARY KEY,
                 proposal_id    TEXT REFERENCES proposals(proposal_id) ON DELETE SET NULL,
@@ -277,10 +233,63 @@ async def _add_foreign_keys_v5(conn: aiosqlite.Connection) -> None:
             DROP TABLE decisions;
             ALTER TABLE decisions_v5 RENAME TO decisions;
             CREATE INDEX IF NOT EXISTS idx_decisions_ts ON decisions(ts);
-        """)
+        """
 
-    # Rebuilt tables must satisfy their own constraints before we hand the
-    # connection back and enforcement is switched on.
+
+async def _add_foreign_keys_v5(conn: aiosqlite.Connection) -> None:
+    """Give ``proposals`` and ``decisions`` the FKs Postgres already had.
+
+    Schema v5, closing finding AC. SQLite has no ``ALTER TABLE ADD CONSTRAINT``,
+    so the only way to add a foreign key to an existing table is to rebuild it:
+    create, copy, drop, rename — the procedure in the SQLite docs.
+
+    **Gated on the actual schema, not the version anchor**, and per table. A
+    fresh database gets the constraints straight from ``SCHEMA_SQL`` yet still
+    reports ``current = 0`` (its ``schema_meta`` row is written at the end of
+    migrating), so a version-only gate would rebuild two tables that were
+    already correct on every first boot. ``PRAGMA foreign_key_list`` answers
+    the question that actually matters.
+
+    **Rows that would violate the new constraint are resolved, not left to
+    fail.** An existing database can hold proposals whose ``event_payloads`` row
+    was already swept — that is precisely the divergence being closed. Since
+    ``proposals.event_id`` is ``NOT NULL`` they cannot be orphan-nulled, so they
+    are dropped, which is exactly what Postgres did to its equivalent rows via
+    the cascade. ``decisions.proposal_id`` *is* nullable, so those are nulled
+    instead: the decision is an audit record and must survive.
+
+    The caller must have foreign-key enforcement OFF (it is off by default, and
+    ``SqliteEventsBackend.open`` only turns it on after migrating) — a rebuild
+    with enforcement on would trip over its own intermediate states.
+    """
+    # proposals first: decisions' new FK points at it, so it must be final
+    # before decisions is rebuilt.
+    if not await _has_fk(conn, "proposals"):
+        await _warn_dropped_proposals(conn)
+        await conn.executescript(_PROPOSALS_V5_REBUILD)
+    if not await _has_fk(conn, "decisions"):
+        await conn.executescript(_DECISIONS_V5_REBUILD)
+    await _check_foreign_keys(conn)
+
+
+async def _warn_dropped_proposals(conn: aiosqlite.Connection) -> None:
+    """Say how many proposals the rebuild will drop for a swept payload."""
+    cur = await conn.execute(
+        "SELECT count(*) FROM proposals WHERE event_id NOT IN (SELECT event_id FROM event_payloads)"
+    )
+    orphans = (await cur.fetchone())[0]
+    await cur.close()
+    if orphans:
+        logger.warning(
+            "events schema v5: dropping %d proposal(s) whose event payload "
+            "was already swept — Postgres had removed these via cascade",
+            orphans,
+        )
+
+
+async def _check_foreign_keys(conn: aiosqlite.Connection) -> None:
+    """Rebuilt tables must satisfy their own constraints before we hand the
+    connection back and enforcement is switched on."""
     cur = await conn.execute("PRAGMA foreign_key_check")
     violations = await cur.fetchall()
     await cur.close()
