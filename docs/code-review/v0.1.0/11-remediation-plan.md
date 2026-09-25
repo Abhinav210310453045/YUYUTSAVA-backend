@@ -705,8 +705,9 @@ the count, so it stops here.
   - `R-BUG-15` a background completion waits for the thread's running turn
     (found live in W4; two writers on one checkpoint).
   - `R-BUG-16` runtime settings write into the package's
-    `events_config.json` (found live in W5; where the per-user copy lives is
-    the owner's call).
+    `events_config.json` — **fixed**: the live copy is
+    `~/.yuyutsava/events_config.json` (owner's choice), with the package file as
+    the shipped default it falls back to until the first save.
   - `R-BUG-17` the first chat replaced the daemon's consent registry — **fixed**
     with the task-runner half of `R-GLB-01` (found in W5 while mapping the
     singletons; confirmed live on the old code).

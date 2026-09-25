@@ -92,20 +92,32 @@ def blobs_dir() -> Path:
 def channels_config_path() -> Path:
     """User-state path for ``channels_config.json`` (channel plugins).
 
-    Under ``state_dir()`` (unlike ``events_config_path``) because which
-    channels a user enabled — and their params — is per-user runtime
-    state, not a project artifact. Override with ``YUYUTSAVA_CHANNELS_CONFIG``.
+    Under ``state_dir()`` because which channels a user enabled — and their
+    params — is per-user runtime state, not a project artifact. Override with
+    ``YUYUTSAVA_CHANNELS_CONFIG``.
     """
     raw = os.environ.get("YUYUTSAVA_CHANNELS_CONFIG", "").strip()
     return Path(raw).expanduser() if raw else state_dir() / "channels_config.json"
 
 
 def events_config_path() -> Path:
-    """Repo-local path for ``events_config.json``.
+    """User-state path for ``events_config.json`` (which event sources run).
 
-    Not under ``state_dir()`` because the source registry config is a
-    project artifact, not user runtime state. Sits next to the events
-    package so a fresh clone has working defaults.
+    Under ``state_dir()`` for the same reason as ``channels_config_path``: the
+    app's toggles (wake word, watched folders) write it at runtime, so it is
+    per-user state. Until the first save creates it, readers fall back to
+    :func:`shipped_events_config_path`. Override with
+    ``YUYUTSAVA_EVENTS_CONFIG``.
+    """
+    raw = os.environ.get("YUYUTSAVA_EVENTS_CONFIG", "").strip()
+    return Path(raw).expanduser() if raw else state_dir() / "events_config.json"
+
+
+def shipped_events_config_path() -> Path:
+    """The default ``events_config.json`` that ships next to the events package.
+
+    Read-only at runtime: a fresh install gets working sources from it, and the
+    first save writes the user's copy instead (``events_config_path``).
     """
     return Path(__file__).resolve().parent.parent / "events" / "events_config.json"
 

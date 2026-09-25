@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from yuyutsava.storage.paths import events_config_path
+from yuyutsava.storage.paths import events_config_path, shipped_events_config_path
 
 # ---------------------------------------------------------------------------
 # Events config
@@ -31,7 +31,11 @@ class EventsConfig:
 
     @classmethod
     def from_file(cls, path: Path | None = None) -> EventsConfig:
-        path = path or events_config_path()
+        """Load *path*; by default the user's copy, else the shipped default."""
+        if path is None:
+            path = events_config_path()
+            if not path.exists():
+                path = shipped_events_config_path()
         if not path.exists():
             return cls.default()
         try:
@@ -74,7 +78,7 @@ class EventsConfig:
         return out
 
     def to_file(self, path: Path | None = None) -> Path:
-        """Persist this config to events_config.json atomically."""
+        """Persist this config atomically; by default to the user's copy."""
         path = path or events_config_path()
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(path.suffix + ".tmp")

@@ -710,8 +710,8 @@ a gated fake turn, and live with a task shorter than the turn.
 
 ## R-BUG-16 — Runtime settings write into the package's own `events_config.json`
 
-**Severity** P1 · **Wave** W5 · **Status** Open — needs the owner's decision
-(where the file should live)
+**Severity** P1 · **Wave** W5 · **Status** Fixed. The owner chose the per-user
+copy on 2026-09-25.
 
 **Evidence.** Found live on 2026-09-25 while checking W5's settings handler.
 `storage/paths.events_config_path()` resolves to
