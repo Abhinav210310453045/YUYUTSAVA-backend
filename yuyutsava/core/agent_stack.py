@@ -22,7 +22,6 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 
 from yuyutsava.agents.general_purpose.agent import GeneralPurposeAgent
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
-from yuyutsava.agents.task_runner.tools import set_default_consent
 from yuyutsava.agents.tinker.subagent import make_tinker_subagent
 from yuyutsava.config.execution import ExecutionSettings
 from yuyutsava.config.search import SearchConfig
@@ -85,29 +84,29 @@ async def _refresh_prices(settings: LlmSettings) -> None:
         logger.debug("price cache refresh failed", exc_info=True)
 
 
+def _stack_consent(wiring: StackWiring) -> Any:
+    """The consent registry every gateway in this stack asks.
+
+    Under the daemon it is the daemon's, so a grant made in a chat is persisted
+    and seen by every surface. Standalone, a session-scoped registry of its own
+    (no events store to persist PROJECT grants into).
+    """
+    return wiring.consent if wiring.consent is not None else ConsentRegistry()
+
+
 def _general_purpose_agent(
-    workspace: Path,
-    layout: WorkspaceLayout,
+    task_runner: TaskRunnerAgent,
     skill_registry: SkillRegistry,
     search_config: SearchConfig,
     memory_store: Any | None,
     skill_store: Any | None,
-) -> tuple[GeneralPurposeAgent, ConsentRegistry]:
-    """The general-purpose subagent, and the consent registry its tools ask.
+) -> GeneralPurposeAgent:
+    """The general-purpose subagent, on the stack's shared gateway.
 
     Passing it makes deepagents name-match-override its built-in
-    general-purpose with our tighter prompt and lazy tool discovery. Consent is
-    session-scoped here (no events store; PROJECT grants persist only in the
-    daemon path) and is installed as the process default for the tr_* tools.
+    general-purpose with our tighter prompt and lazy tool discovery.
     """
-    consent_registry = ConsentRegistry()
-    set_default_consent(consent_registry)
-    task_runner = TaskRunnerAgent(
-        workspace_root=workspace,
-        sandbox_root=layout.sandbox,
-        consent=consent_registry,
-    )
-    general_purpose = GeneralPurposeAgent(
+    return GeneralPurposeAgent(
         task_runner=task_runner,
         skill_registry=skill_registry,
         can_write_skills=True,
@@ -115,7 +114,6 @@ def _general_purpose_agent(
         memory_store=memory_store,
         skill_store=skill_store,
     )
-    return general_purpose, consent_registry
 
 
 async def build_agent_stack(
@@ -177,8 +175,17 @@ async def build_agent_stack(
     # Idempotent, so the daemon's ConversationManager building this same stack
     # lazily is harmless.
     await asyncio.to_thread(layout.ensure)
-    general_purpose, consent_registry = _general_purpose_agent(
-        workspace, layout, skill_registry, search_config, memory_store, skill_store
+    consent = _stack_consent(wiring)
+    # One gateway for the master and its general-purpose subagent: they share
+    # its zones, policy, consent and — in docker mode — its container.
+    task_runner = TaskRunnerAgent(
+        workspace_root=workspace,
+        sandbox_root=layout.sandbox,
+        policy=wiring.policy,
+        consent=consent,
+    )
+    general_purpose = _general_purpose_agent(
+        task_runner, skill_registry, search_config, memory_store, skill_store
     )
 
     # MCP: the daemon passes its manager; standalone, start our own from the
@@ -203,7 +210,8 @@ async def build_agent_stack(
             memory_store=memory_store,
             skill_store=skill_store,
             mcp_manager=mcp_manager,
-            consent=consent_registry,
+            policy=wiring.policy,
+            consent=consent,
         )
         background = await start_background(
             settings,
@@ -256,6 +264,7 @@ async def build_agent_stack(
             prefs_store=wiring.prefs_store,
             runtime_settings=wiring.runtime_settings,
             extra_tools=wiring.extra_tools,
+            task_runner=task_runner,
         ),
         execution_mode=execution.mode,
         docker_settings=execution.docker,

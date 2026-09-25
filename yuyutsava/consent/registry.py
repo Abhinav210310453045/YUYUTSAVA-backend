@@ -6,9 +6,9 @@ scope. An in-memory cache of every active grant (session + persisted) makes a
 just-granted decision visible to the very next ``check`` regardless of the
 store's write latency; PROJECT / PERSISTENT grants are additionally persisted.
 
-DI singleton: build one per daemon (or per CLI process) and share it — via
-``set_default_consent`` for the TaskRunner tool registry and (later) via the
-triage loop for the event domain.
+Build one per daemon (or per standalone CLI stack) and hand it to every
+TaskRunner gateway — the chat and tinker stacks receive the daemon's through
+``StackWiring.consent`` — and (later) to the triage loop for the event domain.
 """
 
 from __future__ import annotations

@@ -31,6 +31,7 @@ from yuyutsava.agents.orchestrator.agent import make_ask_user_tool
 from yuyutsava.agents.orchestrator.capabilities import render_capabilities_block
 from yuyutsava.agents.orchestrator.prompts import render_system_prompt
 from yuyutsava.agents.prompts import docker_system_prompt, local_system_prompt
+from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
 from yuyutsava.agents.task_runner.exec_backend import DockerExecBackend
 from yuyutsava.agents.task_runner.tools import bind_tools as _bind_task_runner_tools
 from yuyutsava.agents.tinker.prompts import render_tinker_system_prompt
@@ -1020,7 +1021,10 @@ def build_cli_deepagent(
         execution_mode, docker_settings, layout, workspace_root, deps.bash_timeout_sec
     )
     startup_tools, _registry = _build_tool_registry_and_tools(
-        _bind_task_runner_tools(ws, sandbox_root, exec_backend=sandbox.exec_backend),
+        _bind_task_runner_tools(
+            deps.task_runner or TaskRunnerAgent(ws, sandbox_root=sandbox_root),
+            exec_backend=sandbox.exec_backend,
+        ),
         deps.search_config,
         skill_registry,
         extra_tools=context_tools,
@@ -1410,7 +1414,10 @@ def build_tinker_agent(
 
     backend = _scratch_root_backend(_local_shell_backend(ws, deps.bash_timeout_sec), _SCRATCH_ROOT)
     startup_tools, _registry = _build_tool_registry_and_tools(
-        _bind_task_runner_tools(ws, sandbox_root, agent_name="tinker"),
+        _bind_task_runner_tools(
+            deps.task_runner or TaskRunnerAgent(ws, sandbox_root=sandbox_root),
+            agent_name="tinker",
+        ),
         deps.search_config,
         skill_registry,
         extra_tools=context_tools,

@@ -15,6 +15,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
 from yuyutsava.agents.task_runner.tools import bind_tools
 
 # Every tool the TaskRunner binds, and the arguments each takes. The argument
@@ -48,7 +49,7 @@ class TheBoundToolSurface(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls._tmp = tempfile.TemporaryDirectory()
         root = Path(cls._tmp.name)
-        cls.tools = bind_tools(root, (root / "_sandbox").resolve())
+        cls.tools = bind_tools(TaskRunnerAgent(root, sandbox_root=(root / "_sandbox").resolve()))
         cls.by_name = {t.name: t for t in cls.tools}
 
     @classmethod
@@ -89,8 +90,8 @@ class TheBoundToolSurface(unittest.TestCase):
                 self.assertIn("reason", tool.args)
 
     def test_binding_twice_yields_the_same_surface(self) -> None:
-        """The agent is cached per workspace; rebinding must not drift."""
-        again = bind_tools(Path(self._tmp.name), (Path(self._tmp.name) / "_sandbox").resolve())
+        """Rebinding the same kind of gateway must not drift."""
+        again = bind_tools(TaskRunnerAgent(Path(self._tmp.name)))
         self.assertEqual(sorted(t.name for t in again), sorted(self.by_name))
 
 

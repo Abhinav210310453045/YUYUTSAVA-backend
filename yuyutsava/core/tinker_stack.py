@@ -71,8 +71,8 @@ async def build_tinker_stack(
     memory_store, skill_store = stores.memory_store, stores.skill_store
 
     # The general-purpose subagent works inside the SAME card workspace, so a
-    # delegated research/build step lands its files on the card. Consent rides
-    # the process default the daemon bootstrap installed (set_default_consent).
+    # delegated research/build step lands its files on the card. It and the
+    # tinker master share one gateway, on the daemon's policy and consent.
     card_ws = card_workspace.resolve()
     card_layout = WorkspaceLayout.for_workspace(card_ws)
     # Materialize <card>/.yuyutsava (sync mkdir → off-loop; see storage.paths).
@@ -80,6 +80,8 @@ async def build_tinker_stack(
     task_runner = TaskRunnerAgent(
         workspace_root=card_ws,
         sandbox_root=card_layout.sandbox,
+        policy=wiring.policy,
+        consent=wiring.consent,
     )
     general_purpose = GeneralPurposeAgent(
         task_runner=task_runner,
@@ -146,6 +148,7 @@ async def build_tinker_stack(
             prefs_store=wiring.prefs_store,
             cap_enforcer=wiring.cap_enforcer,
             extra_tools=wiring.extra_tools,
+            task_runner=task_runner,
             # budget_tokens deliberately unset — build_tinker_agent supplies
             # TINKER_BUDGET_TOKENS, which is what this call has always got.
         ),

@@ -161,20 +161,13 @@ class BaseSubAgent(ABC):
     def task_runner_tools(self) -> list[BaseTool]:
         """Return the tr_* tools bound to this agent's TaskRunnerAgent.
 
-        Every family ``bind_tools`` builds, not a fixed subset.
+        Every family ``bind_tools`` builds, not a fixed subset, and every call
+        goes through this agent's own gateway — its sandbox, policy and consent.
 
         ``self.name`` is threaded into each tool so HITL interrupts carry the
         subagent's identity in their ``agent_path`` (e.g. ``orchestrator/file-organizer``).
-        The sandbox is passed through too: dropping it would bind every
-        subagent to the default sandbox even when its TaskRunnerAgent was built
-        with another one (the background tinker's, deliberately outside the
-        board root).
         """
-        return bind_tools(
-            self._task_runner.workspace_root,
-            self._task_runner.sandbox_root,
-            agent_name=self.name,
-        )
+        return bind_tools(self._task_runner, agent_name=self.name)
 
     def skill_tools(self) -> list[BaseTool]:
         """Return skill tools based on the can_write_skills flag.

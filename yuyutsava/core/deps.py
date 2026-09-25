@@ -90,6 +90,10 @@ class MasterDeps:
     mcp_tools: list[Any] | None = None
     extra_tools: list[Any] | None = None
     runtime_settings: Any | None = None
+    #: The TaskRunnerAgent every tr_* tool of this master goes through (zones,
+    #: policy, consent). A stack passes the one its subagents share; absent,
+    #: the builder makes one for the workspace with neither policy nor consent.
+    task_runner: Any | None = None
 
     def replace(self, **changes: Any) -> "MasterDeps":
         """A copy with some fields changed — the frozen equivalent of a setter."""
@@ -119,6 +123,12 @@ class StackWiring:
     cap_enforcer: Any | None = None
     extra_subagents: list[Any] | None = None
     extra_tools: list[Any] | None = None
+    #: The daemon's permissions policy and consent registry. Every gateway a
+    #: stack builds uses these, so a grant made in a chat is the daemon's grant
+    #: (persisted, visible to every surface). Absent: no policy, and the stack
+    #: starts its own in-memory registry.
+    policy: Any | None = None
+    consent: Any | None = None
 
 
 #: The tinker agent's own budget. It works a single TODO card, so its context is

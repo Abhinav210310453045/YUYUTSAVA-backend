@@ -6,9 +6,6 @@
   outside it and see everything when rooted inside it: a workspace-wide code
   search is not polluted by offloaded tool dumps, while the prompt's explicit
   "tr_grep the state dir" still works.
-* ``_get_or_create_agent(ws)`` and ``_get_or_create_agent(ws, <layout sandbox>)``
-  return the same cached ``TaskRunnerAgent`` — the default is resolved before
-  keying, so master, subagents and ``spawn.py`` share one instance.
 
 Run:  .venv/bin/python test/task_runner/test_executor_paths.py
 """
@@ -78,20 +75,6 @@ class StateDirHygiene(unittest.TestCase):
         joined = json.dumps(res["entries"])
         self.assertIn("dump.txt", joined)
         self.assertIn("ChangeLog.md", joined)
-
-
-class RegistryKey(unittest.TestCase):
-    def test_default_sandbox_shares_the_cached_agent(self) -> None:
-        from yuyutsava.agents.task_runner.tools.support import _get_or_create_agent
-
-        with tempfile.TemporaryDirectory() as tmp:
-            ws = Path(tmp).resolve()
-            layout = WorkspaceLayout.for_workspace(ws)
-            a = _get_or_create_agent(ws)
-            b = _get_or_create_agent(ws, layout.sandbox)
-            self.assertIs(a, b)
-            self.assertEqual(a.sandbox_root, layout.sandbox)
-            self.assertEqual(a.workspace_root, ws)
 
 
 if __name__ == "__main__":

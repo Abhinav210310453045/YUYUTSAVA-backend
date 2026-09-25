@@ -30,7 +30,6 @@ from yuyutsava.agents.general_purpose.agent import GeneralPurposeAgent
 from yuyutsava.agents.orchestrator.agent import OrchestratorDeps
 from yuyutsava.agents.orchestrator.capabilities import render_capabilities_block
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
-from yuyutsava.agents.task_runner.tools import set_default_consent, set_default_policy
 from yuyutsava.agents.tinker.subagent import make_tinker_subagent
 from yuyutsava.agents.triage.agent import TriageAgent
 from yuyutsava.async_subagents.host import AsyncSubagentHost, resolve_allow_blocking
@@ -508,9 +507,9 @@ class PolicySubsystem:
 async def build_policy(store: Store) -> PolicySubsystem:
     """Load preferences, permission rules and consent grants.
 
-    NOTE: still calls ``set_default_policy`` / ``set_default_consent``, which
-    install process-global singletons (finding ``F-S08``, ``R-GLB-01``). They
-    are confined to this one named function until injection replaces them.
+    The policy and the consent registry are handed to every TaskRunner gateway
+    the daemon builds — the orchestrator's subagents directly, the chat and
+    tinker stacks through their wiring — so there is one of each per daemon.
     """
     # ── user prefs store --------------------------------------------------
     prefs_store = PrefsStore(store)
@@ -529,17 +528,15 @@ async def build_policy(store: Store) -> PolicySubsystem:
 
     # ── permissions policy (Tier-1.5: auto_approve, ws_* daily caps) ------
     policy = PermissionsPolicy.from_file()
-    set_default_policy(policy)
     cap_enforcer = StorePolicyCapEnforcer(policy=policy, store=store)
     if policy.entries:
         logger.info("  policy    : %d rule(s) from permissions.json", len(policy.entries))
 
     # ── consent / allowlist registry (Tier-2: "allow for session/project") -
-    # One DI singleton shared by every tr_* tool call (via set_default_consent)
-    # and the explicit TaskRunner gateway below. Persisted PROJECT grants are
-    # loaded from state.db; SESSION grants live in memory for the process.
+    # One per daemon, shared by every gateway (see the docstring). Persisted
+    # PROJECT grants are loaded from state.db; SESSION grants live in memory
+    # for the process.
     consent_registry = ConsentRegistry(store=store)
-    set_default_consent(consent_registry)
 
     return PolicySubsystem(
         prefs_store=prefs_store,
@@ -1634,6 +1631,8 @@ async def build_web(
             runtime_settings=pol.runtime_settings,
             cap_enforcer=pol.cap_enforcer,
             extra_subagents=boot.subagents.make_peers(),
+            policy=pol.policy,
+            consent=pol.consent_registry,
         ),
     )
 

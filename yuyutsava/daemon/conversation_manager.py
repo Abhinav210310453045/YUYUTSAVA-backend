@@ -236,6 +236,8 @@ class ConversationManager:
                 prefs_store=self._wiring.prefs_store,
                 cap_enforcer=self._wiring.cap_enforcer,
                 extra_tools=self._orch_submit_tools("tinker"),
+                policy=self._wiring.policy,
+                consent=self._wiring.consent,
             ),
         )
 

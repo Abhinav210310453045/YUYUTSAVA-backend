@@ -745,3 +745,27 @@ rather than from the default.
 **Verification.** A settings patch under a scratch `YUYUTSAVA_HOME` leaves
 `git status` clean, and a second home does not see it; the hot reload still
 tears the voice source down.
+
+## R-BUG-17 — The first chat in the daemon replaced its consent registry
+
+**Severity** P1 · **Wave** W5 · **Status** Fixed (with `R-GLB-01`'s task-runner
+half)
+
+**Evidence.** Found while mapping `set_default_*` call sites on 2026-09-25.
+`build_agent_stack`, which the daemon runs for every chat and voice bundle,
+called `set_default_consent(ConsentRegistry())`: a fresh registry with no
+store, installed as the process default and written into every cached
+`TaskRunnerAgent`, the orchestrator's subagents included. Confirmed live on
+the code before the fix. A chat turn reading a file outside the workspace,
+answered "allow for this project", left **0** rows in `consent_grants`. On
+the fixed code the same turn leaves the project grant.
+
+**Consequence.** From the first chat of a daemon's life, project grants were
+no longer persisted, and the grants loaded from the database at boot were no
+longer consulted. A user who had allowed something for the project was asked
+again after a restart, and every surface was asked again after a chat.
+
+**Fix.** The task-runner tools bind to an explicit `TaskRunnerAgent`
+(`bind_tools(agent)`); the per-workspace cache and both setters are gone.
+Each stack builds its own gateway: the daemon passes its policy and consent
+through `StackWiring`, and a standalone CLI stack has its own registry.
