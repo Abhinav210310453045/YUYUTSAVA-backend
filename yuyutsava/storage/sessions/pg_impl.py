@@ -32,7 +32,7 @@ from yuyutsava.storage.dialect import ensure_thread
 from yuyutsava.storage.ids import mint_thread_id
 from yuyutsava.storage.models import SESSION_STATUSES, Session
 from yuyutsava.storage.pg import migrations as pg_migrations
-from yuyutsava.storage.pg.pool import PgPool
+from yuyutsava.storage.pg.pool import PgPool, PostgresUnavailable
 from yuyutsava.storage.sessions.store import SessionNotFound
 
 logger = logging.getLogger("yuyutsava.storage.sessions.pg")
@@ -84,7 +84,10 @@ class PgSessionStore:
             async with self._pool.connection() as conn:
                 yield conn
             return
-        conn = await psycopg.AsyncConnection.connect(self._storage.pg_dsn, autocommit=True)
+        try:
+            conn = await psycopg.AsyncConnection.connect(self._storage.pg_dsn, autocommit=True)
+        except psycopg.OperationalError as exc:
+            raise PostgresUnavailable(self._storage.pg_dsn, exc) from exc
         try:
             yield conn
         finally:

@@ -30,12 +30,44 @@ from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
 import psycopg
+from psycopg.conninfo import conninfo_to_dict
 from psycopg_pool import AsyncConnectionPool
 
 from yuyutsava.aio import LoopLocal
 from yuyutsava.storage.backend import StorageSettings
 
 logger = logging.getLogger("yuyutsava.storage.pg.pool")
+
+
+class PostgresUnavailable(psycopg.OperationalError):
+    """The configured Postgres could not be used; the message says which.
+
+    An ``OperationalError``, so everything that already treats a connectivity
+    failure as one (the spillover routing, the daemon's SQLite fallback) still
+    does. The message names host, port and database — never the password — and
+    the reason libpq gave, so a boundary can show it as one line.
+    """
+
+    def __init__(self, dsn: str, cause: BaseException) -> None:
+        self.where = describe_dsn(dsn)
+        self.reason = _reason(cause)
+        super().__init__(f"Postgres at {self.where} is unavailable ({self.reason})")
+
+
+def describe_dsn(dsn: str) -> str:
+    """``host:port/dbname`` of *dsn*, for messages. Never includes the password."""
+    try:
+        parts = conninfo_to_dict(dsn)
+    except psycopg.ProgrammingError:
+        return "<unparseable DSN>"
+    host = parts.get("host") or "localhost"
+    return f"{host}:{parts.get('port') or 5432}/{parts.get('dbname') or ''}"
+
+
+def _reason(cause: BaseException) -> str:
+    """libpq's own words, trimmed: the tail of its first line ("Connection refused")."""
+    first = str(cause).strip().splitlines()[0] if str(cause).strip() else type(cause).__name__
+    return first.rsplit(": ", 1)[-1]
 
 
 class PgPool:
@@ -49,7 +81,9 @@ class PgPool:
         self._opened = False
 
     async def open(self, *, timeout_sec: float = 10.0) -> None:
-        """Open the primary pool and verify connectivity. Raises on failure.
+        """Open the primary pool and verify connectivity.
+
+        Raises :class:`PostgresUnavailable` when the server cannot be used.
 
         ``wait=True`` forces at least ``min_size`` connections to be
         established before returning, so a dead Postgres surfaces here —
@@ -58,6 +92,7 @@ class PgPool:
         """
         if self._opened:
             return
+        await self._probe(timeout_sec)
 
         async def _open_primary() -> AsyncConnectionPool:
             pool = AsyncConnectionPool(
@@ -70,11 +105,26 @@ class PgPool:
             await pool.open(wait=True, timeout=timeout_sec)
             return pool
 
-        await self._pools.aget(_open_primary)
+        try:
+            await self._pools.aget(_open_primary)
+        except psycopg.OperationalError as exc:  # PoolTimeout included
+            raise PostgresUnavailable(self._settings.pg_dsn, exc) from exc
         self._opened = True
         logger.info(
             "pg pool: open (min=%d max=%d)", self._settings.pool_min, self._settings.pool_max
         )
+
+    async def _probe(self, timeout_sec: float) -> None:
+        """One direct connection first, so a server that is down fails now with
+        libpq's reason, instead of after the pool has retried for *timeout_sec*
+        and can only say that it timed out."""
+        try:
+            conn = await psycopg.AsyncConnection.connect(
+                self._settings.pg_dsn, connect_timeout=max(1, int(timeout_sec))
+            )
+        except psycopg.OperationalError as exc:
+            raise PostgresUnavailable(self._settings.pg_dsn, exc) from exc
+        await conn.close()
 
     async def _pool(self) -> AsyncConnectionPool:
         """The current loop's pool, opening a secondary one on first use.

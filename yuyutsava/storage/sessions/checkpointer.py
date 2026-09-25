@@ -9,13 +9,15 @@ both savers implement :class:`BaseCheckpointSaver`.
 from __future__ import annotations
 
 import asyncio
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 
+import psycopg
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from yuyutsava.storage.backend import StorageSettings
+from yuyutsava.storage.pg.pool import PostgresUnavailable
 from yuyutsava.storage.sessions.config import SessionsSettings
 
 
@@ -30,12 +32,21 @@ async def build_checkpointer(
     the context, not the caller. Closes cleanly on exit even after exceptions.
 
     ``storage`` defaults to :meth:`StorageSettings.from_env`; pass it
-    explicitly in tests to avoid env coupling.
+    explicitly in tests to avoid env coupling. Raises
+    :class:`~yuyutsava.storage.pg.pool.PostgresUnavailable` when Postgres is
+    selected but cannot be reached.
     """
     storage = storage or StorageSettings.from_env()
 
     if storage.is_postgres() or settings.backend == "postgres":
-        async with AsyncPostgresSaver.from_conn_string(storage.pg_dsn) as saver:
+        async with AsyncExitStack() as stack:
+            # Only the connect is translated; an error in the body is the body's.
+            try:
+                saver = await stack.enter_async_context(
+                    AsyncPostgresSaver.from_conn_string(storage.pg_dsn)
+                )
+            except psycopg.OperationalError as exc:
+                raise PostgresUnavailable(storage.pg_dsn, exc) from exc
             await saver.setup()
             yield saver
             return

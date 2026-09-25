@@ -60,7 +60,7 @@ from yuyutsava.storage.events import Store
 from yuyutsava.storage.feedback_store_unified import pg_feedback_store, sqlite_feedback_store
 from yuyutsava.storage.paths import state_db_path
 from yuyutsava.storage.pg import migrations as pg_migrations
-from yuyutsava.storage.pg.pool import PgPool
+from yuyutsava.storage.pg.pool import PgPool, PostgresUnavailable
 from yuyutsava.storage.routing.facade import RoutedStore
 from yuyutsava.storage.task_store_unified import pg_task_store, sqlite_task_store
 from yuyutsava.storage.usage import PgUsageStore, SqliteUsageStore
@@ -330,10 +330,13 @@ async def build_retrieval_stores(skill_registry: SkillRegistry):
                     min_score=mem_settings.min_score,
                     dedup_threshold=mem_settings.dedup_threshold,
                 )
-        except Exception:
+        except Exception as exc:
+            # An unreachable server is expected and said in one line; anything
+            # else keeps its traceback.
             logger.warning(
-                "CLI: Postgres unavailable — falling back to SQLite stores",
-                exc_info=True,
+                "CLI: %s — falling back to SQLite stores",
+                exc if isinstance(exc, PostgresUnavailable) else "Postgres unavailable",
+                exc_info=not isinstance(exc, PostgresUnavailable),
             )
             if embedder is not None:
                 await embedder.aclose()

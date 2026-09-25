@@ -684,7 +684,19 @@ test tree exercises process teardown with a live pool.
 
 ## R-BUG-14 — An explicitly chosen Postgres that is down produces a raw traceback
 
-**Severity** P2 · **Wave** W5 · **Status** Open
+**Severity** P2 · **Wave** W5 · **Status** **Fixed** (2026-09-26).
+- `PgPool.open` probes one direct connection first and raises
+  `PostgresUnavailable` (an `OperationalError`) naming `host:port/db` and
+  libpq's reason. It never names the password.
+- The checkpointer's own connection and the sessions store's direct connect
+  raise the same error.
+- `cli.dispatch` turns it into one message with exit code 2. The message says
+  why there is no fallback and what to do.
+- The daemon's SQLite-fallback reason reads the same, and it comes at once
+  instead of after the 10-second pool timeout.
+- Live, against a closed port: `--list-sessions` went from a traceback after
+  11.3 s to one message after 1.2 s. `--delete-session`, a one-shot task,
+  `chat` and a daemon under `YUYUTSAVA_STORAGE_REQUIRE=1` give the same message.
 
 **Evidence.** With `YUYUTSAVA_STORAGE_BACKEND=postgres` and the database
 container stopped, `yuyutsava --list-sessions` ends in:

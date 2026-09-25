@@ -40,7 +40,9 @@ from yuyutsava.config.search import SearchConfig
 from yuyutsava.core.deps import MasterDeps
 from yuyutsava.core.engine import build_cli_deepagent
 from yuyutsava.llm.settings import llm_settings_from_env
+from yuyutsava.storage.backend import StorageSettings
 from yuyutsava.storage.paths import ensure_state_dirs
+from yuyutsava.storage.pg.pool import PostgresUnavailable
 
 # After the imports and before any model is built — see the function, which
 # explains why that window is the whole requirement.
@@ -115,10 +117,35 @@ def _quietly(run: Callable[[], int]) -> int:
 def dispatch(raw: list[str], commands: tuple[Subcommand, ...] = SUBCOMMANDS) -> int:
     """Route argv to a subcommand, or to the task path when it names none."""
     cmd = next((c for c in commands if raw and raw[0] == c.name), None)
-    if cmd is None:
-        return _quietly(lambda: _run_task(raw))
-    rest = raw[1:]
-    return _quietly(lambda: cmd.run(rest)) if cmd.quiet_interrupt else cmd.run(rest)
+    try:
+        if cmd is None:
+            return _quietly(lambda: _run_task(raw))
+        rest = raw[1:]
+        return _quietly(lambda: cmd.run(rest)) if cmd.quiet_interrupt else cmd.run(rest)
+    except PostgresUnavailable as exc:
+        return _report_postgres_unavailable(exc)
+
+
+def _report_postgres_unavailable(exc: PostgresUnavailable) -> int:
+    """One message, not a psycopg traceback: which database, and what to do.
+
+    Postgres is opt-in, so reaching here means it was chosen explicitly: the
+    CLI has nothing to fall back to, and the daemon falls back to SQLite
+    unless ``YUYUTSAVA_STORAGE_REQUIRE`` forbids it.
+    """
+    why = (
+        "YUYUTSAVA_STORAGE_REQUIRE forbids a SQLite fallback"
+        if StorageSettings.from_env().require
+        else "YUYUTSAVA_STORAGE_BACKEND=postgres selects it, so there is no SQLite fallback"
+    )
+    print(
+        f"yuyutsava: {exc}.\n"
+        f"  {why}.\n"
+        "  Start the database (docker compose up -d postgres), or unset\n"
+        "  YUYUTSAVA_STORAGE_BACKEND to use SQLite.",
+        file=sys.stderr,
+    )
+    return 2
 
 
 def _subcommand_help() -> str:

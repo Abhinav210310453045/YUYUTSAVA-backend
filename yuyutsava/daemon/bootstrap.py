@@ -95,7 +95,7 @@ from yuyutsava.storage.paths import (
     state_dir,
 )
 from yuyutsava.storage.pg import migrations as pg_migrations
-from yuyutsava.storage.pg.pool import PgPool
+from yuyutsava.storage.pg.pool import PgPool, PostgresUnavailable
 from yuyutsava.storage.prefs import PrefsStore
 from yuyutsava.storage.routing.health import StorageHealth
 from yuyutsava.storage.routing.reconcile import CONTENT_TABLE_SPECS, Reconciler
@@ -393,8 +393,9 @@ async def _open_backend() -> tuple[StorageSettings, PgPool | None, str | None]:
                 "storage: postgres unavailable and YUYUTSAVA_STORAGE_REQUIRE=1 — refusing to boot"
             )
             raise
+        why = str(exc) if isinstance(exc, PostgresUnavailable) else f"Postgres unavailable ({exc})"
         reason = (
-            f"Postgres unavailable ({exc}); using SQLite for this run. "
+            f"{why}; using SQLite for this run. "
             "Checkpoints/artifacts written now are INVISIBLE to Postgres."
         )
         logger.error("storage: %s", reason)
