@@ -416,11 +416,9 @@ class ConversationService:
     ) -> tuple[str, int]:
         """A turn produced nothing. Try to fix it, and never stay silent.
 
-        Measured failure this exists for: a user sent a message while a tool
-        call was running, LangGraph fabricated a "cancelled" success result,
-        and from then on every call returned ``finish_reason: STOP`` with zero
-        output tokens. Four messages, ~70,000 input tokens each, no reply and
-        no error — the thread was dead and said nothing about it.
+        The failure this exists for: after a fabricated "cancelled" tool result,
+        every call returned ``finish_reason: STOP`` with zero output tokens —
+        each turn cost ~70,000 input tokens and said nothing.
 
         Two steps, in order:
 
@@ -432,50 +430,24 @@ class ConversationService:
            indistinguishable from a hang, and it is the one outcome a
            conversational agent must never produce.
 
-        The retry is unconditional, and that is the correction the 14 Sep
-        session forced. It used to fire only when the marker-based check had
-        found something, so a turn that came back empty for any *other* reason
-        got no retry at all — the log read ``(repaired=0) — surfaced to the
-        user`` and the conversation stopped. It happened twice in a row on
-        60,813 and 60,978 input tokens, and the user's very next message went
-        through untouched: the turn was recoverable and nothing tried. One
-        extra call against a conversation that is otherwise dead is a trade
-        worth making; it stays at exactly one so an unrecoverable thread cannot
-        spend in a loop.
+        The retry is unconditional — an empty turn with nothing to repair is
+        often transient, and the user's next message goes through — and it is
+        exactly one, so an unrecoverable thread cannot spend in a loop.
         """
-
         steps = 0
         found, repaired = await self._inspect_and_repair(bundle, what="empty-turn inspection")
-
         if repaired and found is not None:
-            await self._emit(
+            await self._notice(
                 on_event,
-                StreamEvent(
-                    "notice",
-                    {
-                        "level": "warning",
-                        "text": (
-                            "The previous turn left the history in a shape the model "
-                            "would not continue from ("
-                            + _repair_summary(found)
-                            + "). Repaired — retrying."
-                        ),
-                    },
-                ),
+                "warning",
+                "The previous turn left the history in a shape the model "
+                "would not continue from (" + _repair_summary(found) + "). Repaired — retrying.",
             )
         else:
-            await self._emit(
+            await self._notice(
                 on_event,
-                StreamEvent(
-                    "notice",
-                    {
-                        "level": "warning",
-                        "text": (
-                            "The model returned nothing. Retrying once — an empty "
-                            "response is often transient."
-                        ),
-                    },
-                ),
+                "warning",
+                "The model returned nothing. Retrying once — an empty response is often transient.",
             )
         # No new user message: theirs is already in the history, and sending it
         # twice would make the model answer itself.
@@ -487,21 +459,14 @@ class ConversationService:
         if final:
             return final, steps
 
-        await self._emit(
+        await self._notice(
             on_event,
-            StreamEvent(
-                "notice",
-                {
-                    "level": "error",
-                    "text": (
-                        "The model returned an empty response twice — no text and no "
-                        "tool call, before and after a repair. The conversation's "
-                        "history is in a state it will not continue from. Try /new for "
-                        "a fresh session; your last message is still in the history, "
-                        "so nothing you wrote is lost."
-                    ),
-                },
-            ),
+            "error",
+            "The model returned an empty response twice — no text and no "
+            "tool call, before and after a repair. The conversation's "
+            "history is in a state it will not continue from. Try /new for "
+            "a fresh session; your last message is still in the history, "
+            "so nothing you wrote is lost.",
         )
         logger.warning(
             "empty turn on thread=%s (repaired=%d, retried=1) — surfaced to the user",
@@ -509,6 +474,9 @@ class ConversationService:
             repaired,
         )
         return "", steps
+
+    async def _notice(self, on_event: "EventSink", level: str, text: str) -> None:
+        await self._emit(on_event, StreamEvent("notice", {"level": level, "text": text}))
 
     @staticmethod
     async def _emit(on_event: "EventSink", ev: StreamEvent) -> None:
