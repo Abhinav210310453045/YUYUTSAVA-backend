@@ -664,6 +664,19 @@ bar the known one, and a live socket got the expected `hello`, usage frames
 and a reply. Classes over 400 lines: **2**, and both are deliberate stops:
 `ChatDashboard` (see `R-SOL-01`) and `RichChatRenderer` (411, carried).
 
+**`RichChatRenderer`: reworked, 411 → 408, left carried.** `render` is a
+`match` over the event kind with one handler per kind, so its
+`noqa: PLR0912` is gone (`C901` 7 → 6). The `Live` region is built in one
+place instead of two. The spinner and the dashboard's status line now format
+a single `_activity()` decision instead of each carrying a copy of it, which
+was the drift its own docstring warned about. Verified by a golden
+transcript with styles (every event kind, verbose and plain), the status and
+spinner structure after each event, and a recorded `Live` lifecycle:
+identical, and negative-controlled. `test/cli` (309) passes, and the classic
+REPL rendered a live turn on a real pty. What remains is one display path.
+Getting under 400 would mean moving line builders out of the class only for
+the count, so it stops here.
+
 ## W5 — Errors, logging, state, defects
 
 - **Classify the 58 silent handlers** as boundary (log plus reason) or internal (narrow type). (`R-ERR-01`, `R-ERR-02`)

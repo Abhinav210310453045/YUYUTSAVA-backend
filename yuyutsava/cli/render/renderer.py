@@ -117,13 +117,7 @@ class RichChatRenderer:
         if not self._use_live:
             self._notify()
             return
-        self._live = Live(
-            self._status_renderable(),
-            console=self._console,
-            transient=True,
-            refresh_per_second=10,
-        )
-        self._live.start()
+        self._start_live()
 
     async def end_of_turn(self) -> None:
         self._md.finish()
@@ -151,13 +145,16 @@ class RichChatRenderer:
             yield
         finally:
             if had_live:
-                self._live = Live(
-                    self._status_renderable(),
-                    console=self._console,
-                    transient=True,
-                    refresh_per_second=10,
-                )
-                self._live.start()
+                self._start_live()
+
+    def _start_live(self) -> None:
+        self._live = Live(
+            self._status_renderable(),
+            console=self._console,
+            transient=True,
+            refresh_per_second=10,
+        )
+        self._live.start()
 
     def _stop_live(self) -> None:
         if self._live is not None:
@@ -179,23 +176,34 @@ class RichChatRenderer:
     # Status (one source, two presentations)
     # ------------------------------------------------------------------
 
-    def status_text(self) -> str:
-        """The status line as plain text.
+    def _activity(self) -> tuple[str, str]:
+        """What the agent is doing, as ``(state, detail)``.
 
-        Same state the spinner shows, for a host that draws its own status bar
-        (the dashboard). Kept beside ``_status_renderable`` deliberately: two
-        independent descriptions of "what is the agent doing" would drift, and
-        this one appears in a pane that is always on screen.
+        The one decision both presentations format — the spinner and the plain
+        status line — so they cannot drift apart. ``state`` is ``retry``,
+        ``subagent``, ``tool``, ``writing`` or ``thinking``.
         """
         if self._retry_note:
-            return self._retry_note
+            return "retry", self._retry_note
         if self._in_flight:
             name = self._in_flight[-1]
             if name in _SUBAGENT_TOOLS:
-                extra = f" ({len(self._in_flight)} in flight)" if len(self._in_flight) > 1 else ""
-                return f"Subagent working…{extra}"
-            return f"Running {name}…"
-        if self._md.started:
+                n = len(self._in_flight)
+                return "subagent", f"({n} in flight)" if n > 1 else ""
+            return "tool", name
+        return ("writing", "") if self._md.started else ("thinking", "")
+
+    def status_text(self) -> str:
+        """The status line as plain text, for a host that draws its own status
+        bar (the dashboard) — the same state the spinner shows."""
+        state, detail = self._activity()
+        if state == "retry":
+            return detail
+        if state == "subagent":
+            return f"Subagent working… {detail}".rstrip()
+        if state == "tool":
+            return f"Running {detail}…"
+        if state == "writing":
             return "Writing…"
         return "Thinking…" if self._in_turn else ""
 
@@ -204,24 +212,14 @@ class RichChatRenderer:
         return self._in_flight[-1] if self._in_flight else ""
 
     def _status_renderable(self) -> RenderableType:
-        if self._retry_note:
-            parts: list[RenderableType] = [
-                Spinner("dots", text=Text(self._retry_note, style="warn"), style="warn")
-            ]
-            return Group(*parts)
-        if self._in_flight:
-            name = self._in_flight[-1]
-            if name in _SUBAGENT_TOOLS:
-                label = Text.assemble(
-                    ("Subagent working… ", "subagent"),
-                    (
-                        f"({len(self._in_flight)} in flight)" if len(self._in_flight) > 1 else "",
-                        "chrome",
-                    ),
-                )
-            else:
-                label = Text.assemble(("Running ", "chrome"), (name, "tool"), ("…", "chrome"))
-        elif self._md.started:
+        state, detail = self._activity()
+        if state == "retry":
+            return Group(Spinner("dots", text=Text(detail, style="warn"), style="warn"))
+        if state == "subagent":
+            label = Text.assemble(("Subagent working… ", "subagent"), (detail, "chrome"))
+        elif state == "tool":
+            label = Text.assemble(("Running ", "chrome"), (detail, "tool"), ("…", "chrome"))
+        elif state == "writing":
             label = Text("Writing…", style="chrome")
         else:
             label = Text("Thinking…", style="chrome")
@@ -238,95 +236,94 @@ class RichChatRenderer:
     # Event rendering
     # ------------------------------------------------------------------
 
-    async def render(self, ev: StreamEvent) -> None:  # noqa: PLR0912
+    async def render(self, ev: StreamEvent) -> None:
         # Any real output means the retried call got through; drop the banner.
         if self._retry_note:
             self._retry_note = ""
-        if ev.kind == "token":
-            text = ev.data.get("text", "")
-            if not text:
-                return
-            if self._is_subagent_token(ev.data):
-                last = text.strip().splitlines()
-                if last:
-                    self._sub_activity = tf.truncate(tf.sanitize(last[-1]), 80)
-                self._refresh()
-                return
-            if not self._opened_prose:
-                self._console.print()
-                self._console.print("🤖", style="accent")
-                self._opened_prose = True
-            self._md.feed(text)
+        data = ev.data
+        match ev.kind:
+            case "token":
+                self._on_token(data)
+            case "tool_call":
+                self._on_tool_call(data)
+            case "tool_result":
+                self._on_tool_result(data)
+            case "log":
+                if text := data.get("text", ""):
+                    self._console.print(Text(text, style="warn"))
+            case "notice":
+                self._on_notice(data)
+            case "image":
+                title = data.get("title") or data.get("path") or "image"
+                self._console.print(Text(f"  ◨ visual: {tf.sanitize(title)}", style="chrome"))
+            case "artifact":
+                self._print_artifact(data)
+            case "final":
+                self._md.finish()
+
+    def _on_token(self, data: dict) -> None:
+        text = data.get("text", "")
+        if not text:
+            return
+        if self._is_subagent_token(data):
+            last = text.strip().splitlines()
+            if last:
+                self._sub_activity = tf.truncate(tf.sanitize(last[-1]), 80)
             self._refresh()
             return
+        if not self._opened_prose:
+            self._console.print()
+            self._console.print("🤖", style="accent")
+            self._opened_prose = True
+        self._md.feed(text)
+        self._refresh()
 
-        if ev.kind == "tool_call":
-            name = ev.data.get("name", "?")
-            args = ev.data.get("args", {})
-            self._md.flush()
-            idx = self.ring.push("tool_call", name, tf.pretty_args(args))
-            if name == "write_todos":
-                self._print_todos(args, idx)
-                return
-            self._in_flight.append(name)
-            if name in _SUBAGENT_TOOLS:
-                self._print_subagent_call(name, args, idx)
-            else:
-                self._print_tool_call(name, args, idx)
+    def _on_tool_call(self, data: dict) -> None:
+        name = data.get("name", "?")
+        args = data.get("args", {})
+        self._md.flush()
+        idx = self.ring.push("tool_call", name, tf.pretty_args(args))
+        if name == "write_todos":
+            self._print_todos(args, idx)
+            return
+        self._in_flight.append(name)
+        if name in _SUBAGENT_TOOLS:
+            self._print_subagent_call(name, args, idx)
+        else:
+            self._print_tool_call(name, args, idx)
+        self._refresh()
+
+    def _on_tool_result(self, data: dict) -> None:
+        name = data.get("name", "tool")
+        body = data.get("preview", "") or ""
+        full = data.get("full", body) or body
+        idx = self.ring.push("tool_result", name, full)
+        with contextlib.suppress(ValueError):
+            self._in_flight.remove(name)
+        if not self._in_flight:
+            self._sub_activity = ""
+        if name == "write_todos":
             self._refresh()
             return
+        is_err = tf.looks_like_error(full or body)
+        if name == "task" and not is_err:
+            self._print_subagent_response(full or body, idx)
+        else:
+            self._print_tool_result(name, full or body, idx, is_err)
+        self._refresh()
 
-        if ev.kind == "tool_result":
-            name = ev.data.get("name", "tool")
-            body = ev.data.get("preview", "") or ""
-            full = ev.data.get("full", body) or body
-            idx = self.ring.push("tool_result", name, full)
-            with contextlib.suppress(ValueError):
-                self._in_flight.remove(name)
-            if not self._in_flight:
-                self._sub_activity = ""
-            if name == "write_todos":
-                self._refresh()
-                return
-            is_err = tf.looks_like_error(full or body)
-            if name == "task" and not is_err:
-                self._print_subagent_response(full or body, idx)
-            else:
-                self._print_tool_result(name, full or body, idx, is_err)
-            self._refresh()
+    def _on_notice(self, data: dict) -> None:
+        # Never silently dropped: a notice is what says "the model
+        # returned nothing", and that must not look like a hang.
+        text = data.get("text", "")
+        if not text:
             return
-
-        if ev.kind == "log":
-            text = ev.data.get("text", "")
-            if text:
-                self._console.print(Text(text, style="warn"))
-            return
-
-        if ev.kind == "notice":
-            # Never silently dropped: a notice is what says "the model
-            # returned nothing", and that must not look like a hang.
-            text = ev.data.get("text", "")
-            if text:
-                level = ev.data.get("level", "info")
-                style = {"error": "err", "warning": "warn"}.get(level, "chrome")
-                mark = {"error": "✗", "warning": "⚠"}.get(level, "·")
-                self._md.flush()
-                self._console.print()
-                self._console.print(Text(f"  {mark} {text}", style=style))
-            return
-
-        if ev.kind == "image":
-            title = ev.data.get("title") or ev.data.get("path") or "image"
-            self._console.print(Text(f"  ◨ visual: {tf.sanitize(title)}", style="chrome"))
-            return
-
-        if ev.kind == "artifact":
-            self._print_artifact(ev.data)
-            return
-
-        if ev.kind == "final":
-            self._md.finish()
-            return
+        level = data.get("level", "info")
+        style = {"error": "err", "warning": "warn"}.get(level, "chrome")
+        mark = {"error": "✗", "warning": "⚠"}.get(level, "·")
+        self._md.flush()
+        self._console.print()
+        self._console.print(Text(f"  {mark} {text}", style=style))
 
     # ------------------------------------------------------------------
     # Line printers (everything renders above the Live region)
