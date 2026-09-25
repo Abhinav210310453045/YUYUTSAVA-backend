@@ -704,6 +704,9 @@ the count, so it stops here.
   - `R-BUG-07` a daemon started from the app serves its API.
   - `R-BUG-15` a background completion waits for the thread's running turn
     (found live in W4; two writers on one checkpoint).
+  - `R-BUG-16` runtime settings write into the package's
+    `events_config.json` (found live in W5; where the per-user copy lives is
+    the owner's call).
   - `R-BUG-08` an answered inline ask resumes the turn — **landed early, in W4**
     (`7babeca`): it blocked W4's own characterization tests, so it could not wait.
   - `R-BUG-09` an answer that beats its waiter is held — **landed early, in W4**

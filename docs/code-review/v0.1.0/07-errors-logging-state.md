@@ -707,3 +707,41 @@ thread concurrently.
 **Verification.** A background task that completes while its launching turn
 is still streaming is reported after that turn ends, every time — a test with
 a gated fake turn, and live with a task shorter than the turn.
+
+## R-BUG-16 — Runtime settings write into the package's own `events_config.json`
+
+**Severity** P1 · **Wave** W5 · **Status** Open — needs the owner's decision
+(where the file should live)
+
+**Evidence.** Found live on 2026-09-25 while checking W5's settings handler.
+`storage/paths.events_config_path()` resolves to
+`yuyutsava/events/events_config.json`, next to the source, and its docstring
+calls the file "a project artifact, not user runtime state". But it is
+written at runtime:
+
+- `PATCH /settings/runtime` with `voice.wake_enabled` flips
+  `sources.voice.enabled` in it (`routers/settings.py`, by design, so the hot
+  reload releases the microphone);
+- the `/config` endpoints (watched directories and source settings) save it
+  through `ConfigService`.
+
+A scratch daemon with its own `YUYUTSAVA_HOME` toggled wake on and off and
+left the tracked file changed (`"enabled": false` → `true`) in the working
+tree.
+
+**Consequence.** Every toggle in the app dirties the git tree, and a commit
+can carry one user's microphone setting into everyone's default. All daemons
+on a machine share one file whatever their home, so an isolated test is not
+isolated. A non-editable install writes into site-packages, or fails where
+that is read-only.
+
+**Fix.** Keep the file in the package as the shipped default, and read and
+write a per-user copy under `state_dir()` (created from the default on first
+write), the way `channels_config_path()` already does with
+`YUYUTSAVA_CHANNELS_CONFIG`. Existing users' toggles live in the repo copy
+today, so on first start the user copy is seeded from the current repo file
+rather than from the default.
+
+**Verification.** A settings patch under a scratch `YUYUTSAVA_HOME` leaves
+`git status` clean, and a second home does not see it; the hot reload still
+tears the voice source down.
