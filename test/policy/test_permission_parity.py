@@ -52,11 +52,13 @@ import unittest
 from pathlib import Path
 from typing import Any
 
+from test.todoboard.fake_store import FakeTodoStore
 from yuyutsava.platform import host_profile
 from yuyutsava.policy.adapter import LangChainPolicyAdapter
 from yuyutsava.policy.ask import ScriptedAskUser
 from yuyutsava.policy.builtin.permission import PermissionPolicy
 from yuyutsava.policy.types import Denied
+from yuyutsava.todoboard.exchange import TodoExchange
 
 # ---------------------------------------------------------------------------
 # The matrix. Each case: (label, command, answers to give in order).
@@ -401,7 +403,12 @@ class WiredIntoTheRealBuild(unittest.IsolatedAsyncioTestCase):
             engine.build_cli_deepagent(
                 ws,
                 AnthropicSettings(api_key="sk-fake", model="claude-haiku-4-5-20251001"),
-                deps=MasterDeps(permission_check=True, search_config=search, subagents=[gp]),
+                deps=MasterDeps(
+                    permission_check=True,
+                    search_config=search,
+                    subagents=[gp],
+                    board=TodoExchange(FakeTodoStore()),
+                ),
                 execution_mode="local",
                 local_settings=LocalSettings(),
             )

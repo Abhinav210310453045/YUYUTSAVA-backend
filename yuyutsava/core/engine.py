@@ -500,6 +500,7 @@ def _shared_master_tools(
     mcp_tools: "Sequence[Any] | None" = None,
     extra_tools: "Sequence[Any] | None" = None,
     todo_author: str | None = None,
+    board: Any | None = None,
 ) -> tuple[list, str]:
     """Tool families every master shares, selected by its declared profile.
 
@@ -547,10 +548,15 @@ def _shared_master_tools(
         tools.extend(make_visual_tools(output_dir=output_dir))
 
     if ToolFamily.TODO in fams:
+        if board is None:
+            raise ValueError(
+                f"{profile.role}: profile declares the todo_* family but no board was "
+                "supplied for it to write to."
+            )
         kwargs = {"scope": profile.todo_scope}
         if todo_author:
             kwargs["author"] = todo_author
-        tools.extend(make_todo_tools(**kwargs))
+        tools.extend(make_todo_tools(board, **kwargs))
 
     # Per-agent user-behaviour memory. Namespaces must not collide — two masters
     # sharing one would cross-contaminate learned behaviours.
@@ -1011,6 +1017,7 @@ def build_cli_deepagent(
         output_dir=output_dir,
         mcp_tools=deps.mcp_tools,
         extra_tools=deps.extra_tools,
+        board=deps.board,
     )
     skill_registry = SkillRegistry(workspace_dir=layout.skills)
 
@@ -1119,6 +1126,7 @@ def _orchestrator_tools(
         mcp_tools=(
             deps.mcp_manager.tools_for("orchestrator") if deps.mcp_manager is not None else None
         ),
+        board=deps.board,
     )
     master_tools.extend(shared)
 
@@ -1406,6 +1414,7 @@ def build_tinker_agent(
         mcp_tools=deps.mcp_tools,
         extra_tools=deps.extra_tools,
         todo_author="tinker",
+        board=deps.board,
     )
     skill_registry = skill_registry or SkillRegistry()
 

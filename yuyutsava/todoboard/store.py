@@ -171,31 +171,7 @@ def _load_json(raw: Any, fallback: Any) -> Any:
 # unified store, on both live backends, in test/storage/test_todo_store_parity.py.
 
 
-# Process-singleton, mirroring get/set_default_feedback_store(). Postgres is
-# primary: the daemon injects a RoutedStore(Pg, Sqlite) at boot and the CLI a
-# plain PgTodoStore when it owns a pool; otherwise this lazily builds the
-# SQLite fallback.
-_default_store: TodoStore | None = None
-
-
-def set_default_todo_store(store: TodoStore) -> None:
-    global _default_store
-    _default_store = store
-
-
-def get_default_todo_store() -> TodoStore:
-    global _default_store
-    if _default_store is None:
-        # Import cycle: yuyutsava.todoboard.store_unified imports this module.
-        from yuyutsava.todoboard.store_unified import sqlite_todo_store  # noqa: PLC0415
-
-        _default_store = sqlite_todo_store()
-    return _default_store
-
-
 __all__ = [
     "TodoStore",
-    "get_default_todo_store",
-    "set_default_todo_store",
     "DEFAULT_LIST_LIMIT",
 ]

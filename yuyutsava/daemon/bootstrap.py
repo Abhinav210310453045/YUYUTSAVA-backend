@@ -103,9 +103,8 @@ from yuyutsava.storage.sessions import PgSessionStore, set_default_session_store
 from yuyutsava.storage.sweeper import BlobSweepTarget, SweeperConfig, UnifiedSweeper
 from yuyutsava.storage.task_registry import TaskRegistry
 from yuyutsava.storage.usage import UsageStore
-from yuyutsava.todoboard.exchange import get_default_exchange
-from yuyutsava.todoboard.recall import TodoNoteIndex, set_default_note_index
-from yuyutsava.todoboard.store import set_default_todo_store
+from yuyutsava.todoboard.exchange import TodoExchange
+from yuyutsava.todoboard.recall import TodoNoteIndex
 from yuyutsava.visuals.store import set_default_visual_store
 
 logger = logging.getLogger("yuyutsava.daemon.bootstrap")
@@ -353,6 +352,9 @@ class StorageSubsystem:
     task_registry: TaskRegistry
     events: Store
     model_router: object
+    #: The one TODO board: the routed todo store and, with Postgres and an
+    #: embedder, its note index. Everything that touches the board gets this.
+    board: TodoExchange
 
     #: Set when Postgres was requested but unreachable; surfaced on the user
     #: timeline once channels exist, so a silent downgrade is impossible.
@@ -397,7 +399,7 @@ async def _open_backend() -> tuple[StorageSettings, PgPool | None, str | None]:
 
 
 def _install_rest_stores(stores: StoreFactory, has_spillover: bool) -> None:
-    """Point the visual, feedback and todo default stores at Postgres-with-spillover.
+    """Point the visual and feedback default stores at Postgres-with-spillover.
 
     These are the REST-path stores written OUTSIDE a checkpointed turn (the
     👍/👎 endpoint, the /visuals API, the board), so a raised error would lose
@@ -410,7 +412,6 @@ def _install_rest_stores(stores: StoreFactory, has_spillover: bool) -> None:
         return
     set_default_visual_store(stores.visuals())
     set_default_feedback_store(stores.feedback())
-    set_default_todo_store(stores.todos())
 
 
 async def build_storage(opts: DaemonOptions) -> StorageSubsystem:
@@ -465,6 +466,17 @@ async def build_storage(opts: DaemonOptions) -> StorageSubsystem:
 
     _install_rest_stores(stores, pg_pool is not None and storage_health is not None)
 
+    # The board: the factory's todo store (routed with SQLite spillover on
+    # Postgres) and, on Postgres with an embedder, the note index — built
+    # together so the exchange's embed-on-write hooks have it from the start.
+    # build_retrieval boot-syncs the index.
+    note_index = (
+        TodoNoteIndex(pg_pool, embedder=embedder, min_score=mem_settings.min_score)
+        if pg_pool is not None and embedder is not None
+        else None
+    )
+    board = TodoExchange(stores.todos(), note_index=note_index)
+
     return StorageSubsystem(
         settings=storage,
         pg_pool=pg_pool,
@@ -481,6 +493,7 @@ async def build_storage(opts: DaemonOptions) -> StorageSubsystem:
         task_registry=task_registry,
         events=store,
         model_router=model_router,
+        board=board,
         fallback_reason=storage_fallback_reason,
     )
 
@@ -569,6 +582,7 @@ async def build_retention(
     store: Store,
     artifact_store: object,
     storage_health: object | None,
+    board: TodoExchange,
 ) -> RetentionSubsystem:
     """Start the checkpointer and assemble the unified TTL sweeper.
 
@@ -620,7 +634,7 @@ async def build_retention(
         # Orphaned TODO workspaces (dir without a card row) — card ids come
         # through the exchange; the health handle makes the sweep skip while
         # degraded (the SQLite buffer's card list is partial).
-        todo_exchange=get_default_exchange(),
+        todo_exchange=board,
         storage_health=storage_health,
     )
 
@@ -657,6 +671,7 @@ async def build_retrieval(
     mem_settings: object,
     pg_pool: PgPool | None,
     embedder: Embedder | None,
+    board: TodoExchange,
 ) -> RetrievalSubsystem:
     """Build the skills index and (on Postgres) the TODO-note recall index.
 
@@ -689,15 +704,14 @@ async def build_retrieval(
     # middleware inside build_orchestrator, scoped agent="orchestrator".)
 
     # ── TODO-board note recall (pgvector, migration v16) --------------------
-    # Embed-on-write hooks in the exchange resolve this default index; the boot
+    # The board carries its index (built with it in build_storage); the boot
     # sync backfills notes written before the feature (or while degraded — a
     # spillover-drained note has no chunks until this catches it). SQLite-only
-    # deployments leave the singleton unset and every hook no-ops.
-    if pg_pool is not None and embedder is not None:
-        note_index = TodoNoteIndex(pg_pool, embedder=embedder, min_score=mem_settings.min_score)
-        set_default_note_index(note_index)
+    # deployments have none, and every hook no-ops.
+    note_index = board.note_index
+    if note_index is not None:
         try:
-            await note_index.sync(get_default_exchange())
+            await note_index.sync(board)
             logger.info("  todo notes: pgvector recall enabled (todo_recall)")
         except Exception:
             logger.warning("todo notes: boot index sync failed", exc_info=True)
@@ -1197,6 +1211,7 @@ def build_subagents(
     cap_enforcer: Any,
     memory_store: Any,
     skill_store: Any,
+    board: Any,
 ) -> SubagentSubsystem:
     """Build the subagent roster.
 
@@ -1242,6 +1257,7 @@ def build_subagents(
         skill_store=skill_store,
         policy=policy,
         consent=consent,
+        board=board,
     )
 
     def _make_peers() -> list:
@@ -1351,6 +1367,7 @@ async def build_boot_state(opts: DaemonOptions) -> BootState:
         store=st.events,
         artifact_store=st.artifact_store,
         storage_health=st.storage_health,
+        board=st.board,
     )
     ev = await build_events(
         events_cfg=events_cfg,
@@ -1369,6 +1386,7 @@ async def build_boot_state(opts: DaemonOptions) -> BootState:
         mem_settings=st.mem_settings,
         pg_pool=st.pg_pool,
         embedder=st.embedder,
+        board=st.board,
     )
     wire_spillover_recovery(
         st.storage_health,
@@ -1396,6 +1414,7 @@ async def build_boot_state(opts: DaemonOptions) -> BootState:
         cap_enforcer=pol.cap_enforcer,
         memory_store=st.memory_store,
         skill_store=rtv.skill_store,
+        board=st.board,
     )
     task_queue: asyncio.Queue[OrchestratorTask] = asyncio.Queue()
     launch_index = LaunchIndex()
@@ -1523,6 +1542,7 @@ def build_loops(boot: BootState) -> LoopSubsystem:
         compaction_model=models.compaction,
         usage_store=st.usage_store,
         runtime_settings=pol.runtime_settings,
+        board=st.board,
     )
     orch_loop = OrchestratorLoop(
         task_queue=boot.task_queue,
@@ -1633,6 +1653,7 @@ async def build_web(
             extra_subagents=boot.subagents.make_peers(),
             policy=pol.policy,
             consent=pol.consent_registry,
+            board=st.board,
         ),
     )
 
@@ -1653,6 +1674,7 @@ async def build_web(
         web_hub,
         host=cfg.web_host,
         deps=AppDeps(
+            todo_exchange=st.board,
             skill_registry=boot.retrieval.skill_registry,
             config_reload=boot.events.reload,
             channels=boot.channels.router,

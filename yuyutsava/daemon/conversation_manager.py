@@ -50,7 +50,6 @@ from yuyutsava.storage.ids import (
     tinker_thread_base,
 )
 from yuyutsava.storage.sessions import SessionStore, get_default_session_store
-from yuyutsava.todoboard.exchange import get_default_exchange
 
 logger = logging.getLogger("yuyutsava.daemon.conversation_manager")
 
@@ -186,6 +185,12 @@ class ConversationManager:
                 )
         return bundle
 
+    def _board(self) -> Any:
+        """The daemon's TODO board; tinker conversations need one."""
+        if self._wiring.board is None:
+            raise RuntimeError("tinker conversations need the daemon's board (StackWiring.board)")
+        return self._wiring.board
+
     def _orch_submit_tools(self, origin: str) -> list:
         """The orch_submit hand-off tool, when the daemon wired a submission
         service. Events/background work stay orchestrator-only — this is the
@@ -213,7 +218,7 @@ class ConversationManager:
     async def _build_tinker_bundle(self, card_id: str) -> AgentBundle:
         # Board access only via the exchange — also 404s a bogus card before
         # the (expensive) stack build starts.
-        card = await get_default_exchange().get_card(card_id)
+        card = await self._board().get_card(card_id)
         card_ws = Path(card.workspace_path)
         await asyncio.to_thread(card_ws.mkdir, parents=True, exist_ok=True)
         logger.info(
@@ -238,6 +243,7 @@ class ConversationManager:
                 extra_tools=self._orch_submit_tools("tinker"),
                 policy=self._wiring.policy,
                 consent=self._wiring.consent,
+                board=self._wiring.board,
             ),
         )
 
@@ -329,7 +335,7 @@ class ConversationManager:
     ) -> tuple[ConversationService, bool]:
         # Validate the card up-front so a stale/bogus id fails the handshake
         # (typed TodoNotFoundError) instead of the first turn.
-        card = await get_default_exchange().get_card(card_id)
+        card = await self._board().get_card(card_id)
 
         # Session rows are keyed by their thread_id: resolve which of the
         # card's chats to open. Legacy single-chat cards used the bare

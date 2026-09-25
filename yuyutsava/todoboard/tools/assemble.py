@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from langchain_core.tools import BaseTool
 
-from yuyutsava.todoboard.exchange import TodoExchange, get_default_exchange
+from yuyutsava.todoboard.exchange import TodoExchange
 from yuyutsava.todoboard.tools.artifacts import make_artifacts_tools
 from yuyutsava.todoboard.tools.capture import make_capture_tools
 from yuyutsava.todoboard.tools.editing import make_editing_tools
@@ -13,7 +13,7 @@ from yuyutsava.todoboard.tools.support import BoardContext, ToolScope
 
 
 def make_todo_tools(
-    exchange: TodoExchange | None = None,
+    exchange: TodoExchange,
     *,
     scope: ToolScope = "capture",
     author: str = "master",
@@ -23,7 +23,7 @@ def make_todo_tools(
     ``author`` labels notes written through these tools, so a card's history
     says which agent did what.
     """
-    ctx = BoardContext(exchange=exchange or get_default_exchange(), author=author)
+    ctx = BoardContext(exchange=exchange, author=author)
     capture = make_capture_tools(ctx)
     if scope == "capture":
         return capture

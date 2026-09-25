@@ -24,6 +24,9 @@ import os
 from pathlib import Path
 from typing import Any
 
+from test.todoboard.fake_store import FakeTodoStore
+from yuyutsava.todoboard.exchange import TodoExchange
+
 os.environ.setdefault("LLM_PROVIDER", "anthropic")
 os.environ.setdefault("ANTHROPIC_API_KEY", "sk-fake-key-for-test")
 
@@ -90,6 +93,7 @@ def _render_prompt() -> dict[str, Any]:
             workspace,
             settings,
             deps=MasterDeps(
+                board=TodoExchange(FakeTodoStore()),
                 permission_check=True,
                 search_config=search_config,
                 subagents=[general_purpose],

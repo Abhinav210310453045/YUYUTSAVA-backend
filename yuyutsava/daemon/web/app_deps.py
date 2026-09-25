@@ -60,6 +60,8 @@ class AppDeps:
     subagent_roster: dict | None = None  # {name: BaseSubAgent}
 
     # -- stores ------------------------------------------------------------
+    #: The TODO board (``TodoExchange``); without it the board routes answer 503.
+    todo_exchange: Any | None = None
     usage_store: Any | None = None
     memory_store: Any | None = None
     voice_store: Any | None = None

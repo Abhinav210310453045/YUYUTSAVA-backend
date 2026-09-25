@@ -61,13 +61,19 @@ def board_workspace_root():
 class TodoExchange:
     """Versioned protocol facade over one :class:`TodoStore`."""
 
-    def __init__(self, store: TodoStore | None = None) -> None:
-        core = BoardCore(store)
+    def __init__(self, store: TodoStore, *, note_index: Any | None = None) -> None:
+        """One board: *store* holds it, *note_index* (optional) recalls its notes."""
+        core = BoardCore(store, note_index)
         self._core = core
         self._cards = CardService(core)
         self._objectives = ObjectiveService(core)
         self._notes = NoteService(core)
         self._attachments = AttachmentService(core)
+
+    @property
+    def note_index(self) -> Any | None:
+        """The index that recalls this board's notes, or ``None`` (SQLite-only)."""
+        return self._core.note_index
 
     # ── cards ──────────────────────────────────────────────────────────
 
@@ -248,19 +254,6 @@ class TodoExchange:
         return await self._core.events(card_id, limit=limit)
 
 
-# Process-singleton over the default store, for callers (tools, routers) that
-# don't inject their own. The store singleton underneath is what the daemon/CLI
-# swap at boot, so this needs no set_ counterpart.
-_default_exchange: TodoExchange | None = None
-
-
-def get_default_exchange() -> TodoExchange:
-    global _default_exchange
-    if _default_exchange is None:
-        _default_exchange = TodoExchange()
-    return _default_exchange
-
-
 __all__ = [
     "TodoExchange",
     "board_workspace_root",
@@ -269,5 +262,4 @@ __all__ = [
     "TodoNotFoundError",
     "TodoStorageError",
     "TodoAttachmentError",
-    "get_default_exchange",
 ]

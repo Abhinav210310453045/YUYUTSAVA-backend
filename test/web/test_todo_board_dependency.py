@@ -12,10 +12,9 @@ locator's:
   setting a module global and remembering to restore it;
 * one process, one board, structurally.
 
-`board()` is now a FastAPI dependency. It resolves from `app.state` when the
-daemon installed one and falls back to the process global otherwise — the same
-additive shape as `AppContext`: unmigrated paths keep working, and the honest
-path exists.
+`board()` is now a FastAPI dependency. It resolves from `app.state`, where the
+daemon installs its one board; there is no process global behind it any more
+(`R-GLB-01`), so an app without a board answers 503.
 
 The test that matters is `test_override_replaces_the_board`: it swaps the board
 via `dependency_overrides` with **no global set at all**, which is the property
@@ -30,12 +29,16 @@ import unittest
 
 from fastapi import FastAPI
 
+from test.todoboard.fake_store import FakeTodoStore
 from yuyutsava.daemon.web.routers.todos import board, router
+from yuyutsava.todoboard.exchange import TodoExchange
 
 
 def _app() -> FastAPI:
+    """The router on its own, with an in-memory board where the daemon's goes."""
     app = FastAPI()
     app.include_router(router)
+    app.state.todo_exchange = TodoExchange(FakeTodoStore())
     return app
 
 
@@ -203,17 +206,19 @@ class OverrideSeam(unittest.TestCase):
             "daemon's own exchange would be bypassed",
         )
 
-    def test_falls_back_to_the_global_when_unset(self) -> None:
-        """Unmigrated / standalone paths must keep working."""
+    def test_without_a_board_the_routes_are_unavailable(self) -> None:
+        """No global to fall back to: an app without a board says so (503)
+        rather than quietly serving some other board."""
         from unittest.mock import Mock
 
         from fastapi import Request
 
-        from yuyutsava.todoboard.exchange import get_default_exchange
+        from yuyutsava.daemon.web.exceptions import ServiceUnavailableError
 
         request = Mock(spec=Request)
         request.app.state.todo_exchange = None
-        self.assertIs(board(request), get_default_exchange())
+        with self.assertRaises(ServiceUnavailableError):
+            board(request)
 
 
 if __name__ == "__main__":

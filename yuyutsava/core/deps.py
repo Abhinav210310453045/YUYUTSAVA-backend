@@ -94,6 +94,9 @@ class MasterDeps:
     #: policy, consent). A stack passes the one its subagents share; absent,
     #: the builder makes one for the workspace with neither policy nor consent.
     task_runner: Any | None = None
+    #: The TODO board (``TodoExchange``) behind the todo_* tools; required by a
+    #: profile that declares that family.
+    board: Any | None = None
 
     def replace(self, **changes: Any) -> "MasterDeps":
         """A copy with some fields changed — the frozen equivalent of a setter."""
@@ -129,6 +132,10 @@ class StackWiring:
     #: starts its own in-memory registry.
     policy: Any | None = None
     consent: Any | None = None
+    #: The daemon's board (``TodoExchange``: its routed store and note index),
+    #: so a chat or tinker writes the same board the app shows. Absent: the
+    #: stack builds its own (``core.stores.standalone_board``).
+    board: Any | None = None
 
 
 #: The tinker agent's own budget. It works a single TODO card, so its context is

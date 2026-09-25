@@ -429,6 +429,15 @@ def wired_stores(tmp: Path) -> dict[str, Any]:
     }
 
 
+def _board() -> Any:
+    """A TODO board over an in-memory store — every master declares the todo_*
+    family, and the builders now require the board it writes to."""
+    from test.todoboard.fake_store import FakeTodoStore
+    from yuyutsava.todoboard.exchange import TodoExchange
+
+    return TodoExchange(FakeTodoStore())
+
+
 def _split_overrides(overrides: dict[str, Any], **base: Any):
     """Sort a fingerprint's overrides into `MasterDeps` fields and the rest.
 
@@ -477,7 +486,7 @@ def capture_cli(
         search_config=search,
     )
     deps, rest = _split_overrides(
-        overrides, permission_check=True, search_config=search, subagents=[gp]
+        overrides, permission_check=True, search_config=search, subagents=[gp], board=_board()
     )
     kwargs: dict[str, Any] = {}
     with _fake_chat_model(), _capture_deep_agent_kwargs(kwargs):
@@ -504,6 +513,7 @@ def fingerprint_tinker(**overrides: Any) -> dict[str, Any]:
         overrides,
         permission_check=True,
         search_config=SearchConfig(tavily_api_key="dummy", exa_api_key="dummy"),
+        board=_board(),
     )
     kwargs: dict[str, Any] = {}
     with _fake_chat_model(), _capture_deep_agent_kwargs(kwargs):
@@ -580,6 +590,7 @@ def fingerprint_orchestrator(**overrides: Any) -> dict[str, Any]:
         search_config=overrides.pop(
             "search_config", SearchConfig(tavily_api_key="dummy", exa_api_key="dummy")
         ),
+        board=overrides.pop("board", _board()),
         **overrides,
     )
     kwargs: dict[str, Any] = {}

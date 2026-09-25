@@ -27,8 +27,10 @@ from pathlib import Path
 
 
 def _build(**over):
+    from test.todoboard.fake_store import FakeTodoStore
     from yuyutsava.config.search import SearchConfig
     from yuyutsava.daemon.bootstrap import build_subagents
+    from yuyutsava.todoboard.exchange import TodoExchange
 
     kw = dict(
         workspace=Path(tempfile.gettempdir()),
@@ -41,6 +43,7 @@ def _build(**over):
         cap_enforcer=None,
         memory_store=None,
         skill_store=None,
+        board=TodoExchange(FakeTodoStore()),
     )
     kw.update(over)
     return build_subagents(**kw)

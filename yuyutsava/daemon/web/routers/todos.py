@@ -40,6 +40,7 @@ from fastapi import (
 from fastapi.responses import FileResponse
 
 from yuyutsava.daemon.web.bundle import bundle_asset_response
+from yuyutsava.daemon.web.exceptions import ServiceUnavailableError
 from yuyutsava.daemon.web.schemas.session import SessionOut
 from yuyutsava.daemon.web.schemas.todo import (
     GenerateIn,
@@ -61,7 +62,6 @@ from yuyutsava.todoboard.exchange import (
     TodoExchange,
     TodoNotFoundError,
     TodoValidationError,
-    get_default_exchange,
 )
 from yuyutsava.todoboard.models import (
     BoardSnapshotV1,
@@ -80,18 +80,17 @@ logger = logging.getLogger("yuyutsava.daemon.web.routers.todos")
 def board(request: Request) -> TodoExchange:
     """The TODO board for this request.
 
-    A FastAPI dependency rather than ``get_default_exchange()`` inside each
-    handler, so the board appears in every handler's signature and a test can
-    exercise one against a different board.
+    A FastAPI dependency, so the board appears in every handler's signature and
+    a test can exercise one against a different board.
 
-    As a FastAPI dependency it resolves from ``app.state`` when the daemon
-    installed one and falls back to the process global otherwise, which keeps
-    the standalone paths working. Overriding it in a test becomes
-    ``app.dependency_overrides[board] = ...`` instead of patching a module
-    global and remembering to restore it.
+    It is the board the daemon installed on ``app.state``; an app without one
+    answers 503. Overriding it in a test is
+    ``app.dependency_overrides[board] = ...``.
     """
-    injected = getattr(request.app.state, "todo_exchange", None)
-    return injected if injected is not None else get_default_exchange()
+    exchange = getattr(request.app.state, "todo_exchange", None)
+    if exchange is None:
+        raise ServiceUnavailableError("todo board not initialized")
+    return exchange
 
 
 router = APIRouter(tags=["todos"])

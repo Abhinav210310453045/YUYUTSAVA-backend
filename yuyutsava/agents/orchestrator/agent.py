@@ -37,6 +37,7 @@ from yuyutsava.ports.policy import ContextTuning, RemoteSubagentSpec, TaskMirror
 from yuyutsava.run_context import current_context
 from yuyutsava.skills.registry import SkillRegistry
 from yuyutsava.storage.events import Store
+from yuyutsava.todoboard.exchange import TodoExchange
 
 logger = logging.getLogger("yuyutsava.agents.orchestrator")
 
@@ -116,6 +117,10 @@ class OrchestratorDeps:
     # subagent simply never enters the roster) and enforced per call by
     # SubagentGatePolicy. None → every registered subagent is available.
     runtime_settings: RuntimeToggles | None = None
+
+    # The daemon's board, behind the todo_* capture tools. Required by any
+    # profile declaring the TODO family.
+    board: TodoExchange | None = None
 
 
 # ---------------------------------------------------------------------------

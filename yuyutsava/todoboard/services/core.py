@@ -31,7 +31,7 @@ from ulid import ULID
 from yuyutsava.storage.paths import blobs_dir
 from yuyutsava.todoboard.errors import TodoError, TodoNotFoundError, TodoStorageError
 from yuyutsava.todoboard.models import EVENT_ACTORS, TodoCardV1, TodoEventV1, TodoObjectiveV1
-from yuyutsava.todoboard.store import TodoStore, get_default_todo_store
+from yuyutsava.todoboard.store import TodoStore
 from yuyutsava.todoboard.validate import limit as check_limit
 
 logger = logging.getLogger("yuyutsava.todoboard.exchange")
@@ -45,15 +45,11 @@ def workspace_root() -> Path:
 class BoardCore:
     """One store, reached safely."""
 
-    def __init__(self, store: TodoStore | None = None) -> None:
-        # None = resolve the process default lazily on every call, so an
-        # exchange built before daemon/CLI boot wiring still ends up on the
-        # store set_default_todo_store() injected.
-        self._injected = store
-
-    @property
-    def store(self) -> TodoStore:
-        return self._injected or get_default_todo_store()
+    def __init__(self, store: TodoStore, note_index: Any | None = None) -> None:
+        self.store = store
+        #: ``TodoNoteIndex`` for semantic recall and embed-on-write; ``None``
+        #: where there is none (SQLite-only), and every hook no-ops.
+        self.note_index = note_index
 
     async def guard(self, coro, action: str):
         """Run one store call, wrapping backend faults in TodoStorageError."""

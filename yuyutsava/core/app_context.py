@@ -36,7 +36,6 @@ from typing import Any
 from yuyutsava.storage.events import Store
 from yuyutsava.storage.feedback_store import get_default_feedback_store
 from yuyutsava.storage.sessions import get_default_session_store
-from yuyutsava.todoboard.store import get_default_todo_store
 from yuyutsava.visuals.store import get_default_visual_store
 
 
@@ -53,9 +52,7 @@ class AppContext:
     session_store: Any | None = None
     visual_store: Any | None = None
     feedback_store: Any | None = None
-    todo_store: Any | None = None
     events_store: Any | None = None
-    note_index: Any | None = None
 
     # -- resolution ---------------------------------------------------------
     # Each resolver returns the explicit handle when present, else the global.
@@ -79,11 +76,6 @@ class AppContext:
             return self.feedback_store
 
         return get_default_feedback_store()
-
-    def todos(self) -> Any:
-        if self.todo_store is not None:
-            return self.todo_store
-        return get_default_todo_store()
 
     # -- lifecycle-carrying resolution --------------------------------------
     # The events Store is not a global; it is *constructed*, and a constructed

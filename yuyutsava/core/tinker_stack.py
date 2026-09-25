@@ -7,10 +7,8 @@ the compiled bundle for ONE TODO card. The daemon's
 returned bundle per card (``tinker:<card_id>``) — the conversation thread is
 pinned to ``todo:<card_id>`` by the manager, not here.
 
-Board access stays on the exchange: this module never touches the todo store.
-It deliberately does NOT call ``set_default_todo_store`` — the daemon's
-bootstrap already wired the RoutedStore, and the tinker's ``todo_*`` tools
-resolve it lazily through ``get_default_exchange()``.
+Board access stays on the exchange the daemon hands over (``StackWiring.board``:
+its routed store and note index); this module never touches the todo store.
 """
 
 from __future__ import annotations
@@ -32,11 +30,10 @@ from yuyutsava.core.async_host import (
 )
 from yuyutsava.core.deps import MasterDeps, StackWiring
 from yuyutsava.core.engine import AgentBundle, build_tinker_agent
-from yuyutsava.core.stores import build_master_stores
+from yuyutsava.core.stores import build_master_stores, standalone_board
 from yuyutsava.llm.settings import LlmSettings
 from yuyutsava.skills.registry import SkillRegistry
 from yuyutsava.storage.paths import WorkspaceLayout
-from yuyutsava.todoboard.recall import get_default_note_index
 
 logger = logging.getLogger("yuyutsava.agents.tinker")
 
@@ -118,7 +115,8 @@ async def build_tinker_stack(
     # note index on SQLite-only deployments.
     mcp_tools = mcp_manager.tools_for("tinker") if mcp_manager is not None else []
 
-    note_index = get_default_note_index()
+    board = wiring.board if wiring.board is not None else standalone_board(stores)
+    note_index = board.note_index
 
     bundle = build_tinker_agent(
         card_id,
@@ -149,6 +147,7 @@ async def build_tinker_stack(
             cap_enforcer=wiring.cap_enforcer,
             extra_tools=wiring.extra_tools,
             task_runner=task_runner,
+            board=board,
             # budget_tokens deliberately unset — build_tinker_agent supplies
             # TINKER_BUDGET_TOKENS, which is what this call has always got.
         ),

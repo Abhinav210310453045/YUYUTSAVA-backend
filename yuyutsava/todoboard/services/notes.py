@@ -15,7 +15,6 @@ from ulid import ULID
 from yuyutsava.todoboard import validate
 from yuyutsava.todoboard.errors import TodoNotFoundError, require
 from yuyutsava.todoboard.models import TodoNoteV1
-from yuyutsava.todoboard.recall import get_default_note_index
 from yuyutsava.todoboard.services.core import BoardCore
 
 logger = logging.getLogger("yuyutsava.todoboard.exchange")
@@ -127,7 +126,7 @@ class NoteService:
         require(bool(query), "search query must be non-empty")
         require(1 <= k <= 50, "k must be between 1 and 50")
 
-        index = get_default_note_index()
+        index = self._core.note_index
         if index is None or not index.enabled:
             return []
         return await index.search(query, k, card_id=card_id)
@@ -143,7 +142,7 @@ class NoteService:
         the boot sync repairs the gap.
         """
         try:
-            index = get_default_note_index()
+            index = self._core.note_index
             if index is not None:
                 index.schedule(note, replace=replace)
         except Exception:  # noqa: BLE001 — indexing must never break a write

@@ -259,24 +259,7 @@ class TodoNoteInjector:
         return await self._inner.build_block(task_text)
 
 
-# Process-singleton, mirroring set/get_default_todo_store: the daemon (and the
-# CLI when it owns a pgvector pool) injects a live index at boot; None means
-# "no semantic recall here" and every hook degrades to a silent no-op.
-_default_index: TodoNoteIndex | None = None
-
-
-def set_default_note_index(index: TodoNoteIndex | None) -> None:
-    global _default_index
-    _default_index = index
-
-
-def get_default_note_index() -> TodoNoteIndex | None:
-    return _default_index
-
-
 __all__ = [
     "TodoNoteIndex",
     "TodoNoteInjector",
-    "set_default_note_index",
-    "get_default_note_index",
 ]

@@ -34,42 +34,27 @@ from yuyutsava.core.async_host import (
 )
 from yuyutsava.core.deps import MasterDeps, StackWiring
 from yuyutsava.core.engine import AgentBundle, build_cli_deepagent
-from yuyutsava.core.stores import build_master_stores
+from yuyutsava.core.stores import build_master_stores, standalone_board
 from yuyutsava.llm.pricing import refresh_price_cache
 from yuyutsava.llm.settings import LlmSettings
 from yuyutsava.mcp.loader import start_manager_for_workspace
 from yuyutsava.skills.registry import SkillRegistry
 from yuyutsava.storage.paths import WorkspaceLayout
-from yuyutsava.todoboard.recall import TodoNoteIndex, set_default_note_index
-from yuyutsava.todoboard.store import set_default_todo_store
-from yuyutsava.todoboard.store_unified import pg_todo_store
 from yuyutsava.visuals.store import set_default_visual_store
 from yuyutsava.visuals.store_unified import pg_visual_store
 
 logger = logging.getLogger("yuyutsava.core.agent_stack")
 
 
-def _install_board_stores(pg_pool: Any | None, embedder: Any | None) -> None:
-    """Point the process-wide board, visual and note stores at Postgres.
+def _install_visual_store(pg_pool: Any | None) -> None:
+    """Point the process-wide visual store at Postgres when there is a pool.
 
-    The todo_* capture tools must use the SAME board the daemon serves. With a
-    pool the Pg store is primary (``get_default_todo_store()`` would otherwise
-    lazily fall back to the SQLite twin and split the board); without one the
-    lazy SQLite fallback is correct, so nothing is set.
+    Without this the lazy getter falls back to the SQLite twin, so a chart
+    made in the CLI lands in state.db while the daemon and the app read
+    visual_artifacts in Postgres — and vis_list_artifacts shows two worlds.
     """
-    if pg_pool is None:
-        return
-    set_default_todo_store(pg_todo_store(pg_pool))
-    # Same split, same fix, for vis_* images: without this the lazy getter
-    # falls back to the SQLite twin, so a chart made in the CLI lands in
-    # state.db while the daemon and the app read visual_artifacts in
-    # Postgres — and vis_list_artifacts shows two different worlds.
-    set_default_visual_store(pg_visual_store(pg_pool))
-    # Board-note recall: embed-on-write for notes authored through this
-    # stack + todo_recall searches. Boot backfill is the daemon's job —
-    # a CLI start stays light.
-    if embedder is not None:
-        set_default_note_index(TodoNoteIndex(pg_pool, embedder=embedder))
+    if pg_pool is not None:
+        set_default_visual_store(pg_visual_store(pg_pool))
 
 
 async def _refresh_prices(settings: LlmSettings) -> None:
@@ -168,7 +153,10 @@ async def build_agent_stack(
     if usage_store is None:
         usage_store = stores.factory.usage()
 
-    _install_board_stores(pg_pool, embedder)
+    _install_visual_store(pg_pool)
+    # The daemon's board (routed store, boot-synced note index) when it hands
+    # one over; standalone, the stack's own.
+    board = wiring.board if wiring.board is not None else standalone_board(stores)
     await _refresh_prices(settings)
 
     # Materialize <ws>/.yuyutsava (sync mkdir → off-loop; see storage.paths).
@@ -212,6 +200,7 @@ async def build_agent_stack(
             mcp_manager=mcp_manager,
             policy=wiring.policy,
             consent=consent,
+            board=board,
         )
         background = await start_background(
             settings,
@@ -265,6 +254,7 @@ async def build_agent_stack(
             runtime_settings=wiring.runtime_settings,
             extra_tools=wiring.extra_tools,
             task_runner=task_runner,
+            board=board,
         ),
         execution_mode=execution.mode,
         docker_settings=execution.docker,

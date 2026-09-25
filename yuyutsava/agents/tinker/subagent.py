@@ -30,6 +30,8 @@ and completion wakes the master via the ``subagent_completed`` bridge.
 
 from __future__ import annotations
 
+from typing import Any
+
 from langchain_core.tools import BaseTool
 
 from yuyutsava.agents.base_sub_agent import BaseSubAgent
@@ -134,6 +136,11 @@ so the master can re-show them to the user. Omit the line if you created none.
 class TinkerSubAgent(BaseSubAgent):
     """Board-scoped background tinkerer, registered as ``tinker-bg``."""
 
+    def __init__(self, task_runner: TaskRunnerAgent, *, board: Any, **kwargs: Any) -> None:
+        """``board`` is the ``TodoExchange`` its todo_* tools work on."""
+        super().__init__(task_runner, **kwargs)
+        self._board = board
+
     name = "tinker"
     description = (
         "Background tinkering partner for the user's TODO board: sharpens a "
@@ -153,7 +160,10 @@ class TinkerSubAgent(BaseSubAgent):
         # inline-artifact maker, so a delegated artifact task returns a real
         # artifact the master can re-show in the user's reply (see the ARTIFACTS
         # trailer in the system prompt + artifact_show on the master).
-        return [*make_todo_tools(scope="full", author="tinker"), *make_artifact_tools()]
+        return [
+            *make_todo_tools(self._board, scope="full", author="tinker"),
+            *make_artifact_tools(),
+        ]
 
     #: Tinkering means researching, so the full ws_* set rather than
     #: whatever the visible skills happen to name.
@@ -170,6 +180,7 @@ def make_tinker_subagent(
     skill_store: object | None = None,
     policy: object | None = None,
     consent: object | None = None,
+    board: object,
 ) -> TinkerSubAgent:
     """Build the bg tinkerer with its board-rooted TaskRunner.
 
@@ -188,6 +199,7 @@ def make_tinker_subagent(
     )
     return TinkerSubAgent(
         task_runner,
+        board=board,
         skill_registry=skill_registry,
         can_write_skills=True,
         search_config=search_config,

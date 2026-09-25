@@ -65,6 +65,8 @@ from yuyutsava.storage.routing.facade import RoutedStore
 from yuyutsava.storage.task_store_unified import pg_task_store, sqlite_task_store
 from yuyutsava.storage.usage import PgUsageStore, SqliteUsageStore
 from yuyutsava.storage.voice_store_unified import pg_voice_store, sqlite_voice_store
+from yuyutsava.todoboard.exchange import TodoExchange
+from yuyutsava.todoboard.recall import TodoNoteIndex
 from yuyutsava.todoboard.store_unified import pg_todo_store, sqlite_todo_store
 from yuyutsava.visuals.store_unified import pg_visual_store, sqlite_visual_store
 
@@ -406,3 +408,17 @@ async def build_master_stores(role: str, skill_registry: SkillRegistry) -> Maste
         factory=factory,
         context=factory.context_stores(semantic_recall=context_settings.semantic_recall),
     )
+
+
+def standalone_board(stores: MasterStores) -> TodoExchange:
+    """The board a stack builds when no daemon hands it one.
+
+    The factory's todo store (plain Postgres with a pool, the SQLite twin
+    without) and, with Postgres and an embedder, its own note index.
+    """
+    note_index = (
+        TodoNoteIndex(stores.pg_pool, embedder=stores.embedder)
+        if stores.pg_pool is not None and stores.embedder is not None
+        else None
+    )
+    return TodoExchange(stores.factory.todos(), note_index=note_index)

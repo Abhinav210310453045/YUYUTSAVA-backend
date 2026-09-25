@@ -772,8 +772,8 @@ through `StackWiring`, and a standalone CLI stack has its own registry.
 
 ## R-BUG-18 — The first chat in the daemon replaced its board, visual and note stores
 
-**Severity** P1 · **Wave** W5 · **Status** Open (fix: the store half of
-`R-GLB-01`)
+**Severity** P1 · **Wave** W5 · **Status** Board and note index **fixed**
+(`TodoExchange` injected); the visual store follows.
 
 **Evidence.** The same pattern as `R-BUG-17`. Confirmed in-process on
 2026-09-25: `build_daemon` against a scratch database, then one
