@@ -48,8 +48,8 @@ recovered on its own two messages later with that same tail still present, so
 the shape is strongly *correlated* with the silence rather than proven to be
 its sole trigger. It is repaired here because an unclosed turn and a
 contentless model turn are wrong on their own terms, and because
-:meth:`~yuyutsava.conversation.service.ConversationService._recover_empty_turn`
-— which now retries whatever it finds — is what actually rescues the turn.
+:func:`~yuyutsava.conversation.recovery.recover_empty_turn` — which retries
+whatever it finds — is what actually rescues the turn.
 
 ## What this repairs
 

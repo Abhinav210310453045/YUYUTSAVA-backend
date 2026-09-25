@@ -624,6 +624,16 @@ The 87-case parity suite also passes on both backends, against a scratch
 database rather than the board's, and a live board round trip passed on the
 daemon. Classes over 400 lines: **6**.
 
+**`ConversationService` 446 → 295 lines.** What a turn does about a history
+the model will not continue from (repair before the turn; retry an empty
+reply once; always tell the user) is now `conversation/recovery.py`. It works
+on an agent and a thread id, so its tests call it directly instead of
+building a service with `__new__` (`R-TST-04`). The per-turn bookkeeping is
+`_bookkeep`. The 48 conversation tests and the run_turn-driven front and
+frame tests pass (the one known failure excepted); the recovery tests are
+negative-controlled. A live chat turn on the daemon replied and titled its
+session. Classes over 400 lines: **5**.
+
 ## W5 — Errors, logging, state, defects
 
 - **Classify the 58 silent handlers** as boundary (log plus reason) or internal (narrow type). (`R-ERR-01`, `R-ERR-02`)

@@ -9,6 +9,8 @@ behind the terminal chat, the Electron text chat and the voice agent. See
   written before the first model call so a killed process stays resumable
 - :mod:`~yuyutsava.conversation.repair` — putting a thread back in order after an
   interrupted turn
+- :mod:`~yuyutsava.conversation.recovery` — when a turn repairs its history,
+  retries an empty reply, and what the user is told about it
 - :mod:`~yuyutsava.conversation.titles` — naming a session from what was said in it
 
 ``ConversationService`` is re-exported because other modules import it from here;

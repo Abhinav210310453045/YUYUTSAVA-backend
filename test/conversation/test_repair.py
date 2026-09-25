@@ -28,6 +28,7 @@ import unittest
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
+from yuyutsava.conversation.recovery import recover_empty_turn
 from yuyutsava.conversation.repair import (
     CANCELLED_TOOL_MARKER,
     Cause,
@@ -446,19 +447,7 @@ class AnEmptyTurnIsAlwaysRetried(unittest.TestCase):
     recoverable and nothing tried.
     """
 
-    def _service(self):
-        from yuyutsava.conversation.service import ConversationService
-
-        svc = ConversationService.__new__(ConversationService)
-        # ``thread_id`` is a read-only property over the session row; the
-        # recovery path only reads it, so a stub session is enough and keeps
-        # this a unit test rather than a daemon boot.
-        svc.session = type("S", (), {"thread_id": "t-empty"})()
-        return svc
-
     def _run(self, messages):
-        svc = self._service()
-        bundle = type("B", (), {"agent": _FakeAgent(messages)})()
         events: list = []
         drives: list = []
 
@@ -467,11 +456,7 @@ class AnEmptyTurnIsAlwaysRetried(unittest.TestCase):
             return "recovered", 3
 
         final, steps = asyncio.run(
-            svc._recover_empty_turn(
-                bundle,
-                on_event=events.append,
-                drive=drive,
-            )
+            recover_empty_turn(_FakeAgent(messages), "t-empty", events.append, drive)
         )
         return final, steps, events, drives
 
@@ -499,18 +484,14 @@ class AnEmptyTurnIsAlwaysRetried(unittest.TestCase):
         self.assertIn("cancelled tool call", events[0].data["text"])
 
     def test_a_still_empty_retry_ends_in_a_visible_error(self):
-        svc = self._service()
-        bundle = type("B", (), {"agent": _FakeAgent([HumanMessage(content="hi")])})()
         events: list = []
 
         async def drive(user_text, resume):
             return "", 1
 
         final, _steps = asyncio.run(
-            svc._recover_empty_turn(
-                bundle,
-                on_event=events.append,
-                drive=drive,
+            recover_empty_turn(
+                _FakeAgent([HumanMessage(content="hi")]), "t-empty", events.append, drive
             )
         )
         self.assertEqual(final, "")

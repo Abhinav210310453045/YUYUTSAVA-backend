@@ -1,8 +1,8 @@
 """Reading a thread's shape before using it, and whose turn it is to finish.
 
 `R-DRY-05`: `ConversationService` wrote the read-state/diagnose/repair sequence
-twice — once before every turn and once after a turn came back empty. One helper
-now serves both.
+twice — once before every turn and once after a turn came back empty. One helper,
+`recovery.inspect_and_repair`, now serves both.
 
 The parameter that sequence threads is `close_turn`, and it decides something a
 user can see. `unclosed_turn` means the history ends on a tool result, so the
@@ -23,7 +23,7 @@ import unittest
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
-from yuyutsava.conversation.service import ConversationService
+from yuyutsava.conversation.recovery import inspect_and_repair
 
 
 def _turn_left_open() -> list:
@@ -53,31 +53,10 @@ class _Agent:
         self.updates.append(update)
 
 
-class _Bundle:
-    def __init__(self, agent) -> None:
-        self.agent = agent
-
-
-class _Session:
-    """`thread_id` is a read-only property over the session, so the thread is
-    named here rather than assigned on the service."""
-
-    thread_id = "t1"
-
-
-def _service() -> ConversationService:
-    """The service without its constructor: this tests one method, and building
-    a real one needs a model, a store and a checkpointer."""
-    service = ConversationService.__new__(ConversationService)
-    service.session = _Session()
-    return service
-
-
 def _inspect(messages: list, *, close_turn: bool):
     agent = _Agent(messages)
-    service = _service()
     found, repaired = asyncio.run(
-        service._inspect_and_repair(_Bundle(agent), close_turn=close_turn, what="test")
+        inspect_and_repair(agent, "t1", close_turn=close_turn, what="test")
     )
     return found, repaired, agent
 
@@ -116,10 +95,7 @@ class WhatItReportsBack(unittest.TestCase):
             async def aget_state(self, _config):
                 raise RuntimeError("checkpoint unreachable")
 
-        service = _service()
-        found, repaired = asyncio.run(
-            service._inspect_and_repair(_Bundle(Unreadable()), what="test")
-        )
+        found, repaired = asyncio.run(inspect_and_repair(Unreadable(), "t1", what="test"))
         self.assertIsNone(found, "None means we could not look")
         self.assertEqual(repaired, 0)
 
@@ -130,9 +106,8 @@ class WhatItReportsBack(unittest.TestCase):
             async def aget_state(self, _config):
                 raise KeyboardInterrupt("even this")
 
-        service = _service()
         with self.assertRaises(KeyboardInterrupt):
-            asyncio.run(service._inspect_and_repair(_Bundle(Exploding()), what="test"))
+            asyncio.run(inspect_and_repair(Exploding(), "t1", what="test"))
 
 
 if __name__ == "__main__":

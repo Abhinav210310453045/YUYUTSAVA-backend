@@ -30,48 +30,19 @@ import dataclasses
 import logging
 import time
 from pathlib import Path
-from typing import Any, Awaitable, Callable
+from typing import Awaitable, Callable
 
-from yuyutsava.conversation.repair import Cause, diagnose, repair_orphan_tool_calls
+from yuyutsava.conversation.recovery import EventSink, recover_empty_turn, repair_before_turn
 from yuyutsava.conversation.sessions import CoalescedTicker, count_memory_files, resolve_session
 from yuyutsava.conversation.titles import derive_session_title
 from yuyutsava.core.engine import AgentBundle
-from yuyutsava.core.streaming import StreamEvent, astream_agent_iter
+from yuyutsava.core.streaming import astream_agent_iter
 from yuyutsava.storage.models import Session
 from yuyutsava.storage.sessions import SessionStore
 
 logger = logging.getLogger("yuyutsava.conversation.service")
 
-# An async sink for stream events; sync callables are also accepted and called
-# directly (the service awaits the result only when it's awaitable).
-EventSink = Callable[[StreamEvent], Awaitable[None] | None]
 AskHandler = Callable[[object], Awaitable[str]]
-
-
-def _repair_summary(found: Any, *, close_turn: bool = True) -> str:
-    """Plain-English list of what a repair changed, for a user-facing notice.
-
-    "1 tool call was cancelled" was the only story the notice could tell, so a
-    repair that closed an unfinished turn or dropped an empty reply announced
-    itself as something it was not.
-    """
-    parts: list[str] = []
-    n = len(getattr(found, "cancelled", ()))
-    if n:
-        parts.append(f"{n} cancelled tool call{'s' if n != 1 else ''}")
-    n = len(getattr(found, "dangling", ()))
-    if n:
-        parts.append(f"{n} tool call{'s' if n != 1 else ''} with no result")
-    n = len(getattr(found, "empty_assistant", ()))
-    if n:
-        parts.append(f"{n} empty repl{'ies' if n != 1 else 'y'}")
-    if close_turn and getattr(found, "unclosed_turn", False):
-        parts.append("an unfinished turn")
-    if not parts:
-        return "nothing to repair"
-    if len(parts) == 1:
-        return parts[0]
-    return ", ".join(parts[:-1]) + " and " + parts[-1]
 
 
 class ConversationService:
@@ -245,8 +216,9 @@ class ConversationService:
         # new turn it is on, and it is the half that was missing — cancelling a
         # run left the assistant's turn hanging open and the next user message
         # landed straight after a tool result.
-        await self._repair_before_turn(
-            bundle,
+        await repair_before_turn(
+            bundle.agent,
+            self.thread_id,
             on_event,
             close_turn=resume_value is None,
         )
@@ -279,29 +251,30 @@ class ConversationService:
         final, steps = await _drive(text, resume_value)
 
         if not final:
-            final, extra = await self._recover_empty_turn(
-                bundle,
-                on_event=on_event,
-                drive=_drive,
-            )
+            final, extra = await recover_empty_turn(bundle.agent, self.thread_id, on_event, _drive)
             steps += extra
 
         if self._ticker is not None and resume_value is None:
-            preview = (text or "").strip().replace("\n", " ")
-            try:
-                await self._ticker.tick(max(steps, 1))
-                if preview:
-                    await self.store.touch(self.session.id, task_preview=preview)
-                if not self.session.title:
-                    # Name the session after its first user message — set-once
-                    # (the store's WHERE title='' guard keeps it race-safe).
-                    title = derive_session_title(text)
-                    if title:
-                        await self.store.set_title_if_empty(self.session.id, title)
-                        self.session = dataclasses.replace(self.session, title=title)
-            except Exception:  # noqa: BLE001 — bookkeeping never breaks a turn
-                logger.debug("turn bookkeeping failed", exc_info=True)
+            await self._bookkeep(text, steps)
         return final
+
+    async def _bookkeep(self, text: str, steps: int) -> None:
+        """Count the turn, preview it, and name a session that has no title yet."""
+        assert self._ticker is not None
+        preview = (text or "").strip().replace("\n", " ")
+        try:
+            await self._ticker.tick(max(steps, 1))
+            if preview:
+                await self.store.touch(self.session.id, task_preview=preview)
+            if not self.session.title:
+                # Name the session after its first user message — set-once
+                # (the store's WHERE title='' guard keeps it race-safe).
+                title = derive_session_title(text)
+                if title:
+                    await self.store.set_title_if_empty(self.session.id, title)
+                    self.session = dataclasses.replace(self.session, title=title)
+        except Exception:  # noqa: BLE001 — bookkeeping never breaks a turn
+            logger.debug("turn bookkeeping failed", exc_info=True)
 
     # ------------------------------------------------------------------ #
     # Lifecycle                                                            #
@@ -334,159 +307,6 @@ class ConversationService:
         except Exception:  # noqa: BLE001 — cleanup is best-effort
             logger.debug("discard_if_unused: delete failed", exc_info=True)
             return False
-
-    async def _inspect_and_repair(
-        self,
-        bundle: AgentBundle,
-        *,
-        close_turn: bool = True,
-        what: str,
-    ) -> tuple[Any | None, int]:
-        """Read this thread's checkpoint, diagnose it, and repair if needed.
-
-        Returns ``(findings, repaired)``. ``findings`` is ``None`` only when
-        the inspection itself failed, which is why the two are returned
-        together: a caller cannot tell "nothing was wrong" from "we could not
-        look" any other way, and they lead to different notices.
-
-        Never raises. Both callers reach this on a path where the user is
-        waiting — before a turn, or after one came back empty — and a failed
-        inspection must not block the turn or swallow the reply.
-        """
-        try:
-            state = await bundle.agent.aget_state({"configurable": {"thread_id": self.thread_id}})
-            messages = state.values.get("messages", []) if state and state.values else []
-            found = diagnose(messages)
-            if not found.any(close_turn=close_turn):
-                return found, 0
-            repaired = await repair_orphan_tool_calls(
-                bundle.agent,
-                self.thread_id,
-                cause=Cause.INTERRUPTED_BY_USER,
-                close_turn=close_turn,
-            )
-            return found, repaired
-        except Exception:  # noqa: BLE001 — see the docstring
-            logger.debug("%s failed", what, exc_info=True)
-            return None, 0
-
-    async def _repair_before_turn(
-        self,
-        bundle: AgentBundle,
-        on_event: "EventSink",
-        *,
-        close_turn: bool = True,
-    ) -> None:
-        """Repair an interrupted tool call before sending anything new.
-
-        Costs one checkpoint read per turn, which is nothing beside a model
-        call, and buys an unconditional guarantee: a conversation cannot be
-        sent into the model in a shape it refuses to continue from. The
-        alternative — repairing only where a front happens to know it just
-        cancelled something — is how the app path ended up with no repair at
-        all while the CLI resume path had one.
-        """
-
-        found, repaired = await self._inspect_and_repair(
-            bundle, close_turn=close_turn, what="pre-turn repair"
-        )
-        if repaired:
-            await self._emit(
-                on_event,
-                StreamEvent(
-                    "notice",
-                    {
-                        "level": "info",
-                        "text": "Picking up after an interruption — "
-                        + _repair_summary(
-                            found,
-                            close_turn=close_turn,
-                        )
-                        + ".",
-                    },
-                ),
-            )
-
-    async def _recover_empty_turn(
-        self,
-        bundle: AgentBundle,
-        *,
-        on_event: "EventSink",
-        drive: Any,
-    ) -> tuple[str, int]:
-        """A turn produced nothing. Try to fix it, and never stay silent.
-
-        The failure this exists for: after a fabricated "cancelled" tool result,
-        every call returned ``finish_reason: STOP`` with zero output tokens —
-        each turn cost ~70,000 input tokens and said nothing.
-
-        Two steps, in order:
-
-        1. Repair whatever the history is carrying (see
-           :mod:`yuyutsava.conversation.repair`) and drive the graph **once**
-           more with no new user message, so the agent answers the message
-           already in its history.
-        2. Whatever happens, emit a ``notice`` the user can see. Silence is
-           indistinguishable from a hang, and it is the one outcome a
-           conversational agent must never produce.
-
-        The retry is unconditional — an empty turn with nothing to repair is
-        often transient, and the user's next message goes through — and it is
-        exactly one, so an unrecoverable thread cannot spend in a loop.
-        """
-        steps = 0
-        found, repaired = await self._inspect_and_repair(bundle, what="empty-turn inspection")
-        if repaired and found is not None:
-            await self._notice(
-                on_event,
-                "warning",
-                "The previous turn left the history in a shape the model "
-                "would not continue from (" + _repair_summary(found) + "). Repaired — retrying.",
-            )
-        else:
-            await self._notice(
-                on_event,
-                "warning",
-                "The model returned nothing. Retrying once — an empty response is often transient.",
-            )
-        # No new user message: theirs is already in the history, and sending it
-        # twice would make the model answer itself.
-        try:
-            final, steps = await drive(None, None)
-        except Exception:  # noqa: BLE001
-            logger.exception("retry after an empty turn failed")
-            final = ""
-        if final:
-            return final, steps
-
-        await self._notice(
-            on_event,
-            "error",
-            "The model returned an empty response twice — no text and no "
-            "tool call, before and after a repair. The conversation's "
-            "history is in a state it will not continue from. Try /new for "
-            "a fresh session; your last message is still in the history, "
-            "so nothing you wrote is lost.",
-        )
-        logger.warning(
-            "empty turn on thread=%s (repaired=%d, retried=1) — surfaced to the user",
-            self.thread_id,
-            repaired,
-        )
-        return "", steps
-
-    async def _notice(self, on_event: "EventSink", level: str, text: str) -> None:
-        await self._emit(on_event, StreamEvent("notice", {"level": level, "text": text}))
-
-    @staticmethod
-    async def _emit(on_event: "EventSink", ev: StreamEvent) -> None:
-        """Forward one synthesised event, tolerating a sink that raises."""
-        try:
-            result = on_event(ev)
-            if result is not None:
-                await result
-        except Exception:  # noqa: BLE001
-            logger.debug("event sink raised on a synthesised notice", exc_info=True)
 
     async def finish(self, status: str = "done") -> None:
         """Flush final bookkeeping and mark the session ``done``/``crashed``."""
