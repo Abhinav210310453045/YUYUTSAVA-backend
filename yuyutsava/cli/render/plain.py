@@ -25,6 +25,11 @@ from yuyutsava.config.env import env_flag, env_float
 from yuyutsava.core.streaming import StreamEvent
 
 
+def _err(line: str) -> None:
+    """One line of transcript chrome, on stderr so piped stdout stays prose."""
+    print(line, file=sys.stderr, flush=True)
+
+
 class ChatRenderer:
     """Print StreamEvents in a Claude-Code-style minimal layout.
 
@@ -119,15 +124,7 @@ class ChatRenderer:
 
     async def render(self, ev: StreamEvent) -> None:
         if ev.kind == "token":
-            if not self._in_ai_stream:
-                # Open the AI line with a small chip; no big separator block.
-                print(f"\n{CYAN}🤖{RESET}  ", end="", flush=True)
-                self._in_ai_stream = True
-            text = ev.data.get("text", "")
-            if self._smoother is not None:
-                self._smoother.feed(text)
-            else:
-                print(text, end="", flush=True)
+            self._on_token(ev.data.get("text", ""))
             return
 
         # Any non-token event closes the AI stream visually. Flush the
@@ -138,84 +135,86 @@ class ChatRenderer:
             print(flush=True)
             self._in_ai_stream = False
 
-        if ev.kind == "tool_call":
-            name = ev.data.get("name", "?")
-            args = ev.data.get("args", {})
-            idx = self.ring.push("tool_call", name, tf.pretty_args(args))
-            if name == "write_todos":
-                self._render_todos(args, idx)
-                return
-            if self._verbose:
-                self._render_tool_call_verbose(name, args, idx)
-            else:
-                self._render_tool_call_compact(name, args, idx)
-            return
+        data = ev.data
+        match ev.kind:
+            case "tool_call":
+                self._on_tool_call(data)
+            case "tool_result":
+                self._on_tool_result(data)
+            case "image":
+                # A chart the agent generated must leave a line in a piped
+                # transcript, or it reads exactly like one it never made. Named
+                # rather than inlined — a pipe cannot show it.
+                title = data.get("title") or data.get("path") or "image"
+                _err(f"  ◨ visual: {tf.sanitize(title)}")
+            case "artifact":
+                self._on_artifact(data)
+            case "log":
+                if text := data.get("text", ""):
+                    _err(f"{YELLOW}{text}{RESET}")
+            case "notice":
+                if text := data.get("text", ""):
+                    level = data.get("level", "info")
+                    colour = {"error": RED, "warning": YELLOW}.get(level, DIM)
+                    mark = {"error": "✗", "warning": "⚠"}.get(level, "·")
+                    _err(f"  {colour}{mark} {text}{RESET}")
+            case "final":
+                # The token stream above already covered the prose. Just newline.
+                print(flush=True)
 
-        if ev.kind == "tool_result":
-            name = ev.data.get("name", "tool")
-            body = ev.data.get("preview", "") or ""
-            full = ev.data.get("full", body) or body
-            idx = self.ring.push("tool_result", name, full)
-            # The write_todos call line already reflects the new state.
-            if name == "write_todos":
-                return
-            is_err = tf.looks_like_error(full or body)
-            if self._verbose:
-                self._render_tool_result_verbose(name, full or body, idx, is_err)
-            elif is_err:
-                self._render_tool_result_compact_error(name, full or body, idx)
-            # else: suppress on success in non-verbose
-            return
+    def _on_token(self, text: str) -> None:
+        if not self._in_ai_stream:
+            # Open the AI line with a small chip; no big separator block.
+            print(f"\n{CYAN}🤖{RESET}  ", end="", flush=True)
+            self._in_ai_stream = True
+        if self._smoother is not None:
+            self._smoother.feed(text)
+        else:
+            print(text, end="", flush=True)
 
-        if ev.kind == "image":
-            # Dropped entirely here until now: a chart the agent generated left
-            # no line in a piped transcript, which reads exactly like one it
-            # never made. Named rather than inlined — a pipe cannot show it.
-            title = ev.data.get("title") or ev.data.get("path") or "image"
-            print(f"  ◨ visual: {tf.sanitize(title)}", file=sys.stderr, flush=True)
-            return
+    def _on_tool_call(self, data: dict) -> None:
+        name = data.get("name", "?")
+        args = data.get("args", {})
+        idx = self.ring.push("tool_call", name, tf.pretty_args(args))
+        if name == "write_todos":
+            self._render_todos(args, idx)
+        elif self._verbose:
+            self._render_tool_call_verbose(name, args, idx)
+        else:
+            self._render_tool_call_compact(name, args, idx)
 
-        if ev.kind == "artifact":
-            # Was dropped entirely here, so an artifact the agent built (a
-            # table, a document) left no trace in a piped transcript. Read
-            # from disk, printed only — never fed back into the context.
-            info = av.load_artifact(ev.data)
-            if info is None:
-                title, kind = av.artifact_summary(ev.data)
-                print(
-                    f"  ◨ artifact: {title}{f' ({kind})' if kind else ''}",
-                    file=sys.stderr,
-                    flush=True,
-                )
-                return
-            head = f"  ◨ {info['title']} [{info['kind'] or info['mime']}]"
-            print(head, file=sys.stderr, flush=True)
-            if info["text"]:
-                print(info["text"], file=sys.stderr, flush=True)
-                if info["clipped"]:
-                    print(f"  … clipped — full file: {info['path']}", file=sys.stderr, flush=True)
-            elif info["path"]:
-                print(f"  open {info['path']}", file=sys.stderr, flush=True)
+    def _on_tool_result(self, data: dict) -> None:
+        name = data.get("name", "tool")
+        body = data.get("preview", "") or ""
+        full = data.get("full", body) or body
+        idx = self.ring.push("tool_result", name, full)
+        # The write_todos call line already reflects the new state.
+        if name == "write_todos":
             return
+        is_err = tf.looks_like_error(full or body)
+        if self._verbose:
+            self._render_tool_result_verbose(name, full or body, idx, is_err)
+        elif is_err:
+            self._render_tool_result_compact_error(name, full or body, idx)
+        # else: suppress on success in non-verbose
 
-        if ev.kind == "log":
-            text = ev.data.get("text", "")
-            if text:
-                print(f"{YELLOW}{text}{RESET}", file=sys.stderr, flush=True)
+    def _on_artifact(self, data: dict) -> None:
+        """Name the artifact, and print its text when there is some.
+
+        Read from disk and printed only — never fed back into the context.
+        """
+        info = av.load_artifact(data)
+        if info is None:
+            title, kind = av.artifact_summary(data)
+            _err(f"  ◨ artifact: {title}{f' ({kind})' if kind else ''}")
             return
-
-        if ev.kind == "notice":
-            text = ev.data.get("text", "")
-            if text:
-                level = ev.data.get("level", "info")
-                colour = {"error": RED, "warning": YELLOW}.get(level, DIM)
-                mark = {"error": "✗", "warning": "⚠"}.get(level, "·")
-                print(f"  {colour}{mark} {text}{RESET}", file=sys.stderr, flush=True)
-            return
-
-        if ev.kind == "final":
-            # The token stream above already covered the prose. Just newline.
-            print(flush=True)
+        _err(f"  ◨ {info['title']} [{info['kind'] or info['mime']}]")
+        if info["text"]:
+            _err(info["text"])
+            if info["clipped"]:
+                _err(f"  … clipped — full file: {info['path']}")
+        elif info["path"]:
+            _err(f"  open {info['path']}")
 
     async def end_of_turn(self) -> None:
         """Force-close any dangling streaming line."""
