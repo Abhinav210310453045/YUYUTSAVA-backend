@@ -37,7 +37,7 @@ Calls to ``llm_settings_from_env()`` (no role) are byte-equivalent to today.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import ClassVar, Protocol
 
 from yuyutsava.config.env import env, env_int
 
@@ -74,6 +74,9 @@ class LlmSettings(Protocol):
 
 @dataclass(frozen=True)
 class GroqSettings:
+    #: Input window the context budget steers under — Groq-hosted open models (Llama, Qwen, …) take 128k.
+    max_input_tokens: ClassVar[int] = 128_000
+
     api_key: str
     base_url: str = GROQ_OPENAI_BASE_URL
     model: str = "llama-3.3-70b-versatile"
@@ -94,6 +97,9 @@ class GroqSettings:
 @dataclass(frozen=True)
 class OpenRouterSettings:
     """OpenRouter unified API (OpenAI-compatible chat completions)."""
+
+    #: Input window the context budget steers under — varies by routed model; 128k is the common window.
+    max_input_tokens: ClassVar[int] = 128_000
 
     api_key: str
     base_url: str = OPENROUTER_BASE_URL
@@ -125,6 +131,9 @@ class OpenRouterSettings:
 class AnthropicSettings:
     """Anthropic API provider (enables prompt caching via AnthropicPromptCachingMiddleware)."""
 
+    #: Input window the context budget steers under — Claude models take 200k.
+    max_input_tokens: ClassVar[int] = 200_000
+
     api_key: str
     base_url: str = "https://api.anthropic.com"
     model: str = "claude-haiku-4-5-20251001"
@@ -151,6 +160,9 @@ class OllamaSettings:
     See https://ollama.com/
     """
 
+    #: Input window the context budget steers under — local models: a small window unless the server is configured larger.
+    max_input_tokens: ClassVar[int] = 8_192
+
     api_key: str = "ollama"
     base_url: str = OLLAMA_BASE_URL
     model: str = "gemma4:e2b"
@@ -172,6 +184,9 @@ class OpenAISettings:
     Handled by the default ``ChatOpenAI`` path in ``yuyutsava.llm`` — no
     dedicated factory branch needed. See https://platform.openai.com/
     """
+
+    #: Input window the context budget steers under — the GPT-4o family's window.
+    max_input_tokens: ClassVar[int] = 128_000
 
     api_key: str
     base_url: str = OPENAI_BASE_URL
@@ -198,6 +213,9 @@ class OpenAICompatibleSettings:
     Point ``OPENAI_COMPATIBLE_BASE_URL`` at the provider and set the model. Handled
     by the default ``ChatOpenAI`` path — no dedicated factory branch needed.
     """
+
+    #: Input window the context budget steers under — an unknown host: the common window.
+    max_input_tokens: ClassVar[int] = 128_000
 
     api_key: str
     base_url: str
@@ -230,6 +248,9 @@ class GoogleSettings:
     See https://ai.google.dev/
     """
 
+    #: Input window the context budget steers under — Gemini takes ~1M.
+    max_input_tokens: ClassVar[int] = 1_000_000
+
     api_key: str
     model: str = "gemini-2.5-flash"
 
@@ -257,6 +278,9 @@ class VertexSettings:
     application-default login``); no API key. Needs ``langchain-google-vertexai``
     (``pip install 'yuyutsava[vertex]'``). See https://cloud.google.com/vertex-ai
     """
+
+    #: Input window the context budget steers under — Gemini on Vertex takes ~1M.
+    max_input_tokens: ClassVar[int] = 1_000_000
 
     project: str
     location: str = "us-central1"
@@ -297,6 +321,9 @@ class BedrockSettings:
     See https://aws.amazon.com/bedrock/
     """
 
+    #: Input window the context budget steers under — Claude on Bedrock takes 200k.
+    max_input_tokens: ClassVar[int] = 200_000
+
     region: str
     model: str = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
 
@@ -322,6 +349,9 @@ class AzureOpenAISettings:
 
     See https://learn.microsoft.com/azure/ai-services/openai/
     """
+
+    #: Input window the context budget steers under — the GPT-4o family's window.
+    max_input_tokens: ClassVar[int] = 128_000
 
     api_key: str
     azure_endpoint: str
@@ -371,6 +401,9 @@ class MistralSettings:
     See https://docs.mistral.ai/
     """
 
+    #: Input window the context budget steers under — Mistral Large takes 128k.
+    max_input_tokens: ClassVar[int] = 128_000
+
     api_key: str
     model: str = "mistral-large-latest"
 
@@ -396,6 +429,9 @@ class CohereSettings:
     Needs ``langchain-cohere`` (``pip install 'yuyutsava[cohere]'``).
     See https://docs.cohere.com/
     """
+
+    #: Input window the context budget steers under — Command R takes 128k.
+    max_input_tokens: ClassVar[int] = 128_000
 
     api_key: str
     model: str = "command-r-plus"

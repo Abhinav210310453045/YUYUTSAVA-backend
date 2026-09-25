@@ -13,32 +13,25 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from yuyutsava.config.env import env, env_flag, env_float, env_int
+from yuyutsava.llm.settings import SETTINGS_BY_PROVIDER
 
-# Conservative per-provider input-context defaults. These are *budgets* the
-# compactor steers under, not API hard limits — erring low just compacts a
-# little earlier.
-#
-# Erring low is not free, though: compaction is the one step that drops
-# messages from state, so an under-set budget summarizes away history the
-# model could still have held verbatim. Gemini on Vertex takes ~1M input
-# tokens; without an entry here it inherited the 128k default and compacted
-# at 89.6k — 8x earlier than the model required. Keep these at the model's
-# real input window and let ``compact_fraction`` provide the headroom.
-_PROVIDER_MAX_INPUT_TOKENS: dict[str, int] = {
-    "anthropic": 200_000,
-    "groq": 128_000,
-    "openrouter": 128_000,
-    "ollama": 8_192,
-    "vertex": 1_000_000,
-    "gemini": 1_000_000,
-    "google_vertexai": 1_000_000,
-}
+# The budget the compactor steers under is the provider's real input window,
+# declared by each provider's settings class (``max_input_tokens``) and found
+# through the same alias table ``LLM_PROVIDER`` resolves by — so ``google`` and
+# ``gemini`` cannot disagree. Erring low is not free: compaction is the one
+# step that drops messages from state, so an under-set budget summarizes away
+# history the model could still have held verbatim; ``compact_fraction``
+# provides the headroom instead. An unknown provider name gets the common
+# window.
 _DEFAULT_MAX_INPUT_TOKENS = 128_000
 
 
 def default_max_input_tokens(provider: str) -> int:
-    """Best-effort input-context budget for a provider name."""
-    return _PROVIDER_MAX_INPUT_TOKENS.get(provider.strip().lower(), _DEFAULT_MAX_INPUT_TOKENS)
+    """The input-context budget for an ``LLM_PROVIDER`` name (any accepted alias)."""
+    settings_cls = SETTINGS_BY_PROVIDER.get(provider.strip().lower())
+    if settings_cls is None:
+        return _DEFAULT_MAX_INPUT_TOKENS
+    return settings_cls.max_input_tokens
 
 
 @dataclass(frozen=True)

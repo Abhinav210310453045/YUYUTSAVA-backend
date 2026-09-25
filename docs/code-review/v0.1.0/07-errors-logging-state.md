@@ -184,7 +184,13 @@ process share state. What a function depends on is invisible from its signature.
 
 ## R-BUG-01 — Most providers get a 128k context budget
 
-**Severity** P1 · **Wave** W5 (`fix:` commit) · **Status** Open
+**Severity** P1 · **Wave** W5 (`fix:` commit) · **Status** **Fixed** (2026-09-25).
+Each settings class declares `max_input_tokens`, and the budget is found
+through `SETTINGS_BY_PROVIDER`, the alias table `LLM_PROVIDER` resolves by.
+Changed budgets: `google` 128k → 1M, `bedrock`/`aws` 128k → 200k. The rest
+are unchanged but now declared; the `google_vertexai` key, which is not an
+accepted alias, is gone. There is no changelog file, so this entry and the
+commit are the record.
 
 **Claim.** The compaction budget table misses most provider names, so those
 providers compact far earlier than their models require.
