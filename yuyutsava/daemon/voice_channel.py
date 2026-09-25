@@ -156,12 +156,9 @@ class VoiceChannel(UserChannel):
     async def shutdown(self) -> None:
         try:
             await self._announcer.aclose()
-        except Exception:
-            pass
-        try:
-            shutil.rmtree(self._tmp, ignore_errors=True)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001 — shutdown must finish
+            logger.debug("closing the announcer failed", exc_info=True)
+        shutil.rmtree(self._tmp, ignore_errors=True)
 
 
 # ---------------------------------------------------------------------------

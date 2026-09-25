@@ -35,41 +35,20 @@
   "yuyutsava/agents/triage/agent.py": {
     "BLE001": 1
   },
-  "yuyutsava/async_subagents/interrupt_middleware.py": {
-    "S110": 2
-  },
   "yuyutsava/async_subagents/watcher/health.py": {
-    "BLE001": 1,
-    "PLR0913": 1,
-    "S110": 3
+    "PLR0913": 1
   },
   "yuyutsava/async_subagents/watcher/polling.py": {
-    "BLE001": 2,
-    "S110": 1
-  },
-  "yuyutsava/channels/telegram/channel.py": {
-    "S110": 1
+    "BLE001": 1
   },
   "yuyutsava/cli/cli.py": {
     "BLE001": 1
   },
   "yuyutsava/cli/commands/attach.py": {
-    "BLE001": 1,
-    "S110": 1
-  },
-  "yuyutsava/cli/commands/chat_repl.py": {
-    "BLE001": 2,
-    "S110": 2
+    "BLE001": 1
   },
   "yuyutsava/cli/render/plain.py": {
-    "BLE001": 2,
-    "S110": 1
-  },
-  "yuyutsava/cli/render/renderer.py": {
-    "S110": 1
-  },
-  "yuyutsava/cli/render/reports.py": {
-    "S110": 1
+    "BLE001": 1
   },
   "yuyutsava/cli/render/startup.py": {
     "BLE001": 2
@@ -80,18 +59,11 @@
   "yuyutsava/cli/session_run.py": {
     "PLR0913": 1
   },
-  "yuyutsava/cli/stream_smoother.py": {
-    "S110": 1
-  },
   "yuyutsava/cli/tooling.py": {
     "BLE001": 1
   },
   "yuyutsava/consent/registry.py": {
     "PLR0913": 1
-  },
-  "yuyutsava/context/compaction.py": {
-    "BLE001": 1,
-    "S110": 1
   },
   "yuyutsava/context/prompt_inspector.py": {
     "BLE001": 1
@@ -100,8 +72,7 @@
     "BLE001": 1
   },
   "yuyutsava/conversation/service.py": {
-    "PLR0913": 3,
-    "S110": 1
+    "PLR0913": 3
   },
   "yuyutsava/conversation/sessions.py": {
     "T201": 1
@@ -131,10 +102,6 @@
   "yuyutsava/daemon/bootstrap.py": {
     "PLR0913": 1
   },
-  "yuyutsava/daemon/checkpointing.py": {
-    "BLE001": 1,
-    "S110": 1
-  },
   "yuyutsava/daemon/consent.py": {
     "BLE001": 1
   },
@@ -142,8 +109,7 @@
     "PLR0913": 1
   },
   "yuyutsava/daemon/main.py": {
-    "BLE001": 2,
-    "S110": 1,
+    "BLE001": 1,
     "T201": 13
   },
   "yuyutsava/daemon/orchestrator_loop.py": {
@@ -162,34 +128,11 @@
   "yuyutsava/daemon/turn_registry.py": {
     "PLR0913": 1
   },
-  "yuyutsava/daemon/voice_channel.py": {
-    "BLE001": 2,
-    "S110": 2
-  },
-  "yuyutsava/daemon/web/app.py": {
-    "BLE001": 1,
-    "S110": 1
-  },
-  "yuyutsava/daemon/web/services/converse_connection.py": {
-    "S110": 1
-  },
-  "yuyutsava/daemon/web/services/converse_session.py": {
-    "S110": 2
-  },
-  "yuyutsava/daemon/web/voice_pipeline.py": {
-    "S110": 1
-  },
   "yuyutsava/discovery/tool_registry.py": {
     "BLE001": 1
   },
   "yuyutsava/events/bus.py": {
-    "BLE001": 2,
-    "PLR0913": 1,
-    "S110": 2
-  },
-  "yuyutsava/events/registry.py": {
-    "BLE001": 1,
-    "S110": 1
+    "PLR0913": 1
   },
   "yuyutsava/events/sources/_voice_proc.py": {
     "BLE001": 4
@@ -198,27 +141,12 @@
     "BLE001": 2,
     "S110": 1
   },
-  "yuyutsava/events/sources/fs.py": {
-    "BLE001": 2,
-    "S110": 2
-  },
-  "yuyutsava/events/sources/hotkey.py": {
-    "BLE001": 2,
-    "S110": 2
-  },
-  "yuyutsava/events/sources/voice.py": {
-    "BLE001": 1,
-    "S110": 1
-  },
   "yuyutsava/events/sources/webcam.py": {
     "BLE001": 1,
     "S110": 1
   },
   "yuyutsava/llm/pricing.py": {
     "BLE001": 1
-  },
-  "yuyutsava/llm/quirks/loop_affinity.py": {
-    "S110": 1
   },
   "yuyutsava/llm/tracing.py": {
     "BLE001": 1
@@ -241,10 +169,6 @@
   "yuyutsava/skills/tools.py": {
     "BLE001": 1
   },
-  "yuyutsava/storage/events/sqlite_backend.py": {
-    "BLE001": 2,
-    "S110": 1
-  },
   "yuyutsava/storage/feedback_store.py": {
     "PLR0913": 1
   },
@@ -254,17 +178,11 @@
   "yuyutsava/storage/models.py": {
     "PLR0913": 1
   },
-  "yuyutsava/storage/routing/health.py": {
-    "S110": 1
-  },
   "yuyutsava/storage/sessions/pg_impl.py": {
     "BLE001": 1
   },
   "yuyutsava/todoboard/services/attachments.py": {
     "PLR0913": 1
-  },
-  "yuyutsava/voice/announcer.py": {
-    "S110": 2
   },
   "yuyutsava/voice/vad.py": {
     "PLR0913": 1

@@ -16,6 +16,7 @@ subscriber** and the loss is logged — slow consumers can't stall sources.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import fnmatch
 import logging
 import time
@@ -99,14 +100,10 @@ class EventBus:
                 sub.queue.put_nowait(None)  # type: ignore[arg-type]
             except asyncio.QueueFull:
                 # Drain one and retry; close should always succeed.
-                try:
+                with contextlib.suppress(asyncio.QueueEmpty):
                     sub.queue.get_nowait()
-                except Exception:
-                    pass
-                try:
+                with contextlib.suppress(asyncio.QueueFull):
                     sub.queue.put_nowait(None)  # type: ignore[arg-type]
-                except Exception:
-                    pass
 
     async def subscribe(self, pattern: str = "**") -> AsyncIterator[EventEnvelope]:
         """Yield events matching ``pattern`` until the bus is closed or the

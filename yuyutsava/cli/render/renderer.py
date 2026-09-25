@@ -24,6 +24,7 @@ renderer's stdout/stderr split.
 from __future__ import annotations
 
 import contextlib
+import logging
 from collections import deque
 from pathlib import Path
 from typing import Any
@@ -42,6 +43,8 @@ from yuyutsava.cli.render.markdown_stream import MarkdownStream
 from yuyutsava.cli.render.ring import PayloadRing
 from yuyutsava.core.streaming import StreamEvent
 from yuyutsava.llm.quirks.first_chunk_retry import classify_provider_busy
+
+logger = logging.getLogger("yuyutsava.cli.render.renderer")
 
 _SUBAGENT_TOOLS = ("task", "start_async_task")
 
@@ -406,7 +409,7 @@ class RichChatRenderer:
                 self._console.print(av.artifact_renderable(info))
                 return
             except Exception:  # noqa: BLE001 — fall back to the plain line
-                pass
+                logger.debug("rendering artifact inline failed", exc_info=True)
         title, kind = av.artifact_summary(data)
         suffix = f" ({kind})" if kind else ""
         self._console.print(Text(f"  ◨ artifact: {tf.sanitize(title)}{suffix}", style="chrome"))

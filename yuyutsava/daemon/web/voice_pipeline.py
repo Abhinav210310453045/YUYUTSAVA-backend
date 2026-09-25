@@ -129,10 +129,7 @@ class VoicePipeline:
     # -- lifecycle ---------------------------------------------------------
 
     def close(self) -> None:
-        try:
-            shutil.rmtree(self._tmp, ignore_errors=True)
-        except Exception:  # noqa: BLE001
-            pass
+        shutil.rmtree(self._tmp, ignore_errors=True)
 
     # -- internals ---------------------------------------------------------
 

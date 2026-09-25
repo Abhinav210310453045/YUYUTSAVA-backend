@@ -14,6 +14,7 @@ app.
 from __future__ import annotations
 
 import dataclasses
+import logging
 import os
 import time
 from typing import Awaitable, Callable
@@ -102,6 +103,8 @@ from yuyutsava.daemon.web.services.decision_service import DecisionService
 from yuyutsava.daemon.web.services.stream_service import StreamEventItem, WebHub
 from yuyutsava.ports.channels import HttpLogPayload
 
+logger = logging.getLogger("yuyutsava.daemon.web.app")
+
 ReloadCallback = Callable[[], Awaitable[None]] | None
 
 
@@ -156,9 +159,8 @@ def _install_http_log(app: FastAPI, hub: WebHub) -> None:
                     )
                 )
             )
-        except Exception:
-            # Broadcasting must never break a request.
-            pass
+        except Exception:  # noqa: BLE001 — broadcasting must never break a request
+            logger.debug("broadcasting the http log line failed", exc_info=True)
         return response
 
 

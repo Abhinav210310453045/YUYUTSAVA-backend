@@ -440,8 +440,11 @@ class YuyutsavaCompactionMiddleware(SummarizationMiddleware):
         token_count = 0
         try:
             token_count = int(self.token_counter([HumanMessage(content=summary)]))
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001 — the counter is pluggable; the summary still stores
+            logger.warning(
+                "counting the summary's tokens failed; storing it with token_count=0",
+                exc_info=True,
+            )
         if self._summary_store is not None:
             try:
                 version = await self._summary_store.put(thread_id, summary, token_count=token_count)

@@ -10,6 +10,7 @@ leaves the reports out of it.
 
 from __future__ import annotations
 
+import logging
 import sys
 from typing import Any, Sequence
 
@@ -19,6 +20,8 @@ from yuyutsava.cli.usage import format_usage, session_usage
 from yuyutsava.context.meter import bus
 from yuyutsava.skills.injector import last_recalled
 from yuyutsava.skills.registry import SkillRegistry
+
+logger = logging.getLogger("yuyutsava.cli.render.reports")
 
 
 def print_help(commands: "Sequence[Any]") -> None:
@@ -178,7 +181,7 @@ def print_context(thread_id: str, console: Any = None) -> None:
             console.print(context_report(snap))
             return
         except Exception:  # noqa: BLE001 — fall through to the plain summary
-            pass
+            logger.debug("rendering the context report failed", exc_info=True)
     if snap is None:
         print(
             f"  {DIM}no model call has completed yet — context figures appear "

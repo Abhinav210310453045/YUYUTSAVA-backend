@@ -111,11 +111,8 @@ class CheckpointerSaver:
 
 def _redact_dsn(dsn: str) -> str:
     """Hide the password segment of a DSN for log lines."""
-    try:
-        before, _, after = dsn.partition("@")
-        if ":" in before and after:
-            scheme_user = before.rsplit(":", 1)[0]
-            return f"{scheme_user}:***@{after}"
-    except Exception:
-        pass
+    before, _, after = dsn.partition("@")
+    if ":" in before and after:
+        scheme_user = before.rsplit(":", 1)[0]
+        return f"{scheme_user}:***@{after}"
     return dsn

@@ -26,6 +26,8 @@ import asyncio
 from collections import deque
 from typing import Callable
 
+from yuyutsava.aio.tasks import cancel_and_reap
+
 
 class TokenSmoother:
     """Pace streamed text to a writer at a steady, adaptive per-character rate.
@@ -102,12 +104,7 @@ class TokenSmoother:
         await self.drain()
         task = self._task
         self._task = None
-        if task is not None and not task.done():
-            task.cancel()
-            try:
-                await task
-            except (asyncio.CancelledError, Exception):  # noqa: BLE001
-                pass
+        await cancel_and_reap(task, what="stream smoother")
 
     # -- internals ---------------------------------------------------------
 

@@ -125,8 +125,8 @@ class RemoteThreadPatcher:
             return
         try:
             client.runs.cancel(thread_id=thread_id, run_id=run_id)
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception:  # noqa: BLE001 — it may have settled already; the poll below decides
+            logger.debug("cancelling run %s on %s failed", run_id, thread_id, exc_info=True)
         # Poll briefly for the run to settle (cap ~3s).
         for _ in range(15):
             time.sleep(0.2)
@@ -151,8 +151,8 @@ class RemoteThreadPatcher:
             return
         try:
             await client.runs.cancel(thread_id=thread_id, run_id=run_id)
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception:  # noqa: BLE001 — it may have settled already; the poll below decides
+            logger.debug("cancelling run %s on %s failed", run_id, thread_id, exc_info=True)
         for _ in range(15):
             await asyncio.sleep(0.2)
             try:

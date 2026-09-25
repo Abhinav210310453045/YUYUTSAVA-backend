@@ -349,7 +349,7 @@ class ChatRenderer:
             if stripped.startswith(("{", "[")):
                 try:
                     return json.dumps(json.loads(stripped), indent=2, default=str)
-                except Exception:
+                except ValueError:  # not JSON after all: show it as it came
                     pass
             return v
         if isinstance(v, (dict, list)):

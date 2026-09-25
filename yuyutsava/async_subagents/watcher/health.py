@@ -24,6 +24,7 @@ import logging
 
 from langgraph_sdk import get_client
 
+from yuyutsava.aio.tasks import cancel_and_reap
 from yuyutsava.async_subagents.launch_index import LaunchIndex
 from yuyutsava.async_subagents.mirror import AsyncTaskMirror
 from yuyutsava.async_subagents.watcher.context import (
@@ -91,11 +92,7 @@ class AsyncTaskHealthWatcher:
             try:
                 await asyncio.wait_for(self._loop_task, timeout=5.0)
             except asyncio.TimeoutError:
-                self._loop_task.cancel()
-                try:
-                    await self._loop_task
-                except (asyncio.CancelledError, Exception):
-                    pass
+                await cancel_and_reap(self._loop_task, what="async task watcher loop")
             self._loop_task = None
         # Best-effort: cancel every non-terminal run on the server.
         if self._ctx.client is not None:
@@ -112,10 +109,12 @@ class AsyncTaskHealthWatcher:
                             await self._ctx.client.runs.cancel(
                                 thread_id=t.sub_thread_id, run_id=rid
                             )
-                        except Exception:  # noqa: BLE001
-                            pass
-                except Exception:  # noqa: BLE001
-                    pass
+                        except Exception:  # noqa: BLE001 — shutting down; the mirror is marked below
+                            logger.debug("shutdown: cancelling run %s failed", rid, exc_info=True)
+                except Exception:  # noqa: BLE001 — shutting down; the mirror is marked below
+                    logger.debug(
+                        "shutdown: listing runs on %s failed", t.sub_thread_id, exc_info=True
+                    )
         await self._ctx.mirror.mark_all_cancelled(reason="daemon_shutdown")
 
     async def _run_loop(self) -> None:

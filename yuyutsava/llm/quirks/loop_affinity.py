@@ -43,8 +43,11 @@ the running loop and don't need it.
 from __future__ import annotations
 
 import asyncio
+import logging
 import weakref
 from functools import lru_cache
+
+logger = logging.getLogger("yuyutsava.llm.quirks.loop_affinity")
 
 # Attribute set via object.__setattr__ — bypasses pydantic v2 field validation
 # and lands in the instance __dict__, so model_copy() carries the pin along
@@ -70,8 +73,10 @@ class _LoopPinnedMixin:
                     if getattr(self, attr, None) is not None:
                         try:
                             setattr(self, attr, None)
-                        except Exception:  # noqa: BLE001 - best-effort reset
-                            pass
+                        except (AttributeError, TypeError, ValueError):
+                            # A frozen or validating model refuses the reset; the
+                            # stale client is then re-bound by the SDK itself.
+                            logger.debug("could not reset %s on re-pin", attr, exc_info=True)
             object.__setattr__(self, _PIN_ATTR, weakref.ref(loop))
             return
         if home is not loop:

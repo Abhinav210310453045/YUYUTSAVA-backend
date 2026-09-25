@@ -24,6 +24,7 @@ from typing import Any, Awaitable, Callable, Protocol
 from fastapi import WebSocket
 from starlette.websockets import WebSocketDisconnect
 
+from yuyutsava.aio.tasks import cancel_and_reap, reap
 from yuyutsava.ports.channels import AskPrompt, DecisionConflictError
 from yuyutsava.voice.sentence import SentenceChunker
 
@@ -162,11 +163,7 @@ class DictationSession:
             pass
         finally:
             prewarm.cancel()
-            worker.cancel()
-            try:
-                await worker
-            except (asyncio.CancelledError, Exception):  # noqa: BLE001
-                pass
+            await cancel_and_reap(worker, what="converse frame worker")
             self._voice.close()
 
 
@@ -338,10 +335,7 @@ class SpokenReply:
         finally:
             self._state.agent_active = False
             await self._queue.put(None)
-            try:
-                await worker
-            except (asyncio.CancelledError, Exception):  # noqa: BLE001
-                pass
+            await reap(worker, what="spoken-reply synth worker")
             if self._persist is not None and not self._cancel.is_set():
                 if self._final_text or self._pcm_parts:
                     await self._persist(

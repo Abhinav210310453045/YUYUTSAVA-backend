@@ -105,8 +105,8 @@ class HotkeySource(EventSource):
         finally:
             try:
                 listener.stop()
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001 — pynput teardown; the source is ending anyway
+                logger.debug("hotkey source: stopping the listener failed", exc_info=True)
             self._listener = None
 
     async def _emit_event(self, ctx: SourceContext, *, combo: str, action: str) -> None:
@@ -123,8 +123,8 @@ class HotkeySource(EventSource):
         if self._listener is not None:
             try:
                 self._listener.stop()
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001 — pynput teardown; the source is ending anyway
+                logger.debug("hotkey source: stopping the listener failed", exc_info=True)
             self._listener = None
 
 

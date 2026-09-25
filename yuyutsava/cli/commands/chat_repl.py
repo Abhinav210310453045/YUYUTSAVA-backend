@@ -72,6 +72,8 @@ from yuyutsava.storage.sessions import (
     get_default_session_store,
 )
 
+logger = logging.getLogger("yuyutsava.cli.commands.chat_repl")
+
 # ---------------------------------------------------------------------------
 # Banner
 # ---------------------------------------------------------------------------
@@ -996,8 +998,8 @@ async def _close_chat(
     if bundle.layout is not None:
         try:
             cleanup_local_sandbox(bundle.layout)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001 — scratch cleanup must not fail the exit
+            logger.debug("sandbox scratch cleanup failed", exc_info=True)
 
 
 async def run_chat_repl(
@@ -1093,8 +1095,8 @@ async def run_chat_repl(
             # Loop exited — flush bookkeeping and mark the session done.
             try:
                 await convo.finish("done")
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001 — bookkeeping must not fail the exit
+                logger.debug("marking the session done failed", exc_info=True)
         finally:
             await _close_chat(
                 dashboard=dashboard,

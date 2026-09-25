@@ -38,6 +38,7 @@ except ImportError:  # pragma: no cover
 
 from yuyutsava import platform as yplatform
 from yuyutsava.aio import run as aio_run
+from yuyutsava.aio.tasks import cancel_and_reap
 from yuyutsava.async_subagents.host_lock import release_host_lock
 from yuyutsava.config.env import env_flag
 from yuyutsava.config.logs import quiet_grpc_fork_logs, silence_plumbing_loggers
@@ -239,11 +240,7 @@ async def _run_uvicorn(server: uvicorn.Server, stop_event: asyncio.Event) -> Non
         try:
             await asyncio.wait_for(serve_task, timeout=5.0)
         except asyncio.TimeoutError:
-            serve_task.cancel()
-            try:
-                await serve_task
-            except (asyncio.CancelledError, Exception):
-                pass
+            await cancel_and_reap(serve_task, what="web server")
 
 
 async def _open_electron_when_ready(

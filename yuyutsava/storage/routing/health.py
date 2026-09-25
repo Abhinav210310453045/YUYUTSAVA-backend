@@ -14,6 +14,7 @@ import asyncio
 import logging
 from typing import Awaitable, Callable
 
+from yuyutsava.aio.tasks import cancel_and_reap
 from yuyutsava.storage.pg.pool import PgPool
 from yuyutsava.storage.routing.errors import PG_RUNTIME_ERRORS
 
@@ -85,10 +86,6 @@ class StorageHealth:
             return
 
     async def stop(self) -> None:
-        if self._probe_task is not None and not self._probe_task.done():
-            self._probe_task.cancel()
-            try:
-                await self._probe_task
-            except (asyncio.CancelledError, Exception):  # noqa: BLE001
-                pass
+        if self._probe_task is not None:
+            await cancel_and_reap(self._probe_task, what="storage health probe")
             self._probe_task = None

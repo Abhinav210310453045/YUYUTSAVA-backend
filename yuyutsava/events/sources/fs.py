@@ -161,8 +161,8 @@ class FsSource(EventSource):
             try:
                 observer.stop()
                 observer.join(timeout=2.0)
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001 — watchdog teardown; the source is ending anyway
+                logger.debug("fs source: stopping the observer failed", exc_info=True)
 
     def _on_raw_event(
         self,
@@ -277,8 +277,8 @@ class FsSource(EventSource):
         if self._observer is not None:
             try:
                 self._observer.stop()
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001 — watchdog teardown; the source is ending anyway
+                logger.debug("fs source: stopping the observer failed", exc_info=True)
 
 
 def _human_size(n: int | None) -> str:

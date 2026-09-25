@@ -142,8 +142,8 @@ class TaskPoller:
                 hint = md.get("agent_name") or md.get("assistant_name")
                 if hint:
                     return str(hint)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001 — a name is a nicety; the caller has a fallback
+            logger.debug("reading metadata of thread %s failed", thread_id, exc_info=True)
         return None
 
     async def emit_progress(self, task: MirroredTask) -> None:

@@ -326,8 +326,8 @@ class ConversationService:
         """Rotate to a fresh session row + thread_id in-process (CLI ``/new``)."""
         try:
             await self.store.update_status(self.session.id, "done")
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception:  # noqa: BLE001 — the old row's status must not block /new
+            logger.debug("marking session %s done failed", self.session.id, exc_info=True)
         session, _ = await resolve_session(
             self.store,
             workspace=self.workspace,

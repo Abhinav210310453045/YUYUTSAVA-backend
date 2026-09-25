@@ -18,6 +18,7 @@ import asyncio
 import logging
 from typing import Callable
 
+from yuyutsava.aio.tasks import cancel_and_reap
 from yuyutsava.events.bus import EventBus
 from yuyutsava.events.config import EventsConfig, SourceConfig
 from yuyutsava.events.source import EventSource, SourceContext
@@ -139,12 +140,7 @@ class SourceRegistry:
                 await asyncio.wait_for(source.stop(), timeout=2.0)
             except Exception:
                 logger.exception("source %s stop() failed", name)
-        if task is not None and not task.done():
-            task.cancel()
-            try:
-                await task
-            except (asyncio.CancelledError, Exception):
-                pass
+        await cancel_and_reap(task, what=f"event source {name}")
         self._sources.pop(name, None)
         self._tasks.pop(name, None)
         self._cancelled.pop(name, None)

@@ -40,13 +40,9 @@ def _default_daemon_url() -> str:
     env = os.environ.get("YUYUTSAVA_DAEMON_URL")
     if env:
         return env
-    try:
-        disco = read_daemon_discovery()
-        if disco and isinstance(disco.get("web_url"), str):
-            url = str(disco["web_url"]).rstrip("/")
-            return url
-    except Exception:  # noqa: BLE001
-        pass
+    disco = read_daemon_discovery()
+    if disco and isinstance(disco.get("web_url"), str):
+        return str(disco["web_url"]).rstrip("/")
     return "http://127.0.0.1:7654"
 
 

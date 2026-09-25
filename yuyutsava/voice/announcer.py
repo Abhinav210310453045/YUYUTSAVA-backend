@@ -28,6 +28,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from yuyutsava.aio.tasks import cancel_and_reap
 from yuyutsava.voice.backends.device import AudioUnavailableError, play_wav, stop_playback
 from yuyutsava.voice.backends.tts import TTS, tts_from_env
 from yuyutsava.voice.earcons import earcon_path
@@ -89,16 +90,8 @@ class Announcer:
         self.stop()
         worker = self._worker
         self._worker = None
-        if worker is not None and not worker.done():
-            worker.cancel()
-            try:
-                await worker
-            except (asyncio.CancelledError, Exception):  # noqa: BLE001
-                pass
-        try:
-            shutil.rmtree(self._tmp, ignore_errors=True)
-        except Exception:  # noqa: BLE001
-            pass
+        await cancel_and_reap(worker, what="announcer worker")
+        shutil.rmtree(self._tmp, ignore_errors=True)
 
     # -- internals ---------------------------------------------------------
 

@@ -31,6 +31,7 @@ import os
 import time
 from typing import Any
 
+from yuyutsava.aio.tasks import reap
 from yuyutsava.channels.plugin import (
     CAP_ASK,
     CAP_INVOKE,
@@ -151,11 +152,7 @@ class TelegramChannelPlugin(ChannelPlugin):
             if task is not None and not task.done():
                 task.cancel()
         for task in (self._poll_task, self._flush_task, *self._bg):
-            if task is not None:
-                try:
-                    await task
-                except (asyncio.CancelledError, Exception):  # noqa: BLE001
-                    pass
+            await reap(task, what="telegram task")
         self._poll_task = None
         self._flush_task = None
         self._bg.clear()

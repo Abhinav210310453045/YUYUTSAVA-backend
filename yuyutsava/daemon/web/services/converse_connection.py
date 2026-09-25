@@ -518,5 +518,5 @@ class ConverseConnection:
             discarded = (not self._spec.resuming) and await self._spec.convo.discard_if_unused()
             if not discarded:
                 await self._spec.convo.finish("idle")
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception:  # noqa: BLE001 — best-effort, on a socket that is already gone
+            logger.debug("retiring session on %s failed", self._thread_id, exc_info=True)

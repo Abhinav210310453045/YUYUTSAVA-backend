@@ -37,6 +37,7 @@ import os
 import sys
 from pathlib import Path
 
+from yuyutsava.aio.tasks import cancel_and_reap
 from yuyutsava.events.registry import register_source
 from yuyutsava.events.source import EventSource, SourceContext
 from yuyutsava.storage.paths import blobs_dir
@@ -106,11 +107,7 @@ class VoiceSource(EventSource):
             await self._read_loop(ctx, self._proc, heartbeat_timeout)
         finally:
             await self._terminate(self._proc)
-            stderr_task.cancel()
-            try:
-                await stderr_task
-            except (asyncio.CancelledError, Exception):
-                pass
+            await cancel_and_reap(stderr_task, what="voice listener stderr drain")
             self._proc = None
 
     async def _read_loop(

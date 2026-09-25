@@ -219,7 +219,8 @@ class SqlitePrefsBackend(PrefsBackend):
             return default
         try:
             return json.loads(row["value_json"])
-        except Exception:
+        except json.JSONDecodeError:
+            logger.warning("user_prefs[%s] is not valid JSON; using the default", key)
             return default
 
     async def list(self) -> dict[str, Any]:
@@ -228,8 +229,8 @@ class SqlitePrefsBackend(PrefsBackend):
         for r in rows:
             try:
                 out[r["key"]] = json.loads(r["value_json"])
-            except Exception:
-                pass
+            except json.JSONDecodeError:
+                logger.warning("user_prefs[%s] is not valid JSON; left out", r["key"])
         return out
 
 
