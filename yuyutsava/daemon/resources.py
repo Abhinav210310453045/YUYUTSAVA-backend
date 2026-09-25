@@ -248,7 +248,7 @@ class ResourceMonitor:
                 ["docker", "stats", "--no-stream", "--format", "{{json .}}"],
                 timeout=4.0,
             )
-        except Exception:
+        except (OSError, TimeoutError):
             return {}
         stats: dict[str, dict[str, float]] = {}
         for line in out.decode("utf-8", "replace").splitlines():

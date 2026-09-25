@@ -86,7 +86,7 @@ async def _run(args: argparse.Namespace) -> int:
             f"channel={info['channel_name']}  newly_attached={info['attached']}",
             file=sys.stderr,
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — any connect failure is reported and exits 1
         print(f"attach failed: {exc!r}", file=sys.stderr)
         return 1
     print("(Ctrl-C to detach)", file=sys.stderr, flush=True)

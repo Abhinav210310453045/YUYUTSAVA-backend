@@ -31,7 +31,7 @@ from yuyutsava.policy.types import ModelCall
 # reappears, never a crash).
 try:
     from deepagents.middleware.filesystem import FILESYSTEM_SYSTEM_PROMPT as _FS_PROMPT
-except Exception:  # pragma: no cover - import guard for future library moves
+except ImportError:  # pragma: no cover - import guard for future library moves
     _FS_PROMPT = None
 
 _ANCHOR = "## Filesystem Tools"  # stable fallback marker

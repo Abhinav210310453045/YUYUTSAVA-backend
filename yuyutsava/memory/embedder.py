@@ -95,7 +95,7 @@ class Embedder:
         try:
             await self.embed_one("ping", mode="query")
             return True
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — a health probe: any failure means unhealthy
             logger.warning(
                 "memory: embedder unreachable at %s (model %s): %s — "
                 "semantic memory degrades to keyword search until it recovers",

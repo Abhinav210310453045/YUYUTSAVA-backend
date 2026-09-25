@@ -359,7 +359,7 @@ class DockerSandboxBackend(BaseSandbox):
         except subprocess.TimeoutExpired:
             _slog.warning("[SANDBOX LOG] execute TIMEOUT after %ds", effective_timeout)
             return _timed_out(effective_timeout, custom=timeout is not None)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 — any failure is a failed response
             _slog.error("[SANDBOX LOG] execute ERROR  %s: %s", type(e).__name__, e)
             return _failed(e)
         return self._response(proc.stdout, proc.stderr, proc.returncode, "execute")
@@ -398,7 +398,7 @@ class DockerSandboxBackend(BaseSandbox):
                     pass
             _slog.warning("[SANDBOX LOG] aexecute TIMEOUT after %ds", effective_timeout)
             return _timed_out(effective_timeout, custom=False)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 — any failure is a failed response
             _slog.error("[SANDBOX LOG] aexecute ERROR  %s: %s", type(e).__name__, e)
             return _failed(e)
 

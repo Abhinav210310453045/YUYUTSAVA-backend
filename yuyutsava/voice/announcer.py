@@ -113,7 +113,7 @@ class Announcer:
             return self._tts
         try:
             self._tts = self._tts_factory()
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 — no TTS makes say() silent, not fatal
             self._tts_failed = True
             logger.warning("Announcer: TTS unavailable — say() will be silent", exc_info=True)
         return self._tts
@@ -130,7 +130,7 @@ class Announcer:
                 if not item.done.done():
                     item.done.set_result(None)
                 raise
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001 — a playback failure must not stop the queue
                 logger.warning("Announcer: playback failed", exc_info=True)
             finally:
                 if not item.done.done():

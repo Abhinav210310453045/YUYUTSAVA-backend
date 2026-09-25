@@ -197,7 +197,7 @@ def release_host_lock(attachment: HostAttachment) -> None:
     if attachment.host is not None:
         try:
             attachment.host.shutdown()
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 — teardown continues past a failed shutdown
             logger.exception("async host shutdown failed (continuing)")
     if attachment.lock is not None:
         attachment.lock.release()

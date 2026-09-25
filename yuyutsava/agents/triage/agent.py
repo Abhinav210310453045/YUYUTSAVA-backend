@@ -109,7 +109,7 @@ class TriageAgent:
                     config=_invoke_cfg,
                 )  # type: ignore[assignment]
                 break
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 — any provider failure is retried
                 last_exc = exc
                 logger.warning(
                     "triage LLM call failed (attempt %d/2): %s",

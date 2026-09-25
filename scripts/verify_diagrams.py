@@ -51,7 +51,7 @@ def _kroki_up(base: str) -> bool:
     try:
         with urllib.request.urlopen(f"{base}/health", timeout=3) as r:
             return r.status == 200
-    except Exception:
+    except Exception:  # noqa: BLE001 — a health probe: any failure means down
         return False
 
 
@@ -108,7 +108,7 @@ def main() -> int:
             except urllib.error.HTTPError as e:
                 detail = e.read().decode(errors="replace").strip().replace("\n", " ")
                 bad.append(f"    block {index} (line {line_no}): {detail[:200]}")
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:  # noqa: BLE001 — each failure is reported and counted
                 bad.append(f"    block {index} (line {line_no}): {type(e).__name__}: {e}")
         status = "OK" if not bad else f"{len(bad)} BROKEN"
         print(f"{name:<26} {len(blocks):>2} diagrams  {status}")

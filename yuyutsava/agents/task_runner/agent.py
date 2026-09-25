@@ -304,9 +304,9 @@ class TaskRunnerAgent:
             result = await run_operation(
                 request, exec_backend=self.exec_backend, sandbox_root=self.sandbox_root
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — returned to the agent as an error
             error_msg = f"{type(exc).__name__}: {exc}"
-            logger.error("TaskRunner | EXEC ERROR | %s", error_msg)
+            logger.error("TaskRunner | EXEC ERROR | %s", error_msg, exc_info=True)
             return OperationResponse(
                 request_id=request.request_id,
                 operation_id=operation_id,

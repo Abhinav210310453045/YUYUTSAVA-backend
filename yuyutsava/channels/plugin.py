@@ -157,7 +157,7 @@ class InboundSink:
         if self._status_provider is not None:
             try:
                 return self._status_provider()
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001 — a plugin's status callback must not break /status
                 logger.exception("status_provider failed")
         return "daemon: running"
 

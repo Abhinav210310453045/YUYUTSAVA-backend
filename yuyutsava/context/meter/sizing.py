@@ -81,7 +81,8 @@ def note_bound_tools(role: str, registry: Any, tools: Any) -> None:
     if role not in _catalog_chars:
         try:
             _catalog_chars[role] = len(registry.catalog_block() or "")
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 — the meter is an estimate; it must never break a turn
+            logger.debug("context meter: sizing the tool catalog failed", exc_info=True)
             _catalog_chars[role] = 0
 
 
@@ -140,7 +141,8 @@ def catalog_chars(role: str) -> int:
     if registry is not None:
         try:
             size = len(registry.catalog_block() or "")
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 — the meter is an estimate; it must never break a turn
+            logger.debug("context meter: sizing the tool catalog failed", exc_info=True)
             size = 0
     _catalog_chars[role] = size
     return size
@@ -203,10 +205,7 @@ def split_system_chars(text: str) -> dict[str, int]:
 
 def injected_block_chars(thread_id: str) -> dict[str, int]:
     """Sizes of the blocks the retrieval injectors last rendered on *thread_id*."""
-    try:
-        return last_block_chars(thread_id)
-    except Exception:  # noqa: BLE001
-        return {}
+    return last_block_chars(thread_id)
 
 
 def is_offloaded_digest(content: Any) -> bool:

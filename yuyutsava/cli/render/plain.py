@@ -355,6 +355,6 @@ class ChatRenderer:
         if isinstance(v, (dict, list)):
             try:
                 return json.dumps(v, indent=2, default=str)
-            except Exception:
+            except (TypeError, ValueError):
                 return str(v)
         return str(v)

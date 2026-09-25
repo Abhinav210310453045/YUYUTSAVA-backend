@@ -257,7 +257,7 @@ def get_callback():
     except ImportError:
         logger.warning("langfuse is not installed — tracing disabled. Run: uv add langfuse")
         return None
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — tracing is optional; any init failure disables it
         logger.warning("LangFuse callback init failed (%s) — tracing disabled", exc)
         return None
 

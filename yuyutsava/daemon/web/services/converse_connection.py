@@ -82,7 +82,7 @@ def latest_usage_snapshot(thread_id: str) -> dict | None:
     try:
         snap = bus().latest(thread_id)
         return snap.as_dict() if snap is not None else None
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 — the hello goes out without a usage snapshot
         logger.debug("usage snapshot unavailable for hello", exc_info=True)
         return None
 
@@ -167,7 +167,7 @@ class VoiceHistory:
                 audio_blob_path=blob_path,
                 sample_rate=rate if blob_path else None,
             )
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 — persisting voice must not end the conversation
             logger.warning("converse: persisting voice message failed", exc_info=True)
 
 

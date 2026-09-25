@@ -133,7 +133,10 @@ class RemoteThreadPatcher:
             time.sleep(0.2)
             try:
                 cur = client.runs.get(thread_id=thread_id, run_id=run_id)
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001 — the wait is best-effort; the patch proceeds
+                logger.debug(
+                    "polling run %s on %s failed; not waiting", run_id, thread_id, exc_info=True
+                )
                 break
             if (cur.get("status") or "") in _SETTLED_RUN_STATUSES:
                 break
@@ -159,7 +162,10 @@ class RemoteThreadPatcher:
             await asyncio.sleep(0.2)
             try:
                 cur = await client.runs.get(thread_id=thread_id, run_id=run_id)
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001 — the wait is best-effort; the patch proceeds
+                logger.debug(
+                    "polling run %s on %s failed; not waiting", run_id, thread_id, exc_info=True
+                )
                 break
             if (cur.get("status") or "") in _SETTLED_RUN_STATUSES:
                 break
@@ -181,7 +187,7 @@ class RemoteThreadPatcher:
                 thread_id=thread_id,
                 values={"messages": build_synthetic_toolmessages(pending)},
             )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 — best-effort; thread left as it was
             logger.warning("interrupt-patch: cannot update thread %s: %s", thread_id, e)
             return 0
         logger.info(
@@ -196,7 +202,7 @@ class RemoteThreadPatcher:
             client = self._get_async_client(agent_name)
             await self._settle_active_run_async(client, thread_id)
             thread = await client.threads.get(thread_id=thread_id)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 — best-effort; thread left as it was
             logger.warning("interrupt-patch: cannot fetch thread %s: %s", thread_id, e)
             return 0
         messages = (thread.get("values") or {}).get("messages") or []
@@ -208,7 +214,7 @@ class RemoteThreadPatcher:
                 thread_id=thread_id,
                 values={"messages": build_synthetic_toolmessages(pending)},
             )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 — best-effort; thread left as it was
             logger.warning("interrupt-patch: cannot update thread %s: %s", thread_id, e)
             return 0
         logger.info(

@@ -343,7 +343,7 @@ class OrchestratorLoop:
             return None
         try:
             rec = await self._registry.get(task_id)
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 — a lookup failure is treated as an unknown task
             logger.exception("task registry: get(%s) failed", task_id)
             return None
         origin = rec.origin if rec is not None else ""
@@ -592,7 +592,8 @@ async def resume_interrupted_tasks(
     # them so an operator can see what was left behind rather than wonder.
     try:
         stale, _ = await registry.list(status="queued", limit=limit)
-    except Exception:
+    except Exception:  # noqa: BLE001 — a startup report; it must not stop the resume
+        logger.warning("resume: could not list queued tasks", exc_info=True)
         stale = []
     if stale:
         logger.info(

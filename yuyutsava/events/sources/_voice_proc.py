@@ -117,7 +117,7 @@ def _listen(sd: Any, detector: Any, sample_rate: int, stopping: dict) -> None:
             try:
                 fired = detector.process(bytes(raw))
                 detector_errors = 0
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 — counted; five in a row end it
                 detector_errors += 1
                 if detector_errors >= 5:
                     _fatal(f"wake detector unusable, giving up: {exc}")
@@ -157,7 +157,7 @@ def main(argv: list[str] | None = None) -> None:
     try:
         # Subprocess entry module.
         from yuyutsava.voice.backends.wake import wake_from_env  # noqa: PLC0415
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — reported to the parent process
         _fatal(f"Failed to import wake module: {exc}")
         return
 
@@ -166,7 +166,7 @@ def main(argv: list[str] | None = None) -> None:
     # Load wake detector (lazy — first process() call loads the model).
     try:
         detector = wake_from_env()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — reported to the parent process
         _fatal(f"Failed to build wake detector: {exc}")
         return
 
@@ -187,7 +187,7 @@ def main(argv: list[str] | None = None) -> None:
     logger.info("voice source ready — sample_rate=%d (wake-detection only)", args.sample_rate)
     try:
         _listen(sd, detector, args.sample_rate, stopping)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — reported to the parent process
         _fatal(f"audio stream error: {exc}")
 
     logger.info("subprocess exiting (pid=%d)", os.getpid())

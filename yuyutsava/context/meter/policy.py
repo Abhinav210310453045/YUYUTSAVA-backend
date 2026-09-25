@@ -162,7 +162,7 @@ class ContextMeterPolicy(Policy):
                     window_measured=False,
                 )
             )
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 — the meter must never break a model call
             logger.debug("context meter: pre-call publish failed", exc_info=True)
 
     async def after_model(self, turn: Turn) -> Directive | None:
@@ -171,7 +171,7 @@ class ContextMeterPolicy(Policy):
             return None
         try:
             self._record_call(turn.thread_id, usage)
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 — the meter must never break a model call
             logger.debug("context meter: post-call publish failed", exc_info=True)
         return None
 

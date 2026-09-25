@@ -6,15 +6,18 @@
 
 Some rules in docs/code-review/v0.1.0/01-standards.md have too many existing
 violations to gate at zero: imports inside functions, complexity, argument
-counts, blind excepts, try/except/pass, and print. Each is counted per file and
-per rule, and compared with ``scripts/lint_ratchet.json``.
+counts, and print. Each is counted per file and per rule, and compared with
+``scripts/lint_ratchet.json``. (Blind excepts are gated at zero by ruff; this
+script checks that each allowed one says why.)
 
 Exit code 0 = every count equals its baseline. Non-zero when either:
 
 * a count **grew**, or a file outside the baseline has a violation — fix it, or
   for a justified exception add ``# noqa: <RULE>  <reason>``;
 * a count **fell** and the baseline was not updated — run ``--update`` in the
-  same commit as the clean-up, so the ratchet cannot slip back.
+  same commit as the clean-up, so the ratchet cannot slip back;
+* a ``# noqa: BLE001`` states no reason. A blind except is allowed only at a
+  boundary, and the marker says why on the same line (R-ERR-01).
 
 ``--update`` rewrites the baseline and refuses to record an increase. ruff is
 run at the version pinned by ``required-version`` in ``pyproject.toml``.
@@ -24,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -33,10 +37,13 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 BASELINE = REPO / "scripts" / "lint_ratchet.json"
-RULES = ("BLE001", "C901", "PLC0415", "PLR0913", "S110", "T201")
+RULES = ("C901", "PLC0415", "PLR0913", "T201")
 PATHS = ("yuyutsava", "scripts")
 
 Counts = dict[str, dict[str, int]]
+
+#: A noqa marker naming BLE001, followed by nothing but punctuation: no reason given.
+_BARE_BLE001 = re.compile(r"#\s*noqa:\s*[A-Z0-9, ]*\bBLE001\b[A-Z0-9, ]*[\s—:-]*$")
 
 
 def ruff_command() -> list[str]:
@@ -73,6 +80,17 @@ def current_counts() -> Counts:
     return {path: dict(sorted(rules.items())) for path, rules in sorted(counts.items())}
 
 
+def bare_blind_excepts() -> list[str]:
+    """``path:line`` of every ``noqa: BLE001`` that does not say why."""
+    found = []
+    for root in PATHS:
+        for path in sorted((REPO / root).rglob("*.py")):
+            for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                if _BARE_BLE001.search(line):
+                    found.append(f"{path.relative_to(REPO).as_posix()}:{number}")
+    return found
+
+
 def compare(baseline: Counts, current: Counts) -> tuple[list[str], list[str]]:
     """(grown, fallen) as ``path: RULE before -> after`` lines."""
     grown, fallen = [], []
@@ -100,6 +118,14 @@ def main() -> int:
         "--update", action="store_true", help="rewrite the baseline; refuses increases"
     )
     args = parser.parse_args()
+
+    bare = bare_blind_excepts()
+    if bare:
+        print(f"{len(bare)} `# noqa: BLE001` without a reason:")
+        for where in bare:
+            print(f"  {where}")
+        print("\nSay why the broad catch is right here: `# noqa: BLE001 — <reason>`.")
+        return 1
 
     baseline: Counts = json.loads(BASELINE.read_text(encoding="utf-8")) if BASELINE.exists() else {}
     current = current_counts()

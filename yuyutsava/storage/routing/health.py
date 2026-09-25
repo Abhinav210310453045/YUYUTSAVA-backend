@@ -55,7 +55,7 @@ class StorageHealth:
             if self._on_degrade is not None:
                 try:
                     self._on_degrade(reason)
-                except Exception:  # noqa: BLE001
+                except Exception:  # noqa: BLE001 — a callback failure must not stop the degrade
                     logger.exception("storage: on_degrade callback failed")
         self._ensure_probe()
 
@@ -71,7 +71,7 @@ class StorageHealth:
                     await conn.execute("SELECT 1")
             except PG_RUNTIME_ERRORS:
                 continue  # still down — keep probing
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001 — the probe loop keeps probing
                 logger.exception("storage: health probe error; will retry")
                 continue
             # Postgres answered — recover.
@@ -81,7 +81,7 @@ class StorageHealth:
             if self._on_recover is not None:
                 try:
                     await self._on_recover()
-                except Exception:  # noqa: BLE001
+                except Exception:  # noqa: BLE001 — recovery stands even if reconciling fails
                     logger.exception("storage: reconcile after recovery failed")
             return
 

@@ -109,7 +109,7 @@ class VoicePipeline:
             await asyncio.get_running_loop().run_in_executor(None, _write_wav, wav, pcm)
             result = await stt.transcribe_detailed(wav)
             return TranscriptResult(text=result.text.strip(), confidence=result.confidence)
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 — a backend failure degrades to no transcript
             logger.warning("voice: transcription failed", exc_info=True)
             return TranscriptResult(text="", confidence=None)
 
@@ -122,7 +122,7 @@ class VoicePipeline:
             return b"", 0
         try:
             return await synthesize_pcm(tts, text)
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 — a backend failure degrades to no audio
             logger.warning("voice: synthesis failed", exc_info=True)
             return b"", 0
 
@@ -138,7 +138,7 @@ class VoicePipeline:
             return self._stt
         try:
             self._stt = self._stt_factory()
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 — a missing backend disables captions, not the socket
             self._stt_failed = True
             logger.warning("voice: STT unavailable — captions disabled", exc_info=True)
         return self._stt
@@ -148,7 +148,7 @@ class VoicePipeline:
             return self._tts
         try:
             self._tts = self._tts_factory()
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 — a missing backend disables speech, not the socket
             self._tts_failed = True
             logger.warning("voice: TTS unavailable — spoken replies disabled", exc_info=True)
         return self._tts

@@ -513,7 +513,7 @@ async def _async_main(argv: list[str] | None = None, *, force_chat: bool = False
             except OSError as e:
                 print(f"Error: could not write graph PNG: {e}", file=sys.stderr)
                 return 1
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 — any render failure is reported
                 print(
                     "Error: PNG export failed (network needed for default Mermaid.Ink). "
                     f"Details: {e}",

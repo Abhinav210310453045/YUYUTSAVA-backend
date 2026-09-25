@@ -86,7 +86,7 @@ def main() -> None:
                         d = client.delete(f"/api/public/models/{mid}")
                         if d.status_code < 300:
                             removed += 1
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 — a registration failure is reported, not fatal
             print(f"warning: could not prune existing definitions: {exc}", file=sys.stderr)
 
         body = {

@@ -198,7 +198,7 @@ class InterruptHandler:
                 command={"resume": {interrupt_id: reply}},
                 multitask_strategy="interrupt",
             )
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 — a failed resume is reported to the caller as False
             logger.exception("resume_interrupt: runs.create failed for %s", task_id)
             return False
         await self._ctx.mirror.set_status(task_id, "running", pending_ask_id=None)

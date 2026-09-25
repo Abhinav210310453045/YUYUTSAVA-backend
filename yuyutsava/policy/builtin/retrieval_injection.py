@@ -64,7 +64,7 @@ class RetrievalInjectionPolicy(Policy):
         for injector in self._injectors:
             try:
                 block = await injector.build_block(task_text)
-            except Exception:  # noqa: BLE001 — one injector failing must not cost the turn the others
+            except Exception:  # noqa: BLE001 — one injector must not cost the rest
                 logger.warning(
                     "%s failed; its block is left out of this turn",
                     type(injector).__name__,

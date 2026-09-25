@@ -110,7 +110,7 @@ async def run_session(
                     settings.interrupts_db_path,
                     busy_timeout_ms=settings.busy_timeout_ms,
                 )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 — bookkeeping must not stop the turn
             print(f"{YELLOW}sessions:{RESET} interrupts store init failed: {exc}", file=sys.stderr)
             interrupts_store = None
 
@@ -132,7 +132,7 @@ async def run_session(
                         f"interrupt(s) from prior run as orphaned.",
                         file=sys.stderr,
                     )
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001 — bookkeeping must not stop the turn
                 print(f"{YELLOW}sessions:{RESET} mark_orphaned failed: {exc}", file=sys.stderr)
         # Refresh task_preview so the sessions list shows the most recent intent
         # rather than the original prompt from the first run.
@@ -176,6 +176,6 @@ async def run_session(
                 session.id,
                 "done" if completed else "crashed",
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 — must not mask the turn's failure
             # Never let bookkeeping mask the original failure.
             print(f"{YELLOW}sessions:{RESET} bookkeeping failed: {exc}", file=sys.stderr)

@@ -67,7 +67,7 @@ class AskRegistry:
             self._pending[ask.ask_id] = record
         try:
             await self._store.put_pending_ask(record)
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 — persistence is best-effort; the live ask still works
             logger.warning(
                 "ask %s could not be persisted — it is live but will not survive a restart",
                 ask.ask_id,
@@ -86,7 +86,7 @@ class AskRegistry:
             self._orphaned.discard(ask_id)
         try:
             return await self._store.resolve_pending_ask(ask_id, response, status=status)
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 — persistence is best-effort; the live ask still works
             logger.warning("ask %s resolve write failed", ask_id, exc_info=True)
             return False
 
@@ -118,7 +118,7 @@ class AskRegistry:
         """Reload asks left pending by a previous process. Returns the count."""
         try:
             rows = await self._store.list_pending_asks()
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 — persistence is best-effort; the live ask still works
             logger.warning("pending-ask hydration failed", exc_info=True)
             return 0
         async with self._lock:

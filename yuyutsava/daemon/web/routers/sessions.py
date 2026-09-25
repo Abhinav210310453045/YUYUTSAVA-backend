@@ -197,7 +197,8 @@ async def get_session_messages(
         if voice_store is not None:
             try:
                 voice_rows = await voice_store.list_messages(thread_id)
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001 — clips decorate the history; it loads without them
+                logger.warning("sessions: voice clips for %s unavailable", thread_id, exc_info=True)
                 voice_rows = []
             _attach_voice_clips(messages, voice_rows, session_id)
 

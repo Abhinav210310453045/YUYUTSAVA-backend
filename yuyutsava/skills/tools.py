@@ -78,7 +78,7 @@ def make_skill_tools(
         agent = agent_name if scope == "own" and agent_name else None
         try:
             slug = registry.write_skill(name=name, description=description, body=body, agent=agent)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — a tool reports its failure to the model
             return f"error saving skill {name!r}: {exc}"
         # Index into the semantic store so it's retrievable later. Best-effort:
         # the disk file is authoritative; a store failure must not lose the skill.

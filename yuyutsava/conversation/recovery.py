@@ -165,7 +165,7 @@ async def recover_empty_turn(
     # twice would make the model answer itself.
     try:
         final, steps = await drive(None, None)
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 — the retry's failure becomes the silent-turn notice
         logger.exception("retry after an empty turn failed")
         final = ""
     if final:
@@ -199,5 +199,5 @@ async def emit(on_event: EventSink, ev: StreamEvent) -> None:
         result = on_event(ev)
         if result is not None:
             await result
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 — a broken event sink must not stop the notice path
         logger.debug("event sink raised on a synthesised notice", exc_info=True)

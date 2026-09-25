@@ -50,7 +50,7 @@ def _msg_size(content: Any) -> int:
         return len(content)
     try:
         return len(json.dumps(content))
-    except Exception:
+    except (TypeError, ValueError):
         return len(str(content))
 
 

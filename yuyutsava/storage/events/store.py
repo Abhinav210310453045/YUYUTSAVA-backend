@@ -151,7 +151,7 @@ class Store:
         await self._backend.open()
         try:
             self._grants_cache = await self._grants.load()
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 — the cache starts empty; grants are asked for again
             logger.exception("events: consent-grant cache preload failed")
             self._grants_cache = []
 

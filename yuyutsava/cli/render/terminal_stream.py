@@ -152,7 +152,7 @@ async def _record_interrupt(
             invocation_mode=invocation_mode,
         )
         return await interrupts_store.record(record)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 — the audit row must not cost the prompt
         logger.warning("InterruptsStore.record raised: %s", exc)
         return ""
 

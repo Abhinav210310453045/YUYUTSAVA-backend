@@ -242,7 +242,7 @@ async def converse(ws: WebSocket) -> None:
             resume_id=resume_id,
             continue_latest=q.get("continue", "").lower() in ("1", "true", "yes"),
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 — any failure is sent as a refusal
         logger.warning("converse: failed to open conversation", exc_info=True)
         await _refuse(ws, str(exc))
         return

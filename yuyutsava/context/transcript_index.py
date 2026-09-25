@@ -165,7 +165,7 @@ class PgTranscriptIndex(VectorStore):
                 if isinstance(content, str):  # some drivers hand back text
                     try:
                         data = json.loads(content).get("data", {})
-                    except Exception:
+                    except (ValueError, AttributeError):
                         data = {}
                 text = flatten_content(data.get("content", "")).strip()
                 if not text:

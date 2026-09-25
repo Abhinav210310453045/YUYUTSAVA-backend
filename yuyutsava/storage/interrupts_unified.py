@@ -222,7 +222,7 @@ class UnifiedInterruptsStore(InterruptsStore):
 
         try:
             return await d.write(_do)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 — the audit row is best-effort
             # Best-effort: the prompt matters more than the audit row.
             logger.warning("InterruptsStore.record failed: %s", exc)
             return ""
@@ -243,7 +243,7 @@ class UnifiedInterruptsStore(InterruptsStore):
 
         try:
             await d.write(_do)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 — the audit row is best-effort
             logger.warning("InterruptsStore.resolve failed: %s", exc)
 
     async def mark_orphaned_for_session(self, session_id: str) -> int:
@@ -268,7 +268,7 @@ class UnifiedInterruptsStore(InterruptsStore):
 
         try:
             return await d.write(_do)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 — the audit row is best-effort
             logger.warning("InterruptsStore.mark_orphaned_for_session failed: %s", exc)
             return 0
 

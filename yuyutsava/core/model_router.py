@@ -184,6 +184,6 @@ class ComplexityScorer:
             logger.warning(
                 "complexity scorer: unparseable reply %r — using %d", text[:80], DEFAULT_COMPLEXITY
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — any failure means the default
             logger.warning("complexity scorer failed (%s) — using %d", exc, DEFAULT_COMPLEXITY)
         return DEFAULT_COMPLEXITY

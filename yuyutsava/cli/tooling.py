@@ -164,5 +164,5 @@ def cleanup_local_sandbox(layout: WorkspaceLayout) -> None:
             else:
                 target.unlink()
             logger.debug("Cleaned up %s", target)
-        except Exception as exc:
+        except OSError as exc:
             logger.warning("Could not remove %s: %s", target, exc)

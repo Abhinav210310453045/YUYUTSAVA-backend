@@ -137,14 +137,14 @@ class ChannelRouter:
         if self.ask_registry is not None:
             try:
                 await self.ask_registry.record(a)
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001 — bookkeeping; the ask still goes out
                 logger.debug("ask registry record failed", exc_info=True)
 
         prefer = None
         if self.session_origin is not None:
             try:
                 prefer = self.session_origin.get(a.session_id)
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001 — a routing hint; without it every channel is asked
                 logger.debug("session_origin.get failed", exc_info=True)
                 prefer = None
         ordered = self._ordered_for_ask(prefer=prefer)
@@ -184,7 +184,7 @@ class ChannelRouter:
         if self.ask_registry is not None:
             try:
                 await self.ask_registry.resolve(a.ask_id, answer)
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001 — bookkeeping; the answer still returns
                 logger.debug("ask registry resolve failed", exc_info=True)
         return answer
 
@@ -209,7 +209,7 @@ class ChannelRouter:
                         continue
                     except NotImplementedError:
                         continue  # this surface can't show asks
-                    except Exception:  # noqa: BLE001
+                    except Exception:  # noqa: BLE001 — one channel must not stop the rest
                         logger.warning(
                             "channel %s failed showing ask %s",
                             channel.name,

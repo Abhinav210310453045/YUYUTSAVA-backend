@@ -315,11 +315,11 @@ class ConversationService:
                 await self._ticker.flush_final(
                     memory_files_count=count_memory_files(self.workspace)
                 )
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001 — finish bookkeeping must not mask the turn's result
                 logger.debug("final bookkeeping flush failed", exc_info=True)
         try:
             await self.store.update_status(self.session.id, status)
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 — finish bookkeeping must not mask the turn's result
             logger.debug("update_status on finish failed", exc_info=True)
 
     async def new_session(self, *, task: str = "(interactive)", origin: str = "cli") -> Session:

@@ -68,7 +68,7 @@ async def _apply_wake_to_events_config(request: Request, wake_enabled: bool) -> 
         )
         await svc.save_events(EventsConfig(sources=sources))
         logger.info("settings: voice events source → enabled=%s", wake_enabled)
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 — the setting is saved regardless
         logger.warning(
             "settings: could not apply wake_enabled=%s to the events config",
             wake_enabled,
@@ -89,7 +89,7 @@ async def _broadcast(request: Request, settings) -> None:
                 ts=time.time(),
             )
         )
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 — a broadcast failure must not fail the request
         logger.debug("settings: broadcast failed", exc_info=True)
 
 

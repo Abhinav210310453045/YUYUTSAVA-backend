@@ -288,12 +288,12 @@ class Reconciler:
         for drain in self.extra_drains:
             try:
                 total += await drain()
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001 — one failed drain must not stop the others
                 logger.exception("reconcile: extra drain failed")
         for backfill in self.backfills:
             try:
                 await backfill()
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001 — one failed drain must not stop the others
                 logger.exception("reconcile: backfill failed")
         if total:
             logger.info("reconcile: drained %d buffered row(s) into postgres", total)
@@ -304,7 +304,7 @@ class Reconciler:
         for spec in sorted((*EVENT_TABLE_SPECS, *self.content_specs), key=lambda s: s.order):
             try:
                 total += await self._drain_table(spec)
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001 — one failed drain must not stop the others
                 logger.exception("reconcile: draining %s failed", spec.table)
         return total
 

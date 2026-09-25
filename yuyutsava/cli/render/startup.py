@@ -121,7 +121,7 @@ def startup_status_line(sessions_settings: SessionsSettings) -> str:
     """
     try:
         tracing_on = _tracing.is_configured() and _tracing.langfuse_reachable()
-    except Exception:
+    except Exception:  # noqa: BLE001 — a status-line probe: any failure shows tracing as off
         tracing_on = False
     try:
         lg_version = importlib.metadata.version(LANGGRAPH_API)
@@ -136,7 +136,7 @@ def startup_status_line(sessions_settings: SessionsSettings) -> str:
         storage = (
             "postgres" if StorageSettings.from_env().is_postgres() else sessions_settings.backend
         )
-    except Exception:
+    except RuntimeError:
         storage = sessions_settings.backend
     return (
         f"storage: {storage} · "

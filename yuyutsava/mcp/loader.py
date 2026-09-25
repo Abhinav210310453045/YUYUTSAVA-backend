@@ -190,7 +190,7 @@ class MCPClientManager:
                     )
                     mcp_tools = mcp_tools[: spec.max_tools]
                 adapted = [adapt(session, name, t) for t in mcp_tools]
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001 — one server must not stop the rest
                 logger.exception("MCP server %r failed to start: %s", name, exc)
                 ready.set()
                 return
@@ -234,7 +234,7 @@ class MCPClientManager:
                 await asyncio.wait_for(asyncio.shield(entry.runner), timeout=2.0)
             except (asyncio.TimeoutError, asyncio.CancelledError):
                 pass
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 — shutdown continues past one server
             logger.warning("MCP server %r stop raised %s", name, exc)
 
 

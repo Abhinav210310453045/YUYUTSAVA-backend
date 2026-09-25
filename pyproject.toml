@@ -188,12 +188,16 @@ line-length = 100
 [tool.ruff.lint]
 # The gate — CI fails on any of these. They find real defects (names that do not
 # exist, dead exports, unused locals and imports, a re-raise that drops its cause
-# — B904) or break the import-placement standard, which includes sorted import
-# blocks (I001).
-select = ["B904", "E402", "E741", "F401", "F541", "F821", "F822", "F841", "I001"]
+# — B904), break the import-placement standard, which includes sorted import
+# blocks (I001), or catch everything where only a boundary may (BLE001, S110:
+# a boundary says why with `# noqa: BLE001 — <reason>`, which the ratchet
+# script checks — R-ERR-01).
+select = [
+  "B904", "BLE001", "E402", "E741", "F401", "F541", "F821", "F822", "F841", "I001", "S110",
+]
 # Rules with too many existing violations to gate at zero (PLC0415, C901,
-# PLR0913, BLE001, S110, T201) are not selected here: scripts/check_lint_ratchet.py
-# counts them per file against scripts/lint_ratchet.json, and no count may grow.
+# PLR0913, T201) are not selected here: scripts/check_lint_ratchet.py counts them
+# per file against scripts/lint_ratchet.json, and no count may grow.
 
 [tool.ruff.lint.mccabe]
 max-complexity = 15
@@ -205,8 +209,12 @@ max-args = 7
 # print is how the terminal front end and maintainer scripts talk to people.
 "yuyutsava/cli/**" = ["T201"]
 "scripts/**" = ["T201"]
-# Tests defer heavy imports into test bodies to keep collection fast.
-"test/**" = ["PLC0415", "T201"]
+# Tests defer heavy imports into test bodies to keep collection fast; their
+# teardown swallows broadly (revisited with the test tree, W6).
+"test/**" = ["BLE001", "PLC0415", "S110", "T201"]
+# The face watcher is left exactly as it is, by the owner's decision.
+"yuyutsava/events/sources/_webcam_proc.py" = ["BLE001", "S110"]
+"yuyutsava/events/sources/webcam.py" = ["BLE001", "S110"]
 # Imports that follow sys.path manipulation — removed with it (R-TST-02, W6).
 "test/async_subagents/test_completion_loop.py" = ["E402"]
 "test/async_subagents/test_unit.py" = ["E402"]

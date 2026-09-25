@@ -417,5 +417,5 @@ class ConversationManager:
         for key, bundle in bundles.items():
             try:
                 await bundle.aclose()
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001 — teardown continues past one bundle
                 logger.debug("conversation bundle %s aclose failed", key, exc_info=True)

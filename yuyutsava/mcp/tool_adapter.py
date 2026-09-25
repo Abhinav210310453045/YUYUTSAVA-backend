@@ -56,7 +56,7 @@ def adapt(session: ClientSession, server_name: str, mcp_tool: MCPTool) -> BaseTo
                         session.call_tool(mcp_tool.name, kwargs), home_loop
                     )
                 )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 — a call's failure goes back to the model as text
             logger.warning("MCP call %s failed: %s", namespaced, exc)
             return f"[error calling {namespaced}: {exc}]"
         return _flatten_content(result)

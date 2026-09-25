@@ -105,7 +105,7 @@ def _middleware_descendants() -> list[str]:
     found: list[str] = []
     try:
         from langchain.agents.middleware import AgentMiddleware
-    except Exception:  # pragma: no cover - framework absent
+    except ImportError:  # pragma: no cover - framework absent
         return found
 
     for path in _modules():
@@ -115,7 +115,7 @@ def _middleware_descendants() -> list[str]:
             parts = parts[:-1]
         try:
             module = importlib.import_module(".".join(parts))
-        except Exception:
+        except Exception:  # noqa: BLE001 — a module that will not import is not measured
             continue
         for name, obj in vars(module).items():
             if (

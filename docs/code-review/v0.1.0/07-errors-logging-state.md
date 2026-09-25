@@ -15,7 +15,25 @@ reproduction before they are fixed.
 
 ## R-ERR-01 — Broad exception handlers that do nothing
 
-**Severity** P1 · **Wave** W5 · **Status** Open
+**Severity** P1 · **Wave** W5 · **Status** **Fixed** (2026-09-26).
+- Every blind `except` in `yuyutsava/` and `scripts/` is now either a boundary
+  that logs and says why on the marker line (`# noqa: BLE001 — <reason>`), or a
+  narrow catch. The narrow ones are:
+  - `OSError` for file removal and the Electron launch;
+  - `(OSError, TimeoutError)` for `docker stats`;
+  - `(TypeError, ValueError)` for JSON encoding;
+  - `(ValueError, AttributeError)` for JSON decoding;
+  - `RuntimeError` for the storage banner;
+  - `ImportError` for import guards.
+- The silent handlers now log: the meter's catalog sizing, the resume
+  report, the history's voice clips and the interrupt patch's run polls. The
+  `try` around a dict read that cannot fail is gone.
+- **Enforced.** `BLE001` and `S110` moved from the ratchet into ruff's
+  gate, so a new blind except fails CI. `check_lint_ratchet.py` also fails on
+  any `noqa: BLE001` that gives no reason. Both checks are negative-controlled.
+- **Left alone by decision.** The face watcher (`events/sources/_webcam_proc.py`,
+  `webcam.py`) has a per-file ignore; its one silent handler is
+  `silent_broad_excepts` = 1. `test/**` is ignored until W6.
 
 **Claim.** 58 handlers catch `Exception` (or everything) and only `pass`,
 `continue` or return a falsy value.

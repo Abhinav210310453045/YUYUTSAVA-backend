@@ -208,7 +208,7 @@ def main() -> int:
     try:
         a.run(pool.open(timeout_sec=3))
         pg_up = True
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 — a probe's failure is reported as FAIL
         pg_up = False
         print(f"  [skip] Postgres not reachable ({type(exc).__name__}) — pool checks skipped")
     if pg_up:

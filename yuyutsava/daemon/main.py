@@ -162,8 +162,8 @@ async def _open_electron_when_ready(
             if holder is not None:
                 holder["proc"] = proc
             return
-        except Exception:
-            logger.warning("Could not launch Electron app; visit %s manually", url)
+        except OSError as exc:
+            logger.warning("Could not launch Electron app (%s); visit %s manually", exc, url)
     else:
         logger.warning("Electron app not found at %s; visit %s manually", electron_app_dir, url)
 
