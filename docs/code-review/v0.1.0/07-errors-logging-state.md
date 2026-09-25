@@ -769,3 +769,34 @@ again after a restart, and every surface was asked again after a chat.
 (`bind_tools(agent)`); the per-workspace cache and both setters are gone.
 Each stack builds its own gateway: the daemon passes its policy and consent
 through `StackWiring`, and a standalone CLI stack has its own registry.
+
+## R-BUG-18 — The first chat in the daemon replaced its board, visual and note stores
+
+**Severity** P1 · **Wave** W5 · **Status** Open (fix: the store half of
+`R-GLB-01`)
+
+**Evidence.** The same pattern as `R-BUG-17`. Confirmed in-process on
+2026-09-25: `build_daemon` against a scratch database, then one
+`ConversationManager._build_master_bundle()`, the chat bundle every
+conversation uses:
+
+| default | after boot | after the first chat bundle |
+|---|---|---|
+| todo store | `RoutedStore` (Postgres, SQLite spillover) | `UnifiedTodoStore` (plain Postgres) |
+| visual store | `RoutedStore` | `UnifiedVisualStore` |
+| note index | the boot index (configured `min_score`) | a new `TodoNoteIndex` |
+
+`agent_stack._install_board_stores` sets all three process defaults on every
+stack build, and the daemon runs that stack for chat and voice.
+
+**Consequence.** After the first chat, the daemon's board API, the todo_*
+tools and the vis_* tools write straight to Postgres on the chat stack's own
+pool. A Postgres outage then fails those writes instead of buffering them to
+SQLite for the reconciler to drain. Note recall loses the configured
+`min_score`.
+
+**Fix.** Build one `TodoExchange` (store and note index) and one visual store
+per process: the daemon's at boot, and the standalone CLI's in its stack.
+Pass them explicitly to the web routers (`AppDeps`), the conversation manager,
+the stacks (`StackWiring`) and the tools. The `set_default_*` accessors for
+all three go.
