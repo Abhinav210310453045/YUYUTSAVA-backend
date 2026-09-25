@@ -140,7 +140,10 @@ class PurgeDerivation(unittest.TestCase):
         """
         from yuyutsava.core import purge
 
-        src = inspect.getsource(purge.purge_session)
+        # purge_session and the step it delegates the loose tables to.
+        src = inspect.getsource(purge.purge_session) + inspect.getsource(
+            purge._purge_outside_the_hub
+        )
         for d in DOMAINS:
             if d.purge is not PurgeMode.STORE_METHOD:
                 continue

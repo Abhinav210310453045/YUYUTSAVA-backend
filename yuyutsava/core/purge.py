@@ -94,6 +94,43 @@ class PurgeReport:
         return sum(self.rows.values())
 
 
+async def _purge_outside_the_hub(
+    ctx: "AppContext",
+    settings: StorageSettings,
+    pg_pool: object | None,
+    thread_id: str,
+    report: PurgeReport,
+) -> None:
+    """Delete what the thread-hub cascade cannot reach: files and loose tables.
+
+    Runs BEFORE the hub is dropped, so on-disk files are unlinked (a cascade
+    would remove only the row that points at them).
+    """
+    # On-disk voice audio clips.
+    report.voice_blobs_deleted = delete_thread_voice_blobs(thread_id)
+    # Rendered visuals — rows + on-disk image files (the row holds an absolute
+    # path, so a raw table delete would orphan the PNGs). The backend-aware
+    # default store cleans PG-primary rows too.
+    report.rows["visual_artifacts"] = await ctx.visuals().delete_for_thread(thread_id)
+    # Message feedback lives outside the thread-hub FK graph, so neither the
+    # bulk delete nor the PG cascade reaches it — and a feedback row stores
+    # user_text/assistant_text VERBATIM, the conversation the user asked to
+    # delete. The resolver falls back to the SQLite store lazily.
+    report.rows["message_feedback"] = await ctx.feedback().delete_for_thread(thread_id)
+    # Pending asks: the row stores the agent's question and the user's answer.
+    # A caller that already has an events store open (the daemon keeps one for
+    # the process) passes it and we neither start nor stop it; otherwise a
+    # per-call store is opened here.
+    events, owned = ctx.events(settings, pg_pool=pg_pool)
+    if owned:
+        await events.start()
+    try:
+        report.rows["pending_asks"] = await events.delete_pending_asks_for_thread(thread_id)
+    finally:
+        if owned:
+            await events.stop()
+
+
 async def purge_session(
     session_id: str,
     *,
@@ -102,19 +139,12 @@ async def purge_session(
 ) -> PurgeReport:
     """Remove every row + file tied to ``session_id``. Raises ``SessionNotFound``.
 
-    Pass ``ctx`` to supply the stores explicitly; omit it and they come from the
-    process globals (finding ``F-S08``).
-
-    The explicit form matters because this function's one-argument signature hid
-    that it touches **four** stores — sessions, visuals, feedback and the events
-    store — plus the checkpointer and on-disk blobs. A caller reading
-    ``purge_session(sid)`` had no way to know its blast radius, and a test had to
-    set and restore four globals to exercise it.
-
-    Still self-contained by default: the CLI and the web endpoint call it
-    identically with no wiring. Any step failing propagates (hard-fail); see the
-    module docstring for the ordering that makes a partial purge safely
-    retryable.
+    It touches the sessions, visuals, feedback and events stores, the
+    checkpointer and on-disk blobs. Pass ``ctx`` to supply the stores
+    explicitly; omit it and they come from the process globals (finding
+    ``F-S08``), so the CLI and the web endpoint call it identically with no
+    wiring. Any step failing propagates (hard-fail); see the module docstring
+    for the ordering that makes a partial purge safely retryable.
     """
     ctx = ctx if ctx is not None else GLOBAL_CONTEXT
     store = ctx.sessions()
@@ -142,41 +172,8 @@ async def purge_session(
         else:
             await _purge_sqlite(thread_id, session_id, report)
 
-        # 3. On-disk voice audio clips.
-        report.voice_blobs_deleted = delete_thread_voice_blobs(thread_id)
-
-        # 3b. Rendered visuals — rows + on-disk image files (the DB row holds an
-        #     absolute path, so a raw table delete would orphan the PNGs). Use the
-        #     backend-aware default store (PgVisualStore when the daemon injected
-        #     it, else the SQLite twin) so PG-primary rows are cleaned too. Run
-        #     BEFORE the thread hub is dropped so files are unlinked (the FK
-        #     CASCADE would only remove the row, not the on-disk PNG).
-        report.rows["visual_artifacts"] = await ctx.visuals().delete_for_thread(thread_id)
-
-        # 3c. Message feedback. Not in _STATE_TABLES / _PG_CHILD_TABLES because
-        #     the table lives outside the thread-hub FK graph, so neither the
-        #     bulk delete nor the PG cascade reaches it — and a feedback row
-        #     stores user_text/assistant_text VERBATIM. Leaving it behind kept
-        #     the conversation content of a session the user asked to delete.
-        #     Uses the backend-aware default store, same as visuals above.
-        #     The resolver lazily falls back to the SQLite store when the daemon
-        #     never installed one, so this needs no guard.
-        report.rows["message_feedback"] = await ctx.feedback().delete_for_thread(thread_id)
-
-        # 3d. Pending asks. Same class of gap as 3c, found by the domain
-        #     registry: the row stores the agent's question (title/body) and the
-        #     user's response, and it was purged by nothing and swept by nothing.
-        #     Unwired callers get a per-call store (purge_session takes no
-        #     wiring); a caller that already has one open — the daemon keeps one
-        #     for the whole process — passes it and we do not start or stop it.
-        _events, _owned = ctx.events(settings, pg_pool=pg_pool)
-        if _owned:
-            await _events.start()
-        try:
-            report.rows["pending_asks"] = await _events.delete_pending_asks_for_thread(thread_id)
-        finally:
-            if _owned:
-                await _events.stop()
+        # 3. Files and the tables the hub cascade does not reach.
+        await _purge_outside_the_hub(ctx, settings, pg_pool, thread_id, report)
 
         # 4. Sessions row LAST — a failure above leaves it listed + retryable.
         await store.delete(session_id)

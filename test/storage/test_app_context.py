@@ -129,7 +129,10 @@ class PurgeSessionAcceptsContext(unittest.TestCase):
 
         from yuyutsava.core import purge
 
-        src = inspect.getsource(purge.purge_session)
+        # purge_session and the step it delegates the loose tables to.
+        src = inspect.getsource(purge.purge_session) + inspect.getsource(
+            purge._purge_outside_the_hub
+        )
         for direct in (
             "get_default_visual_store(",
             "get_default_feedback_store(",
