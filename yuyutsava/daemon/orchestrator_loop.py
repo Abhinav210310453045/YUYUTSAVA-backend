@@ -99,13 +99,15 @@ class LoopServices:
     Without a registry nothing is recorded; without a router every task uses
     the model the daemon booted with; without admission heavy tasks are not
     gated; without a launch index a background task cannot wake the
-    conversation that started it.
+    conversation that started it; without the conversations' turn registry a
+    wake-up is not queued behind the conversation's running turn.
     """
 
     task_registry: object | None = None  # yuyutsava.storage.task_registry.TaskRegistry
     model_router: object | None = None  # yuyutsava.core.model_router.ModelRouter
     admission: object | None = None  # yuyutsava.daemon.resources.AdmissionController
     launch_index: object | None = None  # yuyutsava.async_subagents.launch_index.LaunchIndex
+    turns: object | None = None  # yuyutsava.daemon.turn_registry.TurnRegistry
 
 
 class OrchestratorLoop:
@@ -128,6 +130,7 @@ class OrchestratorLoop:
         model_router = services.model_router
         admission = services.admission
         launch_index = services.launch_index
+        self._turns = services.turns
         self._queue = task_queue
         self._channels = channels
         self._store = store
@@ -205,7 +208,6 @@ class OrchestratorLoop:
             if self._admission is not None
             else contextlib.nullcontext()
         )
-        mapped_origin: str | None = None
         try:
             async with slot:
                 if (
@@ -221,27 +223,15 @@ class OrchestratorLoop:
                 # per-task selection free. Router absent or flag off → the role
                 # models the daemon booted with.
                 model, deps = self._select_models(task)
-                if self._registry is not None and task_id:
-                    await self._registry.mark_running(
-                        task_id,
+                async with self._thread_gate(task, thread_id):
+                    await self._start_on_thread(
+                        task,
+                        task_id=task_id,
                         thread_id=thread_id,
-                        complexity=task.complexity,
-                        model=model_name_of(model) or None,
+                        model=model,
+                        deps=deps,
+                        resume=resume,
                     )
-                # Origin-aware ask routing: when the task came in
-                # through a channel plugin (origin == a registered channel
-                # name, e.g. "telegram"), map this run's thread_id to that
-                # channel so Tier-2 asks prefer the submitting surface.
-                mapped_origin = await self._map_session_origin(task_id, thread_id)
-                await self._execute(
-                    task,
-                    task_id=task_id,
-                    thread_id=thread_id,
-                    model=model,
-                    deps=deps,
-                    resume=resume,
-                    origin=mapped_origin or task.origin or None,
-                )
         except Exception as exc:
             if self._registry is not None and task_id:
                 try:
@@ -249,6 +239,53 @@ class OrchestratorLoop:
                 except Exception:
                     logger.exception("task registry: mark_failed failed")
             raise
+
+    def _thread_gate(self, task: OrchestratorTask, thread_id: str) -> Any:
+        """The conversation's turn gate, for a wake-up that writes its thread.
+
+        A background task finishing wakes the orchestrator on the thread of the
+        conversation that launched it. A LangGraph checkpoint is single-writer,
+        so the wake-up waits for that conversation's running turn to end and
+        holds the thread while it writes (R-BUG-15). Any other task runs on a
+        thread of its own and needs no gate.
+        """
+        if task.kind == "subagent_completed" and task.parent_thread_id and self._turns is not None:
+            return self._turns.hold(thread_id)
+        return contextlib.nullcontext()
+
+    async def _start_on_thread(
+        self,
+        task: OrchestratorTask,
+        *,
+        task_id: str,
+        thread_id: str,
+        model: BaseChatModel,
+        deps: OrchestratorDeps,
+        resume: bool,
+    ) -> None:
+        """Mark the task running, route its asks to the submitting surface, run it."""
+        if self._registry is not None and task_id:
+            await self._registry.mark_running(
+                task_id,
+                thread_id=thread_id,
+                complexity=task.complexity,
+                model=model_name_of(model) or None,
+            )
+        # Origin-aware ask routing: when the task came in through a channel
+        # plugin (origin == a registered channel name, e.g. "telegram"), map this
+        # run's thread_id to that channel so Tier-2 asks prefer the submitting
+        # surface.
+        mapped_origin = await self._map_session_origin(task_id, thread_id)
+        try:
+            await self._execute(
+                task,
+                task_id=task_id,
+                thread_id=thread_id,
+                model=model,
+                deps=deps,
+                resume=resume,
+                origin=mapped_origin or task.origin or None,
+            )
         finally:
             if mapped_origin and self._channels.session_origin is not None:
                 self._channels.session_origin.clear(thread_id)

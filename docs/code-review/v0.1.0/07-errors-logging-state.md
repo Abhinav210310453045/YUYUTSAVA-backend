@@ -714,7 +714,12 @@ traceback.
 
 ## R-BUG-15 — A background task that finishes mid-turn wakes the orchestrator onto a thread still being written
 
-**Severity** P1 · **Wave** W5 · **Status** Open
+**Severity** P1 · **Wave** W5 · **Status** **Fixed** (2026-09-26). The conversations'
+`TurnRegistry` is shared with the orchestrator loop. A `subagent_completed`
+wake-up on a conversation thread takes the gate with `TurnRegistry.hold`: it
+waits for the running turn, and while it holds the thread a new turn is
+refused as busy. Live, a completion that arrived mid-turn logged "turn gate:
+… waits for turn", ran after the turn ended, and was reported.
 
 **Evidence.** Found while verifying the `build_async_subagents` split live
 (2026-09-25). A chat turn starts a background task on `general-purpose`

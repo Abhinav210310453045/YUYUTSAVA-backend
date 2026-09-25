@@ -24,10 +24,12 @@ resumption exact.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
 import uuid
 from collections import OrderedDict, deque
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
@@ -208,10 +210,17 @@ class TurnRegistry:
     (duplicate leading human message, empty messages the model 400s on).
     :meth:`start` returns ``None`` rather than a second run. Race-free for the
     same reason the old set was: no ``await`` between the check and the insert.
+
+    A writer that is not a turn — the orchestrator waking a conversation when
+    its background task finished — takes the same gate with :meth:`hold`.
     """
 
     def __init__(self) -> None:
         self._channels: "OrderedDict[str, ThreadChannel]" = OrderedDict()
+        #: Threads held by a non-turn writer; :meth:`start` refuses them.
+        self._held: set[str] = set()
+        #: Serializes holders of one thread among themselves.
+        self._hold_locks: dict[str, asyncio.Lock] = {}
 
     # ------------------------------------------------------------------ #
     # Channels & viewers                                                   #
@@ -272,7 +281,7 @@ class TurnRegistry:
         caller should tell *its own* connection, not the channel (every other
         viewer is happily watching the turn that's already going).
         """
-        if self.active(thread_id) is not None:
+        if self.active(thread_id) is not None or thread_id in self._held:
             return None
         chan = self.channel(thread_id)
         run = TurnRun(
@@ -311,6 +320,34 @@ class TurnRegistry:
             kind,
         )
         return run
+
+    @contextlib.asynccontextmanager
+    async def hold(self, thread_id: str) -> AsyncIterator[None]:
+        """Exclusive use of *thread_id* by a writer that is not a turn.
+
+        A LangGraph checkpoint is single-writer per thread. Waits for a turn
+        running on the thread to end (and for any other holder), then holds it:
+        :meth:`start` refuses the thread until the block exits, exactly as it
+        refuses a second turn.
+        """
+        lock = self._hold_locks.setdefault(thread_id, asyncio.Lock())
+        async with lock:
+            while (running := self.active(thread_id)) is not None and running.task is not None:
+                logger.info(
+                    "turn gate: a non-turn writer waits for turn %s on %s",
+                    running.run_id,
+                    thread_id,
+                )
+                await asyncio.wait({running.task})
+            # No await between the last check and the hold: a turn cannot start
+            # in between on this event loop.
+            self._held.add(thread_id)
+            try:
+                yield
+            finally:
+                self._held.discard(thread_id)
+        if not lock.locked():
+            self._hold_locks.pop(thread_id, None)
 
     async def _drive(self, run: TurnRun, body: TurnBody) -> None:
         """Run the body and terminate the run exactly once, however it ends."""

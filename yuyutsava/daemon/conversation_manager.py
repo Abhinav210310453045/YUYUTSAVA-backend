@@ -90,6 +90,7 @@ class ConversationManager:
         launch_index: Any | None = None,
         task_submission: Any | None = None,
         wiring: StackWiring | None = None,
+        turns: TurnRegistry | None = None,
     ) -> None:
         """``wiring`` is what every conversation bundle is built with.
 
@@ -138,7 +139,9 @@ class ConversationManager:
         # concurrently interleave message writes (duplicate leading human
         # message, empty messages the model 400s on — duplicated bubbles and
         # truncated "half" replies). See daemon/turn_registry.py.
-        self._turns = TurnRegistry()
+        # Shared with the orchestrator loop, whose wake-ups on a conversation
+        # thread take the same gate (R-BUG-15); a standalone manager has its own.
+        self._turns = turns if turns is not None else TurnRegistry()
 
     # ------------------------------------------------------------------ #
     # Bundle builds                                                        #

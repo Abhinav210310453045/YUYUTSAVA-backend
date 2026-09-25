@@ -61,6 +61,7 @@ from yuyutsava.daemon.resources import AdmissionController, ResourceMonitor, Res
 from yuyutsava.daemon.task_submission import TaskSubmissionService
 from yuyutsava.daemon.terminal_channel import TerminalChannel
 from yuyutsava.daemon.triage_loop import OrchestratorTask, TriageLoop
+from yuyutsava.daemon.turn_registry import TurnRegistry
 from yuyutsava.daemon.voice_channel import voice_channel_from_env
 from yuyutsava.daemon.web.app import create_app
 from yuyutsava.daemon.web.app_deps import AppDeps
@@ -1459,6 +1460,9 @@ class LoopSubsystem:
     task_submission: TaskSubmissionService
     triage_loop: TriageLoop
     orch_loop: OrchestratorLoop
+    #: The per-thread turn gate, shared by conversation turns and the
+    #: orchestrator's wake-ups on a conversation's thread.
+    turns: TurnRegistry
 
 
 def build_loops(boot: BootState) -> LoopSubsystem:
@@ -1468,6 +1472,7 @@ def build_loops(boot: BootState) -> LoopSubsystem:
     channels = boot.channels.router
     skill_registry = boot.retrieval.skill_registry
     background = subs.background if async_subs.available else None
+    turns = TurnRegistry()
 
     def capabilities_block() -> str:
         """The subagent roster as triage should see it *right now*.
@@ -1557,10 +1562,11 @@ def build_loops(boot: BootState) -> LoopSubsystem:
             model_router=model_router,
             admission=boot.resources.admission,
             launch_index=boot.launch_index,
+            turns=turns,
         ),
     )
     return LoopSubsystem(
-        task_submission=task_submission, triage_loop=triage_loop, orch_loop=orch_loop
+        task_submission=task_submission, triage_loop=triage_loop, orch_loop=orch_loop, turns=turns
     )
 
 
@@ -1640,6 +1646,7 @@ async def build_web(
         settings=boot.models.orchestrator_settings,
         search_config=boot.search_config,
         store=st.session_store,
+        turns=loops.turns,
         voice_store=st.voice_store,
         launch_index=boot.launch_index,
         task_submission=loops.task_submission,
