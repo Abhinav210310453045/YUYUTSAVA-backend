@@ -501,6 +501,7 @@ def _shared_master_tools(
     extra_tools: "Sequence[Any] | None" = None,
     todo_author: str | None = None,
     board: Any | None = None,
+    visual_store: Any | None = None,
 ) -> tuple[list, str]:
     """Tool families every master shares, selected by its declared profile.
 
@@ -545,7 +546,12 @@ def _shared_master_tools(
                 "was supplied for rendered visuals to land in."
             )
 
-        tools.extend(make_visual_tools(output_dir=output_dir))
+        if visual_store is None:
+            raise ValueError(
+                f"{profile.role}: profile declares the vis_* family but no visual store "
+                "was supplied for it to record visuals in."
+            )
+        tools.extend(make_visual_tools(visual_store, output_dir=output_dir))
 
     if ToolFamily.TODO in fams:
         if board is None:
@@ -1018,6 +1024,7 @@ def build_cli_deepagent(
         mcp_tools=deps.mcp_tools,
         extra_tools=deps.extra_tools,
         board=deps.board,
+        visual_store=deps.visual_store,
     )
     skill_registry = SkillRegistry(workspace_dir=layout.skills)
 
@@ -1415,6 +1422,7 @@ def build_tinker_agent(
         extra_tools=deps.extra_tools,
         todo_author="tinker",
         board=deps.board,
+        visual_store=deps.visual_store,
     )
     skill_registry = skill_registry or SkillRegistry()
 

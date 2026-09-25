@@ -24,8 +24,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from test.todoboard.fake_store import FakeTodoStore
-from yuyutsava.todoboard.exchange import TodoExchange
+from test.support.stores import fake_board, scratch_visual_store
 
 os.environ.setdefault("LLM_PROVIDER", "anthropic")
 os.environ.setdefault("ANTHROPIC_API_KEY", "sk-fake-key-for-test")
@@ -86,14 +85,19 @@ def _render_prompt() -> dict[str, Any]:
         task_runner = TaskRunnerAgent(
             workspace_root=workspace, sandbox_root=(workspace / "_sandbox").resolve()
         )
+        visuals = scratch_visual_store()
         general_purpose = GeneralPurposeAgent(
-            task_runner=task_runner, skill_registry=skill_registry, search_config=search_config
+            task_runner=task_runner,
+            skill_registry=skill_registry,
+            search_config=search_config,
+            visual_store=visuals,
         )
         bundle = engine.build_cli_deepagent(
             workspace,
             settings,
             deps=MasterDeps(
-                board=TodoExchange(FakeTodoStore()),
+                board=fake_board(),
+                visual_store=visuals,
                 permission_check=True,
                 search_config=search_config,
                 subagents=[general_purpose],

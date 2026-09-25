@@ -714,6 +714,12 @@ the count, so it stops here.
   - `R-BUG-18` the first chat replaced the daemon's routed board and visual
     stores and its note index (found in W5; confirmed in-process) — fix is the
     store half of `R-GLB-01`.
+  - `R-BUG-19` a CLI delete on Postgres left the session's feedback rows —
+    **fixed** with `R-GLB-01` (explicit `AppContext`, `open_app_context`).
+  - `R-GLB-01` itself — **done**: no `set_default_*` or `get_default_*` left.
+    That also resolved the order-dependent failures in the third standing
+    group (`test_todo_board_dependency`, `test_app_context`,
+    `test_feedback_purge`); the suite is at 11 known failures.
   - `R-BUG-08` an answered inline ask resumes the turn — **landed early, in W4**
     (`7babeca`): it blocked W4's own characterization tests, so it could not wait.
   - `R-BUG-09` an answer that beats its waiter is held — **landed early, in W4**

@@ -42,7 +42,7 @@ from dataclasses import dataclass, field
 
 import aiosqlite
 
-from yuyutsava.core.app_context import GLOBAL_CONTEXT, AppContext
+from yuyutsava.core.app_context import AppContext
 from yuyutsava.storage.backend import StorageSettings
 from yuyutsava.storage.domains import Backend, purge_tables
 from yuyutsava.storage.paths import interrupts_db_path, state_db_path
@@ -109,14 +109,13 @@ async def _purge_outside_the_hub(
     # On-disk voice audio clips.
     report.voice_blobs_deleted = delete_thread_voice_blobs(thread_id)
     # Rendered visuals — rows + on-disk image files (the row holds an absolute
-    # path, so a raw table delete would orphan the PNGs). The backend-aware
-    # default store cleans PG-primary rows too.
-    report.rows["visual_artifacts"] = await ctx.visuals().delete_for_thread(thread_id)
+    # path, so a raw table delete would orphan the PNGs).
+    report.rows["visual_artifacts"] = await ctx.visual_store.delete_for_thread(thread_id)
     # Message feedback lives outside the thread-hub FK graph, so neither the
     # bulk delete nor the PG cascade reaches it — and a feedback row stores
     # user_text/assistant_text VERBATIM, the conversation the user asked to
-    # delete. The resolver falls back to the SQLite store lazily.
-    report.rows["message_feedback"] = await ctx.feedback().delete_for_thread(thread_id)
+    # delete.
+    report.rows["message_feedback"] = await ctx.feedback_store.delete_for_thread(thread_id)
     # Pending asks: the row stores the agent's question and the user's answer.
     # A caller that already has an events store open (the daemon keeps one for
     # the process) passes it and we neither start nor stop it; otherwise a
@@ -134,20 +133,19 @@ async def _purge_outside_the_hub(
 async def purge_session(
     session_id: str,
     *,
+    ctx: AppContext,
     pg_pool: object | None = None,
-    ctx: "AppContext | None" = None,
 ) -> PurgeReport:
     """Remove every row + file tied to ``session_id``. Raises ``SessionNotFound``.
 
-    It touches the sessions, visuals, feedback and events stores, the
-    checkpointer and on-disk blobs. Pass ``ctx`` to supply the stores
-    explicitly; omit it and they come from the process globals (finding
-    ``F-S08``), so the CLI and the web endpoint call it identically with no
-    wiring. Any step failing propagates (hard-fail); see the module docstring
-    for the ordering that makes a partial purge safely retryable.
+    It touches the sessions, visuals, feedback and events stores in ``ctx``,
+    the checkpointer and on-disk blobs. The daemon passes its own stores; a CLI
+    command opens them with :func:`~yuyutsava.core.app_context.open_app_context`.
+    Any step failing propagates (hard-fail); see the module docstring for the
+    ordering that makes a partial purge safely retryable.
     """
-    ctx = ctx if ctx is not None else GLOBAL_CONTEXT
-    store = ctx.sessions()
+    store = ctx.session_store
+    pg_pool = pg_pool if pg_pool is not None else ctx.pg_pool
     s = await store.get(session_id)  # raises SessionNotFound if unknown
     thread_id = s.thread_id
     report = PurgeReport(session_id=session_id, thread_id=thread_id)

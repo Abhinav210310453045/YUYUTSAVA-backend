@@ -40,6 +40,7 @@ from fastapi import (
 from fastapi.responses import FileResponse
 
 from yuyutsava.daemon.web.bundle import bundle_asset_response
+from yuyutsava.daemon.web.deps import get_session_store
 from yuyutsava.daemon.web.exceptions import ServiceUnavailableError
 from yuyutsava.daemon.web.schemas.session import SessionOut
 from yuyutsava.daemon.web.schemas.todo import (
@@ -54,7 +55,6 @@ from yuyutsava.daemon.web.schemas.todo import (
 )
 from yuyutsava.storage.ids import tinker_thread_base
 from yuyutsava.storage.paths import blobs_dir
-from yuyutsava.storage.sessions import get_default_session_store
 from yuyutsava.todoboard import artifacts
 from yuyutsava.todoboard.exchange import (
     TodoAttachmentError,
@@ -368,9 +368,9 @@ async def list_card_chats(
     card_id: str,
     limit: int = Query(50, ge=1, le=200),
     ex: TodoExchange = Depends(board),
+    store=Depends(get_session_store),
 ) -> list[SessionOut]:
     await ex.get_card(card_id)  # 404 for unknown cards
-    store = get_default_session_store()
     rows = await store.list_thread_family(tinker_thread_base(card_id), limit=limit)
     return [SessionOut.from_session(s) for s in rows]
 

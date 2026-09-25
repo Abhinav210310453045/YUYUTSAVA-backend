@@ -12,10 +12,11 @@ import time
 from pathlib import Path
 
 from yuyutsava.ansi import BOLD, CYAN, DIM, GREEN, RED, RESET, YELLOW
+from yuyutsava.core.app_context import open_app_context
 from yuyutsava.core.purge import purge_session
 from yuyutsava.storage.sessions import (
     SessionNotFound,
-    get_default_session_store,
+    session_store_for,
 )
 
 _STATUS_COLOR_CODES = {
@@ -65,8 +66,7 @@ async def print_sessions_table(workspace_filter: Path | None = None) -> int:
     command beneath it. Long fields (workspace, task) are NOT truncated — the
     point of this view is to be the source of truth the user copies from.
     """
-    store = get_default_session_store()
-    rows = await store.list(workspace=workspace_filter, limit=100)
+    rows = await session_store_for().list(workspace=workspace_filter, limit=100)
     if not rows:
         print("(no sessions yet — start one with `uv run yuyutsava <task>`)")
         return 0
@@ -119,13 +119,13 @@ async def delete_session(session_id: str) -> int:
     memories) via the shared :func:`yuyutsava.core.purge.purge_session`, so
     the CLI and the daemon delete identically. Prints a one-line summary.
     """
-    store = get_default_session_store()
-    try:
-        s = await store.get(session_id)
-    except SessionNotFound:
-        print(f"Error: no session with id {session_id!r}", file=sys.stderr)
-        return 2
-    report = await purge_session(session_id)
+    async with open_app_context() as ctx:
+        try:
+            s = await ctx.session_store.get(session_id)
+        except SessionNotFound:
+            print(f"Error: no session with id {session_id!r}", file=sys.stderr)
+            return 2
+        report = await purge_session(session_id, ctx=ctx)
     print(
         f"Deleted session {session_id} (workspace: {s.workspace}) — "
         f"purged {report.total_rows} rows, {report.voice_blobs_deleted} audio clip(s)"

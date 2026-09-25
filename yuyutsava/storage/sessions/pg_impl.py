@@ -1,7 +1,7 @@
 """Postgres-backed ``SessionStore`` — the durable twin of SqliteSessionStore.
 
 Selected when ``YUYUTSAVA_STORAGE_BACKEND=postgres`` (see
-:func:`yuyutsava.storage.sessions.sqlite_impl.get_default_session_store`).
+:func:`yuyutsava.storage.sessions.session_store_for`).
 Moving the session index into Postgres lets it JOIN the rest of the relational
 model: ``sessions.thread_id`` FKs to ``threads`` (migration v6), which in turn
 ties sessions to ``tasks`` / ``llm_usage`` / ``artifacts`` for the first time.

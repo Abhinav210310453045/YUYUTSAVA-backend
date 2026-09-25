@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 
 from yuyutsava.daemon.web.deps import get_usage_store
 from yuyutsava.daemon.web.schemas.usage import (
@@ -29,7 +29,6 @@ from yuyutsava.daemon.web.schemas.usage import (
     UsageSummaryOut,
 )
 from yuyutsava.llm.pricing import is_priced, load_price_table
-from yuyutsava.storage.sessions import get_default_session_store
 
 logger = logging.getLogger("yuyutsava.daemon.web.usage")
 
@@ -118,6 +117,7 @@ async def get_usage_summary(
     summary="Per-conversation usage, joined to session titles",
 )
 async def get_usage_sessions(
+    request: Request,
     since: float | None = Query(
         None,
         description="Only count calls at/after this epoch-seconds timestamp",
@@ -139,7 +139,9 @@ async def get_usage_sessions(
     totals = await usage_store.thread_totals(since=since, limit=limit)
 
     prices = load_price_table()
-    titles = await _session_titles([t.thread_id for t in totals])
+    # Titles are a nicety: without a session store the report is still useful.
+    session_store = getattr(request.app.state, "session_store", None)
+    titles = await _session_titles(session_store, [t.thread_id for t in totals])
 
     rows: list[UsageSessionOut] = []
     for t in totals:
@@ -165,7 +167,7 @@ async def get_usage_sessions(
     return UsageSessionsOut(since=since, rows=rows)
 
 
-async def _session_titles(thread_ids: list[str]) -> dict[str, tuple[str, str]]:
+async def _session_titles(store: Any, thread_ids: list[str]) -> dict[str, tuple[str, str]]:
     """``thread_id -> (title, origin)`` for the sessions we can find.
 
     Best-effort: a usage report with bare thread ids is still useful, and the
@@ -173,10 +175,9 @@ async def _session_titles(thread_ids: list[str]) -> dict[str, tuple[str, str]]:
     """
     out: dict[str, tuple[str, str]] = {}
     wanted = {t for t in thread_ids if t}
-    if not wanted:
+    if not wanted or store is None:
         return out
     try:
-        store = get_default_session_store()
         for row in await store.list(limit=500):
             thread_id = getattr(row, "thread_id", "") or ""
             if thread_id in wanted:

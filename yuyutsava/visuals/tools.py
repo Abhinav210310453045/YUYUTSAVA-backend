@@ -21,7 +21,7 @@ from langchain_core.tools import BaseTool, tool
 from yuyutsava.run_context import thread_id_from_runtime
 
 from .render import render
-from .store import VisualStore, get_default_visual_store
+from .store import VisualStore
 from .types import VisualError
 
 logger = logging.getLogger("yuyutsava.visuals.tools")
@@ -34,15 +34,14 @@ def _url(visual_id: str) -> str:
 
 
 def make_visual_tools(
+    store: VisualStore,
     *,
-    store: VisualStore | None = None,
     output_dir: str | Path | None = None,
 ) -> list[BaseTool]:
-    """Build the ``vis_*`` tools. ``store`` defaults to the backend-aware shared
-    store (Postgres when the daemon injected it, else SQLite); ``output_dir`` is
-    the agent's ``_output`` dir so files land in the workspace.
+    """Build the ``vis_*`` tools over *store* — the one the app's Artifacts
+    panel reads, handed over by whoever builds the agent. ``output_dir`` is the
+    agent's ``_output`` dir so files land in the workspace.
     """
-    store = store or get_default_visual_store()
 
     async def _finish(kind: str, spec: dict[str, Any]) -> str:
         try:

@@ -80,7 +80,9 @@ class BaseSubAgent(ABC):
         cap_enforcer: CapEnforcer | None = None,
         memory_store: MemoryStore | None = None,
         skill_store: object | None = None,  # skills.store.SkillStore; for dual-write indexing
+        visual_store: object | None = None,  # visuals.store.VisualStore; behind vis_*
     ) -> None:
+        self._visual_store = visual_store
         self._task_runner = task_runner
         self._skill_registry = skill_registry
         self._can_write_skills = can_write_skills
@@ -252,15 +254,18 @@ class BaseSubAgent(ABC):
         """Return the vis_* tools so background subagents can produce visuals too.
 
         Files land in the workspace's ``.yuyutsava/outputs/visuals`` dir and are
-        indexed in the shared SQLite store, so a chart made by a subagent shows
-        up in the UI Artifacts panel exactly like one made by the master.
+        recorded in the visual store it was built with — the master's — so a
+        chart made by a subagent shows up in the UI Artifacts panel exactly like
+        one made by the master.
         """
+        if self._visual_store is None:
+            raise ValueError(f"{self.name}: no visual store was supplied for its vis_* tools")
 
         layout = WorkspaceLayout.for_workspace(
             self._task_runner.workspace_root,
             sandbox_override=self._task_runner.sandbox_root,
         )
-        return make_visual_tools(output_dir=layout.outputs)
+        return make_visual_tools(self._visual_store, output_dir=layout.outputs)
 
     def all_tools(self) -> list[BaseTool]:
         """Combined list: TaskRunner + skill + memory + search + MCP + visual + extra_tools()."""

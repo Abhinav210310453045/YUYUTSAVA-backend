@@ -49,7 +49,7 @@ from yuyutsava.storage.ids import (
     mint_tinker_thread_id,
     tinker_thread_base,
 )
-from yuyutsava.storage.sessions import SessionStore, get_default_session_store
+from yuyutsava.storage.sessions import SessionStore
 
 logger = logging.getLogger("yuyutsava.daemon.conversation_manager")
 
@@ -244,6 +244,7 @@ class ConversationManager:
                 policy=self._wiring.policy,
                 consent=self._wiring.consent,
                 board=self._wiring.board,
+                visual_store=self._wiring.visual_store,
             ),
         )
 
@@ -295,7 +296,9 @@ class ConversationManager:
         of them, ``continue_latest`` resumes the newest, and neither means a
         fresh chat on the card.
         """
-        store = self._store or get_default_session_store()
+        store = self._store
+        if store is None:
+            raise RuntimeError("ConversationManager needs a session store")
 
         if agent == "tinker":
             if not card_id:

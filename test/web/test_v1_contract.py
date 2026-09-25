@@ -11,7 +11,6 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest import mock
 
 import httpx
 
@@ -186,16 +185,12 @@ class V1ContractTests(unittest.IsolatedAsyncioTestCase):
             proposal_expiry_sec=300,
         )
         self.sessions = SqliteSessionStore(tmp / "sessions.db")
-        self._sessions_patch = mock.patch(
-            "yuyutsava.daemon.web.routers.sessions.get_default_session_store",
-            return_value=self.sessions,
-        )
-        self._sessions_patch.start()
 
         app = create_app(
             self.hub,
             host="127.0.0.1",
             deps=AppDeps(
+                session_store=self.sessions,
                 task_registry=self.registry,
                 task_submission=submission,
                 channel_plugins=_ChannelPlugins(),
@@ -219,7 +214,6 @@ class V1ContractTests(unittest.IsolatedAsyncioTestCase):
 
     async def asyncTearDown(self) -> None:
         await self.client.aclose()
-        self._sessions_patch.stop()
         self._tmp.cleanup()
 
     # ------------------------------------------------------------------ #

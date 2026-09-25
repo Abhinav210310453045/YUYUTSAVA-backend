@@ -75,6 +75,27 @@ def get_usage_store(request: Request):
     return store
 
 
+def get_session_store(request: Request):
+    store = getattr(request.app.state, "session_store", None)
+    if store is None:
+        raise ServiceUnavailableError("session store not initialized")
+    return store
+
+
+def get_visual_store(request: Request):
+    store = getattr(request.app.state, "visual_store", None)
+    if store is None:
+        raise ServiceUnavailableError("visual store not initialized")
+    return store
+
+
+def get_feedback_store(request: Request):
+    store = getattr(request.app.state, "feedback_store", None)
+    if store is None:
+        raise ServiceUnavailableError("feedback store not initialized")
+    return store
+
+
 def get_resource_monitor(request: Request):
     """The ``ResourceMonitor`` (system metrics)."""
     monitor = getattr(request.app.state, "resource_monitor", None)

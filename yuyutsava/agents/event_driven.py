@@ -44,6 +44,7 @@ class EventDrivenSubAgent(BaseSubAgent):
         cap_enforcer: object | None = None,
         memory_store: object | None = None,
         skill_store: object | None = None,
+        visual_store: object | None = None,
     ) -> None:
         super().__init__(
             task_runner,
@@ -56,6 +57,7 @@ class EventDrivenSubAgent(BaseSubAgent):
             cap_enforcer=cap_enforcer,
             memory_store=memory_store,
             skill_store=skill_store,
+            visual_store=visual_store,
         )
         self._store = store
 

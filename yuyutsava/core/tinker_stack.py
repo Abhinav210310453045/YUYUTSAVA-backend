@@ -74,6 +74,9 @@ async def build_tinker_stack(
     card_layout = WorkspaceLayout.for_workspace(card_ws)
     # Materialize <card>/.yuyutsava (sync mkdir → off-loop; see storage.paths).
     await asyncio.to_thread(card_layout.ensure)
+    visual_store = (
+        wiring.visual_store if wiring.visual_store is not None else stores.factory.visuals()
+    )
     task_runner = TaskRunnerAgent(
         workspace_root=card_ws,
         sandbox_root=card_layout.sandbox,
@@ -87,6 +90,7 @@ async def build_tinker_stack(
         search_config=search_config,
         memory_store=memory_store,
         skill_store=skill_store,
+        visual_store=visual_store,
     )
 
     background = Background()
@@ -148,6 +152,7 @@ async def build_tinker_stack(
             extra_tools=wiring.extra_tools,
             task_runner=task_runner,
             board=board,
+            visual_store=visual_store,
             # budget_tokens deliberately unset — build_tinker_agent supplies
             # TINKER_BUDGET_TOKENS, which is what this call has always got.
         ),

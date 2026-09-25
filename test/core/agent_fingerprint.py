@@ -432,10 +432,17 @@ def wired_stores(tmp: Path) -> dict[str, Any]:
 def _board() -> Any:
     """A TODO board over an in-memory store — every master declares the todo_*
     family, and the builders now require the board it writes to."""
-    from test.todoboard.fake_store import FakeTodoStore
-    from yuyutsava.todoboard.exchange import TodoExchange
+    from test.support.stores import fake_board
 
-    return TodoExchange(FakeTodoStore())
+    return fake_board()
+
+
+def _visuals() -> Any:
+    """A scratch visual store — the vis_* family needs one, and so does every
+    subagent (each carries the vis_* tools)."""
+    from test.support.stores import scratch_visual_store
+
+    return scratch_visual_store()
 
 
 def _split_overrides(overrides: dict[str, Any], **base: Any):
@@ -480,13 +487,20 @@ def capture_cli(
     ws = _workspace()
     search = SearchConfig(tavily_api_key="dummy", exa_api_key="dummy")
     task_runner = TaskRunnerAgent(workspace_root=ws, sandbox_root=(ws / "_sandbox").resolve())
+    visuals = _visuals()
     gp = GeneralPurposeAgent(
         task_runner=task_runner,
         skill_registry=SkillRegistry(workspace_dir=ws),
         search_config=search,
+        visual_store=visuals,
     )
     deps, rest = _split_overrides(
-        overrides, permission_check=True, search_config=search, subagents=[gp], board=_board()
+        overrides,
+        permission_check=True,
+        search_config=search,
+        subagents=[gp],
+        board=_board(),
+        visual_store=visuals,
     )
     kwargs: dict[str, Any] = {}
     with _fake_chat_model(), _capture_deep_agent_kwargs(kwargs):
@@ -514,6 +528,7 @@ def fingerprint_tinker(**overrides: Any) -> dict[str, Any]:
         permission_check=True,
         search_config=SearchConfig(tavily_api_key="dummy", exa_api_key="dummy"),
         board=_board(),
+        visual_store=_visuals(),
     )
     kwargs: dict[str, Any] = {}
     with _fake_chat_model(), _capture_deep_agent_kwargs(kwargs):

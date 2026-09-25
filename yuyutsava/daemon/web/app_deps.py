@@ -62,6 +62,11 @@ class AppDeps:
     # -- stores ------------------------------------------------------------
     #: The TODO board (``TodoExchange``); without it the board routes answer 503.
     todo_exchange: Any | None = None
+    #: Sessions, rendered visuals and message feedback. Without one, the routes
+    #: that need it answer 503.
+    session_store: Any | None = None
+    visual_store: Any | None = None
+    feedback_store: Any | None = None
     usage_store: Any | None = None
     memory_store: Any | None = None
     voice_store: Any | None = None

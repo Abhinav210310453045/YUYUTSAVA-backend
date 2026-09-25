@@ -87,7 +87,6 @@ from yuyutsava.skills.registry import SkillRegistry
 from yuyutsava.skills.store import SkillIndexer
 from yuyutsava.storage.backend import StorageSettings
 from yuyutsava.storage.events import Store
-from yuyutsava.storage.feedback_store import set_default_feedback_store
 from yuyutsava.storage.paths import (
     WorkspaceLayout,
     blobs_dir,
@@ -99,13 +98,12 @@ from yuyutsava.storage.pg.pool import PgPool
 from yuyutsava.storage.prefs import PrefsStore
 from yuyutsava.storage.routing.health import StorageHealth
 from yuyutsava.storage.routing.reconcile import CONTENT_TABLE_SPECS, Reconciler
-from yuyutsava.storage.sessions import PgSessionStore, set_default_session_store
+from yuyutsava.storage.sessions import SessionStore, session_store_for
 from yuyutsava.storage.sweeper import BlobSweepTarget, SweeperConfig, UnifiedSweeper
 from yuyutsava.storage.task_registry import TaskRegistry
 from yuyutsava.storage.usage import UsageStore
 from yuyutsava.todoboard.exchange import TodoExchange
 from yuyutsava.todoboard.recall import TodoNoteIndex
-from yuyutsava.visuals.store import set_default_visual_store
 
 logger = logging.getLogger("yuyutsava.daemon.bootstrap")
 
@@ -355,6 +353,11 @@ class StorageSubsystem:
     #: The one TODO board: the routed todo store and, with Postgres and an
     #: embedder, its note index. Everything that touches the board gets this.
     board: TodoExchange
+    #: Sessions, rendered visuals and message feedback — one of each, handed to
+    #: the web app, the conversation manager, the stacks and the subagents.
+    session_store: SessionStore
+    visual_store: object
+    feedback_store: object
 
     #: Set when Postgres was requested but unreachable; surfaced on the user
     #: timeline once channels exist, so a silent downgrade is impossible.
@@ -398,22 +401,6 @@ async def _open_backend() -> tuple[StorageSettings, PgPool | None, str | None]:
         return _dc_replace(storage, backend="sqlite"), None, reason
 
 
-def _install_rest_stores(stores: StoreFactory, has_spillover: bool) -> None:
-    """Point the visual and feedback default stores at Postgres-with-spillover.
-
-    These are the REST-path stores written OUTSIDE a checkpointed turn (the
-    👍/👎 endpoint, the /visuals API, the board), so a raised error would lose
-    the write outright. Spillover is a declared policy (storage/domains.py:
-    Failover): the factory wraps exactly the domains that ask for it, an outage
-    buffers to SQLite, and the Reconciler drains it back on recovery. On the
-    SQLite backend the getters fall back to the twins lazily.
-    """
-    if not has_spillover:
-        return
-    set_default_visual_store(stores.visuals())
-    set_default_feedback_store(stores.feedback())
-
-
 async def build_storage(opts: DaemonOptions) -> StorageSubsystem:
     """Open the backend, run migrations, and construct every domain store."""
     storage, pg_pool, storage_fallback_reason = await _open_backend()
@@ -441,11 +428,9 @@ async def build_storage(opts: DaemonOptions) -> StorageSubsystem:
     summary_store = stores.summaries()
     transcript_store = stores.transcripts()
     voice_store = stores.voice()
-    if pg_pool is not None:
-        # Sessions live in Postgres too (migration v6). Inject the shared pool
-        # so the web router's get_default_session_store() reuses it; migrations
-        # already ran, so the store skips its own lazy schema-ensure.
-        set_default_session_store(PgSessionStore(storage, pool=pg_pool))
+    # Sessions live in Postgres too (migration v6) and share the daemon's pool;
+    # migrations already ran, so the store skips its own lazy schema-ensure.
+    session_store = session_store_for(storage, pool=pg_pool)
 
     task_registry = TaskRegistry(stores.tasks())
     usage_store: UsageStore = stores.usage()
@@ -464,7 +449,12 @@ async def build_storage(opts: DaemonOptions) -> StorageSubsystem:
     store = stores.events()
     await store.start()
 
-    _install_rest_stores(stores, pg_pool is not None and storage_health is not None)
+    # The REST-path stores, written OUTSIDE a checkpointed turn (the 👍/👎
+    # endpoint, the /visuals API): on Postgres each is routed with SQLite
+    # spillover (storage/domains.py: Failover), so an outage buffers the write
+    # instead of losing it, and the Reconciler drains it back on recovery.
+    visual_store = stores.visuals()
+    feedback_store = stores.feedback()
 
     # The board: the factory's todo store (routed with SQLite spillover on
     # Postgres) and, on Postgres with an embedder, the note index — built
@@ -494,6 +484,9 @@ async def build_storage(opts: DaemonOptions) -> StorageSubsystem:
         events=store,
         model_router=model_router,
         board=board,
+        session_store=session_store,
+        visual_store=visual_store,
+        feedback_store=feedback_store,
         fallback_reason=storage_fallback_reason,
     )
 
@@ -1212,6 +1205,7 @@ def build_subagents(
     memory_store: Any,
     skill_store: Any,
     board: Any,
+    visual_store: Any,
 ) -> SubagentSubsystem:
     """Build the subagent roster.
 
@@ -1234,6 +1228,7 @@ def build_subagents(
         "cap_enforcer": cap_enforcer,
         "memory_store": memory_store,
         "skill_store": skill_store,
+        "visual_store": visual_store,
     }
     sync_list = [
         FileOrganizerAgent(task_runner, store, **common),
@@ -1258,6 +1253,7 @@ def build_subagents(
         policy=policy,
         consent=consent,
         board=board,
+        visual_store=visual_store,
     )
 
     def _make_peers() -> list:
@@ -1415,6 +1411,7 @@ async def build_boot_state(opts: DaemonOptions) -> BootState:
         memory_store=st.memory_store,
         skill_store=rtv.skill_store,
         board=st.board,
+        visual_store=st.visual_store,
     )
     task_queue: asyncio.Queue[OrchestratorTask] = asyncio.Queue()
     launch_index = LaunchIndex()
@@ -1641,6 +1638,7 @@ async def build_web(
         checkpointer=boot.retention.checkpointer,
         settings=boot.models.orchestrator_settings,
         search_config=boot.search_config,
+        store=st.session_store,
         voice_store=st.voice_store,
         launch_index=boot.launch_index,
         task_submission=loops.task_submission,
@@ -1654,6 +1652,7 @@ async def build_web(
             policy=pol.policy,
             consent=pol.consent_registry,
             board=st.board,
+            visual_store=st.visual_store,
         ),
     )
 
@@ -1675,6 +1674,9 @@ async def build_web(
         host=cfg.web_host,
         deps=AppDeps(
             todo_exchange=st.board,
+            session_store=st.session_store,
+            visual_store=st.visual_store,
+            feedback_store=st.feedback_store,
             skill_registry=boot.retrieval.skill_registry,
             config_reload=boot.events.reload,
             channels=boot.channels.router,

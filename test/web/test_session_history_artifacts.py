@@ -45,8 +45,7 @@ def _history(rows) -> list[dict]:
             state=SimpleNamespace(voice_store=None, transcript_store=_Transcript(rows))
         )
     )
-    with mock.patch.object(router, "get_default_session_store", return_value=store):
-        out = asyncio.run(asyncio.wait_for(router.get_session_messages("s1", request), 10))
+    out = asyncio.run(asyncio.wait_for(router.get_session_messages("s1", request, store=store), 10))
     return out["messages"]
 
 

@@ -98,24 +98,3 @@ def _validate(rating: str) -> None:
 # NOTE: PgFeedbackStore was replaced on 2026-08-09 by UnifiedFeedbackStore in
 # storage/feedback_store_unified.py (ADR-002 step 2.5b). Parity verified on both
 # live backends in test/storage/test_feedback_store_parity.py.
-
-
-# Process-singleton, mirroring get/set_default_session_store(). Postgres is
-# primary: the daemon injects a PgFeedbackStore (sharing its pool) at boot;
-# otherwise this lazily builds the SQLite fallback.
-_default_store: FeedbackStore | None = None
-
-
-def set_default_feedback_store(store: FeedbackStore) -> None:
-    global _default_store
-    _default_store = store
-
-
-def get_default_feedback_store() -> FeedbackStore:
-    global _default_store
-    if _default_store is None:
-        # Import cycle: yuyutsava.storage.feedback_store_unified imports this module.
-        from yuyutsava.storage.feedback_store_unified import sqlite_feedback_store  # noqa: PLC0415
-
-        _default_store = sqlite_feedback_store()
-    return _default_store

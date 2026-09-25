@@ -20,7 +20,7 @@ from yuyutsava.storage.paths import WorkspaceLayout
 from yuyutsava.storage.sessions import (
     SessionsSettings,
     build_checkpointer,
-    get_default_session_store,
+    session_store_for,
 )
 
 
@@ -45,7 +45,7 @@ async def run_chat(
     resume_id = opts.resume_id
     continue_latest = opts.continue_latest
     verbose = opts.verbose
-    store = get_default_session_store()
+    store = session_store_for()
     sessions_settings = SessionsSettings.from_env()
 
     async with build_checkpointer(sessions_settings) as checkpointer:

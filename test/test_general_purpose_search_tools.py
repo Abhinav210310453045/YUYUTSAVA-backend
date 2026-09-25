@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from test.support.stores import scratch_visual_store
 from yuyutsava.agents.general_purpose.agent import GeneralPurposeAgent
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
 from yuyutsava.config.search import SearchConfig
@@ -37,6 +38,7 @@ def _agent(search_config: SearchConfig) -> GeneralPurposeAgent:
         task_runner=task_runner,
         skill_registry=skill_registry,
         search_config=search_config,
+        visual_store=scratch_visual_store(),
     )
 
 

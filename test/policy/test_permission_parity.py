@@ -52,13 +52,12 @@ import unittest
 from pathlib import Path
 from typing import Any
 
-from test.todoboard.fake_store import FakeTodoStore
+from test.support.stores import fake_board, scratch_visual_store
 from yuyutsava.platform import host_profile
 from yuyutsava.policy.adapter import LangChainPolicyAdapter
 from yuyutsava.policy.ask import ScriptedAskUser
 from yuyutsava.policy.builtin.permission import PermissionPolicy
 from yuyutsava.policy.types import Denied
-from yuyutsava.todoboard.exchange import TodoExchange
 
 # ---------------------------------------------------------------------------
 # The matrix. Each case: (label, command, answers to give in order).
@@ -393,10 +392,12 @@ class WiredIntoTheRealBuild(unittest.IsolatedAsyncioTestCase):
         ws = _workspace()
         search = SearchConfig(tavily_api_key="dummy", exa_api_key="dummy")
         task_runner = TaskRunnerAgent(workspace_root=ws, sandbox_root=(ws / "_sandbox").resolve())
+        visuals = scratch_visual_store()
         gp = GeneralPurposeAgent(
             task_runner=task_runner,
             skill_registry=SkillRegistry(workspace_dir=ws),
             search_config=search,
+            visual_store=visuals,
         )
         kwargs: dict[str, Any] = {}
         with _fake_chat_model(), _capture_deep_agent_kwargs(kwargs):
@@ -407,7 +408,8 @@ class WiredIntoTheRealBuild(unittest.IsolatedAsyncioTestCase):
                     permission_check=True,
                     search_config=search,
                     subagents=[gp],
-                    board=TodoExchange(FakeTodoStore()),
+                    board=fake_board(),
+                    visual_store=visuals,
                 ),
                 execution_mode="local",
                 local_settings=LocalSettings(),

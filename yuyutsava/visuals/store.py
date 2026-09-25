@@ -21,7 +21,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
 
-from yuyutsava.storage.paths import blobs_dir, state_db_path
+from yuyutsava.storage.paths import blobs_dir
 
 from .types import RenderResult
 
@@ -97,29 +97,8 @@ def _blob_dir(out_dir: str | Path | None) -> Path:
 # the comparison is ever needed again.
 #
 # This module keeps the shared vocabulary: VisualRecord, the VisualStore
-# interface, the blob-dir helpers, and the process-default accessors below.
+# interface and the blob-dir helpers.
 # ---------------------------------------------------------------------------
-
-
-_default_store: "VisualStore | None" = None
-
-
-def set_default_visual_store(store: VisualStore) -> None:
-    global _default_store
-    _default_store = store
-
-
-def get_default_visual_store() -> VisualStore:
-    global _default_store
-    if _default_store is None:
-        # Import cycle: yuyutsava.visuals.store_unified imports this module.
-        from yuyutsava.visuals.store_unified import sqlite_visual_store  # noqa: PLC0415
-
-        # Migrated to the dialect-backed store (ADR-002 step 2.3). The daemon
-        # installs a RoutedStore over the same implementation; this is the
-        # standalone-CLI fallback, so both paths now run one implementation.
-        _default_store = sqlite_visual_store(state_db_path())
-    return _default_store
 
 
 def _write_file(path: Path, data: bytes) -> None:

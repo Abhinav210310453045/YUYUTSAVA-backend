@@ -110,7 +110,9 @@ else uses `logging.getLogger(__name__)`.
 
 ## R-GLB-01 — Stores reached through module-level singletons
 
-**Severity** P1 · **Wave** W5 · **Status** Open (legacy `F-S08`, partly closed)
+**Severity** P1 · **Wave** W5 · **Status** **Fixed** (legacy `F-S08`):
+`set_default_definitions` 7 → 0 and `default_accessor_call_sites` 46 → 0.
+Retiring them surfaced `R-BUG-17`, `R-BUG-18` and `R-BUG-19`.
 
 **Claim.** Seven `set_default_*` functions remain. Together with their getters
 there are 46 accessor calls and 25 `global` statements.
@@ -772,8 +774,8 @@ through `StackWiring`, and a standalone CLI stack has its own registry.
 
 ## R-BUG-18 — The first chat in the daemon replaced its board, visual and note stores
 
-**Severity** P1 · **Wave** W5 · **Status** Board and note index **fixed**
-(`TodoExchange` injected); the visual store follows.
+**Severity** P1 · **Wave** W5 · **Status** **Fixed**: the board and note index
+come through an injected `TodoExchange`, and the visual store is handed over too.
 
 **Evidence.** The same pattern as `R-BUG-17`. Confirmed in-process on
 2026-09-25: `build_daemon` against a scratch database, then one
@@ -800,3 +802,21 @@ per process: the daemon's at boot, and the standalone CLI's in its stack.
 Pass them explicitly to the web routers (`AppDeps`), the conversation manager,
 the stacks (`StackWiring`) and the tools. The `set_default_*` accessors for
 all three go.
+
+## R-BUG-19 — A CLI session delete on Postgres left the session's feedback behind
+
+**Severity** P1 · **Wave** W5 · **Status** Fixed (with `R-GLB-01`)
+
+**Evidence.** Confirmed live on 2026-09-25. A session with one feedback row in
+the scratch Postgres database, deleted with `yuyutsava --delete-session`: the
+session was gone, and `message_feedback` still held its row. A CLI process
+never set the feedback global, so `purge_session` fell back to the SQLite twin
+and deleted from a file the row was never in. The row stores the user's and
+the assistant's text verbatim, which is exactly what the user asked to delete.
+The visual store had the same fallback. Its row went through the Postgres
+cascade, but the image file would have stayed on disk.
+
+**Fix.** `AppContext` has no fallbacks. `purge_session` takes one, and a CLI
+command opens the configured backend's stores with `open_app_context()`: one
+pool, migrations applied, and every store on it. Live on the fixed code, the
+same delete removes the feedback row, the visual row and the image file.

@@ -3,8 +3,8 @@
 Backed by the same session store the CLI writes to — the SQLite twin (shared
 via WAL) in zero-config mode, or the Postgres ``sessions`` table when
 ``YUYUTSAVA_STORAGE_BACKEND=postgres`` (then the index JOINs threads/tasks/
-usage). ``get_default_session_store`` is a process singleton, so no app-state
-wiring is needed; the daemon injects its pooled :class:`PgSessionStore` at boot.
+usage). The store is the daemon's (``app.state.session_store``, pooled on
+Postgres).
 
 The message-history endpoints (Phase 6b) let a resumed UI/voice conversation
 re-render its past turns (closing the "resume opens empty" gap) and replay the
@@ -18,16 +18,16 @@ import logging
 import os
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 
 from yuyutsava.artifacts.events import ARTIFACT_EVENT
 from yuyutsava.core.app_context import AppContext
 from yuyutsava.core.purge import purge_session
+from yuyutsava.daemon.web.deps import get_feedback_store, get_session_store, get_visual_store
 from yuyutsava.daemon.web.schemas.session import SessionOut
 from yuyutsava.storage.sessions import (
     SessionNotFound,
-    get_default_session_store,
 )
 
 logger = logging.getLogger("yuyutsava.daemon.web.routers.sessions")
@@ -45,16 +45,15 @@ async def list_sessions(
     cursor: float | None = Query(
         None, description="updated_at of the last row of the previous page (keyset pagination)"
     ),
+    store=Depends(get_session_store),
 ) -> list[SessionOut]:
-    store = get_default_session_store()
     ws = Path(workspace).resolve() if workspace else None
     rows = await store.list(workspace=ws, origin=origin, limit=limit, cursor=cursor)
     return [SessionOut.from_session(s) for s in rows]
 
 
 @router.get("/sessions/{session_id}", response_model=SessionOut, summary="Fetch one session")
-async def get_session(session_id: str) -> SessionOut:
-    store = get_default_session_store()
+async def get_session(session_id: str, store=Depends(get_session_store)) -> SessionOut:
     try:
         return SessionOut.from_session(await store.get(session_id))
     except SessionNotFound as exc:
@@ -170,7 +169,9 @@ def _attach_voice_clips(messages: list[dict], voice_rows: list, session_id: str)
 
 
 @router.get("/sessions/{session_id}/messages", summary="Conversation history for resume/replay")
-async def get_session_messages(session_id: str, request: Request) -> dict:
+async def get_session_messages(
+    session_id: str, request: Request, store=Depends(get_session_store)
+) -> dict:
     """Return the ordered conversation turns so a resumed chat re-renders.
 
     Voice sessions return the ``voice_messages`` surface (text + an ``audio_url``
@@ -178,7 +179,6 @@ async def get_session_messages(session_id: str, request: Request) -> dict:
     messages from the verbatim transcript store. Either way the shape is a flat
     ``messages`` list the UI can map straight onto bubbles.
     """
-    store = get_default_session_store()
     try:
         session = await store.get(session_id)
     except SessionNotFound as exc:
@@ -205,8 +205,9 @@ async def get_session_messages(session_id: str, request: Request) -> dict:
 
 
 @router.get("/sessions/{session_id}/audio/{seq}", summary="Serve a turn's TTS audio clip")
-async def get_session_audio(session_id: str, seq: int, request: Request) -> FileResponse:
-    store = get_default_session_store()
+async def get_session_audio(
+    session_id: str, seq: int, request: Request, store=Depends(get_session_store)
+) -> FileResponse:
     try:
         session = await store.get(session_id)
     except SessionNotFound as exc:
@@ -222,18 +223,28 @@ async def get_session_audio(session_id: str, seq: int, request: Request) -> File
 
 
 @router.delete("/sessions/{session_id}", summary="Delete a session + all its data")
-async def delete_session(session_id: str, request: Request) -> dict[str, int]:
+async def delete_session(
+    session_id: str,
+    request: Request,
+    sessions=Depends(get_session_store),
+    visuals=Depends(get_visual_store),
+    feedback=Depends(get_feedback_store),
+) -> dict[str, int]:
     """Purge every row + file tied to the session (checkpoints, transcript,
     artifacts, summaries, voice history + audio blobs, tasks, usage,
     proposals/decisions, interrupts, and the ephemeral memories), then the
     session row itself. See :func:`yuyutsava.core.purge.purge_session` for the
     full teardown + atomicity model.
 
-    Hands over the daemon's already-open events store rather than letting the
-    purge construct a second one per request. Anything not passed still resolves
-    from the process globals, so the CLI path is unchanged.
+    Hands over the daemon's own stores, including its already-open events store
+    rather than letting the purge construct a second one per request.
     """
-    ctx = AppContext(events_store=getattr(request.app.state, "store", None))
+    ctx = AppContext(
+        session_store=sessions,
+        visual_store=visuals,
+        feedback_store=feedback,
+        events_store=getattr(request.app.state, "store", None),
+    )
     try:
         report = await purge_session(session_id, ctx=ctx)
     except SessionNotFound as exc:

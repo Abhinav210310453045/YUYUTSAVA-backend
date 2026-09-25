@@ -89,10 +89,10 @@ class PurgeWiring(unittest.IsolatedAsyncioTestCase):
 
     async def asyncSetUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
-        self._prev = {
-            k: os.environ.get(k) for k in ("YUYUTSAVA_STATE_DIR", "YUYUTSAVA_STORAGE_BACKEND")
-        }
-        os.environ["YUYUTSAVA_STATE_DIR"] = self._tmp.name
+        self._prev = {k: os.environ.get(k) for k in ("YUYUTSAVA_HOME", "YUYUTSAVA_STORAGE_BACKEND")}
+        # The purge also sweeps the checkpointer and state DB for the thread;
+        # point the state dir at the scratch directory so it touches no real file.
+        os.environ["YUYUTSAVA_HOME"] = self._tmp.name
         os.environ["YUYUTSAVA_STORAGE_BACKEND"] = "sqlite"
 
     async def asyncTearDown(self) -> None:
@@ -106,7 +106,7 @@ class PurgeWiring(unittest.IsolatedAsyncioTestCase):
     async def test_purge_session_deletes_feedback(self) -> None:
         from yuyutsava.core.app_context import AppContext
         from yuyutsava.core.purge import purge_session
-        from yuyutsava.storage.sessions import get_default_session_store
+        from yuyutsava.storage.sessions import SqliteSessionStore
 
         seen: list[str] = []
 
@@ -119,7 +119,7 @@ class PurgeWiring(unittest.IsolatedAsyncioTestCase):
             async def delete_for_thread(self, thread_id: str) -> int:
                 return 0
 
-        store = get_default_session_store()
+        store = SqliteSessionStore(Path(self._tmp.name) / "sessions.db")
         session = await store.create(workspace=Path(self._tmp.name), origin="cli", task="t")
 
         report = await purge_session(

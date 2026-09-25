@@ -181,6 +181,7 @@ def make_tinker_subagent(
     policy: object | None = None,
     consent: object | None = None,
     board: object,
+    visual_store: object | None = None,
 ) -> TinkerSubAgent:
     """Build the bg tinkerer with its board-rooted TaskRunner.
 
@@ -200,6 +201,7 @@ def make_tinker_subagent(
     return TinkerSubAgent(
         task_runner,
         board=board,
+        visual_store=visual_store,
         skill_registry=skill_registry,
         can_write_skills=True,
         search_config=search_config,

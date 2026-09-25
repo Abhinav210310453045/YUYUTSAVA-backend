@@ -69,7 +69,7 @@ from yuyutsava.storage.prefs import PrefsStore
 from yuyutsava.storage.sessions import (
     SessionsSettings,
     build_checkpointer,
-    get_default_session_store,
+    session_store_for,
 )
 
 logger = logging.getLogger("yuyutsava.cli.commands.chat_repl")
@@ -1019,7 +1019,7 @@ async def run_chat_repl(
     if not debug_plumbing:
         silence_plumbing_loggers()
 
-    store = get_default_session_store()
+    store = session_store_for()
     sessions_settings = SessionsSettings.from_env()
 
     # History file lives under the standard YUYUTSAVA state dir so it

@@ -25,20 +25,27 @@ Run:  .venv/bin/python test/web/test_todo_board_dependency.py
 
 from __future__ import annotations
 
+import tempfile
 import unittest
+from pathlib import Path
 
 from fastapi import FastAPI
 
 from test.todoboard.fake_store import FakeTodoStore
 from yuyutsava.daemon.web.routers.todos import board, router
+from yuyutsava.storage.sessions import SqliteSessionStore
 from yuyutsava.todoboard.exchange import TodoExchange
 
 
 def _app() -> FastAPI:
-    """The router on its own, with an in-memory board where the daemon's goes."""
+    """The router on its own, with a scratch board and session store where the
+    daemon's go."""
     app = FastAPI()
     app.include_router(router)
     app.state.todo_exchange = TodoExchange(FakeTodoStore())
+    app.state.session_store = SqliteSessionStore(
+        Path(tempfile.mkdtemp(prefix="yy-test-sessions-")) / "sessions.db"
+    )
     return app
 
 

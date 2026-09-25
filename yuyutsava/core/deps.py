@@ -97,6 +97,9 @@ class MasterDeps:
     #: The TODO board (``TodoExchange``) behind the todo_* tools; required by a
     #: profile that declares that family.
     board: Any | None = None
+    #: The visual store behind the vis_* tools; required by a profile that
+    #: declares that family.
+    visual_store: Any | None = None
 
     def replace(self, **changes: Any) -> "MasterDeps":
         """A copy with some fields changed — the frozen equivalent of a setter."""
@@ -136,6 +139,9 @@ class StackWiring:
     #: so a chat or tinker writes the same board the app shows. Absent: the
     #: stack builds its own (``core.stores.standalone_board``).
     board: Any | None = None
+    #: The daemon's visual store (routed on Postgres), so a chart made in a chat
+    #: shows in the app. Absent: the stack's own factory store.
+    visual_store: Any | None = None
 
 
 #: The tinker agent's own budget. It works a single TODO card, so its context is

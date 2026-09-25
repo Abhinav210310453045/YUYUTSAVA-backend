@@ -22,13 +22,10 @@ from typing import Any, ClassVar
 
 import aiosqlite
 
-from yuyutsava.storage.backend import StorageSettings
 from yuyutsava.storage.base import BaseSqliteStore
 from yuyutsava.storage.ids import mint_thread_id
 from yuyutsava.storage.models import SESSION_STATUSES, Session
-from yuyutsava.storage.sessions.config import SessionsSettings
-from yuyutsava.storage.sessions.pg_impl import PgSessionStore
-from yuyutsava.storage.sessions.store import SessionNotFound, SessionStore
+from yuyutsava.storage.sessions.store import SessionNotFound
 
 _TASK_PREVIEW_MAX = 200
 _TITLE_MAX = 80
@@ -365,38 +362,3 @@ def _row_to_session(row: Any) -> Session:
         origin=origin,
         title=title,
     )
-
-
-# ---------------------------------------------------------------------------
-# Process-level default store factory
-# ---------------------------------------------------------------------------
-
-_DEFAULT_STORE: SessionStore | None = None
-
-
-def set_default_session_store(store: SessionStore) -> None:
-    """Override the process-wide default (the daemon injects a pool-backed
-    :class:`PgSessionStore` at boot so the web router reuses its pool)."""
-    global _DEFAULT_STORE
-    _DEFAULT_STORE = store
-
-
-def get_default_session_store() -> SessionStore:
-    """Lazy singleton — one store per process, backend chosen from env.
-
-    Postgres mode (``YUYUTSAVA_STORAGE_BACKEND=postgres`` or
-    ``YUYUTSAVA_SESSIONS_BACKEND=postgres``) yields a :class:`PgSessionStore`
-    so the CLI and daemon share one durable, JOINable ``sessions`` table;
-    otherwise the SQLite twin in ``~/.yuyutsava/sessions.db`` (cross-process
-    coordination via SQLite's WAL lock). Override via
-    :func:`set_default_session_store`.
-    """
-    global _DEFAULT_STORE
-    if _DEFAULT_STORE is None:
-        s = SessionsSettings.from_env()
-        storage = StorageSettings.from_env()
-        if storage.is_postgres() or s.backend == "postgres":
-            _DEFAULT_STORE = PgSessionStore(storage)
-        else:
-            _DEFAULT_STORE = SqliteSessionStore(s.db_path, busy_timeout_ms=s.busy_timeout_ms)
-    return _DEFAULT_STORE

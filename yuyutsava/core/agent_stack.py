@@ -40,21 +40,8 @@ from yuyutsava.llm.settings import LlmSettings
 from yuyutsava.mcp.loader import start_manager_for_workspace
 from yuyutsava.skills.registry import SkillRegistry
 from yuyutsava.storage.paths import WorkspaceLayout
-from yuyutsava.visuals.store import set_default_visual_store
-from yuyutsava.visuals.store_unified import pg_visual_store
 
 logger = logging.getLogger("yuyutsava.core.agent_stack")
-
-
-def _install_visual_store(pg_pool: Any | None) -> None:
-    """Point the process-wide visual store at Postgres when there is a pool.
-
-    Without this the lazy getter falls back to the SQLite twin, so a chart
-    made in the CLI lands in state.db while the daemon and the app read
-    visual_artifacts in Postgres — and vis_list_artifacts shows two worlds.
-    """
-    if pg_pool is not None:
-        set_default_visual_store(pg_visual_store(pg_pool))
 
 
 async def _refresh_prices(settings: LlmSettings) -> None:
@@ -85,6 +72,7 @@ def _general_purpose_agent(
     search_config: SearchConfig,
     memory_store: Any | None,
     skill_store: Any | None,
+    visual_store: Any,
 ) -> GeneralPurposeAgent:
     """The general-purpose subagent, on the stack's shared gateway.
 
@@ -98,6 +86,7 @@ def _general_purpose_agent(
         search_config=search_config,
         memory_store=memory_store,
         skill_store=skill_store,
+        visual_store=visual_store,
     )
 
 
@@ -153,7 +142,12 @@ async def build_agent_stack(
     if usage_store is None:
         usage_store = stores.factory.usage()
 
-    _install_visual_store(pg_pool)
+    # The daemon's visual store when it hands one over; standalone, the
+    # factory's — Postgres with a pool, so a chart made in the CLI lands where
+    # the app reads it, not in a SQLite file the app never opens.
+    visual_store = (
+        wiring.visual_store if wiring.visual_store is not None else stores.factory.visuals()
+    )
     # The daemon's board (routed store, boot-synced note index) when it hands
     # one over; standalone, the stack's own.
     board = wiring.board if wiring.board is not None else standalone_board(stores)
@@ -173,7 +167,7 @@ async def build_agent_stack(
         consent=consent,
     )
     general_purpose = _general_purpose_agent(
-        task_runner, skill_registry, search_config, memory_store, skill_store
+        task_runner, skill_registry, search_config, memory_store, skill_store, visual_store
     )
 
     # MCP: the daemon passes its manager; standalone, start our own from the
@@ -201,6 +195,7 @@ async def build_agent_stack(
             policy=wiring.policy,
             consent=consent,
             board=board,
+            visual_store=visual_store,
         )
         background = await start_background(
             settings,
@@ -255,6 +250,7 @@ async def build_agent_stack(
             extra_tools=wiring.extra_tools,
             task_runner=task_runner,
             board=board,
+            visual_store=visual_store,
         ),
         execution_mode=execution.mode,
         docker_settings=execution.docker,
