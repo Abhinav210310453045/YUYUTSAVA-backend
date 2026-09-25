@@ -643,6 +643,17 @@ tests written earlier in W4 drive it through `handle`, and they are
 negative-controlled. Live: a read, a listing and a sandboxed command went
 through the gateway on the daemon. Classes over 400 lines: **4**.
 
+**`TelegramChannelPlugin` 420 → 356 lines.** What the bot says (event lines,
+batches, proposal and ask messages with their keyboards, `/tasks`, the help
+and command list) is now pure functions in `telegram/messages.py`. The plugin
+keeps transport, lifecycle and routing, and a button tap is
+`_on_proposal_button` or `_on_ask_button`. Checked with a golden record of
+every message, edit and callback answer: the plugin runs through its full
+lifecycle on the tests' fake client, including escaping, de-duplication,
+truncation, the three proposal outcomes, three kinds of ask, the commands and
+strangers. Byte-identical, and a one-character change shows. **No live
+check:** no bot token is configured. Classes over 400 lines: **3**.
+
 ## W5 — Errors, logging, state, defects
 
 - **Classify the 58 silent handlers** as boundary (log plus reason) or internal (narrow type). (`R-ERR-01`, `R-ERR-02`)

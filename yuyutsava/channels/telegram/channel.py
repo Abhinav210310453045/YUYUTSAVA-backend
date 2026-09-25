@@ -26,7 +26,6 @@ other chat are dropped and logged at WARNING).
 from __future__ import annotations
 
 import asyncio
-import html
 import logging
 import os
 import time
@@ -40,6 +39,7 @@ from yuyutsava.channels.plugin import (
     ChannelPlugin,
     InboundSink,
 )
+from yuyutsava.channels.telegram import messages as msg
 from yuyutsava.channels.telegram.client import TelegramClient
 from yuyutsava.ports.channels import (
     AskPrompt,
@@ -47,12 +47,9 @@ from yuyutsava.ports.channels import (
     ChannelEvent,
     DecisionConflictError,
     HttpLogPayload,
-    LogPayload,
     ProposalDecision,
     TimelinePayload,
     TokenPayload,
-    ToolCallPayload,
-    ToolResultPayload,
 )
 from yuyutsava.storage.events import Proposal
 
@@ -63,12 +60,6 @@ OFFSET_STATE_KEY = "telegram.offset"
 # TimelinePayload classes that mean "a run finished" — these flush the
 # debounce buffer immediately so completions reach the phone right away.
 _FLUSH_NOW_CLASSES = frozenset({"event-action", "event-error"})
-
-_HELP_TEXT = (
-    "Send any text to submit it as a task.\n"
-    "/tasks — pending + running tasks\n"
-    "/status — daemon health"
-)
 
 
 def _parse_chat_ids(raw: str) -> tuple[int, ...]:
@@ -82,10 +73,6 @@ def _parse_chat_ids(raw: str) -> tuple[int, ...]:
         except ValueError as exc:
             raise ValueError(f"YUYUTSAVA_TELEGRAM_CHAT_IDS: {part!r} is not a chat id") from exc
     return tuple(ids)
-
-
-def _esc(text: str) -> str:
-    return html.escape(text, quote=False)
 
 
 class TelegramChannelPlugin(ChannelPlugin):
@@ -189,7 +176,7 @@ class TelegramChannelPlugin(ChannelPlugin):
         p = ev.payload
         if isinstance(p, (TokenPayload, HttpLogPayload)):
             return
-        line = self._format_payload(p)
+        line = msg.event_line(p)
         if not line:
             return
         self._buffer.append(line)
@@ -203,24 +190,6 @@ class TelegramChannelPlugin(ChannelPlugin):
             self._bg.add(t)
             t.add_done_callback(self._bg.discard)
 
-    @staticmethod
-    def _format_payload(p: Any) -> str:
-        if isinstance(p, LogPayload):
-            return p.text.strip()
-        if isinstance(p, TimelinePayload):
-            return p.line.strip()
-        if isinstance(p, ToolCallPayload):
-            return f"⚙ {p.name}"
-        if isinstance(p, ToolResultPayload):
-            preview = (p.preview or "").strip().replace("\n", " ")[:120]
-            return f"⚙ {p.name} → {preview}" if preview else ""
-        if isinstance(p, AsyncTaskCompletedPayload):
-            mark = "✅" if p.ok else "❌"
-            return f"{mark} bg {p.agent_name}: {p.summary[:200]}"
-        # Other async-task chatter: keep it terse.
-        text = getattr(p, "text", "") or getattr(p, "title", "")
-        return str(text).strip()[:200]
-
     async def _flush_loop(self) -> None:
         while not self._stopped.is_set():
             await asyncio.sleep(self._debounce_sec)
@@ -230,8 +199,7 @@ class TelegramChannelPlugin(ChannelPlugin):
         if not self._buffer:
             return
         lines, self._buffer = self._buffer, []
-        text = "\n".join(dict.fromkeys(lines))  # de-dupe, keep order
-        await self._send_to_all(_esc(text)[:4000])
+        await self._send_to_all(msg.batch_text(lines))
 
     async def _send_to_all(
         self,
@@ -243,13 +211,13 @@ class TelegramChannelPlugin(ChannelPlugin):
         sent: dict[int, int] = {}
         for chat_id in self._chat_ids:
             try:
-                msg = await self._client.send_message(
+                reply = await self._client.send_message(
                     chat_id,
                     text,
                     reply_markup=reply_markup,
                 )
-                if isinstance(msg, dict) and msg.get("message_id"):
-                    sent[chat_id] = int(msg["message_id"])
+                if isinstance(reply, dict) and reply.get("message_id"):
+                    sent[chat_id] = int(reply["message_id"])
             except Exception:
                 logger.exception("telegram: send to chat %s failed", chat_id)
         return sent
@@ -261,24 +229,11 @@ class TelegramChannelPlugin(ChannelPlugin):
     async def post_proposal(self, p: Proposal) -> ProposalDecision:
         if self._sink is None:
             raise NotImplementedError("telegram plugin not started")
-        text = (
-            f"<b>Proposal</b> — {_esc(p.summary)}\n"
-            f"{_esc(p.proposed)}\n"
-            f"<i>subagent: {_esc(p.subagent)} · urgency {p.urgency}</i>"
-        )
-        keyboard = {
-            "inline_keyboard": [
-                [
-                    {"text": "✅ Approve", "callback_data": f"p:{p.proposal_id}:a"},
-                    {"text": "⏭ Skip", "callback_data": f"p:{p.proposal_id}:s"},
-                    {"text": "✏️ Modify…", "callback_data": f"p:{p.proposal_id}:m"},
-                ]
-            ]
-        }
+        text = msg.proposal_text(p)
         loop = asyncio.get_running_loop()
         fut: "asyncio.Future[ProposalDecision]" = loop.create_future()
         self._sink.pending_proposals[p.proposal_id] = fut
-        sent = await self._send_to_all(text, reply_markup=keyboard)
+        sent = await self._send_to_all(text, reply_markup=msg.proposal_keyboard(p.proposal_id))
         if not sent:
             # Nothing reached the user — let the router try the next channel.
             self._sink.pending_proposals.pop(p.proposal_id, None)
@@ -295,7 +250,7 @@ class TelegramChannelPlugin(ChannelPlugin):
                 await self._client.edit_message_text(
                     chat_id,
                     message_id,
-                    f"{text}\n→ <b>{_esc(decision.decision)}</b>",
+                    msg.decided_text(text, decision.decision),
                 )
             except Exception:
                 logger.debug("telegram: proposal message edit failed", exc_info=True)
@@ -304,25 +259,14 @@ class TelegramChannelPlugin(ChannelPlugin):
     async def post_ask(self, a: AskPrompt) -> str:
         if self._sink is None:
             raise NotImplementedError("telegram plugin not started")
-        text = f"<b>{_esc(a.title)}</b>\n{_esc(a.body)}"
         loop = asyncio.get_running_loop()
         fut: "asyncio.Future[str]" = loop.create_future()
         self._sink.pending_asks[a.ask_id] = fut
         try:
             if a.options:
                 self._ask_options[a.ask_id] = list(a.options)
-                keyboard = {
-                    "inline_keyboard": [
-                        [{"text": opt, "callback_data": f"a:{a.ask_id}:{i}"}]
-                        for i, opt in enumerate(a.options)
-                    ]
-                }
-                sent = await self._send_to_all(text, reply_markup=keyboard)
-            else:
-                sent = await self._send_to_all(
-                    text + "\n<i>Reply to this message with your answer.</i>",
-                    reply_markup={"force_reply": True},
-                )
+            sent = await self._send_to_all(msg.ask_text(a), reply_markup=msg.ask_keyboard(a))
+            if not a.options:
                 for message_id in sent.values():
                     self._reply_waits[message_id] = ("ask", a.ask_id)
             if not sent:
@@ -338,13 +282,7 @@ class TelegramChannelPlugin(ChannelPlugin):
 
     async def _poll_loop(self) -> None:
         try:
-            await self._client.set_my_commands(
-                [
-                    {"command": "tasks", "description": "Pending and running tasks"},
-                    {"command": "status", "description": "Daemon health"},
-                    {"command": "help", "description": "How to use this bot"},
-                ]
-            )
+            await self._client.set_my_commands(msg.BOT_COMMANDS)
         except Exception:
             logger.warning("telegram: setMyCommands failed (continuing)", exc_info=True)
 
@@ -402,31 +340,11 @@ class TelegramChannelPlugin(ChannelPlugin):
             return
         data = str(cq.get("data", ""))
         parts = data.split(":", 2)
-        toast = "ok"
         try:
             if len(parts) == 3 and parts[0] == "p":
-                _, proposal_id, action = parts
-                if action == "m":
-                    sent = await self._send_to_all(
-                        "✏️ Reply to this message with the modified instruction.",
-                        reply_markup={"force_reply": True},
-                    )
-                    for message_id in sent.values():
-                        self._reply_waits[message_id] = ("modify", proposal_id)
-                    toast = "send the new instruction"
-                else:
-                    decision = "approve" if action == "a" else "skip"
-                    await self._sink.respond_proposal(proposal_id, decision)
-                    toast = decision
+                toast = await self._on_proposal_button(parts[1], parts[2])
             elif len(parts) == 3 and parts[0] == "a":
-                _, ask_id, idx_raw = parts
-                options = self._ask_options.get(ask_id, [])
-                try:
-                    response = options[int(idx_raw)]
-                except (ValueError, IndexError):
-                    response = idx_raw
-                await self._sink.respond_ask(ask_id, response)
-                toast = response[:60]
+                toast = await self._on_ask_button(parts[1], parts[2])
             else:
                 logger.warning("telegram: unrecognized callback data %r", data)
                 toast = "unrecognized button"
@@ -436,6 +354,26 @@ class TelegramChannelPlugin(ChannelPlugin):
             await self._client.answer_callback_query(cq_id, text=toast)
         except Exception:
             logger.debug("telegram: answerCallbackQuery failed", exc_info=True)
+
+    async def _on_proposal_button(self, proposal_id: str, action: str) -> str:
+        """Approve / skip now; modify asks for the new instruction first."""
+        if action == "m":
+            sent = await self._send_to_all(msg.MODIFY_PROMPT, reply_markup=msg.FORCE_REPLY)
+            for message_id in sent.values():
+                self._reply_waits[message_id] = ("modify", proposal_id)
+            return "send the new instruction"
+        decision = "approve" if action == "a" else "skip"
+        await self._sink.respond_proposal(proposal_id, decision)
+        return decision
+
+    async def _on_ask_button(self, ask_id: str, idx_raw: str) -> str:
+        options = self._ask_options.get(ask_id, [])
+        try:
+            response = options[int(idx_raw)]
+        except (ValueError, IndexError):
+            response = idx_raw
+        await self._sink.respond_ask(ask_id, response)
+        return response[:60]
 
     # --- plain messages ----------------------------------------------------
 
@@ -473,7 +411,7 @@ class TelegramChannelPlugin(ChannelPlugin):
 
         command = text.split()[0].lower() if text.startswith("/") else ""
         if command in ("/start", "/help"):
-            await self._client.send_message(chat_id, _HELP_TEXT, parse_mode=None)
+            await self._client.send_message(chat_id, msg.HELP_TEXT, parse_mode=None)
         elif command == "/status":
             await self._client.send_message(
                 chat_id,
@@ -483,7 +421,7 @@ class TelegramChannelPlugin(ChannelPlugin):
         elif command == "/tasks":
             await self._client.send_message(
                 chat_id,
-                await self._format_tasks(),
+                msg.tasks_text(await self._sink.list_pending()),
                 parse_mode=None,
             )
         else:
@@ -493,18 +431,3 @@ class TelegramChannelPlugin(ChannelPlugin):
                 f"✓ task submitted: {task_id}",
                 parse_mode=None,
             )
-
-    async def _format_tasks(self) -> str:
-        pending = await self._sink.list_pending()
-        tasks = pending.get("tasks", [])
-        if not tasks:
-            return "No queued or running tasks."
-        lines = []
-        for t in tasks[:15]:
-            instr = (t.get("instruction") or "").replace("\n", " ")[:80]
-            lines.append(f"[{t.get('status')}] {t.get('task_id')} — {instr}")
-        n_props = len(pending.get("pending_proposal_ids", []))
-        n_asks = len(pending.get("pending_ask_ids", []))
-        if n_props or n_asks:
-            lines.append(f"(awaiting you: {n_props} proposal(s), {n_asks} ask(s))")
-        return "\n".join(lines)
