@@ -101,7 +101,14 @@ Separate parsing from building in `tool_result`.
 
 ## R-ERR-03 — One failure, several exception types
 
-**Severity** P2 · **Wave** W3–W5 · **Status** Open
+**Severity** P2 · **Wave** W3–W5 · **Status** **Fixed** in W5.
+- `2093580`: a missing voice package is `voice.optional.VoiceDependencyMissing`,
+  raised through one `require(package, message)`. Every backend uses it, and
+  the announcer goes quiet on it.
+- The `RuntimeError`s left in the voice backends are runtime and configuration
+  failures, not missing packages: piper or `say` exiting non-zero, an unset
+  `PIPER_MODEL`, a failed wake-model download.
+- `d79e4c2`: re-raises keep their cause, and `B904` is gated at zero.
 
 **Evidence.**
 - **A missing optional voice package** raises `AudioUnavailableError` in
@@ -118,7 +125,11 @@ helper; `raise … from exc`.
 
 ## R-LOG-01 — Library code prints
 
-**Severity** P1 · **Wave** W5 · **Status** Open
+**Severity** P1 · **Wave** W5 · **Status** **Fixed** in W5 (`f37d9b3`).
+- `prints_outside_cli` 41 → 0, and the `T201` ratchet is at 0 outside `cli/`
+  and `scripts/`.
+- The terminal prompts moved to `cli/render/` in W3.
+- `agent_profiles`' `__main__` block is now `scripts/print_agent_matrix.py`.
 
 **Claim.** 86 `print` calls sit outside `cli/`, in code the daemon also runs.
 

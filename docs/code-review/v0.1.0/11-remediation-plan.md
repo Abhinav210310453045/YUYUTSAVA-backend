@@ -49,9 +49,9 @@ W0 safety net ─► W1 guardrails ─► W2 __init__ + imports ─► W3 layeri
 | W0 | Safety net: `verify_imports.py`, `measure_code_health.py`, baselines | Done with this review |
 | W1 | Guardrails | Done — see the outcome under W1 |
 | W2 | `__init__.py` and import hygiene | Done — see the outcome under W2 |
-| W3 | Layering and placement | Planned |
-| W4 | Readability, SOLID, DRY | Planned |
-| W5 | Errors, logging, state, defects | Planned |
+| W3 | Layering and placement | Done — see the outcome under W3 |
+| W4 | Readability, SOLID, DRY | Closed — see the terms under W4 |
+| W5 | Errors, logging, state, defects | Done — see the outcome under W5 |
 | W6 | Tests and scripts | Planned |
 | W7 | Electron app | Planned |
 | W8 | Close-out | Planned |
@@ -730,6 +730,24 @@ the count, so it stops here.
 - `silent_broad_excepts` 0; `prints_outside_cli` 0.
 - `set_default_definitions` 0; `default_accessor_call_sites` 0.
 - Each `fix:` has a test that failed before it.
+
+**Outcome — done** on `code-improvement`, 2026-09-26.
+- **Findings.** Every `R-ERR`, `R-LOG`, `R-GLB` and `R-BUG` finding in
+  `07-errors-logging-state.md` is closed. The rest of `R-GLB-02` is kept by
+  a decision recorded there.
+- **Defects.** `R-BUG-13` and `R-BUG-14` were found by this wave's own per-wave
+  checks, and each was fixed with a test shown red on the old code and a live
+  reproduction.
+- **Metrics.**
+  - `prints_outside_cli` 0, `set_default_definitions` 0 and
+    `default_accessor_call_sites` 0, as the exit asked.
+  - `silent_broad_excepts` is **1**, not 0. The one handler is in the face
+    watcher, which is left exactly as it is by the owner's decision.
+- **Gates now enforced.** Blind excepts moved from the ratchet into ruff's
+  gate (`BLE001`, `S110`, with per-file ignores for the face watcher and
+  `test/**`). Every allowed blind except must say why on its marker, which the
+  ratchet script checks. `B904` is gated at zero.
+- **Suite.** 11 known failures, down from 21, all carried to W6.
 
 ## W6 — Tests and scripts
 
