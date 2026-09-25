@@ -261,6 +261,8 @@ async def build_agent_stack(
     # one) to the bundle so teardown closes them.
     bundle.pg_pool = pg_pool
     bundle.embedder = embedder
+    if stores.context.transcript_index is not None:
+        bundle.background_writers.append(stores.context.transcript_index)
     bundle.mcp_manager = owned_mcp
     # Not owned (nothing to close) — exposed so the front can report what the
     # turn cost, reading the same rows the graph just wrote.

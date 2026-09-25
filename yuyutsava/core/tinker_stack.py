@@ -161,4 +161,6 @@ async def build_tinker_stack(
     )
     bundle.pg_pool = stores.pg_pool
     bundle.embedder = stores.embedder
+    if stores.context.transcript_index is not None:
+        bundle.background_writers.append(stores.context.transcript_index)
     return bundle

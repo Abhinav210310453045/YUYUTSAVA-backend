@@ -49,6 +49,7 @@ from yuyutsava.context.artifacts import (
 )
 from yuyutsava.retrieval.chunking import chunk_text
 from yuyutsava.retrieval.pg import PgVectorSearch, PgVectorTable
+from yuyutsava.retrieval.query import query_vector
 from yuyutsava.retrieval.vector import vector_literal
 from yuyutsava.storage.base import BaseSqliteStore
 from yuyutsava.storage.dialect import Dialect, PostgresDialect, SqliteDialect
@@ -202,10 +203,8 @@ class UnifiedArtifactStore(ArtifactStore):
         if self._search is None:
             return []
         where = "AND thread_id = %s"
-        try:
-            qvec = vector_literal(await self._embedder.embed_one(query, mode="query"))
-        except Exception:
-            logger.warning("artifacts: recall query embed failed — keyword fallback", exc_info=True)
+        qvec = await query_vector(self._embedder, query, what="artifacts: recall", log=logger)
+        if qvec is None:
             async with self._pool.connection() as conn:
                 hits = await self._search.keyword_search(
                     conn, query, k, where=where, params=[thread_id]

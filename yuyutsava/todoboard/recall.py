@@ -34,6 +34,7 @@ from yuyutsava.retrieval.chunking import chunk_text
 from yuyutsava.retrieval.hit import Hit
 from yuyutsava.retrieval.injector import RetrievalInjector
 from yuyutsava.retrieval.pg import PgVectorSearch, PgVectorTable
+from yuyutsava.retrieval.query import query_vector
 from yuyutsava.retrieval.vector import vector_literal
 from yuyutsava.todoboard.models import TodoNoteV1
 
@@ -189,10 +190,8 @@ class TodoNoteIndex:
         fallback when the embedder is down; [] (never raises) on any failure."""
         where = "AND card_id = %s" if card_id else ""
         params = [card_id] if card_id else []
-        try:
-            qvec = vector_literal(await self._embedder.embed_one(query, mode="query"))
-        except Exception:
-            logger.warning("todo recall: query embed failed — keyword fallback", exc_info=True)
+        qvec = await query_vector(self._embedder, query, what="todo recall", log=logger)
+        if qvec is None:
             try:
                 async with self._pool.connection() as conn:
                     return await self._search.keyword_search(

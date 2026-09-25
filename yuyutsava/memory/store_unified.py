@@ -51,6 +51,7 @@ from yuyutsava.memory.store import (
 )
 from yuyutsava.retrieval.keyword import keyword_tokens as _keyword_tokens
 from yuyutsava.retrieval.pg import PgVectorSearch, PgVectorTable
+from yuyutsava.retrieval.query import query_vector
 from yuyutsava.retrieval.vector import vector_literal
 from yuyutsava.storage.base import BaseSqliteStore
 from yuyutsava.storage.dialect import Dialect, PostgresDialect, SqliteDialect
@@ -212,10 +213,8 @@ class UnifiedMemoryStore(MemoryStore):
         """
         if self._search is None:
             return await self._keyword_search(query, k, kinds)
-        try:
-            qvec = vector_literal(await self._embedder.embed_one(query, mode="query"))
-        except Exception:
-            logger.warning("memory: query embedding failed — keyword fallback", exc_info=True)
+        qvec = await query_vector(self._embedder, query, what="memory", log=logger)
+        if qvec is None:
             return await self._keyword_search(query, k, kinds)
         where, params = _kind_filter(kinds, self._d)
         # The pool's own connection, not d.reading(): PgVectorSearch reads rows

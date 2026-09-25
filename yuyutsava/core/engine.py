@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -140,16 +140,25 @@ class AgentBundle:
     pg_pool: Any | None = None  # PgPool owned by the CLI (closed in aclose)
     embedder: Any | None = None  # memory.Embedder owned by the CLI
     mcp_manager: Any | None = None  # MCPClientManager owned by the CLI (stopped in aclose)
+    #: Things still writing through the pool in the background (each has an
+    #: ``async drain()``), drained in aclose before the pool closes.
+    background_writers: list[Any] = field(default_factory=list)
     usage_store: Any | None = None  # UsageStore the graph writes to — read for /usage
 
     async def aclose(self) -> None:
         """Async teardown: stop the CLI-owned MCP manager (its sessions live on
-        this loop, so it must go first), close the pool + embedder, then close()."""
+        this loop, so it must go first), let background writers finish, close
+        the pool + embedder, then close()."""
         if self.mcp_manager is not None:
             try:
                 await self.mcp_manager.stop()
             except Exception:
                 logger.exception("AgentBundle: mcp_manager.stop failed")
+        for writer in self.background_writers:
+            try:
+                await writer.drain()
+            except Exception:
+                logger.exception("AgentBundle: draining %r failed", writer)
         if self.embedder is not None:
             try:
                 await self.embedder.aclose()

@@ -624,7 +624,14 @@ description. The test matches the first token of a help line for that reason.
 
 ## R-BUG-13 — Every CLI turn ends by printing two tracebacks it has already handled
 
-**Severity** P2 · **Wave** W5 · **Status** Open
+**Severity** P2 · **Wave** W5 · **Status** **Fixed** (2026-09-26).
+- The bundle drains the transcript indexer's outstanding writes before
+  closing its pool (`PgTranscriptIndex.drain`, `AgentBundle.background_writers`).
+- An unreachable embedder is one warning line on every recall path, through a
+  shared `retrieval.query.query_vector`, and on the index write.
+- Live, with the embedder pointed at a closed port: 10 tracebacks on the old
+  code, 0 on the fixed code. The turn's chunks were written whole, with NULL
+  embeddings.
 
 **Evidence.** Three consecutive one-shot turns, each finishing correctly with
 exit status 0, each ending with this on stderr:

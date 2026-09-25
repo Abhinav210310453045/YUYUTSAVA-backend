@@ -47,6 +47,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from yuyutsava.retrieval.hit import Hit
 from yuyutsava.retrieval.keyword import keyword_tokens
 from yuyutsava.retrieval.pg import PgVectorSearch, PgVectorTable
+from yuyutsava.retrieval.query import query_vector
 from yuyutsava.retrieval.vector import vector_literal
 from yuyutsava.skills.store import SkillStore
 from yuyutsava.storage.base import BaseSqliteStore
@@ -206,10 +207,8 @@ class UnifiedSkillStore(SkillStore):
         """
         if self._search is None:
             return await self._keyword_search(query, k, agent)
-        try:
-            qvec = vector_literal(await self._embedder.embed_one(query, mode="query"))
-        except Exception:
-            logger.warning("skills: query embedding failed — keyword fallback", exc_info=True)
+        qvec = await query_vector(self._embedder, query, what="skills", log=logger)
+        if qvec is None:
             return await self._keyword_search(query, k, agent)
         where, params = _agent_filter(agent, self._d.ph())
         # The pool's own connection, NOT d.reading(): PgVectorSearch builds its

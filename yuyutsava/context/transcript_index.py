@@ -32,11 +32,13 @@ import logging
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+import httpx
 from ulid import ULID
 
 from yuyutsava.retrieval.chunking import chunk_text
 from yuyutsava.retrieval.hit import Hit
 from yuyutsava.retrieval.pg import PgVectorSearch, PgVectorTable
+from yuyutsava.retrieval.query import query_vector
 from yuyutsava.retrieval.store import VectorStore
 from yuyutsava.retrieval.vector import vector_literal
 from yuyutsava.storage.dialect import ensure_thread
@@ -116,6 +118,26 @@ class PgTranscriptIndex(VectorStore):
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
 
+    async def drain(self, timeout: float = 5.0) -> None:
+        """Let outstanding index writes finish (up to *timeout*), cancel the rest.
+
+        Called before the pool closes: a write still running at teardown would
+        otherwise reach a closed pool and fail noisily (R-BUG-13). Indexing is
+        an enhancement, so what does not finish in time is simply dropped — the
+        next backfill catches it up.
+        """
+        pending = {t for t in self._tasks if not t.done()}
+        if not pending:
+            return
+        _done, late = await asyncio.wait(pending, timeout=timeout)
+        for task in late:
+            task.cancel()
+        if late:
+            await asyncio.gather(*late, return_exceptions=True)
+            logger.info(
+                "transcript_index: dropped %d unfinished index write(s) at close", len(late)
+            )
+
     async def backfill_thread(self, thread_id: str) -> int:
         """Index a thread's existing transcript + voice rows. Returns items indexed."""
         try:
@@ -183,6 +205,16 @@ class PgTranscriptIndex(VectorStore):
             try:
                 embedded = await self._embedder.embed(texts, mode="document")
                 vectors: list[str | None] = [vector_literal(v) for v in embedded]
+            except httpx.TransportError as exc:
+                # An embedder that is down or unreachable is expected, and this
+                # handler knows what to do about it: one line, no traceback.
+                logger.warning(
+                    "transcript_index: embedder unreachable (%s) — storing %d NULL rows for %s",
+                    type(exc).__name__,
+                    len(rows),
+                    thread_id,
+                )
+                vectors = [None] * len(rows)
             except Exception:
                 logger.warning(
                     "transcript_index: embedding failed for %s — storing %d NULL rows",
@@ -232,10 +264,8 @@ class PgTranscriptIndex(VectorStore):
         thread_id = (filters or {}).get("thread_id") if filters else None
         where = "AND thread_id = %s" if thread_id else ""
         params = [thread_id] if thread_id else []
-        try:
-            qvec = vector_literal(await self._embedder.embed_one(query, mode="query"))
-        except Exception:
-            logger.warning("transcript_index: query embed failed — keyword fallback", exc_info=True)
+        qvec = await query_vector(self._embedder, query, what="transcript_index", log=logger)
+        if qvec is None:
             try:
                 async with self._pool.connection() as conn:
                     return await self._search.keyword_search(
