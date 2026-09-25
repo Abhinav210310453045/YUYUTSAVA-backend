@@ -1659,7 +1659,7 @@ electron-app/
 ```mermaid
 flowchart TB
     subgraph Main["Main process (Node)"]
-        D["daemon.js<br/>spawn: uv run yuyutsava daemon --no-ui"]
+        D["daemon.js<br/>spawn: uv run yuyutsava daemon --no-app"]
         IPC["ipc-handlers.js"]
     end
     subgraph Renderer["Renderer (React + Vite)"]
@@ -1730,7 +1730,7 @@ per-OS critical prefixes, and Windows Electron packaging works from the same cod
 ```
 1. Electron main reads settings.json (port, API keys, model names)
 2. daemon.js pings GET /health
-3.   ↳ not reachable → spawn: uv run yuyutsava daemon --no-ui --workspace <cwd>
+3.   ↳ not reachable → spawn: uv run yuyutsava daemon --no-app --workspace <cwd>
 4. Python daemon:
      a. load .env (project) then ~/.yuyutsava/.env (override)
      b. acquire_daemon_lock (singleton) → write discovery JSON

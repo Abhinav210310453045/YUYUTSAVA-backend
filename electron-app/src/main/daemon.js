@@ -183,7 +183,7 @@ async function start(workspacePath) {
   // Without this, SIGTERM reaches `uv` but not the python process it spawns.
   // (Windows has no process groups; _killGroup uses taskkill /T instead.)
   const isPosix = process.platform !== 'win32'
-  _proc = spawn('uv', ['run', 'yuyutsava', 'daemon', '--no-ui', '--workspace', workspace], {
+  _proc = spawn('uv', ['run', 'yuyutsava', 'daemon', '--no-app', '--workspace', workspace], {
     env,
     cwd: codeRoot,
     stdio: ['ignore', 'pipe', 'pipe'],

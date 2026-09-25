@@ -494,7 +494,7 @@ async def _async_main(argv: list[str] | None = None) -> int:
     _log_ready_banner(subs)
 
     ui_holder: dict[str, subprocess.Popen] = {}
-    if subs.web_server is not None and not args.no_ui:
+    if subs.web_server is not None and subs.web_url and not (args.no_ui or args.no_app):
         asyncio.create_task(_open_electron_when_ready(subs.web_url, ui_holder))
 
     # Detached one-shot: rescue any memories left vectorless by an earlier

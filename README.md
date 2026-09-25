@@ -124,7 +124,8 @@ It serves on `http://127.0.0.1:7654`. Loopback binds skip auth; binding
 elsewhere requires `YUYUTSAVA_API_TOKEN`.
 
 > Do **not** pass `--no-ui` if you want the desktop app — that flag is headless
-> mode and shuts off the web API the app connects to.
+> mode and shuts off the web API the app connects to. To serve the API without
+> opening the app (how the app itself starts the daemon), pass `--no-app`.
 
 The desktop app is an Electron client in [`electron-app/`](electron-app/):
 

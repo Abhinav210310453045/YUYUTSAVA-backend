@@ -66,7 +66,7 @@ def read_daemon_discovery() -> dict[str, Any] | None:
 def write_daemon_discovery(
     *,
     pid: int,
-    web_url: str,
+    web_url: str | None,
     async_host_url: str | None,
 ) -> None:
     """Atomically write the discovery file."""

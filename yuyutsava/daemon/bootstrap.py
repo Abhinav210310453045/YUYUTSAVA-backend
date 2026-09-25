@@ -181,7 +181,8 @@ class DaemonSubsystems:
     #: headless mode, where there is no web hub to broadcast on.
     log_bridge: Any | None
     web_server: uvicorn.Server | None
-    web_url: str
+    #: The web/API address; ``None`` for a headless (``--no-ui``) daemon.
+    web_url: str | None
 
     # external integrations
     mcp_manager: MCPClientManager
@@ -1757,7 +1758,9 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         web_hub=chans.web_hub,
         log_bridge=chans.log_bridge,
         web_server=web_server,
-        web_url=_web_url(boot.daemon_cfg),
+        # Advertised only when something serves it: a headless daemon has no
+        # web server, and a URL in daemon.json would send clients to nothing.
+        web_url=_web_url(boot.daemon_cfg) if web_server is not None else None,
         mcp_manager=boot.mcp_manager,
         checkpointer_saver=boot.retention.checkpointer_saver,
         sweeper=boot.retention.sweeper,

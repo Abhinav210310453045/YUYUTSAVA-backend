@@ -322,7 +322,11 @@ interrupted checkpoint.
 
 ## R-BUG-07 — A daemon started from the app serves no API the app can reach
 
-**Severity** P1 · **Wave** W5 (`fix:` commit) · **Status** Open (found during W2)
+**Severity** P1 · **Wave** W5 (`fix:` commit) · **Status** **Fixed** (2026-09-25).
+`--no-app` serves the API without opening the app, and `daemon.js` uses it;
+`--no-ui` stays headless and now advertises no `web_url`. Verified by running
+the identical spawn command. The drive from the Electron app itself is part of
+W7's Electron checks.
 
 **Evidence.**
 - `electron-app/src/main/daemon.js:186` spawns `yuyutsava daemon --no-ui`.

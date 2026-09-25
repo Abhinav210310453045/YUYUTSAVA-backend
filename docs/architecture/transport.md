@@ -468,7 +468,7 @@ The Electron **main** process spawns the daemon and keeps a log pipe — note `s
 ```js
 // electron-app/src/main/daemon.js:164-181
 const isPosix = process.platform !== 'win32'
-_proc = spawn('uv', ['run', 'yuyutsava', 'daemon', '--no-ui', '--workspace', workspace], {
+_proc = spawn('uv', ['run', 'yuyutsava', 'daemon', '--no-app', '--workspace', workspace], {
   env,
   cwd: codeRoot,
   stdio: ['ignore', 'pipe', 'pipe'],

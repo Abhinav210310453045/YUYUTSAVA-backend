@@ -26,7 +26,18 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--no-ui",
         action="store_true",
-        help="Headless mode: don't auto-open the Electron app; terminal-only fallback.",
+        help=(
+            "Headless mode: no web API and no app — terminal-only. (To keep the API "
+            "without opening the app, use --no-app.)"
+        ),
+    )
+    p.add_argument(
+        "--no-app",
+        action="store_true",
+        help=(
+            "Serve the web API but don't open the Electron app — how the app itself "
+            "starts the daemon."
+        ),
     )
     p.add_argument("--verbose", "-v", action="store_true", help="DEBUG-level logging to stderr.")
     p.add_argument(
