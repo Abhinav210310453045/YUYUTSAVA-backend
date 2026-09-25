@@ -6,6 +6,7 @@ import os
 from dataclasses import dataclass
 
 from yuyutsava.config.env import env_flag, env_int
+from yuyutsava.config.network import DEFAULT_DAEMON_PORT
 
 # ---------------------------------------------------------------------------
 # Daemon config
@@ -17,7 +18,7 @@ class DaemonConfig:
     """Daemon-wide settings: web server, consent expiry, token budgets."""
 
     web_host: str = "127.0.0.1"
-    web_port: int = 7654
+    web_port: int = DEFAULT_DAEMON_PORT
     web_open_browser: bool = False
     proposal_expiry_sec: int = 300
     orchestrator_token_budget: int = 60000
@@ -27,7 +28,7 @@ class DaemonConfig:
 
     @classmethod
     def from_env(cls) -> DaemonConfig:
-        port = env_int("YUYUTSAVA_DAEMON_PORT", default=7654)
+        port = env_int("YUYUTSAVA_DAEMON_PORT", default=DEFAULT_DAEMON_PORT)
 
         host = os.environ.get("YUYUTSAVA_DAEMON_HOST", "127.0.0.1").strip() or "127.0.0.1"
 

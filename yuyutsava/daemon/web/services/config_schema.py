@@ -23,6 +23,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from yuyutsava.config.network import DEFAULT_DAEMON_PORT
+
 # reload_class constants
 HOT = "hot"
 RESTART_RESUME = "restart_resume"
@@ -64,9 +66,9 @@ _GROUPS: list[ConfigGroup] = [
                 "YUYUTSAVA_DAEMON_PORT",
                 "Port",
                 "number",
-                default="7654",
+                default=str(DEFAULT_DAEMON_PORT),
                 reload_class=RESTART_NO_RESUME,
-                placeholder="7654",
+                placeholder=str(DEFAULT_DAEMON_PORT),
                 help="The app reconnects on the new port after restart.",
             ),
             ConfigVar(

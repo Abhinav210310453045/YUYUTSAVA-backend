@@ -24,6 +24,7 @@ from yuyutsava.cli.remote_attach import (
     prompt_user_for_ask,
     render_event_frame,
 )
+from yuyutsava.config.network import DEFAULT_DAEMON_URL
 from yuyutsava.daemon.singleton import read_daemon_discovery
 
 logger = logging.getLogger("yuyutsava.cli.commands.attach")
@@ -43,7 +44,7 @@ def _default_daemon_url() -> str:
     disco = read_daemon_discovery()
     if disco and isinstance(disco.get("web_url"), str):
         return str(disco["web_url"]).rstrip("/")
-    return "http://127.0.0.1:7654"
+    return DEFAULT_DAEMON_URL
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
@@ -56,7 +57,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         default=_default_daemon_url(),
         help=(
             "Daemon base URL. Resolution order: $YUYUTSAVA_DAEMON_URL → "
-            "~/.yuyutsava/daemon.json discovery file → http://127.0.0.1:7654."
+            f"~/.yuyutsava/daemon.json discovery file → {DEFAULT_DAEMON_URL}."
         ),
     )
     p.add_argument(

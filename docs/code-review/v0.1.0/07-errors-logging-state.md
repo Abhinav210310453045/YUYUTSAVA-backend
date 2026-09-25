@@ -275,7 +275,10 @@ renderer" test from `R-SOL-02`.
 
 ## R-BUG-04 — The remote-attach client defaults to the wrong port
 
-**Severity** P2 · **Wave** W5 · **Status** Open
+**Severity** P2 · **Wave** W5 · **Status** **Fixed** (2026-09-25).
+`config/network.py` holds `DEFAULT_DAEMON_PORT`/`DEFAULT_DAEMON_URL`, used by
+the daemon config, the attach fallback and the Settings catalog; the client has
+no default.
 
 **Evidence.** `cli/remote_attach.py:46` defaults to `http://127.0.0.1:8765`; the
 daemon's default is 7654 (`cli/commands/attach.py:49`). Both callers pass

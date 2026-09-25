@@ -48,7 +48,7 @@ class CliAttachClient:
 
     def __init__(
         self,
-        base_url: str = "http://127.0.0.1:8765",
+        base_url: str,
         *,
         session_id: str | None = None,
         label: str | None = None,
