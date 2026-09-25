@@ -130,6 +130,107 @@ def _normalize_yes_no(answer: str) -> str:
     return "reject"
 
 
+async def _record_interrupt(
+    interrupt_value: Any,
+    interrupts_store: InterruptsStore | None,
+    *,
+    session_id: str | None,
+    thread_id: str | None,
+    invocation_mode: str,
+) -> str:
+    """Write the interrupt to the audit DB before asking; its row id, or ``""``.
+
+    Best-effort: a failed write is logged and never blocks the user.
+    """
+    if interrupts_store is None or not isinstance(interrupt_value, dict):
+        return ""
+    try:
+        record = InterruptRecord.from_payload(
+            interrupt_value,
+            session_id=session_id or "",
+            thread_id=thread_id or "",
+            invocation_mode=invocation_mode,
+        )
+        return await interrupts_store.record(record)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("InterruptsStore.record raised: %s", exc)
+        return ""
+
+
+async def _ask_question(interrupt_value: dict) -> tuple[str, str]:
+    """tr_ask_user: a free-text question. ``(answer, audit outcome)``."""
+    iv = UserQuestionInterrupt.model_validate(interrupt_value)
+    print(f"\n{CYAN}{_SEP}{RESET}", file=sys.stderr)
+    print(f"{CYAN}💬  AGENT QUESTION{RESET}", file=sys.stderr)
+    print(f"{CYAN}{_SEP}{RESET}", file=sys.stderr)
+    print(f"  {iv.question}", file=sys.stderr)
+    if iv.options:
+        print(f"  Options: {' | '.join(iv.options)}", file=sys.stderr)
+    _print_scoping_chips(interrupt_value, colour="36")
+    print(f"{CYAN}{_SEP}{RESET}", file=sys.stderr)
+
+    answer: str = await asyncio.to_thread(input, "  Your answer: ")
+    response = answer.strip() or "no response"
+    print(f"{CYAN}  → {response}{RESET}\n", file=sys.stderr)
+    return response, "answered"
+
+
+async def _ask_task_runner(interrupt_value: dict) -> tuple[str, str]:
+    """TaskRunnerAgent: a filesystem operation needs approval."""
+    iv = TaskRunnerPermissionInterrupt.model_validate(interrupt_value)
+    print(f"\n{MAGENTA}{_SEP}{RESET}", file=sys.stderr)
+    print(f"{MAGENTA}🔐  TASK RUNNER PERMISSION REQUEST{RESET}", file=sys.stderr)
+    print(f"{MAGENTA}{_SEP}{RESET}", file=sys.stderr)
+    print(f"  Operation : {iv.operation.upper()}", file=sys.stderr)
+    print(f"  Path(s)   : {', '.join(iv.paths)}", file=sys.stderr)
+    print(f"  Zone      : {iv.zone.upper()}", file=sys.stderr)
+    agent_line = f"  Agent     : {iv.requesting_agent}"
+    if iv.parent_agent:
+        agent_line += f"  (parent: {iv.parent_agent})"
+    print(agent_line, file=sys.stderr)
+    print(f"  Reason    : {iv.reason}", file=sys.stderr)
+    print(f"  Risk      : {iv.risk_level}", file=sys.stderr)
+    _print_scoping_chips(interrupt_value, colour="35")
+    print(f"{MAGENTA}{_SEP}{RESET}", file=sys.stderr)
+
+    decision = _normalize_yes_no(await asyncio.to_thread(input, "  Allow? [y/N]: "))
+    if decision == "approve":
+        print(f"{GREEN}  ✅  Approved{RESET}\n", file=sys.stderr)
+    else:
+        print(f"{RED}  🚫  Rejected{RESET}\n", file=sys.stderr)
+    return decision, decision
+
+
+async def _ask_command(interrupt_value: Any) -> tuple[str, str]:
+    """PermissionPolicy: a raw execute call triggered a pattern check."""
+    if isinstance(interrupt_value, dict):
+        iv = PermissionRequestInterrupt.model_validate(
+            {
+                "command": interrupt_value.get("command", "<unknown>"),
+                "reason": interrupt_value.get("reason", "Potentially dangerous operation"),
+            }
+        )
+    else:
+        iv = PermissionRequestInterrupt(
+            command=str(interrupt_value),
+            reason="Potentially dangerous operation",
+        )
+    print(f"\n{YELLOW}{_SEP}{RESET}", file=sys.stderr)
+    print(f"{YELLOW}🛑  PERMISSION REQUEST{RESET}", file=sys.stderr)
+    print(f"{YELLOW}{_SEP}{RESET}", file=sys.stderr)
+    print(f"  Command : {iv.command}", file=sys.stderr)
+    print(f"  Reason  : {iv.reason}", file=sys.stderr)
+    _print_scoping_chips(interrupt_value, colour="33")
+    print(f"{YELLOW}{_SEP}{RESET}", file=sys.stderr)
+
+    decision = _normalize_yes_no(await asyncio.to_thread(input, "  Allow? [y/N]: "))
+    if decision == "approve":
+        print(f"{GREEN}  ✅  Approved — running command{RESET}\n", file=sys.stderr)
+    else:
+        print(f"{RED}  🚫  Rejected — command will not run{RESET}\n", file=sys.stderr)
+    return decision, decision
+
+
 async def prompt_permission(
     interrupt_value: Any,
     *,
@@ -149,101 +250,25 @@ async def prompt_permission(
       • free-text answer      for user questions
     """
     interrupt_type = interrupt_value.get("type", "") if isinstance(interrupt_value, dict) else ""
-
-    row_id = ""
-    if interrupts_store is not None and isinstance(interrupt_value, dict):
-        try:
-            record = InterruptRecord.from_payload(
-                interrupt_value,
-                session_id=session_id or "",
-                thread_id=thread_id or "",
-                invocation_mode=invocation_mode,
-            )
-            row_id = await interrupts_store.record(record)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("InterruptsStore.record raised: %s", exc)
-
-    # ── tr_ask_user: agent asks a free-text question ───────────────────────
+    row_id = await _record_interrupt(
+        interrupt_value,
+        interrupts_store,
+        session_id=session_id,
+        thread_id=thread_id,
+        invocation_mode=invocation_mode,
+    )
     if interrupt_type == "user_question":
-        iv = UserQuestionInterrupt.model_validate(interrupt_value)
-
-        print(f"\n{CYAN}{_SEP}{RESET}", file=sys.stderr)
-        print(f"{CYAN}💬  AGENT QUESTION{RESET}", file=sys.stderr)
-        print(f"{CYAN}{_SEP}{RESET}", file=sys.stderr)
-        print(f"  {iv.question}", file=sys.stderr)
-        if iv.options:
-            print(f"  Options: {' | '.join(iv.options)}", file=sys.stderr)
-        _print_scoping_chips(interrupt_value, colour="36")
-        print(f"{CYAN}{_SEP}{RESET}", file=sys.stderr)
-
-        answer: str = await asyncio.to_thread(input, "  Your answer: ")
-        response = answer.strip() or "no response"
-        print(f"{CYAN}  → {response}{RESET}\n", file=sys.stderr)
-        if interrupts_store is not None and row_id:
-            await interrupts_store.resolve(row_id, outcome="answered", user_response=response)
-        return response
-
-    # ── TaskRunnerAgent: filesystem operation permission request ───────────
-    if interrupt_type == "task_runner_permission":
-        iv = TaskRunnerPermissionInterrupt.model_validate(interrupt_value)
-        path_str = ", ".join(iv.paths)
-
-        print(f"\n{MAGENTA}{_SEP}{RESET}", file=sys.stderr)
-        print(f"{MAGENTA}🔐  TASK RUNNER PERMISSION REQUEST{RESET}", file=sys.stderr)
-        print(f"{MAGENTA}{_SEP}{RESET}", file=sys.stderr)
-        print(f"  Operation : {iv.operation.upper()}", file=sys.stderr)
-        print(f"  Path(s)   : {path_str}", file=sys.stderr)
-        print(f"  Zone      : {iv.zone.upper()}", file=sys.stderr)
-        agent_line = f"  Agent     : {iv.requesting_agent}"
-        if iv.parent_agent:
-            agent_line += f"  (parent: {iv.parent_agent})"
-        print(agent_line, file=sys.stderr)
-        print(f"  Reason    : {iv.reason}", file=sys.stderr)
-        print(f"  Risk      : {iv.risk_level}", file=sys.stderr)
-        _print_scoping_chips(interrupt_value, colour="35")
-        print(f"{MAGENTA}{_SEP}{RESET}", file=sys.stderr)
-
-        answer = await asyncio.to_thread(input, "  Allow? [y/N]: ")
-        decision = _normalize_yes_no(answer)
-        if decision == "approve":
-            print(f"{GREEN}  ✅  Approved{RESET}\n", file=sys.stderr)
-        else:
-            print(f"{RED}  🚫  Rejected{RESET}\n", file=sys.stderr)
-        if interrupts_store is not None and row_id:
-            await interrupts_store.resolve(row_id, outcome=decision)
-        return decision
-
-    # ── PermissionPolicy: raw execute call triggered a pattern check ───────
-    if isinstance(interrupt_value, dict):
-        iv2 = PermissionRequestInterrupt.model_validate(
-            {
-                "command": interrupt_value.get("command", "<unknown>"),
-                "reason": interrupt_value.get("reason", "Potentially dangerous operation"),
-            }
-        )
+        response, outcome = await _ask_question(interrupt_value)
+    elif interrupt_type == "task_runner_permission":
+        response, outcome = await _ask_task_runner(interrupt_value)
     else:
-        iv2 = PermissionRequestInterrupt(
-            command=str(interrupt_value),
-            reason="Potentially dangerous operation",
-        )
-
-    print(f"\n{YELLOW}{_SEP}{RESET}", file=sys.stderr)
-    print(f"{YELLOW}🛑  PERMISSION REQUEST{RESET}", file=sys.stderr)
-    print(f"{YELLOW}{_SEP}{RESET}", file=sys.stderr)
-    print(f"  Command : {iv2.command}", file=sys.stderr)
-    print(f"  Reason  : {iv2.reason}", file=sys.stderr)
-    _print_scoping_chips(interrupt_value, colour="33")
-    print(f"{YELLOW}{_SEP}{RESET}", file=sys.stderr)
-
-    answer = await asyncio.to_thread(input, "  Allow? [y/N]: ")
-    decision = _normalize_yes_no(answer)
-    if decision == "approve":
-        print(f"{GREEN}  ✅  Approved — running command{RESET}\n", file=sys.stderr)
-    else:
-        print(f"{RED}  🚫  Rejected — command will not run{RESET}\n", file=sys.stderr)
+        response, outcome = await _ask_command(interrupt_value)
     if interrupts_store is not None and row_id:
-        await interrupts_store.resolve(row_id, outcome=decision)
-    return decision
+        if outcome == "answered":
+            await interrupts_store.resolve(row_id, outcome=outcome, user_response=response)
+        else:
+            await interrupts_store.resolve(row_id, outcome=outcome)
+    return response
 
 
 class _AiStreamLine:
