@@ -63,7 +63,6 @@
   },
   "yuyutsava/cli/render/plain.py": {
     "BLE001": 2,
-    "C901": 1,
     "S110": 1
   },
   "yuyutsava/cli/render/renderer.py": {
@@ -77,9 +76,6 @@
   },
   "yuyutsava/cli/render/terminal_stream.py": {
     "PLR0913": 1
-  },
-  "yuyutsava/cli/render/tool_format.py": {
-    "C901": 1
   },
   "yuyutsava/cli/session_run.py": {
     "PLR0913": 1

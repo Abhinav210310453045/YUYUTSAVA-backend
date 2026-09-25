@@ -152,54 +152,59 @@ def format_result(name: str, body: str, is_err: bool) -> str:
     """Short outcome line for a tool result ("3 matches", "exit 0", error)."""
     if is_err:
         return truncate(error_message(body) or "error", MAX_RESULT_LEN)
-
     obj, result = _envelope(body)
+    summary = _result_summary(name, result) if isinstance(result, dict) else None
+    if summary is None:
+        summary = _loose_summary(obj, result)
+    return summary if summary is not None else _first_line_summary(body)
 
-    if isinstance(result, dict):
+
+def _plural(n: int, one: str, many: str) -> str:
+    return f"{n} {one if n == 1 else many}"
+
+
+def _result_summary(name: str, result: dict) -> str | None:
+    """A ``result`` payload by its shape; ``None`` when no shape matches."""
+    if "exit_code" in result:
         # Shell-shaped results (tr_execute*, tr_grep, tr_run_python …).
-        if "exit_code" in result:
-            stdout = str(result.get("stdout") or "")
-            lines = [ln for ln in stdout.splitlines() if ln.strip()]
-            if name == "tr_grep":
-                n = len(lines)
-                return f"{n} matching line{'s' if n != 1 else ''}"
-            code = result.get("exit_code")
-            if lines:
-                first = truncate(sanitize(lines[0]), 70)
-                more = f" (+{len(lines) - 1} lines)" if len(lines) > 1 else ""
-                return f"{first}{more}"
-            return f"exit {code}" if code not in (0, None) else "ok"
-        # File reads.
-        content = result.get("content")
-        if isinstance(content, str):
-            n = content.count("\n") + 1 if content else 0
-            return f"{n} line{'s' if n != 1 else ''}"
-        # Directory/glob listings.
-        entries = result.get("entries")
-        if isinstance(entries, list):
-            n = len(entries)
-            return f"{n} entr{'ies' if n != 1 else 'y'}"
-        # Subagent-ish nested response.
-        response = result.get("response")
-        if isinstance(response, str) and response.strip():
-            return truncate(sanitize(response), MAX_RESULT_LEN)
+        stdout = str(result.get("stdout") or "")
+        lines = [ln for ln in stdout.splitlines() if ln.strip()]
+        if name == "tr_grep":
+            return _plural(len(lines), "matching line", "matching lines")
+        if lines:
+            more = f" (+{len(lines) - 1} lines)" if len(lines) > 1 else ""
+            return f"{truncate(sanitize(lines[0]), 70)}{more}"
+        code = result.get("exit_code")
+        return f"exit {code}" if code not in (0, None) else "ok"
+    content = result.get("content")
+    if isinstance(content, str):  # file reads
+        return _plural(content.count("\n") + 1 if content else 0, "line", "lines")
+    entries = result.get("entries")
+    if isinstance(entries, list):  # directory/glob listings
+        return _plural(len(entries), "entry", "entries")
+    response = result.get("response")
+    if isinstance(response, str) and response.strip():  # a subagent's nested response
+        return truncate(sanitize(response), MAX_RESULT_LEN)
+    return None
 
+
+def _loose_summary(obj: Any, result: Any) -> str | None:
+    """A bare list, or a status dict with no ``result``; ``None`` otherwise."""
     if isinstance(obj, list):
-        return f"{len(obj)} item{'s' if len(obj) != 1 else ''}"
+        return _plural(len(obj), "item", "items")
     if isinstance(obj, dict) and not result:
-        # Bare status dicts / loose payloads.
         msg = obj.get("message") or obj.get("detail")
         if isinstance(msg, str) and msg.strip():
             return truncate(sanitize(msg), MAX_RESULT_LEN)
         if str(obj.get("status", "")).lower() in ("success", "ok"):
             return "ok"
+    return None
 
+
+def _first_line_summary(body: str) -> str:
     first = ""
     if isinstance(body, str):
-        for ln in body.splitlines():
-            if ln.strip():
-                first = ln.strip()
-                break
+        first = next((ln.strip() for ln in body.splitlines() if ln.strip()), "")
     return truncate(sanitize(first), MAX_RESULT_LEN) if first else "ok"
 
 
