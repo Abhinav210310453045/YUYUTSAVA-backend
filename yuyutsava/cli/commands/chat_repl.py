@@ -681,6 +681,8 @@ class ReplCommands:
     status_line: str
     session: Any
     remote: Any | None = None
+    #: The split-screen dashboard, when the chat runs in one.
+    dashboard: Any | None = None
 
     async def dispatch(self, text: str) -> Outcome:
         line = text.strip()
@@ -718,6 +720,9 @@ class ReplCommands:
             session_id=self.session.id,
             workspace=self.workspace,
             renderer=self.renderer,
+            clear_screen=(
+                self.dashboard.clear_transcript if self.dashboard is not None else _clear_terminal
+            ),
         )
         return Outcome.QUIT if result is _SLASH_QUIT else Outcome.HANDLED
 
@@ -752,12 +757,17 @@ class ReplCommands:
         )
 
 
+def _clear_terminal() -> None:
+    print(CLEAR_SCREEN, end="", file=sys.stderr)
+
+
 def _handle_slash(
     cmd: CommandLine,
     *,
     session_id: str,
     workspace: Path,
     renderer: "ChatRenderer",
+    clear_screen: Callable[[], None] = _clear_terminal,
 ) -> Any:
     """The commands that need only the terminal: ``_SLASH_QUIT`` to exit,
     otherwise ``_SLASH_HANDLED`` — an unknown command included, after saying so.
@@ -769,8 +779,10 @@ def _handle_slash(
         reports.print_help(SLASH_COMMANDS)
         return _SLASH_HANDLED
     if head == "/clear":
-        # ANSI clear + redraw banner.
-        print(CLEAR_SCREEN, end="", file=sys.stderr)
+        # The terminal's clear, or — in the dashboard, where stderr is the
+        # transcript pane and an escape sequence would land in it as text — the
+        # pane's own. Then redraw the banner.
+        clear_screen()
         startup.print_banner(session_id=session_id, workspace=workspace, resuming=False)
         return _SLASH_HANDLED
     if head == "/session":
@@ -1084,6 +1096,7 @@ async def run_chat_repl(
                 status_line=status_line,
                 session=convo.session,
                 remote=approvals.remote,
+                dashboard=dashboard,
             )
             await ReplLoop(
                 commands=commands,

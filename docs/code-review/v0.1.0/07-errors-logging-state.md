@@ -290,7 +290,10 @@ daemon's default is 7654 (`cli/commands/attach.py:49`). Both callers pass
 
 ## R-BUG-05 — `/clear` may paint an escape sequence into the dashboard
 
-**Severity** P2 · **Wave** W5 · **Status** Open (suspected — reproduce first)
+**Severity** P2 · **Wave** W5 · **Status** **Fixed** (2026-09-25). It
+reproduced: the escape landed in the pane, and the transcript stayed. `/clear`
+now calls the dashboard's `clear_transcript`, and in the rich and plain REPLs
+the terminal clear.
 
 **Evidence.** `cli/commands/chat_repl.py:815` prints `"\033[2J\033[H"` to
 `sys.stderr`. In dashboard mode `sys.stderr` is the transcript buffer.
