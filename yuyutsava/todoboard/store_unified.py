@@ -128,7 +128,7 @@ def _insert_sql(d: Dialect, table: str, cols: tuple[str, ...]) -> str:
 
 
 def _column_values(record: Any, cols: tuple[str, ...], **encoded: Any) -> tuple:
-    """*record*'s fields in *cols* order; *encoded* replaces the ones stored differently.
+    """*record*'s fields in *cols* order; *encoded* overrides the ones stored differently.
 
     Built from the column list, so the values can never drift out of the order
     the INSERT names its columns in.

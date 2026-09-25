@@ -212,7 +212,7 @@ _PROPOSALS_V5_REBUILD = """
         """
 
 #: Rebuild ``decisions`` with its FK to ``proposals``, nulling (not dropping)
-#: references to proposals that no longer exist — a decision is an audit record.
+#: references to proposals that have been deleted — a decision is an audit record.
 _DECISIONS_V5_REBUILD = """
             CREATE TABLE decisions_v5 (
                 decision_id    TEXT PRIMARY KEY,
