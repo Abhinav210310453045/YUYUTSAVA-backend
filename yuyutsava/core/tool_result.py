@@ -43,47 +43,10 @@ def guard_tool_result(content: str, tool_name: str) -> str:
 
     try:
         data = json.loads(content)
-        result = data.get("result") or {}
-
-        # ── tr_execute_in_sandbox: inject notice into result, keep exit_code ──
-        if tool_name in ("tr_execute_in_sandbox", "tr_grep"):
-            command = ""
-            if isinstance(result, dict):
-                command = str(result.get("stdout", ""))[:80]  # best-effort for hint
-
-            notice = SuppressedContentNotice.stdout_too_large(
-                tool=tool_name,
-                command=command,
-                original_size_chars=len(content),
-            )
-            # Preserve exit_code and stderr (small); replace stdout with notice
-            new_result: dict[str, Any] = {
-                "kind": result.get("kind", "shell") if isinstance(result, dict) else "shell",
-                "exit_code": result.get("exit_code") if isinstance(result, dict) else None,
-                "stderr": (result.get("stderr", "") or "")[:2_000]
-                if isinstance(result, dict)
-                else "",
-                "stdout_notice": notice.model_dump(),
-            }
-            data["result"] = new_result
-            return json.dumps(data)
-
-        # ── all other tools: replace entire result with a generic notice ──────
-        notice = SuppressedContentNotice(
-            reason=SuppressedReason.UNKNOWN,
-            original_size_chars=len(content),
-            tool=tool_name,
-            human_message=(
-                f"Tool result was {len(content):,} chars — too large to pass to the LLM. "
-                f"Re-run it in smaller pieces, or read the offloaded copy back."
-            ),
-            recovery=_generic_recovery(tool_name),
-        )
-        data["result"] = notice.model_dump()
-        return json.dumps(data)
-
-    except Exception:
-        # Non-JSON tool output (shouldn't happen for tr_* tools but be safe)
+    except ValueError:
+        data = None
+    if not isinstance(data, dict):
+        # Not a JSON object (shouldn't happen for tr_* tools, but be safe).
         notice = SuppressedContentNotice(
             reason=SuppressedReason.UNKNOWN,
             original_size_chars=len(content),
@@ -95,6 +58,45 @@ def guard_tool_result(content: str, tool_name: str) -> str:
             recovery=_generic_recovery(tool_name),
         )
         return json.dumps({"suppressed": True, "notice": notice.model_dump()})
+
+    result = data.get("result") or {}
+
+    # ── tr_execute_in_sandbox: inject notice into result, keep exit_code ──
+    if tool_name in ("tr_execute_in_sandbox", "tr_grep"):
+        command = ""
+        if isinstance(result, dict):
+            command = str(result.get("stdout", ""))[:80]  # best-effort for hint
+
+        notice = SuppressedContentNotice.stdout_too_large(
+            tool=tool_name,
+            command=command,
+            original_size_chars=len(content),
+        )
+        # Preserve exit_code and stderr (small); replace stdout with notice
+        new_result: dict[str, Any] = {
+            "kind": result.get("kind", "shell") if isinstance(result, dict) else "shell",
+            "exit_code": result.get("exit_code") if isinstance(result, dict) else None,
+            "stderr": str(result.get("stderr", "") or "")[:2_000]
+            if isinstance(result, dict)
+            else "",
+            "stdout_notice": notice.model_dump(),
+        }
+        data["result"] = new_result
+        return json.dumps(data)
+
+    # ── all other tools: replace entire result with a generic notice ──────
+    notice = SuppressedContentNotice(
+        reason=SuppressedReason.UNKNOWN,
+        original_size_chars=len(content),
+        tool=tool_name,
+        human_message=(
+            f"Tool result was {len(content):,} chars — too large to pass to the LLM. "
+            f"Re-run it in smaller pieces, or read the offloaded copy back."
+        ),
+        recovery=_generic_recovery(tool_name),
+    )
+    data["result"] = notice.model_dump()
+    return json.dumps(data)
 
 
 def _generic_recovery(tool_name: str) -> list[RecoveryHint]:

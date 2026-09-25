@@ -70,7 +70,12 @@ class ToolRegistry:
         for t in tools:
             try:
                 schema = t.args_schema.model_json_schema() if t.args_schema else {}
-            except Exception:
+            except Exception:  # noqa: BLE001 — a third-party schema; one bad tool must not hide the rest
+                logger.warning(
+                    "tool %r: its argument schema cannot be rendered; published without parameters",
+                    t.name,
+                    exc_info=True,
+                )
                 schema = {}
             schemas.append(
                 {

@@ -50,7 +50,20 @@ only on allowlisted boundaries.
 
 ## R-ERR-02 — Failures that matter, silently converted into defaults
 
-**Severity** P1 · **Wave** W5 · **Status** Open
+**Severity** P1 · **Wave** W5 · **Status** **Fixed** (2026-09-26). Each site
+still degrades the same way and now says so:
+- A failing injector is logged by name, with its traceback. The other
+  injectors' blocks still land.
+- An unrenderable tool schema is logged by tool name.
+- `guard_tool_result` parses first and builds second. Only non-object output
+  gets the "could not be parsed" notice, and a bug in the build surfaces.
+  Before/after output is identical on 11 input shapes.
+- A bug that escapes the never-raising price refresh is a WARNING, not DEBUG.
+- Compaction's token count and the loop-affinity nest were fixed earlier in
+  W4: they log and catch narrow types.
+- The paths below have moved since the review: `policy/builtin/`,
+  `discovery/tool_registry.py`, `core/agent_stack.py`.
+- Tests: `test/core/test_failures_are_visible.py` (4 of 5 fail on the old code).
 
 **Evidence.**
 

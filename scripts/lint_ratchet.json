@@ -87,9 +87,6 @@
   "yuyutsava/core/tinker_stack.py": {
     "PLR0913": 1
   },
-  "yuyutsava/core/tool_result.py": {
-    "BLE001": 1
-  },
   "yuyutsava/daemon/bootstrap.py": {
     "PLR0913": 1
   },
@@ -112,9 +109,6 @@
   "yuyutsava/daemon/turn_registry.py": {
     "PLR0913": 1
   },
-  "yuyutsava/discovery/tool_registry.py": {
-    "BLE001": 1
-  },
   "yuyutsava/events/bus.py": {
     "PLR0913": 1
   },
@@ -136,9 +130,6 @@
     "BLE001": 1
   },
   "yuyutsava/policy/builtin/filesystem_prompt.py": {
-    "BLE001": 1
-  },
-  "yuyutsava/policy/builtin/retrieval_injection.py": {
     "BLE001": 1
   },
   "yuyutsava/skills/tools.py": {

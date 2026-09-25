@@ -10,8 +10,9 @@ Two properties the order depends on:
   list order, and the prompt is a cached prefix, so reordering them costs cache
   hits on every provider that does prefix caching. The agent fingerprint records
   the chain for that reason.
-* **An injector that fails is skipped, not fatal.** Retrieval is an enhancement;
-  a dead pgvector connection must degrade the answer, not end the turn.
+* **An injector that fails is skipped and logged, not fatal.** Retrieval is an
+  enhancement; a dead pgvector connection must degrade the answer, not end the
+  turn — but it must not vanish either.
 
 Only fires when the last message is a human turn — there is nothing to retrieve
 *for* mid-tool-loop, and re-running retrieval on every model call inside one turn
@@ -20,10 +21,13 @@ would both cost latency and churn the cached prefix.
 
 from __future__ import annotations
 
+import logging
 from typing import Protocol
 
 from yuyutsava.policy.base import Policy
 from yuyutsava.policy.types import ModelCall
+
+logger = logging.getLogger("yuyutsava.policy.builtin.retrieval_injection")
 
 
 class Injector(Protocol):
@@ -60,7 +64,12 @@ class RetrievalInjectionPolicy(Policy):
         for injector in self._injectors:
             try:
                 block = await injector.build_block(task_text)
-            except Exception:
+            except Exception:  # noqa: BLE001 — one injector failing must not cost the turn the others
+                logger.warning(
+                    "%s failed; its block is left out of this turn",
+                    type(injector).__name__,
+                    exc_info=True,
+                )
                 block = ""
             if block:
                 out.append(block)

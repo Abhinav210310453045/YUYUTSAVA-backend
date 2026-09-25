@@ -53,7 +53,8 @@ async def _refresh_prices(settings: LlmSettings) -> None:
     try:
         await asyncio.to_thread(refresh_price_cache, settings)
     except Exception:  # noqa: BLE001 — pricing must never block a stack build
-        logger.debug("price cache refresh failed", exc_info=True)
+        # refresh_price_cache handles its own failures; reaching here is a bug.
+        logger.warning("price cache refresh failed; costs may show as unpriced", exc_info=True)
 
 
 def _stack_consent(wiring: StackWiring) -> Any:
