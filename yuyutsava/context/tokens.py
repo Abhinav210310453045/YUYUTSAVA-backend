@@ -21,9 +21,12 @@ see :class:`yuyutsava.context.meter.ContextMeterPolicy`.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from langchain_core.messages.utils import count_tokens_approximately
+
+logger = logging.getLogger("yuyutsava.context.tokens")
 
 #: langchain's default. One token ≈ 4 characters of common English text.
 DEFAULT_CHARS_PER_TOKEN = 4.0
@@ -59,6 +62,7 @@ def approx_tokens(messages: Any, *, model: Any | None = None) -> int:
             )
         )
     except Exception:  # noqa: BLE001 — estimation must never fail a caller
+        logger.debug("token estimate failed; reporting 0", exc_info=True)
         return 0
 
 

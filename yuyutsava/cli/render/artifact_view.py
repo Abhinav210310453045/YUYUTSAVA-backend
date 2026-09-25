@@ -21,10 +21,13 @@ drawn in a terminal, so those print their path with an ``open`` hint.
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
 from yuyutsava.artifacts import store
+
+logger = logging.getLogger("yuyutsava.cli.render.artifact_view")
 
 # One artifact's inline budget. Beyond this the box shows a head and points at
 # the file: a 200k-char document should not scroll the transcript away.
@@ -65,6 +68,7 @@ def load_artifact(data: dict) -> dict[str, Any] | None:
     try:
         rec = store.load_record(artifact_id)
     except Exception:  # noqa: BLE001 — rendering must never break a turn
+        logger.debug("loading artifact %s failed", artifact_id, exc_info=True)
         return None
     if rec is None:
         return None

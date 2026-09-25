@@ -43,7 +43,9 @@ def is_voice_turn() -> bool:
         cfg = get_config() or {}
         conf = cfg.get("configurable", {}) or {}
         return conf.get("modality") == "voice"
-    except Exception:  # noqa: BLE001 — styling never breaks a turn
+    except (RuntimeError, AttributeError, TypeError):
+        # RuntimeError: called outside a graph run; the others: a config of an
+        # unexpected shape. Either way, not a voice turn — styling never breaks one.
         return False
 
 

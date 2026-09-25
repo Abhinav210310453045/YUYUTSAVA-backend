@@ -114,7 +114,8 @@ class RemoteThreadPatcher:
         """
         try:
             runs = client.runs.list(thread_id=thread_id, limit=1)
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 — settling is best-effort; the patch still runs
+            logger.debug("listing runs on %s failed", thread_id, exc_info=True)
             return
         run = _first_run(runs)
         if run is None:
@@ -140,7 +141,8 @@ class RemoteThreadPatcher:
     async def _settle_active_run_async(self, client: Any, thread_id: str) -> None:
         try:
             runs = await client.runs.list(thread_id=thread_id, limit=1)
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 — settling is best-effort; the patch still runs
+            logger.debug("listing runs on %s failed", thread_id, exc_info=True)
             return
         run = _first_run(runs)
         if run is None:

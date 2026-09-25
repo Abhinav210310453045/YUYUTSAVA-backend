@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import importlib.metadata
 import json
+import logging
 import sys
 import urllib.request
 from pathlib import Path
@@ -21,6 +22,8 @@ from yuyutsava.ansi import CYAN, DIM, RESET, YELLOW
 from yuyutsava.llm import tracing as _tracing
 from yuyutsava.storage.backend import StorageSettings
 from yuyutsava.storage.sessions.config import SessionsSettings
+
+logger = logging.getLogger("yuyutsava.cli.render.startup")
 
 BANNER_LINES = [
     "╦ ╦ ╦ ╦ ╦ ╦ ╦ ╦ ╔╦╗ ╔═╗ ╔═╗ ╦  ╦ ╔═╗",
@@ -51,6 +54,7 @@ def print_version_notice(*, full: bool = False) -> None:
         latest = Version(payload["info"]["version"])
         releases = payload.get("releases") or {}
     except Exception:  # noqa: BLE001 — not installed, offline, or an odd reply: no notice
+        logger.debug("version check skipped", exc_info=True)
         return
     if current.is_prerelease or latest <= current:
         return

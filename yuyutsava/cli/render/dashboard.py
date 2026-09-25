@@ -502,11 +502,23 @@ class ChatDashboard:
             return [("class:ctx.warn", (status + behind)[: self.left_width])]
         return [("class:status", status[: self.left_width])]
 
-    @staticmethod
-    def _safe(fn: Callable[[], str]) -> str:
+    _status_failure_logged = False
+
+    @classmethod
+    def _safe(cls, fn: Callable[[], str]) -> str:
+        """A status callback's text; a failing one shows nothing.
+
+        Called on every repaint, so a persistent failure is logged once, not
+        once a frame.
+        """
         try:
             return fn() or ""
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 — the status bar must never break the screen
+            if not cls._status_failure_logged:
+                cls._status_failure_logged = True
+                logger.debug(
+                    "a status callback failed (further failures not logged)", exc_info=True
+                )
             return ""
 
     def _sync_width(self, *, force: bool = False) -> None:

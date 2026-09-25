@@ -39,7 +39,7 @@ def pid_alive(pid: int) -> bool:
         return False
     try:
         return psutil.pid_exists(pid)
-    except Exception:  # psutil should not throw here, but never let this crash callers
+    except (psutil.Error, OSError):  # e.g. denied access to another user's process table
         return False
 
 

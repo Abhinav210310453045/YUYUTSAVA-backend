@@ -58,7 +58,8 @@ class ConsentEvaluator:
                 continue
             try:
                 predicate = json.loads(rule.match_json)
-            except Exception:
+            except (json.JSONDecodeError, TypeError):
+                logger.warning("consent rule %s has an unreadable match; skipped", rule.rule_id)
                 continue
             if not self._match_predicate(event, predicate):
                 continue

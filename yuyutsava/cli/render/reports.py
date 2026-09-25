@@ -154,6 +154,7 @@ def print_skills(layout: Any) -> None:
         )
         skills = registry.scan(agent="cli")
     except Exception:  # noqa: BLE001 — a listing must never break the REPL
+        logger.debug("scanning skills for the listing failed", exc_info=True)
         return
     if not skills:
         return

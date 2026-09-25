@@ -19,6 +19,7 @@ Connection strategy
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -33,6 +34,8 @@ from yuyutsava.storage.models import SESSION_STATUSES, Session
 from yuyutsava.storage.pg import migrations as pg_migrations
 from yuyutsava.storage.pg.pool import PgPool
 from yuyutsava.storage.sessions.store import SessionNotFound
+
+logger = logging.getLogger("yuyutsava.storage.sessions.pg")
 
 _TASK_PREVIEW_MAX = 200
 _TITLE_MAX = 80
@@ -199,7 +202,10 @@ class PgSessionStore:
             )
             row = await cur.fetchone()
             return int(row[0]) if row and row[0] is not None else 0
-        except Exception:
+        except psycopg.Error:
+            # A size is informational (no checkpoints table yet, a dropped
+            # connection); the listing still renders.
+            logger.debug("checkpoint size for %s unavailable", thread_id, exc_info=True)
             return 0
 
     async def update_status(self, session_id: str, status: str) -> None:

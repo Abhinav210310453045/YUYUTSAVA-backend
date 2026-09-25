@@ -77,7 +77,8 @@ class TaskPoller:
         assert self._ctx.client is not None
         try:
             runs = await self._ctx.client.runs.list(thread_id=thread_id, limit=5)
-        except Exception:
+        except Exception:  # noqa: BLE001 — the next poll rediscovers it
+            logger.debug("listing runs on %s failed", thread_id, exc_info=True)
             return
         # The latest run (newest-first) decides whether this thread is live.
         latest = parsing.first_run_status(runs)

@@ -29,7 +29,7 @@ from yuyutsava.daemon.web.deps import (
     get_runtime_settings,
     get_subagent_roster,
 )
-from yuyutsava.daemon.web.exceptions import ValidationError
+from yuyutsava.daemon.web.exceptions import ServiceUnavailableError, ValidationError
 from yuyutsava.daemon.web.schemas.settings import (
     RuntimeSettingsOut,
     RuntimeSettingsPatchIn,
@@ -80,7 +80,7 @@ async def _broadcast(request: Request, settings) -> None:
     """Fan the new snapshot out to every connected surface. Never fatal."""
     try:
         hub = get_hub(request)
-    except Exception:  # noqa: BLE001 — headless app, no hub
+    except ServiceUnavailableError:  # headless app, no hub: nobody to tell
         return
     try:
         await hub.broadcast(

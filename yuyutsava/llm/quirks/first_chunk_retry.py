@@ -150,7 +150,10 @@ def _is_transient(exc: BaseException) -> bool:
             import grpc  # noqa: PLC0415 — optional dependency
 
             return code() in (grpc.StatusCode.RESOURCE_EXHAUSTED, grpc.StatusCode.UNAVAILABLE)
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 — a classifier: "not busy" is the safe answer
+            logger.debug(
+                "classifying %s by its grpc code failed", type(exc).__name__, exc_info=True
+            )
             return False
     return False
 

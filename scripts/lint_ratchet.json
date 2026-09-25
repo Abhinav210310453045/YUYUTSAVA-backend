@@ -38,9 +38,6 @@
   "yuyutsava/async_subagents/watcher/health.py": {
     "PLR0913": 1
   },
-  "yuyutsava/async_subagents/watcher/polling.py": {
-    "BLE001": 1
-  },
   "yuyutsava/cli/cli.py": {
     "BLE001": 1
   },
@@ -102,9 +99,6 @@
   "yuyutsava/daemon/bootstrap.py": {
     "PLR0913": 1
   },
-  "yuyutsava/daemon/consent.py": {
-    "BLE001": 1
-  },
   "yuyutsava/daemon/conversation_manager.py": {
     "PLR0913": 1
   },
@@ -154,12 +148,6 @@
   "yuyutsava/memory/embedder.py": {
     "BLE001": 1
   },
-  "yuyutsava/platform/elevation.py": {
-    "BLE001": 1
-  },
-  "yuyutsava/platform/process.py": {
-    "BLE001": 1
-  },
   "yuyutsava/policy/builtin/filesystem_prompt.py": {
     "BLE001": 1
   },
@@ -177,9 +165,6 @@
   },
   "yuyutsava/storage/models.py": {
     "PLR0913": 1
-  },
-  "yuyutsava/storage/sessions/pg_impl.py": {
-    "BLE001": 1
   },
   "yuyutsava/todoboard/services/attachments.py": {
     "PLR0913": 1

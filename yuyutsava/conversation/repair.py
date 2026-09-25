@@ -154,6 +154,7 @@ def _text_of(msg: Any) -> str:
     try:
         return flatten_content(content) or ""
     except Exception:  # noqa: BLE001 — detection must never raise
+        logger.debug("flattening message content failed", exc_info=True)
         return ""
 
 

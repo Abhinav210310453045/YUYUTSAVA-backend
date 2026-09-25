@@ -96,7 +96,7 @@ class WindowsUACProvider:
             import ctypes  # noqa: PLC0415 — platform-specific: windll exists only on Windows
 
             return bool(ctypes.windll.shell32.IsUserAnAdmin())
-        except Exception:
+        except (ImportError, AttributeError, OSError):  # no windll here, or the call failed
             return False
 
     async def run_elevated(self, command: str, *, timeout: int = 300) -> ElevationResult:
