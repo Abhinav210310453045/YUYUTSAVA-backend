@@ -654,6 +654,16 @@ truncation, the three proposal outcomes, three kinds of ask, the commands and
 strangers. Byte-identical, and a one-character change shows. **No live
 check:** no bot token is configured. Classes over 400 lines: **3**.
 
+**`ConverseConnection` 417 → 349 lines.** The `hello` frame is a pure
+`hello_frame(spec, chan, run, policy)`, and voice-turn persistence is a small
+`VoiceHistory` over the store and the conversation. The thread is still read
+at write time. A before/after record matches exactly (three hello shapes,
+and persistence with no store, audio, text-only and a failing store), and
+it is negative-controlled. The converse, voice, frame and history tests pass
+bar the known one, and a live socket got the expected `hello`, usage frames
+and a reply. Classes over 400 lines: **2**, and both are deliberate stops:
+`ChatDashboard` (see `R-SOL-01`) and `RichChatRenderer` (411, carried).
+
 ## W5 — Errors, logging, state, defects
 
 - **Classify the 58 silent handlers** as boundary (log plus reason) or internal (narrow type). (`R-ERR-01`, `R-ERR-02`)

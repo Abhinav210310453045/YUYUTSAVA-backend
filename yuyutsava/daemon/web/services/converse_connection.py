@@ -87,6 +87,90 @@ def latest_usage_snapshot(thread_id: str) -> dict | None:
         return None
 
 
+def hello_frame(
+    spec: ConverseSpec, chan: Any, live_run: TurnRun | None, policy: VoicePolicy
+) -> dict[str, Any]:
+    """The first frame on a socket: who this conversation is, and where it stands."""
+    toggles = spec.voice_toggles
+    return {
+        "type": "hello",
+        "session_id": spec.convo.session_id,
+        "thread_id": spec.convo.thread_id,
+        "origin": spec.origin,
+        "agent": spec.agent,
+        "card_id": spec.card_id,
+        "resuming": spec.resuming,
+        # Where this thread's frame counter stands, and what (if
+        # anything) is running on it right now — so a client that
+        # reattaches mid-turn stays in its "busy" state instead of
+        # releasing the composer.
+        "seq": chan.seq,
+        "run": live_run.to_wire() if live_run is not None else None,
+        # The voice interruption policy, so the client can match it:
+        # when barge-in is off (default) the client runs half-duplex,
+        # muting the mic while the reply is still playing so noise
+        # cannot cut it off.
+        "barge_in": policy.barge_in_enabled,
+        # Voice-mode snapshot at connect. The live source of truth is
+        # the `settings` SSE item that every surface already listens to;
+        # this is so a freshly-opened panel renders the right affordance
+        # before its first SSE frame arrives.
+        "voice": (
+            toggles.voice().to_dict()
+            if toggles is not None
+            else {"wake_enabled": True, "tts_enabled": True}
+        ),
+        # Last known context/spend reading, so a panel opened between
+        # turns shows real numbers instead of waiting for the next model
+        # call to say anything.
+        "usage": latest_usage_snapshot(spec.convo.thread_id),
+    }
+
+
+class VoiceHistory:
+    """The replayable record of a conversation's voice turns. Best-effort.
+
+    The thread is read from the conversation at each write rather than
+    captured, so the row lands on whatever thread the conversation is on.
+    """
+
+    def __init__(self, store: Any | None, convo: Any) -> None:
+        self._store = store
+        self._convo = convo
+
+    async def put(
+        self,
+        *,
+        role: str,
+        modality: str,
+        text: str,
+        pcm: bytes | None = None,
+        rate: int | None = None,
+    ) -> None:
+        """Append one turn: the TTS audio (if any) to disk off the loop, then the row.
+
+        A no-op without a store. Persistence never breaks a live turn —
+        failures are logged and dropped.
+        """
+        if self._store is None:
+            return
+        try:
+            thread_id = self._convo.thread_id
+            blob_path = None
+            if pcm and rate:
+                blob_path = await asyncio.to_thread(write_voice_wav, thread_id, pcm, rate)
+            await self._store.put_message(
+                thread_id,
+                role=role,
+                modality=modality,
+                text=text or "",
+                audio_blob_path=blob_path,
+                sample_rate=rate if blob_path else None,
+            )
+        except Exception:  # noqa: BLE001
+            logger.warning("converse: persisting voice message failed", exc_info=True)
+
+
 class ConverseConnection:
     """One open conversation socket."""
 
@@ -125,6 +209,8 @@ class ConverseConnection:
         # kept referenced so it isn't GC'd mid-flight; cancelled on disconnect.
         self._bg: set[asyncio.Task] = set()
 
+        self._voice_history = VoiceHistory(spec.voice_store, spec.convo)
+
         # Mic guards, read by the audio branch and written by whichever turn
         # body is running. Connection-scoped: the run they describe may outlive
         # this socket.
@@ -147,7 +233,7 @@ class ConverseConnection:
                 voice_of=lambda: self._voice,
                 send=self._send,
                 start_turn=self.start_spoken_turn,
-                persist=self._persist_voice_message,
+                persist=self._voice_history.put,
                 spawn=self._spawn_bg,
             ),
             origin=spec.origin,
@@ -175,43 +261,7 @@ class ConverseConnection:
         return task
 
     async def _handshake(self, chan: Any, live_run: TurnRun | None) -> None:
-        spec = self._spec
-        toggles = spec.voice_toggles
-        await self._send(
-            {
-                "type": "hello",
-                "session_id": spec.convo.session_id,
-                "thread_id": spec.convo.thread_id,
-                "origin": spec.origin,
-                "agent": spec.agent,
-                "card_id": spec.card_id,
-                "resuming": spec.resuming,
-                # Where this thread's frame counter stands, and what (if
-                # anything) is running on it right now — so a client that
-                # reattaches mid-turn stays in its "busy" state instead of
-                # releasing the composer.
-                "seq": chan.seq,
-                "run": live_run.to_wire() if live_run is not None else None,
-                # The voice interruption policy, so the client can match it:
-                # when barge-in is off (default) the client runs half-duplex,
-                # muting the mic while the reply is still playing so noise
-                # cannot cut it off.
-                "barge_in": self._policy.barge_in_enabled,
-                # Voice-mode snapshot at connect. The live source of truth is
-                # the `settings` SSE item that every surface already listens to;
-                # this is so a freshly-opened panel renders the right affordance
-                # before its first SSE frame arrives.
-                "voice": (
-                    toggles.voice().to_dict()
-                    if toggles is not None
-                    else {"wake_enabled": True, "tts_enabled": True}
-                ),
-                # Last known context/spend reading, so a panel opened between
-                # turns shows real numbers instead of waiting for the next model
-                # call to say anything.
-                "usage": latest_usage_snapshot(spec.convo.thread_id),
-            }
-        )
+        await self._send(hello_frame(self._spec, chan, live_run, self._policy))
 
     async def _pump(self, sub_q: Any) -> None:
         """Relay this thread's live frames onto the socket, in seq order."""
@@ -312,7 +362,7 @@ class ConverseConnection:
                 ask_handler=self._asks.handler,
                 meter_frames=self._meter_frames,
             ),
-            persist=(self._persist_voice_message if self._spec.voice_store is not None else None),
+            persist=(self._voice_history.put if self._spec.voice_store is not None else None),
         ).run()
 
     def start_turn(self, text: str, *, spoken: bool) -> bool:
@@ -378,40 +428,6 @@ class ConverseConnection:
             # model load. Overlaps with the user's first utterance.
             self._spawn_bg(self._voice.prewarm())
         return self._voice
-
-    async def _persist_voice_message(
-        self,
-        *,
-        role: str,
-        modality: str,
-        text: str,
-        pcm: bytes | None = None,
-        rate: int | None = None,
-    ) -> None:
-        """Best-effort append of one turn to the replayable voice history.
-
-        Writes the TTS audio (if any) to disk off the loop, then the DB row.
-        Persistence never breaks a live turn — failures are logged and dropped.
-        """
-        store = self._spec.voice_store
-        if store is None:
-            return
-        try:
-            blob_path = None
-            if pcm and rate:
-                blob_path = await asyncio.to_thread(
-                    write_voice_wav, self._spec.convo.thread_id, pcm, rate
-                )
-            await store.put_message(
-                self._spec.convo.thread_id,
-                role=role,
-                modality=modality,
-                text=text or "",
-                audio_blob_path=blob_path,
-                sample_rate=rate if blob_path else None,
-            )
-        except Exception:  # noqa: BLE001
-            logger.warning("converse: persisting voice message failed", exc_info=True)
 
     # ------------------------------------------------------------------ #
     # Lifecycle                                                           #
