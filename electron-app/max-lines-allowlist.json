@@ -4,7 +4,6 @@
     "src/main/daemon.js",
     "src/renderer/audio/index.js",
     "src/renderer/components/asks/AskCard.jsx",
-    "src/renderer/components/background-tasks/TaskDetail.jsx",
     "src/renderer/components/layout/ActivityLog.jsx",
     "src/renderer/components/layout/Titlebar.jsx",
     "src/renderer/components/proposals/ProposalCard.jsx",

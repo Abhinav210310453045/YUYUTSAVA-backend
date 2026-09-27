@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { getTaskLogs } from '../../api/client'
 import { alpha } from '../../lib/color'
+import './TaskDetail.css'
 
 // Full-height drawer that shows how the deepagent drives one background
 // sub-agent: its instruction, every tool call (name + args), each result/output,
@@ -69,37 +70,23 @@ function TimelineItem({ msg, isLast }) {
   }
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '20px 1fr', gap: 10 }}>
+    <div className="task-step">
       {/* left rail: node dot + connecting line */}
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+      <div className="task-step-rail">
         <span
-          style={{
-            width: 10,
-            height: 10,
-            borderRadius: '50%',
-            background: nodeColor,
-            marginTop: 12,
-            flexShrink: 0,
-            boxShadow: `0 0 8px ${nodeColor}`,
-          }}
+          className="task-step-dot"
+          style={{ background: nodeColor, boxShadow: `0 0 8px ${nodeColor}` }}
         />
-        {!isLast && (
-          <span style={{ flex: 1, width: 2, background: 'rgba(255,255,255,0.08)', marginTop: 4 }} />
-        )}
+        {!isLast && <span className="task-step-line" />}
       </div>
 
       {/* card */}
       <div
         onMouseEnter={() => setHover(true)}
         onMouseLeave={() => setHover(false)}
+        className="task-step-card"
         style={{
-          marginBottom: 10,
-          borderRadius: 8,
-          background: 'var(--bg-card, rgba(255,255,255,0.03))',
           border: `1px solid ${hover ? nodeColor : 'rgba(255,255,255,0.08)'}`,
-          padding: '8px 12px',
-          animation: 'card-enter 0.25s ease',
-          transition: 'transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease',
           transform: hover ? 'translateY(-2px) scale(1.01)' : 'none',
           boxShadow: hover
             ? `0 6px 20px rgba(0,0,0,0.35), 0 0 12px ${alpha(nodeColor, 13)}`
@@ -107,30 +94,19 @@ function TimelineItem({ msg, isLast }) {
         }}
       >
         <div
+          className="task-step-label"
           style={{
             color: isErr ? 'var(--neon-red, var(--neon-red))' : nodeColor,
-            fontFamily: 'var(--font-mono)',
-            fontSize: 11,
-            fontWeight: 700,
             marginBottom: body ? 4 : 0,
-            letterSpacing: '0.02em',
           }}
         >
           {label}
         </div>
         {body && (
           <div
-            className="selectable"
-            style={{
-              color: isErr ? 'var(--neon-red, var(--neon-red))' : 'var(--text-secondary)',
-              fontFamily: mono ? 'var(--font-mono)' : 'var(--font-ui)',
-              fontSize: mono ? 11 : 12.5,
-              lineHeight: 1.5,
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-word',
-              maxHeight: 260,
-              overflow: 'auto',
-            }}
+            className={`selectable task-step-body${mono ? ' task-step-body--mono' : ''}${
+              isErr ? ' task-step-body--error' : ''
+            }`}
           >
             {body}
           </div>
@@ -188,164 +164,51 @@ export default function TaskDetail({ task, onClose }) {
   const instruction = (task.instruction_preview || task.text || '').toString()
 
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 50,
-        background: 'rgba(0,0,0,0.5)',
-        backdropFilter: 'blur(2px)',
-        display: 'flex',
-        justifyContent: 'flex-end',
-        animation: 'fade-in 0.15s ease',
-      }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: 'min(720px, 94vw)',
-          height: '100%',
-          background: 'var(--bg-panel)',
-          borderLeft: '1px solid var(--border-neon, rgba(var(--accent-rgb),0.25))',
-          display: 'flex',
-          flexDirection: 'column',
-          boxShadow: '-24px 0 60px rgba(0,0,0,0.5)',
-          animation: 'drawer-slide-in 0.22s ease',
-        }}
-      >
+    <div onClick={onClose} className="task-detail">
+      <div onClick={(e) => e.stopPropagation()} className="task-detail-drawer">
         {/* header */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 10,
-            padding: '14px 18px',
-            borderBottom: '1px solid var(--border-subtle)',
-            background: 'var(--bg-bar)',
-            flexShrink: 0,
-          }}
-        >
+        <div className="task-detail-head">
           <span
-            style={{
-              width: 9,
-              height: 9,
-              borderRadius: '50%',
-              background: style.color,
-              boxShadow: `0 0 8px ${style.color}`,
-              animation: isLive ? 'task-node-pulse 1.4s ease-out infinite' : 'none',
-            }}
+            className={`task-detail-status-dot${isLive ? ' task-detail-status-dot--live' : ''}`}
+            style={{ background: style.color, boxShadow: `0 0 8px ${style.color}` }}
           />
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span
-                style={{
-                  color: 'var(--text-primary)',
-                  fontWeight: 700,
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: 13,
-                }}
-              >
-                {task.agent_name || '(unknown agent)'}
-              </span>
-              <span
-                className="selectable"
-                title={task.task_id}
-                style={{ color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', fontSize: 11 }}
-              >
+          <div className="task-detail-titles">
+            <div className="task-detail-row">
+              <span className="task-detail-agent">{task.agent_name || '(unknown agent)'}</span>
+              <span className="selectable task-detail-dim" title={task.task_id}>
                 task={String(task.task_id || '').slice(0, 8)}
               </span>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 }}>
-              <span
-                style={{
-                  color: style.color,
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: 11,
-                  fontWeight: 'var(--fw-semibold)',
-                }}
-              >
+            <div className="task-detail-row task-detail-row--sub">
+              <span className="task-detail-status" style={{ color: style.color }}>
                 {style.label}
               </span>
-              <span
-                style={{ color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', fontSize: 11 }}
-              >
-                {fmtElapsed(elapsed)}
-              </span>
+              <span className="task-detail-dim">{fmtElapsed(elapsed)}</span>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            title="close"
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--text-muted)',
-              cursor: 'pointer',
-              fontSize: 20,
-              lineHeight: 1,
-              padding: '2px 6px',
-            }}
-          >
+          <button onClick={onClose} title="close" className="task-detail-close">
             ×
           </button>
         </div>
 
         {/* timeline */}
-        <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '16px 18px' }}>
+        <div ref={scrollRef} className="task-detail-timeline">
           {instruction && (
-            <div
-              style={{
-                marginBottom: 14,
-                padding: '10px 12px',
-                borderRadius: 8,
-                background: 'rgba(167,139,250,0.06)',
-                border: '1px solid rgba(167,139,250,0.25)',
-              }}
-            >
-              <div
-                style={{
-                  color: 'var(--neon-purple, #a78bfa)',
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: 10,
-                  fontWeight: 700,
-                  letterSpacing: '0.12em',
-                  textTransform: 'uppercase',
-                  marginBottom: 4,
-                }}
-              >
-                Task
-              </div>
-              <div
-                className="selectable"
-                style={{ color: 'var(--text-secondary)', fontSize: 12.5, lineHeight: 1.5 }}
-              >
-                {instruction}
-              </div>
+            <div className="task-detail-instruction">
+              <div className="task-detail-kicker task-detail-kicker--task">Task</div>
+              <div className="selectable task-detail-text">{instruction}</div>
             </div>
           )}
 
           {loading && logs === null && (
-            <div style={{ color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', fontSize: 12 }}>
-              loading timeline<span style={{ animation: 'blink 1s step-end infinite' }}>…</span>
+            <div className="task-detail-note">
+              loading timeline<span className="task-detail-blink">…</span>
             </div>
           )}
-          {err && (
-            <div
-              style={{
-                color: 'var(--neon-red, var(--neon-red))',
-                fontFamily: 'var(--font-mono)',
-                fontSize: 12,
-              }}
-            >
-              error: {err}
-            </div>
-          )}
+          {err && <div className="task-detail-error">error: {err}</div>}
 
           {logs && logs.length === 0 && !loading && (
-            <div style={{ color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', fontSize: 12 }}>
-              (no steps recorded yet)
-            </div>
+            <div className="task-detail-note">(no steps recorded yet)</div>
           )}
 
           {logs &&
@@ -354,27 +217,11 @@ export default function TaskDetail({ task, onClose }) {
             ))}
 
           {isLive && (
-            <div style={{ display: 'grid', gridTemplateColumns: '20px 1fr', gap: 10 }}>
-              <div style={{ display: 'flex', justifyContent: 'center' }}>
-                <span
-                  style={{
-                    width: 10,
-                    height: 10,
-                    borderRadius: '50%',
-                    marginTop: 12,
-                    background: 'var(--neon-cyan, var(--text-cyan))',
-                    animation: 'task-node-pulse 1.4s ease-out infinite',
-                  }}
-                />
+            <div className="task-step">
+              <div className="task-detail-live-rail">
+                <span className="task-detail-live-dot" />
               </div>
-              <div
-                style={{
-                  color: 'var(--neon-cyan, var(--text-cyan))',
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: 11,
-                  padding: '10px 0',
-                }}
-              >
+              <div className="task-detail-live-text">
                 {task.status === 'awaiting_user' ? 'waiting for your input…' : 'working…'}
               </div>
             </div>
@@ -382,33 +229,13 @@ export default function TaskDetail({ task, onClose }) {
 
           {!isLive && task.summary && (
             <div
-              style={{
-                marginTop: 8,
-                padding: '10px 12px',
-                borderRadius: 8,
-                background: 'rgba(var(--accent-rgb),0.05)',
-                border: `1px solid ${alpha(style.color, 27)}`,
-              }}
+              className="task-detail-result"
+              style={{ border: `1px solid ${alpha(style.color, 27)}` }}
             >
-              <div
-                style={{
-                  color: style.color,
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: 10,
-                  fontWeight: 700,
-                  letterSpacing: '0.12em',
-                  textTransform: 'uppercase',
-                  marginBottom: 4,
-                }}
-              >
+              <div className="task-detail-kicker" style={{ color: style.color }}>
                 Result
               </div>
-              <div
-                className="selectable"
-                style={{ color: 'var(--text-secondary)', fontSize: 12.5, lineHeight: 1.5 }}
-              >
-                {task.summary}
-              </div>
+              <div className="selectable task-detail-text">{task.summary}</div>
             </div>
           )}
         </div>
