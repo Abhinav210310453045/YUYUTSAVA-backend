@@ -296,6 +296,20 @@ class TaskRunnerAgent:
         )
         return None
 
+    @staticmethod
+    def _exec_error(
+        request: OperationRequest, operation_id: str, zone: FilesystemZone, error_msg: str
+    ) -> OperationResponse:
+        return OperationResponse(
+            request_id=request.request_id,
+            operation_id=operation_id,
+            status="error",
+            error=error_msg,
+            error_code=_EC_EXEC_ERROR,
+            zone=zone.value if zone else None,
+            operation=request.operation.value,
+        )
+
     async def _run(
         self, request: OperationRequest, operation_id: str, zone: FilesystemZone
     ) -> OperationResponse:
@@ -304,18 +318,17 @@ class TaskRunnerAgent:
             result = await run_operation(
                 request, exec_backend=self.exec_backend, sandbox_root=self.sandbox_root
             )
+        except TimeoutError:
+            # The executor's documented outcome for a command or script that
+            # overran its limit: expected, so one line — and a message the agent
+            # can act on, where str(TimeoutError()) is empty.
+            error_msg = "TimeoutError: did not finish within its time limit and was stopped"
+            logger.warning("TaskRunner | EXEC TIMEOUT | %s", request.operation.value)
+            return self._exec_error(request, operation_id, zone, error_msg)
         except Exception as exc:  # noqa: BLE001 — returned to the agent as an error
             error_msg = f"{type(exc).__name__}: {exc}"
             logger.error("TaskRunner | EXEC ERROR | %s", error_msg, exc_info=True)
-            return OperationResponse(
-                request_id=request.request_id,
-                operation_id=operation_id,
-                status="error",
-                error=error_msg,
-                error_code=_EC_EXEC_ERROR,
-                zone=zone.value if zone else None,
-                operation=request.operation.value,
-            )
+            return self._exec_error(request, operation_id, zone, error_msg)
 
         logger.info(
             "TaskRunner | SUCCESS | %s | zone=%s | path=%s",
