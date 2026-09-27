@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { fetchText } from '../../../api/client'
 import { blockSrc, bundleSrc, primaryName } from './src'
 
 // Phase-7 JSX/HTML sandbox block. Interactive artifacts render inside an iframe
@@ -159,9 +160,7 @@ export default function SandboxBlock({ attachment, cardId, expanded }) {
         // Still fetched when framing: the source toggle shows it, and a failure
         // here is the same 404 the frame would hit — better surfaced as our own
         // error than as the daemon's JSON rendered inside the frame.
-        const res = await fetch(blockSrc(attachment, cardId))
-        if (!res.ok) throw new Error(`fetch → ${res.status}`)
-        const text = await res.text()
+        const text = await fetchText(blockSrc(attachment, cardId))
         if (cancelled) return
         setSource(text)
         if (frameSrc) return // the frame loads its own bytes from the bundle

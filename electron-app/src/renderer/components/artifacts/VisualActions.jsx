@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { visualUrl, deleteVisual } from '../../api/client'
+import { visualUrl, deleteVisual, fetchBlob } from '../../api/client'
 
 // Copy / Download / Delete toolbar shared by every artifact surface (the
 // Artifacts gallery cards, the inline chat/voice images, and the full-screen
@@ -94,7 +94,7 @@ export default function VisualActions({ visual, onDeleted, dark = false }) {
   const onCopy = async (e) => {
     stop(e)
     try {
-      const blob = await (await fetch(visualUrl(visual.url))).blob()
+      const blob = await fetchBlob(visualUrl(visual.url))
       // Chromium's clipboard only reliably writes PNG; for anything else (SVG)
       // fall through to copying the URL as text.
       if (blob.type === 'image/png' && window.ClipboardItem) {
@@ -118,7 +118,7 @@ export default function VisualActions({ visual, onDeleted, dark = false }) {
   const onDownload = async (e) => {
     stop(e)
     try {
-      const blob = await (await fetch(visualUrl(visual.url))).blob()
+      const blob = await fetchBlob(visualUrl(visual.url))
       const ext = EXT_BY_MIME[visual.mime || blob.type] || 'png'
       const name = `${slug(visual.title || visual.kind)}.${ext}`
       if (window.electronAPI?.saveFile) {

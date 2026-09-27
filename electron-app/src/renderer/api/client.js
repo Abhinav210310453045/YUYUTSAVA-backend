@@ -24,6 +24,18 @@ async function _json(method, path, body) {
   return res.json()
 }
 
+// Raw bodies — images, file sources, audio — from a URL the helpers here built
+// (visualUrl, blockSrc, voice clip URLs). One place for the status check, so a
+// 404 is an error rather than the daemon's JSON error body read as content.
+async function _get(url) {
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`GET ${url} → ${res.status}`)
+  return res
+}
+export const fetchBlob = async (url) => (await _get(url)).blob()
+export const fetchText = async (url) => (await _get(url)).text()
+export const fetchArrayBuffer = async (url) => (await _get(url)).arrayBuffer()
+
 export const respondProposal = (id, decision, editedInstruction = null) =>
   _json('POST', `/proposal/${id}/respond`, { decision, edited_instruction: editedInstruction })
 

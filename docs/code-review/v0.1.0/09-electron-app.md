@@ -105,7 +105,7 @@ see no effect.
 
 ## R-UI-05 — HTTP calls outside the API layer
 
-**Severity** P2 · **Wave** W7 · **Status** Open
+**Severity** P2 · **Wave** W7 · **Status** **Fixed** (W7, 2026-09-27). `api/client.js` gained `fetchBlob`, `fetchText` and `fetchArrayBuffer` over one `_get` that raises on a non-OK status. Before, the visual copy and download read a 404's JSON body as the image. No `fetch` is left outside `api/`. Verified live in Electron: the Markdown preview, the HTML source toggle, audio `playUrl` (a served WAV plays, and a missing one names its 404), and Copy image (the clipboard holds `image/png`).
 
 **Evidence.** `fetch` bypasses `src/renderer/api/` at:
 - `components/artifacts/VisualActions.jsx:56,73`

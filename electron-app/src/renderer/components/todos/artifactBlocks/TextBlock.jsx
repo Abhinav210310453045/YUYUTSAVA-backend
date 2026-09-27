@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { fetchText } from '../../../api/client'
 import { blockSrc } from './src'
 
 const TEXT_MIMES = ['text/plain', 'text/markdown', 'text/html', 'text/csv', 'application/json']
@@ -15,11 +16,7 @@ export default function TextBlock({ attachment, cardId, expanded }) {
 
   useEffect(() => {
     let cancelled = false
-    fetch(blockSrc(attachment, cardId))
-      .then((res) => {
-        if (!res.ok) throw new Error(`fetch → ${res.status}`)
-        return res.text()
-      })
+    fetchText(blockSrc(attachment, cardId))
       .then((body) => {
         if (!cancelled) setText(body)
       })

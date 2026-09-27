@@ -1,5 +1,5 @@
 // Renderer-side sound layer (Web Audio) — the client mirror of the daemon's
-// yuyutsava/audio_io package. Because the daemon can be remote (Tailscale),
+// yuyutsava/voice package. Because the daemon can be remote (Tailscale),
 // playback for the Electron/mobile UI happens here, on the user's device.
 //
 // Two primitives, matching the server:
@@ -11,6 +11,8 @@
 //
 // This module is agent-agnostic: the chat playback, the Voice panel, and the
 // mic overlay all reuse the same AudioPlayer.
+
+import { fetchArrayBuffer } from '../api/client'
 
 // Earcon tone sequences: [frequencyHz, seconds][]. Mirrors the server defaults.
 const EARCON_TONES = {
@@ -223,9 +225,7 @@ export class AudioPlayer {
   async playUrl(url) {
     if (!url) return
     const ctx = await this.ensureContext()
-    const resp = await fetch(url)
-    if (!resp.ok) throw new Error(`audio ${resp.status}`)
-    const buffer = await ctx.decodeAudioData(await resp.arrayBuffer())
+    const buffer = await ctx.decodeAudioData(await fetchArrayBuffer(url))
     const src = ctx.createBufferSource()
     src.buffer = buffer
     src.connect(this._out())
