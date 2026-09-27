@@ -95,7 +95,9 @@ function _unlinkStaleFiles() {
   for (const p of [discoveryPath(), lockPath()]) {
     try {
       fs.unlinkSync(p)
-    } catch (_) {}
+    } catch {
+      // Already gone is the usual case: the daemon unlinks both on a clean exit.
+    }
   }
 }
 
@@ -215,7 +217,9 @@ function _killTree(pid, signal) {
   if (process.platform === 'win32') {
     try {
       spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore' })
-    } catch (_) {}
+    } catch {
+      // taskkill failing to spawn leaves nothing else to try from here.
+    }
     return
   }
   try {
@@ -224,7 +228,9 @@ function _killTree(pid, signal) {
     // negative pid → process group
     try {
       process.kill(pid, signal)
-    } catch (_) {}
+    } catch {
+      // The process already exited.
+    }
   }
 }
 
@@ -257,7 +263,9 @@ async function stop() {
     // the stale-file sweep below / next start() clears the lock).
     try {
       process.kill(pid, 'SIGTERM')
-    } catch (_) {}
+    } catch {
+      // The process already exited.
+    }
   }
 
   // Wait for the daemon to actually go away: /health stops responding AND the

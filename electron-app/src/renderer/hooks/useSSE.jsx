@@ -35,7 +35,9 @@ export function setLogsEnabled(enabled) {
   logsFlag.enabled = enabled
   try {
     localStorage.setItem(LOGS_ENABLED_KEY, enabled ? '1' : '0')
-  } catch {}
+  } catch {
+    // Storage can be unavailable; the flag still applies for this session.
+  }
 }
 
 export function getLogsEnabled() {
@@ -198,7 +200,9 @@ export function SSEProvider({ children }) {
             stage: data?.stage || 'open',
             command: data?.command || '',
           })
-        } catch {}
+        } catch {
+          // The bridge is absent outside Electron; the wake still reaches the panel.
+        }
       },
       onEvent: (data) => {
         const kind = data.kind || 'log'
@@ -219,7 +223,9 @@ export function SSEProvider({ children }) {
                 title: ok ? `${agent} ✓ completed` : `${agent} ✗ failed`,
                 body: (d.summary || '').slice(0, 200),
               })
-            } catch {}
+            } catch {
+              // The bridge is absent outside Electron; the task list still updates.
+            }
           }
           dispatch({
             type: 'EVENT_LINE',

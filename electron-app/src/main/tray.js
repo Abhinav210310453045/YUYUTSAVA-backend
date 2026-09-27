@@ -163,7 +163,9 @@ function clearAttention() {
   if (process.platform === 'win32' && _win && !_win.isDestroyed()) {
     try {
       _win.flashFrame(false)
-    } catch {}
+    } catch {
+      // Stopping the flash is cosmetic; the window is focused anyway.
+    }
   }
 }
 

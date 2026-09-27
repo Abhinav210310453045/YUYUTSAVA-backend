@@ -46,7 +46,9 @@ export class ConverseClient {
     if (this._ws) {
       try {
         this._ws.close()
-      } catch {}
+      } catch {
+        // Closing a socket that is already closing throws; it is discarded either way.
+      }
       this._ws = null
     }
   }
@@ -128,7 +130,9 @@ export class ConverseClient {
     ws.onerror = () => {
       try {
         ws.close()
-      } catch {}
+      } catch {
+        // onclose follows and reconnects; closing an errored socket may throw.
+      }
     }
   }
 

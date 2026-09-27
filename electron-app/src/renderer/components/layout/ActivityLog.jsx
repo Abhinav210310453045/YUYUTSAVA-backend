@@ -49,7 +49,9 @@ function EventRow({ line, isLast }) {
       navigator.clipboard.writeText(JSON.stringify(raw, null, 2))
       setCopied(true)
       setTimeout(() => setCopied(false), 1000)
-    } catch {}
+    } catch {
+      // A payload that can't be serialised just isn't copied.
+    }
   }
   return (
     <div

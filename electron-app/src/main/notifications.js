@@ -20,11 +20,15 @@ function _platformBounce() {
   if (process.platform === 'darwin') {
     try {
       app.dock.bounce('informational')
-    } catch {}
+    } catch {
+      // An attention cue is cosmetic; the notification itself was shown.
+    }
   } else if (process.platform === 'win32' && _win && !_win.isDestroyed()) {
     try {
       _win.flashFrame(true)
-    } catch {}
+    } catch {
+      // An attention cue is cosmetic; the notification itself was shown.
+    }
   }
 }
 

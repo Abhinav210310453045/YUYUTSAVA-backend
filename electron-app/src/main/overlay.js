@@ -157,7 +157,9 @@ function showAsk({ title = '', agent = '', mainFocused = false } = {}) {
   if (!wasVisible) {
     try {
       require('./notifications').bounce()
-    } catch {}
+    } catch {
+      // An attention cue is cosmetic; the overlay is already up.
+    }
   }
   const send = () => w.webContents.send('overlay:ask', { title, agent })
   if (w.webContents.isLoading()) w.webContents.once('did-finish-load', send)

@@ -115,10 +115,14 @@ if (process.platform === 'darwin' && fs.existsSync(plistPath)) {
         ['-f', appBundleDir],
         { stdio: 'ignore' },
       )
-    } catch (_) {}
+    } catch {
+      // Refreshing the icon cache is cosmetic; the app launches either way.
+    }
     try {
       execFileSync('killall', ['Dock'], { stdio: 'ignore' })
-    } catch (_) {}
+    } catch {
+      // Restarting the Dock only refreshes its icon; launching doesn't depend on it.
+    }
   }
 }
 

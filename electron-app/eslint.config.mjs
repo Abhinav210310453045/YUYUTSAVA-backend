@@ -19,9 +19,9 @@ const shared = {
     'error',
     { argsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_', varsIgnorePattern: '^_' },
   ],
-  // Empty blocks are silent failures. Ratcheted as warnings (see `npm run lint`)
-  // until each is given a reason or real handling (R-UI-01, W7).
-  'no-empty': 'warn',
+  // An empty block is a silent failure: handle it, or say in a comment why
+  // silence is right (R-ERR).
+  'no-empty': 'error',
   // A file does one thing: over the limit, split it by responsibility.
   'max-lines': ['error', { max: maxLines.max }],
 }

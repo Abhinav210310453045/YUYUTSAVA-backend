@@ -60,7 +60,9 @@ function createWindow() {
     if (details && details.reason === 'clean-exit') return
     try {
       win.reload()
-    } catch {}
+    } catch {
+      // The window is being torn down; there is nothing left to reload.
+    }
   })
 
   ipcHandlers.register(win)
