@@ -229,7 +229,26 @@ keyword tokenizer, the HTML sniffing), make it public in its module
 
 ## R-TST-06 — Packages with no tests of their own
 
-**Severity** P1 · **Wave** W6 · **Status** Open
+**Severity** P1 · **Wave** W6 · **Status** **Fixed** (W6, 2026-09-27)
+- **`platform/`: contract tests on every OS.** 14 tests drive the real
+  primitives: a lock across processes, killing a process tree, capture with a
+  timeout, and the native shell. A CI job runs them on Ubuntu, macOS and
+  Windows; only macOS is verified locally.
+- **`prefs/`:** the injector (whitelist, fence, cap, truncation order) and the
+  runtime toggles.
+- **`websearch/`:** registration by key, the rate cap, and result shape and
+  errors. The provider module is faked.
+- **`docker_sandbox/`:** the locked-down `docker run`, exec output, truncation,
+  timeouts, and missing or failing Docker. A fake `docker` on `PATH` plays the
+  CLI.
+- **`artifacts/`:** content kinds, sidecar round trip, attach, the traversal
+  guard, a corrupt sidecar, and ordering.
+- **Each suite is negative-controlled.** Writing them found two defects:
+  `R-BUG-20` (the preferences cap cut the wrong entries) and `R-BUG-21`
+  (CLI-set preferences never reached the daemon on Postgres).
+- **Not given a suite of its own.** `models/` holds pydantic data shapes that
+  the gateway, interrupt and tool-message tests exercise on every call. `ports`
+  is covered by `test/architecture/`. `workspace/` holds only a README.
 
 **Evidence.** No test directory corresponds to these packages:
 - `agents` (beyond `task_runner`), `artifacts`, `todoboard`, `tools`, `visuals`
