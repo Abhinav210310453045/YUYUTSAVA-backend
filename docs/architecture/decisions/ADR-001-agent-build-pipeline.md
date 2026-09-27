@@ -1,7 +1,8 @@
 # ADR-001 — Replace the three agent builders with a declarative spec + pipeline
 
 **Status:** Proposed
-**Addresses:** [`F-D01`](../03-findings-dry-kiss.md#f-d01), [`F-S02`](../02-findings-solid.md#f-s02), [`F-K02`](../03-findings-dry-kiss.md#f-k02), [`F-D06`](../03-findings-dry-kiss.md#f-d06), partially [`F-T03`](../04-findings-thirdparty-coupling.md#f-t03)
+**Status (2026-09-28):** Accepted and implemented incrementally — profiles as data plus shared helpers rather than a parallel pipeline and cut-over, a deliberate revision recorded by the old tracker. See [the ledger](../../code-review/v0.1.0/10-legacy-ledger.md#adr-001).
+**Addresses:** [`F-D01`](../../code-review/v0.1.0/10-legacy-ledger.md#f-d01), [`F-S02`](../../code-review/v0.1.0/10-legacy-ledger.md#f-s02), [`F-K02`](../../code-review/v0.1.0/10-legacy-ledger.md#f-k02), [`F-D06`](../../code-review/v0.1.0/10-legacy-ledger.md#f-d06), partially [`F-T03`](../../code-review/v0.1.0/10-legacy-ledger.md#f-t03)
 **Phase:** 1
 
 ---
@@ -17,7 +18,7 @@ Those choices are not recorded anywhere. They are the *difference between three
 functions*, which means:
 
 - six capabilities already diverge silently across the three
-  ([`F-S02`](../02-findings-solid.md#f-s02) has the matrix);
+  ([`F-S02`](../../code-review/v0.1.0/10-legacy-ledger.md#f-s02) has the matrix);
 - a fourth master agent costs ~250 copied lines and inherits whichever subset of
   the matrix its source happened to have;
 - 27 optional parameters encode combinations whose validity is checked, if at
@@ -134,7 +135,7 @@ plus an undocumented capability decision.
 ### Positive
 
 - Scenario A (new master agent): ~475 lines → ~15. See
-  [05](../05-change-cost-scenarios.md#scenario-a--add-a-new-master-agent).
+  [the ledger](../../code-review/v0.1.0/10-legacy-ledger.md#f-s02) (the retired review's scenario A).
 - The capability matrix becomes data: testable, diffable, reviewable.
 - `core/engine.py` drops from 1319 lines to an estimated < 400.
 - Specs are printable — an operator can log exactly how a running agent was

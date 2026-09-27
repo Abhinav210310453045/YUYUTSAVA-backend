@@ -1,7 +1,8 @@
 # ADR-002 — Collapse the store twins behind a dialect adapter and a domain registry
 
 **Status:** Proposed
-**Addresses:** [`F-D02`](../03-findings-dry-kiss.md#f-d02), [`F-D04`](../03-findings-dry-kiss.md#f-d04), [`F-S04`](../02-findings-solid.md#f-s04), [`F-S07`](../02-findings-solid.md#f-s07), [`F-S10`](../02-findings-solid.md#f-s10), [`F-S12`](../02-findings-solid.md#f-s12)
+**Status (2026-09-28):** Accepted; implemented for 18 of 19 storage domains. Schema centralization (`F-D04`) and the `usage` domain are carried. See [the ledger](../../code-review/v0.1.0/10-legacy-ledger.md#adr-002).
+**Addresses:** [`F-D02`](../../code-review/v0.1.0/10-legacy-ledger.md#f-d02), [`F-D04`](../../code-review/v0.1.0/10-legacy-ledger.md#f-d04), [`F-S04`](../../code-review/v0.1.0/10-legacy-ledger.md#f-s04), [`F-S07`](../../code-review/v0.1.0/10-legacy-ledger.md#f-s07), [`F-S10`](../../code-review/v0.1.0/10-legacy-ledger.md#f-s10), [`F-S12`](../../code-review/v0.1.0/10-legacy-ledger.md#f-s12)
 **Phase:** 2
 
 ---
@@ -16,16 +17,16 @@ Consequences already realized:
 
 - **Divergent semantics.** SQLite twins run inside `BEGIN IMMEDIATE` with
   retry-on-busy via `BaseSqliteStore._run_write`; Postgres twins have neither
-  ([`F-S10`](../02-findings-solid.md#f-s10)). Dev and prod do not agree.
+  ([`F-S10`](../../code-review/v0.1.0/10-legacy-ledger.md#f-s10)). Dev and prod do not agree.
 - **Two schema authorities.** DDL lives in 16 modules *and* in an 866-line
   `storage/pg/migrations.py`, with two unrelated version counters
-  ([`F-D04`](../03-findings-dry-kiss.md#f-d04)).
+  ([`F-D04`](../../code-review/v0.1.0/10-legacy-ledger.md#f-d04)).
 - **Hardcoded lifecycle lists.** `storage/purge.py:79` `_PG_CHILD_TABLES` is an
   11-entry tuple with a SQLite twin. Forgetting an entry means session deletion
   silently orphans rows — a data-retention bug with no test to catch it.
 - **13 backend branches** in `build_daemon`, plus a *second*, contradictory
   policy (`RoutedStore`) applied to 3 of 17 stores with no documentation of why
-  ([`F-S07`](../02-findings-solid.md#f-s07)).
+  ([`F-S07`](../../code-review/v0.1.0/10-legacy-ledger.md#f-s07)).
 
 ## Decision
 
@@ -133,7 +134,7 @@ divergence that has *already* occurred in transaction semantics.
 - 51 store classes → ~17 implementations + 2 dialect adapters.
 - Scenario B (new domain): ~515 lines → ~120, and the purge/sweep traps become
   structurally impossible rather than merely documented. See
-  [05](../05-change-cost-scenarios.md#scenario-b--add-a-new-persisted-domain).
+  [the ledger](../../code-review/v0.1.0/10-legacy-ledger.md#f-d02) (the retired review's scenario B).
 - `F-S10` dissolves: one transaction policy by construction.
 - `F-S04`'s 13 branches collapse to one `StoreFactory`.
 - `F-S07`'s failover policy becomes declared data.

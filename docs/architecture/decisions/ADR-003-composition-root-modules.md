@@ -1,7 +1,8 @@
 # ADR-003 — Extract `ports/` and split the composition root into subsystem builders
 
 **Status:** Proposed
-**Addresses:** [`F-S01`](../02-findings-solid.md#f-s01), [`F-S05`](../02-findings-solid.md#f-s05), [`F-S08`](../02-findings-solid.md#f-s08), [`F-K01`](../03-findings-dry-kiss.md#f-k01), [`F-K03`](../03-findings-dry-kiss.md#f-k03), [`F-D06`](../03-findings-dry-kiss.md#f-d06)
+**Status (2026-09-28):** Accepted and implemented — `ports/`, typed dependency bundles, subsystem builders (`build_daemon` 62 lines), and no process singletons left. See [the ledger](../../code-review/v0.1.0/10-legacy-ledger.md#adr-003).
+**Addresses:** [`F-S01`](../../code-review/v0.1.0/10-legacy-ledger.md#f-s01), [`F-S05`](../../code-review/v0.1.0/10-legacy-ledger.md#f-s05), [`F-S08`](../../code-review/v0.1.0/10-legacy-ledger.md#f-s08), [`F-K01`](../../code-review/v0.1.0/10-legacy-ledger.md#f-k01), [`F-K03`](../../code-review/v0.1.0/10-legacy-ledger.md#f-k03), [`F-D06`](../../code-review/v0.1.0/10-legacy-ledger.md#f-d06)
 **Phase:** 3 · **Requires:** ADR-001, ADR-002
 
 ---

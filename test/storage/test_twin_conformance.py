@@ -28,7 +28,8 @@ import inspect
 import unittest
 
 #: (module, interface, sqlite impl, pg impl) for every domain with two backends.
-#: Derived from docs/architecture/review/01-evidence-and-metrics.md § M3.
+#: Derived from the retired structural review's twin inventory (F-D02 in
+#: docs/code-review/v0.1.0/10-legacy-ledger.md).
 TWINS: tuple[tuple[str, str, str, str], ...] = (
     ("yuyutsava.storage.usage", "UsageStore", "SqliteUsageStore", "PgUsageStore"),
 )

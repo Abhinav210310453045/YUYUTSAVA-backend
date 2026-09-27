@@ -7,7 +7,7 @@ edited only to record status — the next review gets a new version.
 
 | Version | Reviewed commit | Scope | Status |
 |---|---|---|---|
-| [v0.1.0](v0.1.0/README.md) | `f4ec45c` — `main` on 2026-09-14, after the context-telemetry merge | `yuyutsava/`, `test/`, `scripts/`, `electron-app/` | Fixes in progress on branch `code-improvement` |
+| [v0.1.0](v0.1.0/README.md) | `f4ec45c` — `main` on 2026-09-14, after the context-telemetry merge | `yuyutsava/`, `test/`, `scripts/`, `electron-app/` | Remediation done (W1–W8) on branch `code-improvement`; carried items listed in its [plan](v0.1.0/11-remediation-plan.md#carried) |
 
 Release tags and review versions share a number line: `v0.1.0-simple-cli` is
 the first release tag, and Code Review v0.1.0 is the first review of that line.

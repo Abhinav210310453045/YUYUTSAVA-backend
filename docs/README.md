@@ -15,31 +15,15 @@ How the system is built and why.
 | [architecture/task-runner.md](architecture/task-runner.md) | The filesystem/shell gateway — zones, permission model, rule table. |
 | [mcp_architecture.html](mcp_architecture.html) | MCP connectivity: client manager lifecycle, tool scoping, and what is *not* supported (SSE only, no sampling, no elicitation). Hand-drawn SVG diagrams — GitHub shows this as source, so open it in a browser. |
 
-## Code review
+## Architecture decisions
 
-[code-review/](code-review/README.md) holds versioned, evidence-based reviews of
-the code itself — readability, SOLID/KISS/DRY, placement, import hygiene,
-`__init__.py` contents, errors, tests and the Electron app — each with normative
-standards and a remediation plan. Start with
-[code-review/v0.1.0/00-executive-summary.md](code-review/v0.1.0/00-executive-summary.md);
-engineers changing code should read
-[code-review/v0.1.0/01-standards.md](code-review/v0.1.0/01-standards.md).
-
-### Architecture review (superseded)
-
-Superseded by Code Review v0.1.0, whose
+[architecture/decisions/](architecture/decisions/) holds the ADRs behind today's
+structure (agent builders from profiles, the storage dialect, the composition
+root, the framework boundary), each with a dated status. The structural review
+that proposed them was retired at the close of Code Review v0.1.0; its
 [legacy ledger](code-review/v0.1.0/10-legacy-ledger.md) records the status of
-every finding below. This section is removed when the review's fixes land.
-
-[architecture/review/](architecture/review/) is a strict evaluation of the
-`yuyutsava/` package against SOLID, DRY and KISS, plus an analysis of coupling
-to third-party framework abstractions. Findings are keyed (`F-S07`, `F-D04`,
-`F-T01`…) and referenced directly from source docstrings.
-
-Read [review/00-executive-summary.md](architecture/review/00-executive-summary.md)
-first, or jump to [review/06-remediation-plan.md](architecture/review/06-remediation-plan.md)
-for the plan. The four accepted decisions live in
-[review/adr/](architecture/review/adr/).
+every one of its findings (`F-S07`, `F-D04`, `F-T01`…), and source docstrings
+that cite those IDs link there.
 
 ## Reference
 

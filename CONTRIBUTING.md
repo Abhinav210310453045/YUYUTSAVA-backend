@@ -134,7 +134,7 @@ change.
 `pyproject.toml` pins upper bounds on `deepagents`, `langgraph`, `langchain`
 and friends. This is not laziness. The codebase couples to framework internals,
 and **some of those couplings fail silently on upgrade** — see
-[docs/architecture/review/04-findings-thirdparty-coupling.md](docs/architecture/review/04-findings-thirdparty-coupling.md).
+[`F-T04` in the legacy ledger](docs/code-review/v0.1.0/10-legacy-ledger.md#f-t04).
 
 Do not relax a ceiling without running `scripts/verify_framework_contract.py`
 against the new version. That run is the acceptance criterion, and a PR raising
@@ -175,8 +175,10 @@ Being upfront so you are not surprised:
   remediation in `docs/code-review/v0.1.0/` brings them down. Please do not
   bundle a reformat into an unrelated PR.
 - **Interfaces are unstable.** This is alpha. Expect things to move.
-- **The architecture review is honest about the debt.** Start at
-  [docs/architecture/review/00-executive-summary.md](docs/architecture/review/00-executive-summary.md)
+- **The code review is honest about the debt.** Start at
+  [docs/code-review/v0.1.0/00-executive-summary.md](docs/code-review/v0.1.0/00-executive-summary.md)
+  and the carried items in
+  [11-remediation-plan.md](docs/code-review/v0.1.0/11-remediation-plan.md#carried)
   if you want to know where the structural problems are before you pick
   something up.
 

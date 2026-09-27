@@ -1,7 +1,7 @@
 """The ``Policy`` contract — a YUYUTSAVA cross-cutting concern, in our own types.
 
-[ADR-004](../../docs/architecture/review/adr/ADR-004-framework-boundary.md)
-item 1, addressing [`F-T01`](../../docs/architecture/review/04-findings-thirdparty-coupling.md#f-t01).
+[ADR-004](../../docs/architecture/decisions/ADR-004-framework-boundary.md)
+item 1, addressing [`F-T01`](../../docs/code-review/v0.1.0/10-legacy-ledger.md#f-t01).
 
 This system's own policies — permissions, budget ceilings, cost accounting,
 tool filtering, transcript persistence, skill retrieval — are not LangChain

@@ -10,11 +10,12 @@ domain stores, including the artifact, summary, transcript, memory, skill,
 todo, visual, voice, feedback, interrupt, task, usage and session stores.
 Changing its transaction or retry behaviour changes all of them at once.
 
-Note that only the *SQLite* twins inherit from it — the Postgres twins reach
-the pool directly and therefore do NOT get its ``BEGIN IMMEDIATE`` wrapper or
-its retry policy. That asymmetry is a known LSP defect (finding ``F-S10`` in
-docs/architecture/review/); it is resolved by ADR-002, which moves the
-transaction policy into a shared dialect adapter.
+The unified domain stores share one transaction policy through the dialect
+adapter (ADR-002, docs/architecture/decisions/). The exception is the
+unmigrated ``usage`` domain (``storage/usage.py``): its SQLite store inherits
+from this class, while its Postgres store reaches the pool directly and does
+not get the ``BEGIN IMMEDIATE`` wrapper or the retry policy (``F-S10`` and
+``F-D02`` in docs/code-review/v0.1.0/10-legacy-ledger.md; carried).
 """
 
 from __future__ import annotations

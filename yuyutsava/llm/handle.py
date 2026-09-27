@@ -1,6 +1,6 @@
 """``ModelHandle`` — a chat model plus what this system actually knows about it.
 
-[ADR-004](../../docs/architecture/review/adr/ADR-004-framework-boundary.md)
+[ADR-004](../../docs/architecture/decisions/ADR-004-framework-boundary.md)
 item 2 — *"the cheapest item in the entire review with a real payoff"*.
 
 ## The problem it solves

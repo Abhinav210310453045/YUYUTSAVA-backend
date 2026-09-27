@@ -1,6 +1,6 @@
 """What a policy sees and what it may answer — in YUYUTSAVA's own types.
 
-[ADR-004](../../docs/architecture/review/adr/ADR-004-framework-boundary.md)
+[ADR-004](../../docs/architecture/decisions/ADR-004-framework-boundary.md)
 item 1.
 
 ## Scope of these types

@@ -1,6 +1,6 @@
 """The one place this system knows about ``AgentMiddleware``.
 
-[ADR-004](../../docs/architecture/review/adr/ADR-004-framework-boundary.md)
+[ADR-004](../../docs/architecture/decisions/ADR-004-framework-boundary.md)
 item 1. Every policy reaches the framework through this one adapter, so a
 hook-signature change is a one-file change.
 

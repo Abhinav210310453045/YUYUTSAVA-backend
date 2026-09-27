@@ -1,7 +1,8 @@
 # ADR-004 — Draw a boundary between YUYUTSAVA policy and the agent framework
 
 **Status:** Proposed — **requires an explicit go/no-go decision**
-**Addresses:** [`F-T01`](../04-findings-thirdparty-coupling.md#f-t01), [`F-T02`](../04-findings-thirdparty-coupling.md#f-t02), [`F-T03`](../04-findings-thirdparty-coupling.md#f-t03), [`F-T06`](../04-findings-thirdparty-coupling.md#f-t06), [`F-D03`](../03-findings-dry-kiss.md#f-d03)
+**Status (2026-09-28):** Accepted by the owner on 2026-08-10 and executed; the constructing half of `F-T03` remains by design. See [the ledger](../../code-review/v0.1.0/10-legacy-ledger.md#adr-004).
+**Addresses:** [`F-T01`](../../code-review/v0.1.0/10-legacy-ledger.md#f-t01), [`F-T02`](../../code-review/v0.1.0/10-legacy-ledger.md#f-t02), [`F-T03`](../../code-review/v0.1.0/10-legacy-ledger.md#f-t03), [`F-T06`](../../code-review/v0.1.0/10-legacy-ledger.md#f-t06), [`F-D03`](../../code-review/v0.1.0/10-legacy-ledger.md#f-d03)
 **Phase:** 4 (optional) · **Requires:** ADR-001, ADR-003
 
 ---

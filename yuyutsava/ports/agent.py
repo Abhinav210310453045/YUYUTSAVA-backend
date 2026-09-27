@@ -1,7 +1,7 @@
 """What the driver needs from a compiled agent — and nothing more.
 
 ADR-004 item 4, partially addressing
-[`F-T03`](../../docs/architecture/review/04-findings-thirdparty-coupling.md#f-t03).
+[`F-T03`](../../docs/code-review/v0.1.0/10-legacy-ledger.md#f-t03).
 
 ``yuyutsava.core.streaming`` annotated its two entrypoints
 ``agent: CompiledStateGraph``. That is a LangGraph class with a large surface,

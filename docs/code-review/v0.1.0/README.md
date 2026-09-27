@@ -27,16 +27,18 @@ its code will keep letting it grow.
 
 ## Relationship to the structural review
 
-`docs/architecture/review/` (2026-08-08) evaluated the architecture — agent
+The structural review of 2026-08-08 (formerly `docs/architecture/review/`) evaluated the architecture — agent
 builders, storage twins, the composition root, framework coupling — and its
 remediation plan was largely executed. This review works one level down, at the
 code itself, and **supersedes** it:
 
 - every finding of the old review is closed or carried forward here, by ID, in
   [10-legacy-ledger.md](10-legacy-ledger.md);
-- its four ADRs move to `docs/architecture/decisions/` because they still explain
-  why the current code is shaped the way it is;
-- the old review directory is deleted once this review's fixes have landed.
+- its four ADRs moved to [`docs/architecture/decisions/`](../../architecture/decisions/README.md)
+  because they still explain why the current code is shaped the way it is, and
+  its storage migration playbook to
+  [`docs/architecture/storage-migration-playbook.md`](../../architecture/storage-migration-playbook.md);
+- the old review directory was deleted at W8, once this review's fixes had landed.
 
 ## How to read
 

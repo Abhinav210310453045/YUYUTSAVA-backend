@@ -7,8 +7,8 @@
 > view of the SSE/WebSocket surfaces drawn below — frame catalogs, `seq`/replay
 > semantics, the voice PCM path — see [`docs/Transport.md`](transport.md).
 >
-> **Updated** after the Phase 0–4 architecture remediation
-> (`docs/architecture/review/`). The structural changes that show up here:
+> **Updated** after the Phase 0–4 architecture remediation (the decisions are
+> in [`decisions/`](decisions/README.md)). The structural changes that show up here:
 > `build_daemon` split into seven builders, the fourteen middleware classes
 > replaced by one `LangChainPolicyAdapter` over plain policies, the two stream
 > drivers merged into `drive_graph` + two sinks, and the SQLite/Postgres store

@@ -1,7 +1,9 @@
 # 10 — Legacy ledger
 
 The status of every finding, carry-over and decision from the structural review
-in `docs/architecture/review/` (2026-08-08). That review's execution tracker
+of 2026-08-08, formerly `docs/architecture/review/`, retired at W8: its ADRs are
+in [`docs/architecture/decisions/`](../../architecture/decisions/README.md) and its
+migration playbook is [`storage-migration-playbook.md`](../../architecture/storage-migration-playbook.md). That review's execution tracker
 lives on the `yuyutsava-daemon` branch as `docs/internal/PROGRESS.md`.
 
 Source docstrings that cite an old ID (`F-T04`, `ADR-004`, …) point here once the

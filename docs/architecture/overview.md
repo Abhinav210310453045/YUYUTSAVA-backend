@@ -1888,7 +1888,8 @@ YUYUTSAVA_EXECUTION=docker + YUYUTSAVA_DOCKER_* (sandbox)
 ---
 
 *This document reflects the current source tree (updated after the Phase 0–4
-architecture remediation — see `docs/architecture/review/`). When you change a
+architecture remediation — see [`decisions/`](decisions/README.md) and
+[Code Review v0.1.0](../code-review/v0.1.0/README.md)). When you change a
 subsystem's wiring (`daemon/bootstrap.py`), a policy or its ordering
 (`yuyutsava/policy/`, `core/engine.py`), a storage migration
 (`storage/pg/migrations.py`), or a channel/consent contract, update the

@@ -17,8 +17,8 @@ layer between the model and your filesystem.
 
 > **Status: alpha.** It is used daily by its author, and the internals still
 > move. Interfaces are not yet stable. See
-> [docs/architecture/review/](docs/architecture/review/) for a candid
-> assessment of the codebase's current structural debt.
+> [docs/code-review/](docs/code-review/) for a candid assessment of the
+> codebase's structure, what was fixed, and what is still carried.
 
 <!-- TODO: screenshot of the Electron app goes here -->
 
@@ -213,7 +213,8 @@ Start at **[docs/](docs/README.md)**.
 | [Daemon flows](docs/architecture/daemon.md) | Boot, events, triage, orchestration, shutdown |
 | [Transport](docs/architecture/transport.md) | Wire level — SSE/WebSocket frames, the voice PCM path |
 | [`/v1` API](docs/reference/api-v1.md) | The daemon's HTTP contract |
-| [Architecture review](docs/architecture/review/) | SOLID/DRY/KISS findings, ADRs, remediation plan |
+| [Code review](docs/code-review/) | Versioned reviews: findings, metrics, remediation and what is carried |
+| [Architecture decisions](docs/architecture/decisions/) | The ADRs behind today's structure |
 
 ---
 

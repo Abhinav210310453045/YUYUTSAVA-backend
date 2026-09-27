@@ -1,7 +1,7 @@
 """Asking the user something, without knowing how the answer arrives.
 
-[ADR-004](../../docs/architecture/review/adr/ADR-004-framework-boundary.md)
-item 3, addressing [`F-T06`](../../docs/architecture/review/04-findings-thirdparty-coupling.md#f-t06).
+[ADR-004](../../docs/architecture/decisions/ADR-004-framework-boundary.md)
+item 3, addressing [`F-T06`](../../docs/code-review/v0.1.0/10-legacy-ledger.md#f-t06).
 
 ``langgraph.types.interrupt()`` is called from inside domain code — permission
 checks, the task-runner gateway, ``tr_ask_user``. Each of those is a YUYUTSAVA
