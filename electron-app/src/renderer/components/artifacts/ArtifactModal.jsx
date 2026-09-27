@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { resolveBlock } from '../todos/artifactBlocks'
+import { alpha } from '../../lib/color'
 
 // Full-screen "big view" for any artifact — the block-aware twin of Lightbox
 // (which is <img>-only). Renders whatever the pluggable registry resolves for
@@ -64,9 +65,9 @@ export default function ArtifactModal({ attachment, cardId, onClose }) {
           width: 'min(1100px, 96vw)',
           maxHeight: '92vh',
           background: 'var(--bg-elevated, #14141f)',
-          border: `1px solid ${accent}44`,
+          border: `1px solid ${alpha(accent, 27)}`,
           borderRadius: 12,
-          boxShadow: `0 16px 70px rgba(0,0,0,0.7), 0 0 30px ${accent}18`,
+          boxShadow: `0 16px 70px rgba(0,0,0,0.7), 0 0 30px ${alpha(accent, 9)}`,
           animation: 'overlay-in 0.2s ease',
           overflow: 'hidden',
         }}
@@ -77,7 +78,7 @@ export default function ArtifactModal({ attachment, cardId, onClose }) {
             alignItems: 'center',
             gap: 10,
             padding: '10px 14px',
-            borderBottom: `1px solid ${accent}22`,
+            borderBottom: `1px solid ${alpha(accent, 13)}`,
             fontFamily: 'var(--font-mono)',
           }}
         >
@@ -87,7 +88,7 @@ export default function ArtifactModal({ attachment, cardId, onClose }) {
               textTransform: 'uppercase',
               letterSpacing: '0.06em',
               color: accent,
-              border: `1px solid ${accent}55`,
+              border: `1px solid ${alpha(accent, 33)}`,
               borderRadius: 6,
               padding: '1px 6px',
             }}

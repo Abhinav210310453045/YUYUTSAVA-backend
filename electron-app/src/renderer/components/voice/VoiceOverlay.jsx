@@ -4,6 +4,7 @@ import { useRuntimeSettings } from '../../hooks/useRuntimeSettings'
 import { audioPlayer } from '../../audio'
 import ArtifactModal from '../artifacts/ArtifactModal'
 import { subscribeAskShowing, isAskShowing } from '../asks/overlayState'
+import { alpha } from '../../lib/color'
 
 // The mini voice overlay rendered in its own frameless transparent window.
 // It opens (hotkey / wake word), plays an open earcon, listens, shows a compact
@@ -127,7 +128,7 @@ function OverlayMic({ listening, speaking, busy }) {
             position: 'absolute',
             inset: 3,
             borderRadius: '50%',
-            background: `conic-gradient(from 0deg, ${accent}00 0%, ${accent}00 60%, ${accent} 100%)`,
+            background: `conic-gradient(from 0deg, ${alpha(accent, 0)} 0%, ${alpha(accent, 0)} 60%, ${accent} 100%)`,
             WebkitMask:
               'radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px))',
             mask: 'radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px))',
@@ -142,7 +143,7 @@ function OverlayMic({ listening, speaking, busy }) {
           borderRadius: '50%',
           display: 'grid',
           placeItems: 'center',
-          background: `radial-gradient(circle at 50% 38%, ${accent}44, ${accent}0d)`,
+          background: `radial-gradient(circle at 50% 38%, ${alpha(accent, 27)}, ${alpha(accent, 5)})`,
           border: `1.5px solid ${accent}`,
           color: accent,
           animation: DISC_ANIM[state],
@@ -304,11 +305,11 @@ export default function VoiceOverlay() {
           // Layered glass: a deep tinted base plus a state-tinted wash, so the
           // panel takes on the mic's hue instead of just outlining it.
           background: `linear-gradient(160deg, rgba(26,26,46,0.90), rgba(10,10,15,0.92)),
-                     radial-gradient(80% 120% at 12% 0%, ${accent}22, transparent 70%)`,
+                     radial-gradient(80% 120% at 12% 0%, ${alpha(accent, 13)}, transparent 70%)`,
           backdropFilter: 'blur(26px)',
           WebkitBackdropFilter: 'blur(26px)',
-          border: `1px solid ${accent}44`,
-          boxShadow: `0 12px 48px rgba(0,0,0,0.58), 0 0 34px ${accent}26`,
+          border: `1px solid ${alpha(accent, 27)}`,
+          boxShadow: `0 12px 48px rgba(0,0,0,0.58), 0 0 34px ${alpha(accent, 15)}`,
           transition: 'border-color 0.35s ease, box-shadow 0.35s ease, background 0.35s ease',
           animation: `${phase === 'out' ? 'overlay-out' : 'overlay-in'} ${EXIT_MS}ms ease`,
           animationFillMode: 'both',
@@ -324,7 +325,7 @@ export default function VoiceOverlay() {
             left: 16,
             right: 16,
             height: 1,
-            background: `linear-gradient(90deg, transparent, ${accent}88, transparent)`,
+            background: `linear-gradient(90deg, transparent, ${alpha(accent, 53)}, transparent)`,
             transition: 'background 0.35s ease',
           }}
         />
@@ -351,8 +352,8 @@ export default function VoiceOverlay() {
               letterSpacing: '0.12em',
               textTransform: 'uppercase',
               color: accent,
-              background: `${accent}18`,
-              border: `1px solid ${accent}40`,
+              background: `${alpha(accent, 9)}`,
+              border: `1px solid ${alpha(accent, 25)}`,
               borderRadius: 999,
               padding: '3px 10px',
               transition: 'color 0.35s ease, background 0.35s ease, border-color 0.35s ease',

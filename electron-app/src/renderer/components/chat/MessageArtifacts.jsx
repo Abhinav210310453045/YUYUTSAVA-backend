@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { resolveBlock } from '../todos/artifactBlocks'
 import ArtifactModal from '../artifacts/ArtifactModal'
+import { alpha } from '../../lib/color'
 
 // Inline rendering of a message's rich artifacts (interactive HTML/JSX, docs,
 // audio) right inside the chat/voice bubble — the non-visual twin of
@@ -36,9 +37,9 @@ export default function MessageArtifacts({ artifacts }) {
               margin: 0,
               borderRadius: 12,
               overflow: 'hidden',
-              border: `1px solid ${accent}44`,
+              border: `1px solid ${alpha(accent, 27)}`,
               background: 'var(--bg-deep)',
-              boxShadow: `0 2px 14px rgba(0,0,0,0.4), 0 0 18px ${accent}18`,
+              boxShadow: `0 2px 14px rgba(0,0,0,0.4), 0 0 18px ${alpha(accent, 9)}`,
               maxWidth: 440,
               animation: 'bubble-pop 0.28s cubic-bezier(0.34,1.56,0.64,1)',
             }}
@@ -49,7 +50,7 @@ export default function MessageArtifacts({ artifacts }) {
                 alignItems: 'center',
                 gap: 6,
                 padding: '6px 10px',
-                borderBottom: `1px solid ${accent}22`,
+                borderBottom: `1px solid ${alpha(accent, 13)}`,
                 fontFamily: 'var(--font-mono)',
               }}
             >
@@ -59,7 +60,7 @@ export default function MessageArtifacts({ artifacts }) {
                   textTransform: 'uppercase',
                   letterSpacing: '0.06em',
                   color: accent,
-                  border: `1px solid ${accent}55`,
+                  border: `1px solid ${alpha(accent, 33)}`,
                   borderRadius: 6,
                   padding: '1px 6px',
                 }}
@@ -85,7 +86,7 @@ export default function MessageArtifacts({ artifacts }) {
                   background: 'transparent',
                   color: accent,
                   cursor: 'pointer',
-                  border: `1px solid ${accent}55`,
+                  border: `1px solid ${alpha(accent, 33)}`,
                   borderRadius: 6,
                   padding: '2px 8px',
                   fontSize: 11,

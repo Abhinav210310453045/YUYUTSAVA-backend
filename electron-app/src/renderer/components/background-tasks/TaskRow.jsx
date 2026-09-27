@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { getTaskLogs } from '../../api/client'
+import { alpha } from '../../lib/color'
 
 function fmtElapsed(seconds) {
   if (seconds < 60) return `${Math.floor(seconds)}s`
@@ -71,7 +72,9 @@ export default function TaskRow({ task, onOpen }) {
         lineHeight: 1.45,
         transition: 'transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease',
         transform: hover ? 'translateY(-2px) scale(1.01)' : 'none',
-        boxShadow: hover ? `0 6px 18px rgba(0,0,0,0.35), 0 0 10px ${style.color}22` : 'none',
+        boxShadow: hover
+          ? `0 6px 18px rgba(0,0,0,0.35), 0 0 10px ${alpha(style.color, 13)}`
+          : 'none',
       }}
     >
       <div

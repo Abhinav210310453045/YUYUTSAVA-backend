@@ -3,6 +3,7 @@ import { visualUrl } from '../../api/client'
 import { kindAccent } from '../artifacts/kinds'
 import Lightbox from '../artifacts/Lightbox'
 import VisualActions from '../artifacts/VisualActions'
+import { alpha } from '../../lib/color'
 
 // Inline rendering of a message's rendered artifacts (charts/diagrams/tables/…)
 // right inside the chat/voice bubble — Claude-Desktop style. Click to zoom.
@@ -29,10 +30,10 @@ export default function MessageImages({ images }) {
               margin: 0,
               borderRadius: 12,
               overflow: 'hidden',
-              border: `1px solid ${accent}44`,
+              border: `1px solid ${alpha(accent, 27)}`,
               background: 'var(--bg-deep)',
-              boxShadow: `0 2px 14px rgba(0,0,0,0.4), 0 0 18px ${accent}18`,
-              '--bulge-glow': `${accent}55`,
+              boxShadow: `0 2px 14px rgba(0,0,0,0.4), 0 0 18px ${alpha(accent, 9)}`,
+              '--bulge-glow': `${alpha(accent, 33)}`,
               animation: 'bubble-pop 0.28s cubic-bezier(0.34,1.56,0.64,1)',
               maxWidth: 380,
             }}
@@ -57,7 +58,7 @@ export default function MessageImages({ images }) {
                 alignItems: 'center',
                 gap: 6,
                 padding: '6px 10px',
-                borderTop: `1px solid ${accent}22`,
+                borderTop: `1px solid ${alpha(accent, 13)}`,
               }}
             >
               <span
@@ -67,7 +68,7 @@ export default function MessageImages({ images }) {
                   textTransform: 'uppercase',
                   letterSpacing: '0.06em',
                   color: accent,
-                  border: `1px solid ${accent}55`,
+                  border: `1px solid ${alpha(accent, 33)}`,
                   borderRadius: 6,
                   padding: '1px 6px',
                 }}

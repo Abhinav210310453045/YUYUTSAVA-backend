@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { submitFeedback } from '../../api/client'
+import { alpha } from '../../lib/color'
 
 // Hover actions under an assistant bubble: Copy, Regenerate, and 👍/👎 reactions.
 // The reactions persist the (user, assistant) pair to the feedback table for a
@@ -27,7 +28,7 @@ function IconBtn({ title, onClick, active, activeColor = 'var(--neon-green)', ch
         cursor: 'pointer',
         padding: '3px 7px',
         borderRadius: 7,
-        background: active ? `${activeColor}1f` : 'var(--glass-bg)',
+        background: active ? `${alpha(activeColor, 12)}` : 'var(--glass-bg)',
         border: `1px solid ${active ? activeColor : 'var(--glass-border)'}`,
         color: active ? activeColor : 'var(--text-muted)',
         backdropFilter: 'blur(8px)',

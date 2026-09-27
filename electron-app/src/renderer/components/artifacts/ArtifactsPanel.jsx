@@ -13,6 +13,7 @@ import ArtifactModal from './ArtifactModal'
 import VisualActions from './VisualActions'
 import { useNav } from '../../nav/NavProvider'
 import { useViewState, useScrollRestore } from '../../nav/useViewState'
+import { alpha } from '../../lib/color'
 
 // A gallery of everything the agent has produced. Two feeds:
 //   • Visuals (charts/diagrams/tables/…) served from /visuals, session-scoped.
@@ -44,10 +45,10 @@ function VisualCard({ v, onOpen, onDeleted }) {
         gap: 8,
         padding: 8,
         background: 'var(--bg-card)',
-        border: `1px solid ${accent}55`,
+        border: `1px solid ${alpha(accent, 33)}`,
         borderRadius: 10,
         textAlign: 'left',
-        '--bulge-glow': `${accent}44`,
+        '--bulge-glow': `${alpha(accent, 27)}`,
       }}
     >
       <img
@@ -73,7 +74,7 @@ function VisualCard({ v, onOpen, onDeleted }) {
             textTransform: 'uppercase',
             letterSpacing: '0.06em',
             color: accent,
-            border: `1px solid ${accent}55`,
+            border: `1px solid ${alpha(accent, 33)}`,
             borderRadius: 6,
             padding: '1px 6px',
           }}
@@ -113,7 +114,7 @@ function ArtifactTile({ item, onExpand }) {
         margin: 0,
         borderRadius: 10,
         overflow: 'hidden',
-        border: `1px solid ${accent}44`,
+        border: `1px solid ${alpha(accent, 27)}`,
         background: 'var(--bg-card)',
       }}
     >
@@ -123,7 +124,7 @@ function ArtifactTile({ item, onExpand }) {
           alignItems: 'center',
           gap: 6,
           padding: '6px 10px',
-          borderBottom: `1px solid ${accent}22`,
+          borderBottom: `1px solid ${alpha(accent, 13)}`,
           fontFamily: 'var(--font-mono)',
         }}
       >
@@ -133,7 +134,7 @@ function ArtifactTile({ item, onExpand }) {
             textTransform: 'uppercase',
             letterSpacing: '0.06em',
             color: accent,
-            border: `1px solid ${accent}55`,
+            border: `1px solid ${alpha(accent, 33)}`,
             borderRadius: 6,
             padding: '1px 6px',
           }}
@@ -166,7 +167,7 @@ function ArtifactTile({ item, onExpand }) {
             background: 'transparent',
             color: accent,
             cursor: 'pointer',
-            border: `1px solid ${accent}55`,
+            border: `1px solid ${alpha(accent, 33)}`,
             borderRadius: 6,
             padding: '1px 7px',
             fontSize: 11,

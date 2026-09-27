@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { getTaskLogs } from '../../api/client'
+import { alpha } from '../../lib/color'
 
 // Full-height drawer that shows how the deepagent drives one background
 // sub-agent: its instruction, every tool call (name + args), each result/output,
@@ -100,7 +101,9 @@ function TimelineItem({ msg, isLast }) {
           animation: 'card-enter 0.25s ease',
           transition: 'transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease',
           transform: hover ? 'translateY(-2px) scale(1.01)' : 'none',
-          boxShadow: hover ? `0 6px 20px rgba(0,0,0,0.35), 0 0 12px ${nodeColor}22` : 'none',
+          boxShadow: hover
+            ? `0 6px 20px rgba(0,0,0,0.35), 0 0 12px ${alpha(nodeColor, 13)}`
+            : 'none',
         }}
       >
         <div
@@ -384,7 +387,7 @@ export default function TaskDetail({ task, onClose }) {
                 padding: '10px 12px',
                 borderRadius: 8,
                 background: 'rgba(var(--accent-rgb),0.05)',
-                border: `1px solid ${style.color}44`,
+                border: `1px solid ${alpha(style.color, 27)}`,
               }}
             >
               <div

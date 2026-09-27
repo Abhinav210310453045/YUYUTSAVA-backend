@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { alpha } from '../../lib/color'
 
 // Small "＋ New" button used in the Chat and Voice headers to start a fresh
 // conversation in-place (the panel stays mounted; only the thread resets).
@@ -29,7 +30,7 @@ export default function NewSessionButton({ onClick, label = 'New', color = 'var(
         transition:
           'transform 0.15s ease, background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease',
         transform: hover ? 'translateY(-1px)' : 'none',
-        boxShadow: hover ? `0 0 12px ${color}66` : 'none',
+        boxShadow: hover ? `0 0 12px ${alpha(color, 40)}` : 'none',
       }}
     >
       <span style={{ fontSize: 12, lineHeight: 1 }}>＋</span>
