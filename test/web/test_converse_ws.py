@@ -12,6 +12,7 @@ import asyncio
 
 from fastapi.testclient import TestClient
 
+from test.support.ws import collect_until
 from yuyutsava.core.streaming import StreamEvent
 from yuyutsava.daemon.turn_registry import TurnRegistry
 from yuyutsava.daemon.web.app import create_app
@@ -41,7 +42,7 @@ class _FakeConvo:
     async def run_turn(self, text, *, on_event, ask_handler=None, **_kw) -> str:
         await on_event(StreamEvent("token", {"text": "hi "}))
         if "ask" in text and ask_handler is not None:
-            ans = await ask_handler({"type": "user_question", "body": "proceed?"})
+            ans = await ask_handler({"type": "user_question", "question": "proceed?"})
             await on_event(StreamEvent("token", {"text": f"[{ans}]"}))
         if "slow" in text:
             await asyncio.sleep(5)  # cancelled by an interrupt in the test
@@ -81,13 +82,8 @@ def _make_app():
 
 
 def _drain_turn(ws):
-    """Collect frames until turn_end; return list of frames."""
-    frames = []
-    while True:
-        f = ws.receive_json()
-        frames.append(f)
-        if f["type"] == "turn_end":
-            return frames
+    """Frames up to and including turn_end — failing, not parking, on a hang."""
+    return collect_until(ws, "turn_end")
 
 
 def test_hello_and_basic_turn():
@@ -115,18 +111,22 @@ def test_inline_ask_roundtrip():
         ws.receive_json()  # hello
         ws.send_json({"type": "user_text", "text": "please ask me"})
         # First frame(s): a token, then an ask.
-        ask = None
-        seen = []
-        while ask is None:
-            f = ws.receive_json()
-            seen.append(f)
-            if f["type"] == "ask":
-                ask = f
-        assert ask["payload"]["body"] == "proceed?"
+        seen = collect_until(ws, "ask")
+        ask = seen[-1]
+        # The ask frame carries the same wire record every surface renders
+        # (AskPrompt.to_wire_dict), under "ask".
+        assert ask["ask"]["body"] == "proceed?"
+        assert ask["ask"]["ask_id"]
+        # Answered WITHOUT an ask_id, as the app's client does when it has none:
+        # the server resolves the run's pending ask. (test_converse_frames covers
+        # the answer that names its ask_id.)
         ws.send_json({"type": "ask_response", "text": "yes go"})
         frames = _drain_turn(ws)
         text = "".join(f.get("text", "") for f in (seen + frames) if f["type"] == "token")
         assert "[yes go]" in text
+        assert any(
+            f["type"] == "ask_resolved" and f["ask_id"] == ask["ask"]["ask_id"] for f in frames
+        )
 
 
 def test_ping_pong():

@@ -786,6 +786,16 @@ the behaviour it was written for — the char cap, the nomic prefixes and the
 dimension check are all still real rules, the tests simply stopped reaching
 them.
 
+**Outcome (W6, 2026-09-27): the suite is green — 2231 passed, 0 failed.**
+Each failure was checked as a possible product bug before it was fixed.
+
+| group | verdict | commit |
+|---|---|---|
+| `memory/test_embedder.py` (6) | test debt: the fake never reached `Embedder`. Fixed with a `client_factory` seam | `R-TST-08` |
+| `daemon/test_build_retrieval.py` (4) | test debt: two signatures had moved, and a state-dir variable nothing reads meant a test could write the real home | `R-TST-09` |
+| the cached-default group (10) | product: the global singletons, fixed at the cause in W5 | `R-GLB-01` |
+| `web/test_converse_ws.py::test_inline_ask_roundtrip` (1) | test debt: the frame shape and the fake's interrupt payload were both stale. The server's id-less answer path, which the app uses, was correct, and the test now pins it | this wave |
+
 **Treat each as a suspect, not as known debt.** `R-BUG-10` was filed as exactly
 this kind of "obviously stale" symptom and turned out to be every MCP server
 failing to load. A failing test is evidence about the product until proven

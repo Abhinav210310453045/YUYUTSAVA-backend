@@ -23,10 +23,10 @@ what the split has to preserve.
 from __future__ import annotations
 
 import asyncio
-import threading
 
 from fastapi.testclient import TestClient
 
+from test.support.ws import collect_until
 from yuyutsava.core.streaming import StreamEvent
 from yuyutsava.daemon.turn_registry import TurnRegistry
 from yuyutsava.daemon.web.app import create_app
@@ -111,31 +111,6 @@ def _drain_to_turn_end(ws) -> list[dict]:
 # --------------------------------------------------------------------------
 # Handshake
 # --------------------------------------------------------------------------
-
-
-def _collect_until(ws, until: str, timeout: float = 15.0) -> list[dict]:
-    """Drain frames until ``until`` arrives, failing rather than parking.
-
-    `R-BUG-08` was precisely a hang, so a regression has to fail the suite
-    instead of stopping it: the blocking read runs on a daemon thread that is
-    abandoned when the deadline passes.
-    """
-    frames: list[dict] = []
-    arrived = threading.Event()
-
-    def _read() -> None:
-        while True:
-            frame = ws.receive_json()
-            frames.append(frame)
-            if frame["type"] == until:
-                arrived.set()
-                return
-
-    threading.Thread(target=_read, daemon=True).start()
-    assert arrived.wait(timeout), (
-        f"no {until!r} frame within {timeout}s; saw {[f['type'] for f in frames]}"
-    )
-    return frames
 
 
 def test_hello_describes_the_connection():
@@ -261,10 +236,10 @@ def test_an_answered_ask_resumes_the_turn():
     with TestClient(app).websocket_connect("/ws/converse") as ws:
         ws.receive_json()  # hello
         ws.send_json({"type": "user_text", "text": "ask me something"})
-        asked = _collect_until(ws, "ask")[-1]
+        asked = collect_until(ws, "ask")[-1]
         assert asked["ask"]["ask_id"]
         ws.send_json({"type": "ask_response", "ask_id": asked["ask"]["ask_id"], "text": "yes"})
-        rest = _collect_until(ws, "turn_end")
+        rest = collect_until(ws, "turn_end")
 
     kinds = [f["type"] for f in rest]
     assert "ask_resolved" in kinds, "the inline card is never cleared"

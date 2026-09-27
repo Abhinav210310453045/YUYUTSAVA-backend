@@ -403,7 +403,11 @@ with exit 1 and no traceback.
 
 ## R-TST-13 — A cached default store makes three files fail, but only together
 
-**Severity** P1 · **Wave** W6 · **Status** Open (found during W4)
+**Severity** P1 · **Wave** W6 · **Status** **Fixed by the cause** (W5, `R-GLB-01`).
+- The `set_default_*` / `get_default_*` accessors are gone, so there is no
+  cached default left for one file to leak into another.
+- `test_app_context` asserts that none can come back.
+- The three files pass together, in the whole suite.
 
 **Claim.** `test/daemon/test_build_storage.py` calls `build_storage`, which
 calls `set_default_session_store(PgSessionStore(storage, pool=pg_pool))`
