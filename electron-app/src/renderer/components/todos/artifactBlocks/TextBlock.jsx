@@ -14,9 +14,12 @@ export default function TextBlock({ attachment, cardId, expanded }) {
   const [text, setText] = useState(null)
   const [error, setError] = useState(null)
 
+  // Versioned by created_ts, so it changes only when the bytes do.
+  const src = blockSrc(attachment, cardId)
+
   useEffect(() => {
     let cancelled = false
-    fetchText(blockSrc(attachment, cardId))
+    fetchText(src)
       .then((body) => {
         if (!cancelled) setText(body)
       })
@@ -26,7 +29,7 @@ export default function TextBlock({ attachment, cardId, expanded }) {
     return () => {
       cancelled = true
     }
-  }, [cardId, attachment.attachment_id])
+  }, [src])
 
   if (error) {
     return (

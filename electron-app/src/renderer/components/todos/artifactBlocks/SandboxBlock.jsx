@@ -152,6 +152,8 @@ export default function SandboxBlock({ attachment, cardId, expanded }) {
   // HTML with a real file on disk frames itself from its own directory; JSX (and
   // a pathless record) still builds an inlined srcDoc.
   const frameSrc = !isJsx && primary ? bundleSrc(attachment, cardId, primary) : null
+  // Versioned by created_ts, so it changes only when the bytes do.
+  const src = blockSrc(attachment, cardId)
 
   useEffect(() => {
     let cancelled = false
@@ -160,7 +162,7 @@ export default function SandboxBlock({ attachment, cardId, expanded }) {
         // Still fetched when framing: the source toggle shows it, and a failure
         // here is the same 404 the frame would hit — better surfaced as our own
         // error than as the daemon's JSON rendered inside the frame.
-        const text = await fetchText(blockSrc(attachment, cardId))
+        const text = await fetchText(src)
         if (cancelled) return
         setSource(text)
         if (frameSrc) return // the frame loads its own bytes from the bundle
@@ -173,7 +175,7 @@ export default function SandboxBlock({ attachment, cardId, expanded }) {
     return () => {
       cancelled = true
     }
-  }, [cardId, attachment.attachment_id, attachment.mime, frameSrc, isJsx])
+  }, [src, frameSrc, isJsx])
 
   if (error) {
     return (

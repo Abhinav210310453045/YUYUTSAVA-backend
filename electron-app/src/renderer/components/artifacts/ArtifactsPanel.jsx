@@ -249,7 +249,7 @@ export default function ArtifactsPanel() {
       })
       .catch(() => {})
     refreshItems()
-  }, [refreshItems])
+  }, [refreshItems, setSessionId])
 
   const refresh = useCallback((id) => {
     if (!id) return

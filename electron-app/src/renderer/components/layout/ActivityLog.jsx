@@ -167,7 +167,10 @@ export default function ActivityLog({ events = [], logs = [], bgTasks = EMPTY_MA
   const [minLevel, setMinLevel] = useState('INFO')
   const [showHttp, setShowHttp] = useState(false)
 
-  const rawLines = tab === 'logs' ? logs : tab === 'events' ? events : []
+  const rawLines = useMemo(
+    () => (tab === 'logs' ? logs : tab === 'events' ? events : []),
+    [tab, logs, events],
+  )
   const lines = useMemo(() => {
     if (tab !== 'logs') return rawLines
     const floor = LEVEL_ORDER.indexOf(minLevel)

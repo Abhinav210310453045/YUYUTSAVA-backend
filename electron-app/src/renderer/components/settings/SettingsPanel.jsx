@@ -53,7 +53,7 @@ export default function SettingsPanel() {
       if (status) setDaemonStatus(status)
     }, 3000)
     return () => clearInterval(id)
-  }, [])
+  }, [setInitial, setSettings])
 
   // key → reload_class / label lookups built from the active schema.
   const { reloadClassOf, labelOf } = useMemo(() => {
