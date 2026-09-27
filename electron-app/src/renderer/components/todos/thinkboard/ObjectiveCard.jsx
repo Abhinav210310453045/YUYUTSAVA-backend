@@ -49,6 +49,15 @@ export default function ObjectiveCard({
     resize: 'vertical',
   }
 
+  // The drop highlight recolours the top, right and bottom edges; the left
+  // edge is always the phase bar. Per-edge longhands, not `border` plus
+  // `borderLeft`: when the shorthand changed on a re-render the browser reset
+  // the left edge with it, and the bar was gone until the card remounted.
+  const [edgeStyle, edgeColor] =
+    over === 'file'
+      ? ['dashed', 'rgba(var(--accent-rgb),0.6)']
+      : [over === 'note' ? 'dashed' : 'solid', over === 'note' || selected ? a.bar : a.border]
+
   return (
     <div
       onDragOver={(e) => {
@@ -86,11 +95,9 @@ export default function ObjectiveCard({
       }}
       style={{
         background: 'var(--bg-elevated, #1a1a2e)',
-        border:
-          over === 'file'
-            ? '1px dashed rgba(var(--accent-rgb),0.6)'
-            : `1px ${over === 'note' ? 'dashed' : 'solid'} ${over === 'note' ? a.bar : selected ? a.bar : a.border}`,
-        borderLeft: `3px solid ${a.bar}`,
+        borderWidth: '1px 1px 1px 3px',
+        borderStyle: `${edgeStyle} ${edgeStyle} ${edgeStyle} solid`,
+        borderColor: `${edgeColor} ${edgeColor} ${edgeColor} ${a.bar}`,
         borderRadius: 8,
         display: 'flex',
         flexDirection: 'column',
