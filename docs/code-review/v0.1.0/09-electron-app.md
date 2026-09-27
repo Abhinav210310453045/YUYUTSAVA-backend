@@ -13,7 +13,10 @@ a name with the live one.
 
 ## R-UI-01 — No lint, format, type or test tooling
 
-**Severity** P1 · **Wave** W1 (lint) + W7 (tests) · **Status** Open
+**Severity** P1 · **Wave** W1 (lint) + W7 (tests) · **Status** **Fixed** (W1 lint, W7 tests, 2026-09-27).
+- W1 added ESLint (`rules-of-hooks` as an error, warnings under a ratcheted ceiling) and Prettier.
+- W7 added vitest 2.1.9 (`npm test`, Node environment) with 32 tests: 25 characterize the conversation store frame by frame and action by action, and 7 cover the API client's base URL, JSON calls, 204, and error and raw-body helpers.
+- CI runs them in the `electron` job. A failing test gives exit code 1, and each store test has a negative control.
 
 **Evidence.**
 - `electron-app/package.json` defines only `dev`, `build`, `dist` and `electron`.

@@ -20,4 +20,10 @@ export default defineConfig({
   server: {
     port: 5173,
   },
+  // vitest: colocated *.test.js under the root. Node, not jsdom — the units
+  // under test (the conversation store, the API client) touch no DOM.
+  test: {
+    environment: 'node',
+    include: ['**/*.test.{js,jsx}'],
+  },
 })

@@ -169,6 +169,11 @@ jobs:
         working-directory: electron-app
         run: npm run format:check
 
+      # vitest: the conversation store and the API client (R-UI-01, R-UI-02).
+      - name: Unit tests
+        working-directory: electron-app
+        run: npm test
+
       - name: Build renderer
         working-directory: electron-app
         run: npm run build

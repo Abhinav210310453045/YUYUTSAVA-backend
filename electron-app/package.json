@@ -2,7 +2,7 @@
   "name": "yuyutsava-terminal",
   "productName": "YUYUTSAVA",
   "version": "0.1.0",
-  "description": "YUYUTSAVA Terminal — native desktop app",
+  "description": "YUYUTSAVA Terminal \u2014 native desktop app",
   "license": "Apache-2.0",
   "author": "Abhinav",
   "repository": {
@@ -17,7 +17,8 @@
     "electron": "node scripts/launch-electron.js",
     "lint": "eslint . --max-warnings 33",
     "format": "prettier --write \"src/**/*.{js,jsx,css}\" \"scripts/**/*.js\" \"*.config.js\"",
-    "format:check": "prettier --check \"src/**/*.{js,jsx,css}\" \"scripts/**/*.js\" \"*.config.js\""
+    "format:check": "prettier --check \"src/**/*.{js,jsx,css}\" \"scripts/**/*.js\" \"*.config.js\"",
+    "test": "vitest run"
   },
   "dependencies": {
     "@babel/standalone": "^8.0.4",
@@ -39,6 +40,7 @@
     "globals": "^17.12.0",
     "prettier": "^3.9.6",
     "vite": "^5.4.10",
+    "vitest": "^2.1.9",
     "wait-on": "^7.2.0"
   }
 }
