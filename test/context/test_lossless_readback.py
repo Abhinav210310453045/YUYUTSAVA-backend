@@ -527,12 +527,12 @@ class ArgStubbing(unittest.TestCase):
 class SummaryPrompt(unittest.TestCase):
     def test_placeholder_is_resolved_both_ways_and_messages_survives(self):
         from yuyutsava.context.compaction import (
-            _READBACK_NOTE,
+            READBACK_NOTE,
             YUYUTSAVA_SUMMARY_PROMPT,
         )
 
         self.assertIn("{readback_note}", YUYUTSAVA_SUMMARY_PROMPT)
-        on = YUYUTSAVA_SUMMARY_PROMPT.replace("{readback_note}", _READBACK_NOTE)
+        on = YUYUTSAVA_SUMMARY_PROMPT.replace("{readback_note}", READBACK_NOTE)
         off = YUYUTSAVA_SUMMARY_PROMPT.replace("{readback_note}", "")
         for rendered in (on, off):
             # langchain formats {messages} itself — it must not be consumed.

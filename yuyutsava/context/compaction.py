@@ -113,7 +113,7 @@ Messages to summarize:
 # Spliced into the prompt above (by replace, not format — ``{messages}`` is
 # langchain's placeholder and must survive untouched) only when the agent
 # actually has the ctx_history* tools.
-_READBACK_NOTE = """
+READBACK_NOTE = """
 Note: these messages are not being deleted — they stay readable verbatim via
 ctx_history / ctx_history_grep / ctx_history_message(seq). So prefer naming
 where a detail lives (an artifact id, a file path, a tool call) over copying
@@ -169,7 +169,7 @@ class YuyutsavaCompactionMiddleware(SummarizationMiddleware):
             trigger=("tokens", settings.compact_trigger_tokens),
             keep=("messages", settings.keep_messages),
             summary_prompt=YUYUTSAVA_SUMMARY_PROMPT.replace(
-                "{readback_note}", _READBACK_NOTE if history_readback else ""
+                "{readback_note}", READBACK_NOTE if history_readback else ""
             ),
             trim_tokens_to_summarize=settings.summarizer_input_tokens,
         )

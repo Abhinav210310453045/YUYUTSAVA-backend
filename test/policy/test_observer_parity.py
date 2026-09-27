@@ -331,25 +331,25 @@ class UsageIsResolvedOnce(unittest.IsolatedAsyncioTestCase):
     """Budget and usage read the same ``Turn.usage``; they used to each dig it out."""
 
     async def test_dict_and_object_metadata_both_work(self) -> None:
-        from yuyutsava.policy.adapter import _latest_usage
+        from yuyutsava.policy.adapter import latest_usage
 
         class _Obj:
             input_tokens = 7
             output_tokens = 3
 
-        by_dict = _latest_usage([_ai("x", input_tokens=7, output_tokens=3)])
+        by_dict = latest_usage([_ai("x", input_tokens=7, output_tokens=3)])
         msg = AIMessage(content="x", id="a2")
         msg.usage_metadata = _Obj()  # type: ignore[assignment]
-        by_object = _latest_usage([msg])
+        by_object = latest_usage([msg])
         self.assertEqual(
             (by_dict.input_tokens, by_dict.output_tokens),
             (by_object.input_tokens, by_object.output_tokens),
         )
 
     async def test_the_latest_ai_message_wins(self) -> None:
-        from yuyutsava.policy.adapter import _latest_usage
+        from yuyutsava.policy.adapter import latest_usage
 
-        usage = _latest_usage(
+        usage = latest_usage(
             [
                 _ai("old", msg_id="a1", input_tokens=1),
                 HumanMessage("mid", id="h1"),
@@ -359,9 +359,9 @@ class UsageIsResolvedOnce(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(usage.input_tokens, 99)
 
     async def test_no_ai_message_yields_none(self) -> None:
-        from yuyutsava.policy.adapter import _latest_usage
+        from yuyutsava.policy.adapter import latest_usage
 
-        self.assertIsNone(_latest_usage([HumanMessage("hi")]))
+        self.assertIsNone(latest_usage([HumanMessage("hi")]))
 
 
 if __name__ == "__main__":

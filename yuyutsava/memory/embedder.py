@@ -25,7 +25,7 @@ _DOCUMENT_PREFIX = "search_document: "
 # (nomic-embed-text is ~2048 tokens ≈ a few thousand chars). We truncate
 # explicitly to a known budget rather than letting the server drop the tail.
 # Only the vector input is capped; the full text is still stored by the caller.
-_MAX_EMBED_CHARS = 6000
+MAX_EMBED_CHARS = 6000
 
 
 class Embedder:
@@ -70,9 +70,9 @@ class Embedder:
         """
         if not texts:
             return []
-        if any(len(t) > _MAX_EMBED_CHARS for t in texts):
-            logger.debug("memory: truncating embed input(s) to %d chars", _MAX_EMBED_CHARS)
-            texts = [t[:_MAX_EMBED_CHARS] for t in texts]
+        if any(len(t) > MAX_EMBED_CHARS for t in texts):
+            logger.debug("memory: truncating embed input(s) to %d chars", MAX_EMBED_CHARS)
+            texts = [t[:MAX_EMBED_CHARS] for t in texts]
         payload_texts = texts
         if self._use_prefixes:
             prefix = _QUERY_PREFIX if mode == "query" else _DOCUMENT_PREFIX

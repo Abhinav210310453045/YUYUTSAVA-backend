@@ -18,7 +18,7 @@ import unittest
 
 from mcp.types import CallToolResult, TextContent, Tool
 
-from yuyutsava.mcp.tool_adapter import _flatten_content, adapt
+from yuyutsava.mcp.tool_adapter import adapt, result_text
 
 SCHEMA = {
     "type": "object",
@@ -56,14 +56,14 @@ class FlatteningAResult(unittest.IsolatedAsyncioTestCase):
                 TextContent(type="text", text="second"),
             ]
         )
-        self.assertEqual(_flatten_content(result), "first\nsecond")
+        self.assertEqual(result_text(result), "first\nsecond")
 
     async def test_an_error_result_is_marked(self) -> None:
         result = CallToolResult(content=[TextContent(type="text", text="boom")], isError=True)
-        self.assertEqual(_flatten_content(result), "[error] boom")
+        self.assertEqual(result_text(result), "[error] boom")
 
     async def test_no_result_is_empty(self) -> None:
-        self.assertEqual(_flatten_content(None), "")
+        self.assertEqual(result_text(None), "")
 
 
 if __name__ == "__main__":

@@ -318,13 +318,13 @@ def _build_tool_registry_and_tools(
 #
 # `pre` runs before the context controllers, `post` after: budget and usage must
 # observe POST-compaction token counts, so they cannot be hoisted.
-_POLICY_ORDER_PRE: tuple[PolicyKind, ...] = (
+POLICY_ORDER_PRE: tuple[PolicyKind, ...] = (
     PolicyKind.TOOL_FILTER,
     PolicyKind.FILESYSTEM_PROMPT,
     PolicyKind.VOICE_STYLE,
     PolicyKind.SUBAGENT_GATE,
 )
-_POLICY_ORDER_POST: tuple[PolicyKind, ...] = (
+POLICY_ORDER_POST: tuple[PolicyKind, ...] = (
     PolicyKind.BUDGET,
     PolicyKind.USAGE,
     PolicyKind.PERMISSION,
@@ -359,7 +359,7 @@ def _policy_middleware(
     unwired here. Conflating the two is why this was assembled by hand three
     times.
     """
-    order = _POLICY_ORDER_PRE if phase == "pre" else _POLICY_ORDER_POST
+    order = POLICY_ORDER_PRE if phase == "pre" else POLICY_ORDER_POST
     out: list = []
     for policy in order:
         if policy not in profile.policies:
@@ -732,7 +732,7 @@ def _retrieval_injection_middleware(
     return [LangChainPolicyAdapter([RetrievalInjectionPolicy(injectors)])]
 
 
-def _subagent_spec(
+def subagent_spec(
     sa: Any,
     *,
     context_middleware: "Sequence[Any]",
@@ -768,7 +768,7 @@ def _subagent_spec(
     return spec
 
 
-def _sync_subagent_specs(
+def sync_subagent_specs(
     subagents: "Sequence[Any]",
     *,
     model: BaseChatModel,
@@ -789,7 +789,7 @@ def _sync_subagent_specs(
     serve interactive resume.
     """
     return [
-        _subagent_spec(
+        subagent_spec(
             sa,
             context_middleware=_context_middleware(
                 model=model,
@@ -821,7 +821,7 @@ def _master_middleware(
 
     Pre-policies, then the context layer, then budget and usage — after
     compaction, so they see post-compaction counts (the ordering itself lives in
-    ``_POLICY_ORDER_POST``). Each of those two attaches only when given its
+    ``POLICY_ORDER_POST``). Each of those two attaches only when given its
     input: usage when a usage store is passed, budget when
     ``deps.budget_tokens`` is. ``usage_ids`` pins usage rows to a task and
     thread — the tinker graph IS one conversation; the chat bundle is shared
@@ -895,7 +895,7 @@ def _master_subagents(deps: MasterDeps, model: BaseChatModel, role: str) -> tupl
     specs: list[dict] = []
     if deps.subagents:
         specs.extend(
-            _sync_subagent_specs(
+            sync_subagent_specs(
                 deps.subagents,
                 model=model,
                 artifact_store=deps.artifact_store,
@@ -1210,7 +1210,7 @@ def _orchestrator_subagents(
         ]
 
     specs: list[dict] = [
-        _subagent_spec(
+        subagent_spec(
             sa,
             context_middleware=_orchestrator_context_mw(
                 deps, deps.subagent_model, sa.name, meter_window=False

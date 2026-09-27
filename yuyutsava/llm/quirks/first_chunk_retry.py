@@ -103,7 +103,7 @@ def classify_provider_busy(exc: BaseException) -> str:
     """The status to show a user for a provider error, e.g. ``"429"``.
 
     Read from the exception, never guessed from its class name. A name-based
-    guess gets two things wrong: :func:`_is_transient` also retries
+    guess gets two things wrong: :func:`is_transient` also retries
     ``DeadlineExceeded`` and ``Aborted``, which the SDK reports as 504 and 409
     and a guess would announce as "provider busy (503)"; and a subclass either
     matches a name test or does not depending on whether it is a substring or
@@ -134,7 +134,7 @@ def classify_provider_busy(exc: BaseException) -> str:
     return _BUSY_BY_NAME.get(type(exc).__name__, "503")
 
 
-def _is_transient(exc: BaseException) -> bool:
+def is_transient(exc: BaseException) -> bool:
     """Google/gRPC errors that a fresh attempt can reasonably clear.
 
     Mirrors the set the Vertex SDK itself retries (``_utils.create_retry_decorator``)
@@ -214,7 +214,7 @@ class _FirstChunkRetryMixin:
                 first = await agen.__anext__()
             except StopAsyncIteration:
                 return
-            except Exception as exc:  # noqa: BLE001 — filtered by _is_transient
+            except Exception as exc:  # noqa: BLE001 — filtered by is_transient
                 delay = self._plan_retry(exc, attempt, retries, started, budget)
                 if delay is None:
                     raise
@@ -238,7 +238,7 @@ class _FirstChunkRetryMixin:
                 first = next(gen)
             except StopIteration:
                 return
-            except Exception as exc:  # noqa: BLE001 — filtered by _is_transient
+            except Exception as exc:  # noqa: BLE001 — filtered by is_transient
                 delay = self._plan_retry(exc, attempt, retries, started, budget)
                 if delay is None:
                     raise
@@ -265,7 +265,7 @@ class _FirstChunkRetryMixin:
         Stopping at the budget is what turns a quota storm into one honest
         error the caller can report instead of a spinner that never returns.
         """
-        if not _is_transient(exc):
+        if not is_transient(exc):
             return None
         label = _label(self)
         if attempt >= retries:

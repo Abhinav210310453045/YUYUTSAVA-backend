@@ -28,7 +28,7 @@ from yuyutsava.retrieval.vector import vector_literal
 logger = logging.getLogger("yuyutsava.retrieval.pg")
 
 
-def _by_name_or_position(row: Any, names: tuple[str, ...]) -> tuple[Any, ...]:
+def by_name_or_position(row: Any, names: tuple[str, ...]) -> tuple[Any, ...]:
     """Read *names* from a row that may be a mapping **or** a tuple.
 
     Postgres rows arrive in two shapes here depending on who opened the
@@ -168,7 +168,7 @@ class PgVectorSearch:
         row = await cur.fetchone()
         if row is None:
             return None
-        dup_id, score = _by_name_or_position(row, ("dup_id", "score"))
+        dup_id, score = by_name_or_position(row, ("dup_id", "score"))
         return dup_id if float(score) >= threshold else None
 
     async def backfill(self, embedder, *, batch_size: int = 64, max_rows: int = 2000) -> int:

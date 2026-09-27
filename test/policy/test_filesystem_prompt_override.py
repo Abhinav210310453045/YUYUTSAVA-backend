@@ -153,16 +153,16 @@ def test_lazy_discovery_invariant_holds():
     that says nothing about whether lazy discovery still works. What actually
     matters is that ToolFilterPolicy is still hiding what it claims to hide.
     """
-    from yuyutsava.policy.builtin.tool_filter import _SUPPRESS_NAMES, _SUPPRESS_PREFIXES
+    from yuyutsava.policy.builtin.tool_filter import SUPPRESS_NAMES, SUPPRESS_PREFIXES
 
     bound = set(_render_prompt()["bound_tools"])
 
-    leaked_prefix = {n for n in bound if n.startswith(_SUPPRESS_PREFIXES)}
+    leaked_prefix = {n for n in bound if n.startswith(SUPPRESS_PREFIXES)}
     assert not leaked_prefix, (
         f"suppressed prefix families leaked to the model: {sorted(leaked_prefix)}"
     )
 
-    leaked_builtin = bound & _SUPPRESS_NAMES
+    leaked_builtin = bound & SUPPRESS_NAMES
     assert not leaked_builtin, (
         f"deepagents built-ins we replace with tr_* leaked to the model: {sorted(leaked_builtin)}"
     )

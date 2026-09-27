@@ -119,7 +119,24 @@ protocol so a drift fails type checking.
 
 ## R-TST-04 — Tests reach into private names
 
-**Severity** P2 · **Wave** W6 · **Status** Open
+**Severity** P2 · **Wave** W6 · **Status** **Fixed** (W6, 2026-09-27)
+- **Re-measured before fixing.** 21 private names in 28 imports; the list below
+  predates W2–W5.
+- **Genuine units, now public in their module.** Download sniffing, transient
+  classification, the policy order, the subagent-spec builders, the stack's
+  consent rule, the usage reader, the suppression lists, the embed char cap,
+  the readback note, row access by name or position, the v5 foreign-key
+  migration, the artifact tool's result encoder (`ok_result`), and the MCP
+  result flattener (`result_text`).
+- **One reach-in replaced by API.** The registry gained `all_providers()`, and
+  the leak check's accessor is public `registered_count()`.
+- **The rename is provably only renames.** Reversing the mapping on every
+  changed file reproduces HEAD exactly.
+- **One allowance, with its reason.** `events.sources._voice_proc` is a
+  subprocess entry module.
+- **Guard.** `test/architecture/test_tests_use_public_names.py` fails on any new
+  private import, and on an allowance nothing uses any more.
+  Negative-controlled.
 
 **Evidence.** 16 imports of underscore names:
 

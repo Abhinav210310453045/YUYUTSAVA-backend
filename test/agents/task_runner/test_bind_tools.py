@@ -21,7 +21,7 @@ from pathlib import Path
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
 from yuyutsava.agents.task_runner.tools import bind_tools
 from yuyutsava.consent.registry import ConsentRegistry
-from yuyutsava.core.agent_stack import _stack_consent
+from yuyutsava.core.agent_stack import stack_consent
 from yuyutsava.core.deps import StackWiring
 from yuyutsava.models.operations import OperationResponse
 from yuyutsava.storage.paths import WorkspaceLayout
@@ -84,10 +84,10 @@ class ToolsUseTheirOwnGateway(unittest.TestCase):
 class AStackUsesTheDaemonsConsent(unittest.TestCase):
     def test_under_the_daemon_it_is_the_daemons_registry(self) -> None:
         daemon_consent = ConsentRegistry()
-        self.assertIs(_stack_consent(StackWiring(consent=daemon_consent)), daemon_consent)
+        self.assertIs(stack_consent(StackWiring(consent=daemon_consent)), daemon_consent)
 
     def test_standalone_it_is_a_registry_of_its_own(self) -> None:
-        self.assertIsInstance(_stack_consent(StackWiring()), ConsentRegistry)
+        self.assertIsInstance(stack_consent(StackWiring()), ConsentRegistry)
 
 
 if __name__ == "__main__":

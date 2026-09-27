@@ -59,7 +59,7 @@ def adapt(session: ClientSession, server_name: str, mcp_tool: MCPTool) -> BaseTo
         except Exception as exc:  # noqa: BLE001 — a call's failure goes back to the model as text
             logger.warning("MCP call %s failed: %s", namespaced, exc)
             return f"[error calling {namespaced}: {exc}]"
-        return _flatten_content(result)
+        return result_text(result)
 
     return StructuredTool.from_function(
         name=namespaced,
@@ -69,7 +69,7 @@ def adapt(session: ClientSession, server_name: str, mcp_tool: MCPTool) -> BaseTo
     )
 
 
-def _flatten_content(result: Any) -> str:
+def result_text(result: Any) -> str:
     """Reduce ``CallToolResult`` (or compatible) to a single string.
 
     MCP tool results are a list of content blocks. We concatenate the ``text``

@@ -30,7 +30,7 @@ from yuyutsava.policy.base import Policy
 from yuyutsava.policy.types import ModelCall
 
 # Exact-name suppression: deepagents built-in tools replaced by tr_* equivalents.
-_SUPPRESS_NAMES: frozenset[str] = frozenset(
+SUPPRESS_NAMES: frozenset[str] = frozenset(
     {
         "read_file",
         "write_file",
@@ -51,7 +51,7 @@ _SUPPRESS_NAMES: frozenset[str] = frozenset(
 # the model must always see their schemas (same always-visible treatment as
 # tool_search itself). ``_ALWAYS_VISIBLE`` below carves out the one sk_* tool
 # that needs the same reachability.
-_SUPPRESS_PREFIXES: tuple[str, ...] = (
+SUPPRESS_PREFIXES: tuple[str, ...] = (
     "tr_",
     "ws_",
     "sk_",
@@ -80,9 +80,9 @@ def should_suppress(name: str) -> bool:
     """Whether *name*\'s schema is hidden from the model\'s initial view."""
     if name in _ALWAYS_VISIBLE:
         return False
-    if name in _SUPPRESS_NAMES:
+    if name in SUPPRESS_NAMES:
         return True
-    return name.startswith(_SUPPRESS_PREFIXES)
+    return name.startswith(SUPPRESS_PREFIXES)
 
 
 class ToolFilterPolicy(Policy):

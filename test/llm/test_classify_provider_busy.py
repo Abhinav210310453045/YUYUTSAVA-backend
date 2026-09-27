@@ -20,7 +20,7 @@ import unittest
 from google.api_core import exceptions as g
 
 from test.support.paths import PACKAGE
-from yuyutsava.llm.quirks.first_chunk_retry import _is_transient, classify_provider_busy
+from yuyutsava.llm.quirks.first_chunk_retry import classify_provider_busy, is_transient
 
 ROOT = PACKAGE
 
@@ -62,7 +62,7 @@ class EveryRetriedKindIsLabelledCorrectly(unittest.TestCase):
         """The label and the retry decision describe the same set."""
         for cls, _label in self.CASES:
             with self.subTest(kind=cls.__name__):
-                self.assertTrue(_is_transient(cls("x")))
+                self.assertTrue(is_transient(cls("x")))
 
 
 class SubclassesAreNotGuessedAt(unittest.TestCase):

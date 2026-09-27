@@ -57,7 +57,7 @@ async def _refresh_prices(settings: LlmSettings) -> None:
         logger.warning("price cache refresh failed; costs may show as unpriced", exc_info=True)
 
 
-def _stack_consent(wiring: StackWiring) -> Any:
+def stack_consent(wiring: StackWiring) -> Any:
     """The consent registry every gateway in this stack asks.
 
     Under the daemon it is the daemon's, so a grant made in a chat is persisted
@@ -158,7 +158,7 @@ async def build_agent_stack(
     # Idempotent, so the daemon's ConversationManager building this same stack
     # lazily is harmless.
     await asyncio.to_thread(layout.ensure)
-    consent = _stack_consent(wiring)
+    consent = stack_consent(wiring)
     # One gateway for the master and its general-purpose subagent: they share
     # its zones, policy, consent and — in docker mode — its container.
     task_runner = TaskRunnerAgent(

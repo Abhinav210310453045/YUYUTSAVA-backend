@@ -167,7 +167,7 @@ async def migrate(conn: aiosqlite.Connection) -> None:
             "CREATE INDEX IF NOT EXISTS idx_proposals_session ON proposals(session_id)"
         )
 
-    await _add_foreign_keys_v5(conn)
+    await add_foreign_keys_v5(conn)
 
     await conn.execute(
         "INSERT INTO schema_meta(key, value) VALUES('version', ?) "
@@ -236,7 +236,7 @@ _DECISIONS_V5_REBUILD = """
         """
 
 
-async def _add_foreign_keys_v5(conn: aiosqlite.Connection) -> None:
+async def add_foreign_keys_v5(conn: aiosqlite.Connection) -> None:
     """Give ``proposals`` and ``decisions`` the FKs Postgres already had.
 
     Schema v5, closing finding AC. SQLite has no ``ALTER TABLE ADD CONSTRAINT``,

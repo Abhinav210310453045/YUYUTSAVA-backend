@@ -316,10 +316,10 @@ class FreshDatabaseIsNotRebuilt(_Base):
         return {r["name"]: r["rootpage"] for r in rows}
 
     async def test_the_rebuild_is_skipped_entirely(self) -> None:
-        from yuyutsava.storage.events.schema import _add_foreign_keys_v5
+        from yuyutsava.storage.events.schema import add_foreign_keys_v5
 
         before = await self._rootpages()
-        await _add_foreign_keys_v5(self.backend._c)
+        await add_foreign_keys_v5(self.backend._c)
         self.assertEqual(
             await self._rootpages(),
             before,

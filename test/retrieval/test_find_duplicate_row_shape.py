@@ -49,24 +49,22 @@ class RowShapeHelper(unittest.TestCase):
     """The helper itself, with no database at all."""
 
     def test_reads_a_mapping_by_name(self) -> None:
-        from yuyutsava.retrieval.pg import _by_name_or_position
+        from yuyutsava.retrieval.pg import by_name_or_position
 
         row = {"dup_id": "mem_1", "score": 0.99}
-        self.assertEqual(_by_name_or_position(row, ("dup_id", "score")), ("mem_1", 0.99))
+        self.assertEqual(by_name_or_position(row, ("dup_id", "score")), ("mem_1", 0.99))
 
     def test_reads_a_tuple_by_position(self) -> None:
-        from yuyutsava.retrieval.pg import _by_name_or_position
+        from yuyutsava.retrieval.pg import by_name_or_position
 
-        self.assertEqual(
-            _by_name_or_position(("mem_1", 0.99), ("dup_id", "score")), ("mem_1", 0.99)
-        )
+        self.assertEqual(by_name_or_position(("mem_1", 0.99), ("dup_id", "score")), ("mem_1", 0.99))
 
     def test_a_mapping_without_those_keys_falls_back(self) -> None:
         """psycopg's dict rows are dicts; a stray shape must not hard-fail."""
-        from yuyutsava.retrieval.pg import _by_name_or_position
+        from yuyutsava.retrieval.pg import by_name_or_position
 
         self.assertEqual(
-            _by_name_or_position({0: "mem_1", 1: 0.99}, ("dup_id", "score")),
+            by_name_or_position({0: "mem_1", 1: 0.99}, ("dup_id", "score")),
             ("mem_1", 0.99),
         )
 

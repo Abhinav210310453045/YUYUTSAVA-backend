@@ -232,7 +232,7 @@ class LangChainPolicyAdapter(AgentMiddleware):  # type: ignore[misc]
         return Turn(
             messages=tuple(messages),
             thread_id=thread_id_from_runtime(default=""),
-            usage=_latest_usage(messages),
+            usage=latest_usage(messages),
             state=state if isinstance(state, dict) else {},
         )
 
@@ -366,7 +366,7 @@ def _tool_name(tool: Any) -> str:
     return ""
 
 
-def _latest_usage(messages: Any) -> Usage | None:
+def latest_usage(messages: Any) -> Usage | None:
     """Token usage from the most recent AI message, or ``None`` if it reported none.
 
     One copy of what ``BudgetMiddleware._accumulate`` and ``UsageRecorder._tokens``

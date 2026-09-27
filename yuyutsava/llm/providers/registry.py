@@ -41,3 +41,8 @@ def provider_for(settings: LlmSettings) -> Provider:
         if provider.settings_type is not None and isinstance(settings, provider.settings_type):
             return provider
     return _FALLBACK
+
+
+def all_providers() -> tuple[Provider, ...]:
+    """Every provider, the fallback last — for checks that must cover each one."""
+    return (*_PROVIDERS, _FALLBACK)

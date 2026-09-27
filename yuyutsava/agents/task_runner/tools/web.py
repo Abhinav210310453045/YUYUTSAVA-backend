@@ -54,7 +54,7 @@ _MAGIC: dict[str, list[bytes]] = {
 }
 
 
-def _looks_like_html(head: bytes) -> bool:
+def looks_like_html(head: bytes) -> bool:
     """Heuristic: does *head* look like an HTML page (incl. Cloudflare/login walls)?"""
     low = head.lstrip().lower()
     if low.startswith((b"<!doctype html", b"<html", b"<head")):
@@ -67,7 +67,7 @@ def _looks_like_html(head: bytes) -> bool:
     )
 
 
-def _verify_download(path: str, expected_type: str) -> tuple[bool, str, str | None]:
+def verify_download(path: str, expected_type: str) -> tuple[bool, str, str | None]:
     """Verify a downloaded file is real: non-empty and matching its expected type.
 
     Returns ``(ok, reason, detected_type)``. Catches the common failure where a
@@ -88,7 +88,7 @@ def _verify_download(path: str, expected_type: str) -> tuple[bool, str, str | No
     if ext in ("", "auto"):
         ext = os.path.splitext(path)[1].lstrip(".").lower()
 
-    is_html = _looks_like_html(head)
+    is_html = looks_like_html(head)
 
     if ext in _MAGIC:
         if is_html:
@@ -199,7 +199,7 @@ def make_web_tools(ctx: ToolContext) -> list[BaseTool]:
                 }
             )
 
-        ok, why, detected = _verify_download(dest, expected_type)
+        ok, why, detected = verify_download(dest, expected_type)
         if not ok:
             with contextlib.suppress(OSError):
                 os.remove(dest)

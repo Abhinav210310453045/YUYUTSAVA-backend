@@ -173,6 +173,6 @@ __all__ = [
 ]
 
 
-def _registered_count() -> int:
+def registered_count() -> int:
     """Live entry count — for the leak test in ``test/llm/test_model_handle.py``."""
     return len(_IDENTITIES)

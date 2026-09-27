@@ -276,14 +276,14 @@ class PoliciesAreProfileDriven(unittest.TestCase):
         invites "just append it" — which is how budget/usage would end up
         before compaction and start reporting pre-compaction token counts.
         """
-        from yuyutsava.core.engine import _POLICY_ORDER_POST, _POLICY_ORDER_PRE
+        from yuyutsava.core.engine import POLICY_ORDER_POST, POLICY_ORDER_PRE
 
         self.assertEqual(
-            set(_POLICY_ORDER_PRE) & set(_POLICY_ORDER_POST),
+            set(POLICY_ORDER_PRE) & set(POLICY_ORDER_POST),
             set(),
             "a policy appears in both phases; it would be built twice",
         )
-        covered = set(_POLICY_ORDER_PRE) | set(_POLICY_ORDER_POST)
+        covered = set(POLICY_ORDER_PRE) | set(POLICY_ORDER_POST)
         self.assertEqual(
             covered,
             set(PolicyKind),
@@ -294,16 +294,16 @@ class PoliciesAreProfileDriven(unittest.TestCase):
 
     def test_budget_and_usage_run_after_compaction(self) -> None:
         """Both must observe POST-compaction token counts."""
-        from yuyutsava.core.engine import _POLICY_ORDER_POST
+        from yuyutsava.core.engine import POLICY_ORDER_POST
 
-        self.assertIn(PolicyKind.BUDGET, _POLICY_ORDER_POST)
-        self.assertIn(PolicyKind.USAGE, _POLICY_ORDER_POST)
+        self.assertIn(PolicyKind.BUDGET, POLICY_ORDER_POST)
+        self.assertIn(PolicyKind.USAGE, POLICY_ORDER_POST)
 
     def test_declared_policies_match_what_is_built(self) -> None:
         """Every profile's policy set is reachable through the pipeline order."""
-        from yuyutsava.core.engine import _POLICY_ORDER_POST, _POLICY_ORDER_PRE
+        from yuyutsava.core.engine import POLICY_ORDER_POST, POLICY_ORDER_PRE
 
-        placed = set(_POLICY_ORDER_PRE) | set(_POLICY_ORDER_POST)
+        placed = set(POLICY_ORDER_PRE) | set(POLICY_ORDER_POST)
         for profile in (CLI_PROFILE, ORCHESTRATOR_PROFILE, TINKER_PROFILE):
             with self.subTest(profile=profile.role):
                 missing = profile.policies - placed

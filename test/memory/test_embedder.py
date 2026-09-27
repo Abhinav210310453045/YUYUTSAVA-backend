@@ -14,7 +14,7 @@ from __future__ import annotations
 import unittest
 
 from yuyutsava.memory.config import EMBEDDING_DIM, MemorySettings
-from yuyutsava.memory.embedder import _MAX_EMBED_CHARS, Embedder
+from yuyutsava.memory.embedder import MAX_EMBED_CHARS, Embedder
 
 NOWHERE = "http://127.0.0.1:9"
 
@@ -77,8 +77,8 @@ class EmbedderTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_input_capped(self) -> None:
         emb, fake = _embedder(use_prefixes=False)
-        await emb.embed_one("x" * (_MAX_EMBED_CHARS + 500), mode="document")
-        self.assertEqual(len(fake.last_input[0]), _MAX_EMBED_CHARS)
+        await emb.embed_one("x" * (MAX_EMBED_CHARS + 500), mode="document")
+        self.assertEqual(len(fake.last_input[0]), MAX_EMBED_CHARS)
 
     async def test_dim_mismatch_raises(self) -> None:
         emb, fake = _embedder(use_prefixes=False, dim=EMBEDDING_DIM - 1)

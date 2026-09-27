@@ -151,9 +151,9 @@ class HandleCarriesTheProvider(unittest.TestCase):
 
     def test_every_provider_declares_a_key(self) -> None:
         """Ratchet — a new provider with no key would report ``""`` forever."""
-        from yuyutsava.llm.providers.registry import _FALLBACK, _PROVIDERS
+        from yuyutsava.llm.providers.registry import all_providers
 
-        for provider in (*_PROVIDERS, _FALLBACK):
+        for provider in all_providers():
             with self.subTest(provider=type(provider).__name__):
                 self.assertTrue(
                     provider.key,
@@ -226,20 +226,20 @@ class TheRegistryDoesNotLeak(unittest.TestCase):
     """A daemon builds a fresh model per task; entries must not accumulate."""
 
     def test_entries_are_evicted_when_the_model_is_collected(self) -> None:
-        from yuyutsava.llm.factory import _registered_count
+        from yuyutsava.llm.factory import registered_count
 
         gc.collect()
-        before = _registered_count()
+        before = registered_count()
         models = [chat_model(SETTINGS["groq"]) for _ in range(25)]
         self.assertEqual(
-            _registered_count(),
+            registered_count(),
             before + 25,
             "models were built but not registered — model_name_of would fall back to probing",
         )
         del models
         gc.collect()
         self.assertEqual(
-            _registered_count(),
+            registered_count(),
             before,
             "handles outlived their models; a long-running daemon would grow "
             "this dict without bound",

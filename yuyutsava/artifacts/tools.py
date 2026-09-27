@@ -128,7 +128,7 @@ def make_artifact_tools() -> list[BaseTool]:
             logger.exception("artifact_create failed for kind=%s", kind)
             return json.dumps({"status": "error", "error": f"artifact creation failed: {exc}"})
 
-        return _ok(rec)
+        return ok_result(rec)
 
     @tool
     async def artifact_show(artifact_id: str) -> str:
@@ -148,12 +148,12 @@ def make_artifact_tools() -> list[BaseTool]:
                     "error": f"no artifact with id {artifact_id!r}",
                 }
             )
-        return _ok(rec)
+        return ok_result(rec)
 
     return [artifact_create, artifact_show]
 
 
-def _ok(rec: store.ArtifactRecordV1) -> str:
+def ok_result(rec: store.ArtifactRecordV1) -> str:
     return json.dumps(
         {
             "status": "ok",

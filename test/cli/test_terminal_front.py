@@ -153,10 +153,10 @@ class RenderingNeverFeedsBackIntoContext(unittest.TestCase):
     def test_the_tool_result_itself_stays_metadata_only(self):
         # artifact_create returns id/kind/mime/title/path/url — this is what
         # actually enters the conversation.
-        from yuyutsava.artifacts.tools import _ok
+        from yuyutsava.artifacts.tools import ok_result
 
         rec = store.create_from_content("markdown", "SENTINEL-BODY-TEXT", title="Doc")
-        payload = _ok(rec)
+        payload = ok_result(rec)
         self.assertNotIn("SENTINEL-BODY-TEXT", payload)
         self.assertIn(rec.artifact_id, payload)
 

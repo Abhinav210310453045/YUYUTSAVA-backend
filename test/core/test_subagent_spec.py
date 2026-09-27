@@ -3,7 +3,7 @@
 `R-DRY-05`: three builders wired a subagent spec, and the identical part —
 the filter that hides the master's prefixed tools, the context controllers, and
 the `ctx_*` pair a subagent needs to read back its own offloaded results — was
-written twice. `_subagent_spec` holds it.
+written twice. `subagent_spec` holds it.
 
 What is *not* shared is ADR-001's business and stays at the call site: the
 orchestrator names a model, adds a per-subagent spend ceiling and per-call cost
@@ -22,7 +22,7 @@ import ast
 import pathlib
 import unittest
 
-from yuyutsava.core.engine import _subagent_spec, _sync_subagent_specs
+from yuyutsava.core.engine import subagent_spec, sync_subagent_specs
 
 ENGINE = pathlib.Path(__file__).resolve().parent.parent.parent / "yuyutsava" / "core" / "engine.py"
 
@@ -47,31 +47,31 @@ class WhatEverySpecGets(unittest.TestCase):
     def test_the_master_s_prefixed_tools_are_filtered_out(self) -> None:
         """A subagent that could see tr_*/db_* would route around its own
         parent. The filter is first, before anything can add tools."""
-        spec = _subagent_spec(_Sub("a"), context_middleware=[])
+        spec = subagent_spec(_Sub("a"), context_middleware=[])
         self.assertTrue(_names(spec["middleware"]), "middleware must not be empty")
 
     def test_context_middleware_is_included(self) -> None:
         marker = object()
-        spec = _subagent_spec(_Sub("a"), context_middleware=[marker])
+        spec = subagent_spec(_Sub("a"), context_middleware=[marker])
         self.assertIn(marker, spec["middleware"])
 
     def test_extra_middleware_comes_after_the_context_controllers(self) -> None:
         """Order matters downstream: offload runs on the tool path before the
         compactor counts tokens, and a spend ceiling sits after both."""
         ctx, extra = object(), object()
-        spec = _subagent_spec(_Sub("a"), context_middleware=[ctx], extra_middleware=[extra])
+        spec = subagent_spec(_Sub("a"), context_middleware=[ctx], extra_middleware=[extra])
         mw = spec["middleware"]
         self.assertLess(mw.index(ctx), mw.index(extra))
 
     def test_the_agent_keeps_its_own_tools(self) -> None:
-        spec = _subagent_spec(_Sub("a"), context_middleware=[])
+        spec = subagent_spec(_Sub("a"), context_middleware=[])
         self.assertIn("own_tool", spec["tools"])
 
     def test_ctx_tools_arrive_only_with_an_artifact_store(self) -> None:
         """Without a store there is nothing offloaded to read back."""
-        without = _subagent_spec(_Sub("a"), context_middleware=[])
+        without = subagent_spec(_Sub("a"), context_middleware=[])
         self.assertEqual(without["tools"], ["own_tool"])
-        with_store = _subagent_spec(_Sub("a"), context_middleware=[], artifact_store=_Store())
+        with_store = subagent_spec(_Sub("a"), context_middleware=[], artifact_store=_Store())
         self.assertGreater(len(with_store["tools"]), 1)
         self.assertTrue(any(t.name.startswith("ctx_") for t in with_store["tools"][1:]))
 
@@ -79,16 +79,16 @@ class WhatEverySpecGets(unittest.TestCase):
         """Never shared across graphs — two specs holding one tool object is
         how state leaks between delegations."""
         store = _Store()
-        first = _subagent_spec(_Sub("a"), context_middleware=[], artifact_store=store)
-        second = _subagent_spec(_Sub("b"), context_middleware=[], artifact_store=store)
+        first = subagent_spec(_Sub("a"), context_middleware=[], artifact_store=store)
+        second = subagent_spec(_Sub("b"), context_middleware=[], artifact_store=store)
         firsts = {id(t) for t in first["tools"][1:]}
         seconds = {id(t) for t in second["tools"][1:]}
         self.assertFalse(firsts & seconds)
 
     def test_a_model_is_set_only_when_named(self) -> None:
-        self.assertNotIn("model", _subagent_spec(_Sub("a"), context_middleware=[]))
+        self.assertNotIn("model", subagent_spec(_Sub("a"), context_middleware=[]))
         model = object()
-        self.assertIs(_subagent_spec(_Sub("a"), context_middleware=[], model=model)["model"], model)
+        self.assertIs(subagent_spec(_Sub("a"), context_middleware=[], model=model)["model"], model)
 
 
 class TheCliAndTinkerPathAddsNoBudget(unittest.TestCase):
@@ -96,7 +96,7 @@ class TheCliAndTinkerPathAddsNoBudget(unittest.TestCase):
     ceiling there would be a number nobody chose."""
 
     def test_no_budget_policy_in_a_sync_spec(self) -> None:
-        specs = _sync_subagent_specs(
+        specs = sync_subagent_specs(
             [_Sub("a")],
             model=None,
             artifact_store=None,
@@ -110,7 +110,7 @@ class TheCliAndTinkerPathAddsNoBudget(unittest.TestCase):
         self.assertNotIn("Budget", flat)
 
     def test_one_spec_per_subagent(self) -> None:
-        specs = _sync_subagent_specs(
+        specs = sync_subagent_specs(
             [_Sub("a"), _Sub("b")],
             model=None,
             artifact_store=None,
@@ -140,9 +140,9 @@ class TheOrchestratorKeepsItsDivergences(unittest.TestCase):
         for node in ast.walk(fn):
             if isinstance(node, ast.Call):
                 name = getattr(node.func, "id", "")
-                if name == "_subagent_spec":
+                if name == "subagent_spec":
                     return node
-        raise AssertionError("the orchestrator no longer builds a spec through _subagent_spec")
+        raise AssertionError("the orchestrator no longer builds a spec through subagent_spec")
 
     def test_the_call_is_found_at_all(self) -> None:
         """So a rename cannot make the assertions below vacuous."""
@@ -175,7 +175,7 @@ class TheOrchestratorKeepsItsDivergences(unittest.TestCase):
         comprehensions = [
             ast.unparse(n)
             for n in ast.walk(fn)
-            if isinstance(n, ast.ListComp) and "_subagent_spec" in ast.unparse(n)
+            if isinstance(n, ast.ListComp) and "subagent_spec" in ast.unparse(n)
         ]
         self.assertTrue(comprehensions, "no spec comprehension found")
         self.assertTrue(
