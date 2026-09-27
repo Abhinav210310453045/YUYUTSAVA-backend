@@ -25,11 +25,8 @@ from __future__ import annotations
 import asyncio
 import pathlib
 import statistics
-import sys
 import time
 from typing import Any
-
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 from yuyutsava.policy.adapter import LangChainPolicyAdapter  # noqa: E402
 

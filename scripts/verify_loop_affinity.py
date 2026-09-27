@@ -20,9 +20,6 @@ from __future__ import annotations
 import asyncio
 import sys
 import threading
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 PASS = 0
 FAIL = 0

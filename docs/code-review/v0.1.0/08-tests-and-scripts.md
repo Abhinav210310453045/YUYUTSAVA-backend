@@ -552,7 +552,18 @@ or a cleaned table per run — and only then judge whether dedup is broken. The
 
 ## R-SCR-01 — Maintainer scripts are undocumented
 
-**Severity** P2 · **Wave** W6 · **Status** Open
+**Severity** P2 · **Wave** W6 · **Status** **Fixed** (W6, 2026-09-27)
+- `scripts/README.md` lists every script under **gates**, **measurements** and
+  **one-off tools**, with what it proves, when to run it, what it needs, and
+  the shared exit-code contract.
+- `pg-init/` and `lint_ratchet.json` are described as what they are:
+  infrastructure and a baseline.
+- The last two `sys.path` edits (`benchmark_policy_adapter`,
+  `verify_loop_affinity`) are gone. Both run from `/tmp`, outside the repo.
+  `verify_framework_contract` keeps one root entry, because it imports two
+  test modules as packages.
+- CONTRIBUTING points at `scripts/README.md` and `test/README.md` and shows
+  the hermetic test command. It no longer claims CI has no test gate.
 
 **Evidence.**
 - `scripts/` holds eight tools and an SQL init file.
