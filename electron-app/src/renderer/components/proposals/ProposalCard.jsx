@@ -1,20 +1,11 @@
 import React, { useState } from 'react'
 import CountdownBadge from './CountdownBadge'
 import { respondProposal } from '../../api/client'
+import './ProposalCard.css'
 
 const URGENCY_DOTS = (n) =>
   Array.from({ length: 3 }, (_, i) => (
-    <span
-      key={i}
-      style={{
-        width: 6,
-        height: 6,
-        borderRadius: '50%',
-        background: i < n ? 'var(--neon-green)' : 'var(--border-card)',
-        boxShadow: i < n ? '0 0 4px var(--neon-green)' : 'none',
-        display: 'inline-block',
-      }}
-    />
+    <span key={i} className={`proposal-dot${i < n ? ' proposal-dot--on' : ''}`} />
   ))
 
 export default function ProposalCard({ proposal, onResolved }) {
@@ -34,227 +25,85 @@ export default function ProposalCard({ proposal, onResolved }) {
     }
   }
 
-  const btnBase = {
-    padding: '5px 12px',
-    borderRadius: 'var(--radius-btn)',
-    fontSize: 11,
-    fontFamily: 'var(--font-mono)',
-    fontWeight: 'var(--fw-semibold)',
-    letterSpacing: '0.05em',
-    border: '1px solid',
-    cursor: 'pointer',
-    transition: 'all 0.15s',
-    textTransform: 'uppercase',
-  }
-
   return (
-    <div
-      className="hover-bulge"
-      style={{
-        background: 'var(--bg-card)',
-        border: '1px solid var(--border-neon)',
-        borderRadius: 'var(--radius-card)',
-        padding: '14px 16px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 10,
-        animation: 'card-enter 0.2s ease',
-        boxShadow: 'var(--shadow-card)',
-        backdropFilter: 'blur(8px)',
-        animationName: 'neon-pulse',
-        animationDuration: '3s',
-        animationTimingFunction: 'ease-in-out',
-        animationIterationCount: 'infinite',
-      }}
-    >
+    <div className="hover-bulge proposal">
       {/* Header row */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <span
-            style={{
-              fontFamily: 'var(--font-mono)',
-              fontSize: 10,
-              color: 'var(--neon-cyan)',
-              background: 'rgba(0,212,255,0.08)',
-              border: '1px solid rgba(0,212,255,0.2)',
-              borderRadius: 3,
-              padding: '2px 6px',
-              textTransform: 'uppercase',
-              letterSpacing: '0.08em',
-            }}
-          >
-            {proposal.subagent || 'agent'}
-          </span>
-          <span
-            style={{ color: 'var(--text-muted)', fontSize: 10, fontFamily: 'var(--font-mono)' }}
-          >
-            {proposal.topic}
-          </span>
+      <div className="proposal-head">
+        <div className="proposal-tags">
+          <span className="proposal-agent">{proposal.subagent || 'agent'}</span>
+          <span className="proposal-topic">{proposal.topic}</span>
           {proposal.agent_path && (
-            <span
-              title={proposal.agent_path}
-              style={{
-                fontFamily: 'var(--font-mono)',
-                fontSize: 10,
-                color: 'var(--text-secondary)',
-                background: 'rgba(255,255,255,0.04)',
-                border: '1px solid rgba(255,255,255,0.08)',
-                borderRadius: 3,
-                padding: '2px 6px',
-              }}
-            >
+            <span title={proposal.agent_path} className="proposal-path">
               {proposal.agent_path.split('/').slice(-2).join('/')}
             </span>
           )}
           {proposal.session_id && (
-            <span
-              title={proposal.session_id}
-              style={{
-                fontFamily: 'var(--font-mono)',
-                fontSize: 10,
-                color: 'var(--text-dim)',
-              }}
-            >
+            <span title={proposal.session_id} className="proposal-session">
               sess: {String(proposal.session_id).slice(-8)}
             </span>
           )}
         </div>
-        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-          {URGENCY_DOTS(proposal.urgency || 0)}
-        </div>
+        <div className="proposal-urgency">{URGENCY_DOTS(proposal.urgency || 0)}</div>
       </div>
 
       {/* Summary */}
-      <p style={{ color: 'var(--text-secondary)', fontSize: 12, lineHeight: 1.5 }}>
-        {proposal.summary}
-      </p>
+      <p className="proposal-summary">{proposal.summary}</p>
 
       {/* Proposed instruction block */}
       <div>
-        <div
-          style={{
-            fontSize: 9,
-            fontFamily: 'var(--font-mono)',
-            color: 'var(--text-muted)',
-            textTransform: 'uppercase',
-            letterSpacing: '0.1em',
-            marginBottom: 6,
-          }}
-        >
-          Proposed instruction
-        </div>
+        <div className="proposal-label">Proposed instruction</div>
         {modifying ? (
           <textarea
-            className="selectable"
+            className="selectable proposal-edit"
             value={editedText}
             onChange={(e) => setEditedText(e.target.value)}
             rows={3}
-            style={{
-              width: '100%',
-              resize: 'vertical',
-              fontFamily: 'var(--font-mono)',
-              fontSize: 12,
-              lineHeight: 1.6,
-              color: 'var(--text-code)',
-              background: 'rgba(0,0,0,0.4)',
-              border: '1px solid var(--border-focus)',
-              borderRadius: 4,
-              padding: '8px 10px',
-            }}
           />
         ) : (
-          <div
-            className="selectable"
-            style={{
-              fontFamily: 'var(--font-mono)',
-              fontSize: 12,
-              lineHeight: 1.6,
-              color: 'var(--text-code)',
-              background: 'rgba(0,0,0,0.4)',
-              border: '1px solid rgba(var(--accent-rgb),0.1)',
-              borderRadius: 4,
-              padding: '8px 10px',
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-word',
-            }}
-          >
-            <span style={{ color: 'var(--text-muted)' }}>$ </span>
+          <div className="selectable proposal-instruction">
+            <span className="proposal-prompt">$ </span>
             {proposal.proposed}
           </div>
         )}
       </div>
 
       {/* Action buttons + countdown */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: 6,
-        }}
-      >
-        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+      <div className="proposal-foot">
+        <div className="proposal-actions">
           {!modifying ? (
             <>
               <button
                 onClick={() => respond('approve')}
                 disabled={!!loading}
-                style={{
-                  ...btnBase,
-                  color: 'var(--neon-green)',
-                  borderColor: 'rgba(var(--accent-rgb),0.3)',
-                  background: 'rgba(var(--accent-rgb),0.06)',
-                }}
+                className="proposal-btn proposal-btn--approve"
               >
                 {loading === 'approve' ? '...' : 'Approve'}
               </button>
               <button
                 onClick={() => respond('approve_remember')}
                 disabled={!!loading}
-                style={{
-                  ...btnBase,
-                  color: 'var(--neon-cyan)',
-                  borderColor: 'rgba(0,212,255,0.3)',
-                  background: 'rgba(0,212,255,0.06)',
-                  fontSize: 10,
-                }}
+                className="proposal-btn proposal-btn--remember proposal-btn--small"
               >
                 {loading === 'approve_remember' ? '...' : 'Remember'}
               </button>
               <button
                 onClick={() => setModifying(true)}
                 disabled={!!loading}
-                style={{
-                  ...btnBase,
-                  color: 'var(--neon-purple)',
-                  borderColor: 'rgba(139,92,246,0.3)',
-                  background: 'rgba(139,92,246,0.06)',
-                }}
+                className="proposal-btn proposal-btn--modify"
               >
                 Modify
               </button>
               <button
                 onClick={() => respond('skip')}
                 disabled={!!loading}
-                style={{
-                  ...btnBase,
-                  color: 'var(--neon-red)',
-                  borderColor: 'rgba(255,51,102,0.3)',
-                  background: 'rgba(255,51,102,0.06)',
-                }}
+                className="proposal-btn proposal-btn--skip"
               >
                 {loading === 'skip' ? '...' : 'Skip'}
               </button>
               <button
                 onClick={() => respond('skip_remember')}
                 disabled={!!loading}
-                style={{
-                  ...btnBase,
-                  color: 'var(--text-muted)',
-                  borderColor: 'var(--border-card)',
-                  fontSize: 10,
-                }}
+                className="proposal-btn proposal-btn--quiet proposal-btn--small"
               >
                 Forget
               </button>
@@ -264,22 +113,13 @@ export default function ProposalCard({ proposal, onResolved }) {
               <button
                 onClick={() => respond('modify', editedText)}
                 disabled={!!loading}
-                style={{
-                  ...btnBase,
-                  color: 'var(--neon-green)',
-                  borderColor: 'rgba(var(--accent-rgb),0.3)',
-                  background: 'rgba(var(--accent-rgb),0.06)',
-                }}
+                className="proposal-btn proposal-btn--approve"
               >
                 {loading === 'modify' ? '...' : 'Submit'}
               </button>
               <button
                 onClick={() => setModifying(false)}
-                style={{
-                  ...btnBase,
-                  color: 'var(--text-muted)',
-                  borderColor: 'var(--border-card)',
-                }}
+                className="proposal-btn proposal-btn--quiet"
               >
                 Cancel
               </button>
@@ -287,16 +127,7 @@ export default function ProposalCard({ proposal, onResolved }) {
           )}
         </div>
 
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 5,
-            fontSize: 10,
-            color: 'var(--text-muted)',
-            fontFamily: 'var(--font-mono)',
-          }}
-        >
+        <div className="proposal-expires">
           expires&nbsp;
           <CountdownBadge expiresTs={proposal.expires_ts} />
         </div>

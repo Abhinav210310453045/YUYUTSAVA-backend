@@ -1,0 +1,199 @@
+/* A proposal awaiting a decision. Static styling only. */
+
+.proposal {
+  background: var(--bg-card);
+  border: 1px solid var(--border-neon);
+  border-radius: var(--radius-card);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: var(--shadow-card);
+  backdrop-filter: blur(8px);
+  /* The card pulses while it waits. (It used to also name card-enter, but the
+     pulse's longhands overrode it, so it never ran; this is what rendered.) */
+  animation: neon-pulse 3s ease-in-out infinite;
+}
+
+.proposal-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.proposal-tags {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.proposal-agent {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--neon-cyan);
+  background: rgba(0, 212, 255, 0.08);
+  border: 1px solid rgba(0, 212, 255, 0.2);
+  border-radius: 3px;
+  padding: 2px 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.proposal-topic {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-family: var(--font-mono);
+}
+
+.proposal-path {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  padding: 2px 6px;
+}
+
+.proposal-session {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+/* urgency: three dots, lit up to the proposal's level */
+.proposal-urgency {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.proposal-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--border-card);
+  box-shadow: none;
+  display: inline-block;
+}
+
+.proposal-dot--on {
+  background: var(--neon-green);
+  box-shadow: 0 0 4px var(--neon-green);
+}
+
+.proposal-summary {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.proposal-label {
+  font-size: 9px;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 6px;
+}
+
+.proposal-instruction {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-code);
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(var(--accent-rgb), 0.1);
+  border-radius: 4px;
+  padding: 8px 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.proposal-prompt {
+  color: var(--text-muted);
+}
+
+.proposal-edit {
+  width: 100%;
+  resize: vertical;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-code);
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--border-focus);
+  border-radius: 4px;
+  padding: 8px 10px;
+}
+
+.proposal-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.proposal-actions {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.proposal-expires {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+/* decision buttons */
+.proposal-btn {
+  padding: 5px 12px;
+  border-radius: var(--radius-btn);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.05em;
+  border: 1px solid;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-transform: uppercase;
+}
+
+.proposal-btn--small {
+  font-size: 10px;
+}
+
+.proposal-btn--approve {
+  color: var(--neon-green);
+  border-color: rgba(var(--accent-rgb), 0.3);
+  background: rgba(var(--accent-rgb), 0.06);
+}
+
+.proposal-btn--remember {
+  color: var(--neon-cyan);
+  border-color: rgba(0, 212, 255, 0.3);
+  background: rgba(0, 212, 255, 0.06);
+}
+
+.proposal-btn--modify {
+  color: var(--neon-purple);
+  border-color: rgba(139, 92, 246, 0.3);
+  background: rgba(139, 92, 246, 0.06);
+}
+
+.proposal-btn--skip {
+  color: var(--neon-red);
+  border-color: rgba(255, 51, 102, 0.3);
+  background: rgba(255, 51, 102, 0.06);
+}
+
+/* Forget and Cancel keep the button's own background */
+.proposal-btn--quiet {
+  color: var(--text-muted);
+  border-color: var(--border-card);
+}
