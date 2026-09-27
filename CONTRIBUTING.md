@@ -95,8 +95,13 @@ uvx ruff@0.16.5 check yuyutsava test scripts    # lint gate — must be clean
 uvx ruff@0.16.5 format yuyutsava test scripts   # formatting — CI runs it with --check
 python scripts/check_lint_ratchet.py            # ratcheted lint counts may not grow
 uv build --wheel                                # packaging metadata still valid
-cd electron-app && npm run build                # renderer builds
+cd electron-app && npm run lint && npm test && npm run build   # the desktop app
 ```
+
+In `electron-app/`, `npm run lint` allows **no** ESLint warnings and caps every
+source file at 300 lines; the few files still over it are listed in
+`max-lines-allowlist.json`, which may only shrink (the check fails when a listed
+file no longer needs its entry). `npm run format:check` is Prettier.
 
 The whole suite, including the Postgres tests, is `python -m pytest` with
 `YUYUTSAVA_PG_DSN` pointing at a **scratch** database; unset, it falls back to
@@ -144,6 +149,10 @@ a ceiling should say in its body that it passed.
 
 ## Code conventions
 
+The standard, rule by rule and with how each is enforced, is
+[docs/code-review/v0.1.0/01-standards.md](docs/code-review/v0.1.0/01-standards.md).
+The points that matter most day to day:
+
 - **Match the surrounding code.** Comment density, naming and idiom vary by
   subpackage; follow the file you are in rather than a global house style.
 - **Comments explain *why*.** This codebase's existing comments are unusually
@@ -158,8 +167,12 @@ a ceiling should say in its body that it passed.
   you cannot test.
 - **`yuyutsava/ports/` must stay dependency-free.** It is the acyclic layer both
   sides of a dependency cycle import.
-- Architecture-review findings are keyed (`F-S07`, `F-T01`, …) and cited from
-  source docstrings. If you resolve one, update the citation.
+- **Findings are keyed and cited from source.** Code-review findings are `R-*`
+  (in `docs/code-review/v0.1.0/`); the retired structural review's `F-*` IDs
+  resolve in its [legacy ledger](docs/code-review/v0.1.0/10-legacy-ledger.md).
+  The decisions behind the structure are in
+  [docs/architecture/decisions/](docs/architecture/decisions/README.md). If you
+  resolve a finding, update the citation and its status.
 
 ---
 
@@ -170,10 +183,13 @@ Being upfront so you are not surprised:
 - **CI runs the hermetic tests only.** Tests marked `pg` (a live Postgres),
   `billable` or `slow` are deselected there; run them locally before a change
   to storage.
-- **The lint gate is partial.** Defect and import-placement rules are gated at
-  zero; four noisier rules are ratcheted (counts may only fall) until the
-  remediation in `docs/code-review/v0.1.0/` brings them down. Please do not
-  bundle a reformat into an unrelated PR.
+- **The Python lint gate is partial.** Defect, import-placement and
+  error-handling rules are gated at zero; four noisier rules (`C901`,
+  `PLC0415`, `PLR0913`, `T201`) are ratcheted, so their counts may only fall.
+  The desktop app's lint is at zero warnings. Please do not bundle a reformat
+  into an unrelated PR.
+- **No type checker runs.** Neither package is type-checked in CI, and some
+  builders still take `Any` (carried in the code review).
 - **Interfaces are unstable.** This is alpha. Expect things to move.
 - **The code review is honest about the debt.** Start at
   [docs/code-review/v0.1.0/00-executive-summary.md](docs/code-review/v0.1.0/00-executive-summary.md)
