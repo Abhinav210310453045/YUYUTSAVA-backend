@@ -1,5 +1,21 @@
 import { getBase } from './client'
 
+// The daemon's /stream frames, by event name, and the handler each goes to.
+const FRAMES = {
+  event: 'onEvent',
+  proposal: 'onProposal',
+  ask: 'onAsk',
+  // Resolution: an ask/proposal was answered (here or on the CLI) or expired —
+  // remove the corresponding card so surfaces stay in sync.
+  ask_resolved: 'onAskResolved',
+  proposal_resolved: 'onProposalResolved',
+  // Wake word fired on the daemon — surface to the voice overlay/panel.
+  wake: 'onWake',
+  // A runtime toggle changed (voice mode, dedicated subagents). Broadcast so
+  // every surface — this window, the overlay, mobile — agrees without polling.
+  settings: 'onSettings',
+}
+
 export class SSEClient {
   constructor(handlers) {
     this.handlers = handlers
@@ -31,52 +47,9 @@ export class SSEClient {
       this.handlers.onConnected?.()
     })
 
-    this._es.addEventListener('event', (e) => {
-      try {
-        this.handlers.onEvent?.(JSON.parse(e.data))
-      } catch {}
-    })
-
-    this._es.addEventListener('proposal', (e) => {
-      try {
-        this.handlers.onProposal?.(JSON.parse(e.data))
-      } catch {}
-    })
-
-    this._es.addEventListener('ask', (e) => {
-      try {
-        this.handlers.onAsk?.(JSON.parse(e.data))
-      } catch {}
-    })
-
-    // Resolution events: an ask/proposal was answered (here or on the CLI) or
-    // expired — remove the corresponding card so surfaces stay in sync.
-    this._es.addEventListener('ask_resolved', (e) => {
-      try {
-        this.handlers.onAskResolved?.(JSON.parse(e.data))
-      } catch {}
-    })
-
-    this._es.addEventListener('proposal_resolved', (e) => {
-      try {
-        this.handlers.onProposalResolved?.(JSON.parse(e.data))
-      } catch {}
-    })
-
-    // Wake word fired on the daemon — surface to the voice overlay/panel.
-    this._es.addEventListener('wake', (e) => {
-      try {
-        this.handlers.onWake?.(JSON.parse(e.data))
-      } catch {}
-    })
-
-    // A runtime toggle changed (voice mode, dedicated subagents). Broadcast so
-    // every surface — this window, the overlay, mobile — agrees without polling.
-    this._es.addEventListener('settings', (e) => {
-      try {
-        this.handlers.onSettings?.(JSON.parse(e.data))
-      } catch {}
-    })
+    for (const [name, handler] of Object.entries(FRAMES)) {
+      this._es.addEventListener(name, (e) => this._dispatch(name, handler, e.data))
+    }
 
     this._es.onerror = () => {
       this._es?.close()
@@ -84,6 +57,20 @@ export class SSEClient {
       this.handlers.onDisconnected?.()
       if (!this._stopped) this._scheduleReconnect()
     }
+  }
+
+  // A frame that isn't JSON is dropped with a warning naming it. A handler's
+  // own exception is not caught here: it surfaces as an uncaught error rather
+  // than disappearing with the frame.
+  _dispatch(name, handler, raw) {
+    let data
+    try {
+      data = JSON.parse(raw)
+    } catch (err) {
+      console.warn(`sse: dropped a malformed '${name}' frame`, err)
+      return
+    }
+    this.handlers[handler]?.(data)
   }
 
   _scheduleReconnect() {
