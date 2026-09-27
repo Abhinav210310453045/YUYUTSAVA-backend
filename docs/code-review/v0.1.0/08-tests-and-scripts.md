@@ -13,7 +13,24 @@ Postgres or an API key, and CI therefore runs no tests at all.
 
 ## R-TST-01 — No runner configuration, no markers, no CI test gate
 
-**Severity** P1 · **Wave** W6 · **Status** Runner landed in W4; markers and CI open
+**Severity** P1 · **Wave** W6 · **Status** **Fixed** (W6, 2026-09-27)
+- `[tool.pytest.ini_options]`: `testpaths`, `--strict-markers`, and the markers
+  `pg`, `billable` and `slow`.
+- `test/support/pg.py:requires_pg` both skips without Postgres and marks `pg`,
+  so the two cannot drift. It replaces 22 copies of the probe (`R-TST-03`).
+  The skip reason no longer prints the DSN's password.
+- CI job `tests`, on Python 3.11 and 3.12:
+  `uv sync --frozen --extra dev --extra all-providers --extra visuals`, then
+  `pytest -m "not pg and not billable and not slow"`.
+- Reproduced from a lockfile-only install in a clean worktree, with no `.env`
+  and a scratch home: 1954 passed on both Python versions.
+- Negative controls: a failing test gives rc 1, and a misspelled marker gives
+  rc 2.
+- Two fixes this needed:
+  - `uv.lock` was regenerated. It predated the `dev` extra, so the frozen
+    install failed. Only pytest and its two dependencies were added; nothing
+    was removed or re-versioned.
+  - The fingerprint was made hermetic (`R-TST-15`, second half).
 
 **Claim.** The suite cannot be run safely by a machine.
 

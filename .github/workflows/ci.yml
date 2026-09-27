@@ -63,6 +63,33 @@ jobs:
           print("wheel license metadata OK")
           EOF
 
+  tests:
+    name: Tests (hermetic) ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      # From the lockfile, exactly. all-providers and visuals because tests
+      # build every provider and dispatch every visual kind; without them those
+      # tests fail to import or skip, and the gate covers less than it claims.
+      - name: Install
+        run: uv sync --frozen --python ${{ matrix.python-version }} --extra dev --extra all-providers --extra visuals
+
+      # Everything that needs nothing outside the repo: no Postgres (`pg`), no
+      # paid model calls (`billable`), nothing that takes seconds (`slow`).
+      # Markers are declared in pyproject.toml; --strict-markers rejects typos.
+      - name: Hermetic suite
+        run: uv run --frozen --no-sync pytest -m "not pg and not billable and not slow"
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
