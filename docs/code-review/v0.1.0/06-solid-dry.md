@@ -65,7 +65,7 @@ pass unchanged, and new unit tests cover each extracted part.
 
 ## R-SOL-02 — Extension means editing chains (open/closed)
 
-**Severity** P1 · **Wave** W4 · **Status** Open (includes legacy `F-S06`, `F-D05`)
+**Severity** P1 · **Wave** W4 · **Status** **Mostly done** (checked at W8). Registries now drive slash commands (one `SLASH_COMMANDS` table; `/help` is generated), stream event kinds (each renderer dispatches by kind; `test_renderer_event_kinds.py`), tool-to-UI events (`ports/tool_events.py`), visual kinds (`visuals/render.RENDERERS`), policies (profile-driven, in `POLICY_ORDER_*`) and providers' context budgets (`max_input_tokens` on each settings class). Open, carried: the price lookup (`R-PLC-10`) and the remote-attach formatter chain.
 
 **Claim.** Six extension points are `if`/`elif` chains or scattered tables, not
 registries.
@@ -196,7 +196,7 @@ daemon: a five-turn conversation with a permission ask, and a CLI chat turn.
 
 ## R-SOL-04 — Dependencies declared as `Any` while the protocols exist (dependency inversion)
 
-**Severity** P1 · **Wave** W4 · **Status** Open (legacy `F-S05` partly closed; `F-D01` partly closed)
+**Severity** P1 · **Wave** W4 · **Status** **Partly done** (checked at W8). The orchestrator's budget and usage policies come from its profile, and `MasterDeps` replaced the 33- and 32-parameter builder signatures. Open, carried: `MasterDeps` still types 28 fields `Any`, the engine 42 parameters `Any | None`, the tinker subagent factory `object | None`, and `ConversationService` still defaults its identity to `"cli"`.
 
 **Claim.** The `ports/` protocols fixed `OrchestratorDeps`, but the other
 builders and bundles still erase their dependency types. The orchestrator also
@@ -452,7 +452,7 @@ Still open: the background-task event lines (copied text, but over different inp
 
 ## R-DRY-06 — Voice and miscellaneous knowledge repeated
 
-**Severity** P2 · **Wave** W3–W4 · **Status** Open
+**Severity** P2 · **Wave** W3–W4 · **Status** **Mostly done** (W3–W8). One sample rate (`voice/pcm.py`), one WAV writer (`yuyutsava/wav.py`), one offload-digest detector and one `CapEnforcer` (`640c669c`), and the CLI's call-summary table checked against the real tools (`089b8438`, which also fixed `tr_run_python` showing its reason instead of its script). Open, carried: two WAV readers, and the TTS backend's own `subprocess.run` calls.
 
 **Evidence.**
 

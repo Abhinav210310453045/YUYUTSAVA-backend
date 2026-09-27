@@ -138,7 +138,7 @@ rather than to hit the number.
 
 ## R-RDB-02 — Functions longer than a screen, many times over
 
-**Severity** P1 · **Wave** W4 · **Status** Open (legacy `F-K01`)
+**Severity** P1 · **Wave** W4 · **Status** **Closed on W4's terms** (W4, re-measured at W8). 0 functions over 200 lines. Over 100: 19 at close-out, 8 of them the accepted tool factories and one the off-limits face watcher; three builders crossed 100 after W4 with W5's explicit wiring ([02](02-metrics.md)).
 
 **Evidence.** 11 functions over 200 lines, 38 over 100, 88 over 60 (of 2,590).
 
@@ -287,7 +287,7 @@ five-turn conversation, which is `conversation_manager` on the same path.
 
 ## R-RDB-04 — Names that mean two things, and things with two names
 
-**Severity** P2 · **Wave** W3 · **Status** Open
+**Severity** P2 · **Wave** W3 · **Status** **Partly done** (checked at W8). Done: the enum is `PolicyKind`; `permission_middleware.py` and the `_SS`/`_SF` aliases are gone; the permission policies live in `policy/builtin/`. Open, carried: the `context_middleware = _context_middleware` alias, the `--generate_agent_graph` flag, `context/artifacts.py` beside `yuyutsava/artifacts/`, and the near-twin names `PermissionPolicy`/`PermissionsPolicy`.
 
 **Evidence.**
 
@@ -324,7 +324,7 @@ five-turn conversation, which is `conversation_manager` on the same path.
 
 ## R-RDB-05 — Magic numbers and repeated literals
 
-**Severity** P2 · **Wave** W4 · **Status** Open
+**Severity** P2 · **Wave** W4 · **Status** **Partly done** (checked at W8). Done: the 60,000-token budget is a named default (`core/deps.py`, the profile). Open, carried: the async concurrency default `8` in four places, three bare `sleep(0.05)` write-drain waits, and the 40,000-character cap written into a tool description.
 
 **Evidence.**
 
@@ -349,7 +349,7 @@ values. Tool descriptions are built from the constants they describe.
 
 ## R-RDB-06 — Deep nesting
 
-**Severity** P2 · **Wave** W4 · **Status** Open
+**Severity** P2 · **Wave** W4 · **Status** **Open — carried** (checked at W8): `render_chart`, `remote_attach.render_event_frame` and `_policy_middleware` still nest eight deep.
 
 **Evidence.**
 - depth 8: `visuals/charts.py:36` `render_chart` (at `:59`)
@@ -461,7 +461,7 @@ policy inconsistencies once, in a `fix:` commit if behaviour changes.
 
 ## R-KIS-03 — Scrolling re-wraps the whole transcript
 
-**Severity** P2 · **Wave** W4 · **Status** Open (suspected cost; not measured)
+**Severity** P2 · **Wave** W4 · **Status** **Open — carried** (checked at W8). `ScrollView.display_count` still re-wraps every line on each scroll key; the cost is still unmeasured.
 
 **Evidence.** `cli/render/dashboard.py:551-556` recomputes wrapped row counts for
 up to 5,000 scrollback lines on every scroll event.

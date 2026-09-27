@@ -215,7 +215,7 @@ Only `cli/` and `daemon/main.py` use any of it.
 
 ## R-PLC-06 — Two engines run a conversation turn
 
-**Severity** P1 · **Wave** W3 (placement) + W5 (behaviour) · **Status** W3 done · W5 open
+**Severity** P1 · **Wave** W3 (placement) + W5 (behaviour) · **Status** **Fixed** (W3 placement; W5 behaviour, `0a7e7cb8`). The one-shot turn runs the same history repair and empty-turn recovery as `ConversationService`, from `conversation/recovery.py` (`R-BUG-06`), rather than through the service itself; it can no longer end in silence.
 
 **Evidence.**
 - The one-shot CLI turns through `sessions/runner.py:169-242`
@@ -288,7 +288,7 @@ The split is documented nowhere.
 
 ## R-PLC-09 — The web layer keeps schemas and logic in routers
 
-**Severity** P2 · **Wave** W3 (schemas) + W4 (logic) · **Status** W3 done · W4 open
+**Severity** P2 · **Wave** W3 (schemas) + W4 (logic) · **Status** **Fixed** (W3 schemas; W4 logic). No request model is defined in a router; `converse` is a 105-line router over `services/converse_session.py` and `converse_connection.py` (`R-RDB-01`).
 
 **Evidence.**
 - `daemon/web/schemas/` exists, yet five routers define request models inline:
@@ -303,7 +303,7 @@ The split is documented nowhere.
 
 ## R-PLC-10 — Pricing knowledge in three places
 
-**Severity** P2 · **Wave** W3 · **Status** Open — the module moved to `llm/pricing.py`; the provider-method half did not
+**Severity** P2 · **Wave** W3 · **Status** **Open — carried** (checked at W8). The module is `llm/pricing.py`, but the live lookup still recognises OpenRouter and Ollama from `base_url` substrings instead of asking the provider.
 
 **Evidence.**
 - `core/model_router.py:51-160` holds the price table, `load_price_table`,
