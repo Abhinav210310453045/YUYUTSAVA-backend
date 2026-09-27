@@ -90,6 +90,29 @@ jobs:
       - name: Hermetic suite
         run: uv run --frozen --no-sync pytest -m "not pg and not billable and not slow"
 
+  platform:
+    name: Platform contract (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install
+        run: uv sync --frozen --python 3.11 --extra dev
+
+      # yuyutsava/platform/ is the one place OS-specific code lives, and the
+      # maintainer cannot run every OS; this is the contract it keeps on each.
+      - name: Platform contract tests
+        run: uv run --frozen --no-sync pytest test/platform
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
