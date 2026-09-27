@@ -54,7 +54,7 @@ W0 safety net ─► W1 guardrails ─► W2 __init__ + imports ─► W3 layeri
 | W5 | Errors, logging, state, defects | Done — see the outcome under W5 |
 | W6 | Tests and scripts | Done — see the outcome under W6 |
 | W7 | Electron app | Done — see the outcome under W7 |
-| W8 | Close-out | Planned |
+| W8 | Close-out | Done — see the outcome under W8 |
 
 ---
 
@@ -909,6 +909,31 @@ finding in [09](09-electron-app.md).
   gaps drop "no lint gate"; the test instructions show the runner and the
   hermetic subset.
 
+**Outcome (W8, 2026-09-28).**
+
+- **Re-measured.** [02](02-metrics.md) has its *after* column at `67523dce`:
+  0 modules failing when imported first, no package cycle, deferred ratio 1.2%,
+  0 functions over 200 lines, highest complexity 25, 0 silent handlers outside
+  the face watcher, 0 library prints, 0 process singletons, every file
+  formatted; the `--print-tools` hash is unchanged from `f4ec45c`. The re-measure
+  itself found one regression, an unused re-export in `storage.sessions`, fixed
+  (`67523dce`).
+- **Every open status checked in the code**, not relabelled (`d47b2de8`): two
+  "open" findings were in fact fixed, eight are partly or mostly done with
+  what is left named, three are carried. The scorecard in
+  [00](00-executive-summary.md) gained an *after* grade per dimension.
+- **Fixed on the way:** the CLI summarised a script run by its reason instead of
+  its script, from a hand-written table that had drifted from the tools
+  (`089b8438`, now checked against the bound tools' schemas); one digest
+  detector and one `CapEnforcer`, whose `ports` declaration had the wrong return
+  type (`640c669c`).
+- **The old review retired** (`f2914e17`): the ADRs are in
+  `docs/architecture/decisions/` with status lines, the migration playbook in
+  `docs/architecture/storage-migration-playbook.md`, the
+  [ledger](10-legacy-ledger.md) final (23 closed, 7 partly, 2 carried), every
+  reference repointed, the directory deleted. `CONTRIBUTING.md` updated
+  (`9e2001ee`).
+
 ---
 
 ## Carried
@@ -924,4 +949,11 @@ Deliberately not fixed in this remediation, each with its reason:
 | **A rejected tool ends the turn** (`R-KIS-02`, the `Denied.status`/`named` split) | The owner's call (2026-09-24): when the user rejects a tool, stop the turn — the REPL stays open, the UI session stays open, and the user's next message decides what happens. Today the agent carries on by itself (seen live). Policies cannot end a turn yet, so it is new behaviour, not a cleanup. | After this review: a policy result that ends the turn, applied to approval asks; decide background tasks then. |
 | **The remaining inline styles** (`R-UI-06`) — 512 objects | The worst five files are done; the rest is the same mechanical move file by file, each needing its own before/after capture. | Continue file by file, largest first (`AskCard`, `ActivityLog`, `VoiceOverlay`). |
 | **Card hover glows** (`R-UI-09`) | Fixing it changes what users see on hover, under six themes. | The owner decides; then one change per card. |
+| **Price lookup by provider** (`R-PLC-10`, the last of `R-SOL-02`) | `llm/pricing.py` still recognises OpenRouter and Ollama from `base_url`. Moving the lookup onto the providers is a design change to the provider contract. | A `live_price()` provider method, with the two current lookups as its first implementations. |
+| **`Any`-typed dependencies** (`R-SOL-04`), **the settings half of `R-SOL-03`** | 28 `MasterDeps` fields and 42 engine parameters; `LlmSettings` requires fields two providers lack. Each typing change needs the fingerprint and a live turn per master. | Type `MasterDeps` against `ports/` first; then the settings hierarchy. |
+| **Names, literals, nesting** (`R-RDB-04`…`06`) | Small, mechanical and independent: an alias, a snake_case flag (renaming it changes the CLI), the concurrency default ×4, the write-drain sleep ×3, three functions nested eight deep. | One commit each. |
+| **Scroll re-wrap** (`R-KIS-03`) | The cost is suspected, never measured. | Measure on a full buffer first; cache only if it shows. |
+| **The last copies** (`R-DRY-02`, `R-DRY-06`) | A fourth content flattener (joins with `\n`), two WAV readers, the TTS backend's own `subprocess` calls. | Fold each into its canonical module. |
+| **Size** — 19 functions over 100 lines, 3 classes over 400, `core/engine.py` at 1,496 lines | Eight are the accepted tool factories and one the off-limits face watcher; three builders crossed 100 after W4 with W5's explicit wiring. | Split the builders that grew; the rest were stopped deliberately. |
+| **The Visuals session picker** (`R-UI-10`) | A UX gap, found in W7. | Refresh the list with the panel's ↻. |
 | **Renaming `yuyutsava/platform`, `yuyutsava/mcp`** (`R-PLC-12`) | `platform` has 16 package-root importers and carries OS invariance; `mcp` is contained by `test/mcp_layer`. The benefit is small next to the churn. | One rename-only change each, if ever. |
