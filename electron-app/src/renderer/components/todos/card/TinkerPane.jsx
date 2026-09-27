@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { listTodoChats } from '../../../api/client'
+import { clamp, startResize } from '../../../lib/resize'
 import { useNav } from '../../../nav/NavProvider'
 import { useViewState } from '../../../nav/useViewState'
 import ChatPanel from '../../chat/ChatPanel'
@@ -90,29 +91,16 @@ export default function TinkerPane({
   }, [onTurnEnd, loadChats])
 
   const startTinkerDrag = useCallback(
-    (e) => {
-      e.preventDefault()
-      const startX = e.clientX
-      const startW = tinkerW
-      setTinkerDragging(true)
-      let w = startW
-      const onMove = (ev) => {
-        w = Math.min(TINKER_MAX, Math.max(TINKER_MIN, startW - (ev.clientX - startX)))
-        setTinkerW(w)
-      }
-      const onUp = () => {
-        window.removeEventListener('mousemove', onMove)
-        window.removeEventListener('mouseup', onUp)
-        document.body.style.cursor = ''
-        document.body.style.userSelect = ''
-        setTinkerDragging(false)
-        localStorage.setItem(TINKER_W_KEY, String(w))
-      }
-      document.body.style.cursor = 'col-resize'
-      document.body.style.userSelect = 'none'
-      window.addEventListener('mousemove', onMove)
-      window.addEventListener('mouseup', onUp)
-    },
+    (e) =>
+      startResize(e, {
+        sizeAt: (dx) => clamp(tinkerW - dx, TINKER_MIN, TINKER_MAX),
+        onSize: setTinkerW,
+        onStart: () => setTinkerDragging(true),
+        onEnd: (w) => {
+          setTinkerDragging(false)
+          localStorage.setItem(TINKER_W_KEY, String(w))
+        },
+      }),
     [tinkerW],
   )
 

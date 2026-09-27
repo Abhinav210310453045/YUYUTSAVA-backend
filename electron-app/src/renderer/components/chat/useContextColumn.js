@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react'
 import { useViewState } from '../../nav/useViewState'
+import { clamp, startResize } from '../../lib/resize'
 
 // Context column bounds, matching the card view's tinker aside.
 export const CTX_MIN_W = 200
@@ -15,26 +16,13 @@ export function useContextColumn(origin) {
   const [ctxW, setCtxW] = useViewState(`ctx:w:${origin}`, CTX_DEFAULT_W)
   const [ctxDragging, setCtxDragging] = useState(false)
   const startCtxDrag = useCallback(
-    (e) => {
-      e.preventDefault()
-      const startX = e.clientX
-      const startW = ctxW
-      setCtxDragging(true)
-      const onMove = (ev) => {
-        setCtxW(Math.min(CTX_MAX_W, Math.max(CTX_MIN_W, startW - (ev.clientX - startX))))
-      }
-      const onUp = () => {
-        window.removeEventListener('mousemove', onMove)
-        window.removeEventListener('mouseup', onUp)
-        document.body.style.cursor = ''
-        document.body.style.userSelect = ''
-        setCtxDragging(false)
-      }
-      window.addEventListener('mousemove', onMove)
-      window.addEventListener('mouseup', onUp)
-      document.body.style.cursor = 'col-resize'
-      document.body.style.userSelect = 'none'
-    },
+    (e) =>
+      startResize(e, {
+        sizeAt: (dx) => clamp(ctxW - dx, CTX_MIN_W, CTX_MAX_W),
+        onSize: setCtxW,
+        onStart: () => setCtxDragging(true),
+        onEnd: () => setCtxDragging(false),
+      }),
     [ctxW, setCtxW],
   )
   return { ctxOpen, setCtxOpen, ctxW, ctxDragging, startCtxDrag }

@@ -10,6 +10,7 @@ import ChatPanel from './components/chat/ChatPanel'
 import VoicePanel from './components/voice/VoicePanel'
 import InWindowToast from './components/notifications/InWindowToast'
 import ResizeHandle from './components/common/ResizeHandle'
+import { clamp, startResize } from './lib/resize'
 import { useSSE, getLogsEnabled, setLogsEnabled } from './hooks/useSSE.jsx'
 import { useRuntimeSettings } from './hooks/useRuntimeSettings'
 import { NotificationsProvider } from './hooks/useNotifications.jsx'
@@ -136,28 +137,13 @@ function AppShell() {
   const [dragging, setDragging] = useState(false)
 
   const startDrag = useCallback(
-    (e) => {
-      e.preventDefault()
-      const startX = e.clientX
-      const startActivity = activityW
-      setDragging(true)
-
-      const onMove = (ev) => {
-        const dx = ev.clientX - startX
-        setActivityW(Math.min(ACTIVITY_MAX, Math.max(ACTIVITY_MIN, startActivity - dx)))
-      }
-      const onUp = () => {
-        window.removeEventListener('mousemove', onMove)
-        window.removeEventListener('mouseup', onUp)
-        document.body.style.cursor = ''
-        document.body.style.userSelect = ''
-        setDragging(false)
-      }
-      document.body.style.cursor = 'col-resize'
-      document.body.style.userSelect = 'none'
-      window.addEventListener('mousemove', onMove)
-      window.addEventListener('mouseup', onUp)
-    },
+    (e) =>
+      startResize(e, {
+        sizeAt: (dx) => clamp(activityW - dx, ACTIVITY_MIN, ACTIVITY_MAX),
+        onSize: setActivityW,
+        onStart: () => setDragging(true),
+        onEnd: () => setDragging(false),
+      }),
     [activityW],
   )
 

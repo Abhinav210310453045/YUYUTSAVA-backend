@@ -3,6 +3,7 @@ import { deleteTodoAttachment } from '../../api/client'
 import { humanAge } from './shared'
 import { resolveBlock } from './artifactBlocks'
 import ResizeHandle from '../common/ResizeHandle'
+import { clamp, startResize } from '../../lib/resize'
 
 // The card's attachment gallery as a bottom drawer — a slim always-visible
 // bar that rises to a resizable panel (VS Code terminal style). Tiles carry
@@ -174,30 +175,17 @@ export default function AttachmentsDrawer({
   const fileInputRef = useRef(null)
 
   const startHDrag = useCallback(
-    (e) => {
-      e.preventDefault()
-      const startY = e.clientY
-      const startH = height
-      setHDragging(true)
-      let h = startH
-      const onMove = (ev) => {
-        const max = Math.round(window.innerHeight * 0.6)
-        h = Math.min(max, Math.max(ATT_MIN, startH - (ev.clientY - startY)))
-        setHeight(h)
-      }
-      const onUp = () => {
-        window.removeEventListener('mousemove', onMove)
-        window.removeEventListener('mouseup', onUp)
-        document.body.style.cursor = ''
-        document.body.style.userSelect = ''
-        setHDragging(false)
-        localStorage.setItem(ATT_H_KEY, String(h))
-      }
-      document.body.style.cursor = 'row-resize'
-      document.body.style.userSelect = 'none'
-      window.addEventListener('mousemove', onMove)
-      window.addEventListener('mouseup', onUp)
-    },
+    (e) =>
+      startResize(e, {
+        axis: 'y',
+        sizeAt: (dy) => clamp(height - dy, ATT_MIN, Math.round(window.innerHeight * 0.6)),
+        onSize: setHeight,
+        onStart: () => setHDragging(true),
+        onEnd: (h) => {
+          setHDragging(false)
+          localStorage.setItem(ATT_H_KEY, String(h))
+        },
+      }),
     [height],
   )
 
