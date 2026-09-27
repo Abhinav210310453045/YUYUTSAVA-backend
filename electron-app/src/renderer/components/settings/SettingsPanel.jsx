@@ -1,91 +1,13 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import SettingsSection from './SettingsSection'
-import SettingsField from './SettingsField'
 import WatchedDirsEditor from './WatchedDirsEditor'
-import WakeWordsEditor from './WakeWordsEditor'
 import { VoiceModeSettings, SubagentSettings } from './RuntimeToggles'
 import UsageSettings from './UsageSettings'
+import { DaemonStatusBar, ReloadPrompt } from './DaemonControls'
+import { FALLBACK_SCHEMA } from './fallbackSchema'
+import { renderField } from './schemaField'
 import { getConfigSchema } from '../../api/client'
 import { useViewState, useScrollRestore } from '../../nav/useViewState'
-
-function DaemonBtn({ label, color, borderColor, bg, disabled, onClick }) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      style={{
-        padding: '5px 14px',
-        borderRadius: 'var(--radius-btn)',
-        fontSize: 10,
-        fontFamily: 'var(--font-mono)',
-        fontWeight: 700,
-        letterSpacing: '0.08em',
-        textTransform: 'uppercase',
-        border: `1px solid ${borderColor}`,
-        background: bg,
-        color,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        opacity: disabled ? 0.5 : 1,
-        transition: 'all 0.15s',
-        flexShrink: 0,
-      }}
-    >
-      {disabled ? '...' : label}
-    </button>
-  )
-}
-
-// Minimal fallback so the form is usable before the daemon's first boot
-// (the schema endpoint is unreachable then). Mirrors the daemon's Core group.
-const FALLBACK_SCHEMA = {
-  groups: [
-    {
-      name: 'LLM Provider',
-      vars: [
-        {
-          key: 'LLM_PROVIDER',
-          label: 'Provider',
-          type: 'select',
-          default: 'groq',
-          options: ['groq', 'openrouter', 'anthropic', 'ollama'],
-          reload_class: 'restart_resume',
-        },
-        {
-          key: 'GROQ_API_KEY',
-          label: 'Groq API key',
-          type: 'password',
-          secret: true,
-          placeholder: 'gsk_...',
-          reload_class: 'restart_resume',
-          depends_key: 'LLM_PROVIDER',
-          depends_value: 'groq',
-        },
-        {
-          key: 'GROQ_MODEL',
-          label: 'Groq model',
-          type: 'text',
-          placeholder: 'llama-3.3-70b-versatile',
-          reload_class: 'restart_resume',
-          depends_key: 'LLM_PROVIDER',
-          depends_value: 'groq',
-        },
-      ],
-    },
-    {
-      name: 'Daemon',
-      vars: [
-        {
-          key: 'YUYUTSAVA_DAEMON_PORT',
-          label: 'Port',
-          type: 'number',
-          default: '7654',
-          placeholder: '7654',
-          reload_class: 'restart_no_resume',
-        },
-      ],
-    },
-  ],
-}
 
 export default function SettingsPanel() {
   // The edit buffer outlives navigation: stepping out to check something and
@@ -212,51 +134,6 @@ export default function SettingsPanel() {
     }, 2000)
   }
 
-  function renderField(v) {
-    // Conditional visibility (e.g. provider-specific keys, postgres-only fields).
-    if (v.depends_key && (settings[v.depends_key] ?? '') !== v.depends_value) return null
-    // Wake words get a dedicated list editor (add/remove + presets) instead of a
-    // raw comma-separated text box; it hot-applies via the voice events source.
-    if (v.key === 'WAKE_WORDS') {
-      return (
-        <div key={v.key} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <label
-            style={{
-              fontSize: 11,
-              color: 'var(--text-secondary)',
-              fontFamily: 'var(--font-mono)',
-              letterSpacing: '0.04em',
-            }}
-          >
-            {v.label}
-            <span style={{ color: 'var(--text-dim)', marginLeft: 6, fontSize: 10 }}>{v.key}</span>
-          </label>
-          <WakeWordsEditor
-            value={settings.WAKE_WORDS}
-            threshold={settings.WAKE_THRESHOLD}
-            onChange={onChange}
-          />
-        </div>
-      )
-    }
-    const options =
-      v.options && v.options.length
-        ? v.options.map((o) => ({ value: o, label: o === '' ? '(default)' : o }))
-        : undefined
-    return (
-      <SettingsField
-        key={v.key}
-        label={v.label}
-        envKey={v.key}
-        type={v.type || 'text'}
-        value={settings[v.key]}
-        onChange={onChange}
-        placeholder={v.placeholder || v.default || ''}
-        options={options}
-      />
-    )
-  }
-
   if (loading) {
     return (
       <div
@@ -345,135 +222,23 @@ export default function SettingsPanel() {
         </div>
       )}
 
-      {/* Reload prompt: changed vars need a daemon restart to take effect. */}
       {reloadPrompt && (
-        <div
-          style={{
-            background: 'rgba(251,191,36,0.07)',
-            border: '1px solid rgba(251,191,36,0.3)',
-            borderRadius: 'var(--radius-card)',
-            padding: '12px 14px',
-            fontSize: 11,
-            color: 'var(--neon-amber)',
-            fontFamily: 'var(--font-mono)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 8,
-          }}
-        >
-          <div>
-            Restart the daemon to apply changes to{' '}
-            <strong>{reloadPrompt.keys.map(labelOf).join(', ')}</strong>.
-          </div>
-          <div style={{ color: reloadPrompt.noResume ? 'var(--neon-red)' : 'var(--text-muted)' }}>
-            {reloadPrompt.noResume
-              ? '⚠ A running task will restart from the beginning (storage/port change).'
-              : 'A running task will resume from its last checkpoint.'}
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <DaemonBtn
-              label="Restart now"
-              color="var(--neon-amber)"
-              borderColor="rgba(251,191,36,0.3)"
-              bg="rgba(251,191,36,0.06)"
-              disabled={daemonBusy}
-              onClick={applyReload}
-            />
-            <DaemonBtn
-              label="Later"
-              color="var(--text-muted)"
-              borderColor="var(--border-card)"
-              bg="var(--bg-elevated)"
-              disabled={daemonBusy}
-              onClick={() => setReloadPrompt(null)}
-            />
-          </div>
-        </div>
+        <ReloadPrompt
+          reloadPrompt={reloadPrompt}
+          labelOf={labelOf}
+          daemonBusy={daemonBusy}
+          onApply={applyReload}
+          onLater={() => setReloadPrompt(null)}
+        />
       )}
 
-      {/* Daemon status + controls */}
-      <div
-        style={{
-          background: 'var(--bg-elevated)',
-          border: `1px solid ${daemonStatus?.running ? 'rgba(var(--accent-rgb),0.15)' : 'rgba(255,51,102,0.15)'}`,
-          borderRadius: 'var(--radius-card)',
-          padding: '10px 14px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-        }}
-      >
-        {/* Status indicator */}
-        <span
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            fontFamily: 'var(--font-mono)',
-            fontSize: 11,
-            flex: 1,
-          }}
-        >
-          <span
-            style={{
-              width: 7,
-              height: 7,
-              borderRadius: '50%',
-              flexShrink: 0,
-              background: daemonStatus?.running ? 'var(--neon-green)' : 'var(--neon-red)',
-              boxShadow: daemonStatus?.running ? 'var(--glow-green)' : 'var(--glow-red)',
-              animation: daemonStatus?.running ? 'neon-pulse 2s ease-in-out infinite' : 'none',
-            }}
-          />
-          <span
-            style={{
-              color: daemonStatus?.running ? 'var(--neon-green)' : 'var(--neon-red)',
-              fontWeight: 'var(--fw-semibold)',
-            }}
-          >
-            {daemonStatus?.running ? 'Running' : 'Stopped'}
-          </span>
-          <span style={{ color: 'var(--text-dim)' }}>·</span>
-          <span style={{ color: 'var(--text-muted)' }}>port {daemonStatus?.port ?? '7654'}</span>
-          {daemonStatus?.managed && (
-            <>
-              <span style={{ color: 'var(--text-dim)' }}>·</span>
-              <span style={{ color: 'var(--text-muted)' }}>managed</span>
-            </>
-          )}
-        </span>
-
-        {/* Action buttons */}
-        {daemonStatus?.running ? (
-          <>
-            <DaemonBtn
-              label="Restart"
-              color="var(--neon-amber)"
-              borderColor="rgba(251,191,36,0.3)"
-              bg="rgba(251,191,36,0.06)"
-              disabled={daemonBusy}
-              onClick={restartDaemon}
-            />
-            <DaemonBtn
-              label="Stop"
-              color="var(--neon-red)"
-              borderColor="rgba(255,51,102,0.3)"
-              bg="rgba(255,51,102,0.06)"
-              disabled={daemonBusy}
-              onClick={stopDaemon}
-            />
-          </>
-        ) : (
-          <DaemonBtn
-            label="Start"
-            color="var(--neon-green)"
-            borderColor="rgba(var(--accent-rgb),0.3)"
-            bg="rgba(var(--accent-rgb),0.06)"
-            disabled={daemonBusy}
-            onClick={startDaemon}
-          />
-        )}
-      </div>
+      <DaemonStatusBar
+        daemonStatus={daemonStatus}
+        daemonBusy={daemonBusy}
+        onStart={startDaemon}
+        onStop={stopDaemon}
+        onRestart={restartDaemon}
+      />
 
       {/* Hot toggles — applied immediately, no Save, no restart. */}
       <SettingsSection title="Voice Mode" defaultOpen={true}>
@@ -496,7 +261,7 @@ export default function SettingsPanel() {
 
       {/* Schema-driven config groups (served by the daemon). */}
       {(schema?.groups || []).map((g, idx) => {
-        const fields = g.vars.map(renderField).filter(Boolean)
+        const fields = g.vars.map((x) => renderField(x, settings, onChange)).filter(Boolean)
         if (!fields.length) return null
         return (
           <SettingsSection key={g.name} title={g.name} defaultOpen={idx < 2}>
