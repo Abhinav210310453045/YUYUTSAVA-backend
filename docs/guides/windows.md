@@ -124,7 +124,7 @@ Proactor helper loop for streaming children).
 - Also owns `system_critical_prefixes()`, `temp_zone_prefixes()`, `default_shell()` so L5
   and L3 read platform facts from one place.
 - **Injected into every agent system prompt** (orchestrator + task_runner via
-  `core/prompts.py` / `agents/base_sub_agent.py`) — the model always knows which system it
+  `agents/prompts.py` / `agents/base_sub_agent.py`) — the model always knows which system it
   speaks to and which dialect to emit.
 - Exposed as **`tr_sysinfo`** so agents/subagents can re-query live details (versions, disk,
   managers) on demand.
@@ -205,7 +205,7 @@ How capability grows "for any system without duplication":
 - **Consent integration**: routine warden ops flow through the existing `yuyutsava/consent/`
   grants (once/session/project, risk-gated) so the daemon isn't nagging for every step of a
   cure; `elevated`/destructive = CRITICAL = always ask.
-- Prompt text mentioning `/tmp` (`core/prompts.py`, `agents/base_sub_agent.py`) → dynamic
+- Prompt text mentioning `/tmp` (`agents/prompts.py`, `agents/base_sub_agent.py`) → dynamic
   scratch dir.
 
 ---
@@ -305,7 +305,7 @@ Collected during the code audit. Use as an implementation checklist.
 | `yuyutsava/agents/task_runner/zones.py` | 19–29 | `/etc,/sys,/proc,/dev,/boot,/root,/usr/bin,/usr/sbin,/var/log` |
 | `yuyutsava/core/permission_middleware.py` | 38–69, 116–119 | `/etc,/usr,/bin,/sbin,/lib` regexes + prefixes |
 | `yuyutsava/cli/commands/chat_repl.py` | 586 | `/tmp,/var/folders,/private/tmp` zone check |
-| `yuyutsava/core/prompts.py` | 80 | `/tmp` in prompt text |
+| `yuyutsava/agents/prompts.py` | — | `/tmp` in prompt text |
 | `yuyutsava/agents/base_sub_agent.py` | 137 | `/tmp` in prompt text |
 
 ### Already Windows-safe (guards in place — no change)

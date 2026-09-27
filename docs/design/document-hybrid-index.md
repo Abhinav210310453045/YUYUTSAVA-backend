@@ -92,7 +92,7 @@ tools already enforce for oversized tool results — we reuse it, not reinvent i
 
 Mirrors the existing pluggable-registry idiom (`todoboard/artifacts.py`
 `ArtifactBlock` registry + `_MAGIC` byte-signatures in
-[tools.py:60](../../yuyutsava/agents/task_runner/tools.py#L60)).
+[agents/task_runner/tools/](../../yuyutsava/agents/task_runner/tools/)).
 
 - `documents/extractors/base.py` — contract:
   ```python
@@ -226,7 +226,7 @@ New factory `yuyutsava/documents/tools.py :: make_document_tools(...)` (mirror
 ([engine.py:302](../../yuyutsava/core/engine.py#L302)): add `document_tools` to
 `all_custom_tools` (covers CLI agent + orchestrator via `master_tools`). Add
 `"doc_"` to `_SUPPRESS_PREFIXES`
-([tool_filter_policy.py:46](../../yuyutsava/core/tool_filter_policy.py#L46))
+([policy/builtin/tool_filter.py](../../yuyutsava/policy/builtin/tool_filter.py))
 for lazy discovery. Subagents opt in via `extra_tools()`
 ([base_sub_agent.py](../../yuyutsava/agents/base_sub_agent.py#L225)).
 
@@ -255,7 +255,7 @@ thread_id)` fire-and-forget (best-effort, mirrors `TodoNoteIndex.schedule`).
 ### 7. Wiring
 
 - Construct `PgDocumentIndex(pg_pool, embedder=embedder)` where
-  `PgTranscriptIndex` is built — [agent_stack.py:227](../../yuyutsava/cli/agent_stack.py#L227)
+  `PgTranscriptIndex` is built — [core/agent_stack.py](../../yuyutsava/core/agent_stack.py)
   (CLI) and [daemon/bootstrap.py](../../yuyutsava/daemon/bootstrap.py) (daemon); `None`
   on the SQLite/no-PG fallback (docs simply not indexable then, like transcript recall).
 - Pass into `make_document_tools`; register per §5.

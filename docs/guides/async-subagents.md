@@ -130,7 +130,7 @@ Type your answer and hit Enter; the run resumes.
 > reasonably split, e.g. *"organise my Downloads folder in the background and
 > in the meantime tell me about the latest news"*. The system prompt
 > explicitly tells the master to prefer `start_async_task` for long-running
-> work — see [`yuyutsava/core/prompts.py`](../../yuyutsava/core/prompts.py)
+> work — see [`yuyutsava/agents/prompts.py`](../../yuyutsava/agents/prompts.py)
 > (`ASYNC_SUBAGENT_GUIDANCE`).
 
 ---
