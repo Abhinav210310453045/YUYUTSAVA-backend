@@ -439,7 +439,28 @@ test/storage/test_app_context.py` passes.
 
 ## R-TST-14 — A standing failure that was never in the ledger
 
-**Severity** P1 · **Wave** W6 · **Status** Open (found during W4)
+**Severity** P1 · **Wave** W6 · **Status** **Fixed** (W6, 2026-09-27)
+
+**The cause was not rows left in the database, as recorded below. It was
+whether an embedding server was answering.** The test used the real embedder.
+With the embedder up it passed 3 of 3; with `EMBED_BASE_URL` pointed at a closed
+port it failed 3 of 3. Without a vector, `UnifiedMemoryStore.add` skips the
+dedup probe by design and stores a degraded row, so identical text makes two
+rows.
+
+- **Fix.** A deterministic one-hot embedder, keyed by a hash of the text:
+  identical text gives cosine 1, different text gives 0. The real
+  `find_duplicate` still runs on the real write path. The tag is now a UUID,
+  because `id(self)` can repeat across runs.
+- **Verification.** 8/8 pass three times each, with and without an embedding
+  server. Negative control: skipping the dedup probe turns the dedup test red.
+- **Found on the way.** The write paths printed tracebacks for an unreachable
+  embedder. Fixed as `R-BUG-13`'s write side.
+- **Carried, the owner's decision.** Should identical text also collapse when
+  no vector exists, i.e. an exact-text dedup fallback? Today it does not, on
+  Postgres without an embedder or on SQLite. That is consistent, and it is
+  documented as "degraded, not broken". It is a product choice, not a test
+  defect, so it is recorded here rather than changed.
 
 **Claim.** `retrieval/test_find_duplicate_row_shape.py`
 `::TheRealWritePath::test_identical_text_is_deduplicated` is **flaky against the

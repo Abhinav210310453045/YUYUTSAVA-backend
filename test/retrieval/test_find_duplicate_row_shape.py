@@ -38,9 +38,11 @@ Run:  .venv/bin/python test/retrieval/test_find_duplicate_row_shape.py
 
 from __future__ import annotations
 
+import hashlib
 import os
 import socket
 import unittest
+import uuid
 from urllib.parse import urlparse
 
 from yuyutsava.storage.backend import DEFAULT_PG_DSN
@@ -138,18 +140,43 @@ class AgainstBothConnectionShapes(unittest.IsolatedAsyncioTestCase):
         await PostgresDialect(self.pool).write(probe)  # must not raise
 
 
+class _OneHotEmbedder:
+    """Deterministic vectors: one-hot at a position chosen by the text's hash.
+
+    Identical text → identical vector (cosine 1); different text → orthogonal
+    (cosine 0, barring a 1-in-768 collision). This used the real embedder, so
+    the dedup test passed only while a local embedding server answered —
+    without one the write stores no vector, the probe is skipped by design, and
+    identical text makes two rows (R-TST-14).
+    """
+
+    async def embed(self, texts: list[str], *, mode: str = "document") -> list[list[float]]:
+        return [self._vec(t) for t in texts]
+
+    async def embed_one(self, text: str, *, mode: str = "document") -> list[float]:
+        return self._vec(text)
+
+    @staticmethod
+    def _vec(text: str) -> list[float]:
+        from yuyutsava.memory.config import EMBEDDING_DIM
+
+        hot = int(hashlib.sha256(text.encode()).hexdigest(), 16) % EMBEDDING_DIM
+        return [1.0 if i == hot else 0.0 for i in range(EMBEDDING_DIM)]
+
+
 @unittest.skipUnless(PG_UP, f"no Postgres at {_dsn()}")
 class TheRealWritePath(unittest.IsolatedAsyncioTestCase):
     """End to end through ``UnifiedMemoryStore.add`` with dedup **on**.
 
     The parity suite runs with the factory default (``1.1``), which switches
     dedup off. The daemon passes the configured ``0.97``. This uses the daemon's
-    value, which is the only way to reach the failing line.
+    value, which is the only way to reach the failing line — with a
+    deterministic embedder, so the outcome depends on the code, not on whether
+    an embedding server is running.
     """
 
     async def asyncSetUp(self) -> None:
         from yuyutsava.memory.config import MemorySettings
-        from yuyutsava.memory.embedder import Embedder
         from yuyutsava.memory.store_unified import pg_memory_store
         from yuyutsava.storage.backend import StorageSettings
         from yuyutsava.storage.pg.pool import PgPool
@@ -157,13 +184,14 @@ class TheRealWritePath(unittest.IsolatedAsyncioTestCase):
         self.pool = PgPool(StorageSettings(backend="postgres", pg_dsn=_dsn()))
         await self.pool.open()
         settings = MemorySettings.from_env(default_enabled=True)
-        self.embedder = Embedder(settings)
         self.store = pg_memory_store(
             self.pool,
-            embedder=self.embedder,
+            embedder=_OneHotEmbedder(),
             dedup_threshold=settings.dedup_threshold,  # 0.97 — dedup ON
         )
-        self.tag = f"claude-regression-{id(self)}"
+        # Unique per run: id(self) can repeat across runs and match a row an
+        # earlier, crashed run left behind.
+        self.tag = f"claude-regression-{uuid.uuid4().hex}"
 
     async def asyncTearDown(self) -> None:
         async with self.pool.connection() as conn:
