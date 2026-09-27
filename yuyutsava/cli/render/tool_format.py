@@ -41,18 +41,19 @@ def truncate(s: str, limit: int = MAX_CALL_LEN) -> str:
 # Call summaries
 # ---------------------------------------------------------------------------
 
-# Tool name → the args (in priority order) whose value IS the summary.
-_CALL_KEYS: dict[str, tuple[str, ...]] = {
+# Tool name → the args (in priority order) whose value IS the summary. The
+# task-runner entries are checked against the bound tools' schemas
+# (test/cli/test_tool_call_summaries.py).
+CALL_KEYS: dict[str, tuple[str, ...]] = {
     "tr_read_file": ("path", "file_path"),
     "tr_write_file": ("path", "file_path"),
     "tr_delete_file": ("path", "file_path"),
-    "tr_chmod": ("path", "file_path"),
     "tr_ls": ("path", "directory"),
     "tr_glob": ("pattern",),
     "tr_grep": ("pattern", "query"),
     "tr_execute": ("command",),
     "tr_execute_in_sandbox": ("command",),
-    "tr_run_python": ("code", "script"),
+    "tr_run_python": ("script_path",),
     "tr_fetch_url": ("url",),
     "tr_ask_user": ("question", "prompt"),
     "task": ("description", "task", "prompt"),
@@ -85,7 +86,7 @@ def format_call(name: str, args: Any) -> str:
     if not isinstance(args, dict):
         return truncate(sanitize(args))
 
-    keys = _CALL_KEYS.get(name)
+    keys = CALL_KEYS.get(name)
     if keys is None:
         for prefix, pkeys in _PREFIX_KEYS:
             if name.startswith(prefix):
