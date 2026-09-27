@@ -39,29 +39,10 @@ Run:  .venv/bin/python test/retrieval/test_find_duplicate_row_shape.py
 from __future__ import annotations
 
 import hashlib
-import os
-import socket
 import unittest
 import uuid
-from urllib.parse import urlparse
 
-from yuyutsava.storage.backend import DEFAULT_PG_DSN
-
-
-def _dsn() -> str:
-    return os.environ.get("YUYUTSAVA_PG_DSN", "").strip() or DEFAULT_PG_DSN
-
-
-def _pg_up() -> bool:
-    u = urlparse(_dsn())
-    try:
-        with socket.create_connection((u.hostname or "127.0.0.1", u.port or 5432), 1.5):
-            return True
-    except OSError:
-        return False
-
-
-PG_UP = _pg_up()
+from test.support.pg import PG_UP, pg_dsn, requires_pg
 
 
 class RowShapeHelper(unittest.TestCase):
@@ -90,7 +71,7 @@ class RowShapeHelper(unittest.TestCase):
         )
 
 
-@unittest.skipUnless(PG_UP, f"no Postgres at {_dsn()}")
+@requires_pg
 class AgainstBothConnectionShapes(unittest.IsolatedAsyncioTestCase):
     """The regression: run the real query on both row factories."""
 
@@ -98,7 +79,7 @@ class AgainstBothConnectionShapes(unittest.IsolatedAsyncioTestCase):
         from yuyutsava.storage.backend import StorageSettings
         from yuyutsava.storage.pg.pool import PgPool
 
-        self.pool = PgPool(StorageSettings(backend="postgres", pg_dsn=_dsn()))
+        self.pool = PgPool(StorageSettings(backend="postgres", pg_dsn=pg_dsn()))
         await self.pool.open()
 
     async def asyncTearDown(self) -> None:
@@ -164,7 +145,7 @@ class _OneHotEmbedder:
         return [1.0 if i == hot else 0.0 for i in range(EMBEDDING_DIM)]
 
 
-@unittest.skipUnless(PG_UP, f"no Postgres at {_dsn()}")
+@requires_pg
 class TheRealWritePath(unittest.IsolatedAsyncioTestCase):
     """End to end through ``UnifiedMemoryStore.add`` with dedup **on**.
 
@@ -181,7 +162,7 @@ class TheRealWritePath(unittest.IsolatedAsyncioTestCase):
         from yuyutsava.storage.backend import StorageSettings
         from yuyutsava.storage.pg.pool import PgPool
 
-        self.pool = PgPool(StorageSettings(backend="postgres", pg_dsn=_dsn()))
+        self.pool = PgPool(StorageSettings(backend="postgres", pg_dsn=pg_dsn()))
         await self.pool.open()
         settings = MemorySettings.from_env(default_enabled=True)
         self.store = pg_memory_store(
@@ -231,5 +212,5 @@ class TheRealWritePath(unittest.IsolatedAsyncioTestCase):
 
 
 if __name__ == "__main__":
-    print(f"Postgres at {_dsn()}: {'UP' if PG_UP else 'DOWN (pg cases skip)'}\n")
+    print(f"Postgres at {pg_dsn()}: {'UP' if PG_UP else 'DOWN (pg cases skip)'}\n")
     unittest.main(verbosity=2)

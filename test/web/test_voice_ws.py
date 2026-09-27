@@ -213,6 +213,7 @@ def test_a_low_confidence_transcript_asks_the_user_to_repeat(app):
     assert clarify["heard"] == "welcome to the general"
 
 
+@pytest.mark.slow
 def test_the_mic_is_ignored_while_a_turn_is_running(app):
     """With barge-in off, the answer is always heard in full.
 

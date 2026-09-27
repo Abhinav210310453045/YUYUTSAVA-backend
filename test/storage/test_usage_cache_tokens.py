@@ -22,33 +22,15 @@ Run:  .venv/bin/python test/storage/test_usage_cache_tokens.py
 
 from __future__ import annotations
 
-import os
-import socket
 import sqlite3
 import tempfile
 import time
 import unittest
 from pathlib import Path
-from urllib.parse import urlparse
 
-from yuyutsava.storage.backend import DEFAULT_PG_DSN
+from test.support.pg import pg_dsn, requires_pg
 from yuyutsava.storage.usage import UsageRow
 
-
-def _pg_dsn() -> str:
-    return os.environ.get("YUYUTSAVA_PG_DSN", "").strip() or DEFAULT_PG_DSN
-
-
-def _pg_reachable() -> bool:
-    u = urlparse(_pg_dsn())
-    try:
-        with socket.create_connection((u.hostname or "127.0.0.1", u.port or 5432), timeout=1.5):
-            return True
-    except OSError:
-        return False
-
-
-PG_UP = _pg_reachable()
 THREAD = "cache_tokens_test_thread"
 
 
@@ -194,7 +176,7 @@ class SqliteCacheTokens(_CacheTokenContract, unittest.IsolatedAsyncioTestCase):
         self.assertIn("llm_usage_thread_ts_idx", names)
 
 
-@unittest.skipUnless(PG_UP, f"no Postgres at {_pg_dsn()}")
+@requires_pg
 class PgCacheTokens(_CacheTokenContract, unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         from yuyutsava.storage.backend import StorageSettings
@@ -202,7 +184,7 @@ class PgCacheTokens(_CacheTokenContract, unittest.IsolatedAsyncioTestCase):
         from yuyutsava.storage.pg.pool import PgPool
         from yuyutsava.storage.usage import PgUsageStore
 
-        self.pool = PgPool(StorageSettings(backend="postgres", pg_dsn=_pg_dsn()))
+        self.pool = PgPool(StorageSettings(backend="postgres", pg_dsn=pg_dsn()))
         await self.pool.open()
         await migrations.apply(self.pool)
         self.store = PgUsageStore(self.pool)

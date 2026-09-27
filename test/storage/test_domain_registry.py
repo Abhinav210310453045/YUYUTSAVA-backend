@@ -21,12 +21,9 @@ Run:  .venv/bin/python test/storage/test_domain_registry.py
 from __future__ import annotations
 
 import inspect
-import os
-import socket
 import unittest
-from urllib.parse import urlparse
 
-from yuyutsava.storage.backend import DEFAULT_PG_DSN
+from test.support.pg import PG_UP, pg_dsn, requires_pg
 from yuyutsava.storage.domains import (
     BY_TABLE,
     DOMAINS,
@@ -36,22 +33,6 @@ from yuyutsava.storage.domains import (
     session_scoped_tables,
     unaccounted,
 )
-
-
-def _pg_dsn() -> str:
-    return os.environ.get("YUYUTSAVA_PG_DSN", "").strip() or DEFAULT_PG_DSN
-
-
-def _pg_reachable() -> bool:
-    u = urlparse(_pg_dsn())
-    try:
-        with socket.create_connection((u.hostname or "127.0.0.1", u.port or 5432), timeout=1.5):
-            return True
-    except OSError:
-        return False
-
-
-PG_UP = _pg_reachable()
 
 
 class RegistryShape(unittest.TestCase):
@@ -157,7 +138,7 @@ class PurgeDerivation(unittest.TestCase):
                 )
 
 
-@unittest.skipUnless(PG_UP, f"no Postgres reachable at {_pg_dsn()}")
+@requires_pg
 class LiveSchemaCoverage(unittest.IsolatedAsyncioTestCase):
     """The registry vs. the tables that actually exist.
 
@@ -168,7 +149,7 @@ class LiveSchemaCoverage(unittest.IsolatedAsyncioTestCase):
     async def _live_tables(self) -> frozenset[str]:
         import psycopg
 
-        async with await psycopg.AsyncConnection.connect(_pg_dsn(), connect_timeout=5) as conn:
+        async with await psycopg.AsyncConnection.connect(pg_dsn(), connect_timeout=5) as conn:
             cur = await conn.execute(
                 "SELECT table_name FROM information_schema.tables "
                 "WHERE table_schema='public' AND table_type='BASE TABLE'"
@@ -191,7 +172,7 @@ class LiveSchemaCoverage(unittest.IsolatedAsyncioTestCase):
         """Any live table with thread_id/session_id must have a lifecycle."""
         import psycopg
 
-        async with await psycopg.AsyncConnection.connect(_pg_dsn(), connect_timeout=5) as conn:
+        async with await psycopg.AsyncConnection.connect(pg_dsn(), connect_timeout=5) as conn:
             cur = await conn.execute(
                 "SELECT DISTINCT table_name FROM information_schema.columns "
                 "WHERE table_schema='public' AND column_name IN ('thread_id','session_id')"
@@ -215,5 +196,5 @@ class LiveSchemaCoverage(unittest.IsolatedAsyncioTestCase):
 
 
 if __name__ == "__main__":
-    print(f"Postgres at {_pg_dsn()}: {'UP' if PG_UP else 'DOWN (live checks skip)'}\n")
+    print(f"Postgres at {pg_dsn()}: {'UP' if PG_UP else 'DOWN (live checks skip)'}\n")
     unittest.main(verbosity=2)

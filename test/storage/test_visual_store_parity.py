@@ -22,30 +22,12 @@ Run:  .venv/bin/python test/storage/test_visual_store_parity.py
 from __future__ import annotations
 
 import os
-import socket
 import tempfile
 import unittest
 from pathlib import Path
-from urllib.parse import urlparse
 
-from yuyutsava.storage.backend import DEFAULT_PG_DSN
+from test.support.pg import PG_UP, pg_dsn, requires_pg
 from yuyutsava.visuals.types import RenderResult
-
-
-def _pg_dsn() -> str:
-    return os.environ.get("YUYUTSAVA_PG_DSN", "").strip() or DEFAULT_PG_DSN
-
-
-def _pg_reachable() -> bool:
-    u = urlparse(_pg_dsn())
-    try:
-        with socket.create_connection((u.hostname or "127.0.0.1", u.port or 5432), timeout=1.5):
-            return True
-    except OSError:
-        return False
-
-
-PG_UP = _pg_reachable()
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"fake-image-bytes"
 
@@ -173,7 +155,7 @@ class _PgCase(unittest.IsolatedAsyncioTestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.out_dir = Path(self._tmp.name) / "out"
         self.thread = f"thread-parity-{os.getpid()}"
-        self.pool = PgPool(StorageSettings(backend="postgres", pg_dsn=_pg_dsn()))
+        self.pool = PgPool(StorageSettings(backend="postgres", pg_dsn=pg_dsn()))
         await self.pool.open()
 
     async def asyncTearDown(self) -> None:
@@ -186,7 +168,7 @@ class _PgCase(unittest.IsolatedAsyncioTestCase):
         self._tmp.cleanup()
 
 
-@unittest.skipUnless(PG_UP, f"no Postgres reachable at {_pg_dsn()}")
+@requires_pg
 class PostgresUnified(_VisualStoreContract, _PgCase):
     """The SAME code as SqliteUnified, over a different dialect."""
 
@@ -216,5 +198,5 @@ class _OutDirBinding:
 
 
 if __name__ == "__main__":
-    print(f"Postgres at {_pg_dsn()}: {'UP' if PG_UP else 'DOWN (pg cases skip)'}\n")
+    print(f"Postgres at {pg_dsn()}: {'UP' if PG_UP else 'DOWN (pg cases skip)'}\n")
     unittest.main(verbosity=2)

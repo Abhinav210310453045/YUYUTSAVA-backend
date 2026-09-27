@@ -22,32 +22,14 @@ Run:  .venv/bin/python test/storage/test_usage_thread_grouping.py
 
 from __future__ import annotations
 
-import os
-import socket
 import tempfile
 import time
 import unittest
 from pathlib import Path
-from urllib.parse import urlparse
 
-from yuyutsava.storage.backend import DEFAULT_PG_DSN
+from test.support.pg import PG_UP, pg_dsn, requires_pg
 from yuyutsava.storage.usage import UsageRow
 
-
-def _pg_dsn() -> str:
-    return os.environ.get("YUYUTSAVA_PG_DSN", "").strip() or DEFAULT_PG_DSN
-
-
-def _pg_reachable() -> bool:
-    u = urlparse(_pg_dsn())
-    try:
-        with socket.create_connection((u.hostname or "127.0.0.1", u.port or 5432), timeout=1.5):
-            return True
-    except OSError:
-        return False
-
-
-PG_UP = _pg_reachable()
 CARD_THREAD = "todo:card_grouping_test"
 
 
@@ -116,14 +98,14 @@ class SqliteThreadGrouping(_ThreadGroupingContract, unittest.IsolatedAsyncioTest
         self.assertEqual(row.task_id, "tinker:card_grouping_test")
 
 
-@unittest.skipUnless(PG_UP, f"no Postgres reachable at {_pg_dsn()}")
+@requires_pg
 class PostgresThreadGrouping(_ThreadGroupingContract, unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         from yuyutsava.storage.backend import StorageSettings
         from yuyutsava.storage.pg.pool import PgPool
         from yuyutsava.storage.usage import PgUsageStore
 
-        self.pool = PgPool(StorageSettings(backend="postgres", pg_dsn=_pg_dsn()))
+        self.pool = PgPool(StorageSettings(backend="postgres", pg_dsn=pg_dsn()))
         await self.pool.open()
         self.store = PgUsageStore(self.pool)
         await self._clean()
@@ -174,5 +156,5 @@ class ApiSurface(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    print(f"Postgres at {_pg_dsn()}: {'UP' if PG_UP else 'DOWN (pg cases skip)'}\n")
+    print(f"Postgres at {pg_dsn()}: {'UP' if PG_UP else 'DOWN (pg cases skip)'}\n")
     unittest.main(verbosity=2)

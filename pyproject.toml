@@ -177,6 +177,18 @@ packages = ["yuyutsava"]
 
 # ── Lint ─────────────────────────────────────────────────────────────────────
 # Rules and their reasons: docs/code-review/v0.1.0/01-standards.md.
+[tool.pytest.ini_options]
+# pytest is the runner of record; it also runs the unittest-style files.
+# The hermetic subset — what CI runs, and what needs nothing outside the repo:
+#   pytest -m "not pg and not billable and not slow"
+testpaths = ["test"]
+addopts = ["--strict-markers"]
+markers = [
+  "pg: needs a live Postgres at YUYUTSAVA_PG_DSN; apply with test.support.pg.requires_pg, which also skips when none answers",
+  "billable: makes real, paid model calls",
+  "slow: takes seconds, not milliseconds",
+]
+
 [tool.ruff]
 # Pinned so a local run, the ratchet script and CI see the same findings.
 required-version = "==0.16.5"

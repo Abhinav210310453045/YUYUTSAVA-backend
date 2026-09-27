@@ -21,39 +21,22 @@ Run:  .venv/bin/python test/daemon/test_build_retrieval.py
 from __future__ import annotations
 
 import os
-import socket
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
-from urllib.parse import urlparse
 
+from test.support.pg import PG_UP, pg_dsn, requires_pg
 from test.todoboard.fake_store import FakeTodoStore
 from yuyutsava.core.stores import StoreFactory
 from yuyutsava.daemon.bootstrap import build_retrieval
 from yuyutsava.memory.config import MemorySettings
 from yuyutsava.memory.embedder import Embedder
-from yuyutsava.storage.backend import DEFAULT_PG_DSN, StorageSettings
+from yuyutsava.storage.backend import StorageSettings
 from yuyutsava.storage.paths import WorkspaceLayout
 from yuyutsava.storage.pg.pool import PgPool
 from yuyutsava.todoboard.exchange import TodoExchange
 from yuyutsava.todoboard.recall import TodoNoteIndex
-
-
-def _pg_dsn() -> str:
-    return os.environ.get("YUYUTSAVA_PG_DSN", "").strip() or DEFAULT_PG_DSN
-
-
-def _pg_reachable() -> bool:
-    u = urlparse(_pg_dsn())
-    try:
-        with socket.create_connection((u.hostname or "127.0.0.1", u.port or 5432), timeout=1.5):
-            return True
-    except OSError:
-        return False
-
-
-PG_UP = _pg_reachable()
 
 
 class _RecordingIndex:
@@ -145,13 +128,13 @@ class TheBoardsIndexIsSyncedAtBoot(_Base):
         self.assertIn("boot index sync failed", logs.output[0])
 
 
-@unittest.skipUnless(PG_UP, f"no Postgres reachable at {_pg_dsn()}")
+@requires_pg
 class RetrievalOnPostgres(_Base):
     """**The branch the NameError hid in**, executed against a real pool."""
 
     async def asyncSetUp(self) -> None:
         await super().asyncSetUp()
-        self.settings = StorageSettings(backend="postgres", pg_dsn=_pg_dsn())
+        self.settings = StorageSettings(backend="postgres", pg_dsn=pg_dsn())
         self.pool = PgPool(self.settings)
         await self.pool.open()
         self.mem = MemorySettings.from_env(default_enabled=True)
@@ -185,5 +168,5 @@ class RetrievalOnPostgres(_Base):
 
 
 if __name__ == "__main__":
-    print(f"Postgres at {_pg_dsn()}: {'UP' if PG_UP else 'DOWN (pg cases skip)'}\n")
+    print(f"Postgres at {pg_dsn()}: {'UP' if PG_UP else 'DOWN (pg cases skip)'}\n")
     unittest.main(verbosity=2)

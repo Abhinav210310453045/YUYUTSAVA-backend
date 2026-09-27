@@ -16,30 +16,13 @@ Run:  .venv/bin/python test/storage/test_store_factory.py
 from __future__ import annotations
 
 import os
-import socket
 import tempfile
 import unittest
-from urllib.parse import urlparse
 
+from test.support.pg import PG_UP, pg_dsn, requires_pg
 from yuyutsava.core.stores import StoreFactory
-from yuyutsava.storage.backend import DEFAULT_PG_DSN, StorageSettings
+from yuyutsava.storage.backend import StorageSettings
 from yuyutsava.storage.domains import DOMAINS, Failover
-
-
-def _pg_dsn() -> str:
-    return os.environ.get("YUYUTSAVA_PG_DSN", "").strip() or DEFAULT_PG_DSN
-
-
-def _pg_reachable() -> bool:
-    u = urlparse(_pg_dsn())
-    try:
-        with socket.create_connection((u.hostname or "127.0.0.1", u.port or 5432), timeout=1.5):
-            return True
-    except OSError:
-        return False
-
-
-PG_UP = _pg_reachable()
 
 
 class _Settings:
@@ -101,7 +84,7 @@ class SqliteBackend(unittest.TestCase):
         self.assertIsNone(self.f.memory(_Settings.Memory(enabled=False)))
 
 
-@unittest.skipUnless(PG_UP, f"no Postgres reachable at {_pg_dsn()}")
+@requires_pg
 class PostgresBackend(unittest.TestCase):
     """With a pool -> Postgres stores, and spillover exactly where declared."""
 
@@ -112,7 +95,7 @@ class PostgresBackend(unittest.TestCase):
 
         cls._tmp = tempfile.TemporaryDirectory()
         os.environ["YUYUTSAVA_STATE_DIR"] = cls._tmp.name
-        cls.settings = StorageSettings(backend="postgres", pg_dsn=_pg_dsn())
+        cls.settings = StorageSettings(backend="postgres", pg_dsn=pg_dsn())
         # NOT opened. The factory only needs a pool *reference* to choose store
         # types — the stores hold it and connect lazily. Opening it here would
         # bind an event loop this synchronous TestCase then discards, producing
@@ -188,5 +171,5 @@ class PostgresBackend(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    print(f"Postgres at {_pg_dsn()}: {'UP' if PG_UP else 'DOWN (pg cases skip)'}\n")
+    print(f"Postgres at {pg_dsn()}: {'UP' if PG_UP else 'DOWN (pg cases skip)'}\n")
     unittest.main(verbosity=2)
