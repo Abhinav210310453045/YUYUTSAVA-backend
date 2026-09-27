@@ -13,7 +13,7 @@ import ArtifactModal from './ArtifactModal'
 import VisualActions from './VisualActions'
 import { useNav } from '../../nav/NavProvider'
 import { useViewState, useScrollRestore } from '../../nav/useViewState'
-import { alpha } from '../../lib/color'
+import './ArtifactsPanel.css'
 
 // A gallery of everything the agent has produced. Two feeds:
 //   • Visuals (charts/diagrams/tables/…) served from /visuals, session-scoped.
@@ -37,63 +37,19 @@ const BLOCK_ACCENT = {
 function VisualCard({ v, onOpen, onDeleted }) {
   const accent = kindAccent(v.kind)
   return (
-    <div
-      className="hover-bulge"
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 8,
-        padding: 8,
-        background: 'var(--bg-card)',
-        border: `1px solid ${alpha(accent, 33)}`,
-        borderRadius: 10,
-        textAlign: 'left',
-        '--bulge-glow': `${alpha(accent, 27)}`,
-      }}
-    >
+    <div className="hover-bulge visual-card" style={{ '--kind': accent }}>
       <img
         src={visualUrl(v.url)}
         alt={v.title || v.kind}
         loading="lazy"
         onClick={() => onOpen(v)}
         title={v.title || v.kind}
-        style={{
-          width: '100%',
-          height: 150,
-          objectFit: 'contain',
-          background: 'var(--bg-deep)',
-          borderRadius: 6,
-          cursor: 'zoom-in',
-        }}
+        className="visual-card-image"
       />
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <span
-          style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: 9,
-            textTransform: 'uppercase',
-            letterSpacing: '0.06em',
-            color: accent,
-            border: `1px solid ${alpha(accent, 33)}`,
-            borderRadius: 6,
-            padding: '1px 6px',
-          }}
-        >
-          {v.kind}
-        </span>
-        <span
-          style={{
-            fontSize: 11,
-            color: 'var(--text-primary)',
-            overflow: 'hidden',
-            whiteSpace: 'nowrap',
-            textOverflow: 'ellipsis',
-            flex: 1,
-          }}
-        >
-          {v.title || '—'}
-        </span>
-        <span style={{ fontSize: 10, color: 'var(--text-dim)' }}>{humanAge(v.created_ts)}</span>
+      <div className="visual-card-caption">
+        <span className="artifact-kind">{v.kind}</span>
+        <span className="artifact-name">{v.title || '—'}</span>
+        <span className="artifact-meta">{humanAge(v.created_ts)}</span>
       </div>
       <VisualActions visual={v} onDeleted={onDeleted} />
     </div>
@@ -109,95 +65,33 @@ function ArtifactTile({ item, onExpand }) {
   const accent = BLOCK_ACCENT[item.kind] || 'var(--text-info)'
   const source = item._cardId ? 'board' : 'chat'
   return (
-    <figure
-      style={{
-        margin: 0,
-        borderRadius: 10,
-        overflow: 'hidden',
-        border: `1px solid ${alpha(accent, 27)}`,
-        background: 'var(--bg-card)',
-      }}
-    >
-      <figcaption
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          padding: '6px 10px',
-          borderBottom: `1px solid ${alpha(accent, 13)}`,
-          fontFamily: 'var(--font-mono)',
-        }}
-      >
+    <figure className="artifact-tile" style={{ '--kind': accent }}>
+      <figcaption className="artifact-tile-caption">
+        <span className="artifact-kind">{item.kind}</span>
+        <span className="artifact-name">{item.title || item.mime || 'artifact'}</span>
         <span
-          style={{
-            fontSize: 9,
-            textTransform: 'uppercase',
-            letterSpacing: '0.06em',
-            color: accent,
-            border: `1px solid ${alpha(accent, 33)}`,
-            borderRadius: 6,
-            padding: '1px 6px',
-          }}
-        >
-          {item.kind}
-        </span>
-        <span
-          style={{
-            fontSize: 11,
-            color: 'var(--text-primary)',
-            overflow: 'hidden',
-            whiteSpace: 'nowrap',
-            textOverflow: 'ellipsis',
-            flex: 1,
-          }}
-        >
-          {item.title || item.mime || 'artifact'}
-        </span>
-        <span
-          style={{ fontSize: 9, color: 'var(--text-dim)' }}
+          className="artifact-meta artifact-meta--source"
           title={source === 'board' ? 'from a TODO card' : 'from chat/voice'}
         >
           {source}
         </span>
-        <span style={{ fontSize: 10, color: 'var(--text-dim)' }}>{humanAge(item.created_ts)}</span>
+        <span className="artifact-meta">{humanAge(item.created_ts)}</span>
         <button
           onClick={() => onExpand(item)}
           title="open big view"
-          style={{
-            background: 'transparent',
-            color: accent,
-            cursor: 'pointer',
-            border: `1px solid ${alpha(accent, 33)}`,
-            borderRadius: 6,
-            padding: '1px 7px',
-            fontSize: 11,
-            fontFamily: 'var(--font-mono)',
-          }}
+          className="artifact-tile-expand"
         >
           ⤢
         </button>
       </figcaption>
-      <div style={{ padding: 10, minWidth: 0, maxHeight: 260, overflow: 'hidden' }}>
+      <div className="artifact-tile-body">
         <Block attachment={item} cardId={item._cardId} />
       </div>
     </figure>
   )
 }
 
-const SectionTitle = ({ children }) => (
-  <span
-    style={{
-      fontFamily: 'var(--font-mono)',
-      fontSize: 11,
-      letterSpacing: '0.1em',
-      textTransform: 'uppercase',
-      color: 'var(--text-primary)',
-      fontWeight: 'var(--fw-semibold)',
-    }}
-  >
-    {children}
-  </span>
-)
+const SectionTitle = ({ children }) => <span className="artifacts-title">{children}</span>
 
 export default function ArtifactsPanel() {
   const { params, push, pop } = useNav()
@@ -265,76 +159,31 @@ export default function ArtifactsPanel() {
   }, [sessionId, refresh])
 
   return (
-    <div
-      style={{
-        flex: 1,
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden',
-        position: 'relative',
-      }}
-    >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          padding: '14px 24px',
-          borderBottom: '1px solid var(--border-subtle)',
-          background: 'var(--bg-bar)',
-        }}
-      >
+    <div className="artifacts">
+      <div className="artifacts-bar">
         <SectionTitle>Artifacts</SectionTitle>
       </div>
 
-      <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
+      <div ref={scrollRef} className="artifacts-body">
         {/* ── general artifacts + board attachments (global) ────────── */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+        <div className="artifacts-section">
           <SectionTitle>Documents, interactive & board files</SectionTitle>
           <button
             onClick={refreshItems}
             title="Refresh"
-            style={{
-              marginLeft: 'auto',
-              fontFamily: 'var(--font-mono)',
-              fontSize: 11,
-              padding: '5px 10px',
-              background: 'rgba(var(--accent-rgb),0.08)',
-              color: 'var(--neon-green)',
-              border: '1px solid rgba(var(--accent-rgb),0.25)',
-              borderRadius: 6,
-              cursor: 'pointer',
-            }}
+            className="artifacts-refresh artifacts-refresh--end"
           >
             ↻
           </button>
         </div>
-        {loadingItems && (
-          <div style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: 12 }}>
-            loading…
-          </div>
-        )}
+        {loadingItems && <div className="artifacts-note">loading…</div>}
         {!loadingItems && items.length === 0 && (
-          <div
-            style={{
-              color: 'var(--text-muted)',
-              fontFamily: 'var(--font-mono)',
-              fontSize: 12,
-              padding: '4px 0 20px',
-            }}
-          >
+          <div className="artifacts-note artifacts-note--empty-items">
             {'> no documents, interactive artifacts, or board files yet'}
           </div>
         )}
         {!loadingItems && items.length > 0 && (
-          <div
-            style={{
-              display: 'grid',
-              gap: 14,
-              marginBottom: 26,
-              gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-            }}
-          >
+          <div className="artifacts-grid artifacts-grid--items">
             {items.map((it) => (
               <ArtifactTile key={it.attachment_id} item={it} onExpand={openArtifact} />
             ))}
@@ -342,22 +191,12 @@ export default function ArtifactsPanel() {
         )}
 
         {/* ── visuals (session-scoped) ──────────────────────────────── */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+        <div className="artifacts-section">
           <SectionTitle>Visuals</SectionTitle>
           <select
             value={sessionId || ''}
             onChange={(e) => setSessionId(e.target.value)}
-            style={{
-              marginLeft: 'auto',
-              background: 'var(--bg-card)',
-              color: 'var(--text-primary)',
-              border: '1px solid var(--border-card)',
-              borderRadius: 6,
-              padding: '5px 8px',
-              fontFamily: 'var(--font-mono)',
-              fontSize: 11,
-              maxWidth: 320,
-            }}
+            className="artifacts-session"
           >
             {sessions.length === 0 && <option value="">no sessions</option>}
             {sessions.map((s) => (
@@ -367,48 +206,18 @@ export default function ArtifactsPanel() {
               </option>
             ))}
           </select>
-          <button
-            onClick={() => refresh(sessionId)}
-            title="Refresh"
-            style={{
-              fontFamily: 'var(--font-mono)',
-              fontSize: 11,
-              padding: '5px 10px',
-              background: 'rgba(var(--accent-rgb),0.08)',
-              color: 'var(--neon-green)',
-              border: '1px solid rgba(var(--accent-rgb),0.25)',
-              borderRadius: 6,
-              cursor: 'pointer',
-            }}
-          >
+          <button onClick={() => refresh(sessionId)} title="Refresh" className="artifacts-refresh">
             ↻
           </button>
         </div>
-        {loading && (
-          <div style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: 12 }}>
-            loading…
-          </div>
-        )}
+        {loading && <div className="artifacts-note">loading…</div>}
         {!loading && visuals.length === 0 && (
-          <div
-            style={{
-              color: 'var(--text-muted)',
-              fontFamily: 'var(--font-mono)',
-              fontSize: 12,
-              padding: '4px 0',
-            }}
-          >
+          <div className="artifacts-note artifacts-note--empty-visuals">
             {'> no visuals yet — ask the agent to chart or diagram something'}
           </div>
         )}
         {!loading && visuals.length > 0 && (
-          <div
-            style={{
-              display: 'grid',
-              gap: 14,
-              gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
-            }}
-          >
+          <div className="artifacts-grid artifacts-grid--visuals">
             {visuals.map((v) => (
               <VisualCard key={v.visual_id} v={v} onOpen={openVisual} onDeleted={onDeleted} />
             ))}
