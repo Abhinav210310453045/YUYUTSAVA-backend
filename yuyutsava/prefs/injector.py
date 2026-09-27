@@ -7,7 +7,7 @@ Design constraints:
   stay out of the master prompt — subagents access them via a ``prefs`` tool
   instead.
 - The entire block is hard-capped at ``LIMITS.max_prefs_chars`` (~500 tokens).
-  Longest entries are truncated first.
+  Entries are ordered shortest first, so the cap truncates the longest.
 - The block is wrapped in a fixed prefix so the model knows it is
   *informational only*, mitigating prompt-injection risk from malicious pref
   values.
@@ -60,10 +60,13 @@ class PrefsInjector:
         if not filtered:
             return ""
 
-        # Build lines, longest first so truncation removes the biggest offenders.
-        lines = []
-        for key in sorted(filtered, key=lambda k: -len(json.dumps(filtered[k]))):
-            lines.append(f"  {key}: {json.dumps(filtered[key], ensure_ascii=False)}")
+        # Shortest first: the cap cuts from the end, so it trims the biggest
+        # offenders and keeps the small, useful entries whole. (Longest first
+        # did the opposite.) Ties break by key, so the prompt is stable.
+        lines = [
+            f"  {key}: {json.dumps(filtered[key], ensure_ascii=False)}"
+            for key in sorted(filtered, key=lambda k: (len(json.dumps(filtered[k])), k))
+        ]
 
         body = "\n".join(lines)
         block = f"{_PREFIX}\n{body}"

@@ -928,3 +928,37 @@ cascade, but the image file would have stayed on disk.
 command opens the configured backend's stores with `open_app_context()`: one
 pool, migrations applied, and every store on it. Live on the fixed code, the
 same delete removes the feedback row, the visual row and the image file.
+
+---
+
+## R-BUG-20 — The preferences cap cut the small entries and kept the oversized one
+
+**Severity** P2 · **Wave** W6 (found writing `prefs/` tests) · **Status** **Fixed** (2026-09-27)
+
+**Evidence.** `PrefsInjector` ordered entries **longest first**, "so truncation
+removes the biggest offenders", and then capped the block by slicing its
+**end**. With one oversized value and two short ones, the short ones were cut
+and the oversized one kept: the opposite of the comment.
+
+**Fix.** Entries are ordered shortest first, ties broken by key, so the cap
+trims the longest. `test/prefs/test_injector.py` covers the whitelist, the
+"informational only" fence, the cap, and the truncation order. The truncation
+test is red on the old code.
+
+---
+
+## R-BUG-21 — On Postgres, preferences set in the CLI never reach the daemon, and the standalone CLI ignores them
+
+**Severity** P1 · **Wave** W6 (found live-checking `R-BUG-20`) · **Status** Open
+
+**Evidence.**
+- `yuyutsava prefs set` and the REPL's runtime toggles (`/voice off`) build a
+  bare `Store()`, which is SQLite `state.db`.
+- The daemon and the app's Settings route preferences to Postgres.
+- On the scratch database, `user_prefs` in Postgres held only `runtime.voice`,
+  while `state.db` held the two preferences the CLI had set. The daemon's
+  chat bundle rendered an empty USER PREFERENCES block (in-process probe).
+- Separately, the standalone CLI builds its stack with no `prefs_store` at
+  all. So even on SQLite it never injects preferences, although the CLI
+  master's profile declares a per-turn `PrefsInjector`.
+- `prefs/runtime.py` promises that "the CLI and the daemon read the same row".
