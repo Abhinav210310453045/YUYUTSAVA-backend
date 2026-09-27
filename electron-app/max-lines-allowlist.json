@@ -11,7 +11,6 @@
     "src/renderer/components/proposals/ProposalCard.jsx",
     "src/renderer/components/sessions/SessionRow.jsx",
     "src/renderer/components/todos/AttachmentsDrawer.jsx",
-    "src/renderer/components/todos/TodosPanel.jsx",
     "src/renderer/components/voice/VoiceOverlay.jsx",
     "src/renderer/conversations/session.js"
   ]

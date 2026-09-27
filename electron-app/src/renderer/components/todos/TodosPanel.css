@@ -1,0 +1,243 @@
+/* The TODO board. Static styling only; a card's status accent, a button's
+   busy state and a progress width are computed per render and stay inline. */
+
+.todos {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.todos-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-bar);
+}
+
+.todos-title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-primary);
+  font-weight: var(--fw-semibold);
+}
+
+.todos-new {
+  margin-left: auto;
+  flex: 1;
+  max-width: 420px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border: 1px solid var(--border-card);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  outline: none;
+}
+
+.todos-bar-btn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 5px 12px;
+  background: rgba(var(--accent-rgb), 0.08);
+  color: var(--neon-green);
+  border: 1px solid rgba(var(--accent-rgb), 0.25);
+  border-radius: 6px;
+}
+
+.todos-bar-btn--icon {
+  padding: 5px 10px;
+  cursor: pointer;
+}
+
+.todos-columns {
+  flex: 1;
+  overflow: hidden;
+  padding: 20px 24px;
+  display: flex;
+  gap: 24px;
+}
+
+/* one column per card status */
+.todos-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: hidden;
+}
+
+.todos-col-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.todos-col-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.todos-col-title {
+  font-size: 13px;
+  font-weight: var(--fw-semibold);
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin: 0;
+}
+
+.todos-col-count {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  border-radius: 10px;
+  padding: 1px 7px;
+}
+
+.todos-col-cards {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-right: 4px;
+  scrollbar-width: thin;
+}
+
+.todos-error {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--neon-red);
+  padding: 6px 10px;
+  border: 1px solid rgba(255, 51, 102, 0.25);
+  border-radius: 6px;
+  background: rgba(255, 51, 102, 0.05);
+}
+
+.todos-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 24px 8px;
+}
+
+.todos-empty-glyph {
+  font-size: 28px;
+  opacity: 0.3;
+}
+
+.todos-empty-hint {
+  font-size: 11px;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+/* one card */
+.todo-card {
+  background: var(--bg-elevated, #1a1a2e);
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-primary);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.todo-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.todo-card-pin {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.todo-card-title {
+  flex: 1;
+  font-weight: var(--fw-semibold);
+  word-break: break-word;
+  color: var(--text-primary);
+}
+
+.todo-card-delete {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 2px 7px;
+  background: transparent;
+  color: var(--neon-red);
+  border: 1px solid rgba(255, 51, 102, 0.25);
+  border-radius: 6px;
+}
+
+.todo-card-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.todo-card-track {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+
+.todo-card-fill {
+  height: 100%;
+  border-radius: 2px;
+  opacity: 0.8;
+  transition: width 0.3s ease;
+}
+
+.todo-card-ratio {
+  color: var(--text-muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.todo-card-foot {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.todo-card-count {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.todo-card-sep {
+  color: var(--text-dim);
+}
+
+.todo-card-spacer {
+  flex: 1;
+}
+
+.todo-card-age {
+  color: var(--text-dim);
+  font-size: 10px;
+}

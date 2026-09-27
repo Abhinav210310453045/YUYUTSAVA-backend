@@ -4,6 +4,7 @@ import TodoCardView from './TodoCardView'
 import { STATUS_ACCENT, PHASE_ACCENT, TagChips, PinIcon, humanAge } from './shared'
 import { useNav } from '../../nav/NavProvider'
 import { dropViewState, useScrollRestore } from '../../nav/useViewState'
+import './TodosPanel.css'
 
 const POLL_MS = 5000
 
@@ -17,7 +18,7 @@ const COLUMNS = [
 
 function CountBadge({ label, count }) {
   return (
-    <span title={label} style={{ color: 'var(--text-muted)', fontSize: 11 }}>
+    <span title={label} className="todo-card-count">
       {label}: {count}
     </span>
   )
@@ -42,58 +43,29 @@ function TodoCard({ card, onOpen, onDeleted }) {
 
   return (
     <div
-      className="hover-bulge"
+      className="hover-bulge todo-card"
       onClick={() => onOpen?.(card.card_id)}
       title="click to open this card"
       style={{
-        background: 'var(--bg-elevated, #1a1a2e)',
         border: `1px solid ${accent.border}`,
         borderLeft: `3px solid ${accent.bar}`,
-        borderRadius: 8,
         boxShadow: `0 2px 10px rgba(0, 0, 0, 0.45), 0 0 16px ${accent.glow}`,
         '--bulge-glow': accent.hover,
-        padding: '12px 14px',
-        fontFamily: 'var(--font-mono)',
-        fontSize: 12,
-        color: 'var(--text-primary)',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 8,
-        cursor: 'pointer',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+      <div className="todo-card-head">
         {card.pinned && (
-          <span title="pinned" style={{ flexShrink: 0, marginTop: 1 }}>
+          <span title="pinned" className="todo-card-pin">
             <PinIcon />
           </span>
         )}
-        <span
-          style={{
-            flex: 1,
-            fontWeight: 'var(--fw-semibold)',
-            wordBreak: 'break-word',
-            color: 'var(--text-primary)',
-          }}
-        >
-          {card.title}
-        </span>
+        <span className="todo-card-title">{card.title}</span>
         <button
           onClick={onDelete}
           disabled={deleting}
           title="delete card"
-          style={{
-            flexShrink: 0,
-            fontFamily: 'var(--font-mono)',
-            fontSize: 10,
-            padding: '2px 7px',
-            background: 'transparent',
-            color: 'var(--neon-red)',
-            border: '1px solid rgba(255,51,102,0.25)',
-            borderRadius: 6,
-            cursor: deleting ? 'default' : 'pointer',
-            opacity: deleting ? 0.5 : 1,
-          }}
+          className="todo-card-delete"
+          style={{ cursor: deleting ? 'default' : 'pointer', opacity: deleting ? 0.5 : 1 }}
         >
           {deleting ? '...' : '✕'}
         </button>
@@ -103,39 +75,28 @@ function TodoCard({ card, onOpen, onDeleted }) {
 
       {/* Think-flow progress: completed / total objectives (summary counts). */}
       {card.objective_count > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div
-            style={{
-              flex: 1,
-              height: 4,
-              borderRadius: 2,
-              background: 'rgba(255,255,255,0.06)',
-              overflow: 'hidden',
-            }}
-          >
+        <div className="todo-card-progress">
+          <div className="todo-card-track">
             <div
+              className="todo-card-fill"
               style={{
                 width: `${Math.round((card.objective_done_count / card.objective_count) * 100)}%`,
-                height: '100%',
-                borderRadius: 2,
                 background: PHASE_ACCENT.completed.bar,
-                opacity: 0.8,
-                transition: 'width 0.3s ease',
               }}
             />
           </div>
-          <span style={{ color: 'var(--text-muted)', fontSize: 10, whiteSpace: 'nowrap' }}>
+          <span className="todo-card-ratio">
             {card.objective_done_count}/{card.objective_count}
           </span>
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+      <div className="todo-card-foot">
         <CountBadge label="notes" count={card.note_count} />
-        <span style={{ color: 'var(--text-dim)' }}>·</span>
+        <span className="todo-card-sep">·</span>
         <CountBadge label="files" count={card.attachment_count} />
-        <span style={{ flex: 1 }} />
-        <span style={{ color: 'var(--text-dim)', fontSize: 10 }}>{humanAge(card.updated_ts)}</span>
+        <span className="todo-card-spacer" />
+        <span className="todo-card-age">{humanAge(card.updated_ts)}</span>
       </div>
     </div>
   )
@@ -147,49 +108,17 @@ function BoardColumn({ col, cards, loaded, error, onOpen, onDeleted }) {
   const accent = STATUS_ACCENT[col.key]
   const isEmpty = loaded && cards.length === 0
   return (
-    <div
-      style={{
-        flex: 1,
-        minWidth: 0,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 12,
-        overflow: 'hidden',
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-        <span
-          style={{
-            width: 8,
-            height: 8,
-            borderRadius: '50%',
-            background: accent.bar,
-            flexShrink: 0,
-          }}
-        />
-        <h2
-          style={{
-            fontSize: 13,
-            fontWeight: 'var(--fw-semibold)',
-            fontFamily: 'var(--font-mono)',
-            color: 'var(--text-primary)',
-            textTransform: 'uppercase',
-            letterSpacing: '0.1em',
-            margin: 0,
-          }}
-        >
-          {col.title}
-        </h2>
+    <div className="todos-col">
+      <div className="todos-col-head">
+        <span className="todos-col-dot" style={{ background: accent.bar }} />
+        <h2 className="todos-col-title">{col.title}</h2>
         {cards.length > 0 && (
           <span
+            className="todos-col-count"
             style={{
-              fontFamily: 'var(--font-mono)',
-              fontSize: 10,
               color: accent.bar,
               background: accent.glow,
               border: `1px solid ${accent.border}`,
-              borderRadius: 10,
-              padding: '1px 7px',
             }}
           >
             {cards.length}
@@ -197,54 +126,14 @@ function BoardColumn({ col, cards, loaded, error, onOpen, onDeleted }) {
         )}
       </div>
 
-      <div
-        ref={scrollRef}
-        style={{
-          flex: 1,
-          overflowY: 'auto',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 12,
-          paddingRight: 4,
-          scrollbarWidth: 'thin',
-        }}
-      >
-        {error && (
-          <div
-            style={{
-              fontFamily: 'var(--font-mono)',
-              fontSize: 11,
-              color: 'var(--neon-red)',
-              padding: '6px 10px',
-              border: '1px solid rgba(255,51,102,0.25)',
-              borderRadius: 6,
-              background: 'rgba(255,51,102,0.05)',
-            }}
-          >
-            {`> todos endpoint: ${error}`}
-          </div>
-        )}
+      <div ref={scrollRef} className="todos-col-cards">
+        {error && <div className="todos-error">{`> todos endpoint: ${error}`}</div>}
 
         {isEmpty && !error && (
-          <div
-            style={{
-              flex: 1,
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 12,
-              color: 'var(--text-muted)',
-              fontFamily: 'var(--font-mono)',
-              fontSize: 12,
-              padding: '24px 8px',
-            }}
-          >
-            <div style={{ fontSize: 28, opacity: 0.3 }}>☐</div>
+          <div className="todos-empty">
+            <div className="todos-empty-glyph">☐</div>
             <div>{'> none'}</div>
-            <div style={{ fontSize: 11, color: 'var(--text-dim)', textAlign: 'center' }}>
-              {col.empty}
-            </div>
+            <div className="todos-empty-hint">{col.empty}</div>
           </div>
         )}
 
@@ -320,29 +209,9 @@ export default function TodosPanel() {
   }
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          padding: '14px 24px',
-          borderBottom: '1px solid var(--border-subtle)',
-          background: 'var(--bg-bar)',
-        }}
-      >
-        <span
-          style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: 11,
-            letterSpacing: '0.1em',
-            textTransform: 'uppercase',
-            color: 'var(--text-primary)',
-            fontWeight: 'var(--fw-semibold)',
-          }}
-        >
-          Todos — board
-        </span>
+    <div className="todos">
+      <div className="todos-bar">
+        <span className="todos-title">Todos — board</span>
         <input
           value={newTitle}
           onChange={(e) => setNewTitle(e.target.value)}
@@ -350,64 +219,25 @@ export default function TodosPanel() {
             if (e.key === 'Enter') onCreate()
           }}
           placeholder="new TODO title…"
-          style={{
-            marginLeft: 'auto',
-            flex: 1,
-            maxWidth: 420,
-            background: 'var(--bg-card)',
-            color: 'var(--text-primary)',
-            border: '1px solid var(--border-card)',
-            borderRadius: 6,
-            padding: '5px 10px',
-            fontFamily: 'var(--font-mono)',
-            fontSize: 12,
-            outline: 'none',
-          }}
+          className="todos-new"
         />
         <button
           onClick={onCreate}
           disabled={creating || !newTitle.trim()}
+          className="todos-bar-btn"
           style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: 11,
-            padding: '5px 12px',
-            background: 'rgba(var(--accent-rgb),0.08)',
-            color: 'var(--neon-green)',
-            border: '1px solid rgba(var(--accent-rgb),0.25)',
-            borderRadius: 6,
             cursor: creating || !newTitle.trim() ? 'default' : 'pointer',
             opacity: creating || !newTitle.trim() ? 0.5 : 1,
           }}
         >
           {creating ? '...' : '+ Add'}
         </button>
-        <button
-          onClick={refresh}
-          title="Refresh"
-          style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: 11,
-            padding: '5px 10px',
-            background: 'rgba(var(--accent-rgb),0.08)',
-            color: 'var(--neon-green)',
-            border: '1px solid rgba(var(--accent-rgb),0.25)',
-            borderRadius: 6,
-            cursor: 'pointer',
-          }}
-        >
+        <button onClick={refresh} title="Refresh" className="todos-bar-btn todos-bar-btn--icon">
           ↻
         </button>
       </div>
 
-      <div
-        style={{
-          flex: 1,
-          overflow: 'hidden',
-          padding: '20px 24px',
-          display: 'flex',
-          gap: 24,
-        }}
-      >
+      <div className="todos-columns">
         {COLUMNS.map((col) => (
           <BoardColumn
             key={col.key}
