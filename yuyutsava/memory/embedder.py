@@ -8,6 +8,7 @@ turn, so callers wrap in try/except (see compaction middleware / store).
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 
 import httpx
 
@@ -37,14 +38,25 @@ class Embedder:
     "Event-loop ownership".
     """
 
-    def __init__(self, settings: MemorySettings, *, timeout_sec: float = 30.0) -> None:
+    def __init__(
+        self,
+        settings: MemorySettings,
+        *,
+        timeout_sec: float = 30.0,
+        client_factory: Callable[[], httpx.AsyncClient] | None = None,
+    ) -> None:
+        """*client_factory* builds each loop's HTTP client; the default talks to
+        ``settings.embed_base_url``. Tests pass one that returns a fake."""
         self._settings = settings
         self._use_prefixes = settings.embed_use_prefixes
         self._clients: LoopLocal[httpx.AsyncClient] = LoopLocal(
-            lambda: httpx.AsyncClient(
-                base_url=settings.embed_base_url,
-                headers={"Authorization": f"Bearer {settings.embed_api_key}"},
-                timeout=timeout_sec,
+            client_factory
+            or (
+                lambda: httpx.AsyncClient(
+                    base_url=settings.embed_base_url,
+                    headers={"Authorization": f"Bearer {settings.embed_api_key}"},
+                    timeout=timeout_sec,
+                )
             )
         )
 

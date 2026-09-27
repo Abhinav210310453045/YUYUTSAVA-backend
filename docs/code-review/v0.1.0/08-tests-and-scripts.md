@@ -183,7 +183,15 @@ mid-file module-level imports (`R-IMP-03`) are not covered by that allowance.
 
 ## R-TST-08 — A test double nothing reads, so a unit test calls a live service
 
-**Severity** P1 · **Wave** W6 · **Status** Open (found during W2)
+**Severity** P1 · **Wave** W6 · **Status** **Fixed** (W6, 2026-09-27)
+- `Embedder` takes a `client_factory`, and the tests pass their fake through it.
+  Every test asserts that the fake received the request.
+- The settings point at a closed port, so a request that escapes the fake
+  fails instead of reaching whatever server is running locally.
+- 7/7 pass with no embedding server. Negative control: ignoring the factory
+  turns all 7 red.
+- Verdict: **test debt**. The prefixes, the char cap and the dimension check
+  were all correct in the product; the tests had stopped reaching them.
 
 **Claim.** `test/memory/test_embedder.py` injects its fake HTTP client by
 assigning `emb._client`, but `Embedder` keeps one client per event loop in
