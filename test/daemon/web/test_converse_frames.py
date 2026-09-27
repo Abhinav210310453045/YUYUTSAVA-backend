@@ -22,13 +22,10 @@ what the split has to preserve.
 
 from __future__ import annotations
 
-import asyncio
-
 from fastapi.testclient import TestClient
 
+from test.support.converse import FakeConversationManager
 from test.support.ws import collect_until
-from yuyutsava.core.streaming import StreamEvent
-from yuyutsava.daemon.turn_registry import TurnRegistry
 from yuyutsava.daemon.web.app import create_app
 from yuyutsava.daemon.web.app_deps import AppDeps
 from yuyutsava.daemon.web.services.stream_service import WebHub
@@ -40,59 +37,8 @@ class _RecordingStore:
     async def put_decision(self, **kw) -> None: ...
 
 
-class _FakeConvo:
-    """One conversation. Records the text each turn was handed."""
-
-    def __init__(self, origin: str, seen: list[str]) -> None:
-        self.session_id = "sess-123"
-        self.thread_id = f"{origin}-123"
-        self.finished: str | None = None
-        self._seen = seen
-
-    @property
-    def bundle_ready(self) -> bool:
-        return True
-
-    async def discard_if_unused(self) -> bool:
-        return False
-
-    async def run_turn(self, text, *, on_event, ask_handler=None, **_kw) -> str:
-        self._seen.append(text)
-        await on_event(StreamEvent("token", {"text": "hi "}))
-        if "slow" in text:
-            await asyncio.sleep(5)  # long enough for the test to interrupt it
-        if "ask me" in text and ask_handler is not None:
-            # Echo the answer so the assertion can tell "the socket was told it
-            # was resolved" apart from "the agent actually received it".
-            answer = await ask_handler({"type": "user_question", "question": "proceed?"})
-            await on_event(StreamEvent("token", {"text": f"[{answer}]"}))
-        await on_event(StreamEvent("final", {"text": "done"}))
-        return "done"
-
-    async def finish(self, status: str = "done") -> None:
-        self.finished = status
-
-
-class _FakeManager:
-    def __init__(self) -> None:
-        self.turns = TurnRegistry()
-        self.opened: list[tuple] = []
-        self.turn_texts: list[str] = []
-
-    async def open(
-        self, *, agent="master", card_id=None, origin="cli", resume_id=None, continue_latest=False
-    ):
-        self.opened.append((origin, resume_id, continue_latest))
-        return _FakeConvo(origin, self.turn_texts), False
-
-    def start_turn(self, thread_id: str, **kw):
-        return self.turns.start(thread_id=thread_id, **kw)
-
-    def record_async_launch(self, ev, *, thread_id, origin=None) -> None: ...
-
-
 def _app():
-    mgr = _FakeManager()
+    mgr = FakeConversationManager()
     app = create_app(
         WebHub(store=_RecordingStore()), host="127.0.0.1", deps=AppDeps(conversation_manager=mgr)
     )

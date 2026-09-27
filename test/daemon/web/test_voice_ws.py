@@ -17,7 +17,6 @@ frames, the way the dictation tests drive theirs.
 
 from __future__ import annotations
 
-import asyncio
 import base64
 import threading
 
@@ -25,8 +24,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import yuyutsava.daemon.web.routers.converse as converse_router
-from yuyutsava.core.streaming import StreamEvent
-from yuyutsava.daemon.turn_registry import TurnRegistry
+from test.support.converse import FakeConversationManager
 from yuyutsava.daemon.web.app import create_app
 from yuyutsava.daemon.web.app_deps import AppDeps
 from yuyutsava.daemon.web.services.stream_service import WebHub
@@ -38,45 +36,6 @@ class _RecordingStore:
     async def put_event_payload(self, **kw) -> None: ...
     async def put_proposal(self, p) -> None: ...
     async def put_decision(self, **kw) -> None: ...
-
-
-class _FakeConvo:
-    def __init__(self, origin: str) -> None:
-        self.session_id = "sess-123"
-        self.thread_id = f"{origin}-123"
-
-    @property
-    def bundle_ready(self) -> bool:
-        return True
-
-    async def discard_if_unused(self) -> bool:
-        return False
-
-    async def run_turn(self, text, *, on_event, ask_handler=None, **_kw) -> str:
-        # A trailing period matters: the TTS side synthesizes per finished
-        # sentence, so a fragment would never produce an audio chunk.
-        await on_event(StreamEvent("token", {"text": "Hello back. "}))
-        if "slow" in text:
-            await asyncio.sleep(5)  # long enough to still be running mid-test
-        await on_event(StreamEvent("final", {"text": "Hello back."}))
-        return "Hello back."
-
-    async def finish(self, status: str = "done") -> None: ...
-
-
-class _FakeManager:
-    def __init__(self) -> None:
-        self.turns = TurnRegistry()
-
-    async def open(
-        self, *, agent="master", card_id=None, origin="cli", resume_id=None, continue_latest=False
-    ):
-        return _FakeConvo(origin), False
-
-    def start_turn(self, thread_id: str, **kw):
-        return self.turns.start(thread_id=thread_id, **kw)
-
-    def record_async_launch(self, ev, *, thread_id, origin=None) -> None: ...
 
 
 class _FakeVoice:
@@ -127,7 +86,9 @@ def app(monkeypatch):
     return create_app(
         WebHub(store=_RecordingStore()),
         host="127.0.0.1",
-        deps=AppDeps(conversation_manager=_FakeManager()),
+        deps=AppDeps(
+            conversation_manager=FakeConversationManager(reply="Hello back. ", final="Hello back.")
+        ),
     )
 
 

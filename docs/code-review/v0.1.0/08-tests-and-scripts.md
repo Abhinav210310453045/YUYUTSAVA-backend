@@ -103,7 +103,32 @@ is already installed editable, which is the mechanism that should be used.
 
 ## R-TST-03 — Test doubles copied between files
 
-**Severity** P2 · **Wave** W6 · **Status** Open
+**Severity** P2 · **Wave** W6 · **Status** **Fixed** (W6, 2026-09-27)
+
+**A shared name was not always a shared fake.** Reading each copy before
+merging it:
+
+- **Real duplication, consolidated.**
+  - The converse/voice socket tests each carried the same
+    `_FakeManager`/`_FakeConvo`. They became `test/support/converse.py`
+    (−151 lines).
+  - The Postgres probe was repeated in 22 files. It became
+    `test/support/pg.py`.
+  - The WebSocket deadline reader became `test/support/ws.py`.
+- **Drift is now a test failure.** There is no `ports` protocol to type the
+  converse fakes against, and CI runs no type checker, so
+  `test/daemon/web/test_fake_conformance.py` holds each fake to the real
+  class's signatures instead: no invented parameters, no missing required
+  ones, and the same sync/async. Negative-controlled.
+- **Not duplicates, left alone.**
+  - `_FakeStore` fakes four different stores (memory, consent, and two
+    events-store roles).
+  - `_FakeManager` in `mcp_layer` is the MCP manager.
+  - The three `_FakeVoice`s are scenario stubs, each with its own marker
+    vocabulary.
+  - `_FakeAgent` and `_FakeRegistry` stand in for different things in each
+    file.
+  - Merging any of these would couple unrelated tests.
 
 **Evidence.** Class names defined in more than one test file: `_FakeStore` ×4,
 `_FakeRegistry` ×3, `_FakeManager` ×3, `_FakeAgent` ×3, `_StubStore` ×2,
@@ -228,7 +253,12 @@ contract tests that run on every OS in CI.
 
 ## R-TST-07 — Function-body imports in tests
 
-**Severity** P2 · **Wave** W6 · **Status** Open
+**Severity** P2 · **Wave** W6 · **Status** **Closed as assessed**
+- The directory-level allowance is in `pyproject.toml` (`test/**` ignores
+  `PLC0415`).
+- The mid-file module-level imports it excluded are gone: `E402` is gated at
+  zero, and the last test exemptions left with the `sys.path` hacks
+  (`R-TST-02`).
 
 **Evidence.** ruff `PLC0415` counts 469 in `test/` and `scripts/`.
 

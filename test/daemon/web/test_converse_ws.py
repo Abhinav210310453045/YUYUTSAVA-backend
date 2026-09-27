@@ -8,13 +8,10 @@ Run:  .venv/bin/python -m pytest test/daemon/web/test_converse_ws.py
 
 from __future__ import annotations
 
-import asyncio
-
 from fastapi.testclient import TestClient
 
+from test.support.converse import FakeConversationManager
 from test.support.ws import collect_until
-from yuyutsava.core.streaming import StreamEvent
-from yuyutsava.daemon.turn_registry import TurnRegistry
 from yuyutsava.daemon.web.app import create_app
 from yuyutsava.daemon.web.app_deps import AppDeps
 from yuyutsava.daemon.web.services.stream_service import WebHub
@@ -26,55 +23,8 @@ class _RecordingStore:
     async def put_decision(self, **kw) -> None: ...
 
 
-class _FakeConvo:
-    def __init__(self, origin: str) -> None:
-        self.session_id = "sess-123"
-        self.thread_id = f"{origin}-123"
-        self.finished = None
-
-    @property
-    def bundle_ready(self) -> bool:
-        return True
-
-    async def discard_if_unused(self) -> bool:
-        return False
-
-    async def run_turn(self, text, *, on_event, ask_handler=None, **_kw) -> str:
-        await on_event(StreamEvent("token", {"text": "hi "}))
-        if "ask" in text and ask_handler is not None:
-            ans = await ask_handler({"type": "user_question", "question": "proceed?"})
-            await on_event(StreamEvent("token", {"text": f"[{ans}]"}))
-        if "slow" in text:
-            await asyncio.sleep(5)  # cancelled by an interrupt in the test
-        await on_event(StreamEvent("final", {"text": "done"}))
-        return "done"
-
-    async def finish(self, status: str = "done") -> None:
-        self.finished = status
-
-
-class _FakeManager:
-    def __init__(self) -> None:
-        self.opened = []
-        # Turns are daemon-owned now: the router asks the manager for the
-        # registry and hands it turn bodies (see daemon/turn_registry.py).
-        self.turns = TurnRegistry()
-
-    async def open(
-        self, *, agent="master", card_id=None, origin="cli", resume_id=None, continue_latest=False
-    ):
-        convo = _FakeConvo(origin)
-        self.opened.append((origin, resume_id, continue_latest))
-        return convo, False
-
-    def start_turn(self, thread_id: str, **kw):
-        return self.turns.start(thread_id=thread_id, **kw)
-
-    def record_async_launch(self, ev, *, thread_id, origin=None) -> None: ...
-
-
 def _make_app():
-    mgr = _FakeManager()
+    mgr = FakeConversationManager()
     app = create_app(
         WebHub(store=_RecordingStore()), host="127.0.0.1", deps=AppDeps(conversation_manager=mgr)
     )
