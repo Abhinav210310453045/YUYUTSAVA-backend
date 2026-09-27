@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { getUsageSessions, getUsageSummary } from '../../api/client'
 import { fmtCost, fmtPct, fmtTokens } from '../chat/ContextAside'
+import './UsageSettings.css'
 
 // Settings → Usage: what every session has spent.
 //
@@ -22,38 +23,10 @@ const RANGES = [
 
 function Card({ label, value, hint }) {
   return (
-    <div
-      style={{
-        flex: '1 1 120px',
-        minWidth: 110,
-        background: 'var(--bg-card)',
-        border: '1px solid var(--border-card)',
-        borderRadius: 'var(--radius-card)',
-        padding: '10px 12px',
-      }}
-    >
-      <div
-        style={{
-          fontFamily: 'var(--font-mono)',
-          fontSize: 9,
-          letterSpacing: '0.1em',
-          textTransform: 'uppercase',
-          color: 'var(--text-dim)',
-        }}
-      >
-        {label}
-      </div>
-      <div
-        style={{
-          fontFamily: 'var(--font-mono)',
-          fontSize: 16,
-          marginTop: 4,
-          color: 'var(--text-primary)',
-        }}
-      >
-        {value}
-      </div>
-      {hint && <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>{hint}</div>}
+    <div className="usage-card">
+      <div className="usage-card-label">{label}</div>
+      <div className="usage-card-value">{value}</div>
+      {hint && <div className="usage-card-hint">{hint}</div>}
     </div>
   )
 }
@@ -62,53 +35,21 @@ function Card({ label, value, hint }) {
 function ModelBars({ rows }) {
   const max = Math.max(1, ...rows.map((r) => r.input_tokens + r.output_tokens))
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+    <div className="usage-models">
       {rows.map((r) => {
         const total = r.input_tokens + r.output_tokens
         return (
-          <div key={r.key} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span
-              style={{
-                width: 150,
-                fontSize: 11,
-                color: 'var(--text-secondary)',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                fontFamily: 'var(--font-mono)',
-              }}
-              title={r.key}
-            >
+          <div key={r.key} className="usage-model">
+            <span className="usage-model-name" title={r.key}>
               {r.key || '—'}
             </span>
-            <div
-              style={{
-                flex: 1,
-                height: 6,
-                borderRadius: 3,
-                background: 'rgba(255,255,255,0.06)',
-                overflow: 'hidden',
-              }}
-            >
+            <div className="usage-model-track">
               <div
-                style={{
-                  width: `${Math.max(2, (total / max) * 100)}%`,
-                  height: '100%',
-                  borderRadius: 3,
-                  background: 'var(--neon-green)',
-                  opacity: 0.8,
-                }}
+                className="usage-model-bar"
+                style={{ width: `${Math.max(2, (total / max) * 100)}%` }}
               />
             </div>
-            <span
-              style={{
-                width: 108,
-                textAlign: 'right',
-                fontSize: 10,
-                fontFamily: 'var(--font-mono)',
-                color: 'var(--text-muted)',
-              }}
-            >
+            <span className="usage-model-count">
               {r.calls} · {fmtTokens(total)}
             </span>
           </div>
@@ -128,11 +69,7 @@ function DaySeries({ rows }) {
   const barW = W / rows.length
   return (
     <div>
-      <svg
-        viewBox={`0 0 ${W} 28`}
-        preserveAspectRatio="none"
-        style={{ width: '100%', height: 40, display: 'block' }}
-      >
+      <svg viewBox={`0 0 ${W} 28`} preserveAspectRatio="none" className="usage-days">
         {rows.map((r, i) => {
           const h = ((r.input_tokens + r.output_tokens) / max) * 26
           return (
@@ -150,15 +87,7 @@ function DaySeries({ rows }) {
           )
         })}
       </svg>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          fontSize: 9,
-          color: 'var(--text-dim)',
-          fontFamily: 'var(--font-mono)',
-        }}
-      >
+      <div className="usage-days-axis">
         <span>{rows[0].key}</span>
         <span>{rows[rows.length - 1].key}</span>
       </div>
@@ -167,64 +96,42 @@ function DaySeries({ rows }) {
 }
 
 function SessionTable({ rows }) {
-  const th = {
-    textAlign: 'left',
-    fontFamily: 'var(--font-mono)',
-    fontSize: 9,
-    letterSpacing: '0.08em',
-    textTransform: 'uppercase',
-    color: 'var(--text-dim)',
-    padding: '4px 8px',
-    fontWeight: 400,
-    whiteSpace: 'nowrap',
-  }
-  const td = {
-    padding: '5px 8px',
-    fontSize: 11,
-    color: 'var(--text-secondary)',
-    borderTop: '1px solid var(--border-subtle)',
-    whiteSpace: 'nowrap',
-  }
-  const num = { ...td, fontFamily: 'var(--font-mono)', textAlign: 'right' }
   return (
-    <div style={{ overflowX: 'auto' }}>
-      <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 520 }}>
+    <div className="usage-table-scroll">
+      <table className="usage-table">
         <thead>
           <tr>
-            <th style={th}>session</th>
-            <th style={th}>origin</th>
-            <th style={{ ...th, textAlign: 'right' }}>calls</th>
-            <th style={{ ...th, textAlign: 'right' }}>in</th>
-            <th style={{ ...th, textAlign: 'right' }}>cached</th>
-            <th style={{ ...th, textAlign: 'right' }}>out</th>
-            <th style={{ ...th, textAlign: 'right' }}>cost</th>
+            <th>session</th>
+            <th>origin</th>
+            <th className="usage-num">calls</th>
+            <th className="usage-num">in</th>
+            <th className="usage-num">cached</th>
+            <th className="usage-num">out</th>
+            <th className="usage-num">cost</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.thread_id || 'unattributed'}>
               <td
-                style={{
-                  ...td,
-                  maxWidth: 240,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
+                className="usage-session"
                 title={`${r.title || r.thread_id}\n${(r.models || []).join(', ')}`}
               >
                 {r.title || r.thread_id || 'unattributed'}
               </td>
-              <td style={{ ...td, color: 'var(--text-muted)' }}>{r.origin || '—'}</td>
-              <td style={num}>{r.calls}</td>
-              <td style={num}>{fmtTokens(r.input_tokens)}</td>
-              <td style={{ ...num, color: 'var(--text-muted)' }}>
+              <td className="usage-muted">{r.origin || '—'}</td>
+              <td className="usage-num">{r.calls}</td>
+              <td className="usage-num">{fmtTokens(r.input_tokens)}</td>
+              <td className="usage-num usage-muted">
                 {r.cache_read_tokens
                   ? `${fmtPct(r.cache_read_tokens / Math.max(1, r.input_tokens))}`
                   : '—'}
               </td>
-              <td style={num}>{fmtTokens(r.output_tokens)}</td>
-              <td style={{ ...num, color: r.priced ? 'var(--text-secondary)' : 'var(--text-dim)' }}>
+              <td className="usage-num">{fmtTokens(r.output_tokens)}</td>
+              <td
+                className="usage-num"
+                style={{ color: r.priced ? 'var(--text-secondary)' : 'var(--text-dim)' }}
+              >
                 {fmtCost(r.est_cost_usd, r.priced)}
               </td>
             </tr>
@@ -267,14 +174,10 @@ export default function UsageSettings() {
   useEffect(() => load(), [load])
 
   if (error) {
-    return (
-      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-        Could not read usage — is the daemon running?
-      </div>
-    )
+    return <div className="usage-note">Could not read usage — is the daemon running?</div>
   }
   if (!data) {
-    return <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Loading…</div>
+    return <div className="usage-note">Loading…</div>
   }
 
   const { summary, sessions } = data
@@ -283,19 +186,15 @@ export default function UsageSettings() {
   const cacheShare = totals.input_tokens ? totals.cache_read_tokens / totals.input_tokens : 0
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <div className="usage">
       {/* range picker + refresh */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <div className="usage-ranges">
         {RANGES.map((r) => (
           <button
             key={r.key}
             onClick={() => setRange(r.key)}
+            className="usage-range"
             style={{
-              padding: '3px 10px',
-              borderRadius: 'var(--radius-btn)',
-              fontFamily: 'var(--font-mono)',
-              fontSize: 10,
-              cursor: 'pointer',
               background: range === r.key ? 'rgba(var(--accent-rgb), 0.12)' : 'transparent',
               border: `1px solid ${
                 range === r.key ? 'rgba(var(--accent-rgb), 0.3)' : 'var(--border-subtle)'
@@ -306,32 +205,16 @@ export default function UsageSettings() {
             {r.label}
           </button>
         ))}
-        <button
-          onClick={load}
-          title="Refresh"
-          className="hover-bulge"
-          style={{
-            marginLeft: 'auto',
-            background: 'transparent',
-            border: '1px solid var(--border-subtle)',
-            borderRadius: 'var(--radius-btn)',
-            padding: '3px 8px',
-            cursor: 'pointer',
-            color: 'var(--text-muted)',
-            fontSize: 11,
-          }}
-        >
+        <button onClick={load} title="Refresh" className="hover-bulge usage-refresh">
           {loading ? '…' : '↻'}
         </button>
       </div>
 
       {!totals.calls ? (
-        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-          No model calls recorded in this range.
-        </div>
+        <div className="usage-note">No model calls recorded in this range.</div>
       ) : (
         <>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <div className="usage-cards">
             <Card label="calls" value={totals.calls} />
             <Card
               label="input"
@@ -351,83 +234,36 @@ export default function UsageSettings() {
           </div>
 
           {unpriced.length > 0 && (
-            <div
-              style={{
-                fontSize: 11,
-                color: 'var(--text-warning)',
-                lineHeight: 1.6,
-                background: 'rgba(255,255,255,0.03)',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: 'var(--radius-card)',
-                padding: '8px 10px',
-              }}
-            >
+            <div className="usage-unpriced">
               No price entry for {unpriced.join(', ')}, so their spend counts as $0 and the total
-              above is an undercount. Add them to{' '}
-              <code style={{ fontFamily: 'var(--font-mono)' }}>~/.yuyutsava/model_prices.json</code>{' '}
-              as{' '}
-              <code style={{ fontFamily: 'var(--font-mono)' }}>
-                {'{"<model>": [$/1M in, $/1M out]}'}
-              </code>
-              . Prefixes match, so one entry covers a family.
+              above is an undercount. Add them to <code>~/.yuyutsava/model_prices.json</code> as{' '}
+              <code>{'{"<model>": [$/1M in, $/1M out]}'}</code>. Prefixes match, so one entry covers
+              a family.
             </div>
           )}
 
           {summary?.by_day?.length > 1 && (
             <div>
-              <div
-                style={{
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: 10,
-                  letterSpacing: '0.1em',
-                  textTransform: 'uppercase',
-                  color: 'var(--text-dim)',
-                  marginBottom: 4,
-                }}
-              >
-                tokens per day
-              </div>
+              <div className="usage-heading">tokens per day</div>
               <DaySeries rows={summary.by_day} />
             </div>
           )}
 
           {summary?.by_model?.length > 0 && (
             <div>
-              <div
-                style={{
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: 10,
-                  letterSpacing: '0.1em',
-                  textTransform: 'uppercase',
-                  color: 'var(--text-dim)',
-                  marginBottom: 6,
-                }}
-              >
-                by model
-              </div>
+              <div className="usage-heading usage-heading--spaced">by model</div>
               <ModelBars rows={summary.by_model} />
             </div>
           )}
 
           {sessions.length > 0 && (
             <div>
-              <div
-                style={{
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: 10,
-                  letterSpacing: '0.1em',
-                  textTransform: 'uppercase',
-                  color: 'var(--text-dim)',
-                  marginBottom: 4,
-                }}
-              >
-                by session ({sessions.length})
-              </div>
+              <div className="usage-heading">by session ({sessions.length})</div>
               <SessionTable rows={sessions} />
             </div>
           )}
 
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+          <div className="usage-footnote">
             Cached input is charged at the full input rate here, so a well-cached
             conversation&apos;s cost is an upper bound. Deleting a session removes its usage rows
             with it.
