@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { audioPlayer } from '../../audio'
-import { getSpeaker, subscribeSpeaker } from '../../conversations/store'
+import { getSpeaker, subscribeSpeaker } from '../../conversations/presence'
 import { useNav } from '../../nav/NavProvider'
 
 // Transport for a spoken reply you've walked away from.

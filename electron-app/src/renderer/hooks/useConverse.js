@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useSyncExternalStore } from 'react'
-import { acquireSession, conversationKey } from '../conversations/store'
+import { acquireSession, conversationKey } from '../conversations/sessions'
 
 // A view onto a conversation — not the owner of one.
 //
 // The conversation itself (socket, messages, busy state, mic, playback) lives
-// in conversations/store.js, keyed so that every mount of the same chat lands
+// in conversations/sessions.js, keyed so that every mount of the same chat lands
 // on the same session. Unmounting this hook merely releases it: a turn already
 // running keeps streaming into the store, and remounting picks it straight back
 // up with nothing lost. The daemon, in turn, owns the *run* (see

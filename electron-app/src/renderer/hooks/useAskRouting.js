@@ -1,6 +1,10 @@
 import { useCallback, useMemo, useSyncExternalStore } from 'react'
 import { useNav } from '../nav/NavProvider'
-import { isThreadVisible, subscribeVisibleThreads, visibleThreadIds } from '../conversations/store'
+import {
+  isThreadVisible,
+  subscribeVisibleThreads,
+  visibleThreadIds,
+} from '../conversations/presence'
 
 // useSyncExternalStore needs a snapshot that changes when visibility changes;
 // the count of on-screen conversations is enough and is stable between changes.

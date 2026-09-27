@@ -258,7 +258,7 @@ export default function ChatPanel({
   // Fires with the server hello ({ session_id, thread_id, resuming, … }) so a
   // host that drives resumeId can learn the id of a freshly minted session.
   onSessionChange = null,
-  // Identity of the conversation in the shared store (conversations/store.js),
+  // Identity of the conversation in the shared store (conversations/sessions.js),
   // which is what survives this component being unmounted. Defaults to
   // origin/agent/card/resumeId; a host that can show two different chats at
   // the same coordinates (the TODO card view's "New chat", which has no

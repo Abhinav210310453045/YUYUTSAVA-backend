@@ -42,7 +42,14 @@ the 922-line conversation store (`R-UI-02`) would happen with no safety net.
 
 ## R-UI-02 — One class holds the conversation state
 
-**Severity** P1 · **Wave** W7 · **Status** Open
+**Severity** P1 · **Wave** W7 · **Status** **Fixed** (W7, 2026-09-27). The 1097-line `store.js` is five modules:
+- `messages.js` (107 lines): the rows, list patches, turn-start dedupe, history and the ask queue, as pure functions. It has 9 unit tests.
+- `frames.js` (271): one handler per daemon frame type, in a table, with `applyFrame` owning the seq cursor.
+- `session.js` (636): `ConversationSession`, i.e. the transport, the actions, voice and playback.
+- `sessions.js` (48): the session map, acquire, key and eviction. A session tells the map it was disposed through a hook, so there is no import cycle.
+- `presence.js` (73): the speaker and the visible threads.
+
+The 25 characterization tests, written first against the unsplit store, pass unchanged. Verified in Electron: a chat turn with an artifact tile and the usage meter, and an inline permission ask. With the chat not visible, the ask was routed to a toast and the Inbox; approved in the app, the turn resumed and deleted the file.
 
 **Evidence.** `src/renderer/conversations/store.js` is 922 lines. The class
 `ConversationSession` spans `:95-892`. It holds:

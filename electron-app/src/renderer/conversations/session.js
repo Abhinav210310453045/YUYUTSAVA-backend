@@ -1,8 +1,22 @@
 import { ConverseClient } from '../api/converse'
 import { getBase, getSessionMessages } from '../api/client'
 import { TokenSmoother } from '../lib/tokenSmoother'
-import { audioPlayer, base64ToInt16 } from '../audio'
+import { audioPlayer } from '../audio'
 import { MicCapture } from '../audio/capture'
+import { applyFrame } from './frames'
+import {
+  errorMessage,
+  fromHistory,
+  lastAssistantId,
+  nextId,
+  noticeMessage,
+  patchMessage,
+  streamingMessage,
+  userMessage,
+  withAsk,
+  withoutAsk,
+} from './messages'
+import { getSpeaker, setSpeaker, setThreadVisible } from './presence'
 
 // Conversations outlive the components that show them.
 //
@@ -11,8 +25,10 @@ import { MicCapture } from '../audio/capture'
 // store, its `useConverse` hook owned the socket, so every one of those killed
 // the connection and (server-side) the turn with it. Now the daemon owns the
 // run (see yuyutsava/daemon/turn_registry.py) and this module owns the *view*
-// of it: a ConversationSession per conversation, held in a module-level Map,
-// retained/released by whoever is currently rendering it.
+// of it: a ConversationSession per conversation — its socket, its state and
+// the user's actions — held in the map in sessions.js and retained/released
+// by whoever is currently rendering it. What each daemon frame does is in
+// frames.js; the message list itself, as pure functions, in messages.js.
 //
 // A released-but-busy session stays connected — that is the entire point:
 // the agent is still working and we want its frames when the view comes back.
@@ -21,97 +37,6 @@ import { MicCapture } from '../audio/capture'
 // Sessions with nothing looking at them and no turn running are disconnected
 // and dropped after this long.
 const IDLE_DISCONNECT_MS = 10 * 60 * 1000
-// Hard cap on retained conversations (idle ones evicted oldest-first).
-const MAX_SESSIONS = 24
-
-let _mid = 0
-const nextId = () => `m${++_mid}`
-
-// The server composes board-selection references into the stored user text;
-// the user only ever typed what follows it.
-const SELECTION_RE = /^<selection-context>\n[\s\S]*?\n<\/selection-context>\n\n/
-const stripSelection = (t) => (t || '').replace(SELECTION_RE, '')
-
-export function conversationKey({
-  origin = 'cli',
-  agent = null,
-  card = null,
-  resumeId = null,
-} = {}) {
-  return `${origin}|${agent || ''}|${card || ''}|${resumeId || ''}`
-}
-
-// ---------------------------------------------------------------------------
-// Who is currently speaking — read by the titlebar transport button
-// ---------------------------------------------------------------------------
-
-let speaker = null
-const speakerListeners = new Set()
-
-export function subscribeSpeaker(fn) {
-  speakerListeners.add(fn)
-  return () => speakerListeners.delete(fn)
-}
-export function getSpeaker() {
-  return speaker
-}
-
-function setSpeaker(next) {
-  if (speaker?.key === next?.key && speaker?.label === next?.label) return
-  speaker = next
-  for (const fn of speakerListeners) {
-    try {
-      fn(speaker)
-    } catch {
-      /* ignore */
-    }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Which conversations the user can actually SEE right now
-// ---------------------------------------------------------------------------
-//
-// Ask routing needs "am I looking at the conversation that owns this ask?" —
-// which is not the same question as "am I on the Chat tab". Two different chats
-// both live on the Chat panel, and a card can hold many tinker threads. Getting
-// that wrong in the permissive direction leaks a prompt into someone else's
-// session; getting it wrong the other way silently swallows the notification
-// and the agent waits forever. So visibility is tracked per *thread*, reported
-// by the panel that is rendering it.
-
-const visibleThreads = new Map() // thread_id -> refcount
-const visibleListeners = new Set()
-
-export function subscribeVisibleThreads(fn) {
-  visibleListeners.add(fn)
-  return () => visibleListeners.delete(fn)
-}
-
-export function isThreadVisible(threadId) {
-  return !!threadId && visibleThreads.has(threadId)
-}
-
-export function visibleThreadIds() {
-  return [...visibleThreads.keys()]
-}
-
-function setThreadVisible(threadId, visible) {
-  if (!threadId) return
-  const n = visibleThreads.get(threadId) || 0
-  if (visible) visibleThreads.set(threadId, n + 1)
-  else if (n <= 1) visibleThreads.delete(threadId)
-  else visibleThreads.set(threadId, n - 1)
-  for (const fn of visibleListeners) {
-    try {
-      fn()
-    } catch {
-      /* ignore */
-    }
-  }
-}
-
-// ---------------------------------------------------------------------------
 
 export class ConversationSession {
   constructor(key, { origin = 'cli', resumeId = null, agent = null, card = null } = {}) {
@@ -288,7 +213,7 @@ export class ConversationSession {
       /* ignore */
     }
     this.client = null
-    if (sessions.get(this.key) === this) sessions.delete(this.key)
+    this.onDispose?.()
   }
 
   // ---- transport ------------------------------------------------------
@@ -319,13 +244,7 @@ export class ConversationSession {
           this._finalizeStreaming()
           this._setMessages((cur) => [
             ...cur,
-            {
-              id: nextId(),
-              role: 'assistant',
-              error: true,
-              events: [],
-              text: '⚠ this chat is no longer available — start a new one',
-            },
+            errorMessage('⚠ this chat is no longer available — start a new one'),
           ])
           this._set({ connected: false, busy: false, pendingAsks: [] })
         },
@@ -348,24 +267,7 @@ export class ConversationSession {
       .then((res) => {
         if (this.disposed || this.resumeId !== forId) return
         if (!res?.messages?.length || this.state.messages.length > 0) return
-        this._set({
-          messages: res.messages.map((m) => ({
-            id: nextId(),
-            role: m.role,
-            // The verbatim transcript stores the server-composed selection
-            // block ahead of what the user typed — strip it on hydration so
-            // resumed threads match what the live bubble showed.
-            text: m.role === 'user' ? stripSelection(m.text) : m.text || '',
-            events: [],
-            // Inline artifact cards made during the turn — the history endpoint
-            // rebuilds them from the transcript's artifact_create tool results.
-            artifacts: m.artifacts || [],
-            // The server's audio_url is authoritative — on mixed text+voice
-            // threads it carries the VOICE-store seq, which differs from this
-            // row's transcript seq (rebuilding from m.seq would 404).
-            audioUrl: m.audio_url ? `${getBase()}${m.audio_url}` : null,
-          })),
-        })
+        this._set({ messages: fromHistory(res, getBase()) })
       })
       .catch(() => {
         /* history is best-effort — a fresh thread is fine */
@@ -377,25 +279,14 @@ export class ConversationSession {
   _appendToStreaming(patch) {
     const id = this.streamingId
     if (!id) return
-    this._setMessages((cur) => cur.map((m) => (m.id === id ? patch(m) : m)))
+    this._setMessages((cur) => patchMessage(cur, id, patch))
   }
 
   _ensureStreaming() {
     if (this.streamingId) return
     const id = nextId()
     this.streamingId = id
-    this._setMessages((cur) => [
-      ...cur,
-      {
-        id,
-        role: 'assistant',
-        text: '',
-        events: [],
-        images: [],
-        artifacts: [],
-        streaming: true,
-      },
-    ])
+    this._setMessages((cur) => [...cur, streamingMessage(id)])
   }
 
   // Mark the streaming message done and stop pointing at it. Captures the id
@@ -406,45 +297,22 @@ export class ConversationSession {
   _finalizeStreaming() {
     const id = this.streamingId
     this.streamingId = null
-    if (id)
-      this._setMessages((cur) => cur.map((m) => (m.id === id ? { ...m, streaming: false } : m)))
+    if (id) this._setMessages((cur) => patchMessage(cur, id, (m) => ({ ...m, streaming: false })))
   }
 
-  // The newest assistant block, streaming or just closed. `tool_call` closes
-  // the block it belongs to, so its result and logs have to attach to the
-  // last one rather than conjuring a fresh empty bubble.
   _lastAssistantId() {
-    const msgs = this.state.messages
-    for (let i = msgs.length - 1; i >= 0; i -= 1) {
-      if (msgs[i].role === 'assistant') return msgs[i].id
-    }
-    return null
+    return lastAssistantId(this.state.messages)
   }
 
   _appendToLastAssistant(patch) {
     const id = this.streamingId || this._lastAssistantId()
     if (!id) return
-    this._setMessages((cur) => cur.map((m) => (m.id === id ? patch(m) : m)))
+    this._setMessages((cur) => patchMessage(cur, id, patch))
   }
 
-  // A standalone row for something the user must see with no bubble to hang
-  // it on. The `role` keeps it out of the conversation proper — it is not
-  // something the agent said.
   _pushNotice(text, level = 'info') {
     if (!text) return
-    this._setMessages((cur) => [
-      ...cur,
-      {
-        id: nextId(),
-        role: 'notice',
-        level,
-        text,
-        events: [],
-        images: [],
-        artifacts: [],
-        streaming: false,
-      },
-    ])
+    this._setMessages((cur) => [...cur, noticeMessage(text, level)])
   }
 
   // ---- pending asks ---------------------------------------------------
@@ -455,14 +323,11 @@ export class ConversationSession {
 
   _pushAsk(ask) {
     if (!ask) return
-    const asks = this.state.pendingAsks.filter((a) => a.ask_id !== ask.ask_id)
-    this._set({ pendingAsks: [...asks, ask] })
+    this._set({ pendingAsks: withAsk(this.state.pendingAsks, ask) })
   }
 
   _resolveAsk(askId) {
-    // No id means "the turn ended" — everything parked on it is moot.
-    const asks = askId ? this.state.pendingAsks.filter((a) => a.ask_id !== askId) : []
-    this._set({ pendingAsks: asks })
+    this._set({ pendingAsks: withoutAsk(this.state.pendingAsks, askId) })
   }
 
   // Reveal buffered prose immediately — call before rendering any non-prose
@@ -538,289 +403,7 @@ export class ConversationSession {
   // ---- frames ---------------------------------------------------------
 
   _onMessage(msg) {
-    // Every frame that belongs to the turn carries a monotonic per-thread seq.
-    // Connection-scoped frames (pong, mic state) carry none and must not move
-    // the resume cursor. Neither must `hello` — it reports where the *thread*
-    // stands, not what we've rendered, and adopting it would make a socket that
-    // drops part-way through the replay resume past the frames it never got.
-    if (typeof msg.seq === 'number' && msg.type !== 'hello') {
-      this.lastSeq = msg.seq
-      this.client?.setSinceSeq(msg.seq)
-    }
-
-    switch (msg.type) {
-      case 'hello': {
-        // Adopt the handshake's usage snapshot, but never overwrite a live one
-        // with null: a reconnect mid-turn would blank a panel that is correct.
-        this._set(msg.usage ? { hello: msg, usage: msg.usage } : { hello: msg })
-        // Whether the server allows voice barge-in (talk-over). Default off:
-        // while off we mute the mic and ignore interrupt-y events until the
-        // reply finishes PLAYING, so background noise can't cut it off.
-        this.bargeIn = !!msg.barge_in
-        // Pin the live thread so a reconnect (socket drop / daemon restart)
-        // resumes THIS conversation instead of starting a fresh one.
-        if (msg.thread_id) {
-          const prev = this.resumeId
-          this.resumeId = msg.thread_id
-          this.client?.setResumeId(msg.thread_id)
-          // A visible panel registered under the old id (or none at all) —
-          // move the visibility marker onto the thread we actually landed on.
-          if (this.visible && prev !== msg.thread_id) {
-            if (prev) setThreadVisible(prev, false)
-            setThreadVisible(msg.thread_id, true)
-          }
-        }
-        // The daemon tells us whether a turn is running on this thread — which
-        // may well be one we never saw start (another view began it, or we were
-        // reloaded mid-answer). Trust it over local state; the replayed frames
-        // that follow refine it.
-        const running = msg.run?.status === 'running'
-        if (running) {
-          this._set({ busy: true })
-        } else if (this.state.busy) {
-          this._flushSmoother()
-          this._stopSmoother()
-          this._finalizeStreaming()
-          this._set({ busy: false, pendingAsks: [] })
-        }
-        break
-      }
-      case 'turn_start': {
-        // The user side of a turn, echoed by the daemon so a view that attached
-        // mid-answer can render the bubble it never saw. Skip it when we're the
-        // one who sent it (send() already added the bubble optimistically) or
-        // when the voice path already echoed the transcript.
-        this._set({ busy: true })
-        const text = stripSelection(msg.text || '')
-        if (!text) break
-        // Already have it if we sent it ourselves, if the voice path echoed the
-        // transcript, or if session hydration raced ahead of the replay. "Have
-        // it" = the newest user bubble matches and nothing has answered it yet.
-        const msgs = this.state.messages
-        let lastUser = -1
-        for (let i = msgs.length - 1; i >= 0; i--) {
-          if (msgs[i].role === 'user') {
-            lastUser = i
-            break
-          }
-        }
-        const answered = msgs
-          .slice(lastUser + 1)
-          .some((m) => m.role === 'assistant' && !m.streaming)
-        if (lastUser >= 0 && msgs[lastUser].text === text && !answered) break
-        this._setMessages((cur) => [...cur, { id: nextId(), role: 'user', text, events: [] }])
-        break
-      }
-      case 'token':
-        this._ensureStreaming()
-        this._feedSmoother(msg.text || '')
-        break
-      case 'image': {
-        // Inline artifact (chart/diagram/table/…) rendered by a vis_* tool this
-        // turn. Attach it to the streaming assistant message so it renders inside
-        // the bubble; create the message if the image somehow arrives first.
-        this._flushSmoother()
-        this._ensureStreaming()
-        this._appendToStreaming((m) => ({
-          ...m,
-          images: [
-            ...(m.images || []),
-            {
-              visual_id: msg.visual_id,
-              url: msg.url,
-              kind: msg.kind,
-              title: msg.title,
-              mime: msg.mime,
-            },
-          ],
-        }))
-        break
-      }
-      case 'artifact': {
-        // Inline rich artifact (interactive HTML/JSX, doc, audio) made by
-        // artifact_create this turn — attach it to the streaming assistant
-        // message so it renders as a block card in the bubble, openable big.
-        this._flushSmoother()
-        this._ensureStreaming()
-        this._appendToStreaming((m) => ({
-          ...m,
-          artifacts: [
-            ...(m.artifacts || []),
-            {
-              attachment_id: msg.attachment_id || msg.artifact_id,
-              url: msg.url,
-              kind: msg.kind,
-              mime: msg.mime,
-              title: msg.title,
-            },
-          ],
-        }))
-        break
-      }
-      case 'tool_call':
-        // Flush the prose, attach the tool row, then CLOSE the bubble so the
-        // next token opens a new one. Without the close, a whole turn of
-        // prose -> tool -> prose -> tool collapsed into one blob with every
-        // tool row underneath it, and the reasoning between steps was
-        // unreadable. This is what the CLI renderer does (`self._md.flush()`
-        // before printing the tool line) and why its transcript reads right.
-        this._flushSmoother()
-        this._appendToStreaming((m) => ({
-          ...m,
-          events: [...m.events, { kind: 'tool_call', name: msg.name, args: msg.args }],
-        }))
-        this._finalizeStreaming()
-        break
-      case 'tool_result':
-        // Attach to the block that issued the call, which tool_call just
-        // closed — not to a new bubble that has no text of its own.
-        this._flushSmoother()
-        this._appendToLastAssistant((m) => ({
-          ...m,
-          events: [...m.events, { kind: 'tool_result', name: msg.name, preview: msg.preview }],
-        }))
-        break
-      case 'log':
-        // Attach to the block in flight when there is one; otherwise show it
-        // as its own row. It used to be DROPPED in that case — which is how
-        // four consecutive "no assistant text" warnings reached the user as
-        // silence on a wedged thread.
-        this._flushSmoother()
-        if (this.streamingId || this._lastAssistantId()) {
-          this._appendToLastAssistant((m) => ({
-            ...m,
-            events: [...m.events, { kind: 'log', text: msg.text }],
-          }))
-        } else {
-          this._pushNotice(msg.text, 'info')
-        }
-        break
-      case 'notice':
-        // Never attached, never dropped: a notice is the channel for "the
-        // model returned nothing", and it has to be visible on its own.
-        this._flushSmoother()
-        this._pushNotice(msg.text, msg.level || 'info')
-        break
-      case 'final':
-        // Drain buffered prose and stop. `final` carries only the LAST
-        // assistant message (streaming.last_assistant_text), not the turn, so
-        // the old "snap to the canonical text" step replaced every earlier
-        // block with the closing one whenever the comparison happened to
-        // favour it. The token stream is the transcript — the CLI ignores
-        // `final.text` entirely for exactly this reason.
-        //
-        // The one case it still earns its keep: nothing streamed at all (a
-        // replayed turn whose tokens fell off the ring), where there is no
-        // accumulated text to lose.
-        this._flushSmoother()
-        if (msg.text && !this.streamingId && !this._lastAssistantId()) {
-          this._ensureStreaming()
-          this._appendToStreaming((m) => ({ ...m, text: msg.text }))
-        }
-        break
-      case 'ask':
-        // The full ask record — the same shape the Inbox and the overlay get,
-        // so all three render the one shared AskCard. Arriving on THIS thread's
-        // channel is what makes it ours: an ask is only ever emitted to the
-        // conversation that raised it, so an inline card can't leak into
-        // somebody else's session.
-        this._pushAsk(msg.ask || msg.payload || null)
-        break
-      case 'ask_resolved':
-        // Answered somewhere — here, the Inbox, the overlay, or the CLI — or
-        // the turn was cancelled. Either way the prompt is no longer live.
-        this._resolveAsk(msg.ask_id)
-        break
-      case 'speech_started':
-        // The user is talking — cut off any agent audio still playing (barge-in).
-        // But with barge-in off, a "speech onset" during playback is almost
-        // always the agent's own audio echo / room noise: DON'T stop a reply
-        // that's still playing, or it gets chopped mid-sentence. A real user
-        // interrupt goes through the Stop button (interrupt()).
-        if (this.bargeIn || !audioPlayer.isPlaying()) this._stopPlayback()
-        break
-      case 'transcript':
-        // STT of the user's spoken utterance becomes the user turn.
-        this._setMessages((cur) => [
-          ...cur,
-          { id: nextId(), role: 'user', text: msg.text, events: [] },
-        ])
-        this._set({ busy: true })
-        break
-      case 'audio_chunk':
-        try {
-          const pcm = base64ToInt16(msg.pcm)
-          const sr = msg.sample_rate || 22050
-          audioPlayer.enqueuePcm(pcm, sr)
-          // Retain the chunk on the streaming assistant message so the Voice UI
-          // can offer a ▶ replay of this turn's spoken reply.
-          this._appendToStreaming((m) => ({
-            ...m,
-            audioChunks: [...(m.audioChunks || []), pcm],
-            audioSampleRate: sr,
-          }))
-          // The live reply is now audible — light up this message's Stop toggle
-          // and name this conversation as the one the titlebar transport drives.
-          if (this.streamingId) this._watchPlayback(this.streamingId)
-        } catch {
-          /* ignore */
-        }
-        break
-      // Context-meter reading, twice per model call. Ephemeral on the wire —
-      // never replayed — so this is the only place it lands, and the last one
-      // simply wins.
-      case 'usage':
-        this._set({ usage: msg })
-        break
-      case 'speaking_start':
-        this._set({ speaking: true })
-        break
-      case 'speaking_end':
-        this._set({ speaking: false })
-        break
-      case 'turn_end':
-        this._flushSmoother()
-        this._stopSmoother()
-        this._finalizeStreaming()
-        this._set({ busy: false, speaking: false, pendingAsks: [] })
-        // Anything typed during the turn goes now. Deferred a tick so `busy`
-        // is observably false first — otherwise send() would re-queue it.
-        if (this.state.queued) setTimeout(() => this._flushQueued(), 0)
-        // Nothing is watching and nothing is running — start the idle countdown.
-        if (this.refs === 0) this._armIdle()
-        break
-      case 'clarify':
-        // Low-confidence ASR: the agent turn was skipped on purpose. Show a
-        // gentle re-prompt instead of running on a garbled transcript. A
-        // turn_end follows to release the busy/speaking state. Never let a stray
-        // low-confidence "utterance" (usually background noise) stop a reply
-        // that's still playing.
-        if (this.bargeIn || !audioPlayer.isPlaying()) this._stopPlayback()
-        this._setMessages((cur) => [
-          ...cur,
-          {
-            id: nextId(),
-            role: 'assistant',
-            text: msg.message || "I didn't quite catch that — could you say it again?",
-            events: [],
-            clarify: true,
-          },
-        ])
-        break
-      case 'error':
-        this._flushSmoother()
-        this._stopSmoother()
-        this._stopPlayback()
-        this._setMessages((cur) => [
-          ...cur,
-          { id: nextId(), role: 'assistant', text: `⚠ ${msg.message}`, events: [], error: true },
-        ])
-        this._finalizeStreaming()
-        this._set({ busy: false, speaking: false })
-        break
-      default:
-        break
-    }
+    applyFrame(this, msg)
   }
 
   // ---- actions --------------------------------------------------------
@@ -849,17 +432,11 @@ export class ConversationSession {
     if (!ok) {
       this._setMessages((cur) => [
         ...cur,
-        {
-          id: nextId(),
-          role: 'assistant',
-          error: true,
-          events: [],
-          text: '⚠ not connected to the daemon — is it running? (restart it after updates)',
-        },
+        errorMessage('⚠ not connected to the daemon — is it running? (restart it after updates)'),
       ])
       return false
     }
-    this._setMessages((cur) => [...cur, { id: nextId(), role: 'user', text: t, events: [] }])
+    this._setMessages((cur) => [...cur, userMessage(t)])
     this._set({ busy: true, queued: null })
     return true
   }
@@ -948,13 +525,7 @@ export class ConversationSession {
       this._set({ listening: false })
       this._setMessages((cur) => [
         ...cur,
-        {
-          id: nextId(),
-          role: 'assistant',
-          error: true,
-          events: [],
-          text: `⚠ microphone unavailable: ${e?.message || e}`,
-        },
+        errorMessage(`⚠ microphone unavailable: ${e?.message || e}`),
       ])
     }
   }
@@ -1062,36 +633,4 @@ export class ConversationSession {
     })
     this._connect()
   }
-}
-
-// ---------------------------------------------------------------------------
-// The map
-// ---------------------------------------------------------------------------
-
-const sessions = new Map()
-
-export function acquireSession(key, opts) {
-  let s = sessions.get(key)
-  if (!s || s.disposed) {
-    s = new ConversationSession(key, opts)
-    sessions.set(key, s)
-    evictIdle()
-  }
-  return s
-}
-
-function evictIdle() {
-  if (sessions.size <= MAX_SESSIONS) return
-  const idle = [...sessions.values()]
-    .filter((s) => s.refs === 0 && !s.state.busy)
-    .sort((a, b) => a.touchedAt - b.touchedAt)
-  for (const s of idle) {
-    if (sessions.size <= MAX_SESSIONS) break
-    s.dispose()
-  }
-}
-
-// Test/debug affordance — not used by the app.
-export function _sessionsForTest() {
-  return sessions
 }

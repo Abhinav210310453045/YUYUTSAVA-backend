@@ -61,8 +61,9 @@ vi.mock('../audio', () => ({
 }))
 vi.mock('../audio/capture', () => ({ MicCapture: class {} }))
 
-const { acquireSession, ConversationSession, isThreadVisible, _sessionsForTest } =
-  await import('./store')
+const { acquireSession, _sessionsForTest } = await import('./sessions')
+const { ConversationSession } = await import('./session')
+const { isThreadVisible } = await import('./presence')
 
 let keyN = 0
 function session(opts = {}) {
