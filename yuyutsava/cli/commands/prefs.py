@@ -11,7 +11,7 @@ import json
 import sys
 
 from yuyutsava.aio import run as aio_run
-from yuyutsava.storage.events import Store
+from yuyutsava.core.app_context import open_events_store
 from yuyutsava.storage.prefs import PrefsStore
 
 
@@ -26,59 +26,60 @@ def run_prefs(argv: list[str]) -> int:
 
     sub = argv[0]
 
+    async def _dispatch(prefs: PrefsStore) -> int:
+        if sub == "list":
+            all_prefs = await prefs.all()
+            if not all_prefs:
+                print("(no preferences set)")
+            else:
+                for key, val in sorted(all_prefs.items()):
+                    print(f"{key} = {json.dumps(val)}")
+            return 0
+
+        if sub == "get":
+            if len(argv) < 2:
+                print("Usage: yuyutsava prefs get <key>", file=sys.stderr)
+                return 2
+            val = await prefs.get(argv[1])
+            if val is None:
+                print(f"(not set: {argv[1]})")
+            else:
+                print(json.dumps(val))
+            return 0
+
+        if sub == "set":
+            if len(argv) < 3:
+                print("Usage: yuyutsava prefs set <key> <json_value>", file=sys.stderr)
+                return 2
+            key = argv[1]
+            try:
+                value = json.loads(argv[2])
+            except json.JSONDecodeError as exc:
+                print(f"Error: invalid JSON value: {exc}", file=sys.stderr)
+                return 1
+            await prefs.set(key, value)
+            # Drain the write queue before closing.
+            await asyncio.sleep(0.05)
+            print(f"Set {key} = {json.dumps(value)}")
+            return 0
+
+        if sub == "delete":
+            if len(argv) < 2:
+                print("Usage: yuyutsava prefs delete <key>", file=sys.stderr)
+                return 2
+            await prefs.delete(argv[1])
+            await asyncio.sleep(0.05)
+            print(f"Deleted {argv[1]}")
+            return 0
+
+        print(f"Unknown prefs subcommand: {sub!r}", file=sys.stderr)
+        return 2
+
     async def _run() -> int:
-        store = Store()
-        await store.start()
-        prefs = PrefsStore(store)
-        try:
-            if sub == "list":
-                all_prefs = await prefs.all()
-                if not all_prefs:
-                    print("(no preferences set)")
-                else:
-                    for key, val in sorted(all_prefs.items()):
-                        print(f"{key} = {json.dumps(val)}")
-                return 0
-
-            if sub == "get":
-                if len(argv) < 2:
-                    print("Usage: yuyutsava prefs get <key>", file=sys.stderr)
-                    return 2
-                val = await prefs.get(argv[1])
-                if val is None:
-                    print(f"(not set: {argv[1]})")
-                else:
-                    print(json.dumps(val))
-                return 0
-
-            if sub == "set":
-                if len(argv) < 3:
-                    print("Usage: yuyutsava prefs set <key> <json_value>", file=sys.stderr)
-                    return 2
-                key = argv[1]
-                try:
-                    value = json.loads(argv[2])
-                except json.JSONDecodeError as exc:
-                    print(f"Error: invalid JSON value: {exc}", file=sys.stderr)
-                    return 1
-                await prefs.set(key, value)
-                # Drain the write queue before closing.
-                await asyncio.sleep(0.05)
-                print(f"Set {key} = {json.dumps(value)}")
-                return 0
-
-            if sub == "delete":
-                if len(argv) < 2:
-                    print("Usage: yuyutsava prefs delete <key>", file=sys.stderr)
-                    return 2
-                await prefs.delete(argv[1])
-                await asyncio.sleep(0.05)
-                print(f"Deleted {argv[1]}")
-                return 0
-
-            print(f"Unknown prefs subcommand: {sub!r}", file=sys.stderr)
-            return 2
-        finally:
-            await store.stop()
+        # The configured backend's store — on Postgres, the rows the daemon
+        # reads. A bare Store() is SQLite-only and wrote where the daemon never
+        # looks (R-BUG-21).
+        async with open_events_store() as store:
+            return await _dispatch(PrefsStore(store))
 
     return aio_run(_run())

@@ -15,8 +15,11 @@ from yuyutsava.cli.session_run import run_session
 from yuyutsava.cli.tooling import cleanup_local_sandbox
 from yuyutsava.conversation.sessions import ResumeFailed
 from yuyutsava.core.agent_stack import build_agent_stack
+from yuyutsava.core.app_context import open_events_store
+from yuyutsava.core.deps import StackWiring
 from yuyutsava.docker_sandbox.backend import pull_virtual_paths_to_host
 from yuyutsava.storage.paths import WorkspaceLayout
+from yuyutsava.storage.prefs import PrefsStore
 from yuyutsava.storage.sessions import (
     SessionsSettings,
     build_checkpointer,
@@ -48,10 +51,16 @@ async def run_chat(
     store = session_store_for()
     sessions_settings = SessionsSettings.from_env()
 
-    async with build_checkpointer(sessions_settings) as checkpointer:
+    async with (
+        build_checkpointer(sessions_settings) as checkpointer,
+        open_events_store() as events,
+    ):
         bundle = await build_agent_stack(
             workspace,
             settings,
+            # The per-turn USER PREFERENCES block, from the configured
+            # backend's preferences — the ones the daemon and the app read.
+            wiring=StackWiring(prefs_store=PrefsStore(events)),
             execution=opts.execution,
             bash_timeout_sec=bash_timeout_sec,
             permission_check=permission_check,

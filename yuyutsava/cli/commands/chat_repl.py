@@ -61,9 +61,10 @@ from yuyutsava.config.logs import silence_plumbing_loggers
 from yuyutsava.consent import decision_token as _decision_token
 from yuyutsava.conversation import ConversationService
 from yuyutsava.core.agent_stack import build_agent_stack
+from yuyutsava.core.app_context import open_events_store
+from yuyutsava.core.deps import StackWiring
 from yuyutsava.llm.quirks.first_chunk_retry import add_retry_listener, classify_provider_busy
 from yuyutsava.prefs.runtime import UNDISABLEABLE, RuntimeSettings
-from yuyutsava.storage.events import Store
 from yuyutsava.storage.paths import state_dir
 from yuyutsava.storage.prefs import PrefsStore
 from yuyutsava.storage.sessions import (
@@ -539,34 +540,29 @@ async def _handle_ask_command(cmd: CommandLine, remote: Any) -> bool:
     return False
 
 
-class _LazyRuntimeSettings:
-    """Opens ``state.db`` only if the user actually types /voice or /subagents.
+class _RuntimeToggles:
+    """The /voice and /subagents settings, loaded on first use.
 
-    The REPL has no reason to pay for the events ``Store`` (and its writer
-    task) on every chat launch — these toggles are occasional. Built on first
-    use and closed with :meth:`aclose` when the REPL exits.
+    Over the same preferences the stack injects every turn — on the
+    configured backend, so a ``/voice off`` typed here reaches a daemon on
+    Postgres (a SQLite-only store wrote where the daemon never reads,
+    ``R-BUG-21``). The store itself belongs to the REPL's context.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, prefs: PrefsStore) -> None:
+        self._prefs = prefs
         self._settings: Any | None = None
-        self._store: Any | None = None
 
     async def get(self) -> Any:
         if self._settings is None:
-            self._store = Store()
-            await self._store.start()
-            self._settings = await RuntimeSettings(PrefsStore(self._store)).load()
+            self._settings = await RuntimeSettings(self._prefs).load()
         return self._settings
 
     async def aclose(self) -> None:
-        if self._store is not None:
-            # Let a just-issued write drain before the store goes away (same
-            # 50ms courtesy the `yuyutsava prefs` subcommand takes).
+        # Let a just-issued write drain before the store goes away (same 50ms
+        # courtesy the `yuyutsava prefs` subcommand takes).
+        if self._settings is not None:
             await asyncio.sleep(0.05)
-            with contextlib.suppress(Exception):
-                await self._store.stop()
-            self._store = None
-            self._settings = None
 
 
 def _on_off(word: str) -> bool | None:
@@ -1050,12 +1046,19 @@ async def run_chat_repl(
     stop_retry_notices = _install_retry_listener(renderer, dashboard)
     quieten_chat_loggers(debug_plumbing=debug_plumbing, verbose=opts.verbose)
 
-    async with build_checkpointer(sessions_settings) as checkpointer:
+    async with (
+        build_checkpointer(sessions_settings) as checkpointer,
+        open_events_store() as events,
+    ):
+        # One preferences store for the per-turn USER PREFERENCES block and
+        # the /voice and /subagents toggles.
+        prefs = PrefsStore(events)
         # Build the agent stack ONCE. Swallow the LangGraph host's startup
         # banner unless the user asked for the firehose.
         builder = build_agent_stack(
             workspace,
             opts.settings,
+            wiring=StackWiring(prefs_store=prefs),
             execution=opts.execution,
             bash_timeout_sec=opts.bash_timeout_sec,
             permission_check=opts.permission_check,
@@ -1079,8 +1082,7 @@ async def run_chat_repl(
             silence_plumbing_loggers()
 
         approvals = await BackgroundApprovals.open(bundle)
-        # /voice + /subagents backing store — opened on first use, not here.
-        runtime_toggles = _LazyRuntimeSettings()
+        runtime_toggles = _RuntimeToggles(prefs)
 
         try:
             convo, status_line = await _start_session(

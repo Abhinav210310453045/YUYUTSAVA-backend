@@ -25,6 +25,7 @@ from yuyutsava.storage.backend import StorageSettings
 from yuyutsava.storage.events import Store
 from yuyutsava.storage.pg import migrations as pg_migrations
 from yuyutsava.storage.pg.pool import PgPool
+from yuyutsava.storage.routing.health import StorageHealth
 from yuyutsava.storage.sessions import session_store_for
 
 
@@ -59,7 +60,11 @@ class AppContext:
         if self.events_store is not None:
             return self.events_store, False
 
-        return Store.for_backend(settings, pg_pool=pg_pool), True
+        # Postgres routing needs a health monitor; without one for_backend
+        # builds the SQLite twins, and a CLI purge on Postgres cleared the
+        # thread's pending asks from a file they were never written to.
+        health = StorageHealth(pg_pool) if pg_pool is not None else None
+        return Store.for_backend(settings, pg_pool=pg_pool, health=health), True
 
 
 @asynccontextmanager
@@ -90,4 +95,38 @@ async def open_app_context(settings: StorageSettings | None = None) -> AsyncIter
             await pool.close()
 
 
-__all__ = ["AppContext", "open_app_context"]
+@asynccontextmanager
+async def open_events_store(settings: StorageSettings | None = None) -> AsyncIterator[Store]:
+    """The configured backend's events store, for a process without the daemon.
+
+    It holds the rows the daemon reads — preferences, consent grants, pending
+    asks — so a CLI that writes a preference writes the daemon's. A bare
+    ``Store()`` is SQLite-only: on the Postgres backend it wrote a file the
+    daemon never reads (``R-BUG-21``).
+    """
+    settings = settings or StorageSettings.from_env()
+    pool: PgPool | None = None
+    health: StorageHealth | None = None
+    if settings.is_postgres():
+        pool = PgPool(settings)
+        await pool.open()
+    try:
+        if pool is not None:
+            await pg_migrations.apply(pool)
+            health = StorageHealth(pool)
+            store = Store.for_backend(settings, pg_pool=pool, health=health)
+        else:
+            store = Store()
+        await store.start()
+        try:
+            yield store
+        finally:
+            await store.stop()
+    finally:
+        if health is not None:
+            await health.stop()  # a probe started by a mid-run degrade
+        if pool is not None:
+            await pool.close()
+
+
+__all__ = ["AppContext", "open_app_context", "open_events_store"]

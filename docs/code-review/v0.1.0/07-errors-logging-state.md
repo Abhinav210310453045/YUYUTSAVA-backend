@@ -949,7 +949,7 @@ test is red on the old code.
 
 ## R-BUG-21 — On Postgres, preferences set in the CLI never reach the daemon, and the standalone CLI ignores them
 
-**Severity** P1 · **Wave** W6 (found live-checking `R-BUG-20`) · **Status** Open
+**Severity** P1 · **Wave** W6 (found live-checking `R-BUG-20`) · **Status** **Fixed** (2026-09-27)
 
 **Evidence.**
 - `yuyutsava prefs set` and the REPL's runtime toggles (`/voice off`) build a
@@ -962,3 +962,30 @@ test is red on the old code.
   all. So even on SQLite it never injects preferences, although the CLI
   master's profile declares a per-turn `PrefsInjector`.
 - `prefs/runtime.py` promises that "the CLI and the daemon read the same row".
+
+**Fix.**
+- `core.app_context.open_events_store()` opens the configured backend's events
+  store (pool, migrations and health on Postgres; `state.db` on SQLite). It
+  holds the rows the daemon reads.
+- The `prefs` command uses it.
+- Both CLI chat paths open it next to the checkpointer and pass
+  `StackWiring(prefs_store=…)`, so a standalone CLI injects preferences every
+  turn. The REPL's `/voice` and `/subagents` toggles share the same store.
+- `AppContext.events` also passes a `StorageHealth`. Without one,
+  `Store.for_backend` builds the SQLite twins, and a CLI purge on Postgres
+  cleared the thread's pending asks from a file they were never written to.
+  `pending_asks` has no cascade from the thread hub.
+
+**Verification.**
+- `test/core/test_events_store_backend.py`: one test for each face. Knocking
+  out each part of the fix turns its own test red.
+- Live, on the scratch database:
+  - `prefs set` wrote `user_prefs` in Postgres.
+  - A standalone CLI turn and a daemon chat turn both answered "you are called
+    Priyanka" from it.
+  - The REPL's `/voice off` updated the Postgres row, and the running daemon's
+    `/settings/runtime` reported it.
+
+**Note for existing installs on Postgres.** Preferences set with the CLI before
+this fix sit in `state.db`, where the daemon never read them. They are not
+migrated. Set them again, or copy them over with `yuyutsava prefs`.
