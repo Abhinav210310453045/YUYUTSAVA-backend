@@ -21,6 +21,8 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+import httpx
+
 from yuyutsava.retrieval.hit import Hit
 from yuyutsava.retrieval.keyword import keyword_tokens
 from yuyutsava.retrieval.vector import vector_literal
@@ -194,12 +196,16 @@ class PgVectorSearch:
                 break
             try:
                 vectors = await embedder.embed([r[1] for r in rows], mode="document")
-            except Exception:
+            except httpx.TransportError as exc:
+                # Expected while the embedder is down; the rows wait for the next run.
                 logger.warning(
-                    "retrieval: backfill aborted — embedder unreachable (%s)",
+                    "retrieval: backfill aborted — embedder unreachable (%s, %s)",
                     t.table,
-                    exc_info=True,
+                    type(exc).__name__,
                 )
+                break
+            except Exception:  # noqa: BLE001 — a failed backfill must not stop the caller
+                logger.warning("retrieval: backfill aborted (%s)", t.table, exc_info=True)
                 break
             async with self._pool.connection() as conn:
                 for (id_val, _text), vec in zip(rows, vectors):
