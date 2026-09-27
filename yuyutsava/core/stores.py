@@ -247,7 +247,7 @@ class StoreFactory:
                 dedup_threshold=settings.dedup_threshold,
             )
         logger.info("  memory    : sqlite keyword fallback (no embeddings)")
-        return sqlite_memory_store(self._db())
+        return sqlite_memory_store(self._db(), dedup_threshold=settings.dedup_threshold)
 
     def skills(self, settings: Any) -> Any:
         if self.is_postgres and self._embedder is not None:
@@ -347,7 +347,9 @@ async def build_retrieval_stores(skill_registry: SkillRegistry):
     if skill_store is None:
         skill_store = sqlite_skill_store(state_db_path())
     if memory_store is None and mem_settings.enabled:
-        memory_store = sqlite_memory_store(state_db_path())
+        memory_store = sqlite_memory_store(
+            state_db_path(), dedup_threshold=mem_settings.dedup_threshold
+        )
 
     # Catch the store up to on-disk skills (previous sessions, bundled,
     # workspace) so they're retrievable this session — best-effort.

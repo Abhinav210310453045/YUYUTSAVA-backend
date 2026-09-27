@@ -50,7 +50,7 @@ from yuyutsava.memory.store import (
     mint_memory_id,
 )
 from yuyutsava.retrieval.keyword import keyword_tokens as _keyword_tokens
-from yuyutsava.retrieval.pg import PgVectorSearch, PgVectorTable
+from yuyutsava.retrieval.pg import PgVectorSearch, PgVectorTable, by_name_or_position
 from yuyutsava.retrieval.query import document_vectors, query_vector
 from yuyutsava.storage.base import BaseSqliteStore
 from yuyutsava.storage.dialect import Dialect, PostgresDialect, SqliteDialect
@@ -171,6 +171,20 @@ class UnifiedMemoryStore(MemoryStore):
         async def _do(conn):
             # Dedup probe, parent upsert and insert commit together, so a crash
             # cannot leave a thread row without its memory or vice versa.
+            if self._dedup_threshold <= 1.0:
+                # Identical text first: it needs no embedder, so it holds on
+                # SQLite, with the embedder down, and against an earlier copy
+                # stored without a vector — none of which the vector probe sees.
+                cur = await conn.execute(
+                    f"SELECT memory_id FROM memories WHERE kind = {d.ph()} AND text = {d.ph()} "
+                    "LIMIT 1",
+                    [kind, text],
+                )
+                row = await cur.fetchone()
+                if row is not None:
+                    (same,) = by_name_or_position(row, ("memory_id",))
+                    logger.debug("memory: identical to %s (kind=%s) — skipping insert", same, kind)
+                    return same
             if self._search is not None and self._dedup_threshold <= 1.0 and embedding:
                 dup = await self._search.find_duplicate(
                     conn,
@@ -275,8 +289,14 @@ class UnifiedMemoryStore(MemoryStore):
         return await self._search.backfill(self._embedder, batch_size=batch_size, max_rows=max_rows)
 
 
-def sqlite_memory_store(db_path: Path | None = None) -> UnifiedMemoryStore:
-    return UnifiedMemoryStore(SqliteDialect(MemorySchema(db_path or state_db_path())))
+def sqlite_memory_store(
+    db_path: Path | None = None, *, dedup_threshold: float = 1.1
+) -> UnifiedMemoryStore:
+    """The keyword store; with ``dedup_threshold`` at most 1.0, identical text
+    of the same kind is stored once (there are no vectors for near-duplicates)."""
+    return UnifiedMemoryStore(
+        SqliteDialect(MemorySchema(db_path or state_db_path())), dedup_threshold=dedup_threshold
+    )
 
 
 def pg_memory_store(

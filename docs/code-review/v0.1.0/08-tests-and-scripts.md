@@ -563,11 +563,10 @@ rows.
   server. Negative control: skipping the dedup probe turns the dedup test red.
 - **Found on the way.** The write paths printed tracebacks for an unreachable
   embedder. Fixed as `R-BUG-13`'s write side.
-- **Carried, the owner's decision.** Should identical text also collapse when
-  no vector exists, i.e. an exact-text dedup fallback? Today it does not, on
-  Postgres without an embedder or on SQLite. That is consistent, and it is
-  documented as "degraded, not broken". It is a product choice, not a test
-  defect, so it is recorded here rather than changed.
+- **The owner's decision (2026-09-27): yes.** Identical text of the same kind
+  now collapses to the existing memory whenever dedup is on, with or without
+  vectors and on both backends. The SQLite store is given the configured
+  threshold for this. See `test/memory/test_exact_dedup.py`.
 
 **Claim.** `retrieval/test_find_duplicate_row_shape.py`
 `::TheRealWritePath::test_identical_text_is_deduplicated` is **flaky against the

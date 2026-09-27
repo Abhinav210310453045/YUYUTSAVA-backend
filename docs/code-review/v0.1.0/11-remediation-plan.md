@@ -805,9 +805,9 @@ the count, so it stops here.
   - A traceback regression from the W5 sweep: script timeouts.
   - 11 documentation links broken by the W3 and W4 moves, which the CI link
     check would have failed.
-- **Carried, for the owner.** Should identical memory text collapse when no
-  embedding exists (`R-TST-14`)? And CLI-set preferences from before
-  `R-BUG-21` are still in `state.db` and are not migrated.
+- **Owner's decisions.** Identical memory text now collapses without
+  embeddings too (the owner said yes, 2026-09-27). CLI-set preferences from
+  before `R-BUG-21` stay in `state.db` and are not migrated.
 
 ### Closing out the standing failures
 
