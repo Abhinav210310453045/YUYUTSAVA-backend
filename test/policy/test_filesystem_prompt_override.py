@@ -21,11 +21,7 @@ import asyncio
 import itertools
 import os
 from typing import Any
-
-from test.support.stores import fake_board, scratch_visual_store
-
-os.environ.setdefault("LLM_PROVIDER", "anthropic")
-os.environ.setdefault("ANTHROPIC_API_KEY", "sk-fake-key-for-test")
+from unittest import mock
 
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.messages import AIMessage
@@ -34,6 +30,7 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 import yuyutsava.core.engine as engine
 import yuyutsava.llm.factory as llm_factory
 from test.support.paths import REPO
+from test.support.stores import fake_board, scratch_visual_store
 from yuyutsava.agents.general_purpose.agent import GeneralPurposeAgent
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
 from yuyutsava.config.execution import LocalSettings
@@ -43,6 +40,10 @@ from yuyutsava.llm.settings import AnthropicSettings
 from yuyutsava.skills.registry import SkillRegistry
 
 
+# Only while building: set at import, it leaked into every later test.
+@mock.patch.dict(
+    os.environ, {"LLM_PROVIDER": "anthropic", "ANTHROPIC_API_KEY": "sk-fake-key-for-test"}
+)
 def _render_prompt() -> dict[str, Any]:
     """Build the CLI deepagent with a capturing fake model and return what it sent."""
     captured: dict[str, Any] = {}

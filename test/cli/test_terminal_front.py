@@ -25,25 +25,40 @@ import copy
 import io
 import json
 import os
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
-os.environ["YUYUTSAVA_BLOBS_DIR"] = tempfile.mkdtemp(prefix="artifact-view-")
-
-from yuyutsava.agents.prompts import (  # noqa: E402
+from yuyutsava.agents.prompts import (
     docker_system_prompt,
     front_block,
     local_system_prompt,
 )
-from yuyutsava.artifacts import store  # noqa: E402
-from yuyutsava.cli.render import artifact_view as av  # noqa: E402
-from yuyutsava.cli.render.console import make_console  # noqa: E402
-from yuyutsava.cli.render.plain import ChatRenderer  # noqa: E402
-from yuyutsava.cli.render.renderer import RichChatRenderer  # noqa: E402
-from yuyutsava.core.streaming import StreamEvent  # noqa: E402
-from yuyutsava.storage.paths import WorkspaceLayout  # noqa: E402
+from yuyutsava.artifacts import store
+from yuyutsava.cli.render import artifact_view as av
+from yuyutsava.cli.render.console import make_console
+from yuyutsava.cli.render.plain import ChatRenderer
+from yuyutsava.cli.render.renderer import RichChatRenderer
+from yuyutsava.core.streaming import StreamEvent
+from yuyutsava.storage.paths import WorkspaceLayout
+
+# A scratch blob store for this module's artifacts, set up and torn down
+# around it. Set at import time, it leaked into every test collected after
+# this file — the artifacts store then listed this module's records.
+_BLOBS = mock.patch.dict(os.environ, {"YUYUTSAVA_BLOBS_DIR": ""})
+
+
+def setUpModule() -> None:
+    _BLOBS.values["YUYUTSAVA_BLOBS_DIR"] = tempfile.mkdtemp(prefix="artifact-view-")
+    _BLOBS.start()
+
+
+def tearDownModule() -> None:
+    _BLOBS.stop()
+    shutil.rmtree(_BLOBS.values["YUYUTSAVA_BLOBS_DIR"], ignore_errors=True)
+
 
 TERMINAL_MARK = "THIS CONVERSATION IS A TERMINAL"
 

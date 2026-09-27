@@ -34,7 +34,10 @@ from yuyutsava.artifacts.store import (
 class _ScratchHome(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
-        self._env = mock.patch.dict(os.environ, {"YUYUTSAVA_HOME": self._tmp.name})
+        # YUYUTSAVA_BLOBS_DIR overrides the home; cleared, the store is under it.
+        self._env = mock.patch.dict(
+            os.environ, {"YUYUTSAVA_HOME": self._tmp.name, "YUYUTSAVA_BLOBS_DIR": ""}
+        )
         self._env.start()
 
     def tearDown(self) -> None:

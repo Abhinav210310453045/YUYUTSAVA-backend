@@ -42,9 +42,6 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-os.environ.setdefault("LLM_PROVIDER", "anthropic")
-os.environ.setdefault("ANTHROPIC_API_KEY", "sk-fake-key-for-fingerprint")
-
 REPO = Path(__file__).resolve().parents[2]
 
 
@@ -91,6 +88,14 @@ _PINNED_HOST = {
 }
 
 
+#: A provider the builders accept, set only while a capture runs — set at
+#: import, it leaked into every test collected after this module.
+_FAKE_PROVIDER_ENV = {
+    "LLM_PROVIDER": "anthropic",
+    "ANTHROPIC_API_KEY": "sk-fake-key-for-fingerprint",
+}
+
+
 @contextlib.contextmanager
 def _hermetic():
     """Capture on a pinned host with an empty state dir.
@@ -112,7 +117,7 @@ def _hermetic():
     bound = [m for m in list(sys.modules.values()) if getattr(m, "host_profile", None) is real]
     with (
         tempfile.TemporaryDirectory() as home,
-        mock.patch.dict(os.environ, {"YUYUTSAVA_HOME": home}),
+        mock.patch.dict(os.environ, {"YUYUTSAVA_HOME": home, **_FAKE_PROVIDER_ENV}),
     ):
         for module in bound:
             module.host_profile = fake
