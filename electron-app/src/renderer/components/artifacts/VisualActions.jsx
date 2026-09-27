@@ -173,13 +173,18 @@ export default function VisualActions({ visual, onDeleted, dark = false }) {
     fontSize: 10,
     lineHeight: 1,
     background: dark ? 'rgba(255,255,255,0.10)' : 'var(--glass-bg)',
-    border: '1px solid var(--glass-border)',
+    // Longhands, not the `border` shorthand: the accent below overrides only
+    // the colour, and React cannot remove a longhand cleanly from a shorthand.
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: 'var(--glass-border)',
     color: 'var(--text-secondary)',
     backdropFilter: 'blur(8px)',
     WebkitBackdropFilter: 'blur(8px)',
     transition: 'background 0.15s, color 0.15s, border-color 0.15s',
   }
-  const accent = (c) => ({ color: c, borderColor: `${c}66` })
+  // `${c}66` appended an alpha to a CSS variable — invalid, so it never applied.
+  const accent = (c) => ({ color: c, borderColor: `color-mix(in srgb, ${c} 40%, transparent)` })
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} onClick={stop}>
