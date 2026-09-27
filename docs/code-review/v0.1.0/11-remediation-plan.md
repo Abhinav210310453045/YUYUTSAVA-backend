@@ -52,7 +52,7 @@ W0 safety net ─► W1 guardrails ─► W2 __init__ + imports ─► W3 layeri
 | W3 | Layering and placement | Done — see the outcome under W3 |
 | W4 | Readability, SOLID, DRY | Closed — see the terms under W4 |
 | W5 | Errors, logging, state, defects | Done — see the outcome under W5 |
-| W6 | Tests and scripts | Planned |
+| W6 | Tests and scripts | Done — see the outcome under W6 |
 | W7 | Electron app | Planned |
 | W8 | Close-out | Planned |
 
@@ -762,6 +762,52 @@ the count, so it stops here.
 - **Tests use the public API.** (`R-TST-04`)
 - **New tests** for units extracted in W3–W5, and contract tests for `platform/`. (`R-TST-06`)
 - **`scripts/README.md`.** (`R-SCR-01`)
+
+**Outcome — done** on `code-improvement`, 2026-09-27.
+
+- **The suite is green, and CI runs it.**
+  - The 11 standing failures are resolved. Each was examined as a possible
+    product bug first; all were test debt except the group W5 fixed at its
+    cause.
+  - The flaky dedup test turned out to depend on whether an embedding server
+    was running. It is now deterministic.
+  - New CI job `tests` on Python 3.11 and 3.12, from the lockfile: 2017
+    hermetic tests pass. New CI job `platform` on Ubuntu, macOS and Windows.
+  - Both jobs were reproduced locally from a clean worktree with no `.env`.
+    A misspelled marker and a failing test each turn the job red.
+- **Markers.** `pg`, `billable` and `slow`, with `--strict-markers`.
+  `requires_pg` applies the skip and the marker together.
+- **Hermetic.**
+  - The agent fingerprint no longer hashes the host's OS passport or its
+    author's own memories and skills.
+  - No test module changes the environment at import. An architecture test
+    guards this.
+  - `uv.lock` now carries the `dev` extra, which the frozen install needed.
+- **Layout.**
+  - The tree mirrors the package, and no test changes `sys.path`.
+  - Helpers live in `test/support/`: `paths`, `pg`, `ws`, `converse`,
+    `stores`, `fake_todo_store`, `agent_fingerprint`.
+  - Runnable scripts left the tree: `smoke_async.py` (billable, guarded) and
+    `async_subagents_e2e.py` (15/15).
+  - `test/README.md` and `scripts/README.md` describe the result.
+- **Public names only.** 21 private names imported by tests became public
+  where they were genuine units, with one stated allowance, behind a guard.
+  The rename was proved to be only renames.
+- **New coverage.** `platform/` (a contract on every OS), `prefs/`,
+  `websearch/`, `docker_sandbox/` and `artifacts/`. Every suite is
+  negative-controlled.
+- **Defects found and fixed along the way**, each with a live check:
+  - `R-BUG-13`, write side: embedding tracebacks on every store write.
+  - `R-BUG-20`: the preferences cap cut the wrong entries.
+  - `R-BUG-21`: preferences set in the CLI never reached the daemon on
+    Postgres. The standalone CLI injected none, and a CLI purge left pending
+    asks in Postgres.
+  - A traceback regression from the W5 sweep: script timeouts.
+  - 11 documentation links broken by the W3 and W4 moves, which the CI link
+    check would have failed.
+- **Carried, for the owner.** Should identical memory text collapse when no
+  embedding exists (`R-TST-14`)? And CLI-set preferences from before
+  `R-BUG-21` are still in `state.db` and are not migrated.
 
 ### Closing out the standing failures
 
