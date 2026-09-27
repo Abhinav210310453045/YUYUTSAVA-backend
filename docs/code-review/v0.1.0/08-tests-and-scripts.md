@@ -530,6 +530,25 @@ These are the parts every change should protect, and imitate:
 
 **Severity** P1 · **Wave** W4 · **Status** Fixed (`test/core/agent_fingerprint.py`)
 
+**Second half (W6, 2026-09-27).** W4 normalised the paths, but the snapshot
+still depended on the machine and on its owner. Found by running the suite as
+CI would, in a clean worktree with no `.env` and a scratch home:
+
+- The prompt embeds the **host passport**: package managers, temp dir, and an
+  OS-specific shell paragraph. A Linux runner could never match.
+- It also embeds the developer's **own `~/.yuyutsava` content**: agent memories
+  (`um_*`) in the CLI prompt, and 15 personal skills in the bare orchestrator
+  and tinker prompts, 3,404 characters of it.
+
+The fix: captures run under `_hermetic()`, a pinned `HostProfile` and an empty
+`YUYUTSAVA_HOME`.
+- The regenerated snapshot differs from the old one **only** in
+  `prompt_len`/`prompt_sha`. Middleware, tools, order and chains are
+  unchanged.
+- It is now identical in the developer environment and the CI-like one.
+- Negative control: an authored edit inside the pinned host block still turns
+  the gate red.
+
 **Evidence.** `test_matches_snapshot` fails on a clean checkout of `main`
 (`f4ec45c`) — before this branch exists — and fails differently again depending
 on where the repo is checked out:

@@ -36,8 +36,11 @@ import contextlib
 import dataclasses
 import hashlib
 import os
+import sys
+import tempfile
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 os.environ.setdefault("LLM_PROVIDER", "anthropic")
 os.environ.setdefault("ANTHROPIC_API_KEY", "sk-fake-key-for-fingerprint")
@@ -70,6 +73,54 @@ def _capture_deep_agent_kwargs(record: dict[str, Any]):
         yield
     finally:
         engine.create_deep_agent = original  # type: ignore[assignment]
+
+
+#: The host every fingerprint is taken on. The prompt carries the host's OS
+#: passport (``HostProfile.prompt_block``): package managers, temp dir, and a
+#: whole shell-dialect paragraph that differs by OS. Unpinned, the snapshot
+#: matched only on the machine that wrote it, and a Linux CI run would never
+#: have matched at all.
+_PINNED_HOST = {
+    "os_family": "macos",
+    "os_version": "15.0",
+    "arch": "arm64",
+    "shell_kind": "bash",
+    "package_managers": ("brew",),
+    "service_manager": "launchd",
+    "temp_dir": "/tmp",
+}
+
+
+@contextlib.contextmanager
+def _hermetic():
+    """Capture on a pinned host with an empty state dir.
+
+    The CLI prompt also lists the user's agent memories (``um_*``, read from the
+    state dir), so the snapshot used to hash the developer's own ``~/.yuyutsava``.
+    ``host_profile`` is imported by name into many modules, so every binding of
+    it is swapped — including the defining module's, for modules first imported
+    during the capture.
+    """
+    from yuyutsava.platform import hostprofile
+
+    real = hostprofile.host_profile
+    pinned = dataclasses.replace(real(), **_PINNED_HOST)
+
+    def fake():
+        return pinned
+
+    bound = [m for m in list(sys.modules.values()) if getattr(m, "host_profile", None) is real]
+    with (
+        tempfile.TemporaryDirectory() as home,
+        mock.patch.dict(os.environ, {"YUYUTSAVA_HOME": home}),
+    ):
+        for module in bound:
+            module.host_profile = fake
+        try:
+            yield
+        finally:
+            for module in bound:
+                module.host_profile = real
 
 
 @contextlib.contextmanager
@@ -503,7 +554,7 @@ def capture_cli(
         visual_store=visuals,
     )
     kwargs: dict[str, Any] = {}
-    with _fake_chat_model(), _capture_deep_agent_kwargs(kwargs):
+    with _hermetic(), _fake_chat_model(), _capture_deep_agent_kwargs(kwargs):
         bundle = engine.build_cli_deepagent(
             ws,
             AnthropicSettings(api_key="sk-fake", model="claude-haiku-4-5-20251001"),
@@ -531,7 +582,7 @@ def fingerprint_tinker(**overrides: Any) -> dict[str, Any]:
         visual_store=_visuals(),
     )
     kwargs: dict[str, Any] = {}
-    with _fake_chat_model(), _capture_deep_agent_kwargs(kwargs):
+    with _hermetic(), _fake_chat_model(), _capture_deep_agent_kwargs(kwargs):
         engine.build_tinker_agent(
             "card_fingerprint",
             card_ws,
@@ -609,7 +660,7 @@ def fingerprint_orchestrator(**overrides: Any) -> dict[str, Any]:
         **overrides,
     )
     kwargs: dict[str, Any] = {}
-    with _fake_chat_model(), _capture_deep_agent_kwargs(kwargs):
+    with _hermetic(), _fake_chat_model(), _capture_deep_agent_kwargs(kwargs):
         from yuyutsava.skills.registry import SkillRegistry
 
         engine.build_orchestrator(

@@ -78,8 +78,8 @@
       "VoiceStylePolicy",
       "YuyutsavaCompactionMiddleware"
     ],
-    "prompt_len": 17060,
-    "prompt_sha": "ae77f6c634782616",
+    "prompt_len": 16248,
+    "prompt_sha": "bbfcbce43bc4082e",
     "subagents": [
       {
         "kind": "async",
@@ -222,8 +222,8 @@
       "ToolFilterPolicy",
       "VoiceStylePolicy"
     ],
-    "prompt_len": 16355,
-    "prompt_sha": "7ad154ac0b41b620",
+    "prompt_len": 15543,
+    "prompt_sha": "58b43d5a303357b0",
     "subagents": [
       {
         "kind": "sync",
@@ -370,8 +370,8 @@
       "VoiceStylePolicy",
       "YuyutsavaCompactionMiddleware"
     ],
-    "prompt_len": 17060,
-    "prompt_sha": "ae77f6c634782616",
+    "prompt_len": 16248,
+    "prompt_sha": "bbfcbce43bc4082e",
     "subagents": [
       {
         "kind": "sync",
@@ -538,8 +538,8 @@
       "VoiceStylePolicy",
       "YuyutsavaCompactionMiddleware"
     ],
-    "prompt_len": 9674,
-    "prompt_sha": "5968b843e1095f79",
+    "prompt_len": 9630,
+    "prompt_sha": "f6d59977a5c7355e",
     "subagents": [
       {
         "kind": "async",
@@ -623,8 +623,8 @@
       "ToolFilterPolicy",
       "VoiceStylePolicy"
     ],
-    "prompt_len": 14321,
-    "prompt_sha": "756ddae96ba0b8bd",
+    "prompt_len": 10917,
+    "prompt_sha": "035bac4f641aa963",
     "subagents": [],
     "tools": [
       "artifact_create",
@@ -711,8 +711,8 @@
       "VoiceStylePolicy",
       "YuyutsavaCompactionMiddleware"
     ],
-    "prompt_len": 9419,
-    "prompt_sha": "2f4820e40d2cde57",
+    "prompt_len": 9375,
+    "prompt_sha": "5c07a0712b1888a9",
     "subagents": [],
     "tools": [
       "artifact_create",
@@ -821,8 +821,8 @@
       "VoiceStylePolicy",
       "YuyutsavaCompactionMiddleware"
     ],
-    "prompt_len": 22112,
-    "prompt_sha": "2f642b6879ea6e61",
+    "prompt_len": 22068,
+    "prompt_sha": "90f77e758165f7b9",
     "subagents": [
       {
         "kind": "async",
@@ -938,8 +938,8 @@
       "ToolFilterPolicy",
       "VoiceStylePolicy"
     ],
-    "prompt_len": 26708,
-    "prompt_sha": "15e2646710aab8d4",
+    "prompt_len": 23304,
+    "prompt_sha": "2e69369818a9b14b",
     "subagents": [],
     "tools": [
       "artifact_create",
@@ -1058,8 +1058,8 @@
       "VoiceStylePolicy",
       "YuyutsavaCompactionMiddleware"
     ],
-    "prompt_len": 22112,
-    "prompt_sha": "2f642b6879ea6e61",
+    "prompt_len": 22068,
+    "prompt_sha": "90f77e758165f7b9",
     "subagents": [],
     "tools": [
       "artifact_create",
