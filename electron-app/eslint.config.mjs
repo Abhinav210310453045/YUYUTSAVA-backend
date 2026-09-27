@@ -4,6 +4,12 @@ import js from '@eslint/js'
 import react from 'eslint-plugin-react'
 import reactHooks from 'eslint-plugin-react-hooks'
 import globals from 'globals'
+import { readFileSync } from 'node:fs'
+
+// Files over the size limit today, exempted one by one. The list only shrinks:
+// scripts/check-max-lines-allowlist.js fails when a listed file no longer needs
+// its exemption (R-UI-03).
+const maxLines = JSON.parse(readFileSync(new URL('./max-lines-allowlist.json', import.meta.url)))
 
 // Rules shared by every JavaScript file in the app.
 const shared = {
@@ -16,11 +22,19 @@ const shared = {
   // Empty blocks are silent failures. Ratcheted as warnings (see `npm run lint`)
   // until each is given a reason or real handling (R-UI-01, W7).
   'no-empty': 'warn',
+  // A file does one thing: over the limit, split it by responsibility.
+  'max-lines': ['error', { max: maxLines.max }],
 }
 
 export default [
   {
-    ignores: ['dist/**', 'release/**', 'node_modules/**', 'conversation_history/**', 'large_tool_results/**'],
+    ignores: [
+      'dist/**',
+      'release/**',
+      'node_modules/**',
+      'conversation_history/**',
+      'large_tool_results/**',
+    ],
   },
 
   // Renderer: ES modules, JSX, running in the browser context.
@@ -56,6 +70,10 @@ export default [
     },
     rules: shared,
   },
+
+  // Tests may run long; the size limit is for the code under test.
+  { files: ['**/*.test.{js,jsx}'], rules: { 'max-lines': 'off' } },
+  { files: maxLines.files, rules: { 'max-lines': 'off' } },
 
   // Vite config: an ES module evaluated by Node.
   {

@@ -15,7 +15,7 @@
     "build": "vite build",
     "dist": "vite build && electron-builder",
     "electron": "node scripts/launch-electron.js",
-    "lint": "eslint . --max-warnings 33",
+    "lint": "eslint . --max-warnings 29 && node scripts/check-max-lines-allowlist.js",
     "format": "prettier --write \"src/**/*.{js,jsx,css}\" \"scripts/**/*.js\" \"*.config.js\"",
     "format:check": "prettier --check \"src/**/*.{js,jsx,css}\" \"scripts/**/*.js\" \"*.config.js\"",
     "test": "vitest run"
