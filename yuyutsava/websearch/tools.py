@@ -21,11 +21,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any, Protocol
+from typing import Any
 
 from langchain_core.tools import BaseTool, StructuredTool, tool
 
 from yuyutsava.config.search import SearchConfig
+from yuyutsava.ports.policy import CapEnforcer
 
 logger = logging.getLogger("yuyutsava.websearch.tools")
 
@@ -42,14 +43,6 @@ class ExaSearchError(SearchError):
     """The Exa API call failed or is misconfigured."""
 
 
-class _CapEnforcer(Protocol):
-    """Anything that can decide whether a tool may be called and record it."""
-
-    async def check_and_incr(self, tool_name: str) -> tuple[bool, str]:
-        """Return ``(allowed, reason)``. ``reason`` empty when ``allowed=True``."""
-        ...
-
-
 # ---------------------------------------------------------------------------
 # Public factory
 # ---------------------------------------------------------------------------
@@ -58,7 +51,7 @@ class _CapEnforcer(Protocol):
 def make_search_tools(
     config: SearchConfig,
     *,
-    cap_enforcer: _CapEnforcer | None = None,
+    cap_enforcer: CapEnforcer | None = None,
 ) -> list[BaseTool]:
     """Build ws_* tools for every provider that has a configured API key.
 
@@ -89,7 +82,7 @@ def make_search_tools(
     return tools
 
 
-def _wrap_with_cap(inner: BaseTool, cap: _CapEnforcer) -> BaseTool:
+def _wrap_with_cap(inner: BaseTool, cap: CapEnforcer) -> BaseTool:
     """Wrap a BaseTool so its invocation is gated by *cap*.
 
     Preserves the original name, description, and args_schema so the LLM sees

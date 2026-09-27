@@ -63,6 +63,15 @@ _SCORE_KEYS = ("score", "relevance", "rank", "similarity")
 _ANSWER_KEYS = ("answer", "summary", "response", "overview")
 
 
+def is_offloaded_digest(content: Any) -> bool:
+    """Whether *content* is a digest this module wrote in place of a tool result.
+
+    Relies on ``"offloaded": true`` being the envelope's first key, which
+    :func:`_base_envelope` guarantees and ``json.dumps`` preserves.
+    """
+    return isinstance(content, str) and content.lstrip().startswith('{"offloaded": true')
+
+
 def _base_envelope(tool_name: str, artifact_id: str, content: str) -> dict:
     return {
         "offloaded": True,

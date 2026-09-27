@@ -9,13 +9,13 @@ from typing import Any, Protocol, runtime_checkable
 class CapEnforcer(Protocol):
     """Daily per-tool rate cap for the ``ws_*`` searches.
 
-    Previously ``cap_enforcer: object | None`` on both ``OrchestratorDeps`` and
-    ``BaseSubAgent``, annotated ``# websearch.tools._CapEnforcer; untyped to avoid
-    cycle`` — ``tools`` imports ``core``, and ``core`` builds the agents that
-    carry this.
+    Declared here so the agents that carry it and the search tools that call it
+    need not import each other.
     """
 
-    async def check_and_incr(self, tool_name: str) -> bool: ...
+    async def check_and_incr(self, tool_name: str) -> tuple[bool, str]:
+        """Count one call; ``(allowed, reason)``, with ``reason`` empty when allowed."""
+        ...
 
 
 __all__ = ["CapEnforcer", "RuntimeToggles"]

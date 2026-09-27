@@ -34,6 +34,7 @@ import time
 from typing import Any
 
 from yuyutsava.config.env import env_flag
+from yuyutsava.context.digests import is_offloaded_digest
 from yuyutsava.context.tokens import approx_tokens
 from yuyutsava.policy.base import Policy
 from yuyutsava.policy.types import Directive, Turn
@@ -52,10 +53,6 @@ def _msg_size(content: Any) -> int:
         return len(json.dumps(content))
     except (TypeError, ValueError):
         return len(str(content))
-
-
-def _is_offloaded_digest(content: Any) -> bool:
-    return isinstance(content, str) and content.lstrip().startswith('{"offloaded": true')
 
 
 class PromptInspectorPolicy(Policy):
@@ -86,7 +83,7 @@ class PromptInspectorPolicy(Policy):
             size = _msg_size(content)
             total += size
             tag = ""
-            if _is_offloaded_digest(content):
+            if is_offloaded_digest(content):
                 offloaded += 1
                 tag = " [OFFLOADED DIGEST]"
             label = f"{mtype}" + (f":{name}" if name else "")

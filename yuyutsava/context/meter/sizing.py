@@ -208,14 +208,9 @@ def injected_block_chars(thread_id: str) -> dict[str, int]:
     return last_block_chars(thread_id)
 
 
-def is_offloaded_digest(content: Any) -> bool:
-    return isinstance(content, str) and content.lstrip().startswith('{"offloaded": true')
-
-
 __all__ = [
     "catalog_chars",
     "injected_block_chars",
-    "is_offloaded_digest",
     "markers",
     "note_bound_tools",
     "note_tool_registry",

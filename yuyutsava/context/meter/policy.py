@@ -19,6 +19,7 @@ import time
 from dataclasses import replace
 from typing import Any
 
+from yuyutsava.context.digests import is_offloaded_digest
 from yuyutsava.context.meter.bus import bus, counters
 from yuyutsava.context.meter.calibration import (
     FACTOR_MAX,
@@ -35,7 +36,6 @@ from yuyutsava.context.meter.calibration import (
 from yuyutsava.context.meter.sizing import (
     catalog_chars,
     injected_block_chars,
-    is_offloaded_digest,
     markers,
     split_system_chars,
     tool_schema_chars,
