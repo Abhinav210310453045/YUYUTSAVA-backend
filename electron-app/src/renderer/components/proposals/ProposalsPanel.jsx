@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react'
 import ProposalCard from './ProposalCard'
 import AskCard from '../asks/AskCard'
-import { useAsks } from '../../hooks/useAsks.jsx'
+import { useAsks } from '../../hooks/useAsks.js'
 import { useAskRouting } from '../../hooks/useAskRouting'
 import { useNotifications } from '../../hooks/useNotifications.jsx'
 

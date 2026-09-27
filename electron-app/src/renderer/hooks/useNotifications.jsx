@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { useSSE } from './useSSE.jsx'
-import { useAsks } from './useAsks.jsx'
+import { useAsks } from './useAsks.js'
 import { useAskRouting } from './useAskRouting'
 import { useFocus } from './useFocus'
 

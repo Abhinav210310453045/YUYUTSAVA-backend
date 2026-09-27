@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react'
 import AskCard from './AskCard'
-import { useStandaloneAsks } from '../../hooks/useAsks.jsx'
+import { useStandaloneAsks } from '../../hooks/useAsks.js'
 import { setAskShowing } from './overlayState'
 
 // The surface that reaches you when you are not in YUYUTSAVA at all.

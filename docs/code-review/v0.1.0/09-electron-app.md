@@ -89,7 +89,7 @@ most 300 lines per file (STD-UI-2).
 
 ## R-UI-04 — A dead component with a live component's name
 
-**Severity** P2 · **Wave** W7 · **Status** Open
+**Severity** P2 · **Wave** W7 · **Status** **Fixed** (W7, 2026-09-27). Deleted; `asks/AskCard.jsx` is the only ask card.
 
 **Evidence.** `components/proposals/AskCard.jsx` (214 lines) has zero importers.
 All four importers — `AskOverlay.jsx:2`, `ChatPanel.jsx:19`, `VoicePanel.jsx:9`,
@@ -159,7 +159,7 @@ daemon address through the existing preload bridge (STD-UI-6).
 
 ## R-UI-08 — Hook files with the wrong extension
 
-**Severity** P2 · **Wave** W7 · **Status** Open
+**Severity** P2 · **Wave** W7 · **Status** **Fixed** (W7, 2026-09-27). `hooks/useAsks.js`; its three importers follow (one relative, from `useNotifications.jsx`, found by the build). The other `.jsx` hooks render JSX.
 
 **Evidence.** `src/renderer/hooks/useAsks.jsx` contains no JSX, while its
 siblings mix `.js` (`useConverse.js`) and `.jsx`.
