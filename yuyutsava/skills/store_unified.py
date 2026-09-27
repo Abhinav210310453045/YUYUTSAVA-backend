@@ -47,8 +47,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from yuyutsava.retrieval.hit import Hit
 from yuyutsava.retrieval.keyword import keyword_tokens
 from yuyutsava.retrieval.pg import PgVectorSearch, PgVectorTable
-from yuyutsava.retrieval.query import query_vector
-from yuyutsava.retrieval.vector import vector_literal
+from yuyutsava.retrieval.query import document_vectors, query_vector
 from yuyutsava.skills.store import SkillStore
 from yuyutsava.storage.base import BaseSqliteStore
 from yuyutsava.storage.dialect import Dialect, PostgresDialect, SqliteDialect
@@ -150,18 +149,11 @@ class UnifiedSkillStore(SkillStore):
         now = time.time()
         embedding: str | None = None
         if self._embedder is not None:
-            try:
-                embedding = vector_literal(
-                    await self._embedder.embed_one(meta.description, mode="document")
-                )
-            except Exception:
-                # Indexing without a vector is degraded, not broken: the row is
-                # still found by keyword, and backfill_embeddings repairs it.
-                logger.warning(
-                    "skills: embedding failed — indexing %r without vector",
-                    meta.name,
-                    exc_info=True,
-                )
+            # Without a vector the row is degraded, not broken: still found by
+            # keyword, and backfill_embeddings repairs it.
+            (embedding,) = await document_vectors(
+                self._embedder, [meta.description], what=f"skills {meta.name!r}", log=logger
+            )
 
         cols = ["name", "scope", "agent", "description", "body"]
         vals = [f"{d.ph(5)}"]

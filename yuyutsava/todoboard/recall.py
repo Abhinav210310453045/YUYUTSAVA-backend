@@ -34,8 +34,7 @@ from yuyutsava.retrieval.chunking import chunk_text
 from yuyutsava.retrieval.hit import Hit
 from yuyutsava.retrieval.injector import RetrievalInjector
 from yuyutsava.retrieval.pg import PgVectorSearch, PgVectorTable
-from yuyutsava.retrieval.query import query_vector
-from yuyutsava.retrieval.vector import vector_literal
+from yuyutsava.retrieval.query import document_vectors, query_vector
 from yuyutsava.todoboard.models import TodoNoteV1
 
 logger = logging.getLogger("yuyutsava.todoboard.recall")
@@ -115,16 +114,12 @@ class TodoNoteIndex:
             chunks = list(chunk_text(note.body, target_chars=self._chunk_chars))
             if not chunks:
                 return 0
-            try:
-                embedded = await self._embedder.embed([c.text for c in chunks], mode="document")
-                vectors: list[str | None] = [vector_literal(v) for v in embedded]
-            except Exception:
-                logger.warning(
-                    "todo recall: embedding failed for %s — storing NULL rows",
-                    note.note_id,
-                    exc_info=True,
-                )
-                vectors = [None] * len(chunks)
+            vectors = await document_vectors(
+                self._embedder,
+                [c.text for c in chunks],
+                what=f"todo recall {note.note_id}",
+                log=logger,
+            )
 
             async with self._pool.connection() as conn:
                 for chunk, vec in zip(chunks, vectors):
