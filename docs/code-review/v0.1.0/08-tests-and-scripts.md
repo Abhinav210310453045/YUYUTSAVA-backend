@@ -225,7 +225,18 @@ loudly the moment the injection point moved.
 
 ## R-TST-09 — A test broken by a signature change, unnoticed
 
-**Severity** P2 · **Wave** W6 · **Status** Open (found during W2)
+**Severity** P2 · **Wave** W6 · **Status** **Fixed** (W6, 2026-09-27)
+- The tests pass `workspace` and `board`, the second of which was added when W5
+  moved the note index onto the board. They assert that the board's own index
+  is returned and boot-synced, and that a failing sync is logged, not fatal.
+- A workspace skill is found by the scan.
+- Isolation: a scratch `YUYUTSAVA_HOME` replaces `YUYUTSAVA_STATE_DIR`, which
+  nothing reads, so the SQLite skill index could have written to the real home.
+  An in-memory board replaces the real one.
+- 6/6 pass on the probe database. Three negative controls in `build_retrieval`
+  each turn the matching tests red: dropping the workspace, skipping the sync,
+  and returning no index.
+- Verdict: **test debt**. The builder was correct.
 
 **Claim.** `test/daemon/test_build_retrieval.py` calls `build_retrieval()` without
 the keyword-only `workspace` argument the function now requires, so both of its
