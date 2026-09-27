@@ -8,6 +8,7 @@
 
 const { BrowserWindow, screen } = require('electron')
 const path = require('path')
+const { DEV_SERVER_URL } = require('./config')
 
 const isDev = process.env.NODE_ENV === 'development' || !require('electron').app.isPackaged
 
@@ -72,7 +73,7 @@ function create() {
   overlayWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
 
   if (isDev) {
-    overlayWin.loadURL('http://localhost:5173/overlay.html')
+    overlayWin.loadURL(`${DEV_SERVER_URL}/overlay.html`)
   } else {
     overlayWin.loadFile(path.join(__dirname, '../../dist/renderer/overlay.html'))
   }

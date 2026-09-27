@@ -5,6 +5,7 @@ const fs = require('fs')
 const os = require('os')
 const path = require('path')
 const { readSettings } = require('./settings')
+const { DEFAULT_DAEMON_PORT, daemonUrl } = require('./config')
 
 let _proc = null
 let _logCallback = null
@@ -20,7 +21,7 @@ function isRestarting() {
 
 function getPort() {
   const s = readSettings()
-  return parseInt(s['YUYUTSAVA_DAEMON_PORT'] || '7654', 10)
+  return parseInt(s['YUYUTSAVA_DAEMON_PORT'] || String(DEFAULT_DAEMON_PORT), 10)
 }
 
 function isManaged() {
@@ -305,7 +306,7 @@ async function restart(workspacePath) {
 
 function ping(port) {
   return new Promise((resolve) => {
-    const req = http.get(`http://127.0.0.1:${port}/health`, (res) => {
+    const req = http.get(daemonUrl(port, '/health'), (res) => {
       resolve(res.statusCode === 200)
     })
     req.on('error', () => resolve(false))

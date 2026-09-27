@@ -4,6 +4,7 @@ const fs = require('fs')
 const settings = require('./settings')
 const daemon = require('./daemon')
 const tray = require('./tray')
+const { DAEMON_HOST } = require('./config')
 const notifications = require('./notifications')
 
 function _daemonRequest(method, path, body) {
@@ -12,7 +13,7 @@ function _daemonRequest(method, path, body) {
     const data = body ? Buffer.from(JSON.stringify(body)) : null
     const req = http.request(
       {
-        host: '127.0.0.1',
+        host: DAEMON_HOST,
         port,
         path,
         method,

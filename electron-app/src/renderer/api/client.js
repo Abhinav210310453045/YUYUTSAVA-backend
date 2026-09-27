@@ -1,3 +1,5 @@
+// Replaced by initBase() with the port the main process reports (preload bridge);
+// this default mirrors DEFAULT_DAEMON_PORT in src/main/config.js.
 let _base = 'http://127.0.0.1:7654'
 
 export async function initBase() {

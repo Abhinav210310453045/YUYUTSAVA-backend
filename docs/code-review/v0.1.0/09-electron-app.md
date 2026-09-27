@@ -144,7 +144,7 @@ first). Inline styles only for values computed at render time (STD-UI-4).
 
 ## R-UI-07 — Configuration literals scattered
 
-**Severity** P2 · **Wave** W7 · **Status** Open
+**Severity** P2 · **Wave** W7 · **Status** **Fixed** (W7, 2026-09-27). `src/main/config.js` holds the dev-server URL, the daemon host, the default port and `daemonUrl()`. `index.js`, `overlay.js`, `daemon.js` and `ipc-handlers.js` use it, and the renderer's one fallback says what it mirrors. `test/config/test_default_daemon_port.py` holds the JavaScript default equal to `config/network.py`, and is negative-controlled.
 
 **Evidence.**
 - The dev-server URL `http://localhost:5173` appears in `src/main/index.js:48` and

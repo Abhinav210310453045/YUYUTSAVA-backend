@@ -7,6 +7,7 @@ const tray = require('./tray')
 const ipcHandlers = require('./ipc-handlers')
 const overlay = require('./overlay')
 const settings = require('./settings')
+const { DEV_SERVER_URL } = require('./config')
 
 // Global hotkey that summons the voice UI. Overridable via VOICE_HOTKEY in the
 // daemon .env (Electron settings); falls back to a sensible default.
@@ -45,7 +46,7 @@ function createWindow() {
   })
 
   if (isDev) {
-    win.loadURL('http://localhost:5173')
+    win.loadURL(DEV_SERVER_URL)
     win.webContents.openDevTools({ mode: 'detach' })
   } else {
     win.loadFile(path.join(__dirname, '../../dist/renderer/index.html'))
