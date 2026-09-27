@@ -6,7 +6,7 @@ used to be assigned to an attribute nothing read, so each test quietly posted to
 the real embedding endpoint (R-TST-08). The settings point at a closed port, so
 a request that escaped the fake would fail rather than find a local server.
 
-Run:  uv run python -m unittest test.memory.test_embedder -v
+Run:  .venv/bin/python -m pytest test/memory/test_embedder.py
 """
 
 from __future__ import annotations

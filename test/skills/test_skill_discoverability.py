@@ -12,7 +12,7 @@ column name is worse than no skill, so the WhatsApp entry must keep the two
 gotchas that session actually proved: status/channel sessions are not chats,
 and pinned chats carry a sentinel date.
 
-Run:  .venv/bin/python test/skills/test_skill_discoverability.py
+Run:  .venv/bin/python -m pytest test/skills/test_skill_discoverability.py
 """
 
 from __future__ import annotations

@@ -1,6 +1,6 @@
 """ChannelPluginRegistry lifecycle: enable/disable/reload, idempotence.
 
-Run:  uv run python -m unittest test.channels.test_registry -v
+Run:  .venv/bin/python -m pytest test/channels/test_registry.py
 """
 
 from __future__ import annotations

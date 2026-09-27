@@ -22,7 +22,7 @@ No API calls: constructing a chat model only builds a client object. Bedrock is
 the one provider that cannot be constructed without live AWS credentials, so it
 is asserted structurally rather than by building it.
 
-Run:  .venv/bin/python test/llm/test_model_handle.py
+Run:  .venv/bin/python -m pytest test/llm/test_model_handle.py
 """
 
 from __future__ import annotations

@@ -1,6 +1,6 @@
 """SqliteUsageStore + UsagePolicy (Phase 4 cost tracking).
 
-Run:  uv run python -m unittest test.daemon.test_usage -v
+Run:  .venv/bin/python -m pytest test/daemon/test_usage.py
 """
 
 from __future__ import annotations

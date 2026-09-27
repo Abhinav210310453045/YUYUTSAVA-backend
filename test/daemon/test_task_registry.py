@@ -1,6 +1,6 @@
 """Unit tests for the task registry (SQLite backend).
 
-Run:  uv run python -m unittest test.daemon.test_task_registry -v
+Run:  .venv/bin/python -m pytest test/daemon/test_task_registry.py
 """
 
 from __future__ import annotations

@@ -13,7 +13,7 @@ It deliberately does NOT call ``create_deep_agent``: the point is that the
 *assembly* is now shared and profile-driven. What remains per-builder — prompt
 rendering, workspace layout, the checkpointer — is genuinely role-specific.
 
-Run:  .venv/bin/python test/core/test_fourth_master_cost.py
+Run:  .venv/bin/python -m pytest test/core/test_fourth_master_cost.py
 """
 
 from __future__ import annotations

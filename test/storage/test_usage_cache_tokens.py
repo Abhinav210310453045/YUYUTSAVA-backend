@@ -17,7 +17,7 @@ the ledger. These pin the parts that are easy to get subtly wrong:
 Postgres coverage is skipped (not failed) when no server is reachable, matching
 test_usage_thread_grouping.py.
 
-Run:  .venv/bin/python test/storage/test_usage_cache_tokens.py
+Run:  .venv/bin/python -m pytest test/storage/test_usage_cache_tokens.py
 """
 
 from __future__ import annotations

@@ -14,15 +14,15 @@ another. The SDK already carries the right code; this reads it.
 
 from __future__ import annotations
 
-import pathlib
 import re
 import unittest
 
 from google.api_core import exceptions as g
 
+from test.support.paths import PACKAGE
 from yuyutsava.llm.quirks.first_chunk_retry import _is_transient, classify_provider_busy
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent / "yuyutsava"
+ROOT = PACKAGE
 
 
 class _GrpcStatus:

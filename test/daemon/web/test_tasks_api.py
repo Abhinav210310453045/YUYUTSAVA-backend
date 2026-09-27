@@ -1,6 +1,6 @@
 """Tasks endpoints: submit (direct/triage), list, detail, cancel, replay.
 
-Run:  uv run python -m unittest test.web.test_tasks_api -v
+Run:  .venv/bin/python -m pytest test/daemon/web/test_tasks_api.py
 """
 
 from __future__ import annotations

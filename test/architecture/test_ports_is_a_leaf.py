@@ -10,7 +10,7 @@ again.
 ADR-003 says explicitly that without a CI guard this decays within two quarters,
 because the pressure that created the cycles is still there. This is that guard.
 
-Run:  .venv/bin/python test/test_ports_is_a_leaf.py
+Run:  .venv/bin/python -m pytest test/architecture/test_ports_is_a_leaf.py
 """
 
 from __future__ import annotations
@@ -19,7 +19,9 @@ import ast
 import unittest
 from pathlib import Path
 
-PORTS = Path(__file__).resolve().parent.parent / "yuyutsava" / "ports"
+from test.support.paths import PACKAGE
+
+PORTS = PACKAGE / "ports"
 
 
 def _internal_imports(path: Path) -> list[tuple[int, str]]:
@@ -145,9 +147,8 @@ class OrchestratorDepsIsFullyTyped(unittest.TestCase):
 
     def _fields(self):
         import ast
-        import pathlib as _p
 
-        root = _p.Path(__file__).resolve().parents[1] / "yuyutsava"
+        root = PACKAGE
         tree = ast.parse((root / "agents/orchestrator/agent.py").read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if isinstance(node, ast.ClassDef) and node.name == "OrchestratorDeps":

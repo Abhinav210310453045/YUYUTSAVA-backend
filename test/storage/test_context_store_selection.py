@@ -24,7 +24,7 @@ recall rather than fail — the exact shape of finding Y.
 * the transcript index needs **both** a pool and an embedder;
 * no stack assembler hand-rolls the branch again.
 
-Run:  .venv/bin/python test/storage/test_context_store_selection.py
+Run:  .venv/bin/python -m pytest test/storage/test_context_store_selection.py
 """
 
 from __future__ import annotations

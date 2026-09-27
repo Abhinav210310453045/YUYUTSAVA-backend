@@ -24,7 +24,7 @@ user approval.* A restart was a way around Tier-1 consent.
 So ``queued`` is not resumed. The cost of being wrong in that direction is a
 re-submission; the cost of the other direction is running something declined.
 
-Run:  .venv/bin/python test/daemon/test_resume_consent_boundary.py
+Run:  .venv/bin/python -m pytest test/daemon/test_resume_consent_boundary.py
 """
 
 from __future__ import annotations

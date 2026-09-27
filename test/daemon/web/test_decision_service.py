@@ -1,6 +1,6 @@
 """DecisionService unit tests + HTTP regression for the Phase-3 extraction.
 
-Run:  uv run python -m unittest test.web.test_decision_service -v
+Run:  .venv/bin/python -m pytest test/daemon/web/test_decision_service.py
 """
 
 from __future__ import annotations

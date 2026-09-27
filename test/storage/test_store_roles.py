@@ -16,7 +16,7 @@ legitimate construction-time aggregate, and the defect was in what consumers
 
 These tests keep it that way.
 
-Run:  .venv/bin/python test/storage/test_store_roles.py
+Run:  .venv/bin/python -m pytest test/storage/test_store_roles.py
 """
 
 from __future__ import annotations

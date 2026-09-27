@@ -1,6 +1,6 @@
 """Unit tests for the SQLite artifact store.
 
-Run:  uv run python -m unittest test.context.test_artifacts -v
+Run:  .venv/bin/python -m pytest test/context/test_artifacts.py
 """
 
 from __future__ import annotations

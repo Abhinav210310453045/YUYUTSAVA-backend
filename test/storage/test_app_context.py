@@ -11,7 +11,7 @@ feedback rows in Postgres (``R-BUG-19``). Now every caller supplies an
 ``AppContext``: the daemon from its own stores, a CLI command through
 ``open_app_context``.
 
-Run:  .venv/bin/python test/storage/test_app_context.py
+Run:  .venv/bin/python -m pytest test/storage/test_app_context.py
 """
 
 from __future__ import annotations

@@ -16,14 +16,12 @@ here — whether a purely reactive agent should learn is not a refactor's call.
 from __future__ import annotations
 
 import unittest
-from pathlib import Path
 
+from test.support.paths import REPO
 from yuyutsava.agents.event_driven import EventDrivenSubAgent
 from yuyutsava.agents.face_watcher.agent import FaceWatcherAgent
 from yuyutsava.agents.file_organizer.agent import FileOrganizerAgent
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
-
-REPO = Path(__file__).resolve().parent.parent
 
 
 def _runner() -> TaskRunnerAgent:

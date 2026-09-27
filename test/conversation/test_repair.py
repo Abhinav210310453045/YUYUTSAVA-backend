@@ -18,7 +18,7 @@ These pin the repair and the contract around it:
 * the empty-output warnings are `notice`, not `log`, because a `log` is
   droppable and this one was dropped four times.
 
-Run:  .venv/bin/python test/conversation/test_repair.py
+Run:  .venv/bin/python -m pytest test/conversation/test_repair.py
 """
 
 from __future__ import annotations

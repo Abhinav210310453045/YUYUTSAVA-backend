@@ -6,7 +6,7 @@ broadcast ``ask_resolved`` / ``proposal_resolved`` in its ``finally`` but
 ``CliRemoteChannel`` did not. Both now route through the shared ``WebHub``
 helpers, so this asserts both channels emit the resolution item.
 
-Run:  uv run python -m unittest test.web.test_channel_resolve_broadcast -v
+Run:  .venv/bin/python -m pytest test/daemon/web/test_channel_resolve_broadcast.py
 """
 
 from __future__ import annotations

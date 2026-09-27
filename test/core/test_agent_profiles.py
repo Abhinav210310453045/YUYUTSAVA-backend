@@ -17,7 +17,7 @@ Tool families need indirection handling: the CLI and tinker builders obtain
 ``_build_tool_registry_and_tools``, so a naive scan of their own bodies would
 miss them. The helper's source is folded in when a builder calls it.
 
-Run directly:  .venv/bin/python test/core/test_agent_profiles.py
+Run:  .venv/bin/python -m pytest test/core/test_agent_profiles.py
 """
 
 from __future__ import annotations

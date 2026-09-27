@@ -1,7 +1,6 @@
 """Unit tests for the async-subagents stack (no network, no LLM).
 
-Runnable as a script (``uv run python test/async_subagents/test_unit.py``)
-or via pytest. Exits non-zero on first failure.
+Run:  .venv/bin/python -m pytest test/async_subagents/test_unit.py
 """
 
 from __future__ import annotations

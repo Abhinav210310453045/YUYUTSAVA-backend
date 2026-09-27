@@ -1902,7 +1902,7 @@ corresponding section here so the map stays true to the territory.*
 | `test/core/test_agent_fingerprint.py` | middleware/tool/prompt structure across 9 configurations, per hook chain |
 | `test/core/test_agent_profiles.py` | the capability matrix; unreviewed divergences must stay 0 |
 | `test/daemon/test_bootstrap_no_unbound_names.py` | stranded and shadowed imports in `bootstrap.py` / `engine.py` |
-| `test/test_ports_is_a_leaf.py` | `ports/` imports nothing internal; Protocols match their implementations |
+| `test/architecture/test_ports_is_a_leaf.py` | `ports/` imports nothing internal; Protocols match their implementations |
 | `scripts/measure_framework_surface.py` | framework surface: importers, `AgentMiddleware` subclasses, migrated policies |
 | `test/policy/*_parity.py` | every migrated policy against a golden record of the middleware it replaced |
 | `scripts/verify_diagrams.py` | every Mermaid diagram in these two docs actually renders (a broken one is invisible — the Markdown stays valid) |

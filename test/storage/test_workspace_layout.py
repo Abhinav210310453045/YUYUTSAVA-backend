@@ -10,7 +10,7 @@ folder simply by one of them drifting. These checks pin the contract:
 * ``ensure()`` creates the working dirs and seeds the knowledge files once,
   never rewrites them, and never creates the sandbox.
 
-Run:  .venv/bin/python test/storage/test_workspace_layout.py
+Run:  .venv/bin/python -m pytest test/storage/test_workspace_layout.py
 """
 
 from __future__ import annotations

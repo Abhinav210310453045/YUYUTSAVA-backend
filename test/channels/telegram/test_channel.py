@@ -1,6 +1,6 @@
 """TelegramChannelPlugin behavior against a fake Bot API client.
 
-Run:  uv run python -m unittest test.channels.telegram.test_channel -v
+Run:  .venv/bin/python -m pytest test/channels/telegram/test_channel.py
 """
 
 from __future__ import annotations

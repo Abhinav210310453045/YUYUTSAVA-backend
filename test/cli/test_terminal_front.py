@@ -14,7 +14,7 @@ the artifact body back into the conversation. The body is on disk, the agent
 already wrote it, and re-sending it would duplicate the largest single
 argument in the session on every later call.
 
-Run:  .venv/bin/python test/cli/test_terminal_front.py
+Run:  .venv/bin/python -m pytest test/cli/test_terminal_front.py
 """
 
 from __future__ import annotations

@@ -11,7 +11,7 @@ workspace's ``<ws>/.yuyutsava/mcp_config.json``:
 * ``source`` is bookkeeping and never makes two otherwise-equal specs differ
   (hot_reload diffs specs by equality).
 
-Run:  .venv/bin/python test/mcp_layer/test_config_merge.py
+Run:  .venv/bin/python -m pytest test/mcp_layer/test_config_merge.py
 """
 
 from __future__ import annotations

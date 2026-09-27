@@ -20,7 +20,7 @@ The test that matters is `test_override_replaces_the_board`: it swaps the board
 via `dependency_overrides` with **no global set at all**, which is the property
 the whole step is about.
 
-Run:  .venv/bin/python test/web/test_todo_board_dependency.py
+Run:  .venv/bin/python -m pytest test/daemon/web/test_todo_board_dependency.py
 """
 
 from __future__ import annotations
@@ -32,6 +32,7 @@ from pathlib import Path
 from fastapi import FastAPI
 
 from test.support.fake_todo_store import FakeTodoStore
+from test.support.paths import PACKAGE
 from yuyutsava.daemon.web.routers.todos import board, router
 from yuyutsava.storage.sessions import SqliteSessionStore
 from yuyutsava.todoboard.exchange import TodoExchange
@@ -61,12 +62,9 @@ class EveryHandlerDeclaresIt(unittest.TestCase):
     def test_no_handler_looks_the_board_up_itself(self) -> None:
         """A handler that uses the board must take it as a parameter."""
         import ast
-        import pathlib
         import re
 
-        src = (
-            pathlib.Path(__file__).resolve().parents[2] / "yuyutsava/daemon/web/routers/todos.py"
-        ).read_text(encoding="utf-8")
+        src = (PACKAGE / "daemon/web/routers/todos.py").read_text(encoding="utf-8")
         tree = ast.parse(src)
         offenders: list[str] = []
         for node in ast.walk(tree):
@@ -106,11 +104,8 @@ class EveryHandlerDeclaresIt(unittest.TestCase):
         happens.
         """
         import ast
-        import pathlib
 
-        src = (
-            pathlib.Path(__file__).resolve().parents[2] / "yuyutsava/daemon/web/routers/todos.py"
-        ).read_text(encoding="utf-8")
+        src = (PACKAGE / "daemon/web/routers/todos.py").read_text(encoding="utf-8")
         offenders: list[str] = []
         for node in ast.walk(ast.parse(src)):
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):

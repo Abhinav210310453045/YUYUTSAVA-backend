@@ -13,7 +13,7 @@ properties that make the reading trustworthy rather than merely present:
 * the meter cannot fail a turn — not when a subscriber raises, not when the
   registry is gone, not when the provider reports no usage at all.
 
-Run:  .venv/bin/python test/context/test_meter.py
+Run:  .venv/bin/python -m pytest test/context/test_meter.py
 """
 
 from __future__ import annotations

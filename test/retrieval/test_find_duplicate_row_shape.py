@@ -33,7 +33,7 @@ the daemon, which passes the configured ``0.97``, turns it on. A default that
 disables the feature meant the suite exercised the store thoroughly and this
 branch not at all.
 
-Run:  .venv/bin/python test/retrieval/test_find_duplicate_row_shape.py
+Run:  .venv/bin/python -m pytest test/retrieval/test_find_duplicate_row_shape.py
 """
 
 from __future__ import annotations

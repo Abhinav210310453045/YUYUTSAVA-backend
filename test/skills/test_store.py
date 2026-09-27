@@ -1,6 +1,6 @@
 """Unit tests for the SQLite keyword-fallback skill store + indexer.
 
-Run:  uv run python -m unittest test.skills.test_store -v
+Run:  .venv/bin/python -m pytest test/skills/test_store.py
 """
 
 from __future__ import annotations

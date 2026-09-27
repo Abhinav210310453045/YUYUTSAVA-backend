@@ -4,7 +4,7 @@ The MCP manager's sessions live on the bundle's loop and must be stopped
 before the pool/embedder go away; a failing step must not prevent the rest
 of the teardown. ``close()`` with nothing to close is a no-op.
 
-Run:  .venv/bin/python test/core/test_agent_bundle_close.py
+Run:  .venv/bin/python -m pytest test/core/test_agent_bundle_close.py
 """
 
 from __future__ import annotations

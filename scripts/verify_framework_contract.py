@@ -31,9 +31,8 @@ import traceback
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
+# The repo root, so the `test` package imports when this runs as a script.
 sys.path.insert(0, str(REPO))
-sys.path.insert(0, str(REPO / "test"))
-sys.path.insert(0, str(REPO / "test" / "framework_contract"))
 
 
 def _check_declared_ranges() -> None:
@@ -85,8 +84,8 @@ def _check_declared_ranges() -> None:
 
 
 def main() -> int:
-    import test_deepagents_contract as contract
-    import test_filesystem_prompt_override as fs
+    from test.framework_contract import test_deepagents_contract as contract
+    from test.policy import test_filesystem_prompt_override as fs
 
     checks = [
         ("filesystem block stripped (silent-failure seam)", fs.test_filesystem_block_removed),

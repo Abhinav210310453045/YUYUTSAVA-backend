@@ -6,7 +6,7 @@ properties worth pinning: a per-day series is ordered for plotting rather than
 by cost, and an unpriced model is reported as unpriced instead of letting a
 total quietly read low.
 
-Run:  uv run python -m unittest test.web.test_usage_api -v
+Run:  .venv/bin/python -m pytest test/daemon/web/test_usage_api.py
 """
 
 from __future__ import annotations

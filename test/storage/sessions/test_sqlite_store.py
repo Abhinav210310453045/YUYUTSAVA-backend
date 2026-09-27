@@ -1,6 +1,6 @@
 """Unit tests for SqliteSessionStore.
 
-Run:  uv run python -m unittest test.sessions.test_sqlite_store -v
+Run:  .venv/bin/python -m pytest test/storage/sessions/test_sqlite_store.py
 """
 
 from __future__ import annotations

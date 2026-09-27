@@ -1,6 +1,6 @@
 """Bearer auth: 401 without token, 200 with, loopback untouched.
 
-Run:  uv run python -m unittest test.web.test_auth -v
+Run:  .venv/bin/python -m pytest test/daemon/web/test_auth.py
 """
 
 from __future__ import annotations

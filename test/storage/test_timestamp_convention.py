@@ -21,7 +21,7 @@ asymmetry is precisely what the dialect exists to absorb, and it is asserted
 here too, so "unify the backends" never gets misread as "give SQLite
 timestamps".
 
-Run:  .venv/bin/python test/storage/test_timestamp_convention.py
+Run:  .venv/bin/python -m pytest test/storage/test_timestamp_convention.py
 """
 
 from __future__ import annotations

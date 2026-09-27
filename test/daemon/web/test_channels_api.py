@@ -1,6 +1,6 @@
 """GET /channels + enable/disable endpoints over httpx ASGI.
 
-Run:  uv run python -m unittest test.web.test_channels_api -v
+Run:  .venv/bin/python -m pytest test/daemon/web/test_channels_api.py
 """
 
 from __future__ import annotations

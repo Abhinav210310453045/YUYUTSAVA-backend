@@ -24,7 +24,7 @@ by side. Their behaviour was **captured first** into ``model_call_golden.json``
 — every system-message block and tool list they produced, over the matrix below.
 Regenerating it is not a way to fix a failure; the code it came from is gone.
 
-Run:  .venv/bin/python test/policy/test_model_call_parity.py
+Run:  .venv/bin/python -m pytest test/policy/test_model_call_parity.py
 """
 
 from __future__ import annotations

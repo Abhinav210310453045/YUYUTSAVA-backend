@@ -1,6 +1,6 @@
 """Unit tests for the shared progressive-discovery layer.
 
-Run:  uv run python -m unittest test.discovery.test_discovery -v
+Run:  .venv/bin/python -m pytest test/discovery/test_discovery.py
 
 Covers the contract both tools and skills sit on: the Tier-0 catalog, ``select:``
 exact fetch, keyword ranking, ``max_results`` capping with a truncation note,

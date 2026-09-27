@@ -1,6 +1,6 @@
 """Unit tests for the generic RetrievalInjector + SkillInjector.
 
-Run:  uv run python -m unittest test.retrieval.test_injector -v
+Run:  .venv/bin/python -m pytest test/retrieval/test_injector.py
 """
 
 from __future__ import annotations

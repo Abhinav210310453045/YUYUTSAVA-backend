@@ -32,7 +32,7 @@ already use SQLite's own idempotent syntax (``INSERT OR REPLACE`` /
 ``INSERT OR IGNORE``) or ``ON CONFLICT ... DO UPDATE``. Checking that before
 reporting is why the number here is 3 and not 6.
 
-Run:  .venv/bin/python test/storage/test_events_idempotent_put.py
+Run:  .venv/bin/python -m pytest test/storage/test_events_idempotent_put.py
 """
 
 from __future__ import annotations

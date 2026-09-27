@@ -14,7 +14,7 @@ transcripts, feedback, memory and artifacts all carried (findings AE, AH, AI,
 AJ): the column is ``DOUBLE PRECISION`` on Postgres and both twins bound
 ``time.time()`` explicitly. Asserted anyway, so it stays that way.
 
-Run:  .venv/bin/python test/storage/test_interrupts_store_parity.py
+Run:  .venv/bin/python -m pytest test/storage/test_interrupts_store_parity.py
 """
 
 from __future__ import annotations

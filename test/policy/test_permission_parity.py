@@ -41,7 +41,7 @@ namespace to be testable at all, because ``interrupt()`` only works inside a
 running graph. The new side needs no patching: asking is a port, so a test
 scripts an answer.
 
-Run:  .venv/bin/python test/policy/test_permission_parity.py
+Run:  .venv/bin/python -m pytest test/policy/test_permission_parity.py
 """
 
 from __future__ import annotations

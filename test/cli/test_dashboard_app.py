@@ -14,7 +14,7 @@ application is built:
   not have to change, and a leak would corrupt every later command;
 * existing logging handlers are retargeted and put back.
 
-Run:  .venv/bin/python test/cli/test_dashboard_app.py
+Run:  .venv/bin/python -m pytest test/cli/test_dashboard_app.py
 """
 
 from __future__ import annotations

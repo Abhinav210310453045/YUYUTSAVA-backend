@@ -17,7 +17,7 @@ duplicate-key and does not. So the twins were not merely matched here, they were
 **beaten** — which is the strongest argument available for finishing the
 migration on the remaining domains.
 
-Run:  .venv/bin/python test/storage/test_summary_store_parity.py
+Run:  .venv/bin/python -m pytest test/storage/test_summary_store_parity.py
 """
 
 from __future__ import annotations

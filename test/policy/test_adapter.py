@@ -19,7 +19,7 @@ after-hook. A refusal has no result to rewrite.
 The rest is the boundary itself: policies get YUYUTSAVA types, never the
 framework's request object, and a policy that implements no hook costs nothing.
 
-Run:  .venv/bin/python test/policy/test_adapter.py
+Run:  .venv/bin/python -m pytest test/policy/test_adapter.py
 """
 
 from __future__ import annotations
@@ -369,7 +369,7 @@ class TheSyncPathIsLoud(unittest.TestCase):
         """The premise above, checked — across ``test/`` as well as ``yuyutsava/``.
 
         The first version of this scanned only ``yuyutsava/``, so it passed while
-        ``test/test_filesystem_prompt_override.py`` — the Phase 0 tripwire that
+        ``test/policy/test_filesystem_prompt_override.py`` — the Phase 0 tripwire that
         renders the real system prompt — was calling ``bundle.agent.invoke()``.
         The premise was stated about "the codebase" and checked against
         production code only, which is the same mistake as scoping a check to

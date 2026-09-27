@@ -26,7 +26,7 @@ Deleting it would have destroyed the evidence too, so its behaviour was
 implementation's testimony; regenerating it is not a way to fix a failure, since
 the code it came from no longer exists. A mismatch means the policy changed.
 
-Run:  .venv/bin/python test/policy/test_cap_parity.py
+Run:  .venv/bin/python -m pytest test/policy/test_cap_parity.py
 """
 
 from __future__ import annotations

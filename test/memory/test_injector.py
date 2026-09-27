@@ -1,6 +1,6 @@
 """Unit tests for MemoryInjector budget fitting (whole-memory truncation).
 
-Run:  uv run python -m unittest test.memory.test_injector -v
+Run:  .venv/bin/python -m pytest test/memory/test_injector.py
 """
 
 from __future__ import annotations

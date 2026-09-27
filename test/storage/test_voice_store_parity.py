@@ -16,7 +16,7 @@ previous migrations each turned up a wrong assumption:
   and ``purge_session`` removes it separately. Copying the visuals pattern
   (which *does* unlink) would double-delete.
 
-Run:  .venv/bin/python test/storage/test_voice_store_parity.py
+Run:  .venv/bin/python -m pytest test/storage/test_voice_store_parity.py
 """
 
 from __future__ import annotations

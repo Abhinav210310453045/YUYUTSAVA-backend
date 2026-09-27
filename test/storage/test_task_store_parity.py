@@ -21,7 +21,7 @@ absorbs it via ``ensure_parent``, and the Postgres case asserts the hub row is
 actually created — including the ``origin`` attribute, which only a task insert
 knows.
 
-Run:  .venv/bin/python test/storage/test_task_store_parity.py
+Run:  .venv/bin/python -m pytest test/storage/test_task_store_parity.py
 """
 
 from __future__ import annotations

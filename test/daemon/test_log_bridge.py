@@ -17,7 +17,7 @@ These pin the properties a log transport has to have:
   broadcast;
 * a flood is dropped, bounded and *reported*, not silently lost or grown.
 
-Run:  .venv/bin/python test/daemon/test_log_bridge.py
+Run:  .venv/bin/python -m pytest test/daemon/test_log_bridge.py
 """
 
 from __future__ import annotations

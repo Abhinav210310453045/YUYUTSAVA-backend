@@ -11,7 +11,7 @@ Two things have to hold for the rows to be useful: they must be written, and
 they must carry the thread, since a chat bundle is shared across conversations
 and cannot pin one at build time.
 
-Run:  .venv/bin/python test/cli/test_usage_wiring.py
+Run:  .venv/bin/python -m pytest test/cli/test_usage_wiring.py
 """
 
 from __future__ import annotations

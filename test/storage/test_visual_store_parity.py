@@ -16,7 +16,7 @@ the file. A raw table delete would pass a rows-only test and orphan every image.
 
 Postgres cases skip when no server is reachable, so the file runs anywhere.
 
-Run:  .venv/bin/python test/storage/test_visual_store_parity.py
+Run:  .venv/bin/python -m pytest test/storage/test_visual_store_parity.py
 """
 
 from __future__ import annotations

@@ -18,7 +18,7 @@ real drift lives:
     only one side;
   * every twin pair is reachable from the interface (no orphan implementations).
 
-Run:  .venv/bin/python test/storage/test_twin_conformance.py
+Run:  .venv/bin/python -m pytest test/storage/test_twin_conformance.py
 """
 
 from __future__ import annotations

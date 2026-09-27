@@ -5,7 +5,7 @@
 * configured servers → one manager from the factory, started once with the
   merged config — the daemon-provided path never reaches this helper.
 
-Run:  .venv/bin/python test/mcp_layer/test_owned_manager.py
+Run:  .venv/bin/python -m pytest test/mcp_layer/test_owned_manager.py
 """
 
 from __future__ import annotations

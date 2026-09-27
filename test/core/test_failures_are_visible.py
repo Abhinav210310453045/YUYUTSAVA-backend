@@ -6,7 +6,7 @@ model as taking no parameters, a programming error reported as "could not be
 parsed", a bug in the price refresh hidden at DEBUG. Each still degrades the
 same way; now it says so, or — for the programming error — it surfaces.
 
-Run:  .venv/bin/python test/core/test_failures_are_visible.py
+Run:  .venv/bin/python -m pytest test/core/test_failures_are_visible.py
 """
 
 from __future__ import annotations

@@ -8,14 +8,13 @@ tests convert those silent failures into loud ones.
 Each test pins the *contract*, not the mechanism, and each is cheap: no graph is
 built, no model is called, nothing hits the network.
 
-  seam 1  filesystem prompt block      -> test/test_filesystem_prompt_override.py
+  seam 1  filesystem prompt block      -> test/policy/test_filesystem_prompt_override.py
           (lives there because asserting it needs a rendered prompt)
   seam 2  general-purpose name match   -> test_general_purpose_override_contract
   seam 3  sandbox backend protocol     -> test_docker_backend_satisfies_protocol
   seam 4  backend factory deprecation  -> test_backend_factory_still_accepted
 
-Run directly:  .venv/bin/python test/framework_contract/test_deepagents_contract.py
-Or via pytest: pytest test/framework_contract/
+Run:  .venv/bin/python -m pytest test/framework_contract/test_deepagents_contract.py
 
 See docs/architecture/review/04-findings-thirdparty-coupling.md (F-T04).
 """

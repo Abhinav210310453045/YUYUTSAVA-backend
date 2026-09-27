@@ -15,7 +15,7 @@ failure modes this pins down, all found in the 12 Sep session post-mortem:
   the summary as the only trace;
 * bulky ``content=`` arguments were re-sent on every later call forever.
 
-Run:  .venv/bin/python test/context/test_lossless_readback.py
+Run:  .venv/bin/python -m pytest test/context/test_lossless_readback.py
 """
 
 from __future__ import annotations

@@ -26,7 +26,7 @@ Five behaviours carry the weight and get most of the coverage:
   backends — passing a Python ``bool`` is a type error on Postgres — while
   callers see a ``bool``. ``tags``/``meta``/``payload`` are TEXT vs ``jsonb``.
 
-Run:  .venv/bin/python test/storage/test_todo_store_parity.py
+Run:  .venv/bin/python -m pytest test/storage/test_todo_store_parity.py
 """
 
 from __future__ import annotations

@@ -12,8 +12,7 @@ call, then asserts:
 Doubles as an upgrade tripwire: if a future deepagents version defeats the block matcher,
 the first assertion fails loudly instead of silently regressing.
 
-Run directly:  .venv/bin/python test/test_filesystem_prompt_override.py
-Or via pytest:  pytest test/test_filesystem_prompt_override.py
+Run:  .venv/bin/python -m pytest test/policy/test_filesystem_prompt_override.py
 """
 
 from __future__ import annotations
@@ -21,7 +20,6 @@ from __future__ import annotations
 import asyncio
 import itertools
 import os
-from pathlib import Path
 from typing import Any
 
 from test.support.stores import fake_board, scratch_visual_store
@@ -35,6 +33,7 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 
 import yuyutsava.core.engine as engine
 import yuyutsava.llm.factory as llm_factory
+from test.support.paths import REPO
 from yuyutsava.agents.general_purpose.agent import GeneralPurposeAgent
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
 from yuyutsava.config.execution import LocalSettings
@@ -42,8 +41,6 @@ from yuyutsava.config.search import SearchConfig
 from yuyutsava.core.deps import MasterDeps
 from yuyutsava.llm.settings import AnthropicSettings
 from yuyutsava.skills.registry import SkillRegistry
-
-REPO = Path(__file__).resolve().parent.parent
 
 
 def _render_prompt() -> dict[str, Any]:

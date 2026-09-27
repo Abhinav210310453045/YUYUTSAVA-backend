@@ -10,7 +10,7 @@ forwards each snapshot as a ``usage`` frame. Three properties matter:
 * ``usage`` is **ephemeral**, so a long turn's snapshots cannot evict the reply
   from the 500-frame replay ring a reattaching client reads.
 
-Run:  .venv/bin/python test/daemon/test_usage_frames.py
+Run:  .venv/bin/python -m pytest test/daemon/test_usage_frames.py
 """
 
 from __future__ import annotations

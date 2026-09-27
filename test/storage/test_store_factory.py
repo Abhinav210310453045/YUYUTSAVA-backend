@@ -10,7 +10,7 @@ the same store types the inline branches did, and spillover must apply to
 exactly the three domains it applied to before — no more (which would change
 outage behaviour) and no fewer (which would lose writes).
 
-Run:  .venv/bin/python test/storage/test_store_factory.py
+Run:  .venv/bin/python -m pytest test/storage/test_store_factory.py
 """
 
 from __future__ import annotations

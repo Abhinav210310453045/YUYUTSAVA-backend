@@ -4,7 +4,7 @@ The store is now UnifiedTranscriptStore over SqliteDialect (ADR-002 step 2.5b);
 these cover the middleware and SQLite-specific behaviour, while cross-backend
 parity lives in test/storage/test_transcript_store_parity.py.
 
-Run:  uv run python -m unittest test.context.test_transcript_store -v
+Run:  .venv/bin/python -m pytest test/context/test_transcript_store.py
 """
 
 from __future__ import annotations

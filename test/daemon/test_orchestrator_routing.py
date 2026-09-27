@@ -1,7 +1,7 @@
 """OrchestratorLoop ↔ ModelRouter (Phase 4): per-task model selection and
 the complexity/model columns on the task row.
 
-Run:  uv run python -m unittest test.daemon.test_orchestrator_routing -v
+Run:  .venv/bin/python -m pytest test/daemon/test_orchestrator_routing.py
 """
 
 from __future__ import annotations

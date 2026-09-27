@@ -17,7 +17,7 @@ owns has a URL but no host object, and can still submit background runs. Getting
 that backwards silently disables background delegation for the attached process.
 It was carried only by a comment; now it is a named property with a test.
 
-Run:  .venv/bin/python test/daemon/test_build_async_subagents.py
+Run:  .venv/bin/python -m pytest test/daemon/test_build_async_subagents.py
 """
 
 from __future__ import annotations

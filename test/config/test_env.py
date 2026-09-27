@@ -1,6 +1,6 @@
 """The environment helpers in ``yuyutsava/config/env.py``.
 
-Run:  .venv/bin/python -m unittest test.config.test_env
+Run:  .venv/bin/python -m pytest test/config/test_env.py
 """
 
 from __future__ import annotations

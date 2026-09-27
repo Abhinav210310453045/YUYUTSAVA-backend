@@ -6,7 +6,7 @@ timeline event), a critically full disk fails the task with a clear error,
 and a cancellation issued during a long deferral is honored before the
 graph ever starts.
 
-Run:  uv run python -m unittest test.daemon.test_orchestrator_admission -v
+Run:  .venv/bin/python -m pytest test/daemon/test_orchestrator_admission.py
 """
 
 from __future__ import annotations

@@ -148,7 +148,21 @@ keyword tokenizer, the HTML sniffing), make it public in its module
 
 ## R-TST-05 — The test tree does not mirror the package
 
-**Severity** P2 · **Wave** W6 · **Status** Open
+**Severity** P2 · **Wave** W6 · **Status** **Fixed** (W6, 2026-09-27)
+- `test/web` became `test/daemon/web`, `test/task_runner` became
+  `test/agents/task_runner`, and `test/sessions` became
+  `test/storage/sessions`. Its subject moved in W3; the empty
+  `yuyutsava/sessions/` directory left behind is removed.
+- Eight loose files moved into their package's directory. Five stay at the
+  root because they test root-level modules.
+- Helpers are in `test/support/`, including `paths.py` with `REPO` and
+  `PACKAGE`. Seven tests had counted `Path(__file__).parents[N]`, which a move
+  silently breaks.
+- Every test's `Run:` line is regenerated from its own path, as
+  `.venv/bin/python -m pytest <path>`.
+- `test/README.md` states the layout, the helpers, the markers and the two
+  exceptions (`mcp_layer`, `framework_contract`).
+- The suite and the collection are unchanged: 2234 tests.
 
 **Evidence.**
 - **Directories named differently from what they test:** `test/web/` tests

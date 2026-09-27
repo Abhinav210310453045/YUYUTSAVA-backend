@@ -1,6 +1,6 @@
 """SSE scope filters + WebHub per-task ring bounds.
 
-Run:  uv run python -m unittest test.web.test_stream_filter -v
+Run:  .venv/bin/python -m pytest test/daemon/web/test_stream_filter.py
 """
 
 from __future__ import annotations

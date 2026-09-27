@@ -1,6 +1,6 @@
 """Unit tests for the SQLite keyword-fallback memory store.
 
-Run:  uv run python -m unittest test.memory.test_store -v
+Run:  .venv/bin/python -m pytest test/memory/test_store.py
 """
 
 from __future__ import annotations

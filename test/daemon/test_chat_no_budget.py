@@ -13,7 +13,7 @@ the correct control here. The orchestrator keeps its BudgetPolicy, where the
 cap is per task and exhausting it genuinely means the task is over-spending —
 that asymmetry is the thing worth pinning.
 
-Run:  .venv/bin/python test/daemon/test_chat_no_budget.py
+Run:  .venv/bin/python -m pytest test/daemon/test_chat_no_budget.py
 """
 
 from __future__ import annotations

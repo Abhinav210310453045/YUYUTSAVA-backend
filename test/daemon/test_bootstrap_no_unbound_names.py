@@ -15,7 +15,7 @@ Static analysis found it in milliseconds. That is the point of this file: an
 extraction can strand a name in a branch no test exercises, and the failure only
 appears on a live daemon boot in the backend you happen not to be running.
 
-Run:  .venv/bin/python test/daemon/test_bootstrap_no_unbound_names.py
+Run:  .venv/bin/python -m pytest test/daemon/test_bootstrap_no_unbound_names.py
 """
 
 from __future__ import annotations

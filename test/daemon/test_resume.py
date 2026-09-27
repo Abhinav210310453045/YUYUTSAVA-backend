@@ -8,7 +8,7 @@ Covers:
   * ``astream_agent_iter(resume=True)`` continues from a checkpoint (``input=None``)
     when state exists, and falls back to a fresh run when it does not.
 
-Run:  uv run python -m unittest test.daemon.test_resume -v
+Run:  .venv/bin/python -m pytest test/daemon/test_resume.py
 """
 
 from __future__ import annotations

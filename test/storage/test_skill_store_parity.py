@@ -22,7 +22,7 @@ the semantic cases skip rather than fail when the embedder is unavailable. No
 billable API is used — embeddings run against the local Ollama endpoint the
 project already uses.
 
-Run:  .venv/bin/python test/storage/test_skill_store_parity.py
+Run:  .venv/bin/python -m pytest test/storage/test_skill_store_parity.py
 """
 
 from __future__ import annotations

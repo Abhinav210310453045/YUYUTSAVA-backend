@@ -16,7 +16,7 @@ Two of them are deliberate design decisions rather than incidental structure:
   difference between siblings. They share a ``**common`` dict now, and this
   suite checks the sharing actually happened.
 
-Run:  .venv/bin/python test/daemon/test_build_subagents.py
+Run:  .venv/bin/python -m pytest test/daemon/test_build_subagents.py
 """
 
 from __future__ import annotations

@@ -1,7 +1,7 @@
 """Dependency-free protocols: types that both sides of a would-be cycle can import.
 
 **The one rule: this package imports nothing from ``yuyutsava``,** so any package can
-depend on it without creating a cycle. ``test/test_ports_is_a_leaf.py`` enforces it.
+depend on it without creating a cycle. ``test/architecture/test_ports_is_a_leaf.py`` enforces it.
 Protocols are structural: an implementation satisfies one without inheriting from it.
 The decision is ADR-003.
 

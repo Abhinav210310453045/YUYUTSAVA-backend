@@ -257,7 +257,7 @@ Confirm streaming, HITL prompts, and delegation are unchanged from before.
 
 > ⚠️ **Test-runner caution:** avoid the full `pytest` suite for quick checks — the
 > agent-stack / create_app imports pull in langgraph/deepagents and take minutes.
-> Targeted tests exist (`test/web/test_converse_ws.py`, `test/web/test_voice_ws.py`)
+> Targeted tests exist (`test/daemon/web/test_converse_ws.py`, `test/daemon/web/test_voice_ws.py`)
 > but even those import the app. For fast iteration use `python3 -m py_compile`,
 > `npx vite build`, `npx tsc --noEmit`.
 

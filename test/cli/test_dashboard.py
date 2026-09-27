@@ -15,7 +15,7 @@ so these pin the properties that keep it honest:
 * **nothing the panel shows re-enters the agent's context** — same invariant
   the artifact box has to hold.
 
-Run:  .venv/bin/python test/cli/test_dashboard.py
+Run:  .venv/bin/python -m pytest test/cli/test_dashboard.py
 """
 
 from __future__ import annotations

@@ -15,7 +15,7 @@ keep the registry honest:
 The live check is the important one — it is the only thing that can catch a
 table created by a migration that nobody declared.
 
-Run:  .venv/bin/python test/storage/test_domain_registry.py
+Run:  .venv/bin/python -m pytest test/storage/test_domain_registry.py
 """
 
 from __future__ import annotations

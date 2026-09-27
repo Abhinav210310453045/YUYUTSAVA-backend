@@ -8,7 +8,7 @@ SQLite and on Postgres alike.
 Postgres tests are skipped when no server is reachable, so this file runs
 everywhere; run it with the daemon's Postgres up to exercise both halves.
 
-    .venv/bin/python test/storage/test_rollback.py
+    .venv/bin/python -m pytest test/storage/test_rollback.py
 """
 
 from __future__ import annotations

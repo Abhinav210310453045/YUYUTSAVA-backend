@@ -16,7 +16,7 @@ either backend, in milliseconds, with nothing else running.
 
 Postgres cases skip when no server is reachable.
 
-Run:  .venv/bin/python test/daemon/test_build_storage.py
+Run:  .venv/bin/python -m pytest test/daemon/test_build_storage.py
 """
 
 from __future__ import annotations

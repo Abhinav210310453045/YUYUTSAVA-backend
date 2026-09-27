@@ -5,7 +5,7 @@ the first read and escapes it. These tests drive the mixin with a fake base
 whose ``_astream``/``_stream`` fail a scripted number of times, with the sleeps
 patched out. No model is built, no network, no API calls.
 
-Run:  .venv/bin/python test/llm/test_first_chunk_retry.py
+Run:  .venv/bin/python -m pytest test/llm/test_first_chunk_retry.py
 """
 
 from __future__ import annotations

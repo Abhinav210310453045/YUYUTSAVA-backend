@@ -1,6 +1,6 @@
 """GET /system/metrics: monitor snapshot + ring + admission attribution.
 
-Run:  uv run python -m unittest test.web.test_system_api -v
+Run:  .venv/bin/python -m pytest test/daemon/web/test_system_api.py
 """
 
 from __future__ import annotations

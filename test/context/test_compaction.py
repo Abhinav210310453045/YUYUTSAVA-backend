@@ -9,7 +9,7 @@ Covers the correctness requirements called out in the master plan:
 - empty-history resume re-injects the latest persisted summary,
 - after repeated cycles the model input still contains the session intent.
 
-Run:  uv run python -m unittest test.context.test_compaction -v
+Run:  .venv/bin/python -m pytest test/context/test_compaction.py
 """
 
 from __future__ import annotations

@@ -12,7 +12,7 @@ pane depends on:
 * a line that already fits is returned untouched — no gratuitous rewriting of
   Rich's own careful output.
 
-Run:  .venv/bin/python test/cli/test_ansi_wrap.py
+Run:  .venv/bin/python -m pytest test/cli/test_ansi_wrap.py
 """
 
 from __future__ import annotations

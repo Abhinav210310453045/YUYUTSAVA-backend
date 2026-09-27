@@ -7,7 +7,7 @@ port or what to do. Now the pool probes once and raises
 :class:`PostgresUnavailable` with libpq's reason, the checkpointer does the
 same for its own connection, and the CLI turns it into one message.
 
-Run:  .venv/bin/python test/storage/test_postgres_unavailable.py
+Run:  .venv/bin/python -m pytest test/storage/test_postgres_unavailable.py
 """
 
 from __future__ import annotations

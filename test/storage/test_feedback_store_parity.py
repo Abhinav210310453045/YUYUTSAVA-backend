@@ -23,7 +23,7 @@ transaction, a single connection cannot observe the gap between them, so no test
 here fails if the store reverts to DELETE-then-INSERT. The upsert is justified
 as removing a correctness dependence on the caller, not by a red test.
 
-Run:  .venv/bin/python test/storage/test_feedback_store_parity.py
+Run:  .venv/bin/python -m pytest test/storage/test_feedback_store_parity.py
 """
 
 from __future__ import annotations

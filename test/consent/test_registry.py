@@ -1,7 +1,9 @@
 """Unit tests for the reusable consent / allowlist core (Part B1).
 
 No DB required for the in-memory cases; a small fake ConsentStore covers
-persistence + load-on-init. Runnable as a script or via pytest.
+persistence + load-on-init.
+
+Run:  .venv/bin/python -m pytest test/consent/test_registry.py
 """
 
 from __future__ import annotations

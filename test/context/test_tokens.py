@@ -6,7 +6,7 @@ watch "7 % used" while history was being summarized away — so these pin that
 :mod:`yuyutsava.context.tokens` defers to the same function with the same
 parameters the compactor picks, and that nothing in it can raise.
 
-Run:  .venv/bin/python test/context/test_tokens.py
+Run:  .venv/bin/python -m pytest test/context/test_tokens.py
 """
 
 from __future__ import annotations

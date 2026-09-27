@@ -16,7 +16,7 @@ the backend really produces them:
 
 If a field here is renamed, rename it in the component in the same commit.
 
-Run:  .venv/bin/python test/web/test_usage_ui_contract.py
+Run:  .venv/bin/python -m pytest test/daemon/web/test_usage_ui_contract.py
 """
 
 from __future__ import annotations

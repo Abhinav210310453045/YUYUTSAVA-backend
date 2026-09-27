@@ -9,20 +9,17 @@ ws_* tool a *visible skill* declares, and no general-purpose-scoped skill does.
 Asserts against ``all_tools()`` so it exercises the real assembly path, not the
 override in isolation.
 
-Run directly:  .venv/bin/python -m pytest test/test_general_purpose_search_tools.py -v
+Run:  .venv/bin/python -m pytest test/agents/test_general_purpose_search_tools.py
 """
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from test.support.paths import REPO
 from test.support.stores import scratch_visual_store
 from yuyutsava.agents.general_purpose.agent import GeneralPurposeAgent
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
 from yuyutsava.config.search import SearchConfig
 from yuyutsava.skills.registry import SkillRegistry
-
-REPO = Path(__file__).resolve().parent.parent
 
 WS_ALL = {"ws_tavily_search", "ws_exa_search", "ws_exa_get_contents"}
 

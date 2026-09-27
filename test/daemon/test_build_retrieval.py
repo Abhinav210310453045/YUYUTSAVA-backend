@@ -15,7 +15,7 @@ Both backends are covered on purpose: on SQLite the index is correctly
 Everything writes under a scratch ``YUYUTSAVA_HOME``, and the board is an
 in-memory one — never the real board.
 
-Run:  .venv/bin/python test/daemon/test_build_retrieval.py
+Run:  .venv/bin/python -m pytest test/daemon/test_build_retrieval.py
 """
 
 from __future__ import annotations

@@ -3,7 +3,7 @@
 Validates the transport contract (hello → token/final → turn_end, inline ask
 round-trip) without building a real agent bundle.
 
-Run:  uv run python -m pytest test/web/test_converse_ws.py -v
+Run:  .venv/bin/python -m pytest test/daemon/web/test_converse_ws.py
 """
 
 from __future__ import annotations

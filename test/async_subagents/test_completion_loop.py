@@ -11,8 +11,7 @@ background subagent finished:
 
 No network, no LLM: the watcher is driven against a fake LangGraph client.
 
-Runnable as a script (``python test/async_subagents/test_completion_loop.py``)
-or via pytest.
+Run:  .venv/bin/python -m pytest test/async_subagents/test_completion_loop.py
 """
 
 from __future__ import annotations

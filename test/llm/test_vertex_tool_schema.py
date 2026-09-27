@@ -6,7 +6,7 @@
 "hi" in the chat failed. These tests run the SDK's real converter on that schema.
 No request is sent: no network, no API calls.
 
-Run:  .venv/bin/python -m unittest test.llm.test_vertex_tool_schema
+Run:  .venv/bin/python -m pytest test/llm/test_vertex_tool_schema.py
 """
 
 from __future__ import annotations

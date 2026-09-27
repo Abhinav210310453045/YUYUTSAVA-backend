@@ -11,7 +11,7 @@ subclass. These cases are unchanged and still assert the same contract — drivi
 the adapter is what keeps them exercising the production wiring rather than the
 policy in isolation (``test/policy/test_offload_parity.py`` does that).
 
-Run:  uv run python -m unittest test.context.test_offload_middleware -v
+Run:  .venv/bin/python -m pytest test/context/test_offload_middleware.py
 """
 
 from __future__ import annotations

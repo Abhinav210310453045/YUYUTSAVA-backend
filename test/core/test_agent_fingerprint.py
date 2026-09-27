@@ -16,7 +16,7 @@ Regenerate the snapshot ONLY when a change is intended:
 
     .venv/bin/python test/core/test_agent_fingerprint.py --update-snapshot
 
-Run:  .venv/bin/python test/core/test_agent_fingerprint.py
+Run:  .venv/bin/python -m pytest test/core/test_agent_fingerprint.py
 """
 
 from __future__ import annotations

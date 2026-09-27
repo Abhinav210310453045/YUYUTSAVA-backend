@@ -1,6 +1,6 @@
 """Triage complexity score flows onto the OrchestratorTask (Phase 4).
 
-Run:  uv run python -m unittest test.daemon.test_triage_complexity -v
+Run:  .venv/bin/python -m pytest test/daemon/test_triage_complexity.py
 """
 
 from __future__ import annotations

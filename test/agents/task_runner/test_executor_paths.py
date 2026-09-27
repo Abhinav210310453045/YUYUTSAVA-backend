@@ -7,7 +7,7 @@
   search is not polluted by offloaded tool dumps, while the prompt's explicit
   "tr_grep the state dir" still works.
 
-Run:  .venv/bin/python test/task_runner/test_executor_paths.py
+Run:  .venv/bin/python -m pytest test/agents/task_runner/test_executor_paths.py
 """
 
 from __future__ import annotations

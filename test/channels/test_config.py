@@ -1,6 +1,6 @@
 """ChannelsConfig load/save roundtrip.
 
-Run:  uv run python -m unittest test.channels.test_config -v
+Run:  .venv/bin/python -m pytest test/channels/test_config.py
 """
 
 from __future__ import annotations

@@ -4,7 +4,7 @@ Covers the Phase-2 contract: status transitions queued→running→done|failed|
 cancelled, thread_id joining, event tagging with task_id/session_id, and
 the coarse between-events cancel check.
 
-Run:  uv run python -m unittest test.daemon.test_orchestrator_loop_registry -v
+Run:  .venv/bin/python -m pytest test/daemon/test_orchestrator_loop_registry.py
 """
 
 from __future__ import annotations

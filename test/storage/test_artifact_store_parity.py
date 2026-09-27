@@ -17,7 +17,7 @@ the column and let ``DEFAULT now()`` fire. It decides the TTL sweep boundary via
 holds up as correct, so the tests here pin that it stayed declared — and that
 ``recall`` degrades to ``[]`` rather than raising when a caller skips the check.
 
-Run:  .venv/bin/python test/storage/test_artifact_store_parity.py
+Run:  .venv/bin/python -m pytest test/storage/test_artifact_store_parity.py
 """
 
 from __future__ import annotations

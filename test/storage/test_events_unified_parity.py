@@ -18,7 +18,7 @@ Two behaviours are pinned that the twins disagreed on before:
 * ``match_json`` reads back as a **string** on both backends, though Postgres
   stores it as ``jsonb`` and hands back a ``dict``.
 
-Run:  .venv/bin/python test/storage/test_events_unified_parity.py
+Run:  .venv/bin/python -m pytest test/storage/test_events_unified_parity.py
 """
 
 from __future__ import annotations

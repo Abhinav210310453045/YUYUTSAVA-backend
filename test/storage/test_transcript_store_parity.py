@@ -26,7 +26,7 @@ Three real divergences the twins carried, each now pinned by a test:
 Postgres cases skip when no server is reachable, so the suite is useful in
 zero-config mode too.
 
-Run:  .venv/bin/python test/storage/test_transcript_store_parity.py
+Run:  .venv/bin/python -m pytest test/storage/test_transcript_store_parity.py
 """
 
 from __future__ import annotations

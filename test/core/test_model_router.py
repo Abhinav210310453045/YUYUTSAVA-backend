@@ -1,7 +1,7 @@
 """ModelRouter: tier mapping, threshold parsing, flag-off passthrough,
 lazy build + cache, misconfigured-tier fallback, price table, scorer.
 
-Run:  uv run python -m unittest test.core.test_model_router -v
+Run:  .venv/bin/python -m pytest test/core/test_model_router.py
 """
 
 from __future__ import annotations

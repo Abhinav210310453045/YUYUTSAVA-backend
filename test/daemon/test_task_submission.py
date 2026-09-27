@@ -1,6 +1,6 @@
 """Unit tests for TaskSubmissionService (direct + via-triage paths).
 
-Run:  uv run python -m unittest test.daemon.test_task_submission -v
+Run:  .venv/bin/python -m pytest test/daemon/test_task_submission.py
 """
 
 from __future__ import annotations

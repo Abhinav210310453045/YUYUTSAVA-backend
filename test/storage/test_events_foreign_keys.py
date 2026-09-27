@@ -21,7 +21,7 @@ more than a schema edit:
    still waiting to drain. Cascade there destroys data during outage recovery —
    the failure this suite's last class exists to catch.
 
-Run:  .venv/bin/python test/storage/test_events_foreign_keys.py
+Run:  .venv/bin/python -m pytest test/storage/test_events_foreign_keys.py
 """
 
 from __future__ import annotations

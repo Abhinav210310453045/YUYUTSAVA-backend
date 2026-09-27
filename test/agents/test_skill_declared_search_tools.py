@@ -19,13 +19,12 @@ subagent every web-search tool.
 from __future__ import annotations
 
 import unittest
-from pathlib import Path
 
+from test.support.paths import REPO
 from yuyutsava.agents.base_sub_agent import BaseSubAgent
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
 from yuyutsava.config.search import SearchConfig
 
-REPO = Path(__file__).resolve().parent.parent
 WS_ALL = {"ws_tavily_search", "ws_exa_search", "ws_exa_get_contents"}
 
 

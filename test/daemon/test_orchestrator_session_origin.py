@@ -1,6 +1,6 @@
 """Origin-aware HITL routing: channel-origin tasks map thread→channel.
 
-Run:  uv run python -m unittest test.daemon.test_orchestrator_session_origin -v
+Run:  .venv/bin/python -m pytest test/daemon/test_orchestrator_session_origin.py
 """
 
 from __future__ import annotations

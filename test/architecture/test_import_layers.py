@@ -18,7 +18,7 @@ entry in the same commit that removes the import, so the lists only shrink.
 Same-layer cycles (``agents`` <-> ``core``, ``channels`` <-> ``daemon``) are not
 this test's concern; ``scripts/measure_code_health.py`` tracks them.
 
-Run:  .venv/bin/python -m unittest test.architecture.test_import_layers
+Run:  .venv/bin/python -m pytest test/architecture/test_import_layers.py
 """
 
 from __future__ import annotations

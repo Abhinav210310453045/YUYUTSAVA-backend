@@ -25,7 +25,7 @@ difference rather than papered over.
 Postgres cases need a live server and a working embedder; no billable API is
 touched (embeddings run against the local Ollama endpoint).
 
-Run:  .venv/bin/python test/storage/test_memory_store_parity.py
+Run:  .venv/bin/python -m pytest test/storage/test_memory_store_parity.py
 """
 
 from __future__ import annotations

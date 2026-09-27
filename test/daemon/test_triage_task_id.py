@@ -1,6 +1,6 @@
 """Triage carries the TaskRegistry join key from event hints to the queue.
 
-Run:  uv run python -m unittest test.daemon.test_triage_task_id -v
+Run:  .venv/bin/python -m pytest test/daemon/test_triage_task_id.py
 """
 
 from __future__ import annotations

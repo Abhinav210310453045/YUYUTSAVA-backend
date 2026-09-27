@@ -13,7 +13,7 @@ nothing — and the old behaviour was to return the request unchanged and stay
 quiet, so the block would silently reappear in every prompt. That is exactly the
 failure this class exists to prevent, which is why
 :meth:`FilesystemPromptPolicy._warn_no_match_once` exists and why
-``test/test_filesystem_prompt_override.py`` is negative-controlled.
+``test/policy/test_filesystem_prompt_override.py`` is negative-controlled.
 
 The warning is once per instance: this runs on every model call, and a per-turn
 warning is noise a user learns to ignore.
@@ -91,7 +91,7 @@ class FilesystemPromptPolicy(Policy):
             "deepagents '## Filesystem Tools' block is NOT being stripped and is "
             "reaching the model, contradicting our tr_* prompt. Likely a deepagents "
             "upgrade changed the block's wording. Run "
-            "test/test_filesystem_prompt_override.py to confirm."
+            "test/policy/test_filesystem_prompt_override.py to confirm."
         )
 
 

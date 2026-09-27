@@ -24,7 +24,7 @@ captured — stderr, log records, the return value, and the ``Command`` objects
 handed back to the graph — and compared against ``driver_golden.json``, recorded
 from the pre-merge implementation.
 
-Run:  .venv/bin/python test/core/test_driver_parity.py
+Run:  .venv/bin/python -m pytest test/core/test_driver_parity.py
 """
 
 from __future__ import annotations

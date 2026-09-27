@@ -10,7 +10,7 @@
 * ``HostExecBackend`` really runs a script with this interpreter — the
   pre-existing behaviour ``TaskRunnerAgent`` falls back to.
 
-Run:  .venv/bin/python test/task_runner/test_exec_backend.py
+Run:  .venv/bin/python -m pytest test/agents/task_runner/test_exec_backend.py
 """
 
 from __future__ import annotations

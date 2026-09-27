@@ -1,6 +1,6 @@
 """Unit tests for SqliteThreadSummaryStore versioning.
 
-Run:  uv run python -m unittest test.context.test_summary_store -v
+Run:  .venv/bin/python -m pytest test/context/test_summary_store.py
 """
 
 from __future__ import annotations

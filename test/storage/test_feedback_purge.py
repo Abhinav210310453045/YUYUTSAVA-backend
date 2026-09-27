@@ -13,7 +13,7 @@ This is the failure mode ADR-002 predicts from hardcoded purge lists: adding a
 domain means remembering to edit a list in an unrelated module, and forgetting is
 silent.
 
-Run:  .venv/bin/python test/storage/test_feedback_purge.py
+Run:  .venv/bin/python -m pytest test/storage/test_feedback_purge.py
 """
 
 from __future__ import annotations

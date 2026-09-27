@@ -18,7 +18,7 @@ through the adapter, which is the production path, and the expectations are the
 ones read off the middleware source before it went. Budget's wrap-up text is
 compared verbatim: it is a prompt the model reads.
 
-Run:  .venv/bin/python test/policy/test_observer_parity.py
+Run:  .venv/bin/python -m pytest test/policy/test_observer_parity.py
 """
 
 from __future__ import annotations

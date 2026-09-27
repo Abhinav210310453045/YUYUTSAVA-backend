@@ -17,7 +17,7 @@ The registry row staying ``queued`` is deliberate v1 behaviour
 nothing written, "triage judged this not worth acting on" and "the daemon never
 picked it up" are the same observation from the UI.
 
-Run:  .venv/bin/python test/daemon/test_triage_drop_is_recorded.py
+Run:  .venv/bin/python -m pytest test/daemon/test_triage_drop_is_recorded.py
 """
 
 from __future__ import annotations

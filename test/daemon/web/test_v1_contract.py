@@ -1,7 +1,7 @@
 """Phase 6 contract tests: every /v1 endpoint answers, legacy unprefixed
 aliases answer identically, and the OpenAPI schema documents only /v1.
 
-Run:  uv run python -m unittest test.web.test_v1_contract -v
+Run:  .venv/bin/python -m pytest test/daemon/web/test_v1_contract.py
 """
 
 from __future__ import annotations

@@ -12,7 +12,7 @@ Two behaviours pinned here:
    dropped without a request. A local HTTP server answering 404 stands in for
    "something else took Langfuse's port" — no network beyond localhost.
 
-Run:  .venv/bin/python test/core/test_tracing_dead_switch.py
+Run:  .venv/bin/python -m pytest test/core/test_tracing_dead_switch.py
 """
 
 from __future__ import annotations

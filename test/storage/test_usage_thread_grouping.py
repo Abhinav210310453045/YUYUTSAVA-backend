@@ -17,7 +17,7 @@ These tests pin both halves: the new grouping works everywhere, and the old
 divergence is still there (unchanged, by design) so nobody mistakes this for a
 storage fix.
 
-Run:  .venv/bin/python test/storage/test_usage_thread_grouping.py
+Run:  .venv/bin/python -m pytest test/storage/test_usage_thread_grouping.py
 """
 
 from __future__ import annotations
