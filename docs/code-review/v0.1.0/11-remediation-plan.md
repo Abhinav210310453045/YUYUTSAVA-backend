@@ -53,7 +53,7 @@ W0 safety net ─► W1 guardrails ─► W2 __init__ + imports ─► W3 layeri
 | W4 | Readability, SOLID, DRY | Closed — see the terms under W4 |
 | W5 | Errors, logging, state, defects | Done — see the outcome under W5 |
 | W6 | Tests and scripts | Done — see the outcome under W6 |
-| W7 | Electron app | Planned |
+| W7 | Electron app | Done — see the outcome under W7 |
 | W8 | Close-out | Planned |
 
 ---
@@ -866,6 +866,33 @@ otherwise, so each fix states which it was.
 RUN/SOURCE, expand), the TODO board and ThinkBoard, voice overlay,
 Settings → Usage, asks.
 
+**Outcome (W7, 2026-09-28).** All eight findings closed except `R-UI-06`,
+fixed for the worst five files with the rest carried. Details under each
+finding in [09](09-electron-app.md).
+
+- **Gates.** ESLint at 0 warnings (the ceiling went 33 → 29 → 5 → 0),
+  `no-empty` an error, a 300-line `max-lines` error with a shrink-only
+  allowlist of nine files, Prettier, and 54 vitest tests, all in the CI
+  `electron` job.
+- **Structure.** The conversation store is five modules; `ChatPanel`,
+  `VoicePanel`, `ThinkBoard`, `TodoCardView` and `SettingsPanel` went from
+  864/775/1028/913/509 lines to 280/239/296/260/274; five resize copies became
+  `lib/resize.js`; every HTTP call goes through `api/`.
+- **Styling.** Five files moved to co-located stylesheets on the theme's
+  custom properties; inline style objects app-wide went 650 → 512.
+- **Found and fixed on the way:** an objective card losing its phase bar, the
+  event stream swallowing handler exceptions, invalid `${var}HH` colours (the
+  visual action buttons and 36 other sites). Found and left for the owner: card hover glows that never show
+  (`R-UI-09`) and the Visuals session picker loading once (`R-UI-10`).
+- **How it was verified.** Every split or move was checked in the Electron app
+  against captures taken before it: pixel diffs of fixed states (clock pinned,
+  animations frozen), full computed-style dumps of every element (also with
+  animations live), drag probes over every resize handle, and the moved
+  writes driven through the UI and confirmed through the API. Each gate and
+  probe was negative-controlled. The smoke run (board, card, artifacts,
+  sessions, inbox, settings, voice, and a chat turn that makes an artifact)
+  passed after every commit.
+
 ## W8 — Close-out
 
 - **Re-measure.** Re-run [02](02-metrics.md) and fill in the *after* column;
@@ -895,4 +922,6 @@ Deliberately not fixed in this remediation, each with its reason:
 | **Constructing half of F-T03** | A second agent constructor is a strategic choice, not a code-quality fix; a test pins the gap. | Revisit when a second framework is actually needed. |
 | **C3** — interrupt/resume tripwire | Needs a scripted interrupt round-trip against the real graph runtime. | Add alongside the next change to the ask/resume path. |
 | **A rejected tool ends the turn** (`R-KIS-02`, the `Denied.status`/`named` split) | The owner's call (2026-09-24): when the user rejects a tool, stop the turn — the REPL stays open, the UI session stays open, and the user's next message decides what happens. Today the agent carries on by itself (seen live). Policies cannot end a turn yet, so it is new behaviour, not a cleanup. | After this review: a policy result that ends the turn, applied to approval asks; decide background tasks then. |
+| **The remaining inline styles** (`R-UI-06`) — 512 objects | The worst five files are done; the rest is the same mechanical move file by file, each needing its own before/after capture. | Continue file by file, largest first (`AskCard`, `ActivityLog`, `VoiceOverlay`). |
+| **Card hover glows** (`R-UI-09`) | Fixing it changes what users see on hover, under six themes. | The owner decides; then one change per card. |
 | **Renaming `yuyutsava/platform`, `yuyutsava/mcp`** (`R-PLC-12`) | `platform` has 16 package-root importers and carries OS invariance; `mcp` is contained by `test/mcp_layer`. The benefit is small next to the churn. | One rename-only change each, if ever. |

@@ -17,6 +17,7 @@ a name with the live one.
 - W1 added ESLint (`rules-of-hooks` as an error, warnings under a ratcheted ceiling) and Prettier.
 - W7 added vitest 2.1.9 (`npm test`, Node environment) with 32 tests: 25 characterize the conversation store frame by frame and action by action, and 7 cover the API client's base URL, JSON calls, 204, and error and raw-body helpers.
 - CI runs them in the `electron` job. A failing test gives exit code 1, and each store test has a negative control.
+- Later in W7 the lint gate reached zero: every silent `catch` states its reason and `no-empty` is an error; the event stream no longer swallows handler exceptions; hook dependencies are complete; `--max-warnings` went 33 → 0. A 300-line `max-lines` error applies to every source file but tests, with a shrink-only allowlist (`max-lines-allowlist.json`, checked by `scripts/check-max-lines-allowlist.js` in `npm run lint`). Tests: 54 (plus the multi-select, the resize helper and the event stream).
 
 **Evidence.**
 - `electron-app/package.json` defines only `dev`, `build`, `dist` and `electron`.
@@ -77,7 +78,17 @@ chat and compare the results.
 
 ## R-UI-03 — Components over 500 lines
 
-**Severity** P1 · **Wave** W7 · **Status** Open
+**Severity** P1 · **Wave** W7 · **Status** **Fixed** (W7, 2026-09-28). Each named component is split by responsibility, as pure moves verified in Electron by pixel diffs of fixed states (0 differing pixels) and, where state moved, by driving the writes and checking them through the API:
+
+| Component | Before → after | Split into |
+|---|---|---|
+| `chat/ChatPanel.jsx` | 864 → 280 | `ThreadItems`, `ChatHeader`, `ContextChips`, `ChatComposer`, `useContextColumn`, `useFollowOutput` |
+| `voice/VoicePanel.jsx` | 775 → 239 | `FloatingMic`, `VoiceBubble`, `VoiceChrome`; the context column reuses `useContextColumn` |
+| `todos/ThinkBoard.jsx` | 1028 → 296 | `todos/thinkboard/`: `NoteCard`, `NoteComposer`, `ObjectiveCard`, `useObjectiveActions`, `useColumnWidth`, `ColumnHeader`, `common` |
+| `todos/TodoCardView.jsx` | 913 → 260 | `todos/card/`: `CardHeader`, `ObjectiveComposer`, `CardMeta`, `TinkerPane`, `useCardSelection` over `selection.js` (unit-tested), `useCollapsedObjectives`, `useCardAttachments` |
+| `settings/SettingsPanel.jsx` | 509 → 274 | `DaemonControls`, `schemaField`, `fallbackSchema` |
+
+The five resize implementations (activity rail, context column, board columns, tinker pane, attachments drawer) became one `lib/resize.js`; a drag probe over every handle, including the clamps and the persisted sizes, matched before and after. ESLint now caps every source file at 300 lines; nine files are on the shrink-only allowlist (`R-UI-01`).
 
 **Evidence.**
 
@@ -133,7 +144,17 @@ see no effect.
 
 ## R-UI-06 — Inline styles bypass the theme system
 
-**Severity** P2 · **Wave** W7 · **Status** Open
+**Severity** P2 · **Wave** W7 · **Status** **Fixed for the worst five; the rest carried** (W7, 2026-09-28). The five files with the most inline style objects after the splits each have a co-located stylesheet with classes on the theme's custom properties, and keep inline only what is computed per render:
+
+| File | Inline objects | Pattern |
+|---|---|---|
+| `settings/UsageSettings.jsx` | 38 → 3 | `usage-*`; table cells by modifier |
+| `todos/TodosPanel.jsx` | 31 → 6 | `todos-*`, `todo-card-*`; status accents inline |
+| `artifacts/ArtifactsPanel.jsx` | 29 → 2 | a card sets `--kind`; the stylesheet derives every tint with `color-mix` |
+| `background-tasks/TaskDetail.jsx` | 34 → 7 | booleans become modifiers (`--mono`, `--error`, `--live`) |
+| `proposals/ProposalCard.jsx` | 24 → 0 | button variants as classes |
+
+Verified in Electron by dumping every element's full computed style, geometry and text in fixed states, frozen and with animations and transitions live, before and after: identical in all 19 states (`TaskDetail` and `ProposalCard` mounted in the running app with fixed data). App-wide, inline style objects went 650 → 512 and `className` uses 40 → 187. Literal colours stayed literal: turning them into theme tokens changes pixels under the other themes, a design decision rather than a move. Carried: the remaining 512 objects, file by file, the same way.
 
 **Evidence.**
 - **`style={{…}}` counts:** `ChatPanel.jsx` 40, `UsageSettings.jsx` 38,
@@ -175,6 +196,34 @@ daemon address through the existing preload bridge (STD-UI-6).
 siblings mix `.js` (`useConverse.js`) and `.jsx`.
 
 **Fix.** Rename `useAsks.jsx` to `useAsks.js` and update its importers (STD-UI-3).
+
+---
+
+## R-UI-09 — A card's hover glow never shows
+
+**Severity** P2 · **Wave** — (found in W7) · **Status** Open: a visible change, so the owner decides.
+
+**Evidence.** `SessionRow.jsx` and `TodosPanel.jsx`'s `TodoCard` use `className="hover-bulge"` and set `--bulge-glow`, which `.hover-bulge:hover` turns into a glowing `box-shadow` (`styles/globals.css`). Both also set `boxShadow` inline, and an inline declaration outranks the `:hover` rule, so the hover glow is always overridden. `SessionRow`'s comment says `--bulge-glow` "drives the hover glow".
+
+**Fix.** Move the resting shadow out of the inline style (into the card's class, or a `--card-shadow` the `:hover` rule composes), so hovering shows the glow. Check it under each theme.
+
+---
+
+## R-UI-10 — The Visuals session picker loads once
+
+**Severity** P2 · **Wave** — (found in W7) · **Status** Open.
+
+**Evidence.** `ArtifactsPanel.jsx` lists sessions in a mount-only effect. A session started while the panel is open (or after it was first shown, since view state keeps it mounted) is missing from the picker until the panel remounts.
+
+**Fix.** Refresh the session list with the panel's ↻, or when it becomes visible.
+
+---
+
+## Found and fixed during W7
+
+- **An objective card lost its phase bar** after a note was dragged over it or it was ticked: the `border` shorthand changed and reset the 3px `borderLeft` (41ad4985).
+- **The event stream swallowed handler exceptions** along with malformed frames (c3e2512c).
+- **The visual action buttons' accent border** never applied (`var(--x)55` is invalid CSS), and reverting it reset the border (7d9012f5); 36 such `${var}HH` sites became `alpha()` (9a467865).
 
 ---
 
