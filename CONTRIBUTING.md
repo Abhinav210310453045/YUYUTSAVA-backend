@@ -122,7 +122,7 @@ Some checks in `scripts/` verify specific invariants:
 | `scripts/check_lint_ratchet.py` | Ratcheted lint counts match `scripts/lint_ratchet.json` |
 | `scripts/measure_code_health.py` | The code-health metrics the code reviews track |
 
-> **Careful with `test/test_async.py`** — it makes real, billable LLM calls. It
+> **Careful with `scripts/smoke_async.py`** — it makes real, billable LLM calls. It
 > is guarded and refuses to run unless `YUYUTSAVA_ALLOW_BILLABLE=1` is set.
 > Do not remove that guard.
 

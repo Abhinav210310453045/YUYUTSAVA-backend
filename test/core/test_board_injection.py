@@ -15,8 +15,8 @@ import unittest
 from types import SimpleNamespace
 from unittest import mock
 
-from test.core.agent_fingerprint import capture_cli
-from test.todoboard.fake_store import FakeTodoStore
+from test.support.agent_fingerprint import capture_cli
+from test.support.fake_todo_store import FakeTodoStore
 from yuyutsava.core import engine
 from yuyutsava.core.stores import StoreFactory, standalone_board
 from yuyutsava.storage.backend import StorageSettings

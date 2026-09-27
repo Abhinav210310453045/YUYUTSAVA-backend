@@ -227,10 +227,3 @@ max-args = 7
 # The face watcher is left exactly as it is, by the owner's decision.
 "yuyutsava/events/sources/_webcam_proc.py" = ["BLE001", "S110"]
 "yuyutsava/events/sources/webcam.py" = ["BLE001", "S110"]
-# Imports that follow sys.path manipulation — removed with it (R-TST-02, W6).
-"test/async_subagents/test_completion_loop.py" = ["E402"]
-"test/async_subagents/test_unit.py" = ["E402"]
-"test/consent/test_registry.py" = ["E402"]
-"test/test_ask_handler.py" = ["E402"]
-"test/test_async.py" = ["E402"]
-"test/test_fetch_verify.py" = ["E402"]

@@ -8,13 +8,8 @@ curl happily saves under a binary extension.
 from __future__ import annotations
 
 import os
-import sys
 import tempfile
 import unittest
-
-_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if _ROOT not in sys.path:
-    sys.path.insert(0, _ROOT)
 
 from yuyutsava.agents.task_runner.tools.web import _looks_like_html, _verify_download
 

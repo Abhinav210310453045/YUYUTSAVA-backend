@@ -13,14 +13,8 @@ on import and never ran (`R-TST-10`).
 from __future__ import annotations
 
 import contextlib
-import os
-import sys
 import unittest
 from unittest import mock
-
-_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if _ROOT not in sys.path:
-    sys.path.insert(0, _ROOT)
 
 from yuyutsava.cli.commands import chat_repl
 from yuyutsava.cli.commands.chat_repl import make_ask_handler

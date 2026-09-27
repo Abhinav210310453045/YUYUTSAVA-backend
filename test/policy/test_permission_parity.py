@@ -371,15 +371,11 @@ class WiredIntoTheRealBuild(unittest.IsolatedAsyncioTestCase):
     """
 
     def _adapter_from_a_real_cli_build(self):
-        import sys
-
-        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "core"))
-        from agent_fingerprint import (  # type: ignore[import-not-found]
+        from test.support.agent_fingerprint import (
             _capture_deep_agent_kwargs,
             _fake_chat_model,
             _workspace,
         )
-
         from yuyutsava.agents.general_purpose.agent import GeneralPurposeAgent
         from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
         from yuyutsava.config.execution import LocalSettings

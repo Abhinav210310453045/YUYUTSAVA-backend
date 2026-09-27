@@ -6,14 +6,8 @@ persistence + load-on-init. Runnable as a script or via pytest.
 
 from __future__ import annotations
 
-import os
-import sys
 import time
 import unittest
-
-_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-if _ROOT not in sys.path:
-    sys.path.insert(0, _ROOT)
 
 from yuyutsava.consent import (
     ConsentRegistry,

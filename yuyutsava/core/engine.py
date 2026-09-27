@@ -1087,7 +1087,7 @@ def build_cli_deepagent(
 
 
 # NOTE: the ``build_agent`` back-compat alias was removed once its two real
-# callers (cli/cli.py, test/test_async.py) moved to ``build_cli_deepagent``.
+# callers (cli/cli.py, scripts/smoke_async.py) moved to ``build_cli_deepagent``.
 # Use ``build_cli_deepagent``.
 
 

@@ -26,11 +26,8 @@ import sys
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-from agent_fingerprint import all_fingerprints, diff_fingerprints  # noqa: E402
-
-from yuyutsava.core.agent_profiles import PROFILES_BY_ROLE, PolicyKind, ToolFamily  # noqa: E402
+from test.support.agent_fingerprint import all_fingerprints, diff_fingerprints
+from yuyutsava.core.agent_profiles import PROFILES_BY_ROLE, PolicyKind, ToolFamily
 
 SNAPSHOT = Path(__file__).resolve().parent / "agent_fingerprint_snapshot.json"
 

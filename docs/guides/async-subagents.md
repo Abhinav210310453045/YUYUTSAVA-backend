@@ -60,7 +60,7 @@ Covers: `AsyncTaskMirror` lifecycle, `ChannelRouter` origin-aware routing,
 ### 1b. End-to-end stack (15 checks, ~5–10s)
 
 ```bash
-uv run python test/async_subagents/e2e_stack.py
+uv run python scripts/async_subagents_e2e.py
 ```
 
 Spins up the **whole vertical slice** in one process — an in-process
@@ -302,4 +302,4 @@ The master sees them automatically — there's no extra config on our side.
 * CLI side: `yuyutsava/cli/async_hitl.py`, `yuyutsava/cli/remote_attach.py`, `yuyutsava/cli/commands/attach.py`
 * Daemon side: `yuyutsava/daemon/cli_remote_channel.py`, `yuyutsava/daemon/web/routers/cli_attach.py`
 * Electron: `electron-app/src/renderer/components/background-tasks/`, modified `proposals/AskCard.jsx`, `hooks/useSSE.jsx`
-* Tests: `test/async_subagents/test_unit.py`, `test/async_subagents/e2e_stack.py`
+* Tests: `test/async_subagents/test_unit.py`; manual end-to-end run: `scripts/async_subagents_e2e.py`

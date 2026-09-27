@@ -4,7 +4,7 @@
 path to the board — every router, tool and agent goes through it. Nothing tested
 those 30 methods, so a split had nothing to be checked against.
 
-Driven entirely through :class:`~test.todoboard.fake_store.FakeTodoStore`: the
+Driven entirely through :class:`~test.support.fake_todo_store.FakeTodoStore`: the
 real board holds real work and must not be touched by a test run.
 
 What is pinned here is not just "each method returns something" but the parts a
@@ -21,7 +21,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from test.todoboard.fake_store import FakeTodoStore
+from test.support.fake_todo_store import FakeTodoStore
 from yuyutsava.todoboard.exchange import (
     TodoExchange,
     TodoNotFoundError,

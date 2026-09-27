@@ -11,7 +11,7 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from test.todoboard.fake_store import FakeTodoStore
+from test.support.fake_todo_store import FakeTodoStore
 from yuyutsava.todoboard.exchange import TodoExchange
 from yuyutsava.visuals.store_unified import sqlite_visual_store
 

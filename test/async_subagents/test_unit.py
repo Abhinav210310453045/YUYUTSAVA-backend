@@ -6,16 +6,9 @@ or via pytest. Exits non-zero on first failure.
 
 from __future__ import annotations
 
-import os
-import sys
 import time
 import unittest
 from dataclasses import dataclass
-
-# Make repo root importable when run as a script.
-_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-if _ROOT not in sys.path:
-    sys.path.insert(0, _ROOT)
 
 from yuyutsava.agents.orchestrator.capabilities import render_capabilities_block
 from yuyutsava.async_subagents.mirror import (

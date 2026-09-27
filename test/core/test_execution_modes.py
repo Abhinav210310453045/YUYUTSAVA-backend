@@ -19,7 +19,7 @@ from unittest import mock
 
 from deepagents.backends import CompositeBackend, LocalShellBackend
 
-from test.core.agent_fingerprint import capture_cli, fingerprint_from_kwargs
+from test.support.agent_fingerprint import capture_cli, fingerprint_from_kwargs
 from yuyutsava.agents.task_runner.exec_backend import DockerExecBackend
 from yuyutsava.config.execution import DockerSettings, LocalSettings
 from yuyutsava.core import engine

@@ -154,10 +154,8 @@ class BackendParity(unittest.TestCase):
     def test_every_pg_put_with_on_conflict_has_an_idempotent_sqlite_twin(self) -> None:
         import inspect
         import re
-        import sys
 
-        sys.path.insert(0, str(Path(__file__).resolve().parent))
-        from test_twin_conformance import _all_twins, _public_async_methods
+        from test.storage.test_twin_conformance import _all_twins, _public_async_methods
 
         def idempotent(src: str, is_sqlite: bool) -> bool:
             upper = src.upper()

@@ -68,7 +68,17 @@ files. A contributor cannot run "everything that does not need a database".
 
 ## R-TST-02 — `sys.path` manipulation
 
-**Severity** P2 · **Wave** W6 · **Status** Open
+**Severity** P2 · **Wave** W6 · **Status** **Fixed in `test/`** (W6, 2026-09-27)
+- No test file touches `sys.path`. Helpers are imported as `test.support.*` or
+  `test.<pkg>.*`, and the E402 exemptions that existed for them are gone.
+- `agent_fingerprint.py` and the fake todo store moved to `test/support/`.
+- Two runnable scripts left the tree:
+  - `test/test_async.py` is now `scripts/smoke_async.py`. It is still
+    billable, and it still refuses without `YUYUTSAVA_ALLOW_BILLABLE=1`, now
+    checked in `__main__`.
+  - `test/async_subagents/e2e_stack.py` is now `scripts/async_subagents_e2e.py`,
+    brought to the scripts standard. It still passes 15 of 15 checks.
+- The scripts' own path setup is tracked under `R-SCR-01`.
 
 **Evidence.**
 - Top-level tests: `test/test_async.py:30`, `test/test_ask_handler.py:16`,

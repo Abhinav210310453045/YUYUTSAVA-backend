@@ -31,7 +31,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
-from test.todoboard.fake_store import FakeTodoStore
+from test.support.fake_todo_store import FakeTodoStore
 from yuyutsava.daemon.web.routers.todos import board, router
 from yuyutsava.storage.sessions import SqliteSessionStore
 from yuyutsava.todoboard.exchange import TodoExchange

@@ -17,14 +17,8 @@ or via pytest.
 
 from __future__ import annotations
 
-import os
-import sys
 import time
 import unittest
-
-_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-if _ROOT not in sys.path:
-    sys.path.insert(0, _ROOT)
 
 from yuyutsava.async_subagents.launch_index import LaunchIndex, parse_async_task_id
 from yuyutsava.async_subagents.mirror import AsyncTaskMirror, MirroredTask

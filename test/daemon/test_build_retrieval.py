@@ -26,8 +26,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from test.support.fake_todo_store import FakeTodoStore
 from test.support.pg import PG_UP, pg_dsn, requires_pg
-from test.todoboard.fake_store import FakeTodoStore
 from yuyutsava.core.stores import StoreFactory
 from yuyutsava.daemon.bootstrap import build_retrieval
 from yuyutsava.memory.config import MemorySettings
