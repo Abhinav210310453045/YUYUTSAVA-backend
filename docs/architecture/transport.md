@@ -225,7 +225,7 @@ It is the **conversation** transport: bidirectional, per-thread, ordered, replay
 Crucially it is **one socket per conversation, not one multiplexed socket**. Open the
 chat pane, a voice overlay and two TODO-card tinker threads and you have four live
 sockets, keyed `origin|agent|card|resumeId`
-([`renderer/conversations/store.js:35-37`](../../electron-app/src/renderer/conversations/store.js#L35-L37)).
+([`renderer/conversations/sessions.js:12-19`](../../electron-app/src/renderer/conversations/sessions.js#L12-L19)).
 
 ---
 ---
@@ -521,7 +521,7 @@ _scheduleReconnect() {
 |---|---|---|
 | `SSEProvider` (app-wide) | [`hooks/useSSE.jsx:168`](../../electron-app/src/renderer/hooks/useSSE.jsx#L168) | events, logs, proposals, asks, bg-tasks, wake, tray |
 | `useRuntimeSettings` | [`hooks/useRuntimeSettings.js:38`](../../electron-app/src/renderer/hooks/useRuntimeSettings.js#L38) | self-subscribing, so the overlay (no `SSEProvider`) still gets `settings` |
-| `useStandaloneAsks` (overlay) | [`hooks/useAsks.jsx:139`](../../electron-app/src/renderer/hooks/useAsks.jsx#L139) | ask-only; mounting `SSEProvider` here would make the overlay pop at itself |
+| `useStandaloneAsks` (overlay) | [`hooks/useAsks.js:121`](../../electron-app/src/renderer/hooks/useAsks.js#L121) | ask-only; mounting `SSEProvider` here would make the overlay pop at itself |
 
 ### 7.4 Transport C — WebSocket (one per conversation)
 
@@ -682,7 +682,7 @@ rationale is stated in the file header at
 
 The half-duplex gate is enforced client-side: when barge-in is off, mic frames are
 dropped rather than sent while the agent is speaking
-([`store.js:653-658`](../../electron-app/src/renderer/conversations/store.js#L653-L658)).
+([`session.js:510-516`](../../electron-app/src/renderer/conversations/session.js#L510-L516)).
 
 ### 8.2 Path A′ — dictation (same socket, no agent)
 
@@ -1084,8 +1084,8 @@ socket has genuinely died is detached by its pump task's teardown"
 
 One `ConverseClient` per conversation, held in a module-level `Map` keyed
 `origin|agent|card|resumeId`
-([`store.js:35-37`](../../electron-app/src/renderer/conversations/store.js#L35-L37)), with
-`MAX_SESSIONS = 24` and `IDLE_DISCONNECT_MS = 10 min`.
+([`sessions.js:12-19`](../../electron-app/src/renderer/conversations/sessions.js#L12-L19)), with
+`MAX_SESSIONS = 24` ([`sessions.js`](../../electron-app/src/renderer/conversations/sessions.js)) and `IDLE_DISCONNECT_MS = 10 min` ([`session.js`](../../electron-app/src/renderer/conversations/session.js)).
 
 Reconnect backoff resets on the app-level `hello`, not on `onopen` — and the comment
 explains exactly why:
@@ -1107,8 +1107,8 @@ surfacing "this chat is no longer available" instead of an infinite retry loop.
 
 ### 11.6 Where the renderer maps frames
 
-[`renderer/conversations/store.js:401-595`](../../electron-app/src/renderer/conversations/store.js#L401-L595)
-is the single `switch`. Every frame type in [§11.3](#113-server--client-frames) has a case
+[`renderer/conversations/frames.js`](../../electron-app/src/renderer/conversations/frames.js)
+is the single handler table (`HANDLERS`, one entry per frame type; `FRAME_TYPES` lists them). Every frame type in [§11.3](#113-server--client-frames) has an entry
 there; `transcript` and `dictate_done` are additionally handled in
 [`hooks/useDictation.js:47-50`](../../electron-app/src/renderer/hooks/useDictation.js#L47-L50).
 
