@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from typing import Any
 
 from yuyutsava.conversation.repair import Cause, diagnose, repair_orphan_tool_calls
@@ -53,6 +54,79 @@ def repair_summary(found: Any, *, close_turn: bool = True) -> str:
     if len(parts) == 1:
         return parts[0]
     return ", ".join(parts[:-1]) + " and " + parts[-1]
+
+
+#: Finish reasons meaning "the model hit its output cap", as the SDKs spell them
+#: (Gemini ``MAX_TOKENS``, OpenAI-style ``length``), after normalising case and
+#: any ``FinishReason.`` enum prefix.
+_OUT_OF_ROOM = frozenset({"MAX_TOKENS", "LENGTH", "MAX_OUTPUT_TOKENS"})
+
+
+@dataclass(frozen=True)
+class EmptyReply:
+    """What the model reported about a reply that carried no text and no call."""
+
+    finish_reason: str
+    input_tokens: int
+    output_tokens: int
+    thinking_tokens: int
+
+    @property
+    def ran_out_of_room(self) -> bool:
+        """The model used its whole output cap — typically all of it thinking."""
+        return self.finish_reason in _OUT_OF_ROOM
+
+    def describe(self) -> str:
+        reason = self.finish_reason or "unknown"
+        return (
+            f"finish_reason={reason}, {self.input_tokens:,} in, "
+            f"{self.output_tokens:,} out, {self.thinking_tokens:,} thinking"
+        )
+
+
+def _token(usage: Any, *path: str) -> int:
+    for key in path:
+        usage = usage.get(key) if isinstance(usage, dict) else getattr(usage, key, None)
+        if usage is None:
+            return 0
+    try:
+        return int(usage)
+    except (TypeError, ValueError):
+        return 0
+
+
+def describe_empty_reply(messages: Any) -> EmptyReply | None:
+    """What the latest empty reply in *messages* reported, or ``None`` if there is none.
+
+    Read before the repair removes the message: it is the only record of why
+    the model said nothing (``finish_reason`` is logged nowhere else, and the
+    usage row counts visible output only).
+    """
+    empty = set(diagnose(messages).empty_assistant)
+    reply = next(
+        (m for m in reversed(list(messages or ())) if getattr(m, "id", None) in empty),
+        None,
+    )
+    if reply is None:
+        return None
+    raw = str((getattr(reply, "response_metadata", None) or {}).get("finish_reason") or "")
+    usage = getattr(reply, "usage_metadata", None) or {}
+    return EmptyReply(
+        finish_reason=raw.rsplit(".", 1)[-1].upper(),
+        input_tokens=_token(usage, "input_tokens"),
+        output_tokens=_token(usage, "output_tokens"),
+        thinking_tokens=_token(usage, "output_token_details", "reasoning"),
+    )
+
+
+async def _checkpoint_messages(agent: Any, thread_id: str) -> list[Any]:
+    """The thread's checkpointed messages; empty when they cannot be read."""
+    try:
+        state = await agent.aget_state({"configurable": {"thread_id": thread_id}})
+    except Exception:  # noqa: BLE001 — diagnostics must not block the recovery
+        logger.debug("checkpoint read for diagnostics failed", exc_info=True)
+        return []
+    return list(state.values.get("messages", [])) if state and state.values else []
 
 
 async def inspect_and_repair(
@@ -147,6 +221,9 @@ async def recover_empty_turn(
     exactly one, so an unrecoverable thread cannot spend in a loop.
     """
     steps = 0
+    facts = describe_empty_reply(await _checkpoint_messages(agent, thread_id))
+    if facts is not None:
+        logger.warning("empty reply on thread=%s: %s", thread_id, facts.describe())
     found, repaired = await inspect_and_repair(agent, thread_id, what="empty-turn inspection")
     if repaired and found is not None:
         await notice(
