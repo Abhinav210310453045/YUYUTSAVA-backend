@@ -41,8 +41,8 @@ class FakeConversation:
     async def discard_if_unused(self) -> bool:
         return False
 
-    async def run_turn(self, text, *, on_event, ask_handler=None, **_kw) -> str:
-        self._seen.append(text)
+    async def run_turn(self, text, *, on_event, ask_handler=None, retry=False, **_kw) -> str:
+        self._seen.append("(retry)" if retry else text)
         await on_event(StreamEvent("token", {"text": self._reply}))
         if "slow" in text:
             await asyncio.sleep(5)  # long enough for the test to interrupt it

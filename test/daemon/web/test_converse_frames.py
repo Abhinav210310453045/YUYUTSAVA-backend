@@ -157,6 +157,35 @@ def test_selection_context_is_wrapped_in_the_sentinel():
     assert mgr.turn_texts == ["<selection-context>\nnote:42\n</selection-context>\n\nexplain this"]
 
 
+def test_retry_runs_a_turn_that_sends_nothing():
+    """A notice's Retry (R-UI-11): no text, no user bubble echoed, a whole turn."""
+    app, mgr = _app()
+    with TestClient(app).websocket_connect("/ws/converse") as ws:
+        ws.receive_json()  # hello
+        ws.send_json({"type": "retry"})
+        frames = _drain_to_turn_end(ws)
+    start = frames[0]
+    assert (start["type"], start["kind"], start["text"]) == ("turn_start", "retry", "")
+    assert "final" in [f["type"] for f in frames]
+    assert mgr.turn_texts == ["(retry)"]
+
+
+def test_retry_while_a_turn_runs_is_refused_like_any_turn():
+    app, mgr = _app()
+    with TestClient(app).websocket_connect("/ws/converse") as ws:
+        ws.receive_json()  # hello
+        ws.send_json({"type": "user_text", "text": "slow task"})
+        assert ws.receive_json()["type"] == "turn_start"
+        assert ws.receive_json()["type"] == "token"
+        ws.send_json({"type": "retry"})
+        refused = ws.receive_json()
+        ws.send_json({"type": "interrupt"})
+        _drain_to_turn_end(ws)
+    assert refused["type"] == "error"
+    assert "already running" in refused["message"]
+    assert mgr.turn_texts == ["slow task"]
+
+
 def test_interrupt_ends_the_turn_without_a_final():
     app, _ = _app()
     with TestClient(app).websocket_connect("/ws/converse") as ws:

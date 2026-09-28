@@ -329,7 +329,7 @@ class ConverseConnection:
 
         return _sink
 
-    async def _run_text_turn(self, run: TurnRun) -> None:
+    async def _run_text_turn(self, run: TurnRun, *, retry: bool = False) -> None:
         """Text turn body. Errors, cancellation and ``turn_end`` are the
         registry's job (``TurnRegistry._drive``) — it terminates a run exactly
         once however it ends, for every viewer at the same time."""
@@ -344,9 +344,14 @@ class ConverseConnection:
                     ask_handler=self._asks.handler(run),
                     run_name=f"{self._spec.origin}-chat",
                     keep_full_payloads=True,
+                    retry=retry,
                 )
         finally:
             self._speaking.agent_active = False
+
+    async def _run_retry_turn(self, run: TurnRun) -> None:
+        """The Retry action's body: a text turn that sends nothing new."""
+        await self._run_text_turn(run, retry=True)
 
     async def _run_voice_turn(self, run: TurnRun) -> None:
         """Body for a spoken turn — the streaming lives in :class:`SpokenReply`."""
@@ -365,17 +370,27 @@ class ConverseConnection:
             persist=(self._voice_history.put if self._spec.voice_store is not None else None),
         ).run()
 
-    def start_turn(self, text: str, *, spoken: bool) -> bool:
-        """Hand one turn to the daemon. False when the thread is already busy."""
+    def start_turn(self, text: str, *, spoken: bool, retry: bool = False) -> bool:
+        """Hand one turn to the daemon. False when the thread is already busy.
+
+        ``retry`` runs the model again on the history without sending *text*
+        (the Retry action on a notice); it is always a text turn.
+        """
         spec = self._spec
+        if retry:
+            body, kind = self._run_retry_turn, "retry"
+        elif spoken:
+            body, kind = self._run_voice_turn, "voice"
+        else:
+            body, kind = self._run_text_turn, "text"
         run = spec.manager.start_turn(
             self._thread_id,
-            body=self._run_voice_turn if spoken else self._run_text_turn,
+            body=body,
             session_id=spec.convo.session_id,
             origin=spec.origin,
             agent=spec.agent,
             card_id=spec.card_id,
-            kind="voice" if spoken else "text",
+            kind=kind,
             text=text,
             on_done=self._utterances.on_turn_done,
         )

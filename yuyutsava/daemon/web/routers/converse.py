@@ -18,6 +18,8 @@ Protocol (JSON text frames)
 ---------------------------
 Client → server:
   * ``{"type":"user_text","text":...}``   — run one turn (text)
+  * ``{"type":"retry"}``                  — run the model again on the history,
+    sending nothing new (a notice's Retry action)
   * ``{"type":"audio","pcm":<base64>}``   — a frame of 16 kHz mono int16 mic PCM
   * ``{"type":"audio_end"}``              — end of capture (push-to-talk release)
   * ``{"type":"ask_response","text":...}`` — answer a pending HITL interrupt
@@ -33,8 +35,11 @@ replayed, since finished turns are already in the client's session history.
 Server → client:
   * ``{"type":"hello","session_id":...,"thread_id":...,"resuming":bool,
        "seq":int,"run":{...}|null}``      — ``run`` describes the in-flight turn
-  * ``{"type":"turn_start","run_id":...,"text":...,"kind":"text"|"voice"}``
-  * StreamEvent frames: ``token`` / ``tool_call`` / ``tool_result`` / ``image`` / ``log`` / ``final``
+  * ``{"type":"turn_start","run_id":...,"text":...,"kind":"text"|"voice"|"retry"}``
+  * StreamEvent frames: ``token`` / ``tool_call`` / ``tool_result`` / ``image`` /
+    ``artifact`` / ``log`` / ``notice`` / ``final`` — a ``notice`` may carry
+    ``code`` and ``actions`` (``[{"id":"retry"|"new_chat","label":...}]``); the
+    client offers the actions, and answers Retry with a ``retry`` frame
   * ``{"type":"speech_started"}``          — VAD detected the user talking
   * ``{"type":"transcript","text":...}``   — final STT of the user's utterance
   * ``{"type":"speaking_start"}`` / ``{"type":"speaking_end"}`` — TTS bracketing

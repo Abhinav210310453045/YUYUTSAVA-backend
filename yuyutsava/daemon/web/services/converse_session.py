@@ -687,6 +687,7 @@ class ConverseFrames:
             "ask_response": self._on_ask_response,
             "interrupt": self._on_interrupt,
             "user_text": self._on_user_text,
+            "retry": self._on_retry,
             "audio": self._on_audio,
             "audio_end": self._on_audio_end,
         }
@@ -730,6 +731,11 @@ class ConverseFrames:
         if context:
             text = f"<selection-context>\n{context}\n</selection-context>\n\n{text}"
         if not self._d.start_turn(text, spoken=False):
+            await self._d.reject_busy()
+
+    async def _on_retry(self, msg: dict[str, Any]) -> None:
+        """A notice's Retry: the model runs again on the history, nothing is sent."""
+        if not self._d.start_turn("", spoken=False, retry=True):
             await self._d.reject_busy()
 
     async def _on_ask_response(self, msg: dict[str, Any]) -> None:
