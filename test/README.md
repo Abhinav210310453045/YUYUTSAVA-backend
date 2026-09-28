@@ -19,15 +19,19 @@ Markers are declared in `pyproject.toml`. `--strict-markers` rejects a misspelt 
 
 | Marker | Meaning | How it is applied |
 |---|---|---|
-| `pg` | Needs a live Postgres at `YUYUTSAVA_PG_DSN` | `test.support.pg.requires_pg`. It also **skips** the test when nothing answers, so the mark and the skip cannot drift apart |
+| `pg` | Needs a live Postgres test database (below) | `test.support.pg.requires_pg`. It also **skips** the test when the database is unavailable or refused, so the mark and the skip cannot drift apart |
 | `billable` | Makes real, paid model calls | `@pytest.mark.billable`. The test tree has none: the one smoke script is `scripts/smoke_async.py` |
 | `slow` | Takes seconds, not milliseconds | `@pytest.mark.slow` |
 
-**Point `YUYUTSAVA_PG_DSN` at a scratch database before running `pg` tests.**
-Unset, it falls back to the application's default, which is the real one:
+**The `pg` tests have their own database, `yuyutsava_test`,** on the
+application's server, created on first use. Some of them are destructive by
+design (the TTL-sweep parity tests empty whole tables), so they never run
+against the application's database: `YUYUTSAVA_PG_DSN` — the app's setting —
+does not steer them, and a DSN naming the app's database is refused with a skip
+that says so. To use another scratch database:
 
 ```sh
-YUYUTSAVA_PG_DSN=postgresql://yuyutsava:yuyutsava@127.0.0.1:5435/<scratch-db> \
+YUYUTSAVA_TEST_PG_DSN=postgresql://yuyutsava:yuyutsava@127.0.0.1:5435/<scratch-db> \
   .venv/bin/python -m pytest -m pg
 ```
 

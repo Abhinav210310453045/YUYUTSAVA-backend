@@ -103,9 +103,9 @@ source file at 300 lines; the few files still over it are listed in
 `max-lines-allowlist.json`, which may only shrink (the check fails when a listed
 file no longer needs its entry). `npm run format:check` is Prettier.
 
-The whole suite, including the Postgres tests, is `python -m pytest` with
-`YUYUTSAVA_PG_DSN` pointing at a **scratch** database; unset, it falls back to
-the real one. [test/README.md](test/README.md) covers the markers, the layout and
+The whole suite, including the Postgres tests, is `python -m pytest`. The
+Postgres tests use their own database (`yuyutsava_test`, created on first use,
+or `YUYUTSAVA_TEST_PG_DSN`) and refuse the application's. [test/README.md](test/README.md) covers the markers, the layout and
 the shared helpers.
 
 The lint rules, and why each exists, are in
