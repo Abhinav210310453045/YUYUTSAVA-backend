@@ -88,6 +88,9 @@ def main() -> int:
     from test.framework_contract import (  # noqa: PLC0415 — `test` joins sys.path at run time, above
         test_gemini_output_contract as gemini,
     )
+    from test.framework_contract import (  # noqa: PLC0415 — `test` joins sys.path at run time, above
+        test_retry_node_contract as retry_node,
+    )
     from test.policy import test_filesystem_prompt_override as fs
 
     checks = [
@@ -110,6 +113,10 @@ def main() -> int:
         (
             "Gemini chat classes take the reply-bounding kwargs (silent-failure seam)",
             gemini.test_gemini_chat_classes_accept_the_output_kwargs,
+        ),
+        (
+            "the empty-turn retry's node leads to the model",
+            retry_node.test_the_retry_node_leads_to_the_model,
         ),
         ("declared dependency ranges are sane", _check_declared_ranges),
     ]

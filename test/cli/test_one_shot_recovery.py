@@ -20,6 +20,7 @@ from unittest import mock
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from yuyutsava.cli import session_run
+from yuyutsava.conversation.repair import is_internal
 from yuyutsava.storage.sessions import SqliteSessionStore
 
 
@@ -75,11 +76,21 @@ class OneShotRecovery(unittest.TestCase):
         self.assertEqual(calls, ["go on", None])
         self.assertIn("Retrying", err)
 
-    def test_two_empty_turns_end_in_a_visible_error(self) -> None:
-        final, calls, err = self._run(_Agent([HumanMessage(content="hi", id="h")]), ["", ""])
+    def test_a_still_empty_re_run_gets_one_hidden_nudge(self) -> None:
+        final, calls, _err = self._run(
+            _Agent([HumanMessage(content="hi", id="h")]), ["", "", "done"]
+        )
+        self.assertEqual(final, "done")
+        self.assertEqual(calls[:2], ["go on", None])
+        self.assertTrue(
+            is_internal(calls[2].additional_kwargs), "the nudge must be marked internal"
+        )
+
+    def test_empty_after_the_nudge_ends_in_a_visible_error(self) -> None:
+        final, calls, err = self._run(_Agent([HumanMessage(content="hi", id="h")]), ["", "", ""])
         self.assertEqual(final, "")
-        self.assertEqual(len(calls), 2)
-        self.assertIn("twice", err)
+        self.assertEqual(len(calls), 3, "the first turn, the re-run and the nudge — never a loop")
+        self.assertIn("could not answer", err)
 
     def test_an_open_turn_is_closed_before_the_new_message(self) -> None:
         agent = _Agent(_turn_left_open())

@@ -26,7 +26,13 @@ import sys
 import uuid
 from typing import Any
 
-from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
+from langchain_core.messages import (
+    AIMessage,
+    AIMessageChunk,
+    BaseMessage,
+    HumanMessage,
+    ToolMessage,
+)
 
 from yuyutsava.ansi import BOLD_RED, CYAN, DIM, GREEN, MAGENTA, RED, RESET, YELLOW
 from yuyutsava.core.streaming import drive_graph, last_assistant_text, run_config
@@ -345,7 +351,7 @@ def _log_tool_message(m: ToolMessage) -> None:
 
 async def astream_agent(
     agent: Agent,
-    task: str | None,
+    task: str | BaseMessage | None,
     *,
     thread_id: str | None = None,
     recursion_limit: int = 1000,
@@ -387,15 +393,23 @@ async def astream_agent(
     logger.info(_SEP)
     logger.info("YUYUTSAVA  starting task  thread_id=%s", cfg["configurable"]["thread_id"])
     logger.info(_SEP)
-    logger.info("Task: %s", task if task is not None else "(continuing from the checkpoint)")
+    logger.info(
+        "Task: %s",
+        "(continuing from the checkpoint)"
+        if task is None
+        else ("(an internal retry message)" if isinstance(task, BaseMessage) else task),
+    )
     logger.info(_SEP)
 
     final_messages: list[Any] = []
     # Explicit stable id so the message round-trips the checkpoint unchanged
     # (see the note in core.streaming — prevents duplicate transcript rows).
-    first_input: Any = (
-        None if task is None else {"messages": [HumanMessage(content=task, id=str(uuid.uuid4()))]}
-    )
+    if task is None:
+        first_input: Any = None
+    elif isinstance(task, BaseMessage):
+        first_input = {"messages": [task]}
+    else:
+        first_input = {"messages": [HumanMessage(content=task, id=str(uuid.uuid4()))]}
 
     async def _ask(value: Any) -> str:
         return await prompt_permission(

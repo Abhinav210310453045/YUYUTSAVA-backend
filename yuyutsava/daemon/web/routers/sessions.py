@@ -22,6 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 
 from yuyutsava.artifacts.events import ARTIFACT_EVENT
+from yuyutsava.conversation.repair import is_internal
 from yuyutsava.core.app_context import AppContext
 from yuyutsava.core.purge import purge_session
 from yuyutsava.daemon.web.deps import get_feedback_store, get_session_store, get_visual_store
@@ -131,6 +132,8 @@ def _transcript_history(rows: list) -> list[dict]:
             continue
         if m.type not in ("human", "ai"):
             continue  # skip system messages — not chat bubbles
+        if is_internal(data.get("additional_kwargs")):
+            continue  # a repair note or retry nudge: said to the model, not by or to the user
         text = _extract_text(data.get("content", ""))
         if m.type == "human" and pending:
             _flush(m.seq, m.created_ts)

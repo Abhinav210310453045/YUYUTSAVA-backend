@@ -75,6 +75,12 @@ conclusions. :data:`Cause.INTERRUPTED_BY_USER` — the user interjected, the cal
 never ran, nothing changed. :data:`Cause.SESSION_ENDED` — a permission prompt
 died with the process (Ctrl+C, terminal close, crash), so consent was never
 given and the action must be re-proposed rather than assumed.
+:data:`Cause.EMPTY_REPLY` — the model itself returned nothing; the user did not
+interrupt anything, and saying they did was false history the model then read.
+
+Every message a repair writes carries :data:`INTERNAL_MARK` in its
+``additional_kwargs``: it is a note to the model, never a reply, and the history
+views (:func:`is_internal`) leave it out.
 
 Previously this lived as a private helper in ``sessions/runner.py`` and ran
 **only** on CLI ``--resume``. The daemon — app and voice — never called it,
@@ -105,6 +111,27 @@ class Cause(str, Enum):
 
     INTERRUPTED_BY_USER = "interrupted_by_user"
     SESSION_ENDED = "session_ended"
+    EMPTY_REPLY = "empty_reply"
+
+
+#: The ``additional_kwargs`` key on every message the repair or the empty-turn
+#: retry writes: ``{"yuyutsava": {"internal": <why>}}``.
+INTERNAL_MARK = "yuyutsava"
+
+
+def internal_kwargs(why: str) -> dict[str, dict[str, str]]:
+    """``additional_kwargs`` marking a message as a note to the model, not a reply."""
+    return {INTERNAL_MARK: {"internal": why}}
+
+
+def is_internal(additional_kwargs: Any) -> bool:
+    """Whether a message with these ``additional_kwargs`` is an internal note.
+
+    Takes the kwargs rather than a message so the history views can ask it of a
+    serialised transcript row as easily as of a live message.
+    """
+    mark = additional_kwargs.get(INTERNAL_MARK) if isinstance(additional_kwargs, dict) else None
+    return isinstance(mark, dict) and bool(mark.get("internal"))
 
 
 #: What a tool call that never completed is told to report.
@@ -122,6 +149,11 @@ _REPLACEMENT = {
         "prompt could be answered. If this action is still required, re-propose "
         "it explicitly so the user can decide. Do NOT assume it succeeded."
     ),
+    Cause.EMPTY_REPLY: (
+        "INCOMPLETE: this tool call never returned a result — the turn ended "
+        "before it finished. It did NOT run and nothing it would have changed "
+        "was changed. If the work is still wanted, call the tool again."
+    ),
 }
 
 #: The assistant message that closes an interrupted turn. Short on purpose: it
@@ -135,6 +167,10 @@ _TURN_CLOSER = {
     Cause.SESSION_ENDED: (
         "[interrupted] The session ended before I could finish this turn. The "
         "tool results above were collected but never acted on."
+    ),
+    Cause.EMPTY_REPLY: (
+        "[no reply] I read the tool results above but did not reply to them, so "
+        "I have not reported a conclusion yet."
     ),
 }
 
@@ -285,7 +321,9 @@ def rewrite(messages: Any, cause: Cause, *, close_turn: bool = True) -> list[Any
             )
         )
     if close_turn and found.unclosed_turn:
-        out.append(AIMessage(content=_TURN_CLOSER[cause]))
+        out.append(
+            AIMessage(content=_TURN_CLOSER[cause], additional_kwargs=internal_kwargs(cause.value))
+        )
     return out
 
 
@@ -295,8 +333,15 @@ async def repair_orphan_tool_calls(
     *,
     cause: Cause = Cause.INTERRUPTED_BY_USER,
     close_turn: bool = True,
+    as_node: str | None = None,
 ) -> int:
     """Repair a thread's history in place. Returns how many messages changed.
+
+    *as_node* writes the repair as if that graph node had produced it, which
+    decides what the graph runs next: ``"tools"`` puts the model next, so the
+    empty-turn retry can re-run it on the repaired history. With *as_node* the
+    write happens even when nothing needs repairing — moving the graph is the
+    point.
 
     Never raises: a conversation that cannot be repaired is still better off
     being attempted than being abandoned, and the caller's next step (surface
@@ -310,10 +355,13 @@ async def repair_orphan_tool_calls(
         return 0
     messages = state.values.get("messages", []) if state and state.values else []
     patched = rewrite(messages, cause, close_turn=close_turn)
-    if not patched:
+    if not patched and as_node is None:
         return 0
     try:
-        await agent.aupdate_state(config, {"messages": patched})
+        if as_node is None:
+            await agent.aupdate_state(config, {"messages": patched})
+        else:
+            await agent.aupdate_state(config, {"messages": patched}, as_node=as_node)
     except Exception:
         logger.exception("state repair failed for thread=%s", thread_id)
         return 0
@@ -332,9 +380,12 @@ async def repair_orphan_tool_calls(
 
 __all__ = [
     "CANCELLED_TOOL_MARKER",
+    "INTERNAL_MARK",
     "Cause",
     "Findings",
     "diagnose",
+    "internal_kwargs",
+    "is_internal",
     "needs_repair",
     "repair_orphan_tool_calls",
     "rewrite",

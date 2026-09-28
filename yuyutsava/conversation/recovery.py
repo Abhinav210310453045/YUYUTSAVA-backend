@@ -3,8 +3,9 @@
 Two moments, one sequence (read the checkpoint, :func:`~.repair.diagnose`,
 repair). **Before every turn** (:func:`repair_before_turn`), so no message is
 sent into a history in a shape the model refuses; and **after a turn came back
-empty** (:func:`recover_empty_turn`), where the turn is retried once and the user
-is always told what happened.
+empty** (:func:`recover_empty_turn`), where the turn is retried — first on the
+same history, then with a hidden nudge — and the user is always told what
+happened.
 
 :mod:`~yuyutsava.conversation.repair` rewrites the checkpoint; this module
 decides when to, and what the user hears about it. Nothing here raises into
@@ -14,11 +15,19 @@ a turn — the user is waiting on both paths.
 from __future__ import annotations
 
 import logging
+import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
-from yuyutsava.conversation.repair import Cause, diagnose, repair_orphan_tool_calls
+from langchain_core.messages import BaseMessage, HumanMessage, RemoveMessage
+
+from yuyutsava.conversation.repair import (
+    Cause,
+    diagnose,
+    internal_kwargs,
+    repair_orphan_tool_calls,
+)
 from yuyutsava.core.streaming import StreamEvent
 
 logger = logging.getLogger("yuyutsava.conversation.recovery")
@@ -26,8 +35,22 @@ logger = logging.getLogger("yuyutsava.conversation.recovery")
 # An async sink for stream events; sync callables are also accepted and called
 # directly (the result is awaited only when it's awaitable).
 EventSink = Callable[[StreamEvent], Awaitable[None] | None]
-#: One pass of the graph: ``(user_text, resume_value) -> (final_text, steps)``.
-Drive = Callable[[str | None, object | None], Awaitable[tuple[str, int]]]
+#: One pass of the graph: ``(input, resume_value) -> (final_text, steps)``. The
+#: input is the user's text, a prepared message, or ``None`` to continue from the
+#: checkpoint as it stands.
+Drive = Callable[[str | BaseMessage | None, object | None], Awaitable[tuple[str, int]]]
+
+#: The graph node the retry writes its repair as, so the model runs next. Pinned
+#: by ``test/framework_contract/test_retry_node_contract.py``.
+TOOLS_NODE = "tools"
+
+#: What the second retry says. It changes the input, which is what breaks a
+#: near-deterministic model out of repeating the same empty think; it is marked
+#: internal, so no history view shows it.
+_NUDGE = (
+    "(Automatic retry: your previous reply was empty.) Reply to my last message now, "
+    "using the tool results above if there are any. If nothing is left to do, say so briefly."
+)
 
 
 def repair_summary(found: Any, *, close_turn: bool = True) -> str:
@@ -95,6 +118,16 @@ def _token(usage: Any, *path: str) -> int:
         return 0
 
 
+def _normalise_reason(raw: str) -> str:
+    """``MAX_TOKENS`` from any SDK spelling.
+
+    A streamed reply's metadata merges the chunks' reasons by concatenation, so
+    Vertex reports ``FINISH_REASON_UNSPECIFIEDFINISH_REASON_UNSPECIFIEDMAX_TOKENS``;
+    an enum renders as ``FinishReason.MAX_TOKENS``.
+    """
+    return raw.rsplit(".", 1)[-1].upper().replace("FINISH_REASON_UNSPECIFIED", "")
+
+
 def describe_empty_reply(messages: Any) -> EmptyReply | None:
     """What the latest empty reply in *messages* reported, or ``None`` if there is none.
 
@@ -112,7 +145,7 @@ def describe_empty_reply(messages: Any) -> EmptyReply | None:
     raw = str((getattr(reply, "response_metadata", None) or {}).get("finish_reason") or "")
     usage = getattr(reply, "usage_metadata", None) or {}
     return EmptyReply(
-        finish_reason=raw.rsplit(".", 1)[-1].upper(),
+        finish_reason=_normalise_reason(raw),
         input_tokens=_token(usage, "input_tokens"),
         output_tokens=_token(usage, "output_tokens"),
         thinking_tokens=_token(usage, "output_token_details", "reasoning"),
@@ -134,6 +167,8 @@ async def inspect_and_repair(
     thread_id: str,
     *,
     close_turn: bool = True,
+    cause: Cause = Cause.INTERRUPTED_BY_USER,
+    as_node: str | None = None,
     what: str,
 ) -> tuple[Any | None, int]:
     """Read *thread_id*'s checkpoint, diagnose it, and repair if needed.
@@ -151,13 +186,14 @@ async def inspect_and_repair(
         state = await agent.aget_state({"configurable": {"thread_id": thread_id}})
         messages = state.values.get("messages", []) if state and state.values else []
         found = diagnose(messages)
-        if not found.any(close_turn=close_turn):
+        if not found.any(close_turn=close_turn) and as_node is None:
             return found, 0
         repaired = await repair_orphan_tool_calls(
             agent,
             thread_id,
-            cause=Cause.INTERRUPTED_BY_USER,
+            cause=cause,
             close_turn=close_turn,
+            as_node=as_node,
         )
         return found, repaired
     except Exception:  # noqa: BLE001 — see the docstring
@@ -202,67 +238,118 @@ async def recover_empty_turn(
 ) -> tuple[str, int]:
     """A turn produced nothing. Try to fix it, and never stay silent.
 
-    The failure this exists for: after a fabricated "cancelled" tool result,
-    every call returned ``finish_reason: STOP`` with zero output tokens —
-    each turn cost ~70,000 input tokens and said nothing.
+    The failure this exists for: a thinking model spends its whole output cap
+    thinking over a large tool result and stops with no text and no call — and,
+    at a low temperature, does the same again on the same history.
 
-    Two steps, in order:
+    An escalating ladder, each rung only when the one before came back empty:
 
-    1. Repair whatever the history is carrying (see
-       :mod:`yuyutsava.conversation.repair`) and drive the graph **once**
-       more with no new user message, so the agent answers the message
-       already in its history.
-    2. Whatever happens, emit a ``notice`` the user can see. Silence is
-       indistinguishable from a hang, and it is the one outcome a
-       conversational agent must never produce.
+    1. **Re-run the model** on the same history: the empty reply is removed and
+       the repair is written as the tools node, so the graph's next step is the
+       model. No message is added — the user's is already in the history, and
+       sending it twice would make the model answer itself. Handles the
+       transient case.
+    2. **Nudge**: one hidden instruction to reply now. A changed input is what
+       breaks a near-deterministic model out of repeating itself.
+    3. **Give up visibly**: close the turn with an honest note to the model and
+       tell the user, who can start a new chat or try again.
 
-    The retry is unconditional — an empty turn with nothing to repair is
-    often transient, and the user's next message goes through — and it is
-    exactly one, so an unrecoverable thread cannot spend in a loop.
+    The user hears about it at every stage — silence is indistinguishable from
+    a hang, and it is the one outcome a conversational agent must never produce.
     """
     steps = 0
     facts = describe_empty_reply(await _checkpoint_messages(agent, thread_id))
     if facts is not None:
         logger.warning("empty reply on thread=%s: %s", thread_id, facts.describe())
-    found, repaired = await inspect_and_repair(agent, thread_id, what="empty-turn inspection")
-    if repaired and found is not None:
-        await notice(
-            on_event,
-            "warning",
-            "The previous turn left the history in a shape the model "
-            "would not continue from (" + repair_summary(found) + "). Repaired — retrying.",
-        )
-    else:
-        await notice(
-            on_event,
-            "warning",
-            "The model returned nothing. Retrying once — an empty response is often transient.",
-        )
-    # No new user message: theirs is already in the history, and sending it
-    # twice would make the model answer itself.
-    try:
-        final, steps = await drive(None, None)
-    except Exception:  # noqa: BLE001 — the retry's failure becomes the silent-turn notice
-        logger.exception("retry after an empty turn failed")
-        final = ""
-    if final:
-        return final, steps
-
-    await notice(
-        on_event,
-        "error",
-        "The model returned an empty response twice — no text and no "
-        "tool call, before and after a repair. The conversation's "
-        "history is in a state it will not continue from. Try /new for "
-        "a fresh session; your last message is still in the history, "
-        "so nothing you wrote is lost.",
-    )
-    logger.warning(
-        "empty turn on thread=%s (repaired=%d, retried=1) — surfaced to the user",
+    found, _ = await inspect_and_repair(
+        agent,
         thread_id,
-        repaired,
+        close_turn=False,
+        cause=Cause.EMPTY_REPLY,
+        as_node=TOOLS_NODE,
+        what="empty-turn repair",
+    )
+    await notice(on_event, "warning", _retrying_text(facts, found))
+
+    nudge = _nudge()
+    for rung, retry_input in (("re-run", None), ("nudge", nudge)):
+        try:
+            final, taken = await drive(retry_input, None)
+            steps += taken
+        except Exception:  # noqa: BLE001 — a failed rung falls through to the next, then to the notice
+            logger.exception("empty-turn retry (%s) failed on thread=%s", rung, thread_id)
+            final = ""
+        if final:
+            return final, steps
+        if rung == "re-run":
+            # The re-run came back empty too: clear that reply before the nudge.
+            await inspect_and_repair(
+                agent,
+                thread_id,
+                close_turn=False,
+                cause=Cause.EMPTY_REPLY,
+                what="empty-turn repair",
+            )
+
+    # Giving up: take the nudge back out — an unanswered "reply now" would sit in
+    # front of the user's next message — then close the turn honestly.
+    await _remove(agent, thread_id, nudge.id)
+    await inspect_and_repair(
+        agent, thread_id, cause=Cause.EMPTY_REPLY, what="closing an empty turn"
+    )
+    await notice(on_event, "error", _gave_up_text(facts))
+    logger.warning(
+        "empty turn on thread=%s (re-run and nudge both empty) — surfaced to the user",
+        thread_id,
     )
     return "", steps
+
+
+async def _remove(agent: Any, thread_id: str, message_id: str | None) -> None:
+    """Remove one message from the checkpoint; a failure only costs a stray note."""
+    try:
+        await agent.aupdate_state(
+            {"configurable": {"thread_id": thread_id}},
+            {"messages": [RemoveMessage(id=message_id)]},
+        )
+    except Exception:  # noqa: BLE001 — the give-up notice must still go out
+        logger.debug("removing the retry nudge failed", exc_info=True)
+
+
+def _nudge() -> HumanMessage:
+    return HumanMessage(
+        content=_NUDGE, id=str(uuid.uuid4()), additional_kwargs=internal_kwargs("retry_nudge")
+    )
+
+
+def _retrying_text(facts: EmptyReply | None, found: Any) -> str:
+    why = (
+        "The model used its whole output budget thinking and returned nothing"
+        if facts is not None and facts.ran_out_of_room
+        else "The model returned an empty reply"
+    )
+    extra = [
+        part
+        for part, n in (
+            ("cancelled tool call", len(getattr(found, "cancelled", ()))),
+            ("tool call with no result", len(getattr(found, "dangling", ()))),
+        )
+        if n
+    ]
+    repaired = f" (also repaired: {', '.join(extra)})" if extra else ""
+    return f"{why}{repaired}. Retrying."
+
+
+def _gave_up_text(facts: EmptyReply | None) -> str:
+    why = (
+        "it kept using its whole output budget thinking"
+        if facts is not None and facts.ran_out_of_room
+        else "it kept replying with nothing — no text and no tool call"
+    )
+    return (
+        f"The model could not answer: {why}, on a re-run and after a nudge. "
+        "Your message is still in this conversation. Start a new chat, or try again."
+    )
 
 
 async def notice(on_event: EventSink, level: str, text: str) -> None:

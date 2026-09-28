@@ -62,7 +62,13 @@ class DescribingAnEmptyReply(unittest.TestCase):
         self.assertIn("4,096 thinking", facts.describe())
 
     def test_sdk_spellings_of_the_reason_are_normalised(self) -> None:
-        for raw in ("FinishReason.MAX_TOKENS", "max_tokens", "length"):
+        for raw in (
+            "FinishReason.MAX_TOKENS",
+            "max_tokens",
+            "length",
+            # A streamed reply: Vertex's chunk reasons, merged by concatenation.
+            "FINISH_REASON_UNSPECIFIEDFINISH_REASON_UNSPECIFIEDMAX_TOKENS",
+        ):
             with self.subTest(raw=raw):
                 self.assertTrue(describe_empty_reply(_history(_empty(raw))).ran_out_of_room)
         self.assertFalse(describe_empty_reply(_history(_empty("STOP"))).ran_out_of_room)

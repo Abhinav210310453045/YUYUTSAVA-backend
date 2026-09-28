@@ -19,6 +19,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from langchain_core.messages import BaseMessage
 from langgraph.graph.state import CompiledStateGraph
 
 from yuyutsava.ansi import CYAN, DIM, RED, RESET, YELLOW
@@ -145,7 +146,9 @@ async def run_session(
     async def _on_tick(steps: int) -> None:
         await ticker.tick(steps)
 
-    async def _drive(user_text: str | None, _resume: object | None) -> tuple[str, int]:
+    async def _drive(
+        user_text: str | BaseMessage | None, _resume: object | None
+    ) -> tuple[str, int]:
         final_text = await astream_agent(
             agent,
             user_text,

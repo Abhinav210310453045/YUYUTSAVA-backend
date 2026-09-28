@@ -32,6 +32,8 @@ import time
 from pathlib import Path
 from typing import Awaitable, Callable
 
+from langchain_core.messages import BaseMessage
+
 from yuyutsava.conversation.recovery import EventSink, recover_empty_turn, repair_before_turn
 from yuyutsava.conversation.sessions import CoalescedTicker, count_memory_files, resolve_session
 from yuyutsava.conversation.titles import derive_session_title
@@ -223,7 +225,9 @@ class ConversationService:
             close_turn=resume_value is None,
         )
 
-        async def _drive(user_text: str | None, resume: object | None) -> tuple[str, int]:
+        async def _drive(
+            user_text: str | BaseMessage | None, resume: object | None
+        ) -> tuple[str, int]:
             """One pass of the graph. Returns ``(final_text, steps)``."""
             final_text = ""
             step_count = 0

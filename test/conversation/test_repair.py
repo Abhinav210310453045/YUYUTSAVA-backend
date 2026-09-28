@@ -33,6 +33,7 @@ from yuyutsava.conversation.repair import (
     CANCELLED_TOOL_MARKER,
     Cause,
     diagnose,
+    is_internal,
     needs_repair,
     repair_orphan_tool_calls,
     rewrite,
@@ -165,6 +166,7 @@ class _FakeAgent:
     def __init__(self, messages, *, read_fails=False, write_fails=False):
         self._messages = messages
         self.updates: list = []
+        self.as_nodes: list = []
         self._read_fails = read_fails
         self._write_fails = write_fails
 
@@ -173,10 +175,11 @@ class _FakeAgent:
             raise RuntimeError("checkpoint unreachable")
         return type("S", (), {"values": {"messages": self._messages}})()
 
-    async def aupdate_state(self, config, update):
+    async def aupdate_state(self, config, update, as_node=None):
         if self._write_fails:
             raise RuntimeError("checkpoint read-only")
         self.updates.append(update)
+        self.as_nodes.append(as_node)
 
 
 class RepairingAThread(unittest.TestCase):
@@ -483,10 +486,12 @@ class AnEmptyTurnIsAlwaysRetried(unittest.TestCase):
         self.assertEqual(events[0].kind, "notice")
         self.assertIn("cancelled tool call", events[0].data["text"])
 
-    def test_a_still_empty_retry_ends_in_a_visible_error(self):
+    def test_a_retry_ladder_that_stays_empty_ends_in_a_visible_error(self):
         events: list = []
+        drives: list = []
 
         async def drive(user_text, resume):
+            drives.append(user_text)
             return "", 1
 
         final, _steps = asyncio.run(
@@ -495,8 +500,12 @@ class AnEmptyTurnIsAlwaysRetried(unittest.TestCase):
             )
         )
         self.assertEqual(final, "")
+        self.assertEqual(len(drives), 2, "a re-run and one nudge, never a loop")
+        self.assertIsNone(drives[0])
+        self.assertTrue(is_internal(drives[1].additional_kwargs))
         self.assertEqual(events[-1].data["level"], "error")
-        self.assertIn("twice", events[-1].data["text"])
+        self.assertIn("could not answer", events[-1].data["text"])
+        self.assertNotIn("/new", events[-1].data["text"], "the app has no slash commands")
 
     def test_a_new_turn_closes_an_interrupted_one_but_a_resume_does_not(self):
         import inspect

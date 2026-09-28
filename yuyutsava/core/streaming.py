@@ -24,7 +24,13 @@ import uuid
 from dataclasses import dataclass
 from typing import Any
 
-from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
+from langchain_core.messages import (
+    AIMessage,
+    AIMessageChunk,
+    BaseMessage,
+    HumanMessage,
+    ToolMessage,
+)
 from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command
 
@@ -272,12 +278,17 @@ async def drive_graph(
 async def _first_input(
     agent: Agent,
     cfg: RunnableConfig,
-    task: str,
+    task: str | BaseMessage | None,
     *,
     resume: bool,
     resume_value: Any | None,
 ) -> Any:
-    """What the graph is entered with: a new turn, a resume, or an old answer."""
+    """What the graph is entered with: a new turn, a resume, or an old answer.
+
+    ``task`` is the user's text, a message already built (the empty-turn retry's
+    hidden nudge), or ``None`` — continue from the checkpoint as it stands, which
+    the retry has positioned so the model runs next.
+    """
     if resume_value is not None:
         # Answering an interrupt raised by a PREVIOUS process. The graph is
         # still parked at its checkpointed ``interrupt()``, so we re-enter with
@@ -294,6 +305,10 @@ async def _first_input(
             "resume requested for thread %s but no checkpoint state found; starting a fresh run",
             cfg["configurable"]["thread_id"],
         )
+    if task is None:
+        return None
+    if isinstance(task, BaseMessage):
+        return {"messages": [task]}
     # Explicit stable id: a HumanMessage created with id=None gets a fresh id
     # re-minted by add_messages on every reload of the thread, which breaks the
     # transcript recorder's id-based dedup — the same user turn is written again
@@ -391,7 +406,7 @@ def _empty_turn_notice(
 
 async def astream_agent_iter(
     agent: Agent,
-    task: str,
+    task: str | BaseMessage | None,
     *,
     thread_id: str | None = None,
     recursion_limit: int = 1000,
