@@ -131,8 +131,11 @@ async def run_one_turn(
     renderer: "ChatRenderer",
     ask_handler: Any,
     dashboard: "ChatDashboard | None",
+    retry: bool = False,
 ) -> bool:
     """Run one turn and fail soft. False when it did not finish.
+
+    ``retry`` sends nothing: the model runs again on the history (``/retry``).
 
     The renderer is the terminal's output adapter and ``ask_handler`` its HITL
     bridge; everything else here is about not ending the session over a turn.
@@ -151,6 +154,7 @@ async def run_one_turn(
             ask_handler=ask_handler,
             run_name="cli-chat",
             keep_full_payloads=True,
+            retry=retry,
         )
     except (KeyboardInterrupt, asyncio.CancelledError):
         # Ctrl+C during a turn does NOT arrive as KeyboardInterrupt here:
@@ -365,6 +369,7 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
     SlashCommand("/quit", "exit the chat (Ctrl+D also works)", aliases=("/exit", "/q")),
     SlashCommand("/clear", "clear the screen and redraw the banner"),
     SlashCommand("/new", "start a fresh session in this process"),
+    SlashCommand("/retry", "run the model again on your last message, sending nothing new"),
     SlashCommand("/session", "show the current session id"),
     SlashCommand("/ring", "list recent tool calls/results with their [#n] indices"),
     SlashCommand("/last", "print the last k captured payloads in full (default 1)", usage="[k]"),
@@ -652,6 +657,8 @@ class Outcome(Enum):
     NOT_A_COMMAND = auto()
     HANDLED = auto()
     QUIT = auto()
+    #: ``/retry``: run a turn that sends nothing new.
+    RETRY = auto()
 
 
 @dataclass
@@ -711,6 +718,8 @@ class ReplCommands:
         if head == "/new":
             await self._rotate_session()
             return Outcome.HANDLED
+        if head == "/retry":
+            return Outcome.RETRY
         result = _handle_slash(
             cmd,
             session_id=self.session.id,
@@ -896,8 +905,10 @@ class ReplLoop:
                 return
             if outcome is Outcome.NOT_A_COMMAND:
                 await self._turn(user_input)
+            elif outcome is Outcome.RETRY:
+                await self._turn("", retry=True)
 
-    async def _turn(self, text: str) -> None:
+    async def _turn(self, text: str, *, retry: bool = False) -> None:
         started = time.time()
         if not await run_one_turn(
             self.convo,
@@ -905,6 +916,7 @@ class ReplLoop:
             renderer=self.renderer,
             ask_handler=self.ask_handler,
             dashboard=self.dashboard,
+            retry=retry,
         ):
             return
         # What the turn cost, from the rows the graph just wrote. The input

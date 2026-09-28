@@ -19,6 +19,7 @@ from yuyutsava.ansi import CYAN, DIM, GREEN, RED, RESET, YELLOW
 from yuyutsava.cli.render import artifact_view as av
 from yuyutsava.cli.render import tool_format as tf
 from yuyutsava.cli.render import zones
+from yuyutsava.cli.render.notices import action_hint, notice_mark
 from yuyutsava.cli.render.ring import PayloadRing
 from yuyutsava.cli.stream_smoother import TokenSmoother
 from yuyutsava.config.env import env_flag, env_float
@@ -156,8 +157,9 @@ class ChatRenderer:
                 if text := data.get("text", ""):
                     level = data.get("level", "info")
                     colour = {"error": RED, "warning": YELLOW}.get(level, DIM)
-                    mark = {"error": "✗", "warning": "⚠"}.get(level, "·")
-                    _err(f"  {colour}{mark} {text}{RESET}")
+                    _err(f"  {colour}{notice_mark(level)} {text}{RESET}")
+                    if hint := action_hint(data):
+                        _err(f"    {DIM}{hint}{RESET}")
             case "final":
                 # The token stream above already covered the prose. Just newline.
                 print(flush=True)

@@ -23,6 +23,7 @@ from langchain_core.messages import BaseMessage
 from langgraph.graph.state import CompiledStateGraph
 
 from yuyutsava.ansi import CYAN, DIM, RED, RESET, YELLOW
+from yuyutsava.cli.render.notices import notice_mark
 from yuyutsava.cli.render.terminal_stream import astream_agent
 from yuyutsava.conversation.recovery import recover_empty_turn, repair_before_turn
 from yuyutsava.conversation.repair import Cause, repair_orphan_tool_calls
@@ -55,11 +56,14 @@ async def _patch_orphan_cancellations(agent: CompiledStateGraph, thread_id: str)
 
 
 def _print_notice(ev: StreamEvent) -> None:
-    """A recovery notice, in the terminal's own voice."""
+    """A recovery notice, in the terminal's own voice.
+
+    No action hints: a one-shot run has no ``/retry`` or ``/new`` to offer —
+    the banner's resume command is how to carry on.
+    """
     level = ev.data.get("level", "info")
     colour = {"error": RED, "warning": YELLOW}.get(level, DIM)
-    mark = {"error": "✗", "warning": "⚠"}.get(level, "·")
-    print(f"  {colour}{mark} {ev.data.get('text', '')}{RESET}", file=sys.stderr)
+    print(f"  {colour}{notice_mark(level)} {ev.data.get('text', '')}{RESET}", file=sys.stderr)
 
 
 def _print_start_banner(session: Session, *, resuming: bool) -> None:

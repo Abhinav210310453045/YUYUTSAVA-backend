@@ -25,6 +25,7 @@ EXPECTED = {
     "/quit",
     "/clear",
     "/new",
+    "/retry",
     "/session",
     "/ring",
     "/last",

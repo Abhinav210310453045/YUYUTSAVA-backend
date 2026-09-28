@@ -122,6 +122,15 @@ class Quitting(unittest.TestCase):
                 self.assertEqual(_dispatch(cmds, text)[0], Outcome.QUIT)
 
 
+class Retrying(unittest.TestCase):
+    def test_retry_asks_the_loop_for_a_turn_that_sends_nothing(self) -> None:
+        cmds, ring, toggles = _commands()
+        for text in ("/retry", "  /RETRY "):
+            with self.subTest(text=text):
+                self.assertEqual(_dispatch(cmds, text), (Outcome.RETRY, ""))
+        self.assertEqual((ring.calls, toggles.calls), ([], []))
+
+
 class ScrollbackCommands(unittest.TestCase):
     def test_ring_last_and_expand(self) -> None:
         cmds, ring, _ = _commands()

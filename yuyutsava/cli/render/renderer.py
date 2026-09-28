@@ -40,6 +40,7 @@ from yuyutsava.cli.render import artifact_view as av
 from yuyutsava.cli.render import tool_format as tf
 from yuyutsava.cli.render import zones
 from yuyutsava.cli.render.markdown_stream import MarkdownStream
+from yuyutsava.cli.render.notices import action_hint, notice_mark
 from yuyutsava.cli.render.ring import PayloadRing
 from yuyutsava.core.streaming import StreamEvent
 from yuyutsava.llm.quirks.first_chunk_retry import classify_provider_busy
@@ -323,10 +324,11 @@ class RichChatRenderer:
             return
         level = data.get("level", "info")
         style = {"error": "err", "warning": "warn"}.get(level, "chrome")
-        mark = {"error": "✗", "warning": "⚠"}.get(level, "·")
         self._md.flush()
         self._console.print()
-        self._console.print(Text(f"  {mark} {text}", style=style))
+        self._console.print(Text(f"  {notice_mark(level)} {text}", style=style))
+        if hint := action_hint(data):
+            self._console.print(Text(f"    {hint}", style="chrome"))
 
     # ------------------------------------------------------------------
     # Line printers (everything renders above the Live region)

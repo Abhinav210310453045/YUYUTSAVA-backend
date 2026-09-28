@@ -37,6 +37,8 @@ class _Commands:
         self.seen.append(text)
         if text == "/quit":
             return cr.Outcome.QUIT
+        if text == "/retry":
+            return cr.Outcome.RETRY
         if text.startswith("/"):
             if text == "/new":
                 self.session = SimpleNamespace(thread_id="thr-2")
@@ -63,7 +65,7 @@ def _run(*lines: Any, turn_ok: bool = True, usage: str = "1 call") -> dict:
     usage_calls: list[tuple] = []
 
     async def _one_turn(convo, text, **kw):
-        turns.append(text)
+        turns.append("(retry)" if kw.get("retry") else text)
         return turn_ok
 
     async def _session_usage(store, thread_id, started):
@@ -102,6 +104,11 @@ class WhatEachLineDoes(unittest.TestCase):
         out = _run("  hello  ", "", "   ", "/x", "again", "/quit", "never read")
         self.assertEqual(out["dispatched"], ["hello", "/x", "again", "/quit"])
         self.assertEqual(out["turns"], ["hello", "again"])
+
+    def test_retry_runs_a_turn_that_sends_nothing(self) -> None:
+        out = _run("hi", "/retry", "/quit")
+        self.assertEqual(out["turns"], ["hi", "(retry)"])
+        self.assertEqual(len(out["usage_calls"]), 2, "a retry's cost is printed too")
 
     def test_a_turn_prints_its_cost_for_the_current_session(self) -> None:
         out = _run("hi", "/new", "hi", "/quit")
