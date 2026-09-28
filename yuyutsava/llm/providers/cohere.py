@@ -5,7 +5,7 @@ from __future__ import annotations
 from langchain_core.language_models import BaseChatModel
 from pydantic import SecretStr
 
-from yuyutsava.llm.base import Provider, require
+from yuyutsava.llm.base import ANSWER_TOKENS, Provider, require
 from yuyutsava.llm.settings import CohereSettings
 
 
@@ -21,7 +21,7 @@ class CohereProvider(Provider):
             cohere_api_key=SecretStr(settings.api_key),
             model=settings.model,
             temperature=temperature,
-            max_tokens=4096,
+            max_tokens=ANSWER_TOKENS,
         )
 
 

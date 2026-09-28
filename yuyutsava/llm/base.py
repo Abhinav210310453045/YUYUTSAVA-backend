@@ -32,6 +32,12 @@ from langchain_core.language_models import BaseChatModel
 from yuyutsava.llm.handle import Capability
 from yuyutsava.llm.settings import LlmSettings
 
+#: What every provider lets the model write for one reply — the answer or tool
+#: call itself. A model that thinks gets its thinking budget *on top* of this (see
+#: ``providers/gemini_budget``), so a long think can never leave the answer
+#: without room.
+ANSWER_TOKENS = 8192
+
 
 def require(module: str, *, provider: str, install: str) -> ModuleType:
     """Import an optional provider SDK, or explain how to install it.

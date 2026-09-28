@@ -7,6 +7,7 @@ from pydantic import SecretStr
 
 from yuyutsava.llm.base import Provider, require
 from yuyutsava.llm.handle import Capability
+from yuyutsava.llm.providers.gemini_budget import gemini_output_kwargs
 from yuyutsava.llm.quirks.gemini_parts import parts_safe
 from yuyutsava.llm.quirks.loop_affinity import loop_pinned
 from yuyutsava.llm.settings import GoogleSettings
@@ -30,7 +31,7 @@ class GoogleProvider(Provider):
             api_key=SecretStr(settings.api_key),
             model=settings.model,
             temperature=temperature,
-            max_output_tokens=4096,
+            **gemini_output_kwargs(settings.model, settings.thinking_budget),
         )
 
 

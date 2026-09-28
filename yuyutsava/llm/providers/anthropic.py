@@ -9,7 +9,7 @@ from __future__ import annotations
 from langchain_core.language_models import BaseChatModel
 from pydantic import SecretStr
 
-from yuyutsava.llm.base import Provider, require
+from yuyutsava.llm.base import ANSWER_TOKENS, Provider, require
 from yuyutsava.llm.settings import AnthropicSettings
 
 
@@ -26,7 +26,7 @@ class AnthropicProvider(Provider):
             api_key=SecretStr(settings.api_key),
             model_name=settings.model,
             temperature=temperature,
-            max_tokens_to_sample=4096,
+            max_tokens_to_sample=ANSWER_TOKENS,
         )
 
 

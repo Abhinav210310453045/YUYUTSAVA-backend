@@ -10,7 +10,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_openai import AzureChatOpenAI
 from pydantic import SecretStr
 
-from yuyutsava.llm.base import Provider
+from yuyutsava.llm.base import ANSWER_TOKENS, Provider
 from yuyutsava.llm.settings import AzureOpenAISettings
 
 
@@ -44,7 +44,7 @@ class AzureOpenAIProvider(Provider):
             azure_deployment=settings.azure_deployment,
             api_version=settings.api_version,
             temperature=temperature,
-            max_tokens=4096,
+            max_tokens=ANSWER_TOKENS,
         )
 
 

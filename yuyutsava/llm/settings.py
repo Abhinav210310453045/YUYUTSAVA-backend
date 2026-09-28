@@ -41,6 +41,11 @@ from typing import ClassVar, Protocol
 
 from yuyutsava.config.env import env, env_int
 
+#: Tokens a thinking Gemini model may spend on thinking before it answers — a
+#: budget of its own, on top of the answer's share (``llm.base.ANSWER_TOKENS``).
+#: ``VERTEX_THINKING_BUDGET`` / ``GOOGLE_THINKING_BUDGET``; 0 turns thinking off.
+DEFAULT_THINKING_BUDGET = 8192
+
 GROQ_OPENAI_BASE_URL = "https://api.groq.com/openai/v1"
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 OLLAMA_BASE_URL = "http://localhost:11434/v1"
@@ -253,6 +258,7 @@ class GoogleSettings:
 
     api_key: str
     model: str = "gemini-2.5-flash"
+    thinking_budget: int = DEFAULT_THINKING_BUDGET
 
     @property
     def base_url(self) -> str:  # structural LlmSettings conformance (n/a here)
@@ -267,7 +273,8 @@ class GoogleSettings:
                 "See https://ai.google.dev/gemini-api/docs/api-key"
             )
         model = env("GOOGLE_MODEL", role, "gemini-2.5-flash")
-        return cls(api_key=key, model=model)
+        thinking = max(0, env_int("GOOGLE_THINKING_BUDGET", role, DEFAULT_THINKING_BUDGET))
+        return cls(api_key=key, model=model, thinking_budget=thinking)
 
 
 @dataclass(frozen=True)
@@ -289,6 +296,7 @@ class VertexSettings:
     # Applies to both the SDK's own tenacity wrapper (non-streaming) and the
     # first-chunk retry quirk that covers the streaming path the SDK misses.
     max_retries: int = 6
+    thinking_budget: int = DEFAULT_THINKING_BUDGET
 
     @property
     def api_key(self) -> str:  # ADC auth — no key
@@ -309,7 +317,14 @@ class VertexSettings:
         location = env("VERTEX_LOCATION", role, "us-central1")
         model = env("VERTEX_MODEL", role, "gemini-2.5-flash")
         max_retries = max(0, env_int("VERTEX_MAX_RETRIES", role, 6))
-        return cls(project=project, location=location, model=model, max_retries=max_retries)
+        thinking = max(0, env_int("VERTEX_THINKING_BUDGET", role, DEFAULT_THINKING_BUDGET))
+        return cls(
+            project=project,
+            location=location,
+            model=model,
+            max_retries=max_retries,
+            thinking_budget=thinking,
+        )
 
 
 @dataclass(frozen=True)

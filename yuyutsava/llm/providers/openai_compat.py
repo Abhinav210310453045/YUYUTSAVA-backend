@@ -17,7 +17,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 
-from yuyutsava.llm.base import Provider
+from yuyutsava.llm.base import ANSWER_TOKENS, Provider
 from yuyutsava.llm.handle import Capability
 from yuyutsava.llm.settings import (
     GroqSettings,
@@ -71,7 +71,7 @@ class OpenAICompatibleProvider(Provider):
             base_url=settings.base_url,
             model=settings.model,
             temperature=temperature,
-            max_completion_tokens=4096,
+            max_completion_tokens=ANSWER_TOKENS,
             **({"default_headers": headers} if headers else {}),
             **({"extra_body": extra_body} if extra_body else {}),
         )

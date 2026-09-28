@@ -85,6 +85,9 @@ def _check_declared_ranges() -> None:
 
 def main() -> int:
     from test.framework_contract import test_deepagents_contract as contract
+    from test.framework_contract import (  # noqa: PLC0415 — `test` joins sys.path at run time, above
+        test_gemini_output_contract as gemini,
+    )
     from test.policy import test_filesystem_prompt_override as fs
 
     checks = [
@@ -103,6 +106,10 @@ def main() -> int:
         (
             "no build path reintroduced a backend factory",
             contract.test_no_build_path_passes_a_backend_factory,
+        ),
+        (
+            "Gemini chat classes take the reply-bounding kwargs (silent-failure seam)",
+            gemini.test_gemini_chat_classes_accept_the_output_kwargs,
         ),
         ("declared dependency ranges are sane", _check_declared_ranges),
     ]
