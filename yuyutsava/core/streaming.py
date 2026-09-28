@@ -84,7 +84,10 @@ class StreamEvent:
       - ``image``       data={"visual_id","url","kind","title","mime"}
       - ``artifact``    data={"artifact_id","attachment_id","url","kind","mime","title"}
       - ``log``         data={"text": str}
-      - ``notice``      data={"text": str, "level": "info"|"warning"|"error"}
+      - ``notice``      data={"text": str, "level": "info"|"warning"|"error"}, and
+                        optionally ``code`` (str) and ``actions``
+                        (``[{"id": "retry"|"new_chat", "label": str}]``) —
+                        see ``conversation.recovery.NOTICE_ACTIONS``
       - ``final``       data={"text": str}   (last assistant message)
 
     ``log`` versus ``notice``: a renderer may drop a ``log`` when it has

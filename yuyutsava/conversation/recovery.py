@@ -5,7 +5,12 @@ repair). **Before every turn** (:func:`repair_before_turn`), so no message is
 sent into a history in a shape the model refuses; and **after a turn came back
 empty** (:func:`recover_empty_turn`), where the turn is retried — first on the
 same history, then with a hidden nudge — and the user is always told what
-happened.
+happened. **On request** (:func:`retry_last_turn`), the same re-run starts a
+turn the user asked to retry without sending anything new.
+
+A notice the user can act on names the actions (:data:`RETRY`,
+:data:`NEW_CHAT`) instead of spelling a command: the terminal shows them as
+``/retry`` and ``/new``, the app as buttons. One text serves every surface.
 
 :mod:`~yuyutsava.conversation.repair` rewrites the checkpoint; this module
 decides when to, and what the user hears about it. Nothing here raises into
@@ -20,12 +25,13 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
-from langchain_core.messages import BaseMessage, HumanMessage, RemoveMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, RemoveMessage
 
 from yuyutsava.conversation.repair import (
     Cause,
     diagnose,
     internal_kwargs,
+    is_internal,
     repair_orphan_tool_calls,
 )
 from yuyutsava.core.streaming import StreamEvent
@@ -51,6 +57,28 @@ _NUDGE = (
     "(Automatic retry: your previous reply was empty.) Reply to my last message now, "
     "using the tool results above if there are any. If nothing is left to do, say so briefly."
 )
+
+
+@dataclass(frozen=True)
+class NoticeAction:
+    """Something the user can do about a notice. Each surface decides how to offer it."""
+
+    id: str
+    label: str
+
+    def wire(self) -> dict[str, str]:
+        return {"id": self.id, "label": self.label}
+
+
+#: Run the model again on the conversation as it stands (:func:`retry_last_turn`).
+RETRY = NoticeAction("retry", "Retry")
+#: Leave this conversation and start an empty one.
+NEW_CHAT = NoticeAction("new_chat", "New chat")
+#: Every action a notice can carry. A surface that offers actions handles each.
+NOTICE_ACTIONS = (RETRY, NEW_CHAT)
+
+#: The ``code`` of the notice that ends an unanswerable turn.
+EMPTY_TURN = "empty_turn"
 
 
 def repair_summary(found: Any, *, close_turn: bool = True) -> str:
@@ -297,7 +325,9 @@ async def recover_empty_turn(
     await inspect_and_repair(
         agent, thread_id, cause=Cause.EMPTY_REPLY, what="closing an empty turn"
     )
-    await notice(on_event, "error", _gave_up_text(facts))
+    await notice(
+        on_event, "error", _gave_up_text(facts), code=EMPTY_TURN, actions=(RETRY, NEW_CHAT)
+    )
     logger.warning(
         "empty turn on thread=%s (re-run and nudge both empty) — surfaced to the user",
         thread_id,
@@ -346,15 +376,80 @@ def _gave_up_text(facts: EmptyReply | None) -> str:
         if facts is not None and facts.ran_out_of_room
         else "it kept replying with nothing — no text and no tool call"
     )
+    # No "try /new": the app has no slash commands. The actions say what can be
+    # done, and each surface offers them its own way.
     return (
         f"The model could not answer: {why}, on a re-run and after a nudge. "
-        "Your message is still in this conversation. Start a new chat, or try again."
+        "Your message is still in this conversation."
     )
 
 
-async def notice(on_event: EventSink, level: str, text: str) -> None:
-    """Tell the user something the stream itself did not say."""
-    await emit(on_event, StreamEvent("notice", {"level": level, "text": text}))
+async def retry_last_turn(
+    agent: Any,
+    thread_id: str,
+    on_event: EventSink,
+    drive: Drive,
+) -> tuple[str, int]:
+    """Run the model again on the conversation as it stands — the user's Retry.
+
+    Sends nothing new: the user's message is already in the history. What is
+    retried is whatever the last turn left unanswered — a turn closed by
+    :func:`recover_empty_turn` or by an interruption (the closing note is
+    removed; the model would otherwise read its own "I did not reply"), or a
+    turn that died before the model answered (history ends on the user's
+    message or a tool result). A turn that was answered has nothing to retry,
+    and the user is told so rather than charged for a second answer.
+
+    Comes back empty again and it is the same ladder as any empty turn; raises
+    and the error is the turn's, as for any other turn.
+    """
+    messages = await _checkpoint_messages(agent, thread_id)
+    last = messages[-1] if messages else None
+    if isinstance(last, AIMessage) and is_internal(last.additional_kwargs):
+        await _remove(agent, thread_id, last.id)
+    elif last is None or (isinstance(last, AIMessage) and not last.tool_calls):
+        await notice(on_event, "info", "Nothing to retry: the last message has been answered.")
+        return "", 0
+    # Written as the tools node so the model runs next; a call left with no
+    # result gets one ("INCOMPLETE… call it again if still wanted").
+    await inspect_and_repair(
+        agent,
+        thread_id,
+        close_turn=False,
+        cause=Cause.EMPTY_REPLY,
+        as_node=TOOLS_NODE,
+        what="retry repair",
+    )
+    # Not caught: a retry that fails — the provider still busy, say — fails the
+    # way any turn does, with its own error. Reporting it as an empty reply
+    # would tell the user the wrong story.
+    final, steps = await drive(None, None)
+    if final:
+        return final, steps
+    final, extra = await recover_empty_turn(agent, thread_id, on_event, drive)
+    return final, steps + extra
+
+
+async def notice(
+    on_event: EventSink,
+    level: str,
+    text: str,
+    *,
+    code: str | None = None,
+    actions: tuple[NoticeAction, ...] = (),
+) -> None:
+    """Tell the user something the stream itself did not say.
+
+    ``code`` names the situation for a surface that treats it specially;
+    ``actions`` are what the user can do about it. Both are left out when
+    unset, so a plain notice has the shape it always had.
+    """
+    data: dict[str, Any] = {"level": level, "text": text}
+    if code is not None:
+        data["code"] = code
+    if actions:
+        data["actions"] = [a.wire() for a in actions]
+    await emit(on_event, StreamEvent("notice", data))
 
 
 async def emit(on_event: EventSink, ev: StreamEvent) -> None:

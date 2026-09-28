@@ -34,7 +34,12 @@ from typing import Awaitable, Callable
 
 from langchain_core.messages import BaseMessage
 
-from yuyutsava.conversation.recovery import EventSink, recover_empty_turn, repair_before_turn
+from yuyutsava.conversation.recovery import (
+    EventSink,
+    recover_empty_turn,
+    repair_before_turn,
+    retry_last_turn,
+)
 from yuyutsava.conversation.sessions import CoalescedTicker, count_memory_files, resolve_session
 from yuyutsava.conversation.titles import derive_session_title
 from yuyutsava.core.engine import AgentBundle
@@ -190,6 +195,7 @@ class ConversationService:
         recursion_limit: int | None = None,
         modality: str = "text",
         resume_value: object | None = None,
+        retry: bool = False,
     ) -> str:
         """Run one user turn end-to-end, returning the final assistant text.
 
@@ -202,6 +208,10 @@ class ConversationService:
         when a *previous* daemon process died: no new user message is sent, the
         graph simply continues from its checkpoint with that decision. ``text``
         is ignored in that case (and bookkeeping skips the empty preview).
+
+        ``retry`` is the user's Retry: nothing is sent, and the model runs again
+        on the history as it stands (:func:`~.recovery.retry_last_turn`).
+        ``text`` is ignored here too.
         """
         bundle = await self._ensure_bundle()
         self._turns_ran += 1
@@ -218,12 +228,16 @@ class ConversationService:
         # new turn it is on, and it is the half that was missing — cancelling a
         # run left the assistant's turn hanging open and the next user message
         # landed straight after a tool result.
-        await repair_before_turn(
-            bundle.agent,
-            self.thread_id,
-            on_event,
-            close_turn=resume_value is None,
-        )
+        #
+        # A retry does its own repair: the closing note the pre-turn repair would
+        # keep is exactly what it removes.
+        if not retry:
+            await repair_before_turn(
+                bundle.agent,
+                self.thread_id,
+                on_event,
+                close_turn=resume_value is None,
+            )
 
         async def _drive(
             user_text: str | BaseMessage | None, resume: object | None
@@ -252,11 +266,17 @@ class ConversationService:
                     await result
             return final_text, step_count
 
-        final, steps = await _drive(text, resume_value)
-
-        if not final:
-            final, extra = await recover_empty_turn(bundle.agent, self.thread_id, on_event, _drive)
-            steps += extra
+        if retry:
+            # The empty-turn ladder included; the preview keeps the user's message.
+            final, steps = await retry_last_turn(bundle.agent, self.thread_id, on_event, _drive)
+            text = ""
+        else:
+            final, steps = await _drive(text, resume_value)
+            if not final:
+                final, extra = await recover_empty_turn(
+                    bundle.agent, self.thread_id, on_event, _drive
+                )
+                steps += extra
 
         if self._ticker is not None and resume_value is None:
             await self._bookkeep(text, steps)
