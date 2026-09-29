@@ -48,8 +48,10 @@ def print_help(commands: "Sequence[Any]") -> None:
         f"{CHROME}In the split view: PgUp/PgDn or the wheel scrolls, End follows "
         f"the output again, Ctrl+G hides the context panel, Ctrl+L clears the "
         f"transcript. Typing during a turn queues your message; Ctrl+S "
-        f"interrupts the turn and sends it now. Start with --classic for the "
-        f"single-pane view.{RESET}",
+        f"interrupts the turn and sends it now. Ctrl+O hands the mouse back to "
+        f"the terminal so you can select and copy, at the cost of the wheel "
+        f"until you press it again. Start with --classic for the single-pane "
+        f"view.{RESET}",
         file=sys.stderr,
     )
     print(file=sys.stderr)

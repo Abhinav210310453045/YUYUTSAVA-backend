@@ -101,10 +101,56 @@ class BindingTable(_DashboardCase):
             K.End,
             K.ControlL,
             K.ControlG,
+            K.ControlO,
             K.ScrollUp,
             K.ScrollDown,
         ):
             self.assertIn(str(key), bound, key)
+
+
+class TheMouseCanBeHandedBack(_DashboardCase):
+    """A full-screen application that reports mouse events receives every drag
+    itself, so the terminal has none to turn into a selection and there is
+    nothing to copy. The transcript was readable and unquotable."""
+
+    async def test_it_grabs_the_mouse_by_default(self):
+        self.assertTrue(self.dash._app.mouse_support())
+
+    async def test_ctrl_o_hands_it_back_and_takes_it_again(self):
+        self.dash.toggle_mouse()
+        self.assertFalse(
+            self.dash._app.mouse_support(),
+            "prompt_toolkit re-reads this every render, so the filter is the switch",
+        )
+        self.dash.toggle_mouse()
+        self.assertTrue(self.dash._app.mouse_support())
+
+    async def test_the_status_bar_says_which_mode_is_on(self):
+        """A mode nobody can see is a mode nobody can leave."""
+        self.assertNotIn(self.dash.SELECTING, self._status())
+        self.dash.toggle_mouse()
+        self.assertIn(self.dash.SELECTING, self._status())
+
+    async def test_it_says_so_even_with_nothing_else_to_report(self):
+        """Idle is exactly when someone is selecting."""
+        self.dash.toggle_mouse()
+        self.assertIn("Ctrl+O", self._status())
+
+    async def test_it_says_so_alongside_a_running_turn(self):
+        self.dash._status = lambda: "Thinking…"
+        self.dash._state = lambda: "thinking"
+        self.dash.toggle_mouse()
+        text = self._status()
+        self.assertIn("Thinking…", text)
+        self.assertIn(self.dash.SELECTING, text)
+
+    async def test_the_bar_never_paints_past_the_pane(self):
+        self.dash._status = lambda: "Running a tool with a very long name" * 4
+        self.dash.toggle_mouse()
+        self.assertLessEqual(len(self._status()), self.dash.left_width)
+
+    def _status(self) -> str:
+        return "".join(t for _style, t in self.dash._status_text())
 
 
 class Keys(_DashboardCase):

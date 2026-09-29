@@ -186,6 +186,22 @@ def display_mode(*, classic: bool, is_tty: bool, rich: bool, enabled: bool, wide
     return "dashboard"
 
 
+def _clip(fragments: list[tuple[str, str]], width: int) -> list[tuple[str, str]]:
+    """Trim styled fragments to *width* cells, dropping whole ones past it.
+
+    The status bar is one row: a fragment that runs past the pane is painted
+    over the context column beside it.
+    """
+    out: list[tuple[str, str]] = []
+    used = 0
+    for style, text in fragments:
+        if used >= width:
+            break
+        out.append((style, text[: width - used]))
+        used += len(text)
+    return out
+
+
 class _ScrollableTextControl(FormattedTextControl):
     """A text control whose wheel events scroll the owner instead of the window.
 
@@ -227,6 +243,11 @@ class ChatDashboard:
         self._panel_width = panel_width_for(self._cols)
         self._panel_visible = True
         self._snapshot: Any | None = None
+        #: Whether the application is grabbing the mouse. While it is, the
+        #: terminal never sees a drag, so its own click-and-drag selection —
+        #: the only way to copy out of a full-screen application — does
+        #: nothing. Ctrl+O hands the mouse back at the cost of the wheel.
+        self._mouse = True
         self._status: Callable[[], str] = lambda: ""
         self._state: Callable[[], str] = lambda: ""
         self._tool: Callable[[], str] = lambda: ""
@@ -332,7 +353,7 @@ class ChatDashboard:
             key_bindings=self._key_bindings(),
             style=Style.from_dict(STYLE),
             full_screen=True,
-            mouse_support=True,
+            mouse_support=Condition(lambda: self._mouse),
             # prompt_toolkit enables these by default in full screen, and they
             # bind PgUp/PgDn against the FOCUSED window — the one-row input —
             # so the transcript could not be scrolled at all. This pane owns
@@ -461,6 +482,7 @@ class ChatDashboard:
         bind("end", self.follow)
         bind("c-l", self.clear_transcript)
         bind("c-g", self.toggle_panel)
+        bind("c-o", self.toggle_mouse)
         bind("c-s", self.send_now)
         return kb
 
@@ -519,21 +541,46 @@ class ChatDashboard:
         now = time.monotonic()
         return [t for t, expiry in self._notices if expiry > now]
 
+    def toggle_mouse(self) -> None:
+        """Hand the mouse back to the terminal, or take it again.
+
+        A full-screen application that reports mouse events receives every
+        click and drag itself, so the terminal has no drag to turn into a
+        selection and there is nothing to copy — which makes a transcript you
+        can read but cannot quote. Letting go costs the wheel, so it is a mode
+        rather than a setting, and the status bar says which one is on.
+        """
+        self._mouse = not self._mouse
+        self._invalidate()
+
+    #: Shown while the mouse belongs to the terminal, because a mode nobody can
+    #: see is a mode nobody can leave.
+    SELECTING = "⌶ select to copy · wheel off · Ctrl+O"
+
     def _status_text(self):
-        status = self._safe(self._status)
         if self.view.offset:
+            status = self._safe(self._status)
             behind = f"  ↑{self.view.offset} lines back · End to follow"
             return [("class:ctx.warn", (status + behind)[: self.left_width])]
+        parts = self._working_fragments()
+        if not self._mouse:
+            parts.append(("class:ctx.warn", f"{'  ' if parts else ' '}{self.SELECTING}"))
+        return _clip(parts, self.left_width) if parts else [("class:status", "")]
+
+    def _working_fragments(self):
+        """The mark and what the agent is doing, or nothing when it is idle."""
+        status = self._safe(self._status)
         if not status:
-            return [("class:status", "")]
+            return []
         # Re-read from the clock on every repaint: the application redraws on
         # its own interval while a turn runs, so a mark computed here moves.
         now = time.monotonic()
-        state = self._safe(self._state)
-        mark = pulse.mark_at(now, state)
         return [
-            (f"class:pulse.{pulse.hue_at(now)}", f"{mark} "),
-            ("class:status", status[: max(0, self.left_width - 2)]),
+            (
+                f"class:pulse.{pulse.hue_at(now)}",
+                f" {pulse.mark_at(now, self._safe(self._state))} ",
+            ),
+            ("class:status", status),
         ]
 
     _status_failure_logged = False

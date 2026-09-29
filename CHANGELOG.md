@@ -98,6 +98,15 @@ While the version stays `0.x`, minor bumps may contain breaking changes.
   a real warning still arrives.
 
 ### Fixed
+- **Nothing could be copied out of the split view.** A full-screen application
+  that reports mouse events receives every click and drag itself, so the
+  terminal never saw a drag to turn into a selection — the transcript was
+  readable and unquotable, and the modifier that bypasses mouse reporting
+  differs by terminal (Option in iTerm2, Shift in most others), so there was no
+  answer that worked everywhere. Ctrl+O now hands the mouse back, and takes it
+  again; the status bar says which mode is on, because a mode nobody can see is
+  a mode nobody can leave. The wheel is the price while selection is on, and
+  PgUp/PgDn/End are unaffected.
 - **Scrolling the transcript stuttered.** Working out how far it was allowed to
   scroll re-wrapped the entire 5,000-line scrollback — regex tokenisation plus
   three uncached `unicodedata` lookups per character — on every wheel tick, and

@@ -135,7 +135,11 @@ class BothSurfacesDrawIt(unittest.TestCase):
 
         first, second, settled = asyncio.run(_drive())
         self.assertNotEqual(first[0][1], second[0][1], "the bar's mark did not move")
-        self.assertEqual(settled[0][1], f"{pulse.RESTING} ")
+        self.assertEqual(
+            settled[0][1].strip(),
+            pulse.RESTING,
+            "the mark keeps its cell so the label does not step sideways",
+        )
 
     def test_an_idle_status_bar_draws_no_mark(self) -> None:
         async def _idle() -> list:
