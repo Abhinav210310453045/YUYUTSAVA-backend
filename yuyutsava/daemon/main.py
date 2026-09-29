@@ -228,7 +228,7 @@ async def _reload_loop(
             await subs.mcp_manager.hot_reload(new_mcp)
             logger.info(
                 "config reload: mcp servers now %s",
-                ", ".join(subs.mcp_manager.known_servers()) or "(none)",
+                ", ".join(s.summary() for s in subs.mcp_manager.status()) or "(none)",
             )
         except Exception:
             logger.exception("mcp config reload failed")
