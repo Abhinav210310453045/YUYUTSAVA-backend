@@ -698,6 +698,16 @@ class ReplCommands:
     #: The split-screen dashboard, when the chat runs in one.
     dashboard: Any | None = None
 
+    @property
+    def banner_width(self) -> int | None:
+        """The pane the banner is centred in, or None for the whole terminal.
+
+        The banner writes to stderr, which the dashboard redirects into the
+        left pane — so measuring the terminal centres the wordmark on a width
+        it is not being drawn at, and it lands visibly off to the right.
+        """
+        return self.dashboard.left_width if self.dashboard is not None else None
+
     async def dispatch(self, text: str) -> Outcome:
         line = text.strip()
         cmd = CommandLine.parse(line)
@@ -739,6 +749,7 @@ class ReplCommands:
             clear_screen=(
                 self.dashboard.clear_transcript if self.dashboard is not None else _clear_terminal
             ),
+            width=self.banner_width,
         )
         return Outcome.QUIT if result is _SLASH_QUIT else Outcome.HANDLED
 
@@ -770,6 +781,7 @@ class ReplCommands:
             workspace=self.workspace,
             resuming=False,
             status=self.status_line,
+            width=self.banner_width,
         )
 
 
@@ -784,6 +796,7 @@ def _handle_slash(
     workspace: Path,
     renderer: "ChatRenderer",
     clear_screen: Callable[[], None] = _clear_terminal,
+    width: int | None = None,
 ) -> Any:
     """The commands that need only the terminal: ``_SLASH_QUIT`` to exit,
     otherwise ``_SLASH_HANDLED`` — an unknown command included, after saying so.
@@ -799,7 +812,9 @@ def _handle_slash(
         # transcript pane and an escape sequence would land in it as text — the
         # pane's own. Then redraw the banner.
         clear_screen()
-        startup.print_banner(session_id=session_id, workspace=workspace, resuming=False)
+        startup.print_banner(
+            session_id=session_id, workspace=workspace, resuming=False, width=width
+        )
         return _SLASH_HANDLED
     if head == "/session":
         print(f"  {CHROME}session  {RESET}   {session_id}", file=sys.stderr)
@@ -1009,6 +1024,7 @@ async def _start_session(
         resuming=resuming,
         status=status_line,
         notice=await notice,
+        width=dashboard.left_width if dashboard is not None else None,
     )
     return convo, status_line
 

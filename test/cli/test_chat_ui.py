@@ -17,12 +17,16 @@ import re
 import unittest
 from pathlib import Path
 
+from types import SimpleNamespace
+
 from yuyutsava import ansi
 from yuyutsava.cli.render import glyphs as gl
+from yuyutsava.cli.render import prose_frame as pf
 from yuyutsava.cli.render import startup
 from yuyutsava.cli.render.console import make_console
 from yuyutsava.cli.render.plain import ChatRenderer
 from yuyutsava.cli.render.renderer import RichChatRenderer
+from yuyutsava.core.streaming import StreamEvent
 
 _ESC = re.compile(r"\x1b\[[0-9;]*m")
 
@@ -170,6 +174,137 @@ class BothRenderersAttributeTheUser(unittest.IsolatedAsyncioTestCase):
         text = _plain(buf.getvalue())
         for part in ("first", "second", "third"):
             self.assertIn(part, text)
+
+
+class TheBannerIsCentredOnThePaneItIsDrawnIn(unittest.TestCase):
+    """The banner writes to stderr, which the split view redirects into the
+    left pane. Measuring the whole terminal centred the wordmark on a width it
+    was not being drawn at, and it sat visibly off to the right of the pane."""
+
+    def _commands(self, dashboard):
+        from yuyutsava.cli.commands.chat_repl import ReplCommands
+
+        return ReplCommands(
+            workspace=Path("/tmp"),
+            console=None,
+            renderer=None,
+            bundle=None,
+            convo=None,
+            runtime_toggles=None,
+            status_line="",
+            session=None,
+            dashboard=dashboard,
+        )
+
+    def test_with_a_context_panel_it_measures_the_pane(self) -> None:
+        dashboard = SimpleNamespace(left_width=88)
+        self.assertEqual(self._commands(dashboard).banner_width, 88)
+
+    def test_without_one_it_lets_the_banner_measure_the_terminal(self) -> None:
+        self.assertIsNone(self._commands(None).banner_width)
+
+    def test_the_wordmark_lands_in_the_middle_of_whatever_it_is_given(self) -> None:
+        for width in (88, 118, 200):
+            with self.subTest(width=width):
+                art, margin = startup.wordmark(width)
+                left, right = margin, width - margin - len(art[0])
+                self.assertLessEqual(abs(left - right), 1, "centred, within a cell")
+
+
+class EachAnswerSitsInItsOwnBox(unittest.IsolatedAsyncioTestCase):
+    """An answer used to run straight into the tool lines around it, with only
+    an indent to say where it began and nothing to say where it stopped."""
+
+    def _rich(self, width: int = 88):
+        buf = io.StringIO()
+        return (
+            RichChatRenderer(
+                verbose=False,
+                workspace=Path("/tmp"),
+                console=make_console(file=buf, width=width, force_terminal=False),
+                live=False,
+            ),
+            buf,
+        )
+
+    async def _drive(self, renderer, *events):
+        for kind, data in events:
+            await renderer.render(StreamEvent(kind=kind, data=data))
+
+    async def test_prose_is_framed_top_and_bottom(self) -> None:
+        renderer, buf = self._rich()
+        await self._drive(renderer, ("token", {"text": "an answer\n\n"}))
+        await renderer.end_of_turn()
+        text = _plain(buf.getvalue())
+        self.assertIn(pf.TOP_LEFT, text)
+        self.assertIn(pf.BOTTOM_LEFT, text)
+        self.assertIn(pf.VERTICAL, text)
+        self.assertIn("an answer", text)
+
+    async def test_the_box_closes_before_a_tool_line_and_reopens_after(self) -> None:
+        """A tool call drawn inside the frame would claim to be the answer."""
+        renderer, buf = self._rich()
+        await self._drive(
+            renderer,
+            ("token", {"text": "first\n\n"}),
+            ("tool_call", {"name": "tr_read_file", "args": {"path": "/tmp/a"}}),
+            ("tool_result", {"name": "tr_read_file", "preview": "ok", "full": "ok"}),
+            ("token", {"text": "second\n\n"}),
+        )
+        await renderer.end_of_turn()
+        lines = _plain(buf.getvalue()).splitlines()
+        order = [
+            "top" if pf.TOP_LEFT in ln else "bottom" if pf.BOTTOM_LEFT in ln else "tool"
+            for ln in lines
+            if pf.TOP_LEFT in ln or pf.BOTTOM_LEFT in ln or "tr_read_file" in ln
+        ]
+        self.assertEqual(order, ["top", "bottom", "tool", "top", "bottom"])
+
+    async def test_a_notice_is_not_drawn_inside_the_answer(self) -> None:
+        renderer, buf = self._rich()
+        await self._drive(
+            renderer,
+            ("token", {"text": "an answer\n\n"}),
+            ("notice", {"text": "the model returned nothing", "level": "warning"}),
+        )
+        await renderer.end_of_turn()
+        lines = _plain(buf.getvalue()).splitlines()
+        closed = next(i for i, ln in enumerate(lines) if pf.BOTTOM_LEFT in ln)
+        noticed = next(i for i, ln in enumerate(lines) if "returned nothing" in ln)
+        self.assertLess(closed, noticed)
+
+    async def test_your_next_message_is_not_drawn_inside_the_last_answer(self) -> None:
+        renderer, buf = self._rich()
+        await self._drive(renderer, ("token", {"text": "an answer\n\n"}))
+        renderer.user_message("and another thing")
+        lines = _plain(buf.getvalue()).splitlines()
+        closed = next(i for i, ln in enumerate(lines) if pf.BOTTOM_LEFT in ln)
+        asked = next(i for i, ln in enumerate(lines) if "and another thing" in ln)
+        self.assertLess(closed, asked)
+
+    async def test_the_box_never_paints_past_the_pane(self) -> None:
+        """The reason it is not a Panel is streaming, not width — but a frame
+        one cell too wide would still bleed across the context column."""
+        from yuyutsava.cli.render.ansi_wrap import visible_width
+
+        for width in (40, 60, 88, 120):
+            with self.subTest(width=width):
+                renderer, buf = self._rich(width)
+                await self._drive(
+                    renderer, ("token", {"text": "a much longer answer " * 12 + "\n\n"})
+                )
+                await renderer.end_of_turn()
+                for line in _plain(buf.getvalue()).splitlines():
+                    self.assertLessEqual(visible_width(line), width)
+
+    async def test_nothing_is_closed_that_was_never_opened(self) -> None:
+        """A turn with no prose at all must not emit a stray bottom edge."""
+        renderer, buf = self._rich()
+        await self._drive(renderer, ("tool_call", {"name": "tr_ls", "args": {}}))
+        await renderer.end_of_turn()
+        text = _plain(buf.getvalue())
+        self.assertNotIn(pf.BOTTOM_LEFT, text)
+        self.assertNotIn(pf.TOP_LEFT, text)
 
 
 class TheRolesAreOnePalette(unittest.TestCase):

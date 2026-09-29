@@ -43,6 +43,7 @@ from yuyutsava.cli.render import tool_format as tf
 from yuyutsava.cli.render import zones
 from yuyutsava.cli.render.markdown_stream import MarkdownStream
 from yuyutsava.cli.render.notices import action_hint, notice_mark
+from yuyutsava.cli.render.prose_frame import ProseFrame
 from yuyutsava.cli.render.ring import PayloadRing
 from yuyutsava.core.streaming import StreamEvent
 from yuyutsava.llm.quirks.first_chunk_retry import classify_provider_busy
@@ -81,7 +82,11 @@ class RichChatRenderer:
         #: Shared with the plain renderer by composition, not inheritance.
         self.ring = PayloadRing()
         self._console = console
-        self._md = MarkdownStream(console, indent=_PROSE_INDENT)
+        #: The dotted box an answer is drawn inside. Three pieces rather
+        #: than a Panel, because a Panel cannot close an edge it has not seen
+        #: the end of, and prose is committed block by block as it arrives.
+        self._frame = ProseFrame(console, style="agent")
+        self._md = MarkdownStream(console, indent=_PROSE_INDENT, frame=self._frame)
         self._live: Live | None = None
         self._in_flight: deque[str] = deque()
         self._opened_prose = False
@@ -130,7 +135,7 @@ class RichChatRenderer:
         text = (text or "").strip()
         if not text:
             return
-        self._md.flush()
+        self._close_prose()
         stamp = when or _dt.datetime.now().strftime("%H:%M")
         head = Text(" " * _MARKER_INDENT)
         head.append(f"{gl.YOU} you", style="you.bold")
@@ -155,7 +160,8 @@ class RichChatRenderer:
         self._start_live()
 
     async def end_of_turn(self) -> None:
-        self._md.finish()
+        self._close_prose()
+        self._md.started = False
         self._stop_live()
         self._in_flight.clear()
         self._sub_activity = ""
@@ -296,7 +302,17 @@ class RichChatRenderer:
             case "artifact":
                 self._print_artifact(data)
             case "final":
-                self._md.finish()
+                self._close_prose()
+
+    def _close_prose(self) -> None:
+        """Commit what is buffered and close the box, if one is open.
+
+        Everything that is not prose calls this first: a tool line, a notice
+        or the next message drawn *inside* the answer's frame would say they
+        were part of the answer.
+        """
+        self._md.flush()
+        self._frame.close_frame()
 
     def _on_token(self, data: dict) -> None:
         text = data.get("text", "")
@@ -311,15 +327,15 @@ class RichChatRenderer:
         if not self._opened_prose:
             self._console.print()
             self._console.print(Text(f"  {gl.AGENT} yuyutsava", style="agent.bold"))
-            self._console.print()
             self._opened_prose = True
+        self._frame.open_frame()
         self._md.feed(text)
         self._refresh()
 
     def _on_tool_call(self, data: dict) -> None:
         name = data.get("name", "?")
         args = data.get("args", {})
-        self._md.flush()
+        self._close_prose()
         idx = self.ring.push("tool_call", name, tf.pretty_args(args))
         if name == "write_todos":
             self._print_todos(args, idx)
@@ -358,7 +374,7 @@ class RichChatRenderer:
             return
         level = data.get("level", "info")
         style = {"error": "err", "warning": "warn"}.get(level, "chrome")
-        self._md.flush()
+        self._close_prose()
         self._console.print()
         self._console.print(Text(f"{' ' * _MARKER_INDENT}{notice_mark(level)} {text}", style=style))
         if hint := action_hint(data):

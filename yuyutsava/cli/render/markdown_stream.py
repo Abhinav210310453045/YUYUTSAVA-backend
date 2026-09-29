@@ -18,6 +18,8 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.padding import Padding
 
+from yuyutsava.cli.render.prose_frame import ProseFrame
+
 
 def _committable_length(buf: str) -> int:
     """Chars of ``buf`` that form complete blocks safe to commit.
@@ -44,9 +46,16 @@ def _committable_length(buf: str) -> int:
 class MarkdownStream:
     """Feed tokens in, get committed markdown blocks + a live tail out."""
 
-    def __init__(self, console: Console, *, indent: int = 0) -> None:
+    def __init__(
+        self, console: Console, *, indent: int = 0, frame: ProseFrame | None = None
+    ) -> None:
         self._console = console
         self._indent = indent
+        #: When set, committed blocks are drawn between its rails instead of
+        #: being indented. The frame's edges are opened and closed by the
+        #: renderer, which is the only thing that knows when prose starts and
+        #: what interrupts it.
+        self._frame = frame
         self._buf = ""
         self.started = False  # True once any prose was fed this turn
 
@@ -80,7 +89,10 @@ class MarkdownStream:
         if not text.strip():
             return
         block = Markdown(text)
-        # Prose sits one step in from the markers that name the speaker, so a
-        # reply reads as belonging to the ``◇ yuyutsava`` line above it rather
-        # than as the next thing the terminal happened to print.
+        if self._frame is not None:
+            self._frame.write(block)
+            return
+        # Unframed (the ask cards' console, and any host that wants plain
+        # blocks): prose still sits one step in from the markers that name the
+        # speaker, so a reply reads as belonging to the line above it.
         self._console.print(Padding(block, (0, 0, 0, self._indent)) if self._indent else block)
