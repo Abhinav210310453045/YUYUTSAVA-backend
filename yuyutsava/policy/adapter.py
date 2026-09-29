@@ -24,6 +24,17 @@ A refused call short-circuits: no later policy's ``before_tool`` runs, the tool
 does not run, and no ``after_tool`` runs — because there is no result to rewrite.
 This matches nesting exactly, where an outer middleware returning without calling
 ``handler`` skips everything inside it.
+
+## A failing tool does not end the turn
+
+LangGraph's tool node turns only argument-validation errors into a result; any
+other exception from a tool propagated out of the graph and ended the turn —
+a web search rejecting its query took the whole answer with it (`R-BUG-27`).
+:meth:`awrap_tool_call` wraps every tool call of every agent this adapter is
+wired into, so it turns the exception into an error result the model reads and
+recovers from, like a refusal. LangGraph's own control flow is not an error and
+passes through: an interrupt (a permission ask) and a command to a parent graph
+(``GraphBubbleUp``), and cancellation (a ``BaseException``).
 """
 
 from __future__ import annotations
@@ -33,6 +44,7 @@ from typing import Any, Awaitable, Callable, Sequence
 
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langgraph.errors import GraphBubbleUp
 
 from yuyutsava.policy.ask import LangGraphAskUser
 from yuyutsava.policy.base import Policy
@@ -117,6 +129,20 @@ class LangChainPolicyAdapter(AgentMiddleware):  # type: ignore[misc]
             state=getattr(request, "state", None) or {},
             resolved_tool=resolved if isinstance(resolved, str) else None,
             ask=self._ask,
+        )
+
+    def _failure(self, call: ToolCall, exc: Exception) -> ToolMessage:
+        """The error result the model gets for a tool that raised."""
+        logger.warning("tool %s raised %s: %s", call.name, type(exc).__name__, exc)
+        logger.debug("tool %s traceback", call.name, exc_info=exc)
+        return ToolMessage(
+            content=(
+                f"Error: {call.name} failed — {type(exc).__name__}: {exc}\n"
+                "It did not complete. Fix the arguments, try another way, or tell the user."
+            ),
+            tool_call_id=call.id,
+            name=call.name,
+            status="error",
         )
 
     def _denial(self, call: ToolCall, decision: Denied) -> Any:
@@ -309,7 +335,12 @@ class LangChainPolicyAdapter(AgentMiddleware):  # type: ignore[misc]
                 f"expected Denied, Raw, or None"
             )
 
-        result = await handler(request)
+        try:
+            result = await handler(request)
+        except GraphBubbleUp:
+            raise
+        except Exception as exc:  # noqa: BLE001 — a tool's failure is the model's to handle, not the end of the turn
+            result = self._failure(call, exc)
 
         for policy in self._after:
             result = await policy.after_tool(call, result)
