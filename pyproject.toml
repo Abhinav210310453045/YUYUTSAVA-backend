@@ -27,7 +27,10 @@ dependencies = [
     "uvicorn[standard]>=0.32.0",
     "fastapi>=0.135.1",
     "httpx>=0.28.1",
-    "mcp[cli]>=1.26.0",
+    # Both majors are supported: mcp 2.x renamed the models' attributes to
+    # snake_case, and mcp/tool_adapter.sdk_field reads either (R-BUG-25). The
+    # ceiling stops a 3.x reaching the daemon untested.
+    "mcp[cli]>=1.26.0,<3",
     "python-dotenv>=1.0.1",
     "requests>=2.32.5",
     # --- Agent framework -------------------------------------------------
@@ -58,8 +61,10 @@ dependencies = [
     "python-ulid>=2.7.0",
     "pyyaml>=6.0.0",
     "sse-starlette>=2.0.0",
-    "tavily-python>=0.5.0",
-    "exa-py>=1.1.0",
+    # The web-search clients: pre-1.0 and 2.x APIs the ws_* tools call
+    # directly, so a new major is a change to review, not a free upgrade.
+    "tavily-python>=0.5.0,<1",
+    "exa-py>=1.1.0,<3",
     "langgraph-checkpoint-sqlite>=3.0.3,<4",
     "pyperclip>=1.11.0",
     "pynput>=1.8.1",

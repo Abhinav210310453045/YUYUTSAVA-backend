@@ -21,7 +21,11 @@ Covers:
   3. that override is still dispatched on spec["name"]        (silent failure)
   4. DockerSandboxBackend still satisfies the backend protocol
   5. callable `backend=` factories still accepted             (breaks 3/4 builds)
-  6. declared dependency ranges still admit what is installed
+  6. the Gemini chat classes still take the reply-bounding kwargs (silent failure)
+  7. the empty-turn retry's node still leads to the model
+  8. the MCP SDK still names its fields one of the ways the adapter reads (silent failure)
+  9. declared dependency ranges still admit what is installed, and every
+     coupled dependency has a ceiling
 """
 
 from __future__ import annotations
@@ -33,6 +37,13 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 # The repo root, so the `test` package imports when this runs as a script.
 sys.path.insert(0, str(REPO))
+
+
+#: Dependencies the code couples to closely enough that a new major must be
+#: reviewed before it is installed: the agent framework (internals), the MCP SDK
+#: (model field names, R-BUG-25) and the web-search clients (called directly).
+#: Each must carry an upper bound. Matched as substrings of the package name.
+COUPLED = ("langchain", "langgraph", "deepagents", "mcp", "tavily-python", "exa-py")
 
 
 def _check_declared_ranges() -> None:
@@ -60,8 +71,7 @@ def _check_declared_ranges() -> None:
             continue
         if req.marker and not req.marker.evaluate():
             continue
-        is_framework = any(k in req.name for k in ("langchain", "langgraph", "deepagents"))
-        if is_framework and "<" not in str(req.specifier):
+        if any(k in req.name for k in COUPLED) and "<" not in str(req.specifier):
             uncapped.append(req.name)
         try:
             installed = version(req.name)
@@ -76,9 +86,9 @@ def _check_declared_ranges() -> None:
         )
     if uncapped:
         raise AssertionError(
-            "framework dependencies without an upper bound: "
+            "coupled dependencies without an upper bound: "
             + ", ".join(sorted(uncapped))
-            + "\nAn unbounded framework dep can be upgraded into a silent behaviour "
+            + "\nAn unbounded coupled dep can be upgraded into a silent behaviour "
             "change. Add a ceiling in pyproject.toml."
         )
 
@@ -87,6 +97,9 @@ def main() -> int:
     from test.framework_contract import test_deepagents_contract as contract
     from test.framework_contract import (  # noqa: PLC0415 — `test` joins sys.path at run time, above
         test_gemini_output_contract as gemini,
+    )
+    from test.framework_contract import (  # noqa: PLC0415 — `test` joins sys.path at run time, above
+        test_mcp_sdk_contract as mcp_sdk,
     )
     from test.framework_contract import (  # noqa: PLC0415 — `test` joins sys.path at run time, above
         test_retry_node_contract as retry_node,
@@ -117,6 +130,10 @@ def main() -> int:
         (
             "the empty-turn retry's node leads to the model",
             retry_node.test_the_retry_node_leads_to_the_model,
+        ),
+        (
+            "the MCP SDK's field names are ones the adapter reads (silent-failure seam)",
+            mcp_sdk.test_the_mcp_models_declare_a_spelling_the_adapter_reads,
         ),
         ("declared dependency ranges are sane", _check_declared_ranges),
     ]
