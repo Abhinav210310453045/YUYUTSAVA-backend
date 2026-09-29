@@ -10,13 +10,15 @@ to stdout through ``TokenSmoother``. The palette it draws with lives in
 from __future__ import annotations
 
 import contextlib
+import datetime as _dt
 import json
 import sys
 from pathlib import Path
 from typing import Any
 
-from yuyutsava.ansi import CYAN, DIM, GREEN, RED, RESET, YELLOW
+from yuyutsava.ansi import AGENT, BOLD, CHROME, DIM, ERR, OK, RESET, TOOL, WARN, YOU
 from yuyutsava.cli.render import artifact_view as av
+from yuyutsava.cli.render import glyphs as gl
 from yuyutsava.cli.render import tool_format as tf
 from yuyutsava.cli.render import zones
 from yuyutsava.cli.render.notices import action_hint, notice_mark
@@ -24,6 +26,10 @@ from yuyutsava.cli.render.ring import PayloadRing
 from yuyutsava.cli.stream_smoother import TokenSmoother
 from yuyutsava.config.env import env_flag, env_float
 from yuyutsava.core.streaming import StreamEvent
+
+
+#: The assistant's own marker, coloured once rather than at the call site.
+AGENT_MARK = f"{AGENT}{BOLD}{gl.AGENT} yuyutsava{RESET}"
 
 
 def _err(line: str) -> None:
@@ -52,6 +58,23 @@ class ChatRenderer:
         self._in_ai_stream = False
         self.ring = PayloadRing()
         self._smoother = self._make_smoother()
+
+    def user_message(self, text: str, *, when: str = "") -> None:
+        """Print what you typed, so the transcript says who said what.
+
+        The rich renderer's counterpart is the important one — this path is
+        piped output and dumb terminals — but a piped transcript with only one
+        side of the conversation in it is no more readable than a screen with
+        only one side.
+        """
+        text = (text or "").strip()
+        if not text:
+            return
+        stamp = when or _dt.datetime.now().strftime("%H:%M")
+        _err("")
+        _err(f"  {YOU}{BOLD}{gl.YOU} you{RESET}  {CHROME}{stamp}{RESET}")
+        for line in text.splitlines():
+            _err(f"    {YOU}{line}{RESET}")
 
     def begin_turn(self) -> None:
         """Turn-start hook. The rich subclass starts its spinner here."""
@@ -147,19 +170,19 @@ class ChatRenderer:
                 # transcript, or it reads exactly like one it never made. Named
                 # rather than inlined — a pipe cannot show it.
                 title = data.get("title") or data.get("path") or "image"
-                _err(f"  ◨ visual: {tf.sanitize(title)}")
+                _err(f"  {CHROME}{gl.ARTIFACT} visual: {tf.sanitize(title)}{RESET}")
             case "artifact":
                 self._on_artifact(data)
             case "log":
                 if text := data.get("text", ""):
-                    _err(f"{YELLOW}{text}{RESET}")
+                    _err(f"  {WARN}{text}{RESET}")
             case "notice":
                 if text := data.get("text", ""):
                     level = data.get("level", "info")
-                    colour = {"error": RED, "warning": YELLOW}.get(level, DIM)
+                    colour = {"error": ERR, "warning": WARN}.get(level, CHROME)
                     _err(f"  {colour}{notice_mark(level)} {text}{RESET}")
                     if hint := action_hint(data):
-                        _err(f"    {DIM}{hint}{RESET}")
+                        _err(f"    {CHROME}{hint}{RESET}")
             case "final":
                 # The token stream above already covered the prose. Just newline.
                 print(flush=True)
@@ -167,7 +190,7 @@ class ChatRenderer:
     def _on_token(self, text: str) -> None:
         if not self._in_ai_stream:
             # Open the AI line with a small chip; no big separator block.
-            print(f"\n{CYAN}🤖{RESET}  ", end="", flush=True)
+            print(f"\n  {AGENT_MARK}\n    ", end="", flush=True)
             self._in_ai_stream = True
         if self._smoother is not None:
             self._smoother.feed(text)
@@ -208,9 +231,9 @@ class ChatRenderer:
         info = av.load_artifact(data)
         if info is None:
             title, kind = av.artifact_summary(data)
-            _err(f"  ◨ artifact: {title}{f' ({kind})' if kind else ''}")
+            _err(f"  {CHROME}{gl.ARTIFACT} artifact: {title}{f' ({kind})' if kind else ''}{RESET}")
             return
-        _err(f"  ◨ {info['title']} [{info['kind'] or info['mime']}]")
+        _err(f"  {CHROME}{gl.ARTIFACT} {info['title']} [{info['kind'] or info['mime']}]{RESET}")
         if info["text"]:
             _err(info["text"])
             if info["clipped"]:
@@ -237,14 +260,14 @@ class ChatRenderer:
     def _render_tool_call_compact(self, name: str, args: Any, idx: int) -> None:
         summary = tf.compact_summary(args)
         zone_chip = self._zone_chip(name, args)
-        head = f"  {DIM}·{RESET} {CYAN}{name}{RESET}"
-        body = f"{DIM}: {summary}{RESET}" if summary else ""
-        tail = f"{DIM}  [#{idx}]{RESET}"
-        print(f"{head}{body}{zone_chip}{tail}", file=sys.stderr, flush=True)
+        head = f"  {TOOL}{gl.TOOL} {BOLD}{name}{RESET}"
+        body = f"  {summary}" if summary else ""
+        tail = f"{CHROME}  #{idx}{RESET}"
+        print(f"\n{head}{body}{zone_chip}{tail}", file=sys.stderr, flush=True)
 
     def _render_tool_call_verbose(self, name: str, args: Any, idx: int) -> None:
         print(
-            f"\n  {DIM}·{RESET} {CYAN}{name}{RESET}  {DIM}[#{idx}]{RESET}",
+            f"\n  {TOOL}{gl.TOOL} {BOLD}{name}{RESET}  {CHROME}#{idx}{RESET}",
             file=sys.stderr,
         )
         if not isinstance(args, dict) or not args:
@@ -261,72 +284,53 @@ class ChatRenderer:
                 print(f"    {DIM}{k}:{RESET} {sval}", file=sys.stderr)
 
     def _render_tool_result_verbose(self, name: str, body: str, idx: int, is_err: bool) -> None:
-        status = f"{RED}✗ error{RESET}" if is_err else f"{GREEN}← ok{RESET}"
-        print(
-            f"  {DIM}↳{RESET} {CYAN}{name}{RESET} {status}  {DIM}[#{idx}]{RESET}",
-            file=sys.stderr,
-        )
+        status = f"{ERR}{gl.FAIL} error{RESET}" if is_err else f"{OK}{gl.OK} ok{RESET}"
+        print(f"    {CHROME}{gl.RESULT}{RESET} {status}", file=sys.stderr)
         pretty = tf.pretty_body(body)
         if len(pretty) > self.ring.entry_cap:
             pretty = pretty[: self.ring.entry_cap] + f"\n…[truncated; /expand {idx} for full]"
         for line in pretty.splitlines():
-            print(f"      {line}", file=sys.stderr)
+            print(f"       {line}", file=sys.stderr)
 
     def _render_tool_result_compact_error(self, name: str, body: str, idx: int) -> None:
-        short = tf.error_message(body)
-        if short:
-            tail = f"{DIM}  [#{idx}]{RESET}"
-            print(
-                f"  {RED}↳ {name} ✗ {short}{RESET}{tail}",
-                file=sys.stderr,
-                flush=True,
-            )
-        else:
-            print(
-                f"  {RED}↳ {name} ✗ error{RESET}{DIM}  [#{idx}]{RESET}",
-                file=sys.stderr,
-                flush=True,
-            )
+        short = tf.error_message(body) or "error"
+        print(
+            f"    {CHROME}{gl.RESULT}{RESET} {ERR}{gl.FAIL} {short}{RESET}"
+            f"{CHROME}  /expand {idx}{RESET}",
+            file=sys.stderr,
+            flush=True,
+        )
 
     def _render_todos(self, args: Any, idx: int) -> None:
         todos = args.get("todos") if isinstance(args, dict) else None
         if not isinstance(todos, list) or not todos:
-            print(
-                f"  {DIM}· write_todos  [#{idx}]{RESET}",
-                file=sys.stderr,
-                flush=True,
-            )
+            print(f"  {CHROME}{gl.NOTE} write_todos{RESET}", file=sys.stderr, flush=True)
             return
-        print(
-            f"\n  {CYAN}TODO:{RESET}  {DIM}[#{idx}]{RESET}",
-            file=sys.stderr,
-        )
+        print(f"\n  {TOOL}{BOLD}{gl.PLAN} PLAN{RESET}  {CHROME}#{idx}{RESET}", file=sys.stderr)
         for t in todos:
             if not isinstance(t, dict):
                 continue
             status = str(t.get("status", "")).lower()
             content = str(t.get("content", "")).strip()
             symbol = self._todo_symbol(status)
+            # State is weight, not a new hue: done recedes, the one in
+            # flight is the only bright line, pending is plain.
             if status == "completed":
-                colour = DIM
+                colour = CHROME
             elif status == "in_progress":
-                colour = GREEN
+                colour = f"{TOOL}{BOLD}"
             else:
                 colour = ""
             reset = RESET if colour else ""
-            print(
-                f"    {colour}{symbol} {content}{reset}",
-                file=sys.stderr,
-            )
-        print(file=sys.stderr)
+            print(f"    {colour}{symbol}  {content}{reset}", file=sys.stderr)
 
     @staticmethod
     def _todo_symbol(status: str) -> str:
         if status == "completed":
-            return "[✓]"
+            return gl.TODO_DONE
         if status == "in_progress":
-            return "[▶]"
-        return "[ ]"
+            return gl.TODO_RUNNING
+        return gl.TODO_PENDING
 
     # ------------------------------------------------------------------
     # Format helpers
@@ -341,8 +345,8 @@ class ChatRenderer:
         zone = zones.display_zone(path, self._workspace)
         if not zone:
             return ""
-        colour = YELLOW if zone == "external" else DIM
-        return f"  {colour}[{zone}]{RESET}"
+        colour = WARN if zone == "external" else CHROME
+        return f"  {colour}{zone}{RESET}"
 
     @staticmethod
     def _format_arg_value(v: Any) -> str:

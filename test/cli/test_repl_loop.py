@@ -59,8 +59,19 @@ def _reader(*lines: Any):
     return _read
 
 
-def _run(*lines: Any, turn_ok: bool = True, usage: str = "1 call") -> dict:
+class _EchoingRenderer:
+    """Records what the loop asked it to attribute to the user."""
+
+    def __init__(self) -> None:
+        self.echoed: list[str] = []
+
+    def user_message(self, text: str, *, when: str = "") -> None:
+        self.echoed.append(text)
+
+
+def _run(*lines: Any, turn_ok: bool = True, usage: str = "1 call", echo: bool = False) -> dict:
     commands, approvals = _Commands(), _Approvals()
+    renderer = _EchoingRenderer()
     turns: list[str] = []
     usage_calls: list[tuple] = []
 
@@ -75,12 +86,13 @@ def _run(*lines: Any, turn_ok: bool = True, usage: str = "1 call") -> dict:
     loop = cr.ReplLoop(
         commands=commands,
         convo="CONVO",
-        renderer=None,
+        renderer=renderer,
         ask_handler=None,
         dashboard=None,
         approvals=approvals,
         usage_store="USAGE",
         read_input=_reader(*lines),
+        echo_input=echo,
     )
     err = io.StringIO()
     with (
@@ -96,6 +108,7 @@ def _run(*lines: Any, turn_ok: bool = True, usage: str = "1 call") -> dict:
         "usage_calls": usage_calls,
         "flushes": approvals.flushes,
         "err": err.getvalue(),
+        "echoed": renderer.echoed,
     }
 
 
@@ -123,6 +136,25 @@ class WhatEachLineDoes(unittest.TestCase):
     def test_an_empty_cost_prints_nothing(self) -> None:
         out = _run("hi", "/quit", usage="")
         self.assertEqual(out["err"], "")
+
+
+class TheUsersOwnMessagesReachTheTranscript(unittest.TestCase):
+    """Nothing printed them before: in the split view prompt_toolkit erases the
+    line on submit, so the transcript read as an unattributed monologue."""
+
+    def test_every_line_the_loop_acts_on_is_attributed(self) -> None:
+        out = _run("hello", "/x", "again", "/quit", echo=True)
+        self.assertEqual(out["echoed"], ["hello", "/x", "again", "/quit"])
+
+    def test_blank_lines_are_not_attributed(self) -> None:
+        out = _run("", "   ", "hi", "/quit", echo=True)
+        self.assertEqual(out["echoed"], ["hi", "/quit"])
+
+    def test_a_terminal_that_echoes_for_us_is_not_double_printed(self) -> None:
+        """The negative control. At a rich prompt on a TTY the line is already
+        on screen, and printing it again would show it twice."""
+        out = _run("hello", "/quit", echo=False)
+        self.assertEqual(out["echoed"], [])
 
 
 class WhenItStops(unittest.TestCase):

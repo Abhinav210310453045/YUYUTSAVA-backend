@@ -8,9 +8,13 @@ up a session.
 
 from __future__ import annotations
 
+import datetime as _dt
+import getpass
 import importlib.metadata
 import json
 import logging
+import shutil
+import socket
 import sys
 import urllib.request
 from pathlib import Path
@@ -18,24 +22,48 @@ from typing import Iterable
 
 from packaging.version import InvalidVersion, Version
 
-from yuyutsava.ansi import CYAN, DIM, RESET, YELLOW
+from yuyutsava.ansi import AGENT, BOLD, CHROME, RESET, WARN
 from yuyutsava.llm import tracing as _tracing
 from yuyutsava.storage.backend import StorageSettings
 from yuyutsava.storage.sessions.config import SessionsSettings
 
 logger = logging.getLogger("yuyutsava.cli.render.startup")
 
+#: The full wordmark: six rows, 78 columns. What a new session opens on when
+#: the pane is wide enough to centre it.
+WORDMARK = [
+    "██╗   ██╗██╗   ██╗██╗   ██╗██╗   ██╗████████╗███████╗ █████╗ ██╗   ██╗ █████╗ ",
+    "╚██╗ ██╔╝██║   ██║╚██╗ ██╔╝██║   ██║╚══██╔══╝██╔════╝██╔══██╗██║   ██║██╔══██╗",
+    " ╚████╔╝ ██║   ██║ ╚████╔╝ ██║   ██║   ██║   ███████╗███████║██║   ██║███████║",
+    "  ╚██╔╝  ██║   ██║  ╚██╔╝  ██║   ██║   ██║   ╚════██║██╔══██║╚██╗ ██╔╝██╔══██║",
+    "   ██║   ╚██████╔╝   ██║   ╚██████╔╝   ██║   ███████║██║  ██║ ╚████╔╝ ██║  ██║",
+    "   ╚═╝    ╚═════╝    ╚═╝    ╚═════╝    ╚═╝   ╚══════╝╚═╝  ╚═╝  ╚═══╝  ╚═╝  ╚═╝",
+]
+
+#: The narrow fallback: three rows, 36 columns.
 BANNER_LINES = [
     "╦ ╦ ╦ ╦ ╦ ╦ ╦ ╦ ╔╦╗ ╔═╗ ╔═╗ ╦  ╦ ╔═╗",
     "╚╦╝ ║ ║ ╚╦╝ ║ ║  ║  ╚═╗ ╠═╣ ╚╗╔╝ ╠═╣",
     " ╩  ╚═╝  ╩  ╚═╝  ╩  ╚═╝ ╩ ╩  ╚╝  ╩ ╩",
 ]
 
+#: Narrower still: the name, and nothing drawn.
+WORDMARK_TEXT = "Y U Y U T S A V A"
+
+TAGLINE = "a g e n t   w o r k b e n c h"
+
 LANGGRAPH_API = "langgraph-api"
 
+#: Left margin for everything under the wordmark, when nothing is centred.
+_GUTTER = 2
 
-def print_version_notice(*, full: bool = False) -> None:
-    """Say once, above the banner, when langgraph-api has a newer release.
+#: The REPL's closing line. A one-shot run has no prompt to type at, so it
+#: passes ``hint=None`` and gets its resume command instead.
+REPL_HINT = "/help for commands   ·   Ctrl+D to exit"
+
+
+def version_notice(*, full: bool = False) -> str:
+    """One line when langgraph-api has a newer release, or ``""``.
 
     langgraph_api has its own check, but it logs from a background thread that
     lands mid-chat (``AsyncSubagentHost.start`` turns it off with
@@ -43,6 +71,12 @@ def print_version_notice(*, full: bool = False) -> None:
     This asks PyPI itself, with the same half-second timeout and the same
     end-of-life rule (:func:`langgraph_api_is_eol`). A pre-release install is
     not checked. Best-effort — never breaks start-up.
+
+    Returns the text rather than printing it, for two reasons: the banner
+    decides where a notice belongs (below the wordmark, not above it), and the
+    caller can run this off the start-up path — it makes a network call, and
+    half a second of nothing before the first pixel is half a second spent on
+    the one screen the program is judged by.
 
     ``full=True`` (debug plumbing) also shows the installed version.
     """
@@ -55,16 +89,16 @@ def print_version_notice(*, full: bool = False) -> None:
         releases = payload.get("releases") or {}
     except Exception:  # noqa: BLE001 — not installed, offline, or an odd reply: no notice
         logger.debug("version check skipped", exc_info=True)
-        return
+        return ""
     if current.is_prerelease or latest <= current:
-        return
-    parts = [f"{LANGGRAPH_API} update available → {latest}"]
+        return ""
+    parts = [f"{LANGGRAPH_API} {latest} available"]
     if full:
         parts[0] = f"{LANGGRAPH_API} {current} → {latest} available"
     if langgraph_api_is_eol(current, latest, releases):
-        parts.append("current version is EOL")
+        parts.append(f"{current} is end of life")
     parts.append(f"pip install -U {LANGGRAPH_API}")
-    print(f"  {DIM}{YELLOW}⚠ {' · '.join(parts)}{RESET}", file=sys.stderr)
+    return " · ".join(parts)
 
 
 def langgraph_api_is_eol(current: Version, latest: Version, releases: Iterable[str]) -> bool:
@@ -89,27 +123,91 @@ def langgraph_api_is_eol(current: Version, latest: Version, releases: Iterable[s
     return current.major < latest.major
 
 
+def _cols() -> int:
+    """The terminal's width, or a sane 80 when it will not say."""
+    try:
+        return shutil.get_terminal_size(fallback=(80, 24)).columns
+    except OSError:
+        return 80
+
+
+def wordmark(width: int) -> tuple[list[str], int]:
+    """The largest wordmark that fits *width*, and its left margin.
+
+    Three sizes, same ladder the dashboard uses for the split view: draw the
+    thing that fits rather than the thing that was asked for. The margin
+    centres the art, because a wordmark pushed against column zero reads as
+    output and a centred one reads as a title screen.
+    """
+    for art in (WORDMARK, BANNER_LINES, [WORDMARK_TEXT]):
+        if len(art[0]) + 2 <= width:
+            return art, max(_GUTTER, (width - len(art[0])) // 2)
+    return [WORDMARK_TEXT], _GUTTER
+
+
+def identity_line() -> str:
+    """``user@host · Mon 29 Sep 2026 · 14:32``.
+
+    A session scrolled back to a week later should say when it started, and a
+    screenshot of one should say whose machine it was. Both are best-effort:
+    a container with no passwd entry still gets a banner.
+    """
+    try:
+        user = getpass.getuser()
+    except Exception:  # noqa: BLE001 — no passwd entry (a container): skip the name
+        user = "?"
+    host = socket.gethostname().split(".")[0] or "?"
+    now = _dt.datetime.now().astimezone()
+    return f"{user}@{host}   ·   {now:%a %d %b %Y}   ·   {now:%H:%M}"
+
+
 def print_banner(
     *,
     session_id: str,
     workspace: Path,
     resuming: bool,
     status: str | None = None,
+    notice: str | None = None,
+    resume_cmd: str | None = None,
+    hint: str | None = REPL_HINT,
+    width: int | None = None,
 ) -> None:
-    print(file=sys.stderr)
-    for line in BANNER_LINES:
-        print(f"{CYAN}{line}{RESET}", file=sys.stderr)
-    verb = "resumed session" if resuming else "session"
-    print(file=sys.stderr)
-    print(f"  {DIM}{verb}:{RESET}  {session_id}", file=sys.stderr)
-    print(f"  {DIM}workspace:{RESET} {workspace}", file=sys.stderr)
+    """The screen a session opens on.
+
+    Centred wordmark, who and when, then the machine facts on labelled rows
+    that line up. *notice* (the langgraph-api line) goes below them rather than
+    above the art, where it used to be the first thing anyone saw.
+    """
+    width = _cols() if width is None else width
+    art, margin = wordmark(width)
+    pad = " " * margin
+    gutter = " " * _GUTTER
+
+    out = [""]
+    out += [f"{pad}{AGENT}{BOLD}{line}{RESET}" for line in art]
+    if art is WORDMARK:
+        tag_pad = " " * max(_GUTTER, (width - len(TAGLINE)) // 2)
+        out += ["", f"{tag_pad}{CHROME}{TAGLINE}{RESET}"]
+    out += ["", f"{gutter}{identity_line()}", ""]
+
+    rows = [
+        ("workspace", str(workspace)),
+        ("session" if not resuming else "resumed", session_id),
+    ]
     if status:
-        print(f"  {DIM}{status}{RESET}", file=sys.stderr)
-    print(
-        f"  {DIM}type /help, /quit, or press Ctrl+D to exit{RESET}",
-        file=sys.stderr,
-    )
-    print(file=sys.stderr)
+        rows.append(("runtime", status))
+    if resume_cmd:
+        rows.append(("resume", resume_cmd))
+    label_width = max(len(label) for label, _ in rows)
+    out += [f"{gutter}{CHROME}{label:<{label_width}}{RESET}   {value}" for label, value in rows]
+
+    if notice:
+        out += ["", f"{gutter}{WARN}⚠ {notice}{RESET}"]
+    if hint:
+        out += ["", f"{gutter}{CHROME}{hint}{RESET}"]
+    out += [""]
+
+    print("\n".join(out), file=sys.stderr)
 
 
 def startup_status_line(sessions_settings: SessionsSettings) -> str:
@@ -138,18 +236,22 @@ def startup_status_line(sessions_settings: SessionsSettings) -> str:
         )
     except RuntimeError:
         storage = sessions_settings.backend
-    return (
-        f"storage: {storage} · "
-        f"tracing: {'on' if tracing_on else 'off'} · "
-        f"langgraph-api {lg_version}"
-    )
+    # No inline labels: the banner prints this beside a ``runtime`` label of
+    # its own, and "runtime   storage: postgres" says storage twice.
+    return f"{storage} · tracing {'on' if tracing_on else 'off'} · langgraph-api {lg_version}"
 
 
 __all__ = [
     "BANNER_LINES",
     "LANGGRAPH_API",
+    "TAGLINE",
+    "WORDMARK",
+    "WORDMARK_TEXT",
+    "REPL_HINT",
+    "identity_line",
     "langgraph_api_is_eol",
     "print_banner",
-    "print_version_notice",
     "startup_status_line",
+    "version_notice",
+    "wordmark",
 ]

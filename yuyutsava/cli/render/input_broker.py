@@ -23,7 +23,9 @@ from typing import Any
 from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.history import FileHistory, InMemoryHistory
 
-DEFAULT_PROMPT = "> "
+#: Two cells, and the same mark the transcript puts on your messages — the
+#: prompt and the echo of what was typed at it should look like one element.
+DEFAULT_PROMPT = "❯ "
 
 
 class InputBroker:

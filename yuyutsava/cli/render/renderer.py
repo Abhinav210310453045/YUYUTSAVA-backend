@@ -24,6 +24,7 @@ renderer's stdout/stderr split.
 from __future__ import annotations
 
 import contextlib
+import datetime as _dt
 import logging
 from collections import deque
 from pathlib import Path
@@ -37,6 +38,7 @@ from rich.spinner import Spinner
 from rich.text import Text
 
 from yuyutsava.cli.render import artifact_view as av
+from yuyutsava.cli.render import glyphs as gl
 from yuyutsava.cli.render import tool_format as tf
 from yuyutsava.cli.render import zones
 from yuyutsava.cli.render.markdown_stream import MarkdownStream
@@ -48,6 +50,11 @@ from yuyutsava.llm.quirks.first_chunk_retry import classify_provider_busy
 logger = logging.getLogger("yuyutsava.cli.render.renderer")
 
 _SUBAGENT_TOOLS = ("task", "start_async_task")
+
+#: The indent ladder. Column 2 is where a marker names who is speaking, and
+#: column 4 is what they said — prose, your message, a tool's result.
+_MARKER_INDENT = 2
+_PROSE_INDENT = 4
 
 # Cap for inline subagent-response rendering; /expand shows the rest.
 _SUBAGENT_INLINE_CHARS = 4000
@@ -74,7 +81,7 @@ class RichChatRenderer:
         #: Shared with the plain renderer by composition, not inheritance.
         self.ring = PayloadRing()
         self._console = console
-        self._md = MarkdownStream(console)
+        self._md = MarkdownStream(console, indent=_PROSE_INDENT)
         self._live: Live | None = None
         self._in_flight: deque[str] = deque()
         self._opened_prose = False
@@ -109,6 +116,30 @@ class RichChatRenderer:
         code = classify_provider_busy(exc)
         self._retry_note = f"provider busy ({code}) · retry {attempt}/{retries} · {delay:.0f}s"
         self._refresh()
+
+    def user_message(self, text: str, *, when: str = "") -> None:
+        """Put what you typed into the transcript, above the reply to it.
+
+        Nothing printed it before. In the split view prompt_toolkit owns the
+        screen and ``InputBroker.submit`` resets the buffer, so the line was
+        erased the moment it was sent and the transcript read as an
+        unattributed monologue — and because it never reached the transcript
+        buffer it was missing from the replay printed back to the scrollback
+        on exit, too.
+        """
+        text = (text or "").strip()
+        if not text:
+            return
+        self._md.flush()
+        stamp = when or _dt.datetime.now().strftime("%H:%M")
+        head = Text(" " * _MARKER_INDENT)
+        head.append(f"{gl.YOU} you", style="you.bold")
+        self._console.print()
+        self._console.print()
+        self._console.print(self._with_tail(head, "", stamp))
+        for line in text.splitlines() or [""]:
+            self._console.print(Text(" " * _PROSE_INDENT + line, style="you"))
+        self._notify()
 
     def begin_turn(self) -> None:
         """Start the spinner. Called by the REPL right before run_turn."""
@@ -259,7 +290,9 @@ class RichChatRenderer:
                 self._on_notice(data)
             case "image":
                 title = data.get("title") or data.get("path") or "image"
-                self._console.print(Text(f"  ◨ visual: {tf.sanitize(title)}", style="chrome"))
+                self._console.print(
+                    Text(f"  {gl.ARTIFACT} visual: {tf.sanitize(title)}", style="chrome")
+                )
             case "artifact":
                 self._print_artifact(data)
             case "final":
@@ -277,7 +310,8 @@ class RichChatRenderer:
             return
         if not self._opened_prose:
             self._console.print()
-            self._console.print("🤖", style="accent")
+            self._console.print(Text(f"  {gl.AGENT} yuyutsava", style="agent.bold"))
+            self._console.print()
             self._opened_prose = True
         self._md.feed(text)
         self._refresh()
@@ -326,9 +360,9 @@ class RichChatRenderer:
         style = {"error": "err", "warning": "warn"}.get(level, "chrome")
         self._md.flush()
         self._console.print()
-        self._console.print(Text(f"  {notice_mark(level)} {text}", style=style))
+        self._console.print(Text(f"{' ' * _MARKER_INDENT}{notice_mark(level)} {text}", style=style))
         if hint := action_hint(data):
-            self._console.print(Text(f"    {hint}", style="chrome"))
+            self._console.print(Text(f"{' ' * _PROSE_INDENT}{hint}", style="chrome"))
 
     # ------------------------------------------------------------------
     # Line printers (everything renders above the Live region)
@@ -336,48 +370,74 @@ class RichChatRenderer:
 
     def _print_tool_call(self, name: str, args: Any, idx: int) -> None:
         line = Text("  ")
-        line.append("● ", style="accent")
-        line.append(name, style="tool")
+        line.append(f"{gl.TOOL} ", style="tool")
+        line.append(name, style="tool.bold")
         summary = tf.format_call(name, args)
         if summary:
-            line.append(f"({summary})", style="default")
+            line.append(f"  {summary}")
         zone = self._zone_name(name, args)
-        if zone:
-            line.append(f"  [{zone}]", style="warn" if zone == "external" else "chrome")
-        line.append(f"  [#{idx}]", style="chrome")
-        self._console.print(line)
+        self._console.print()
+        self._console.print(self._with_tail(line, zone, idx))
         if self._verbose and isinstance(args, dict) and args:
             pretty = tf.pretty_args(args)
-            self._console.print(Padding(Text(pretty, style="chrome"), (0, 0, 0, 6)))
+            self._console.print(Padding(Text(pretty, style="chrome"), (0, 0, 0, 7)))
+
+    def _with_tail(self, line: Text, zone: str, idx: int | str) -> Text:
+        """Push the zone chip and the ring index out to the right margin.
+
+        They are metadata about the call, not part of its name, and inline they
+        sat between the reader and the argument they came to read. Right-aligned
+        they form a column that can be ignored until it is wanted. A line
+        already too long to fit just gets them appended — clipping the tail
+        would lose the index `/expand` needs.
+        """
+        tail = Text()
+        if zone:
+            tail.append(f"{zone}   ", style="warn" if zone == "external" else "chrome")
+        tail.append(f"#{idx}" if isinstance(idx, int) else idx, style="chrome")
+        width = self._console.width or 80
+        room = width - tail.cell_len - 2
+        if line.cell_len > room:
+            # Wrapping would put the index on a row of its own, orphaned from
+            # the call it belongs to. The name is at the head of the line, so
+            # what an ellipsis costs is the tail of an argument summary.
+            line.truncate(max(1, room), overflow="ellipsis")
+        line.append(" " * max(1, width - line.cell_len - tail.cell_len - 1))
+        line.append_text(tail)
+        return line
 
     def _print_tool_result(self, name: str, body: str, idx: int, is_err: bool) -> None:
         summary = tf.format_result(name, body, is_err)
-        line = Text("    ⎿ ", style="chrome")
+        # No index here: the call line above carries it, and a result printed
+        # straight under its own call is one statement, not two.
+        line = Text(f"    {gl.RESULT} ", style="chrome")
         if is_err:
-            line.append("✗ ", style="err")
+            line.append(f"{gl.FAIL} ", style="err")
             line.append(summary or "error", style="err")
+            # The only place an index still earns its space: a failure is the
+            # one result anybody goes looking for the whole body of.
+            line.append(f"   /expand {idx}", style="chrome")
         else:
-            line.append("✓ ", style="ok")
+            line.append(f"{gl.OK} ", style="ok")
             line.append(summary or "ok", style="chrome")
-        line.append(f"  [#{idx}]", style="chrome")
         self._console.print(line)
         if self._verbose:
             pretty = tf.pretty_body(body)
             if len(pretty) > self.ring.entry_cap:
                 pretty = pretty[: self.ring.entry_cap] + f"\n…[truncated; /expand {idx} for full]"
-            self._console.print(Padding(Text(pretty), (0, 0, 0, 6)))
+            self._console.print(Padding(Text(pretty), (0, 0, 0, 7)))
 
     def _print_subagent_call(self, name: str, args: Any, idx: int) -> None:
         desc = tf.format_call(name, args)
         line = Text("  ")
-        line.append("◆ ", style="subagent")
-        line.append("Subagent", style="subagent")
+        line.append(f"{gl.SUBAGENT} ", style="subagent")
+        line.append("subagent", style="subagent.bold")
         if desc:
-            line.append(f"({desc})", style="default")
-        if name == "start_async_task":
-            line.append("  [background]", style="chrome")
-        line.append(f"  [#{idx}]", style="chrome")
-        self._console.print(line)
+            line.append(f"  {desc}")
+        self._console.print()
+        self._console.print(
+            self._with_tail(line, "background" if name == "start_async_task" else "", idx)
+        )
 
     def _print_subagent_response(self, body: str, idx: int) -> None:
         response = tf.extract_subagent_response(body)
@@ -385,11 +445,11 @@ class RichChatRenderer:
         if len(response) > _SUBAGENT_INLINE_CHARS:
             response = response[:_SUBAGENT_INLINE_CHARS]
             clipped = True
-        header = Text("    ⎿ ", style="chrome")
-        header.append("✓ subagent response", style="subagent")
-        header.append(f"  [#{idx}]", style="chrome")
+        header = Text(f"    {gl.RESULT} ", style="chrome")
+        header.append(f"{gl.OK} subagent response", style="subagent")
         self._console.print(header)
-        self._console.print(Padding(Markdown(response), (0, 2, 0, 6)))
+        self._console.print()
+        self._console.print(Padding(Markdown(response), (0, 2, 0, 7)))
         if clipped:
             self._console.print(
                 Text(f"      …clipped — /expand {idx} for the full response", style="chrome")
@@ -414,30 +474,33 @@ class RichChatRenderer:
                 logger.debug("rendering artifact inline failed", exc_info=True)
         title, kind = av.artifact_summary(data)
         suffix = f" ({kind})" if kind else ""
-        self._console.print(Text(f"  ◨ artifact: {tf.sanitize(title)}{suffix}", style="chrome"))
+        self._console.print(
+            Text(f"  {gl.ARTIFACT} artifact: {tf.sanitize(title)}{suffix}", style="chrome")
+        )
 
     def _print_todos(self, args: Any, idx: int) -> None:
         todos = args.get("todos") if isinstance(args, dict) else None
         if not isinstance(todos, list) or not todos:
-            self._console.print(Text(f"  · write_todos  [#{idx}]", style="chrome"))
+            self._console.print(Text(f"  {gl.NOTE} write_todos", style="chrome"))
             return
         self._console.print()
-        header = Text("  TODO", style="accent")
-        header.append(f"  [#{idx}]", style="chrome")
-        self._console.print(header)
+        header = Text("  ")
+        header.append(f"{gl.PLAN} PLAN", style="tool.bold")
+        self._console.print(self._with_tail(header, "", idx))
         for t in todos:
             if not isinstance(t, dict):
                 continue
             status = str(t.get("status", "")).lower()
             content = tf.sanitize(t.get("content", ""))
+            # State is weight and glyph, never a new hue: done recedes, the one
+            # in flight is the only bright thing, pending is plain text.
             if status == "completed":
-                line = Text(f"    ✓ {content}", style="chrome strike")
+                line = Text(f"    {gl.TODO_DONE}  {content}", style="chrome")
             elif status == "in_progress":
-                line = Text(f"    ◐ {content}", style="bold ok")
+                line = Text(f"    {gl.TODO_RUNNING}  {content}", style="tool.bold")
             else:
-                line = Text(f"    ☐ {content}")
+                line = Text(f"    {gl.TODO_PENDING}  {content}")
             self._console.print(line)
-        self._console.print()
 
     # ------------------------------------------------------------------
     # Helpers

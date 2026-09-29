@@ -22,7 +22,8 @@ from pathlib import Path
 from langchain_core.messages import BaseMessage
 from langgraph.graph.state import CompiledStateGraph
 
-from yuyutsava.ansi import CYAN, DIM, RED, RESET, YELLOW
+from yuyutsava.ansi import CHROME, ERR, RESET, WARN
+from yuyutsava.cli.render import startup
 from yuyutsava.cli.render.notices import notice_mark
 from yuyutsava.cli.render.terminal_stream import astream_agent
 from yuyutsava.conversation.recovery import recover_empty_turn, repair_before_turn
@@ -37,9 +38,6 @@ from yuyutsava.storage.interrupts import InterruptsStore
 from yuyutsava.storage.interrupts_unified import sqlite_interrupts_store
 from yuyutsava.storage.models import Session
 from yuyutsava.storage.sessions import SessionsSettings, SessionStore
-
-_BANNER = "═" * 60
-
 
 async def _patch_orphan_cancellations(agent: CompiledStateGraph, thread_id: str) -> int:
     """Repair cancellation results left by a killed permission prompt.
@@ -62,19 +60,27 @@ def _print_notice(ev: StreamEvent) -> None:
     the banner's resume command is how to carry on.
     """
     level = ev.data.get("level", "info")
-    colour = {"error": RED, "warning": YELLOW}.get(level, DIM)
+    colour = {"error": ERR, "warning": WARN}.get(level, CHROME)
     print(f"  {colour}{notice_mark(level)} {ev.data.get('text', '')}{RESET}", file=sys.stderr)
 
 
 def _print_start_banner(session: Session, *, resuming: bool) -> None:
-    verb = "resuming" if resuming else "starting"
-    cmd = f"uv run yuyutsava --verbose --workspace {session.workspace} --resume {session.id}"
-    print(f"\n{CYAN}{_BANNER}{RESET}", file=sys.stderr)
-    print(f"{CYAN}YUYUTSAVA — {verb} session{RESET}", file=sys.stderr)
-    print(f"  session_id : {session.id}", file=sys.stderr)
-    print(f"  workspace  : {session.workspace}", file=sys.stderr)
-    print(f"  resume cmd : {cmd}", file=sys.stderr)
-    print(f"{CYAN}{_BANNER}{RESET}\n", file=sys.stderr)
+    """The same opening screen the REPL draws.
+
+    This path used to print a rule of sixty ``═`` and a different set of
+    labels, so a one-shot run looked like a different program from the chat
+    it shares every other line of output with.
+    """
+    startup.print_banner(
+        session_id=session.id,
+        workspace=Path(session.workspace),
+        resuming=resuming,
+        resume_cmd=(
+            f"uv run yuyutsava --verbose --workspace {session.workspace} --resume {session.id}"
+        ),
+        # A one-shot run has no prompt to type a slash command at.
+        hint=None,
+    )
 
 
 async def run_session(

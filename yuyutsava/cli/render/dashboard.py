@@ -100,6 +100,7 @@ from yuyutsava.cli.render.stdio_capture import (
     StdioCapture,
     TranscriptBuffer,
 )
+from yuyutsava.ansi import palette
 from yuyutsava.config.env import env_flag
 from yuyutsava.context.meter import bus
 from yuyutsava.llm.quirks.first_chunk_retry import classify_provider_busy
@@ -115,17 +116,23 @@ _NOTICE_MAX = 3
 #: wrong slicing, corrected immediately.
 _FALLBACK_HEIGHT = 24
 
-_STYLE = {
-    "ctx.title": "bold cyan",
-    "ctx.accent": "cyan",
-    "ctx.dim": "#808080",
+#: Derived from the role palette in ``yuyutsava.ansi``, not restated: this
+#: dict, the Rich theme and the plain renderer's escapes were three hand-kept
+#: lists of the same colours, and they had already drifted apart.
+_P = palette()
+STYLE = {
+    "ctx.title": f"bold {_P['tool']}",
+    "ctx.accent": _P["tool"],
+    "ctx.dim": _P["chrome"],
     "ctx.value": "bold",
-    "ctx.warn": "bold yellow",
-    "ctx.bar.fill": "cyan",
-    "ctx.bar.empty": "#505050",
-    "ctx.border": "#505050",
-    "status": "#808080",
-    "prompt": "bold cyan",
+    "ctx.warn": f"bold {_P['warn']}",
+    "ctx.bar.fill": _P["tool"],
+    "ctx.bar.empty": "#30363d",
+    "ctx.border": _P["chrome"],
+    "status": _P["chrome"],
+    # The prompt wears the colour the transcript gives your messages, so the
+    # line you are typing and the line it becomes are visibly one thing.
+    "prompt": f"bold {_P['you']}",
 }
 
 
@@ -307,7 +314,7 @@ class ChatDashboard:
         self._app = Application(
             layout=Layout(root, focused_element=self.input.buffer),
             key_bindings=self._key_bindings(),
-            style=Style.from_dict(_STYLE),
+            style=Style.from_dict(STYLE),
             full_screen=True,
             mouse_support=True,
             # prompt_toolkit enables these by default in full screen, and they

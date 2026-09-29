@@ -38,7 +38,7 @@ from prompt_toolkit.formatted_text import ANSI
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.patch_stdout import patch_stdout
 
-from yuyutsava.ansi import CLEAR_SCREEN, CYAN, DIM, RED, RESET, YELLOW
+from yuyutsava.ansi import BOLD, CHROME, CLEAR_SCREEN, DIM, RED, RESET, YELLOW, YOU
 from yuyutsava.cli.background_approvals import BackgroundApprovals
 from yuyutsava.cli.commands.options import ChatOptions
 from yuyutsava.cli.line_reader import read_line
@@ -225,6 +225,11 @@ class ChatSurface:
     console: Any | None
     dashboard: "ChatDashboard | None"
     renderer: "ChatRenderer"
+    #: Whether the REPL has to print the user's own messages itself. In the
+    #: split view prompt_toolkit erases the line on submit, and piped input is
+    #: never echoed at all; at a rich prompt on a TTY the terminal has already
+    #: left the line on screen, and printing it again would double it.
+    echo_input: bool
 
 
 def build_surface(
@@ -266,7 +271,13 @@ def build_surface(
             f"context panel){RESET}",
             file=sys.stderr,
         )
-    return ChatSurface(mode=mode, console=console, dashboard=dashboard, renderer=renderer)
+    return ChatSurface(
+        mode=mode,
+        console=console,
+        dashboard=dashboard,
+        renderer=renderer,
+        echo_input=mode == "dashboard" or not sys.stdin.isatty(),
+    )
 
 
 def _rotate_history(path: Path) -> None:
@@ -791,8 +802,8 @@ def _handle_slash(
         startup.print_banner(session_id=session_id, workspace=workspace, resuming=False)
         return _SLASH_HANDLED
     if head == "/session":
-        print(f"  {DIM}session:{RESET}   {session_id}", file=sys.stderr)
-        print(f"  {DIM}workspace:{RESET} {workspace}", file=sys.stderr)
+        print(f"  {CHROME}session  {RESET}   {session_id}", file=sys.stderr)
+        print(f"  {CHROME}workspace{RESET}   {workspace}", file=sys.stderr)
         return _SLASH_HANDLED
     if head == "/ring":
         renderer.ring.print_all()
@@ -861,10 +872,10 @@ def make_input_reader(dashboard: Any, history_path: Path) -> Callable[[], Awaita
             # ANSI(...) wrapper: prompt_toolkit otherwise renders the
             # raw escape bytes as visible characters (^[[36m…).
             with patch_stdout():
-                return await prompt_session.prompt_async(ANSI(f"\n{CYAN}>{RESET} "))
+                return await prompt_session.prompt_async(ANSI(f"\n{YOU}{BOLD}❯{RESET} "))
         # Non-TTY: run blocking input() in a worker thread.
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, lambda: input(f"\n{CYAN}>{RESET} "))
+        return await loop.run_in_executor(None, lambda: input(f"\n{YOU}{BOLD}❯{RESET} "))
 
     return _read_input
 
@@ -886,6 +897,8 @@ class ReplLoop:
     approvals: Any
     usage_store: Any
     read_input: Callable[[], Awaitable[str]]
+    #: See ``ChatSurface.echo_input``.
+    echo_input: bool = False
 
     async def run(self) -> None:
         while True:
@@ -900,6 +913,12 @@ class ReplLoop:
             user_input = (user_input or "").strip()
             if not user_input:
                 continue
+            if self.echo_input:
+                # Here rather than in ``ChatDashboard.submit``: this is the one
+                # place that sees lines the REPL actually acts on, so a queued
+                # message lands in the transcript where it is answered, and an
+                # answer to a permission card is not mistaken for a turn.
+                self.renderer.user_message(user_input)
             outcome = await self.commands.dispatch(user_input)
             if outcome is Outcome.QUIT:
                 return
@@ -963,6 +982,9 @@ async def _start_session(
     text and voice chats are others. Returns the service and the status line
     the banner showed, which ``/new`` shows again.
     """
+    # The langgraph-api check makes a network call. Off the critical path and
+    # beside the session lookup, so the first screen is never waiting on PyPI.
+    notice = asyncio.create_task(asyncio.to_thread(startup.version_notice, full=debug_plumbing))
     convo, resuming = await ConversationService.resolve(
         store=store,
         bundle=bundle,
@@ -980,15 +1002,13 @@ async def _start_session(
     # bare screen with a stray Google credentials warning at the top.
     if dashboard is not None:
         await dashboard.start()
-    # Surface any langgraph-api upgrade/support notice once, cleanly, right
-    # above the banner rather than mid-chat.
-    startup.print_version_notice(full=debug_plumbing)
     status_line = startup.startup_status_line(sessions_settings)
     startup.print_banner(
         session_id=convo.session.id,
         workspace=opts.workspace,
         resuming=resuming,
         status=status_line,
+        notice=await notice,
     )
     return convo, status_line
 
@@ -1121,6 +1141,7 @@ async def run_chat_repl(
                 approvals=approvals,
                 usage_store=bundle.usage_store,
                 read_input=make_input_reader(dashboard, history_path),
+                echo_input=surface.echo_input,
             ).run()
 
             # Loop exited — flush bookkeeping and mark the session done.

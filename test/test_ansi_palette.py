@@ -39,6 +39,13 @@ CODES = {
     "CLEAR_SCREEN": "\033[2J\033[H",
 }
 
+#: The semantic layer: one hue per *kind* of thing in the chat transcript.
+#: Their bytes depend on the terminal (24-bit or 256-colour) and on the ramp,
+#: so what is pinned here is the vocabulary, not the codes.
+ROLE_NAMES = {"YOU", "AGENT", "TOOL", "OK", "ERR", "WARN", "SUBAGENT", "CHROME"}
+
+HELPERS = {"ROLES", "palette", "resolve_theme", "sgr", "truecolor"}
+
 
 class ThePalette(unittest.TestCase):
     def test_every_name_keeps_its_code(self) -> None:
@@ -47,7 +54,21 @@ class ThePalette(unittest.TestCase):
                 self.assertEqual(getattr(ansi, name), code)
 
     def test_the_module_exports_exactly_these(self) -> None:
-        self.assertEqual(set(ansi.__all__), set(CODES))
+        self.assertEqual(set(ansi.__all__), set(CODES) | ROLE_NAMES | HELPERS)
+
+    def test_every_role_is_a_colour_and_nothing_else(self) -> None:
+        """A role that resolved to "" would silently draw in the last colour
+        set, which is how a transcript ends up one undifferentiated hue."""
+        for name in ROLE_NAMES:
+            with self.subTest(role=name):
+                code = getattr(ansi, name)
+                self.assertTrue(code.startswith("\033[38;"), f"{name} is not a foreground colour")
+
+    def test_the_roles_and_the_ramps_name_the_same_things(self) -> None:
+        self.assertEqual({r.upper() for r in ansi.ROLES}, ROLE_NAMES)
+        for theme in ("dark", "light"):
+            with self.subTest(theme=theme):
+                self.assertEqual(set(ansi.palette(theme)), set(ansi.ROLES))
 
     def test_reset_is_not_a_colour(self) -> None:
         """Used to close every sequence, so it must not carry one."""

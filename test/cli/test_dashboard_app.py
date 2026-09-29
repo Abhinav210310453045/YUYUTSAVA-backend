@@ -32,6 +32,7 @@ from prompt_toolkit.output import DummyOutput
 
 from yuyutsava.cli.render.ansi_wrap import visible_width
 from yuyutsava.cli.render.dashboard import ChatDashboard
+from yuyutsava.cli.render.input_broker import DEFAULT_PROMPT
 from yuyutsava.context.meter import ContextSnapshot, bus
 
 
@@ -481,14 +482,14 @@ class AsksAreReadThroughTheApplication(_DashboardCase):
                 await task
 
     async def test_the_prompt_says_what_is_being_asked_then_reverts(self):
-        self.assertEqual(self.dash.input.prompt, "> ")
+        self.assertEqual(self.dash.input.prompt, DEFAULT_PROMPT)
         pending = asyncio.create_task(self.dash.ask("approve/reject> "))
         await asyncio.sleep(0)
         self.assertEqual(self.dash.input.prompt, "approve/reject> ")
         self.dash.input.buffer.text = "n"
         self.dash.submit()
         await asyncio.wait_for(pending, 2)
-        self.assertEqual(self.dash.input.prompt, "> ")
+        self.assertEqual(self.dash.input.prompt, DEFAULT_PROMPT)
 
     async def test_a_frame_renders_with_the_question_prompt_showing(self):
         # The prompt window is sized from the label; a stale width=2 would

@@ -358,12 +358,12 @@ class BannerAndNoise(unittest.TestCase):
 
         settings = SessionsSettings.from_env()
         with mock.patch("yuyutsava.storage.backend.StorageSettings.is_postgres", return_value=True):
-            self.assertIn("storage: postgres", startup_status_line(settings))
+            self.assertTrue(startup_status_line(settings).startswith("postgres"))
         with mock.patch(
             "yuyutsava.storage.backend.StorageSettings.is_postgres", return_value=False
         ):
             # Falls back to the sessions knob, which is the checkpointer's.
-            self.assertIn(f"storage: {settings.backend}", startup_status_line(settings))
+            self.assertTrue(startup_status_line(settings).startswith(settings.backend))
 
     def test_grpc_verbosity_is_pinned_by_the_entry_points(self):
         """Each entry point pins it, and the variable and the reason live in one

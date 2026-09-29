@@ -34,6 +34,15 @@ class ChatRendererProtocol(Protocol):
     #: sets it). ``None`` when nobody is listening.
     on_change: Any
 
+    def user_message(self, text: str, *, when: str = "") -> None:
+        """Put the line the user typed into the transcript.
+
+        On the protocol because the REPL calls it: the renderer owns where a
+        speaker's marker goes and which colour names them, and the REPL has no
+        business knowing either. Before this existed nothing printed the user's
+        own messages at all.
+        """
+
     def begin_turn(self) -> None:
         """A turn is starting: show whatever says "working"."""
 

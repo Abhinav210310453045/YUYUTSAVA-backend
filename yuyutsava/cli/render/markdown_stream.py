@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from rich.console import Console
 from rich.markdown import Markdown
+from rich.padding import Padding
 
 
 def _committable_length(buf: str) -> int:
@@ -43,8 +44,9 @@ def _committable_length(buf: str) -> int:
 class MarkdownStream:
     """Feed tokens in, get committed markdown blocks + a live tail out."""
 
-    def __init__(self, console: Console) -> None:
+    def __init__(self, console: Console, *, indent: int = 0) -> None:
         self._console = console
+        self._indent = indent
         self._buf = ""
         self.started = False  # True once any prose was fed this turn
 
@@ -77,4 +79,8 @@ class MarkdownStream:
     def _commit(self, text: str) -> None:
         if not text.strip():
             return
-        self._console.print(Markdown(text))
+        block = Markdown(text)
+        # Prose sits one step in from the markers that name the speaker, so a
+        # reply reads as belonging to the ``◇ yuyutsava`` line above it rather
+        # than as the next thing the terminal happened to print.
+        self._console.print(Padding(block, (0, 0, 0, self._indent)) if self._indent else block)

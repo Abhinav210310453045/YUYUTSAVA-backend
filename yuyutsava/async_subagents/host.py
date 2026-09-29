@@ -200,7 +200,7 @@ class AsyncSubagentHost:
         # async and logs "[version]/[support]" lines that land in the chat REPL
         # *after* our fd-redirect window closes — ugly. The chat REPL runs its
         # own synchronous check and renders it cleanly above the banner
-        # (see ``_print_version_notice`` in cli/commands/chat_repl.py).
+        # (see ``version_notice`` in cli/render/startup.py).
         # ``setdefault`` lets a user force the firehose back on explicitly.
         os.environ.setdefault("LANGGRAPH_NO_VERSION_CHECK", "true")
 
