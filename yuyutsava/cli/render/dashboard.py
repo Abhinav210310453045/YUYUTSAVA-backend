@@ -127,10 +127,15 @@ _FALLBACK_HEIGHT = 24
 #: lists of the same colours, and they had already drifted apart.
 _P = palette()
 STYLE = {
-    "ctx.title": f"bold {_P['tool']}",
+    # The panel lists facts about the session, exactly as the banner does, so
+    # it wears the banner's key and value colours rather than a scheme of its
+    # own: one screen, one way of saying "this name, that number".
+    "ctx.title": f"bold {_P['key']}",
+    "ctx.key": _P["key"],
     "ctx.accent": _P["tool"],
+    "ctx.model": f"bold {_P['tool']}",
     "ctx.dim": _P["chrome"],
-    "ctx.value": "bold",
+    "ctx.value": f"bold {_P['value']}",
     "ctx.warn": f"bold {_P['warn']}",
     "ctx.bar.fill": _P["tool"],
     "ctx.bar.empty": "#30363d",
@@ -488,6 +493,7 @@ class ChatDashboard:
             height=height,
             status=self._safe(self._status),
             tool=self._safe(self._tool),
+            state=self._safe(self._state),
             notices=self.notices(),
         )
 

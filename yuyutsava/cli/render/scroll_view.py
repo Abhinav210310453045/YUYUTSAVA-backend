@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from yuyutsava.cli.render.ansi_wrap import row_count, wrap_ansi
+from yuyutsava.cli.render.ansi_wrap import HANG, row_count, wrap_ansi
 
 
 class ScrollView:
@@ -28,10 +28,16 @@ class ScrollView:
         width: Callable[[], int],
         height: Callable[[], int],
         version: Callable[[], int] | None = None,
+        hang: int = HANG,
     ) -> None:
         self._lines = lines
         self._width = width
         self._height = height
+        #: Continuation indent for a line too long for the pane. Rich wraps its
+        #: own output, so what reaches here is a ``print``, a log record or a
+        #: warning — and those are the lines whose second row at column zero
+        #: reads as a new statement rather than the rest of the one above.
+        self._hang = hang
         #: A counter the content bumps whenever it changes. With one, the
         #: total row count is computed once per change instead of once per
         #: wheel tick — and a wheel sends several ticks a flick.
@@ -74,7 +80,7 @@ class ScrollView:
         """
         out: list[str] = []
         for line in reversed(self._lines()):
-            rows = wrap_ansi(line, width)
+            rows = wrap_ansi(line, width, hang=self._hang)
             out.extend(reversed(rows))
             if len(out) >= need:
                 break
@@ -95,9 +101,9 @@ class ScrollView:
             if key == self._count_key:
                 return self._count
             self._count_key = key
-            self._count = sum(row_count(line, width) for line in self._lines())
+            self._count = sum(row_count(line, width, self._hang) for line in self._lines())
             return self._count
-        return sum(row_count(line, width) for line in self._lines())
+        return sum(row_count(line, width, self._hang) for line in self._lines())
 
     def visible(self) -> list[str]:
         """The rows the viewport is over, wrapped to the current width."""

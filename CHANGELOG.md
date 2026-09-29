@@ -41,6 +41,22 @@ While the version stays `0.x`, minor bumps may contain breaking changes.
   being written (`cli/render/prose_frame.py`).
 
 ### Changed
+- **The context column reads in words.** Its rows were the meter's own keys —
+  `in`, `out`, `cached`, `calls`, `compacted` — which are a wire format the app
+  also reads and say nothing about which direction is which. On screen they are
+  now `Sent`, `Received`, `Reused`, `Model calls` and `Compactions`, the window
+  line is `35.5k of 1.0M used`, and each row's name and number are styled apart
+  instead of forming one block of grey. The column lists facts about the
+  session exactly as the banner does, so it wears the banner's key and value
+  colours: one screen, one way of saying "this name, that number". Its status
+  row carries the same working mark as the transcript, and a notice too long
+  for the column continues under itself.
+- **A wrapped line continues under itself.** Rich wraps its own output to the
+  pane, so the lines that reach the wrapper are the ones nothing formatted — a
+  `print`, a log record, a warning — and their second row began at column zero,
+  reading as a new statement rather than the rest of the one above. Rows after
+  the first are now indented, unless the pane is too narrow to spare the cells,
+  where the text matters more than the alignment.
 - **The mark that says a turn is alive moves.** A turn waits — on the first
   token, on a tool, on a subagent — and a status line that does not move cannot
   be told apart from a wedged process, which is the moment a reader reaches for

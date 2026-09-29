@@ -19,7 +19,7 @@ import unittest
 from pathlib import Path
 
 from yuyutsava.cli.render import prose_frame as pf
-from yuyutsava.cli.render.ansi_wrap import char_width, row_count, wrap_ansi
+from yuyutsava.cli.render.ansi_wrap import HANG, char_width, row_count, wrap_ansi
 from yuyutsava.cli.render.console import make_console
 from yuyutsava.cli.render.renderer import RichChatRenderer
 from yuyutsava.cli.render.scroll_view import ScrollView
@@ -209,13 +209,51 @@ class ScrollingDoesNotRewrapTheScrollback(unittest.TestCase):
     def test_the_count_matches_what_wrapping_actually_produces(self) -> None:
         sample = self.lines[:200]
         view = ScrollView(lines=lambda: sample, width=lambda: 37, height=lambda: 10)
-        self.assertEqual(view.display_count(37), sum(len(wrap_ansi(ln, 37)) for ln in sample))
+        self.assertEqual(
+            view.display_count(37),
+            sum(len(wrap_ansi(ln, 37, hang=HANG)) for ln in sample),
+            "the count and the rows must agree about the continuation indent",
+        )
 
     def test_row_count_agrees_with_wrap_ansi_on_awkward_input(self) -> None:
         for line in ("", "x", "\x1b[31mred\x1b[0m", "ま" * 30, "a" * 200, "\x1b[1m" * 40):
             for width in (1, 2, 5, 37, 200):
                 with self.subTest(line=line[:12], width=width):
                     self.assertEqual(row_count(line, width), len(wrap_ansi(line, width)))
+
+
+class AWrappedLineContinuesUnderItself(unittest.TestCase):
+    """A second row flush against column zero reads as a new statement.
+
+    Rich wraps its own output to the pane, so the lines that reach the wrapper
+    are the ones nothing formatted — a ``print``, a log record, a warning. A
+    long warning's tail therefore began a fresh line at column zero, under the
+    mark rather than under the message.
+    """
+
+    def test_every_row_after_the_first_is_indented(self) -> None:
+        rows = wrap_ansi("word " * 40, 60, hang=HANG)
+        self.assertGreater(len(rows), 1)
+        for row in rows[1:]:
+            self.assertTrue(row.startswith(" " * HANG))
+
+    def test_no_row_overflows_because_of_the_indent(self) -> None:
+        from yuyutsava.cli.render.ansi_wrap import visible_width
+
+        for width in (20, 37, 60, 90):
+            with self.subTest(width=width):
+                for row in wrap_ansi("word " * 40, width, hang=HANG):
+                    self.assertLessEqual(visible_width(row), width)
+
+    def test_a_narrow_pane_keeps_its_width_instead(self) -> None:
+        """Those cells are the difference between a sentence and a stack of
+        fragments, and the reader needs the text more than the alignment."""
+        rows = wrap_ansi("z" * 40, 10, hang=HANG)
+        self.assertFalse(rows[1].startswith(" "))
+
+    def test_colour_still_survives_the_break(self) -> None:
+        rows = wrap_ansi("\x1b[31m" + ("red " * 40), 60, hang=HANG)
+        self.assertIn("\x1b[31m", rows[1], "the indent must not eat the reopened colour")
 
 
 class TheBufferSaysWhenItChanged(unittest.TestCase):

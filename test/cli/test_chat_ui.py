@@ -416,7 +416,10 @@ class TheRolesAreOnePalette(unittest.TestCase):
 
         dark = ansi.palette()
         self.assertIn(dark["you"], STYLE["prompt"])
-        self.assertIn(dark["tool"], STYLE["ctx.title"])
+        self.assertIn(dark["tool"], STYLE["ctx.model"])
+        # The panel lists session facts, so it wears the banner's colours.
+        self.assertIn(dark["key"], STYLE["ctx.title"])
+        self.assertIn(dark["value"], STYLE["ctx.value"])
 
     def test_the_theme_can_be_chosen_from_the_environment(self) -> None:
         self.assertEqual(ansi.resolve_theme({"YUYUTSAVA_THEME": "light"}), "light")

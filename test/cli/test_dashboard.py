@@ -23,8 +23,10 @@ from __future__ import annotations
 import io
 import unittest
 
+from yuyutsava.cli.render import pulse
 from yuyutsava.cli.render.console import make_console
 from yuyutsava.cli.render.context_panel import (
+    LABELS,
     MAX_PANEL_WIDTH,
     MIN_DASHBOARD_COLS,
     MIN_PANEL_WIDTH,
@@ -204,14 +206,47 @@ class DisplayModeLadder(unittest.TestCase):
 class PanelHonesty(unittest.TestCase):
     def test_segment_rows_are_marked_as_estimates(self):
         text = panel_text(snap(), 34)
-        for label in ("system prompt", "tool schemas", "memory", "skills", "messages", "free"):
+        segments = ("system prompt", "tool schemas", "memory", "skills", "messages")
+        for label in [s.capitalize() for s in segments] + [LABELS["free"]]:
             row = next(ln for ln in text.split("\n") if ln.strip().startswith(label))
             self.assertIn("≈", row, label)
 
     def test_provider_numbers_are_not_marked(self):
         lines = panel_lines(snap(), 34)
-        in_row = next(ln for ln in lines if ln.strip().startswith("in "))
-        self.assertNotIn("≈", in_row)
+        sent = next(ln for ln in lines if ln.strip().startswith(LABELS["input"]))
+        self.assertNotIn("≈", sent)
+
+    def test_the_rows_are_named_in_words_rather_than_in_meter_keys(self):
+        """`in` and `out` said nothing about which direction was which."""
+        text = panel_text(snap(), 34)
+        for word in ("Sent", "Received", "Model calls", "Cost"):
+            with self.subTest(word=word):
+                self.assertIn(word, text)
+        # "Model calls" legitimately contains "calls"; what must be gone is a
+        # row whose whole name is a meter key.
+        named = {ln.strip().split("  ")[0] for ln in text.split("\n") if ln.strip()}
+        self.assertFalse(named & {"in", "out", "calls", "cached", "compacted", "offloaded"})
+
+    def test_a_wrapped_notice_continues_under_itself(self):
+        """In a column this narrow most notices have a second line, and one
+        starting at column zero reads as a new notice."""
+        lines = panel_lines(snap(), 30, notices=["gemini-3.5-flash has no price entry"])
+        wrapped = [ln for ln in lines if "price" in ln or ln.strip() == "entry"]
+        self.assertGreater(len(wrapped), 1, "expected the notice to wrap at this width")
+        for line in wrapped:
+            self.assertTrue(line.startswith(" "))
+
+    def test_the_working_mark_is_drawn_beside_the_status(self):
+        first = panel_text(snap(), 30, status="Thinking…", state="thinking")
+        self.assertIn("Thinking…", first)
+        self.assertTrue(
+            any(frame in first for frame in pulse.FRAMES),
+            "the panel's status row shows no working mark",
+        )
+
+    def test_the_mark_settles_once_output_arrives(self):
+        text = panel_text(snap(), 30, status="Writing…", state="writing")
+        self.assertIn(pulse.RESTING, text)
 
     def test_an_uncalibrated_panel_says_so(self):
         self.assertIn("uncalibrated", panel_text(snap(calibrated=False), 34))

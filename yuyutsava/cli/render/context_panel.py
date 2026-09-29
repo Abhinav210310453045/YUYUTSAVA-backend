@@ -27,6 +27,7 @@ for this" is not "this was free".
 from __future__ import annotations
 
 import textwrap
+import time
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
@@ -34,6 +35,8 @@ from rich.console import Group
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
+
+from yuyutsava.cli.render import pulse
 
 if TYPE_CHECKING:  # pragma: no cover — typing only
     from rich.console import RenderableType
@@ -118,16 +121,19 @@ def bar(fraction: float, width: int) -> tuple[int, int]:
     return filled, width - filled
 
 
-def _row(label: str, value: str, width: int, *, approx: bool = False) -> str:
-    """``label ......... value`` padded to *width*, value right-aligned."""
-    val = f"{_APPROX}{value}" if approx else value
-    gap = width - len(label) - len(val)
+def _fit_pair(label: str, value: str, width: int) -> tuple[str, int]:
+    """*label* as it fits, and the gap that right-aligns *value* after it.
+
+    The label is trimmed and never the number: a number cut in half is wrong
+    where a name cut short is merely terse, and the number is what the row is
+    for.
+    """
+    gap = width - len(label) - len(value)
     if gap < 1:
-        # Trim the label, never the number — the number is the content.
-        keep = max(1, width - len(val) - 1)
+        keep = max(1, width - len(value) - 1)
         label = label[:keep]
-        gap = max(1, width - len(label) - len(val))
-    return f"{label}{' ' * gap}{val}"
+        gap = max(1, width - len(label) - len(value))
+    return label, gap
 
 
 class _Column:
@@ -150,13 +156,49 @@ class _Column:
         pad = max(0, self.width - used)
         self.rows.append((prio, [*frags, ("", " " * pad)] if pad else frags))
 
-    def pair(self, prio: int, label: str, value: str, style: str = "class:ctx.dim", **kw) -> None:
-        self.row(prio, " " + _row(label, value, self.inner, **kw), style)
+    def pair(
+        self,
+        prio: int,
+        label: str,
+        value: str,
+        *,
+        approx: bool = False,
+        value_style: str = "class:ctx.value",
+    ) -> None:
+        """``Label            value``, the name and the number styled apart.
+
+        One colour for both made the panel a block of grey in which nothing
+        was findable. The name carries the banner's key colour and the number
+        its value colour, so the column of numbers reads on its own.
+        """
+        val = f"{_APPROX}{value}" if approx else value
+        label, gap = _fit_pair(label, val, self.inner)
+        self.raw(
+            prio,
+            [("class:ctx.key", f" {label}"), ("", " " * gap), (value_style, val)],
+        )
+
+
+#: What each row is called on screen. The meter's own keys are terse because
+#: they are also a wire format the app reads; these are the words a reader who
+#: did not write the meter would use. ``in``/``out`` in particular said nothing
+#: about which direction was which.
+LABELS = {
+    "input": "Sent",
+    "output": "Received",
+    "cost": "Cost",
+    "calls": "Model calls",
+    "cached": "Reused",
+    "compacted": "Compactions",
+    "offloaded": "Offloaded",
+    "digests": "Digests kept",
+    "free": "Free",
+}
 
 
 def _window_rows(col: _Column, snap: Any) -> bool:
     """Model, fill bar and used/max; returns whether the total is measured."""
-    col.row(_P_ESSENTIAL, f" {snap.model or 'model unknown'}", "class:ctx.accent")
+    col.row(_P_ESSENTIAL, f" {snap.model or 'model unknown'}", "class:ctx.model")
     filled, empty = bar(snap.used_fraction, max(1, col.width - 7))
     col.raw(
         _P_ESSENTIAL,
@@ -171,10 +213,11 @@ def _window_rows(col: _Column, snap: Any) -> bool:
     # for the prompt plus output tokens for the reply it produced.
     measured = bool(getattr(snap, "window_measured", False))
     mark = "" if measured else _APPROX
-    col.pair(
+    used = f"{mark}{fmt_tokens(snap.used_tokens)}"
+    col.row(
         _P_ESSENTIAL,
-        f"{mark}{fmt_tokens(snap.used_tokens)} / {fmt_tokens(snap.max_input_tokens)}",
-        "",
+        f" {used} of {fmt_tokens(snap.max_input_tokens)} used",
+        "class:ctx.dim",
     )
     if snap.compact_trigger_tokens and snap.used_tokens >= snap.compact_trigger_tokens:
         col.row(_P_ESSENTIAL, " compaction imminent", "class:ctx.warn")
@@ -184,32 +227,32 @@ def _window_rows(col: _Column, snap: Any) -> bool:
 def _segment_rows(col: _Column, snap: Any, measured: bool) -> None:
     col.row(_P_SEGMENTS)
     for _key, label, tokens in snap.segments():
-        col.pair(_P_SEGMENTS, label, fmt_tokens(tokens), approx=True)
-    col.pair(_P_SEGMENTS, "free", fmt_tokens(snap.free_tokens), approx=not measured)
+        col.pair(_P_SEGMENTS, label.capitalize(), fmt_tokens(tokens), approx=True)
+    col.pair(_P_SEGMENTS, LABELS["free"], fmt_tokens(snap.free_tokens), approx=not measured)
 
 
 def _last_call_rows(col: _Column, snap: Any) -> None:
     col.row(_P_LAST_CALL)
     col.row(_P_LAST_CALL, f" LAST CALL  #{snap.call_no}", "class:ctx.title")
     cache = f"  ↺{fmt_pct(snap.cache_hit_fraction)}" if snap.cache_read_tokens else ""
-    col.pair(_P_LAST_CALL, "in", fmt_tokens(snap.input_tokens) + cache, "class:ctx.value")
-    col.pair(_P_LAST_CALL, "out", fmt_tokens(snap.output_tokens), "class:ctx.value")
-    col.pair(_P_LAST_CALL, "cost", fmt_cost(snap.est_cost_usd, snap.priced))
+    col.pair(_P_LAST_CALL, LABELS["input"], fmt_tokens(snap.input_tokens) + cache)
+    col.pair(_P_LAST_CALL, LABELS["output"], fmt_tokens(snap.output_tokens))
+    col.pair(_P_LAST_CALL, LABELS["cost"], fmt_cost(snap.est_cost_usd, snap.priced))
 
 
 def _session_rows(col: _Column, snap: Any) -> None:
     col.row(_P_SESSION)
     col.row(_P_SESSION, " SESSION", "class:ctx.title")
-    col.pair(_P_SESSION, "calls", str(snap.calls))
-    col.pair(_P_SESSION, "in", fmt_tokens(snap.session_input_tokens))
-    col.pair(_P_SESSION, "out", fmt_tokens(snap.session_output_tokens))
+    col.pair(_P_SESSION, LABELS["calls"], str(snap.calls))
+    col.pair(_P_SESSION, LABELS["input"], fmt_tokens(snap.session_input_tokens))
+    col.pair(_P_SESSION, LABELS["output"], fmt_tokens(snap.session_output_tokens))
     if snap.session_cache_read_tokens:
-        col.pair(_P_DETAIL, "cached", fmt_tokens(snap.session_cache_read_tokens))
-    col.pair(_P_SESSION, "cost", fmt_cost(snap.session_cost_usd, snap.priced))
-    col.pair(_P_DETAIL, "compacted", str(snap.compactions))
-    col.pair(_P_DETAIL, "offloaded", str(snap.offloads))
+        col.pair(_P_DETAIL, LABELS["cached"], fmt_tokens(snap.session_cache_read_tokens))
+    col.pair(_P_SESSION, LABELS["cost"], fmt_cost(snap.session_cost_usd, snap.priced))
+    col.pair(_P_DETAIL, LABELS["compacted"], str(snap.compactions))
+    col.pair(_P_DETAIL, LABELS["offloaded"], str(snap.offloads))
     if snap.offloaded_digests:
-        col.pair(_P_DETAIL, "digests in ctx", str(snap.offloaded_digests))
+        col.pair(_P_DETAIL, LABELS["digests"], str(snap.offloaded_digests))
 
 
 def _footer_rows(col: _Column, snap: Any) -> None:
@@ -231,6 +274,7 @@ def panel_fragments(
     height: int | None = None,
     status: str = "",
     tool: str = "",
+    state: str = "",
     notices: Sequence[str] = (),
 ) -> list[tuple[str, str]]:
     """The live context column, as ``(style, text)`` fragments with newlines.
@@ -267,7 +311,15 @@ def panel_fragments(
 
     if status or tool:
         col.row(_P_STATUS)
-        col.row(_P_STATUS, f" ● {tool or status}"[: col.width], "class:ctx.accent")
+        now = time.monotonic()
+        mark = pulse.mark_at(now, state)
+        col.raw(
+            _P_STATUS,
+            [
+                (f"class:pulse.{pulse.hue_at(now)}", f" {mark} "),
+                ("class:ctx.accent", (tool or status)[: max(0, col.width - 3)]),
+            ],
+        )
 
     # Transient notices, newest last. The user asked for these here rather than
     # over the transcript; they are also the only place a provider retry or an
@@ -281,19 +333,25 @@ def panel_fragments(
     return _fit(col.rows, height)
 
 
-def _wrap_plain(text: str, width: int) -> list[str]:
+def _wrap_plain(text: str, width: int, *, indent: str = " ") -> list[str]:
     """Word-wrap plain text to the panel width, padding each row.
 
     Word-aware because notices are sentences, not data: breaking
     "no price entry" across two rows mid-word makes a 34-column column
     genuinely hard to read. Over-long single words still hard-break.
+
+    Every row carries *indent*, the continuation rows included: a sentence
+    whose second line starts at column zero reads as a new one, and in a
+    column this narrow most notices have a second line.
     """
 
     if not text:
         return [""]
     rows = textwrap.wrap(
-        text,
+        text.strip(),
         width=width,
+        initial_indent=indent,
+        subsequent_indent=indent,
         break_long_words=True,
         break_on_hyphens=False,
     ) or [""]

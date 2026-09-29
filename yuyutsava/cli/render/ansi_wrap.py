@@ -77,8 +77,16 @@ def _tokens(line: str) -> list[tuple[bool, str]]:
     return out
 
 
+#: Cells a continuation row is indented by. Everything Rich writes already
+#: fits the pane, so the lines that actually reach this wrapper are the ones
+#: nothing formatted — a ``print``, a log record, a warning — and those are
+#: exactly the ones whose second row, flush against column zero, reads as a
+#: new statement rather than as the rest of the one above it.
+HANG = 4
+
+
 @lru_cache(maxsize=8192)
-def row_count(line: str, width: int) -> int:
+def row_count(line: str, width: int, hang: int = 0) -> int:
     """How many display rows *line* takes at *width*.
 
     Split from :func:`wrap_ansi` because the scroll arithmetic only ever
@@ -88,10 +96,20 @@ def row_count(line: str, width: int) -> int:
     """
     if width <= 0 or visible_width(line) <= width:
         return 1
-    return len(wrap_ansi(line, width))
+    return len(wrap_ansi(line, width, hang=hang))
 
 
-def wrap_ansi(line: str, width: int) -> list[str]:
+def _hang_for(hang: int, width: int) -> int:
+    """The continuation indent this width can afford, which may be none.
+
+    An indent is dropped unless the pane is at least four times as wide: in a
+    narrow column those cells are the difference between a sentence and a
+    stack of fragments, and the reader needs the text more than the alignment.
+    """
+    return hang if 0 < hang * 4 <= width else 0
+
+
+def wrap_ansi(line: str, width: int, *, hang: int = 0) -> list[str]:
     """Wrap one logical line to *width* cells, preserving colour across breaks.
 
     Returns at least one element (``[""]`` for an empty line) so a blank line
@@ -102,12 +120,17 @@ def wrap_ansi(line: str, width: int) -> list[str]:
     A character wider than the entire pane becomes ``…`` — one cell, and
     visibly an elision. Emitting it whole would overflow by a cell, and the
     no-overflow guarantee has to hold at every width or it is not a guarantee.
+
+    *hang* indents every row after the first, so a wrapped line reads as one
+    statement instead of starting again at column zero; :func:`_hang_for`
+    decides whether the pane can afford it.
     """
     if width <= 0:
         return [line]
     if visible_width(line) <= width:
         return [line]
 
+    hang = _hang_for(hang, width)
     lines: list[str] = []
     active: list[str] = []  # SGR sequences still in effect
     current: list[str] = []  # pieces of the row being built
@@ -118,10 +141,12 @@ def wrap_ansi(line: str, width: int) -> list[str]:
         text = "".join(current)
         lines.append(text + _RESET if active else text)
         current.clear()
-        # Re-open the colours that were in effect at the break.
-        if active:
-            current.extend(active)
-        col = 0
+        # Re-open the colours that were in effect at the break, then the
+        # indent. Unconditionally: an empty indent costs one empty string and
+        # keeps the break with one shape rather than two.
+        current.extend(active)
+        current.append(" " * hang)
+        col = hang
 
     for is_escape, chunk in _tokens(line):
         if is_escape:
@@ -158,15 +183,16 @@ def wrap_ansi(line: str, width: int) -> list[str]:
     return lines
 
 
-def wrap_lines(lines: list[str], width: int) -> list[str]:
+def wrap_lines(lines: list[str], width: int, *, hang: int = 0) -> list[str]:
     """``wrap_ansi`` over a list, flattened."""
     out: list[str] = []
     for line in lines:
-        out.extend(wrap_ansi(line, width))
+        out.extend(wrap_ansi(line, width, hang=hang))
     return out
 
 
 __all__ = [
+    "HANG",
     "char_width",
     "row_count",
     "strip_ansi",
