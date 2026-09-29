@@ -38,6 +38,7 @@ from yuyutsava import platform as yplatform
 from yuyutsava.aio import run as aio_run
 from yuyutsava.aio.tasks import cancel_and_reap
 from yuyutsava.async_subagents.host_lock import release_host_lock
+from yuyutsava.config.dependencies import check_install
 from yuyutsava.config.env import env_flag
 from yuyutsava.config.logs import quiet_grpc_fork_logs, silence_plumbing_loggers
 from yuyutsava.daemon.bootstrap import DaemonOptions, DaemonSubsystems, build_daemon
@@ -256,6 +257,28 @@ def _log_ready_banner(subs: DaemonSubsystems) -> None:
     logger.info("  subagents : %s", ", ".join(subs.subagent_names))
     if subs.web_hub is not None:
         logger.info("  web window: %s", subs.web_url)
+    _log_install_check()
+
+
+def _log_install_check() -> None:
+    """The coupled dependencies' versions, and a warning when they drift.
+
+    An install that ignores ``uv.lock`` runs code the contracts and CI never
+    checked — how the MCP servers broke (``config/dependencies.py``).
+    """
+    try:
+        report = check_install()
+    except Exception:  # noqa: BLE001 — a failed check must not stop the daemon starting
+        logger.debug("dependency check failed", exc_info=True)
+        return
+    logger.info("  deps      : %s", ", ".join(f"{n} {v}" for n, v in report.versions.items()))
+    if report.drifted:
+        logger.warning(
+            "this install does not match the project's locked dependencies: %s. "
+            "Reinstall with `python scripts/install_cli.py` (README → Installing the CLI), "
+            "or run the daemon with `uv run yuyutsava daemon` from the checkout.",
+            "; ".join(report.out_of_range + report.off_lock),
+        )
 
 
 def _load_env() -> None:

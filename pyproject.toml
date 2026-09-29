@@ -81,6 +81,8 @@ dependencies = [
     "langgraph-checkpoint-postgres>=2.0.0,<4",
     "psycopg[binary,pool]>=3.2",
     "psutil>=5.9",
+    # config/dependencies reads requirement specifiers (the daemon's install check).
+    "packaging>=24",
 ]
 
 [project.urls]

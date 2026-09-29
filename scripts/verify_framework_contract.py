@@ -39,13 +39,6 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
 
-#: Dependencies the code couples to closely enough that a new major must be
-#: reviewed before it is installed: the agent framework (internals), the MCP SDK
-#: (model field names, R-BUG-25) and the web-search clients (called directly).
-#: Each must carry an upper bound. Matched as substrings of the package name.
-COUPLED = ("langchain", "langgraph", "deepagents", "mcp", "tavily-python", "exa-py")
-
-
 def _check_declared_ranges() -> None:
     """Every installed framework package satisfies its declared specifier.
 
@@ -57,6 +50,10 @@ def _check_declared_ranges() -> None:
     from importlib.metadata import PackageNotFoundError, version
 
     from packaging.requirements import Requirement
+
+    from yuyutsava.config.dependencies import (  # noqa: PLC0415 — resolved after the checkout joins sys.path, above
+        is_coupled,
+    )
 
     data = tomllib.loads((REPO / "pyproject.toml").read_text())
     reqs = list(data["project"]["dependencies"])
@@ -71,7 +68,9 @@ def _check_declared_ranges() -> None:
             continue
         if req.marker and not req.marker.evaluate():
             continue
-        if any(k in req.name for k in COUPLED) and "<" not in str(req.specifier):
+        # The coupled set is the one the daemon checks its install against
+        # (yuyutsava/config/dependencies.COUPLED); each needs a ceiling.
+        if is_coupled(req.name) and "<" not in str(req.specifier):
             uncapped.append(req.name)
         try:
             installed = version(req.name)
