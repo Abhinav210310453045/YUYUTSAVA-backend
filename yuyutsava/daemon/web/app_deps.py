@@ -58,6 +58,8 @@ class AppDeps:
     async_subagents: bool = False
     async_task_watcher: Any | None = None  # async_subagents.watcher
     subagent_roster: dict | None = None  # {name: BaseSubAgent}
+    #: The MCP servers' manager, for ``GET /mcp/status``; absent, it lists none.
+    mcp_manager: Any | None = None
 
     # -- stores ------------------------------------------------------------
     #: The TODO board (``TodoExchange``); without it the board routes answer 503.

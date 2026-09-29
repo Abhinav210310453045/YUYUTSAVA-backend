@@ -61,6 +61,9 @@ from yuyutsava.daemon.web.routers import (
     logs as logs_router,
 )
 from yuyutsava.daemon.web.routers import (
+    mcp as mcp_router,
+)
+from yuyutsava.daemon.web.routers import (
     proposals as proposals_router,
 )
 from yuyutsava.daemon.web.routers import (
@@ -194,6 +197,7 @@ def _mount_routers(app: FastAPI) -> None:
         feedback_router.router,
         todos_router.router,
         artifacts_router.router,
+        mcp_router.router,
     ]
     # Read-only DB introspection. Opt-out via env (defaults on).
     if env_flag("YUYUTSAVA_DB_API_ENABLED", default=True, false=("0", "false", "no")):

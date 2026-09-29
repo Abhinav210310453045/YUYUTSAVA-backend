@@ -834,13 +834,15 @@ async def build_mcp(workspace: Path) -> MCPClientManager:
     manager = MCPClientManager()
     cfg = MCPConfig.load(workspace)
     await manager.start(cfg)
-    if manager.known_servers():
+    statuses = manager.status()
+    if statuses:
+        # Every configured server, failed ones included — a failure used to
+        # appear only as a traceback further up the log.
         ws_cfg = str(WorkspaceLayout.for_workspace(workspace).mcp_config)
         logger.info(
             "  mcp       : %s",
             ", ".join(
-                f"{n} (workspace)" if cfg.servers[n].source == ws_cfg else n
-                for n in manager.known_servers()
+                s.summary() + (" [workspace]" if s.source == ws_cfg else "") for s in statuses
             ),
         )
     return manager
@@ -1709,6 +1711,7 @@ async def build_web(
             async_task_watcher=async_subs.watcher,
             runtime_settings=pol.runtime_settings,
             subagent_roster=boot.subagents.sync,
+            mcp_manager=boot.mcp_manager,
         ),
     )
     uvicorn_level = logging.getLevelName(logging.getLogger("yuyutsava").getEffectiveLevel()).lower()
