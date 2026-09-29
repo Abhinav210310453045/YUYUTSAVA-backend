@@ -8,6 +8,8 @@ Three things this pins, each of which was a defect rather than a preference:
   unattributed monologue;
 * ``tool``, ``accent`` and ``prompt`` were all cyan, across three hand-kept
   palettes that had already drifted.
+
+Run:  .venv/bin/python -m pytest test/cli/test_chat_ui.py
 """
 
 from __future__ import annotations
@@ -16,7 +18,6 @@ import io
 import re
 import unittest
 from pathlib import Path
-
 from types import SimpleNamespace
 
 from yuyutsava import ansi
@@ -41,11 +42,13 @@ def _banner(width: int, **kw) -> str:
 
     with contextlib.redirect_stderr(err):
         startup.print_banner(
-            session_id=kw.pop("session_id", "cli-123"),
-            workspace=kw.pop("workspace", Path("/tmp/ws")),
-            resuming=kw.pop("resuming", False),
+            startup.BannerFacts(
+                session_id=kw.pop("session_id", "cli-123"),
+                workspace=kw.pop("workspace", Path("/tmp/ws")),
+                resuming=kw.pop("resuming", False),
+                **kw,
+            ),
             width=width,
-            **kw,
         )
     return _plain(err.getvalue())
 
@@ -93,7 +96,9 @@ class TheBannerSaysWhoAndWhen(unittest.TestCase):
     def test_the_facts_are_labelled_rows_that_line_up(self) -> None:
         text = _banner(118, status="postgres · tracing off")
         rows = [ln for ln in text.splitlines() if ln.startswith("  ") and "   " in ln]
-        labelled = [ln for ln in rows if ln.strip().split()[0] in ("workspace", "session", "runtime")]
+        labelled = [
+            ln for ln in rows if ln.strip().split()[0] in ("workspace", "session", "runtime")
+        ]
         self.assertEqual(len(labelled), 3)
         columns = {ln.index(ln.strip().split()[1]) for ln in labelled}
         self.assertEqual(len(columns), 1, "the values start in one column")
@@ -102,7 +107,7 @@ class TheBannerSaysWhoAndWhen(unittest.TestCase):
         self.assertIn("resumed", _banner(118, resuming=True))
 
     def test_the_update_notice_comes_after_the_wordmark_not_before_it(self) -> None:
-        """It used to be the first thing on screen, above the art."""
+        """A warning above the wordmark opens the session on a complaint."""
         text = _banner(118, notice="langgraph-api 0.15.1 available")
         self.assertLess(
             text.index(startup.WORDMARK[0]),

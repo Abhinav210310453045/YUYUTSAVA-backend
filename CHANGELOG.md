@@ -8,6 +8,73 @@ While the version stays `0.x`, minor bumps may contain breaking changes.
 
 ## [Unreleased]
 
+### Added
+- **The chat REPL opens on a proper screen, and says who said what.** A wordmark
+  centred in the pane it is drawn in — the split view redirects the banner into
+  the left pane, so measuring the whole terminal put the art off to the right —
+  with a fit ladder down to a three-row mark and then the bare name as the
+  terminal narrows. Under it, `user@host · date · time` and every session fact
+  as one labelled row: the label bold in its own colour, the value in a second
+  colour the transcript never uses, so a session id cannot be read as a tool
+  result. The langgraph-api notice is a `warning` row among them rather than the
+  first thing on screen, and its check runs on a thread beside the session
+  lookup instead of holding up the first frame. The one-shot path draws the same
+  banner (`cli/render/startup.py`).
+- **Your own messages are in the transcript.** Nothing printed them: the REPL
+  dispatched the line straight into the turn, and in the split view
+  prompt_toolkit erases it on submit — so the transcript read as an
+  unattributed monologue, and the line was missing from the replay printed back
+  to the scrollback on exit. `user_message()` joins the renderer protocol; the
+  REPL calls it only where the terminal has not already echoed, so nothing is
+  printed twice.
+- **One colour system in place of three.** `yuyutsava/ansi.py` gains a role
+  layer — one hue per kind of thing, with state carried by weight and glyph —
+  and the Rich theme and the dashboard's prompt_toolkit styles are derived from
+  it rather than restating it. Two ramps, because the CLI cannot set the
+  terminal's background; `YUYUTSAVA_THEME` and `COLORFGBG` choose, and a
+  terminal without `COLORTERM` gets 256-colour escapes rather than the
+  parameters of a 24-bit sequence printed as text.
+- **Each answer is drawn inside a dotted frame** in the assistant's colour,
+  built as a top edge, per-line rails and a bottom edge rather than a
+  `rich.panel.Panel` — a Panel must know its whole contents before it can close,
+  and prose is committed block by block so a long answer appears while it is
+  being written (`cli/render/prose_frame.py`).
+
+### Changed
+- **Prose streams instead of arriving a paragraph at a time.** The transcript
+  commits a markdown block only once that block is complete, so between blank
+  lines nothing was on screen at all. Text that has arrived but is not yet a
+  complete block is now shown as provisional rows inside the open frame,
+  replaced as more lands and dropped when the finished block prints, so nothing
+  can appear twice. Prose is also paced through the token smoother the plain
+  renderer already used; the rule for when to pace is stated once, so
+  `YUYUTSAVA_REPL_SMOOTH` and `YUYUTSAVA_REPL_SMOOTH_CPS` govern both
+  renderers. Piped output is not paced and is unchanged.
+- **Skills retrieval reports through the renderer.** The names a turn matched
+  were an INFO log record, which reaches the transcript pane without passing
+  through a renderer and therefore landed unindented at column zero between the
+  user's message and the first tool call. Retrieval now publishes them to
+  listeners (`skills/injector.add_recall_listener`, the shape the retry
+  listener uses) and the renderers draw one row, fitted to the pane with a
+  count of whatever did not fit.
+- **A Python warning is one themed row.** The stdlib's two-line format — an
+  absolute `site-packages` path, the category, the message, then an echo of the
+  offending source line — went into the pane verbatim. It is now the module
+  name, the category and the message on one indented row. Nothing is filtered:
+  a real warning still arrives.
+
+### Fixed
+- **Scrolling the transcript stuttered.** Working out how far it was allowed to
+  scroll re-wrapped the entire 5,000-line scrollback — regex tokenisation plus
+  three uncached `unicodedata` lookups per character — on every wheel tick, and
+  a wheel sends several per flick. Row widths and per-line row counts are now
+  cached, and the total is memoised against a version counter the buffer bumps
+  when its content changes. Measured over 5,000 distinct lines at 88 columns:
+  85 ms per tick before, 1 µs when nothing has changed, 0.23 ms to recount
+  after new output. The application's own repaint interval also drops from
+  0.5 s to 0.12 s; every write already invalidates, so it is a safety net, but
+  at half a second it was the longest anything could sit unseen.
+
 ### Fixed
 - **On Vertex, every chat turn failed, even "hi", because of one MCP tool's
   schema.** Version 2.9.0 of the Google Drive MCP server declares

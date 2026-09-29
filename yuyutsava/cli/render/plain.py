@@ -26,6 +26,10 @@ from yuyutsava.cli.render.ring import PayloadRing
 from yuyutsava.cli.stream_smoother import TokenSmoother, configured_cps, smoothing_enabled
 from yuyutsava.core.streaming import StreamEvent
 
+#: Cells the skills row may use for names. This renderer writes to a stream it
+#: cannot measure — piped output has no width — so it assumes the conventional
+#: eighty-column terminal rather than running off the edge of a narrow one.
+_SKILLS_WIDTH = 60
 
 #: The assistant's own marker, coloured once rather than at the call site.
 AGENT_MARK = f"{AGENT}{BOLD}{gl.AGENT} yuyutsava{RESET}"
@@ -74,6 +78,15 @@ class ChatRenderer:
         _err(f"  {YOU}{BOLD}{gl.YOU} you{RESET}  {CHROME}{stamp}{RESET}")
         for line in text.splitlines():
             _err(f"    {YOU}{line}{RESET}")
+
+    def skills_recalled(self, names: tuple[str, ...]) -> None:
+        """One chrome line naming the skills this turn matched."""
+        if not names:
+            return
+        shown, rest = tf.fit_names(names, _SKILLS_WIDTH)
+        tail = f"  +{rest} more" if rest else ""
+        _err("")
+        _err(f"  {CHROME}{gl.SKILLS} skills  {shown}{tail}{RESET}")
 
     def begin_turn(self) -> None:
         """Turn-start hook. The rich subclass starts its spinner here."""

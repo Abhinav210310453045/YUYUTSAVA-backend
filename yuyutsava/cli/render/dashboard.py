@@ -85,6 +85,7 @@ from prompt_toolkit.mouse_events import MouseEventType
 from prompt_toolkit.output import create_output
 from prompt_toolkit.styles import Style
 
+from yuyutsava.ansi import palette
 from yuyutsava.cli.line_reader import clear_line_reader, set_line_reader
 from yuyutsava.cli.render.console import make_console
 from yuyutsava.cli.render.context_panel import (
@@ -100,7 +101,6 @@ from yuyutsava.cli.render.stdio_capture import (
     StdioCapture,
     TranscriptBuffer,
 )
-from yuyutsava.ansi import palette
 from yuyutsava.config.env import env_flag
 from yuyutsava.context.meter import bus
 from yuyutsava.llm.quirks.first_chunk_retry import classify_provider_busy

@@ -7,12 +7,13 @@ Two complaints, one about each end of the display:
   lines nothing was on screen at all;
 * the wheel stuttered, because working out how far it was allowed to scroll
   re-wrapped the entire scrollback on every tick.
+
+Run:  .venv/bin/python -m pytest test/cli/test_prose_streaming.py
 """
 
 from __future__ import annotations
 
 import asyncio
-import io
 import re
 import unittest
 from pathlib import Path
@@ -93,9 +94,7 @@ class AnAnswerAppearsWhileItIsWritten(unittest.IsolatedAsyncioTestCase):
         buffer = TranscriptBuffer()
         renderer = _renderer(buffer)
         await self._feed(renderer, "before the call")
-        await renderer.render(
-            StreamEvent(kind="tool_call", data={"name": "tr_ls", "args": {}})
-        )
+        await renderer.render(StreamEvent(kind="tool_call", data={"name": "tr_ls", "args": {}}))
         lines = _plain("\n".join(buffer.lines())).splitlines()
         self.assertEqual(sum("before the call" in ln for ln in lines), 1)
         closed = next(i for i, ln in enumerate(lines) if pf.BOTTOM_LEFT in ln)
@@ -138,9 +137,7 @@ class ProseIsPaced(unittest.IsolatedAsyncioTestCase):
         renderer = _renderer(buffer)
         renderer._smoother = TokenSmoother(renderer._feed_prose, base_cps=1.0)
         await renderer.render(StreamEvent(kind="token", data={"text": "said first"}))
-        await renderer.render(
-            StreamEvent(kind="tool_call", data={"name": "tr_ls", "args": {}})
-        )
+        await renderer.render(StreamEvent(kind="tool_call", data={"name": "tr_ls", "args": {}}))
         lines = _plain("\n".join(buffer.lines())).splitlines()
         said = next(i for i, ln in enumerate(lines) if "said first" in ln)
         called = next(i for i, ln in enumerate(lines) if "tr_ls" in ln)
@@ -212,9 +209,7 @@ class ScrollingDoesNotRewrapTheScrollback(unittest.TestCase):
     def test_the_count_matches_what_wrapping_actually_produces(self) -> None:
         sample = self.lines[:200]
         view = ScrollView(lines=lambda: sample, width=lambda: 37, height=lambda: 10)
-        self.assertEqual(
-            view.display_count(37), sum(len(wrap_ansi(ln, 37)) for ln in sample)
-        )
+        self.assertEqual(view.display_count(37), sum(len(wrap_ansi(ln, 37)) for ln in sample))
 
     def test_row_count_agrees_with_wrap_ansi_on_awkward_input(self) -> None:
         for line in ("", "x", "\x1b[31mred\x1b[0m", "ま" * 30, "a" * 200, "\x1b[1m" * 40):

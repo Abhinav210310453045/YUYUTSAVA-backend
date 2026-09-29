@@ -24,6 +24,8 @@ import io
 from rich.console import Console, RenderableType
 from rich.text import Text
 
+from yuyutsava.cli.render.console import make_console
+
 #: Left margin. The frame sits at the marker column, so the ``◇ yuyutsava``
 #: line above it and the box below line up.
 MARGIN = 2
@@ -125,8 +127,6 @@ class ProseFrame:
     @property
     def _scratch(self) -> Console:
         if self._scratch_console is None:
-            from yuyutsava.cli.render.console import make_console
-
             self._scratch_console = make_console(
                 file=io.StringIO(), width=self._console.width, force_terminal=True
             )

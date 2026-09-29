@@ -8,6 +8,7 @@ up a session.
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as _dt
 import getpass
 import importlib.metadata
@@ -22,7 +23,7 @@ from typing import Iterable
 
 from packaging.version import InvalidVersion, Version
 
-from yuyutsava.ansi import AGENT, BOLD, CHROME, RESET, WARN
+from yuyutsava.ansi import AGENT, BOLD, CHROME, KEY, RESET, VALUE, WARN
 from yuyutsava.llm import tracing as _tracing
 from yuyutsava.storage.backend import StorageSettings
 from yuyutsava.storage.sessions.config import SessionsSettings
@@ -30,15 +31,17 @@ from yuyutsava.storage.sessions.config import SessionsSettings
 logger = logging.getLogger("yuyutsava.cli.render.startup")
 
 #: The full wordmark: six rows, 78 columns. What a new session opens on when
-#: the pane is wide enough to centre it.
-WORDMARK = [
-    "██╗   ██╗██╗   ██╗██╗   ██╗██╗   ██╗████████╗███████╗ █████╗ ██╗   ██╗ █████╗ ",
-    "╚██╗ ██╔╝██║   ██║╚██╗ ██╔╝██║   ██║╚══██╔══╝██╔════╝██╔══██╗██║   ██║██╔══██╗",
-    " ╚████╔╝ ██║   ██║ ╚████╔╝ ██║   ██║   ██║   ███████╗███████║██║   ██║███████║",
-    "  ╚██╔╝  ██║   ██║  ╚██╔╝  ██║   ██║   ██║   ╚════██║██╔══██║╚██╗ ██╔╝██╔══██║",
-    "   ██║   ╚██████╔╝   ██║   ╚██████╔╝   ██║   ███████║██║  ██║ ╚████╔╝ ██║  ██║",
-    "   ╚═╝    ╚═════╝    ╚═╝    ╚═════╝    ╚═╝   ╚══════╝╚═╝  ╚═╝  ╚═══╝  ╚═╝  ╚═╝",
-]
+#: the pane is wide enough to centre it. One block rather than six quoted
+#: strings: the rows only mean anything stacked, and a stray edit to one of
+#: them is visible here and invisible in a list of literals.
+WORDMARK = """\
+██╗   ██╗██╗   ██╗██╗   ██╗██╗   ██╗████████╗███████╗ █████╗ ██╗   ██╗ █████╗ 
+╚██╗ ██╔╝██║   ██║╚██╗ ██╔╝██║   ██║╚══██╔══╝██╔════╝██╔══██╗██║   ██║██╔══██╗
+ ╚████╔╝ ██║   ██║ ╚████╔╝ ██║   ██║   ██║   ███████╗███████║██║   ██║███████║
+  ╚██╔╝  ██║   ██║  ╚██╔╝  ██║   ██║   ██║   ╚════██║██╔══██║╚██╗ ██╔╝██╔══██║
+   ██║   ╚██████╔╝   ██║   ╚██████╔╝   ██║   ███████║██║  ██║ ╚████╔╝ ██║  ██║
+   ╚═╝    ╚═════╝    ╚═╝    ╚═════╝    ╚═╝   ╚══════╝╚═╝  ╚═╝  ╚═══╝  ╚═╝  ╚═╝\
+""".splitlines()
 
 #: The narrow fallback: three rows, 36 columns.
 BANNER_LINES = [
@@ -59,7 +62,7 @@ _GUTTER = 2
 
 #: The REPL's closing line. A one-shot run has no prompt to type at, so it
 #: passes ``hint=None`` and gets its resume command instead.
-REPL_HINT = "/help for commands   ·   Ctrl+D to exit"
+REPL_HINT = "/help for commands  ·  Ctrl+D to exit"
 
 
 def version_notice(*, full: bool = False) -> str:
@@ -161,50 +164,76 @@ def identity_line() -> str:
     return f"{user}@{host}   ·   {now:%a %d %b %Y}   ·   {now:%H:%M}"
 
 
-def print_banner(
-    *,
-    session_id: str,
-    workspace: Path,
-    resuming: bool,
-    status: str | None = None,
-    notice: str | None = None,
-    resume_cmd: str | None = None,
-    hint: str | None = REPL_HINT,
-    width: int | None = None,
-) -> None:
+def _row(label: str, value: str, width: int, *, style: str = KEY) -> str:
+    """One ``label   value`` line: the label bold and coloured, the value not.
+
+    The banner's job is to be read at a glance, and a dim grey label beside a
+    plain white value gives the eye nothing to land on. The label carries the
+    weight and the hue; the value carries a second hue of its own so it is
+    legible without competing.
+    """
+    return f"{' ' * _GUTTER}{style}{BOLD}{label:<{width}}{RESET}   {VALUE}{value}{RESET}"
+
+
+@dataclasses.dataclass(frozen=True)
+class BannerFacts:
+    """What the opening screen says about this session.
+
+    A record rather than seven parameters: the banner is drawn from four call
+    sites, each of which cares about a different subset, and a positional
+    mistake among that many keywords is the kind that shows a workspace path
+    where a session id belongs.
+    """
+
+    session_id: str
+    workspace: Path
+    resuming: bool = False
+    #: ``storage · tracing · langgraph-api``, from :func:`startup_status_line`.
+    status: str | None = None
+    #: The langgraph-api line, drawn as a ``warning`` row among the facts.
+    notice: str | None = None
+    #: The command that resumes this session. The one-shot path offers it;
+    #: the REPL is already inside the session and does not.
+    resume_cmd: str | None = None
+    #: The closing line. ``None`` for a run with no prompt to type at.
+    hint: str | None = REPL_HINT
+
+
+def print_banner(facts: BannerFacts, *, width: int | None = None) -> None:
     """The screen a session opens on.
 
-    Centred wordmark, who and when, then the machine facts on labelled rows
-    that line up. *notice* (the langgraph-api line) goes below them rather than
-    above the art, where it used to be the first thing anyone saw.
+    A centred wordmark, who and when, then every fact about the session as one
+    labelled row. *notice* — the langgraph-api line — is a row like the others
+    rather than a paragraph, so the block has one shape; its label keeps the
+    warning colour, because a warning that looks exactly like a fact is not
+    doing its job.
     """
     width = _cols() if width is None else width
     art, margin = wordmark(width)
     pad = " " * margin
-    gutter = " " * _GUTTER
 
     out = [""]
     out += [f"{pad}{AGENT}{BOLD}{line}{RESET}" for line in art]
     if art is WORDMARK:
         tag_pad = " " * max(_GUTTER, (width - len(TAGLINE)) // 2)
         out += ["", f"{tag_pad}{CHROME}{TAGLINE}{RESET}"]
-    out += ["", f"{gutter}{identity_line()}", ""]
+    out += ["", f"{' ' * _GUTTER}{identity_line()}", ""]
 
-    rows = [
-        ("workspace", str(workspace)),
-        ("session" if not resuming else "resumed", session_id),
+    rows: list[tuple[str, str, str]] = [
+        ("workspace", str(facts.workspace), KEY),
+        ("resumed" if facts.resuming else "session", facts.session_id, KEY),
     ]
-    if status:
-        rows.append(("runtime", status))
-    if resume_cmd:
-        rows.append(("resume", resume_cmd))
-    label_width = max(len(label) for label, _ in rows)
-    out += [f"{gutter}{CHROME}{label:<{label_width}}{RESET}   {value}" for label, value in rows]
+    if facts.status:
+        rows.append(("runtime", facts.status, KEY))
+    if facts.resume_cmd:
+        rows.append(("resume", facts.resume_cmd, KEY))
+    if facts.notice:
+        rows.append(("warning", facts.notice, WARN))
+    if facts.hint:
+        rows.append(("help", facts.hint, KEY))
 
-    if notice:
-        out += ["", f"{gutter}{WARN}⚠ {notice}{RESET}"]
-    if hint:
-        out += ["", f"{gutter}{CHROME}{hint}{RESET}"]
+    label_width = max(len(label) for label, _value, _style in rows)
+    out += [_row(label, value, label_width, style=style) for label, value, style in rows]
     out += [""]
 
     print("\n".join(out), file=sys.stderr)
@@ -243,6 +272,7 @@ def startup_status_line(sessions_settings: SessionsSettings) -> str:
 
 __all__ = [
     "BANNER_LINES",
+    "BannerFacts",
     "LANGGRAPH_API",
     "TAGLINE",
     "WORDMARK",

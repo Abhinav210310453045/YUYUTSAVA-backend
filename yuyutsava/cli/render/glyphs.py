@@ -32,6 +32,7 @@ TODO_RUNNING = "▶"
 TODO_PENDING = "·"
 
 #: Asides.
+SKILLS = "✳"
 ARTIFACT = "◨"
 NOTE = "·"
 
@@ -47,6 +48,7 @@ __all__ = [
     "PLAN",
     "PROMPT",
     "RESULT",
+    "SKILLS",
     "SUBAGENT",
     "TODO_DONE",
     "TODO_PENDING",

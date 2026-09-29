@@ -246,7 +246,7 @@ constructor, FastAPI `Depends`, or the `AppContext`.
 | Flattening message content to text | `yuyutsava/text.py` — `flatten_content` |
 | Thread id of the current run | one helper beside the policy adapter |
 | Truncating display text | `cli/render/tool_format.truncate` |
-| Terminal colours | `cli/render/palette.py` |
+| Terminal colours | `yuyutsava/ansi.py` — a leaf, because the daemon's terminal channel writes them too and a palette under `cli/` would make `daemon` import `cli` |
 | WAV reading and writing | the voice package |
 
 **STD-DRY-2 — Search before writing a helper.** When a second copy is found, the

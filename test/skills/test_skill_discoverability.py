@@ -91,8 +91,13 @@ class RecallIsObservable(unittest.TestCase):
                 ]
 
         inj = skill_injector.SkillInjector(FakeStore())
-        with self.assertLogs("yuyutsava.skills.injector", level="INFO") as logs:
-            block = asyncio.run(inj.build_block("read my whatsapp chats"))
+        heard: list[tuple[str, ...]] = []
+        remove = skill_injector.add_recall_listener(heard.append)
+        try:
+            with self.assertLogs("yuyutsava.skills.injector", level="DEBUG") as logs:
+                block = asyncio.run(inj.build_block("read my whatsapp chats"))
+        finally:
+            remove()
 
         self.assertIn("whatsapp-mac-chat-db", block)
         self.assertEqual(
@@ -100,6 +105,37 @@ class RecallIsObservable(unittest.TestCase):
             ("whatsapp-mac-chat-db", "macos-open-app-or-url"),
         )
         self.assertIn("whatsapp-mac-chat-db", logs.records[0].getMessage())
+        self.assertEqual(
+            heard,
+            [("whatsapp-mac-chat-db", "macos-open-app-or-url")],
+            "a surface that wants to show the names must be told, not left to read a log",
+        )
+
+    def test_the_names_are_not_logged_above_debug(self):
+        """A record at INFO reaches the chat transcript as unformatted text at
+        column zero, between the user's message and the first tool line."""
+
+        class FakeStore:
+            async def search(self, q, k=5, agent=None):
+                return [Hit(id="a", text="t", score=0.9, payload={"name": "some-skill"})]
+
+        inj = skill_injector.SkillInjector(FakeStore())
+        with self.assertNoLogs("yuyutsava.skills.injector", level="INFO"):
+            asyncio.run(inj.build_block("anything"))
+
+    def test_a_listener_that_raises_does_not_break_the_turn(self):
+        class FakeStore:
+            async def search(self, q, k=5, agent=None):
+                return [Hit(id="a", text="t", score=0.9, payload={"name": "some-skill"})]
+
+        remove = skill_injector.add_recall_listener(
+            lambda names: (_ for _ in ()).throw(RuntimeError("bad listener"))
+        )
+        try:
+            block = asyncio.run(skill_injector.SkillInjector(FakeStore()).build_block("x"))
+        finally:
+            remove()
+        self.assertIn("some-skill", block)
 
     def test_no_hits_clears_the_record(self):
         class Empty:

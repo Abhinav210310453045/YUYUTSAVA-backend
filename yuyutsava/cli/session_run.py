@@ -39,6 +39,7 @@ from yuyutsava.storage.interrupts_unified import sqlite_interrupts_store
 from yuyutsava.storage.models import Session
 from yuyutsava.storage.sessions import SessionsSettings, SessionStore
 
+
 async def _patch_orphan_cancellations(agent: CompiledStateGraph, thread_id: str) -> int:
     """Repair cancellation results left by a killed permission prompt.
 
@@ -72,14 +73,16 @@ def _print_start_banner(session: Session, *, resuming: bool) -> None:
     it shares every other line of output with.
     """
     startup.print_banner(
-        session_id=session.id,
-        workspace=Path(session.workspace),
-        resuming=resuming,
-        resume_cmd=(
-            f"uv run yuyutsava --verbose --workspace {session.workspace} --resume {session.id}"
-        ),
-        # A one-shot run has no prompt to type a slash command at.
-        hint=None,
+        startup.BannerFacts(
+            session_id=session.id,
+            workspace=Path(session.workspace),
+            resuming=resuming,
+            resume_cmd=(
+                f"uv run yuyutsava --verbose --workspace {session.workspace} --resume {session.id}"
+            ),
+            # A one-shot run has no prompt to type a slash command at.
+            hint=None,
+        )
     )
 
 
@@ -122,14 +125,14 @@ async def run_session(
                     busy_timeout_ms=settings.busy_timeout_ms,
                 )
         except Exception as exc:  # noqa: BLE001 — bookkeeping must not stop the turn
-            print(f"{YELLOW}sessions:{RESET} interrupts store init failed: {exc}", file=sys.stderr)
+            print(f"{WARN}sessions:{RESET} interrupts store init failed: {exc}", file=sys.stderr)
             interrupts_store = None
 
     if resuming:
         n_patched = await _patch_orphan_cancellations(agent, session.thread_id)
         if n_patched:
             print(
-                f"{YELLOW}note:{RESET} rewrote {n_patched} cancelled tool call(s) "
+                f"{WARN}note:{RESET} rewrote {n_patched} cancelled tool call(s) "
                 f"from the previous interrupt as DENIED so the agent doesn't "
                 f"hallucinate success. Re-ask if you wanted that action to run.",
                 file=sys.stderr,
@@ -139,12 +142,12 @@ async def run_session(
                 n_orphaned = await interrupts_store.mark_orphaned_for_session(session.id)
                 if n_orphaned:
                     print(
-                        f"{DIM}sessions:{RESET} flagged {n_orphaned} unresolved "
+                        f"{CHROME}sessions:{RESET} flagged {n_orphaned} unresolved "
                         f"interrupt(s) from prior run as orphaned.",
                         file=sys.stderr,
                     )
             except Exception as exc:  # noqa: BLE001 — bookkeeping must not stop the turn
-                print(f"{YELLOW}sessions:{RESET} mark_orphaned failed: {exc}", file=sys.stderr)
+                print(f"{WARN}sessions:{RESET} mark_orphaned failed: {exc}", file=sys.stderr)
         # Refresh task_preview so the sessions list shows the most recent intent
         # rather than the original prompt from the first run.
         new_preview = (task or "").strip().replace("\n", " ")
@@ -191,4 +194,4 @@ async def run_session(
             )
         except Exception as exc:  # noqa: BLE001 — must not mask the turn's failure
             # Never let bookkeeping mask the original failure.
-            print(f"{YELLOW}sessions:{RESET} bookkeeping failed: {exc}", file=sys.stderr)
+            print(f"{WARN}sessions:{RESET} bookkeeping failed: {exc}", file=sys.stderr)

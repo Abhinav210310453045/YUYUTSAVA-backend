@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Sequence
 from typing import Any
 
 MAX_CALL_LEN = 120
@@ -302,3 +303,25 @@ def extract_subagent_response(body: str) -> str:
             if isinstance(v, str) and v.strip():
                 return v
     return body if isinstance(body, str) else str(body)
+
+
+def fit_names(names: Sequence[str], width: int, *, sep: str = " · ") -> tuple[str, int]:
+    """As many of *names* as fit in *width* cells, and how many were left out.
+
+    Returns ``(text, remaining)``. Counting what did not fit is the point: a
+    row that silently shows three of five names claims the turn saw three.
+    Room is reserved for the ``+N more`` that announces the rest, so the line
+    cannot overflow by exactly the width of its own apology.
+    """
+    kept: list[str] = []
+    used = 0
+    for i, name in enumerate(names):
+        clean = sanitize(name)
+        cost = len(clean) + (len(sep) if kept else 0)
+        remaining = len(names) - i - 1
+        reserve = len(f"  +{remaining} more") if remaining else 0
+        if kept and used + cost + reserve > width:
+            break
+        kept.append(clean)
+        used += cost
+    return sep.join(kept), len(names) - len(kept)

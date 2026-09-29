@@ -51,6 +51,15 @@ class ChatRendererProtocol(Protocol):
         own messages at all.
         """
 
+    def skills_recalled(self, names: tuple[str, ...]) -> None:
+        """Name the skills retrieval matched to this turn.
+
+        On the protocol because the REPL subscribes to the retrieval layer and
+        hands the names here: a log record reaches the transcript pane without
+        passing through a renderer, so it arrives unindented and uncoloured in
+        the middle of a turn.
+        """
+
     def begin_turn(self) -> None:
         """A turn is starting: show whatever says "working"."""
 

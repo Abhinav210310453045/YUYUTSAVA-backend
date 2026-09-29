@@ -66,6 +66,13 @@ _DARK: dict[str, tuple[str, int]] = {
     "warn": ("#e3b341", 179),  # wants an answer: warnings, the external zone
     "subagent": ("#a371f7", 141),  # delegation
     "chrome": ("#6e7681", 244),  # ring indices, arguments, footers
+    # The opening screen only. Its rows name facts about the session rather
+    # than anything in the conversation, so they take two hues the transcript
+    # never uses — rose is the one gap the seven above leave on the wheel, and
+    # a warm neutral reads as data beside it. A banner drawn in transcript
+    # colours invites reading a session id as if it were a tool result.
+    "key": ("#ff8fab", 211),  # a banner row's label
+    "value": ("#d5c4a1", 180),  # a banner row's value
 }
 
 _LIGHT: dict[str, tuple[str, int]] = {
@@ -77,6 +84,8 @@ _LIGHT: dict[str, tuple[str, int]] = {
     "warn": ("#9a6700", 136),
     "subagent": ("#6639ba", 92),
     "chrome": ("#57606a", 242),
+    "key": ("#a4133c", 125),
+    "value": ("#6f5c3e", 94),
 }
 
 ROLES = tuple(_DARK)
@@ -140,6 +149,8 @@ ERR = sgr("err")
 WARN = sgr("warn")
 SUBAGENT = sgr("subagent")
 CHROME = sgr("chrome")
+KEY = sgr("key")
+VALUE = sgr("value")
 
 __all__ = [
     "AGENT",
@@ -151,6 +162,7 @@ __all__ = [
     "DIM",
     "ERR",
     "GREEN",
+    "KEY",
     "MAGENTA",
     "OK",
     "RED",
@@ -158,6 +170,7 @@ __all__ = [
     "ROLES",
     "SUBAGENT",
     "TOOL",
+    "VALUE",
     "WARN",
     "YELLOW",
     "YOU",

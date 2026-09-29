@@ -162,6 +162,20 @@ class RichChatRenderer:
             self._console.print(Text(" " * _PROSE_INDENT + line, style="you"))
         self._notify()
 
+    def skills_recalled(self, names: tuple[str, ...]) -> None:
+        """One chrome line naming the skills this turn matched."""
+        if not names:
+            return
+        self._close_prose()
+        head = f"  {gl.SKILLS} skills  "
+        shown, rest = tf.fit_names(names, max(8, (self._console.width or 80) - len(head)))
+        line = Text(head, style="chrome")
+        line.append(shown, style="chrome")
+        if rest:
+            line.append(f"  +{rest} more", style="chrome")
+        self._console.print()
+        self._console.print(line)
+
     def begin_turn(self) -> None:
         """Start the spinner. Called by the REPL right before run_turn."""
         self._stop_live()

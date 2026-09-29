@@ -12,8 +12,10 @@ A thin wrapper over the generic
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import re
+from collections.abc import Callable
 
 from yuyutsava.config.limits import LIMITS
 from yuyutsava.retrieval.hit import Hit
@@ -21,6 +23,9 @@ from yuyutsava.retrieval.injector import RetrievalInjector
 from yuyutsava.skills.store import SkillStore
 
 logger = logging.getLogger("yuyutsava.skills.injector")
+
+#: Told the names a turn recalled, newest call last.
+RecallListener = Callable[[tuple[str, ...]], None]
 
 #: First line of the rendered block. Public because the context meter attributes
 #: prompt bytes to a "skills" segment by matching it, and a second spelling of
@@ -49,9 +54,33 @@ _last_recalled: tuple[str, ...] = ()
 _LINE = re.compile(r"^ {2}- ([^:]+):")
 
 
+#: Callbacks told which skills a turn recalled. A list rather than one slot,
+#: so a second registration cannot silently replace the first and each owner
+#: removes only its own — the arrangement ``add_retry_listener`` uses for the
+#: same reason.
+_listeners: list[RecallListener] = []
+
+
 def last_recalled() -> tuple[str, ...]:
     """Skill names from the most recent per-turn injection (may be empty)."""
     return _last_recalled
+
+
+def add_recall_listener(callback: RecallListener) -> Callable[[], None]:
+    """Register *callback* for recalled skill names; returns its remover.
+
+    Retrieval happens deep inside a graph run, so a surface that wants to say
+    which skills a turn saw has nothing to ask. Logging it instead put a line
+    of unformatted text between the user's message and the first tool call,
+    at column zero, because a log record never passes through a renderer.
+    """
+    _listeners.append(callback)
+
+    def _remove() -> None:
+        with contextlib.suppress(ValueError):
+            _listeners.remove(callback)
+
+    return _remove
 
 
 class SkillInjector:
@@ -75,8 +104,18 @@ class SkillInjector:
             m.group(1).strip() for m in (_LINE.match(ln) for ln in block.splitlines()) if m
         )
         _last_recalled = names
+        logger.debug("skills recalled for this turn: %s", ", ".join(names) or "(none)")
         if names:
-            logger.info("skills recalled for this turn: %s", ", ".join(names))
-        else:
-            logger.debug("skills: nothing matched this turn")
+            for listener in list(_listeners):
+                with contextlib.suppress(Exception):
+                    listener(names)
         return block
+
+
+__all__ = [
+    "SKILLS_BLOCK_PREFIX",
+    "RecallListener",
+    "SkillInjector",
+    "add_recall_listener",
+    "last_recalled",
+]

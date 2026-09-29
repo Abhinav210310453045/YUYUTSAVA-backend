@@ -42,7 +42,19 @@ CODES = {
 #: The semantic layer: one hue per *kind* of thing in the chat transcript.
 #: Their bytes depend on the terminal (24-bit or 256-colour) and on the ramp,
 #: so what is pinned here is the vocabulary, not the codes.
-ROLE_NAMES = {"YOU", "AGENT", "TOOL", "OK", "ERR", "WARN", "SUBAGENT", "CHROME"}
+ROLE_NAMES = {
+    "YOU",
+    "AGENT",
+    "TOOL",
+    "OK",
+    "ERR",
+    "WARN",
+    "SUBAGENT",
+    "CHROME",
+    # The opening screen's own two, which the transcript never draws with.
+    "KEY",
+    "VALUE",
+}
 
 HELPERS = {"ROLES", "palette", "resolve_theme", "sgr", "truecolor"}
 

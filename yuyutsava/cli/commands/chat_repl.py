@@ -65,6 +65,7 @@ from yuyutsava.core.app_context import open_events_store
 from yuyutsava.core.deps import StackWiring
 from yuyutsava.llm.quirks.first_chunk_retry import add_retry_listener, classify_provider_busy
 from yuyutsava.prefs.runtime import UNDISABLEABLE, RuntimeSettings
+from yuyutsava.skills.injector import add_recall_listener
 from yuyutsava.storage.paths import state_dir
 from yuyutsava.storage.prefs import PrefsStore
 from yuyutsava.storage.sessions import (
@@ -109,6 +110,11 @@ def quieten_chat_loggers(*, debug_plumbing: bool, verbose: bool) -> None:
             "yuyutsava.storage.pg.pool",
             "yuyutsava.storage.pg.migrations",
             "yuyutsava.llm.tracing",
+            # The recalled skill names are drawn by the renderer instead
+            # (_install_recall_listener below). As a log record they reached
+            # the transcript pane without passing through one, so they landed
+            # unindented and uncoloured in the middle of a turn.
+            "yuyutsava.skills.injector",
         ):
             logging.getLogger(_name).setLevel(logging.WARNING)
 
@@ -777,10 +783,11 @@ class ReplCommands:
         """``/new``: a brand-new session row and thread_id, in this process."""
         self.session = await self.convo.new_session(task="(interactive chat)")
         startup.print_banner(
-            session_id=self.session.id,
-            workspace=self.workspace,
-            resuming=False,
-            status=self.status_line,
+            startup.BannerFacts(
+                session_id=self.session.id,
+                workspace=self.workspace,
+                status=self.status_line,
+            ),
             width=self.banner_width,
         )
 
@@ -813,7 +820,7 @@ def _handle_slash(
         # pane's own. Then redraw the banner.
         clear_screen()
         startup.print_banner(
-            session_id=session_id, workspace=workspace, resuming=False, width=width
+            startup.BannerFacts(session_id=session_id, workspace=workspace), width=width
         )
         return _SLASH_HANDLED
     if head == "/session":
@@ -982,6 +989,18 @@ def _install_retry_listener(renderer: Any, dashboard: Any) -> Callable[[], None]
     return add_retry_listener(_on_retry)
 
 
+def _install_recall_listener(renderer: Any) -> Callable[[], None]:
+    """Skills retrieval speaks through the renderer, not the log.
+
+    Retrieval runs deep inside the graph, so the only way it could once report
+    which skills a turn matched was a log line — which is not drawn by any
+    renderer and therefore arrived at column zero, between the user's message
+    and the first tool call. Returns the remover, which :func:`_close_chat`
+    calls.
+    """
+    return add_recall_listener(renderer.skills_recalled)
+
+
 async def _start_session(
     opts: ChatOptions,
     store: Any,
@@ -1019,11 +1038,13 @@ async def _start_session(
         await dashboard.start()
     status_line = startup.startup_status_line(sessions_settings)
     startup.print_banner(
-        session_id=convo.session.id,
-        workspace=opts.workspace,
-        resuming=resuming,
-        status=status_line,
-        notice=await notice,
+        startup.BannerFacts(
+            session_id=convo.session.id,
+            workspace=opts.workspace,
+            resuming=resuming,
+            status=status_line,
+            notice=await notice,
+        ),
         width=dashboard.left_width if dashboard is not None else None,
     )
     return convo, status_line
@@ -1037,10 +1058,12 @@ async def _close_chat(
     runtime_toggles: Any,
     bundle: Any,
     stop_retry_notices: Callable[[], None],
+    stop_skill_notices: Callable[[], None],
 ) -> None:
     """Tear the chat down in order, whatever state it ended in."""
     # A renderer that outlived this REPL would keep drawing on a dead Live region.
     stop_retry_notices()
+    stop_skill_notices()
     if dashboard is not None:
         # Leave the alternate screen first, then hand the transcript back: the
         # app takes the session's output with it when it exits, and a user who
@@ -1092,6 +1115,7 @@ async def run_chat_repl(
     )
     console, dashboard, renderer = surface.console, surface.dashboard, surface.renderer
     stop_retry_notices = _install_retry_listener(renderer, dashboard)
+    stop_skill_notices = _install_recall_listener(renderer)
     quieten_chat_loggers(debug_plumbing=debug_plumbing, verbose=opts.verbose)
 
     async with (
@@ -1173,6 +1197,7 @@ async def run_chat_repl(
                 runtime_toggles=runtime_toggles,
                 bundle=bundle,
                 stop_retry_notices=stop_retry_notices,
+                stop_skill_notices=stop_skill_notices,
             )
 
     print(f"{DIM}— chat closed —{RESET}", file=sys.stderr)
