@@ -54,6 +54,15 @@ class TranscriptBuffer:
         self._lines: deque[str] = deque(maxlen=max(1, max_lines))
         self._partial = ""
         self._on_write = on_write
+        #: Bumped whenever the content changes. The view memoises its row
+        #: count against this: without it, every wheel tick re-wrapped the
+        #: whole scrollback to find out how far it was allowed to scroll.
+        self._version = 0
+        #: Provisional rows shown after the committed ones and replaced whole.
+        #: Prose that has arrived but is not yet a complete markdown block
+        #: lives here, so it is on screen while it is being written without
+        #: ever entering the scrollback twice.
+        self._tail: list[str] = []
 
     # -- file protocol ------------------------------------------------------
 
@@ -63,6 +72,7 @@ class TranscriptBuffer:
         text = self._partial + s
         *complete, self._partial = text.split("\n")
         self._lines.extend(complete)
+        self._version += 1
         if self._on_write is not None:
             with contextlib.suppress(Exception):
                 self._on_write()
@@ -92,18 +102,40 @@ class TranscriptBuffer:
     # -- reading ------------------------------------------------------------
 
     def lines(self) -> list[str]:
-        """Committed lines plus the line still being written."""
+        """Committed lines, the line still being written, then the tail."""
         out = list(self._lines)
         if self._partial:
             out.append(self._partial)
+        out.extend(self._tail)
         return out
 
     def line_count(self) -> int:
-        return len(self._lines) + (1 if self._partial else 0)
+        return len(self._lines) + (1 if self._partial else 0) + len(self._tail)
+
+    def version(self) -> int:
+        return self._version
+
+    def set_tail(self, rows: list[str]) -> None:
+        """Replace the provisional rows.
+
+        Whole-list replacement rather than appending, because these rows are
+        rewritten as more of the same paragraph arrives. They are dropped, not
+        committed, when the finished block is printed properly — so nothing
+        here can end up in the scrollback twice.
+        """
+        if rows == self._tail:
+            return
+        self._tail = list(rows)
+        self._version += 1
+        if self._on_write is not None:
+            with contextlib.suppress(Exception):
+                self._on_write()
 
     def clear(self) -> None:
         self._lines.clear()
         self._partial = ""
+        self._tail = []
+        self._version += 1
 
 
 class StdioCapture:

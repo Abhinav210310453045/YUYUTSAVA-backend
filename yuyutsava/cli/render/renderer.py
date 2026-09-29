@@ -45,6 +45,7 @@ from yuyutsava.cli.render.markdown_stream import MarkdownStream
 from yuyutsava.cli.render.notices import action_hint, notice_mark
 from yuyutsava.cli.render.prose_frame import ProseFrame
 from yuyutsava.cli.render.ring import PayloadRing
+from yuyutsava.cli.stream_smoother import TokenSmoother, configured_cps, smoothing_enabled
 from yuyutsava.core.streaming import StreamEvent
 from yuyutsava.llm.quirks.first_chunk_retry import classify_provider_busy
 
@@ -87,6 +88,21 @@ class RichChatRenderer:
         #: the end of, and prose is committed block by block as it arrives.
         self._frame = ProseFrame(console, style="agent")
         self._md = MarkdownStream(console, indent=_PROSE_INDENT, frame=self._frame)
+        #: Paces prose to a steady rate instead of painting each arriving
+        #: chunk whole. The model delivers a paragraph in one burst after a
+        #: stall, and mirroring that reads as the program stuttering rather
+        #: than as the model thinking. ``None`` when the destination is not an
+        #: interactive terminal, so piped output is unchanged.
+        self._smoother = (
+            TokenSmoother(self._feed_prose, base_cps=configured_cps())
+            if smoothing_enabled()
+            else None
+        )
+        #: Where the provisional rows go — the part of an answer that has
+        #: arrived but is not yet a complete markdown block. Set by the host
+        #: that can redraw them in place (the dashboard); without one, the
+        #: in-progress text is only visible on the Live status region.
+        self.show_pending: Any = None
         self._live: Live | None = None
         self._in_flight: deque[str] = deque()
         self._opened_prose = False
@@ -170,8 +186,10 @@ class RichChatRenderer:
         self._notify()
 
     async def aclose(self) -> None:
-        """Nothing to release: the Live region paces output itself, so this
-        renderer never builds a token smoother to begin with."""
+        """Stop the prose smoother, if this terminal is being paced."""
+        if self._smoother is not None:
+            await self._smoother.aclose()
+            self._smoother = None
 
     @contextlib.contextmanager
     def pause(self):
@@ -181,6 +199,8 @@ class RichChatRenderer:
         so there is no repainting region to get out of the way of.
         """
         had_live = self._live is not None
+        if self._smoother is not None:
+            self._smoother.flush_now()
         self._stop_live()
         try:
             yield
@@ -311,7 +331,13 @@ class RichChatRenderer:
         or the next message drawn *inside* the answer's frame would say they
         were part of the answer.
         """
+        if self._smoother is not None:
+            # Synchronously, not awaited: a tool line or a notice must not
+            # appear above prose the model produced before it, and there is no
+            # awaiting a background task from a synchronous printer.
+            self._smoother.flush_now()
         self._md.flush()
+        self._show_pending()
         self._frame.close_frame()
 
     def _on_token(self, data: dict) -> None:
@@ -329,8 +355,28 @@ class RichChatRenderer:
             self._console.print(Text(f"  {gl.AGENT} yuyutsava", style="agent.bold"))
             self._opened_prose = True
         self._frame.open_frame()
-        self._md.feed(text)
+        if self._smoother is not None:
+            self._smoother.feed(text)
+        else:
+            self._feed_prose(text)
         self._refresh()
+
+    def _feed_prose(self, text: str) -> None:
+        """One paced slice of prose: commit what completes, show the rest."""
+        self._md.feed(text)
+        self._show_pending()
+
+    def _show_pending(self) -> None:
+        """Put the incomplete block on screen, or take it off again."""
+        if self.show_pending is None:
+            return
+        rows = (
+            self._frame.rows(Text(self._md.pending))
+            if self._frame.open and self._md.pending.strip()
+            else []
+        )
+        with contextlib.suppress(Exception):
+            self.show_pending(rows)
 
     def _on_tool_call(self, data: dict) -> None:
         name = data.get("name", "?")

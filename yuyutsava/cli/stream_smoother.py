@@ -23,10 +23,35 @@ non-TTY) without affecting any other part of the system.
 from __future__ import annotations
 
 import asyncio
+import sys
 from collections import deque
 from typing import Callable
 
 from yuyutsava.aio.tasks import cancel_and_reap
+from yuyutsava.config.env import env_flag, env_float
+
+#: Steady characters per second once the smoother has caught up.
+DEFAULT_CPS = 180.0
+
+
+def smoothing_enabled() -> bool:
+    """Whether prose should be paced rather than printed as it arrives.
+
+    Interactive terminals only: with piped output (tests, automation) there is
+    nobody watching it appear, and pacing would only make the render path
+    differ from printing the chunks straight through. Both renderers ask here,
+    so ``YUYUTSAVA_REPL_SMOOTH=0`` turns it off everywhere at once.
+    """
+    if not env_flag("YUYUTSAVA_REPL_SMOOTH", default=True, false=("0", "false", "no", "off")):
+        return False
+    try:
+        return bool(sys.stdout.isatty())
+    except (ValueError, AttributeError):
+        return False
+
+
+def configured_cps() -> float:
+    return env_float("YUYUTSAVA_REPL_SMOOTH_CPS", default=DEFAULT_CPS)
 
 
 class TokenSmoother:
@@ -99,6 +124,22 @@ class TokenSmoother:
             return
         await self._idle.wait()
 
+    def flush_now(self) -> None:
+        """Write everything still buffered, at once, without waiting.
+
+        The paced path is for prose. When something that is *not* prose has to
+        be printed — a tool line, a notice, the end of the turn — it must not
+        appear above text the model produced before it, and there is no
+        awaiting a background task from a synchronous printer. So the backlog
+        is emitted in one go and the ordering holds.
+        """
+        if not self._buflen:
+            return
+        self._write(self._take(self._buflen))
+        if self._flush is not None:
+            self._flush()
+        self._idle.set()
+
     async def aclose(self) -> None:
         """Drain any remaining text, then stop the background task."""
         await self.drain()
@@ -149,3 +190,6 @@ class TokenSmoother:
             if self._flush is not None:
                 self._flush()
             await asyncio.sleep(self._delay_for(backlog))
+
+
+__all__ = ["DEFAULT_CPS", "TokenSmoother", "configured_cps", "smoothing_enabled"]

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from yuyutsava.cli.render.ansi_wrap import wrap_ansi
+from yuyutsava.cli.render.ansi_wrap import row_count, wrap_ansi
 
 
 class ScrollView:
@@ -27,10 +27,17 @@ class ScrollView:
         lines: Callable[[], list[str]],
         width: Callable[[], int],
         height: Callable[[], int],
+        version: Callable[[], int] | None = None,
     ) -> None:
         self._lines = lines
         self._width = width
         self._height = height
+        #: A counter the content bumps whenever it changes. With one, the
+        #: total row count is computed once per change instead of once per
+        #: wheel tick — and a wheel sends several ticks a flick.
+        self._version = version
+        self._count_key: tuple[int, int] | None = None
+        self._count = 0
         #: Display rows above the live tail. 0 means following the output,
         #: which is the position a new line must not move the reader away from.
         self.offset = 0
@@ -75,8 +82,22 @@ class ScrollView:
         return out[-need:] if len(out) > need else out
 
     def display_count(self, width: int) -> int:
-        """Total display rows at this width. Only called on a scroll key."""
-        return sum(len(wrap_ansi(line, width)) for line in self._lines())
+        """Total display rows at this width.
+
+        Called on every scroll key and every wheel tick. Memoised against the
+        content's version and the width, so holding a scroll key costs one
+        dictionary lookup rather than a re-wrap of the whole scrollback; the
+        per-line counts are cached in :func:`row_count` underneath, so even a
+        recount after new output is a walk of cached numbers.
+        """
+        if self._version is not None:
+            key = (self._version(), width)
+            if key == self._count_key:
+                return self._count
+            self._count_key = key
+            self._count = sum(row_count(line, width) for line in self._lines())
+            return self._count
+        return sum(row_count(line, width) for line in self._lines())
 
     def visible(self) -> list[str]:
         """The rows the viewport is over, wrapped to the current width."""

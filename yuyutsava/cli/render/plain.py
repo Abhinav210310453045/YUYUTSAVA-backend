@@ -23,8 +23,7 @@ from yuyutsava.cli.render import tool_format as tf
 from yuyutsava.cli.render import zones
 from yuyutsava.cli.render.notices import action_hint, notice_mark
 from yuyutsava.cli.render.ring import PayloadRing
-from yuyutsava.cli.stream_smoother import TokenSmoother
-from yuyutsava.config.env import env_flag, env_float
+from yuyutsava.cli.stream_smoother import TokenSmoother, configured_cps, smoothing_enabled
 from yuyutsava.core.streaming import StreamEvent
 
 
@@ -84,6 +83,10 @@ class ChatRenderer:
     #: contract rather than something only the rich subclass happens to have.
     on_change: Any = None
 
+    #: Likewise. This renderer prints a running log to a stream it cannot go
+    #: back and rewrite, so it has no provisional rows to offer.
+    show_pending: Any = None
+
     def status_text(self) -> str:
         """What the agent is doing, as plain text. Empty on this renderer.
 
@@ -127,23 +130,16 @@ class ChatRenderer:
     def _make_smoother() -> TokenSmoother | None:
         """Build a token smoother for prose, or None to print directly.
 
-        Smoothing is for interactive terminals only: when stdout is not a TTY
-        (piped output, tests) or the user disabled it via
-        ``YUYUTSAVA_REPL_SMOOTH=0``, return None so the render path is
-        byte-for-byte identical to printing chunks as they arrive.
+        The rule itself lives in :func:`smoothing_enabled`, because the rich
+        renderer needs exactly the same one and a second copy of it is how the
+        two modes come to disagree about when text is paced.
         """
-        if not env_flag("YUYUTSAVA_REPL_SMOOTH", default=True, false=("0", "false", "no", "off")):
+        if not smoothing_enabled():
             return None
-        try:
-            if not sys.stdout.isatty():
-                return None
-        except (ValueError, AttributeError):
-            return None
-        base_cps = env_float("YUYUTSAVA_REPL_SMOOTH_CPS", default=180.0)
         return TokenSmoother(
             sys.stdout.write,
             flush=sys.stdout.flush,
-            base_cps=base_cps,
+            base_cps=configured_cps(),
         )
 
     async def render(self, ev: StreamEvent) -> None:

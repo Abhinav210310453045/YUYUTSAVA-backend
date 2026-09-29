@@ -111,6 +111,11 @@ logger = logging.getLogger("yuyutsava.cli.dashboard")
 _NOTICE_TTL_SEC = 30.0
 _NOTICE_MAX = 3
 
+#: How often the application repaints on its own. It is a safety net — every
+#: write invalidates — but at half a second it was also the longest anything
+#: could sit unseen, which read as the whole program lagging behind the model.
+_REFRESH_SEC = 0.12
+
 #: Height of the left pane's fallback when prompt_toolkit has not rendered yet
 #: (``render_info`` is None before the first frame) — one frame of slightly
 #: wrong slicing, corrected immediately.
@@ -234,6 +239,7 @@ class ChatDashboard:
             lines=self.buffer.lines,
             width=lambda: self.left_width,
             height=self._height,
+            version=self.buffer.version,
         )
 
         # The real terminal, captured BEFORE sys.stdout is replaced — otherwise
@@ -327,7 +333,7 @@ class ChatDashboard:
             # The panel is driven by model calls, not by a clock; a periodic
             # refresh keeps a long provider wait from looking frozen without
             # repainting at spinner speed.
-            refresh_interval=0.5,
+            refresh_interval=_REFRESH_SEC,
         )
 
     # -- key actions --------------------------------------------------------
@@ -558,6 +564,11 @@ class ChatDashboard:
         self._status = lambda: renderer.status_text()
         self._tool = lambda: renderer.tool_in_flight()
         renderer.on_change = self._invalidate
+        # Prose that has arrived but is not yet a complete markdown block goes
+        # under the committed transcript and is replaced as more of it lands,
+        # so an answer appears while it is being written instead of a
+        # paragraph at a time.
+        renderer.show_pending = self.buffer.set_tail
 
     def set_turn_task(self, task: asyncio.Task | None) -> None:
         """The task Ctrl+C should cancel (the REPL's own, while a turn runs)."""

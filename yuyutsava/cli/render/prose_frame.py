@@ -19,6 +19,8 @@ from the machinery around it without competing with the answer.
 
 from __future__ import annotations
 
+import io
+
 from rich.console import Console, RenderableType
 from rich.text import Text
 
@@ -44,6 +46,7 @@ class ProseFrame:
     def __init__(self, console: Console, *, style: str) -> None:
         self._console = console
         self._style = style
+        self._scratch_console: Console | None = None
         self.open = False
 
     # -- geometry -----------------------------------------------------------
@@ -73,12 +76,29 @@ class ProseFrame:
         self.open = False
 
     def write(self, renderable: RenderableType) -> None:
-        """Draw *renderable* inside the rails, one row at a time.
+        """Draw *renderable* inside the rails, one row at a time."""
+        for row in self._rows(renderable):
+            self._console.print(row)
+
+    def rows(self, renderable: RenderableType) -> list[str]:
+        """The same rows, as ANSI strings, for a caller that shows them itself.
+
+        Used for the part of an answer that has arrived but is not yet a
+        complete markdown block: those rows are displayed under the frame's
+        open top edge, replaced as more text arrives, and dropped when the
+        finished block is printed properly — so a paragraph is on screen while
+        it is being written without ever entering the scrollback twice.
+        """
+        return [self._to_ansi(row) for row in self._rows(renderable)]
+
+    def _rows(self, renderable: RenderableType) -> list[Text]:
+        """One :class:`Text` per display row, rails included.
 
         Rendered to segments rather than to a string so the markdown keeps its
         own styles — bold, code, list bullets — inside the frame.
         """
         options = self._console.options.update(width=self.inner)
+        out: list[Text] = []
         for line in self._console.render_lines(renderable, options, pad=True):
             row = Text(" " * MARGIN)
             row.append(f"{VERTICAL} ", style=self._style)
@@ -86,7 +106,31 @@ class ProseFrame:
                 if not segment.control:
                     row.append(segment.text, segment.style)
             row.append(f" {VERTICAL}", style=self._style)
-            self._console.print(row)
+            out.append(row)
+        return out
+
+    def _to_ansi(self, row: Text) -> str:
+        """A row as escape sequences, through Rich's own writer.
+
+        A scratch console rather than rendering the segments by hand: turning
+        a style into escapes means knowing which colour system is in play, and
+        a second implementation of that is a second thing to get wrong.
+        """
+        scratch = self._scratch
+        scratch.width = max(8, (self._console.width or 80) + MARGIN)
+        with scratch.capture() as cap:
+            scratch.print(row, end="", overflow="ignore", crop=False, no_wrap=True)
+        return cap.get()
+
+    @property
+    def _scratch(self) -> Console:
+        if self._scratch_console is None:
+            from yuyutsava.cli.render.console import make_console
+
+            self._scratch_console = make_console(
+                file=io.StringIO(), width=self._console.width, force_terminal=True
+            )
+        return self._scratch_console
 
     def _edge(self, left: str, right: str) -> None:
         bar = HORIZONTAL * max(0, self.width - 2)

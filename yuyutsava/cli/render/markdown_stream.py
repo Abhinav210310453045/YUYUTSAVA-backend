@@ -69,6 +69,15 @@ class MarkdownStream:
             self._commit(self._buf[:end])
             self._buf = self._buf[end:]
 
+    @property
+    def pending(self) -> str:
+        """Text that has arrived but does not yet form a complete block.
+
+        Shown provisionally while it is being written; replaced by the
+        rendered block the moment that block closes.
+        """
+        return self._buf
+
     def tail(self, max_lines: int = 3) -> str:
         """Last few lines of the uncommitted buffer (for the Live region)."""
         lines = self._buf.rstrip("\n").splitlines()

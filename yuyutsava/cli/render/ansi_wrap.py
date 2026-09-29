@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from functools import lru_cache
 
 #: CSI / OSC escape sequences. Only SGR (``…m``) affects later text, but every
 #: sequence is zero-width and must be carried through the wrap untouched.
@@ -37,8 +38,15 @@ _RESET = "\x1b[0m"
 _SGR_RESET = ("\x1b[0m", "\x1b[m")
 
 
+@lru_cache(maxsize=4096)
 def char_width(ch: str) -> int:
-    """Display cells for one character: 0 for combining, 2 for wide, else 1."""
+    """Display cells for one character: 0 for combining, 2 for wide, else 1.
+
+    Cached because this is the innermost loop of the whole display: three
+    ``unicodedata`` lookups ran for every character of every line on every
+    wrap, and a wrap happens per frame and per scroll event. The argument is
+    one character, so the cache is bounded by the alphabet actually in use.
+    """
     if unicodedata.combining(ch):
         return 0
     if unicodedata.category(ch) in ("Mn", "Me", "Cf"):
@@ -67,6 +75,20 @@ def _tokens(line: str) -> list[tuple[bool, str]]:
     if pos < len(line):
         out.append((False, line[pos:]))
     return out
+
+
+@lru_cache(maxsize=8192)
+def row_count(line: str, width: int) -> int:
+    """How many display rows *line* takes at *width*.
+
+    Split from :func:`wrap_ansi` because the scroll arithmetic only ever
+    needed the number, and computing it by wrapping the whole scrollback was
+    what made the wheel stutter: every tick re-wrapped all five thousand
+    buffered lines, characters and escape sequences and all.
+    """
+    if width <= 0 or visible_width(line) <= width:
+        return 1
+    return len(wrap_ansi(line, width))
 
 
 def wrap_ansi(line: str, width: int) -> list[str]:
@@ -146,6 +168,7 @@ def wrap_lines(lines: list[str], width: int) -> list[str]:
 
 __all__ = [
     "char_width",
+    "row_count",
     "strip_ansi",
     "visible_width",
     "wrap_ansi",

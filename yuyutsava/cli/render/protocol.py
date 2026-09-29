@@ -34,6 +34,14 @@ class ChatRendererProtocol(Protocol):
     #: sets it). ``None`` when nobody is listening.
     on_change: Any
 
+    #: Where provisional rows go: the part of an answer that has arrived but
+    #: is not yet a complete markdown block. A host that can redraw rows in
+    #: place sets it; ``None`` means the renderer keeps the partial text to
+    #: itself until the block closes. A data member for the same reason
+    #: ``on_change`` is one — every renderer declares it, so a host can assign
+    #: without asking which renderer it got.
+    show_pending: Any
+
     def user_message(self, text: str, *, when: str = "") -> None:
         """Put the line the user typed into the transcript.
 
