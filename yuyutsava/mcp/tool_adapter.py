@@ -30,18 +30,16 @@ def adapt(session: ClientSession, server_name: str, mcp_tool: MCPTool) -> BaseTo
     """Wrap one MCP tool as a LangChain ``StructuredTool``.
 
     The returned tool's name is ``<server_name>__<tool_name>``; its
-    ``args_schema`` is the MCP tool's ``inputSchema`` (a JSON Schema dict).
+    ``args_schema`` is the MCP tool's input schema (a JSON Schema dict), read
+    with :func:`sdk_field` because the SDK renamed it between majors.
     Invoking the tool calls ``session.call_tool`` and flattens text content
     blocks to a single string.
-
-    ``inputSchema`` is camelCase because it is an MCP *wire protocol* field and
-    the SDK's pydantic models carry the protocol's spelling verbatim. Renaming
-    it to snake_case to match local style makes every server fail to load with
-    ``'Tool' object has no attribute 'input_schema'``.
     """
     namespaced = f"{server_name}__{mcp_tool.name}"
     description = mcp_tool.description or f"MCP tool {namespaced}"
-    input_schema = dict(mcp_tool.inputSchema or {"type": "object", "properties": {}})
+    input_schema = dict(
+        sdk_field(mcp_tool, "input_schema", "inputSchema") or {"type": "object", "properties": {}}
+    )
     # adapt() runs inside the manager's _run_server task, so this IS the loop
     # the session (and its cancel scopes) belongs to.
     home_loop = asyncio.get_running_loop()
@@ -69,6 +67,23 @@ def adapt(session: ClientSession, server_name: str, mcp_tool: MCPTool) -> BaseTo
     )
 
 
+def sdk_field(obj: Any, snake: str, camel: str) -> Any:
+    """An MCP SDK model field under either major's spelling; ``None`` if absent.
+
+    mcp 1.x models carry the wire protocol's camelCase as attribute names
+    (``Tool.inputSchema``, ``CallToolResult.isError``); mcp 2.x renamed the
+    attributes to snake_case and keeps camelCase only as serialisation aliases.
+    Reading one spelling breaks on the other major: on 2.x ``inputSchema``
+    made every server fail to load (``'Tool' object has no attribute
+    'inputSchema'``) and ``isError`` read as absent, so a failed call was
+    reported to the model as a success. On 1.x ``input_schema`` failed the
+    same way (`R-BUG-10`). The project supports both (``pyproject.toml``
+    ``mcp>=1.26,<3``), so every such field is read through here.
+    """
+    value = getattr(obj, snake, None)
+    return getattr(obj, camel, None) if value is None else value
+
+
 def result_text(result: Any) -> str:
     """Reduce ``CallToolResult`` (or compatible) to a single string.
 
@@ -89,8 +104,6 @@ def result_text(result: Any) -> str:
             continue
         kind = getattr(block, "type", type(block).__name__)
         pieces.append(f"[non-text content: {kind}]")
-    # camelCase for the same reason as ``inputSchema`` above: it is the wire
-    # protocol's field name (``CallToolResult.isError``).
-    is_error = getattr(result, "isError", False)
+    is_error = bool(sdk_field(result, "is_error", "isError"))
     body = "\n".join(pieces).strip()
     return f"[error] {body}" if is_error else body
