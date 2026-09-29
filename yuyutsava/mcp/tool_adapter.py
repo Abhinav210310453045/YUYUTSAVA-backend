@@ -23,19 +23,32 @@ from langchain_core.tools import BaseTool, StructuredTool
 from mcp import ClientSession
 from mcp.types import Tool as MCPTool
 
+from yuyutsava.discovery.tool_registry import CATALOG_GROUP, CATALOG_LIMIT
+from yuyutsava.mcp.naming import tool_name
+
 logger = logging.getLogger("yuyutsava.mcp.tool_adapter")
 
 
-def adapt(session: ClientSession, server_name: str, mcp_tool: MCPTool) -> BaseTool:
+def adapt(
+    session: ClientSession,
+    server_name: str,
+    mcp_tool: MCPTool,
+    *,
+    catalog_limit: int | None = None,
+) -> BaseTool:
     """Wrap one MCP tool as a LangChain ``StructuredTool``.
 
-    The returned tool's name is ``<server_name>__<tool_name>``; its
+    The returned tool's name is ``<server_name>__<tool_name>``
+    (:mod:`~yuyutsava.mcp.naming`). Its catalog group is the server, so the
+    prompt lists a server's tools together as ``<server>__*``, and at most
+    *catalog_limit* of them by name (the server's ``max_tools``); every one is
+    bound and reachable through ``tool_search``. Its
     ``args_schema`` is the MCP tool's input schema (a JSON Schema dict), read
     with :func:`sdk_field` because the SDK renamed it between majors.
     Invoking the tool calls ``session.call_tool`` and flattens text content
     blocks to a single string.
     """
-    namespaced = f"{server_name}__{mcp_tool.name}"
+    namespaced = tool_name(server_name, mcp_tool.name)
     description = mcp_tool.description or f"MCP tool {namespaced}"
     input_schema = dict(
         sdk_field(mcp_tool, "input_schema", "inputSchema") or {"type": "object", "properties": {}}
@@ -64,6 +77,9 @@ def adapt(session: ClientSession, server_name: str, mcp_tool: MCPTool) -> BaseTo
         description=description,
         args_schema=input_schema,
         coroutine=_call,
+        # The catalog renders a group as "<group>_*", so "<server>_" reads as
+        # "<server>__*" — the glob that finds this server's tools.
+        metadata={CATALOG_GROUP: f"{server_name}_", CATALOG_LIMIT: catalog_limit},
     )
 
 

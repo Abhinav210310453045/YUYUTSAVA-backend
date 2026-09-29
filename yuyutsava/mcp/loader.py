@@ -19,14 +19,16 @@ from collections.abc import Callable
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from langchain_core.tools import BaseTool
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.sse import sse_client
 from mcp.client.stdio import stdio_client
+from mcp.types import PaginatedRequestParams
 
 from yuyutsava.mcp.config import MCPConfig, MCPServerSpec
-from yuyutsava.mcp.tool_adapter import adapt
+from yuyutsava.mcp.tool_adapter import adapt, sdk_field
 
 logger = logging.getLogger("yuyutsava.mcp.loader")
 
@@ -179,17 +181,8 @@ class MCPClientManager:
 
                 session = await stack.enter_async_context(ClientSession(read, write))
                 await session.initialize()
-                listing = await session.list_tools()
-                mcp_tools = list(listing.tools)
-                if len(mcp_tools) > spec.max_tools:
-                    logger.warning(
-                        "MCP server %r exposed %d tools; capping at max_tools=%d",
-                        name,
-                        len(mcp_tools),
-                        spec.max_tools,
-                    )
-                    mcp_tools = mcp_tools[: spec.max_tools]
-                adapted = [adapt(session, name, t) for t in mcp_tools]
+                mcp_tools = await list_all_tools(session)
+                adapted = [adapt(session, name, t, catalog_limit=spec.max_tools) for t in mcp_tools]
             except Exception as exc:  # noqa: BLE001 — one server must not stop the rest
                 logger.exception("MCP server %r failed to start: %s", name, exc)
                 ready.set()
@@ -236,6 +229,38 @@ class MCPClientManager:
                 pass
         except Exception as exc:  # noqa: BLE001 — shutdown continues past one server
             logger.warning("MCP server %r stop raised %s", name, exc)
+
+
+#: Pages of ``tools/list`` read from one server before giving up — a server
+#: whose cursor never ends must not hang the start-up.
+_MAX_TOOL_PAGES = 50
+
+
+async def list_all_tools(session: ClientSession) -> list[Any]:
+    """Every tool the server exposes, across ``tools/list`` pages.
+
+    All of them are bound: a server's tools are hidden from the model until
+    ``tool_search`` loads one, so a large server costs a catalog line per tool
+    (up to ``max_tools``), not a schema. Truncating to ``max_tools`` here — as
+    this once did — made the rest unreachable: google-drive exposed 128 tools
+    and the agent could call 32.
+    """
+    tools: list[Any] = []
+    cursor: str | None = None
+    for _ in range(_MAX_TOOL_PAGES):
+        listing = await session.list_tools(
+            params=PaginatedRequestParams(cursor=cursor) if cursor else None
+        )
+        tools.extend(listing.tools)
+        cursor = sdk_field(listing, "next_cursor", "nextCursor")
+        if not cursor:
+            return tools
+    logger.warning(
+        "MCP tools/list still paginating after %d pages; using %d tools",
+        _MAX_TOOL_PAGES,
+        len(tools),
+    )
+    return tools
 
 
 async def start_manager_for_workspace(

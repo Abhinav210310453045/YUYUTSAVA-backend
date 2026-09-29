@@ -194,7 +194,7 @@ daemon/main.py                                    # lifecycle only (~261 lines)
    │    │          ├─ stdio_client(StdioServerParameters(...))  ← spawn process
    │    │          │  or sse_client(url)                        ← open SSE
    │    │          ├─ ClientSession(read, write).initialize()
-   │    │          ├─ session.list_tools() → cap at spec.max_tools
+   │    │          ├─ list_all_tools(session) → every page, all bound; max_tools caps the catalog listing
    │    │          ├─ adapt(session, name, tool) for each       ← StructuredTool wrappers
    │    │          └─ park on stop_event (same task owns AsyncExitStack)
    │    ├─ CheckpointerSaver / UnifiedSweeper / EventBus / SourceRegistry

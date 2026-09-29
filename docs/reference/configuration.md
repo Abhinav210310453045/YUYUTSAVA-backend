@@ -78,8 +78,11 @@ servers; the CLI stops them again when it exits.
   `scopes` and `default_scope` are unioned per agent (global first).
 - Tools are exposed as `<server>__<tool>` so two servers can each provide a
   `read` tool without collision.
-- Set `max_tools: N` on a server to cap how many tools it can expose (default
-  32) — useful for misbehaving servers that flood the agent prompt.
+- Every tool a server exposes is available. The agent sees their names in its
+  tool catalog, grouped as `<server>__*`, and loads a tool's schema on demand
+  with `tool_search` — so a large server costs a line per tool, not a schema.
+  `max_tools: N` (default 32) caps how many of a server's tools the catalog
+  *names*; the rest are counted ("N more") and still found by `tool_search`.
 
 **Hot reload:** send `SIGHUP` to the daemon (`kill -HUP <pid>`) to re-read
 both files. Added / removed / changed servers are diffed; in-flight tasks

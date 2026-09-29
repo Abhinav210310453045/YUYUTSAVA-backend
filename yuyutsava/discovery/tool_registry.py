@@ -47,6 +47,13 @@ logger = logging.getLogger("yuyutsava.discovery.tool_registry")
 
 _BLURB_CHARS = 80
 
+#: ``BaseTool.metadata`` keys a tool sets to place itself in the catalog.
+#: ``CATALOG_GROUP`` overrides the name-prefix group (MCP tools group by server,
+#: whose name may itself contain ``_``); ``CATALOG_LIMIT`` caps how many of the
+#: group's tools the catalog names — the rest are counted, and still searchable.
+CATALOG_GROUP = "catalog_group"
+CATALOG_LIMIT = "catalog_limit"
+
 
 class ToolRegistry:
     """Holds all tools; exposes them via a single tool_search gateway."""
@@ -69,7 +76,12 @@ class ToolRegistry:
         schemas: list[dict[str, Any]] = []
         for t in tools:
             try:
-                schema = t.args_schema.model_json_schema() if t.args_schema else {}
+                # A JSON-Schema dict is the schema already — MCP tools carry
+                # one (the server's inputSchema); @tool functions a pydantic model.
+                if isinstance(t.args_schema, dict):
+                    schema = dict(t.args_schema)
+                else:
+                    schema = t.args_schema.model_json_schema() if t.args_schema else {}
             except Exception:  # noqa: BLE001 — one bad schema must not hide the rest
                 logger.warning(
                     "tool %r: its argument schema cannot be rendered; published without parameters",
@@ -89,12 +101,20 @@ class ToolRegistry:
     def to_catalog(self) -> KeywordCatalogProvider:
         """Build the discovery provider over the registered tools."""
         entries: list[CatalogEntry] = []
-        for t in self.all_tools():
+        listed_per_group: dict[str, int] = {}
+        for t in sorted(self.all_tools(), key=lambda t: t.name):
             desc = (t.description or "").strip()
             blurb = desc.splitlines()[0] if desc else t.name
             if len(blurb) > _BLURB_CHARS:
                 blurb = blurb[: _BLURB_CHARS - 1].rstrip() + "…"
-            group = t.name.split("_", 1)[0] if "_" in t.name else "misc"
+            meta = t.metadata or {}
+            group = meta.get(CATALOG_GROUP) or (
+                t.name.split("_", 1)[0] if "_" in t.name else "misc"
+            )
+            limit = meta.get(CATALOG_LIMIT)
+            listed = limit is None or listed_per_group.get(group, 0) < limit
+            if listed:
+                listed_per_group[group] = listed_per_group.get(group, 0) + 1
             entries.append(
                 CatalogEntry(
                     id=t.name,
@@ -102,6 +122,7 @@ class ToolRegistry:
                     blurb=blurb,
                     match_text=f"{t.name} {desc}",
                     load_detail=lambda t=t: self.schema_block([t]),
+                    listed=listed,
                 )
             )
         return KeywordCatalogProvider(entries)

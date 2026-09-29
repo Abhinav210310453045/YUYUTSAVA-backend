@@ -69,7 +69,8 @@ class MCPServerSpec:
     env: dict[str, str] = field(default_factory=dict)
     # sse transport
     url: str = ""
-    # safety cap: orchestrator prompt can't absorb 1000s of tools
+    # How many of this server's tools the prompt's catalog names. Every tool is
+    # bound and found by tool_search; past this the catalog says "N more".
     max_tools: int = 32
     # Which file defined it — for logs only. Excluded from equality so
     # MCPClientManager.hot_reload's spec diff never restarts a server just

@@ -22,3 +22,6 @@ class CatalogEntry:
     blurb: str  # ≤1-line description for the always-visible catalog
     match_text: str  # text ranked against for keyword search (id + blurb + …)
     load_detail: Callable[[], str]  # lazily returns the full schema/body on expand
+    # Named in the always-visible catalog. An unlisted entry is still found by
+    # search and ``select:``; the catalog counts it under its group instead.
+    listed: bool = True

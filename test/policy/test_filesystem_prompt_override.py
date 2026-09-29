@@ -26,6 +26,7 @@ from unittest import mock
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
+from mcp.types import Tool
 
 import yuyutsava.core.engine as engine
 import yuyutsava.llm.factory as llm_factory
@@ -37,6 +38,8 @@ from yuyutsava.config.execution import LocalSettings
 from yuyutsava.config.search import SearchConfig
 from yuyutsava.core.deps import MasterDeps
 from yuyutsava.llm.settings import AnthropicSettings
+from yuyutsava.mcp.naming import server_of
+from yuyutsava.mcp.tool_adapter import adapt
 from yuyutsava.skills.registry import SkillRegistry
 
 
@@ -44,7 +47,7 @@ from yuyutsava.skills.registry import SkillRegistry
 @mock.patch.dict(
     os.environ, {"LLM_PROVIDER": "anthropic", "ANTHROPIC_API_KEY": "sk-fake-key-for-test"}
 )
-def _render_prompt() -> dict[str, Any]:
+def _render_prompt(mcp_tools: list | None = None) -> dict[str, Any]:
     """Build the CLI deepagent with a capturing fake model and return what it sent."""
     captured: dict[str, Any] = {}
 
@@ -99,6 +102,7 @@ def _render_prompt() -> dict[str, Any]:
                 permission_check=True,
                 search_config=search_config,
                 subagents=[general_purpose],
+                mcp_tools=mcp_tools,
             ),
             execution_mode="local",
             local_settings=LocalSettings(),
@@ -126,6 +130,22 @@ def _render_prompt() -> dict[str, Any]:
             if isinstance(blk, dict) and blk.get("type") == "text":
                 text += blk.get("text", "")
     return {"system_text": text, "bound_tools": captured.get("bound_tools") or []}
+
+
+def _mcp_tools() -> list:
+    """Two tools from a fake MCP server, adapted the way the loader adapts them.
+
+    On a loop, as the loader does: ``adapt`` records the session's home loop.
+    Nothing here calls them.
+    """
+
+    async def _adapted() -> list:
+        return [
+            adapt(object(), "probe", Tool(name=f"op_{i:02d}", inputSchema={"type": "object"}))
+            for i in range(2)
+        ]
+
+    return asyncio.run(_adapted())
 
 
 def test_filesystem_block_removed():
@@ -156,12 +176,19 @@ def test_lazy_discovery_invariant_holds():
     """
     from yuyutsava.policy.builtin.tool_filter import SUPPRESS_NAMES, SUPPRESS_PREFIXES
 
-    bound = set(_render_prompt()["bound_tools"])
+    rendered = _render_prompt(mcp_tools=_mcp_tools())
+    bound = set(rendered["bound_tools"])
 
     leaked_prefix = {n for n in bound if n.startswith(SUPPRESS_PREFIXES)}
     assert not leaked_prefix, (
         f"suppressed prefix families leaked to the model: {sorted(leaked_prefix)}"
     )
+
+    # MCP server tools too (R-BUG-26): named in the catalog, schema on demand.
+    leaked_mcp = {n for n in bound if server_of(n) is not None}
+    assert not leaked_mcp, f"MCP tool schemas leaked to the model: {sorted(leaked_mcp)}"
+    assert "probe__*:" in rendered["system_text"], "MCP tools missing from the catalog"
+    assert "probe__op_00" in rendered["system_text"], "an MCP tool is not named"
 
     leaked_builtin = bound & SUPPRESS_NAMES
     assert not leaked_builtin, (

@@ -40,7 +40,13 @@ class KeywordCatalogProvider:
         for group in sorted(groups):
             lines.append(f"{group}_*:")
             for e in sorted(groups[group], key=lambda x: x.id):
-                lines.append(f"  - {e.id}: {e.blurb}")
+                if e.listed:
+                    lines.append(f"  - {e.id}: {e.blurb}")
+            unlisted = sum(1 for e in groups[group] if not e.listed)
+            if unlisted:
+                lines.append(
+                    f"  - … {unlisted} more — find them with tool_search('{group}_*') or a keyword"
+                )
         return "\n".join(lines)
 
     # -- Tier-1 ------------------------------------------------------------

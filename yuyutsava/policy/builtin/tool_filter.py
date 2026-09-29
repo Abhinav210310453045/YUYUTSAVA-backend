@@ -16,6 +16,10 @@ Two suppression layers:
    This is the ToolRegistry progressive-discovery pattern: names are cheap and
    always shown, full schemas are served on request to save tokens.
 
+3. MCP server tools (``<server>__<tool>``, :mod:`yuyutsava.mcp.naming`). A
+   server can expose a hundred tools; bound up front, every schema rode every
+   model call. Their names are in the catalog, grouped by server.
+
 Tools still exist in the graph (ToolMessage handlers work); the model just never
 sees their schemas until it pulls them with ``tool_search``.
 
@@ -26,6 +30,7 @@ around it, which is now the adapter\'s.
 
 from __future__ import annotations
 
+from yuyutsava.mcp.naming import server_of
 from yuyutsava.policy.base import Policy
 from yuyutsava.policy.types import ModelCall
 
@@ -82,7 +87,7 @@ def should_suppress(name: str) -> bool:
         return False
     if name in SUPPRESS_NAMES:
         return True
-    return name.startswith(SUPPRESS_PREFIXES)
+    return name.startswith(SUPPRESS_PREFIXES) or server_of(name) is not None
 
 
 class ToolFilterPolicy(Policy):
