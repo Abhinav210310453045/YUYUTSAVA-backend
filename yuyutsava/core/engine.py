@@ -1055,12 +1055,11 @@ def build_cli_deepagent(
         agent_name="cli",
         cap_enforcer=deps.cap_enforcer,
     )
+    catalog = _registry.catalog_block() + deps.mcp_connectors
     if sandbox.docker is not None:
-        _prompt = docker_system_prompt(
-            layout, sandbox.export_dir, _registry.catalog_block(), front=front
-        )
+        _prompt = docker_system_prompt(layout, sandbox.export_dir, catalog, front=front)
     else:
-        _prompt = local_system_prompt(layout, _registry.catalog_block(), front=front)
+        _prompt = local_system_prompt(layout, catalog, front=front)
     if agent_memory_block:
         _prompt = f"{_prompt}\n\n{agent_memory_block}"
     graph = create_deep_agent(
@@ -1161,7 +1160,10 @@ def _orchestrator_tools(
     # mention in a comment makes this builder appear to wire tool families it
     # does not have.)
     note_bound_tools("orchestrator", registry, master_tools)
-    return master_tools, registry.catalog_block()
+    connectors = (
+        deps.mcp_manager.connectors_block("orchestrator") if deps.mcp_manager is not None else ""
+    )
+    return master_tools, registry.catalog_block() + connectors
 
 
 def _orchestrator_context_mw(
@@ -1464,7 +1466,7 @@ def build_tinker_agent(
         system_prompt=render_tinker_system_prompt(
             card_id=card_id,
             layout=layout,
-            tool_catalog=_registry.catalog_block(),
+            tool_catalog=_registry.catalog_block() + deps.mcp_connectors,
             skills_index=skills_index,
             agent_memory_block=agent_memory_block,
         ),

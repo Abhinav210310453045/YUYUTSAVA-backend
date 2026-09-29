@@ -27,7 +27,8 @@ from mcp.client.sse import sse_client
 from mcp.client.stdio import stdio_client
 from mcp.types import PaginatedRequestParams
 
-from yuyutsava.mcp.config import MCPConfig, MCPServerSpec
+from yuyutsava.mcp.config import MCPConfig, MCPServerSpec, global_mcp_config_path
+from yuyutsava.mcp.status import CONNECTED, FAILED, NOT_RUNNING, ServerStatus, connectors_block
 from yuyutsava.mcp.tool_adapter import adapt, sdk_field
 
 logger = logging.getLogger("yuyutsava.mcp.loader")
@@ -54,6 +55,8 @@ class MCPClientManager:
 
     def __init__(self) -> None:
         self._servers: dict[str, _ServerEntry] = {}
+        #: Why each server that failed to start failed, until it next starts.
+        self._failures: dict[str, str] = {}
         self._config: MCPConfig = MCPConfig.empty()
         self._lock = asyncio.Lock()
 
@@ -120,6 +123,33 @@ class MCPClientManager:
     def known_servers(self) -> list[str]:
         return list(self._servers.keys())
 
+    def status(self, agent_name: str | None = None) -> list[ServerStatus]:
+        """Every configured server's state — or only those in *agent_name*'s scope."""
+        names = (
+            self._config.servers_for(agent_name)
+            if agent_name is not None
+            else list(self._config.servers)
+        )
+        out: list[ServerStatus] = []
+        for name in names:
+            spec = self._config.servers.get(name)
+            if spec is None:
+                continue
+            entry = self._servers.get(name)
+            if entry is not None:
+                out.append(ServerStatus(name, CONNECTED, len(entry.tools), source=spec.source))
+            elif name in self._failures:
+                out.append(
+                    ServerStatus(name, FAILED, error=self._failures[name], source=spec.source)
+                )
+            else:
+                out.append(ServerStatus(name, NOT_RUNNING, source=spec.source))
+        return out
+
+    def connectors_block(self, agent_name: str) -> str:
+        """The prompt lines that tell *agent_name* which connectors it has."""
+        return connectors_block(self.status(agent_name), global_mcp_config_path())
+
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
@@ -185,9 +215,11 @@ class MCPClientManager:
                 adapted = [adapt(session, name, t, catalog_limit=spec.max_tools) for t in mcp_tools]
             except Exception as exc:  # noqa: BLE001 — one server must not stop the rest
                 logger.exception("MCP server %r failed to start: %s", name, exc)
+                self._failures[name] = _failure_text(exc)
                 ready.set()
                 return
 
+            self._failures.pop(name, None)
             self._servers[name] = _ServerEntry(
                 spec=spec,
                 session=session,
@@ -229,6 +261,18 @@ class MCPClientManager:
                 pass
         except Exception as exc:  # noqa: BLE001 — shutdown continues past one server
             logger.warning("MCP server %r stop raised %s", name, exc)
+
+
+def _failure_text(exc: BaseException) -> str:
+    """One line for the agent and the status endpoint: the innermost cause.
+
+    The SDK wraps a server's own failure in anyio ``ExceptionGroup``s, whose
+    message says only how many sub-exceptions there were.
+    """
+    while isinstance(exc, BaseExceptionGroup) and exc.exceptions:
+        exc = exc.exceptions[0]
+    text = f"{type(exc).__name__}: {exc}".strip()
+    return text if len(text) <= 200 else text[:199] + "…"
 
 
 #: Pages of ``tools/list`` read from one server before giving up — a server

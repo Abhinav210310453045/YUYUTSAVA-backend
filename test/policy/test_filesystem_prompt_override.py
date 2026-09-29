@@ -39,6 +39,7 @@ from yuyutsava.config.search import SearchConfig
 from yuyutsava.core.deps import MasterDeps
 from yuyutsava.llm.settings import AnthropicSettings
 from yuyutsava.mcp.naming import server_of
+from yuyutsava.mcp.status import CONNECTED, ServerStatus, connectors_block
 from yuyutsava.mcp.tool_adapter import adapt
 from yuyutsava.skills.registry import SkillRegistry
 
@@ -47,7 +48,7 @@ from yuyutsava.skills.registry import SkillRegistry
 @mock.patch.dict(
     os.environ, {"LLM_PROVIDER": "anthropic", "ANTHROPIC_API_KEY": "sk-fake-key-for-test"}
 )
-def _render_prompt(mcp_tools: list | None = None) -> dict[str, Any]:
+def _render_prompt(mcp_tools: list | None = None, mcp_connectors: str = "") -> dict[str, Any]:
     """Build the CLI deepagent with a capturing fake model and return what it sent."""
     captured: dict[str, Any] = {}
 
@@ -103,6 +104,7 @@ def _render_prompt(mcp_tools: list | None = None) -> dict[str, Any]:
                 search_config=search_config,
                 subagents=[general_purpose],
                 mcp_tools=mcp_tools,
+                mcp_connectors=mcp_connectors,
             ),
             execution_mode="local",
             local_settings=LocalSettings(),
@@ -176,7 +178,12 @@ def test_lazy_discovery_invariant_holds():
     """
     from yuyutsava.policy.builtin.tool_filter import SUPPRESS_NAMES, SUPPRESS_PREFIXES
 
-    rendered = _render_prompt(mcp_tools=_mcp_tools())
+    rendered = _render_prompt(
+        mcp_tools=_mcp_tools(),
+        mcp_connectors=connectors_block(
+            [ServerStatus("probe", CONNECTED, tools=2)], "/home/u/.yuyutsava/mcp_config.json"
+        ),
+    )
     bound = set(rendered["bound_tools"])
 
     leaked_prefix = {n for n in bound if n.startswith(SUPPRESS_PREFIXES)}
@@ -189,6 +196,8 @@ def test_lazy_discovery_invariant_holds():
     assert not leaked_mcp, f"MCP tool schemas leaked to the model: {sorted(leaked_mcp)}"
     assert "probe__*:" in rendered["system_text"], "MCP tools missing from the catalog"
     assert "probe__op_00" in rendered["system_text"], "an MCP tool is not named"
+    # And the agent knows its connectors (R-UI-12).
+    assert "probe: connected, 2 tools" in rendered["system_text"], "MCP connectors not listed"
 
     leaked_builtin = bound & SUPPRESS_NAMES
     assert not leaked_builtin, (

@@ -88,6 +88,9 @@ class MasterDeps:
     # -- extras ------------------------------------------------------------
     cap_enforcer: Any | None = None
     mcp_tools: list[Any] | None = None
+    #: Prompt lines naming this master's MCP connectors and their state
+    #: (``MCPClientManager.connectors_block``); ``""`` without MCP.
+    mcp_connectors: str = ""
     extra_tools: list[Any] | None = None
     runtime_settings: Any | None = None
     #: The TaskRunnerAgent every tr_* tool of this master goes through (zones,

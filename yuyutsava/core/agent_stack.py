@@ -243,6 +243,7 @@ async def build_agent_stack(
             # SQLite fallback, which the middleware treats as a no-op.
             transcript_index=stores.context.transcript_index,
             mcp_tools=(mcp_manager.tools_for("cli") if mcp_manager is not None else None),
+            mcp_connectors=(mcp_manager.connectors_block("cli") if mcp_manager is not None else ""),
             cap_enforcer=wiring.cap_enforcer,
             budget_tokens=wiring.budget_tokens,
             usage_store=usage_store,

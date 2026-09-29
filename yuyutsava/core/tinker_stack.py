@@ -118,6 +118,7 @@ async def build_tinker_stack(
     # resolve to None/[] gracefully: no MCP manager outside the daemon, no
     # note index on SQLite-only deployments.
     mcp_tools = mcp_manager.tools_for("tinker") if mcp_manager is not None else []
+    mcp_connectors = mcp_manager.connectors_block("tinker") if mcp_manager is not None else ""
 
     board = wiring.board if wiring.board is not None else standalone_board(stores)
     note_index = board.note_index
@@ -147,6 +148,7 @@ async def build_tinker_stack(
             transcript_index=stores.context.transcript_index,
             usage_store=wiring.usage_store,
             mcp_tools=mcp_tools,
+            mcp_connectors=mcp_connectors,
             prefs_store=wiring.prefs_store,
             cap_enforcer=wiring.cap_enforcer,
             extra_tools=wiring.extra_tools,
