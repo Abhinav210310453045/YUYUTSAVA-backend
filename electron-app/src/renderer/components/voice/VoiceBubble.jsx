@@ -1,6 +1,7 @@
 import React from 'react'
 import Markdown from '../chat/Markdown'
 import MessageImages from '../chat/MessageImages'
+import NoticeRow from '../chat/NoticeRow'
 
 const BLUE = 'var(--text-info)'
 
@@ -21,7 +22,12 @@ function PlayStopIcon({ playing }) {
   )
 }
 
-export default function VoiceBubble({ m, playing, onReplay }) {
+export default function VoiceBubble({ m, playing, onReplay, noticeActions, onNoticeAction }) {
+  // A notice is the system speaking, not the agent — the same row the chat
+  // shows, not an agent bubble.
+  if (m.role === 'notice') {
+    return <NoticeRow m={m} actions={noticeActions} onAction={onNoticeAction} />
+  }
   const isUser = m.role === 'user'
   // In-session turns carry raw PCM chunks; resumed turns carry a persisted
   // audio_url (Phase 6b) — both are replayable.

@@ -99,6 +99,7 @@ export class ConversationSession {
       send: this.send.bind(this),
       answerAsk: this.answerAsk.bind(this),
       sendNow: this.sendNow.bind(this),
+      retry: this.retry.bind(this),
       discardQueued: this.discardQueued.bind(this),
       interrupt: this.interrupt.bind(this),
       startVoice: this.startVoice.bind(this),
@@ -310,9 +311,9 @@ export class ConversationSession {
     this._setMessages((cur) => patchMessage(cur, id, patch))
   }
 
-  _pushNotice(text, level = 'info') {
+  _pushNotice(text, level = 'info', extra = {}) {
     if (!text) return
-    this._setMessages((cur) => [...cur, noticeMessage(text, level)])
+    this._setMessages((cur) => [...cur, noticeMessage(text, level, extra)])
   }
 
   // ---- pending asks ---------------------------------------------------
@@ -454,6 +455,15 @@ export class ConversationSession {
       return true
     }
     return this._flushQueued()
+  }
+
+  // A notice's Retry: the model runs again on the conversation and nothing is
+  // sent, so no user bubble is added. Refused mid-turn, like the daemon does.
+  retry() {
+    if (this.state.busy) return false
+    const ok = this.client?.retry()
+    if (ok) this._set({ busy: true })
+    return !!ok
   }
 
   discardQueued() {
@@ -624,6 +634,8 @@ export class ConversationSession {
     this._set({
       messages: [],
       busy: false,
+      // A message queued for the old conversation is not the new one's.
+      queued: null,
       pendingAsks: [],
       hello: null,
       listening: false,

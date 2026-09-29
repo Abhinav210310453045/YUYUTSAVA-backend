@@ -164,6 +164,10 @@ export class ConverseClient {
   interrupt() {
     return this._send({ type: 'interrupt' })
   }
+  // A notice's Retry: run the model again on the conversation, sending nothing.
+  retry() {
+    return this._send({ type: 'retry' })
+  }
   // Stream one frame of mic PCM (Int16Array, 16 kHz mono) to the daemon.
   sendAudio(int16) {
     return this._send({ type: 'audio', pcm: int16ToBase64(int16) })

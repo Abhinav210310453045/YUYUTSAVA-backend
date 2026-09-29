@@ -33,6 +33,16 @@ describe('rows', () => {
     expect(streamingMessage('s1')).toMatchObject({ id: 's1', text: '', streaming: true })
   })
 
+  it('a notice keeps what the daemon said can be done about it', () => {
+    const actions = [{ id: 'retry', label: 'Retry' }]
+    expect(noticeMessage('stuck', 'error', { code: 'empty_turn', actions })).toMatchObject({
+      code: 'empty_turn',
+      actions,
+    })
+    expect(noticeMessage('fyi')).toMatchObject({ code: null, actions: [] })
+    expect(noticeMessage('fyi', 'info', { actions: 'junk' }).actions).toEqual([])
+  })
+
   it('the selection block is stripped, anything else kept', () => {
     expect(stripSelection('<selection-context>\n[a]\n</selection-context>\n\nwhy?')).toBe('why?')
     expect(stripSelection('plain')).toBe('plain')

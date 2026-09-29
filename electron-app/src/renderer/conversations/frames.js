@@ -140,7 +140,7 @@ const HANDLERS = {
     // Never attached, never dropped: a notice is the channel for "the
     // model returned nothing", and it has to be visible on its own.
     s._flushSmoother()
-    s._pushNotice(msg.text, msg.level || 'info')
+    s._pushNotice(msg.text, msg.level || 'info', { code: msg.code, actions: msg.actions })
   },
   final(s, msg) {
     // Drain buffered prose and stop. `final` carries only the LAST

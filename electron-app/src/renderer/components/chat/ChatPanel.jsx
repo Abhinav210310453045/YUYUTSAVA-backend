@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
+import { commandAction, liveActions } from '../../conversations/noticeActions'
 import { useConverse } from '../../hooks/useConverse'
 import AskCard from '../asks/AskCard'
 import ResizeHandle from '../common/ResizeHandle'
@@ -52,6 +53,10 @@ export default function ChatPanel({
   // sidebar itself (the TODO card view's tinker aside) — a panel inside a
   // panel has no room to be read.
   showContext = false,
+  // What "New chat" means here — a notice's New-chat action and a typed "/new".
+  // Defaults to starting a fresh conversation in place; the TODO card's tinker
+  // pane passes its own, which opens a new chat on the card.
+  onNewChat = null,
 }) {
   const {
     messages,
@@ -75,6 +80,7 @@ export default function ChatPanel({
     newSession,
     sendNow,
     discardQueued,
+    retry,
   } = useConverse({ origin, resumeId, agent, card, sessionKey, active })
   const [draft, setDraft] = useState('')
   const [fb, setFb] = useState({}) // messageId -> 'up' | 'down' (local selection)
@@ -109,7 +115,19 @@ export default function ChatPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hello?.session_id])
 
+  // A notice's actions, and the same actions typed as the REPL's commands.
+  const onNoticeAction = (id) => {
+    if (id === 'retry') retry()
+    else if (id === 'new_chat') (onNewChat || newSession)()
+  }
+
   const onSubmit = () => {
+    const typed = commandAction(draft)
+    if (typed) {
+      onNoticeAction(typed)
+      setDraft('')
+      return
+    }
     const hasChips = contextChips && contextChips.length > 0
     const ok = send(draft, {
       context: hasChips && buildContext ? buildContext() : undefined,
@@ -201,6 +219,8 @@ export default function ChatPanel({
               paused={playingId === m.id && paused}
               onReplay={replay}
               onTogglePause={togglePause}
+              noticeActions={liveActions(messages, i, busy)}
+              onNoticeAction={onNoticeAction}
             />
           ))}
 

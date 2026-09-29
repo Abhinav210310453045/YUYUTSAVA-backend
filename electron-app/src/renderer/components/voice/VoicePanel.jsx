@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react'
+import { liveActions } from '../../conversations/noticeActions'
 import { useConverse } from '../../hooks/useConverse'
 import { useSettings } from '../../hooks/useSettings'
 import WakeWordOnboarding from './WakeWordOnboarding'
@@ -38,6 +39,7 @@ export default function VoicePanel({
     interrupt,
     replay,
     newSession,
+    retry,
     getMicAnalyser,
   } = useConverse({ origin: 'voice', resumeId, active })
   const { settings, loading: settingsLoading, save } = useSettings()
@@ -99,6 +101,16 @@ export default function VoicePanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active])
 
+  // Voice's New also closes the mic, whichever way it is asked for.
+  const startNew = () => {
+    stopVoice()
+    newSession()
+  }
+  const onNoticeAction = (id) => {
+    if (id === 'retry') retry()
+    else if (id === 'new_chat') startNew()
+  }
+
   const dismissNote = () => {
     save({ [NOTE_KEY]: '1' })
   }
@@ -152,10 +164,7 @@ export default function VoicePanel({
           usage={usage}
           ctxOpen={ctxOpen}
           onToggleContext={() => setCtxOpen(!ctxOpen)}
-          onNewSession={() => {
-            stopVoice()
-            newSession()
-          }}
+          onNewSession={startNew}
         />
 
         {(!wakeOn || !ttsOn) && <VoiceModeNotice wakeOn={wakeOn} voiceModeOff={voiceModeOff} />}
@@ -180,8 +189,15 @@ export default function VoicePanel({
           }}
         >
           {messages.length === 0 && <EmptyVoiceThread />}
-          {messages.map((m) => (
-            <VoiceBubble key={m.id} m={m} playing={playingId === m.id} onReplay={replay} />
+          {messages.map((m, i) => (
+            <VoiceBubble
+              key={m.id}
+              m={m}
+              playing={playingId === m.id}
+              onReplay={replay}
+              noticeActions={liveActions(messages, i, busy)}
+              onNoticeAction={onNoticeAction}
+            />
           ))}
 
           {/* The inline ask, and the only place one renders in this view. It

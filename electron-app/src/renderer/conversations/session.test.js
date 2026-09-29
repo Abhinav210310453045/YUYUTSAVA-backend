@@ -40,6 +40,10 @@ vi.mock('../api/converse', () => ({
     interrupt() {
       this.sent.push(['interrupt'])
     }
+    retry() {
+      this.sent.push(['retry'])
+      return h.connected
+    }
     sendAudio() {}
     endAudio() {}
   },
@@ -168,6 +172,22 @@ describe('a turn', () => {
     ])
   })
 
+  it('a notice keeps its code and actions', () => {
+    const { s } = session()
+    const actions = [
+      { id: 'retry', label: 'Retry' },
+      { id: 'new_chat', label: 'New chat' },
+    ]
+    frame(s, {
+      type: 'notice',
+      text: 'could not answer',
+      level: 'error',
+      code: 'empty_turn',
+      actions,
+    })
+    expect(msgs(s).at(-1)).toMatchObject({ role: 'notice', code: 'empty_turn', actions })
+  })
+
   it('an error ends the turn with a visible error bubble', () => {
     const { s } = session()
     frame(s, { type: 'turn_start', text: 'hi' })
@@ -227,6 +247,16 @@ describe('the user side', () => {
     vi.runOnlyPendingTimers()
     expect(client.sent.map((x) => x[1])).toEqual(['first', 'second'])
     expect(s.getSnapshot().queued).toBe(null)
+  })
+
+  it('retry sends the retry frame and no user bubble; refused mid-turn', () => {
+    const { s, client } = session()
+    expect(s.retry()).toBe(true)
+    expect(client.sent).toEqual([['retry']])
+    expect(s.getSnapshot().busy).toBe(true)
+    expect(msgs(s)).toEqual([])
+    expect(s.retry()).toBe(false)
+    expect(client.sent).toEqual([['retry']])
   })
 
   it('says so when the daemon is not connected', () => {
@@ -315,7 +345,10 @@ describe('history and lifecycle', () => {
   it('a new session in place drops the thread and reconnects', () => {
     const { s, client } = session({ resumeId: 'th-1' })
     frame(s, { type: 'token', text: 'x' })
+    s.send('first')
+    s.send('queued for the old thread')
     s.newSession()
+    expect(s.getSnapshot().queued).toBe(null)
     expect(client.closed).toBe(true)
     expect(s.resumeId).toBe(null)
     expect(msgs(s)).toEqual([])

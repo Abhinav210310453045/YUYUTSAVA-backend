@@ -24,12 +24,15 @@ export const errorMessage = (text) => ({
 
 // A standalone row for something the user must see with no bubble to hang it
 // on. The `role` keeps it out of the conversation proper — it is not something
-// the agent said.
-export const noticeMessage = (text, level = 'info') => ({
+// the agent said. `code` names the situation and `actions` what the user can do
+// about it ([{ id, label }], see noticeActions.js); both come from the daemon.
+export const noticeMessage = (text, level = 'info', { code = null, actions = [] } = {}) => ({
   id: nextId(),
   role: 'notice',
   level,
   text,
+  code,
+  actions: Array.isArray(actions) ? actions : [],
   events: [],
   images: [],
   artifacts: [],

@@ -145,6 +145,7 @@ export default function TinkerPane({
             emptyGlyph="✦"
             emptyHint="> tinker on this card — it sharpens ideas, asks the right questions, and keeps notes here"
             showNewSession={false}
+            onNewChat={onNewChat}
             onTurnEnd={onTinkerTurnEnd}
             contextChips={contextChips}
             onRemoveChip={onRemoveChip}

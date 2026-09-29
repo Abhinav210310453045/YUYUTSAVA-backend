@@ -3,6 +3,7 @@ import Markdown from './Markdown'
 import MessageActions from './MessageActions'
 import MessageArtifacts from './MessageArtifacts'
 import MessageImages from './MessageImages'
+import NoticeRow from './NoticeRow'
 
 // What a chat thread is made of: one bubble per message (with its tool rows,
 // images, artifacts and actions), the empty state, and the jump-to-latest
@@ -71,37 +72,6 @@ function PlayPauseIcon({ playing }) {
   )
 }
 
-// A standalone row for something the system needs to say — the model returned
-// nothing, a history was repaired. Not a bubble: it is not something the agent
-// said, and styling it as speech would misattribute it.
-function NoticeRow({ m }) {
-  const tone = {
-    error: { fg: 'var(--neon-red)', bd: 'var(--border-red)', mark: '✗' },
-    warning: { fg: 'var(--neon-amber)', bd: 'var(--border-amber)', mark: '⚠' },
-    info: { fg: 'var(--text-muted)', bd: 'var(--border-subtle)', mark: '·' },
-  }[m.level || 'info']
-  return (
-    <div
-      style={{
-        display: 'flex',
-        gap: 8,
-        alignItems: 'flex-start',
-        flexShrink: 0,
-        padding: '8px 12px',
-        borderRadius: 'var(--radius-card)',
-        border: `1px solid ${tone.bd}`,
-        background: 'rgba(255,255,255,0.03)',
-        fontSize: 12,
-        lineHeight: 1.6,
-        color: tone.fg,
-      }}
-    >
-      <span style={{ fontFamily: 'var(--font-mono)' }}>{tone.mark}</span>
-      <span style={{ color: 'var(--text-secondary)' }}>{m.text}</span>
-    </div>
-  )
-}
-
 export function Bubble({
   m,
   userText,
@@ -112,11 +82,16 @@ export function Bubble({
   paused,
   onReplay,
   onTogglePause,
+  // A notice row's live actions and what doing one means here (NoticeRow).
+  noticeActions,
+  onNoticeAction,
 }) {
   // Hooks first: an early return above a hook changes the hook count between
   // renders, which React rejects if a bubble's role ever changes.
   const [hover, setHover] = useState(false)
-  if (m.role === 'notice') return <NoticeRow m={m} />
+  if (m.role === 'notice') {
+    return <NoticeRow m={m} actions={noticeActions} onAction={onNoticeAction} />
+  }
   const isUser = m.role === 'user'
   const empty =
     !m.text && (!m.images || m.images.length === 0) && (!m.artifacts || m.artifacts.length === 0)
