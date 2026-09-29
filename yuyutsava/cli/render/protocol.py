@@ -72,6 +72,15 @@ class ChatRendererProtocol(Protocol):
     def status_text(self) -> str:
         """What the agent is doing, as plain text, or ``""`` if not tracked."""
 
+    def status_state(self) -> str:
+        """The phase behind :meth:`status_text`, or ``""`` when idle.
+
+        One of ``retry``, ``subagent``, ``tool``, ``writing``, ``thinking``. A
+        host drawing its own status needs the phase rather than its wording:
+        whether to animate the mark is a fact about the turn, and deciding it
+        by matching on the text would break the first time the text changed.
+        """
+
     def tool_in_flight(self) -> str:
         """The tool currently running, or ``""``."""
 

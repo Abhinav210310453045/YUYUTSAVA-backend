@@ -87,6 +87,7 @@ from prompt_toolkit.styles import Style
 
 from yuyutsava.ansi import palette
 from yuyutsava.cli.line_reader import clear_line_reader, set_line_reader
+from yuyutsava.cli.render import pulse
 from yuyutsava.cli.render.console import make_console
 from yuyutsava.cli.render.context_panel import (
     MIN_DASHBOARD_COLS,
@@ -135,6 +136,9 @@ STYLE = {
     "ctx.bar.empty": "#30363d",
     "ctx.border": _P["chrome"],
     "status": _P["chrome"],
+    # One class per hue the working mark walks through. Named from the palette
+    # rather than restated, the way every other style here is.
+    **{f"pulse.{role}": _P[role] for role in pulse.HUES},
     # The prompt wears the colour the transcript gives your messages, so the
     # line you are typing and the line it becomes are visibly one thing.
     "prompt": f"bold {_P['you']}",
@@ -219,6 +223,7 @@ class ChatDashboard:
         self._panel_visible = True
         self._snapshot: Any | None = None
         self._status: Callable[[], str] = lambda: ""
+        self._state: Callable[[], str] = lambda: ""
         self._tool: Callable[[], str] = lambda: ""
         self._turn_task: asyncio.Task | None = None
         self._meter_token: int | None = None
@@ -513,7 +518,17 @@ class ChatDashboard:
         if self.view.offset:
             behind = f"  ↑{self.view.offset} lines back · End to follow"
             return [("class:ctx.warn", (status + behind)[: self.left_width])]
-        return [("class:status", status[: self.left_width])]
+        if not status:
+            return [("class:status", "")]
+        # Re-read from the clock on every repaint: the application redraws on
+        # its own interval while a turn runs, so a mark computed here moves.
+        now = time.monotonic()
+        state = self._safe(self._state)
+        mark = pulse.mark_at(now, state)
+        return [
+            (f"class:pulse.{pulse.hue_at(now)}", f"{mark} "),
+            ("class:status", status[: max(0, self.left_width - 2)]),
+        ]
 
     _status_failure_logged = False
 
@@ -562,6 +577,7 @@ class ChatDashboard:
         renderer declares ``on_change``, so assigning it needs no guard.
         """
         self._status = lambda: renderer.status_text()
+        self._state = lambda: renderer.status_state()
         self._tool = lambda: renderer.tool_in_flight()
         renderer.on_change = self._invalidate
         # Prose that has arrived but is not yet a complete markdown block goes

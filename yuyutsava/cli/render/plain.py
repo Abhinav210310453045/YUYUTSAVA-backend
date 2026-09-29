@@ -32,7 +32,7 @@ from yuyutsava.core.streaming import StreamEvent
 _SKILLS_WIDTH = 60
 
 #: The assistant's own marker, coloured once rather than at the call site.
-AGENT_MARK = f"{AGENT}{BOLD}{gl.AGENT} yuyutsava{RESET}"
+AGENT_MARK = f"{AGENT}{BOLD}{gl.AGENT} yuyutsava:{RESET}"
 
 
 def _err(line: str) -> None:
@@ -75,7 +75,7 @@ class ChatRenderer:
             return
         stamp = when or _dt.datetime.now().strftime("%H:%M")
         _err("")
-        _err(f"  {YOU}{BOLD}{gl.YOU} you{RESET}  {CHROME}{stamp}{RESET}")
+        _err(f"  {YOU}{BOLD}{gl.YOU} you:{RESET}  {CHROME}{stamp}{RESET}")
         for line in text.splitlines():
             _err(f"    {YOU}{line}{RESET}")
 
@@ -107,6 +107,10 @@ class ChatRenderer:
         log. Defined here so a host that asks for a status (the dashboard)
         degrades to "nothing to say" instead of raising.
         """
+        return ""
+
+    def status_state(self) -> str:
+        """Always ``""``: this renderer prints a running log, not a status."""
         return ""
 
     def tool_in_flight(self) -> str:

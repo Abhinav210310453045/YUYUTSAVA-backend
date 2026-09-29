@@ -312,6 +312,76 @@ class EachAnswerSitsInItsOwnBox(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(pf.TOP_LEFT, text)
 
 
+class TheSpeakerMarkersStayOutOfTheirMessages(unittest.IsolatedAsyncioTestCase):
+    """A marker that looks like the text under it is not a marker. Each side
+    of the conversation gets a named, punctuated label and a box in its own
+    colour, so which side a block belongs to survives a glance."""
+
+    def _rich(self, width: int = 70):
+        buf = io.StringIO()
+        return (
+            RichChatRenderer(
+                verbose=False,
+                workspace=Path("/tmp"),
+                console=make_console(file=buf, width=width, force_terminal=False),
+                live=False,
+            ),
+            buf,
+        )
+
+    def test_your_marker_is_punctuated(self) -> None:
+        renderer, buf = self._rich()
+        renderer.user_message("a question", when="18:36")
+        self.assertIn(f"{gl.YOU} you:", _plain(buf.getvalue()))
+
+    async def test_the_assistants_marker_is_too(self) -> None:
+        renderer, buf = self._rich()
+        await renderer.render(StreamEvent(kind="token", data={"text": "an answer"}))
+        self.assertIn(f"{gl.AGENT} yuyutsava:", _plain(buf.getvalue()))
+
+    def test_your_message_is_framed(self) -> None:
+        renderer, buf = self._rich()
+        renderer.user_message("a question")
+        text = _plain(buf.getvalue())
+        self.assertIn(pf.TOP_LEFT, text)
+        self.assertIn(pf.BOTTOM_LEFT, text)
+        self.assertIn("a question", text)
+
+    async def test_the_two_frames_are_different_colours(self) -> None:
+        """Same box, different side of the conversation."""
+        renderer, buf = self._rich()
+        renderer.user_message("a question")
+        await renderer.render(StreamEvent(kind="token", data={"text": "an answer\n\n"}))
+        await renderer.end_of_turn()
+        ramp = ansi.palette()
+        self.assertNotEqual(ramp["you"], ramp["agent"])
+
+    def test_the_marker_is_not_inside_the_frame(self) -> None:
+        renderer, buf = self._rich()
+        renderer.user_message("a question")
+        lines = [ln for ln in _plain(buf.getvalue()).splitlines() if ln.strip()]
+        marker = next(i for i, ln in enumerate(lines) if "you:" in ln)
+        opened = next(i for i, ln in enumerate(lines) if pf.TOP_LEFT in ln)
+        self.assertLess(marker, opened)
+
+    def test_the_plain_renderer_punctuates_the_same_way(self) -> None:
+        """It draws no box — a frame in piped output is noise — but the label
+        is the same label, or the two modes name the speaker differently."""
+        import contextlib
+
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            ChatRenderer(verbose=False, workspace=Path("/tmp")).user_message("hi")
+        self.assertIn(f"{gl.YOU} you:", _plain(err.getvalue()))
+        self.assertNotIn(pf.TOP_LEFT, _plain(err.getvalue()))
+
+    def test_a_long_message_wraps_inside_the_frame(self) -> None:
+        renderer, buf = self._rich(60)
+        renderer.user_message("word " * 40)
+        for line in _plain(buf.getvalue()).splitlines():
+            self.assertLessEqual(len(line), 60)
+
+
 class TheRolesAreOnePalette(unittest.TestCase):
     """Rich, prompt_toolkit and the raw escapes all read the same table. They
     were three lists before, and ``tool`` was bold cyan in one and plain cyan

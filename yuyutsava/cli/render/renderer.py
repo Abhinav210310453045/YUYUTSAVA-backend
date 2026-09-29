@@ -26,6 +26,7 @@ from __future__ import annotations
 import contextlib
 import datetime as _dt
 import logging
+import time
 from collections import deque
 from pathlib import Path
 from typing import Any
@@ -34,13 +35,12 @@ from rich.console import Console, Group, RenderableType
 from rich.live import Live
 from rich.markdown import Markdown
 from rich.padding import Padding
-from rich.spinner import Spinner
 from rich.text import Text
 
 from yuyutsava.cli.render import artifact_view as av
 from yuyutsava.cli.render import glyphs as gl
+from yuyutsava.cli.render import pulse, zones
 from yuyutsava.cli.render import tool_format as tf
-from yuyutsava.cli.render import zones
 from yuyutsava.cli.render.markdown_stream import MarkdownStream
 from yuyutsava.cli.render.notices import action_hint, notice_mark
 from yuyutsava.cli.render.prose_frame import ProseFrame
@@ -60,6 +60,25 @@ _PROSE_INDENT = 4
 
 # Cap for inline subagent-response rendering; /expand shows the rest.
 _SUBAGENT_INLINE_CHARS = 4000
+
+
+class _Pulse:
+    """The moving mark and its label, re-read from the clock on every frame.
+
+    A Rich renderable rather than a prepared ``Text`` because ``Live`` renders
+    the object it was handed once per refresh: a string built in advance is the
+    same string every tick, which is how a spinner ends up standing still.
+    """
+
+    def __init__(self, state: str, label: Text) -> None:
+        self._state = state
+        self._label = label
+
+    def __rich_console__(self, console: Console, options: Any) -> Any:
+        now = time.monotonic()
+        line = Text(pulse.mark_at(now, self._state) + " ", style=pulse.hue_at(now))
+        line.append_text(self._label)
+        yield line
 
 
 class RichChatRenderer:
@@ -87,6 +106,10 @@ class RichChatRenderer:
         #: than a Panel, because a Panel cannot close an edge it has not seen
         #: the end of, and prose is committed block by block as it arrives.
         self._frame = ProseFrame(console, style="agent")
+        #: The same box around what you typed, in your own colour rather than
+        #: the assistant's, so which side of the conversation a block belongs
+        #: to is legible without reading the marker above it.
+        self._you_frame = ProseFrame(console, style="you")
         self._md = MarkdownStream(console, indent=_PROSE_INDENT, frame=self._frame)
         #: Paces prose to a steady rate instead of painting each arriving
         #: chunk whole. The model delivers a paragraph in one burst after a
@@ -154,12 +177,13 @@ class RichChatRenderer:
         self._close_prose()
         stamp = when or _dt.datetime.now().strftime("%H:%M")
         head = Text(" " * _MARKER_INDENT)
-        head.append(f"{gl.YOU} you", style="you.bold")
+        head.append(f"{gl.YOU} you:", style="you.bold")
         self._console.print()
         self._console.print()
         self._console.print(self._with_tail(head, "", stamp))
-        for line in text.splitlines() or [""]:
-            self._console.print(Text(" " * _PROSE_INDENT + line, style="you"))
+        self._you_frame.open_frame()
+        self._you_frame.write(Text(text))
+        self._you_frame.close_frame()
         self._notify()
 
     def skills_recalled(self, names: tuple[str, ...]) -> None:
@@ -282,6 +306,12 @@ class RichChatRenderer:
             return "Writing…"
         return "Thinking…" if self._in_turn else ""
 
+    def status_state(self) -> str:
+        """The phase :meth:`status_text` is describing, or ``""`` when idle."""
+        if not self._in_turn:
+            return ""
+        return self._activity()[0]
+
     def tool_in_flight(self) -> str:
         """Name of the most recent unfinished tool call, or ``""``."""
         return self._in_flight[-1] if self._in_flight else ""
@@ -289,8 +319,8 @@ class RichChatRenderer:
     def _status_renderable(self) -> RenderableType:
         state, detail = self._activity()
         if state == "retry":
-            return Group(Spinner("dots", text=Text(detail, style="warn"), style="warn"))
-        if state == "subagent":
+            label = Text(detail, style="warn")
+        elif state == "subagent":
             label = Text.assemble(("Subagent working… ", "subagent"), (detail, "chrome"))
         elif state == "tool":
             label = Text.assemble(("Running ", "chrome"), (detail, "tool"), ("…", "chrome"))
@@ -299,7 +329,7 @@ class RichChatRenderer:
         else:
             label = Text("Thinking…", style="chrome")
 
-        parts: list[RenderableType] = [Spinner("dots", text=label, style="accent")]
+        parts: list[RenderableType] = [_Pulse(state, label)]
         tail = self._md.tail() if self._md.started else ""
         if tail:
             parts.append(Padding(Text(tail, style="chrome", no_wrap=False), (0, 0, 0, 2)))
@@ -366,7 +396,7 @@ class RichChatRenderer:
             return
         if not self._opened_prose:
             self._console.print()
-            self._console.print(Text(f"  {gl.AGENT} yuyutsava", style="agent.bold"))
+            self._console.print(Text(f"  {gl.AGENT} yuyutsava:", style="agent.bold"))
             self._opened_prose = True
         self._frame.open_frame()
         if self._smoother is not None:

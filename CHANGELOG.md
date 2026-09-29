@@ -41,6 +41,19 @@ While the version stays `0.x`, minor bumps may contain breaking changes.
   being written (`cli/render/prose_frame.py`).
 
 ### Changed
+- **The mark that says a turn is alive moves.** A turn waits — on the first
+  token, on a tool, on a subagent — and a status line that does not move cannot
+  be told apart from a wedged process, which is the moment a reader reaches for
+  Ctrl+C. Both surfaces now draw an animated braille cell that walks the
+  palette as it turns, and settles the moment tokens start landing, because
+  arriving prose says the turn is alive better than a spinner does
+  (`cli/render/pulse.py`; the phase maths is shared so the scrolling
+  transcript's `Live` region and the split view's status bar cannot drift).
+- **Each speaker's marker is punctuated and separated from what they said.**
+  `❯ you:` and `◇ yuyutsava:`, with your message now in a dotted frame of its
+  own in your colour rather than the assistant's, so which side of the
+  conversation a block belongs to survives a glance. The plain renderer
+  punctuates identically and stays unframed: a box in piped output is noise.
 - **Prose streams instead of arriving a paragraph at a time.** The transcript
   commits a markdown block only once that block is complete, so between blank
   lines nothing was on screen at all. Text that has arrived but is not yet a
