@@ -989,3 +989,133 @@ test is red on the old code.
 **Note for existing installs on Postgres.** Preferences set with the CLI before
 this fix sit in `state.db`, where the daemon never read them. They are not
 migrated. Set them again, or copy them over with `yuyutsava prefs`.
+
+---
+
+## Found in the field (W9)
+
+The findings below came from the owner's own sessions (screenshots and a
+daemon log, 2026-09-28), after W8. Each was fixed in W9 with a test shown
+red first and a live check; the commits are listed under W9 in
+[11](11-remediation-plan.md).
+
+## R-BUG-22 — Running the test suite emptied the application's transcript table
+
+**Severity** P0 · **Wave** W9 · **Status** **Fixed** (377d220e)
+
+**Evidence.** The user's Postgres `transcript_messages` had 12,892 rows
+inserted and 12,892 deleted, so `ctx_history`'s read-back had nothing to read.
+The transcript and artifact parity tests exercise the TTL sweep with
+`delete_older_than(time.time() + 3600)`, and `test/support/pg.py` fell back to
+the application's own database whenever `YUYUTSAVA_PG_DSN` was unset. Every
+full-suite run without a scratch DSN wiped the transcripts and every artifact
+older than an hour. Found by bisecting the pg test files against a canary row.
+
+**Fix.** The tests use `YUYUTSAVA_TEST_PG_DSN`, else a database of their own
+(`yuyutsava_test`, created on first use), and refuse the application's
+database by name. `test/architecture/test_pg_tests_never_touch_the_app_database.py`
+pins it. The deleted rows cannot be recovered.
+
+---
+
+## R-BUG-23 — Gemini's thinking used up the answer's budget, so replies came back empty
+
+**Severity** P0 · **Wave** W9 · **Status** **Fixed** (77ad3861, 5f495847)
+
+**Evidence.** 30 of 2,656 gemini-3.5-flash calls returned no text and no tool
+call: 0.2–0.3 % under 50k input tokens, 3–4 % at 50–125k, right after tool
+calls, repeating on the same history. Gemini's thinking tokens count against
+`max_output_tokens`, hard-coded at 4,096 in every provider, with no thinking
+budget set: after a large tool result the model could think through the whole
+cap and stop at `MAX_TOKENS` before writing anything. At temperature 0.1 the
+retry thought the same way. Reproduced live with a tight cap.
+
+**Fix.** One `ANSWER_TOKENS = 8192` for all providers; the Gemini providers
+set `thinking_budget` (default 8,192) and `max_output_tokens = ANSWER_TOKENS +
+budget`, so thinking never eats the answer's share (the owner's design). A
+contract checks both Gemini classes still take those kwargs. An empty reply is
+now described (finish reason, input/output/thinking tokens) before anything
+removes it. Thinking on/off and levels are deferred by the owner.
+
+---
+
+## R-BUG-24 — The retry after an empty reply crashed, and the repair wrote false history
+
+**Severity** P0 · **Wave** W9 · **Status** **Fixed** (4f68c6a8)
+
+**Evidence.** In the REPL, the app and voice the retry drove the graph with
+`task=None`, and `astream_agent_iter` built `HumanMessage(content=None)` — the
+ValidationError in the screenshots. Every test used a fake `drive`. Even
+without the crash, re-entering a finished run schedules nothing. Each repair
+also closed the turn with "[interrupted] The user interrupted this turn…",
+which the model then read and the app showed after a reload.
+
+**Fix.** An escalating retry: re-run the model (the repair written as the
+`tools` node, pinned by a contract), then one hidden nudge, then an honest
+close and a notice. Internal notes are marked and left out of history views.
+
+---
+
+## R-BUG-25 — Every MCP server failed to load on mcp 2.x, and failed calls read as success
+
+**Severity** P0 · **Wave** W9 · **Status** **Fixed** (3d789a8d, 13dbaed0)
+
+**Evidence.** The daemon logged `'Tool' object has no attribute 'inputSchema'`
+for every server. `R-BUG-10` had fixed the opposite spelling for the locked
+mcp 1.26; the daemon's unlocked install resolved mcp 2.2.0, which renamed the
+attributes to snake_case. There `isError` also read as absent, so a failed
+MCP call was reported to the model as a success. `mcp[cli]>=1.26.0` had no
+ceiling.
+
+**Fix.** `mcp/tool_adapter.sdk_field` reads either spelling; the range is
+`>=1.26,<3`; the search clients are capped too; a contract checks the
+installed SDK still names its fields one of the two ways. Checked live against
+a real stdio server from both environments.
+
+---
+
+## R-BUG-26 — A large MCP server's tools were cut to 32, and the rest cost a schema on every call
+
+**Severity** P1 · **Wave** W9 · **Status** **Fixed** (ecf72b88)
+
+**Evidence.** The loader kept a server's first `max_tools` (32) tools:
+google-drive exposed 128, so 96 were unreachable. The 32 kept were bound like
+built-ins, so every schema rode every model call. `tool_search` also could not
+render a JSON-Schema dict, which is what MCP tools carry.
+
+**Fix.** Every tool is bound (all `tools/list` pages); MCP schemas are hidden
+until `tool_search` loads them; the catalog lists them per server as
+`<server>__*`, naming up to `max_tools` and counting the rest.
+
+---
+
+## R-BUG-27 — A tool that raised ended the whole turn
+
+**Severity** P0 · **Wave** W9 · **Status** **Fixed** (0fef075d)
+
+**Evidence.** A Tavily search with a "site:"-only query raised, and the turn
+ended with a traceback and no answer. LangGraph's tool node turns only
+argument-validation errors into a result; `ws_*`, `mem_*`, `um_*`, `todo_*`
+and `ctx_*` raise on failure.
+
+**Fix.** The policy adapter, which wraps every tool call of every agent,
+returns an error `ToolMessage` for an exception and lets LangGraph's control
+flow (interrupts, parent commands, cancellation) through.
+
+---
+
+## R-BUG-28 — The daemon ran dependencies the project never locked
+
+**Severity** P1 · **Wave** W9 · **Status** **Fixed** (cd469613, 28118c05)
+
+**Evidence.** The user's daemon was a `pipx install -e .`, resolved without
+`uv.lock`: 13 coupled packages differed from the lock (mcp 2.2.0 for 1.26.0,
+langchain-core 1.6.3 for 1.4.8, deepagents 0.6.12 for 0.6.3, …), all inside
+their ranges, none ever tested. Nothing reported it.
+
+**Fix.** At start-up the daemon logs the coupled dependencies' versions and
+warns on anything outside its range or off the lock.
+`scripts/install_cli.py` installs the command editable under the lock, and
+the README says to use it. Replacing the existing pipx install is the owner's
+to run: `pipx uninstall yuyutsava`, then `python scripts/install_cli.py
+--extra vertex`.

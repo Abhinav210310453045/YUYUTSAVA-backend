@@ -55,6 +55,7 @@ W0 safety net ─► W1 guardrails ─► W2 __init__ + imports ─► W3 layeri
 | W6 | Tests and scripts | Done — see the outcome under W6 |
 | W7 | Electron app | Done — see the outcome under W7 |
 | W8 | Close-out | Done — see the outcome under W8 |
+| W9 | Field fixes from the owner's sessions | Done — see the outcome under W9 |
 
 ---
 
@@ -934,6 +935,48 @@ finding in [09](09-electron-app.md).
   reference repointed, the directory deleted. `CONTRIBUTING.md` updated
   (`9e2001ee`).
 
+## W9 — Field fixes (2026-09-28/29)
+
+Added after W8, from the owner's own sessions: screenshots and a daemon log
+showing empty turns, a crashing retry, "try /new" in the app, every MCP server
+failing, an agent unaware of its connectors, and a web search that ended a
+turn. Held to the same rules — one concern per commit, a test shown red first,
+negative controls for every guard, the full gates and a live check per commit
+— on the same branch. The findings are recorded in
+[07](07-errors-logging-state.md) (`R-BUG-22`…`28`) and
+[09](09-electron-app.md) (`R-UI-11`, `R-UI-12`).
+
+| Workstream | Finding | Commits |
+|---|---|---|
+| A. The suite wiped the app's transcript table | `R-BUG-22` | 377d220e |
+| B. Empty replies: thinking budget, diagnosis, a retry that works | `R-BUG-23`, `R-BUG-24` | 77ad3861, 5f495847, 4f68c6a8 |
+| C. Notices name actions; Retry and New chat on every surface | `R-UI-11` | 739f3986, 87f6855e, 54ac2d05, 36bfbf91 |
+| D. MCP: both SDK majors, every tool reachable, connectors known | `R-BUG-25`, `R-BUG-26`, `R-UI-12` | 3d789a8d, 13dbaed0, ecf72b88, 5d5429f9, 74de0f81, daec3332 |
+| E. A raising tool no longer ends the turn | `R-BUG-27` | 0fef075d |
+| F. The daemon's install: drift reported, a locked install | `R-BUG-28` | cd469613, 28118c05 |
+
+**Outcome.**
+- **Suite** 2,382 passed (2,313 after workstream A); 11 framework contracts
+  (8 at W8's close): the Gemini output kwargs, the retry node and the MCP SDK's
+  field names joined; the ceiling check covers the MCP SDK and the search clients.
+  `verify_imports` 485 modules, 0 failed; the lint ratchet unchanged; the
+  Electron app lint-clean with 61 tests.
+- **Fingerprint** unchanged: every prompt addition is empty when no MCP server
+  is configured.
+- **Live**, each on real Vertex through the scratch daemon, REPL or Electron
+  app: a turn that died answered by Retry; `/retry` and the notice buttons in
+  the chat and voice; a 41-tool MCP server loaded under mcp 1.26 and 2.2, a
+  tool past the catalog's cap found through `tool_search`; the agent naming a
+  failed connector and its cause; a "site:"-only Tavily query recovered from
+  within the turn; the pipx daemon warning about its 13 drifted packages.
+- **Found on the way:** a retry that raised was reported as "the model replied
+  with nothing"; `tool_search` published MCP tools without their parameters;
+  the SIGHUP reload line dropped failed servers.
+
+**For the owner.** Rows the test suite deleted before `R-BUG-22` are gone. The
+daemon on the PATH is still the unlocked pipx install; to replace it:
+`pipx uninstall yuyutsava`, then `python scripts/install_cli.py --extra vertex`.
+
 ---
 
 ## Carried
@@ -956,4 +999,6 @@ Deliberately not fixed in this remediation, each with its reason:
 | **The last copies** (`R-DRY-02`, `R-DRY-06`) | A fourth content flattener (joins with `\n`), two WAV readers, the TTS backend's own `subprocess` calls. | Fold each into its canonical module. |
 | **Size** — 19 functions over 100 lines, 3 classes over 400, `core/engine.py` at 1,496 lines | Eight are the accepted tool factories and one the off-limits face watcher; three builders crossed 100 after W4 with W5's explicit wiring. | Split the builders that grew; the rest were stopped deliberately. |
 | **The Visuals session picker** (`R-UI-10`) | A UX gap, found in W7. | Refresh the list with the panel's ↻. |
+| **Thinking controls** (from `R-BUG-23`) | The owner deferred enabling/disabling thinking, levels, and Claude thinking; W9 only gave Gemini's thinking its own budget. | A user-facing setting per provider. |
+| **A crashed MCP server reads as connected** (from `R-UI-12`) | Status is recorded at start-up and reload; a server that dies later keeps its entry until the next reload. | Watch the runner task and mark the server failed when it exits. |
 | **Renaming `yuyutsava/platform`, `yuyutsava/mcp`** (`R-PLC-12`) | `platform` has 16 package-root importers and carries OS invariance; `mcp` is contained by `test/mcp_layer`. The benefit is small next to the churn. | One rename-only change each, if ever. |

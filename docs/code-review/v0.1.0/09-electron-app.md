@@ -219,6 +219,40 @@ siblings mix `.js` (`useConverse.js`) and `.jsx`.
 
 ---
 
+## R-UI-11 — The app told the user to "try /new", and "/new" went to the model
+
+**Severity** P1 · **Wave** W9 (field report) · **Status** **Fixed** (739f3986, 87f6855e, 54ac2d05, 36bfbf91)
+
+**Evidence.** The empty-turn notice was one surface-blind string ("try
+/new"). The app has no slash commands: typed into the composer, "/new" was
+sent to the model as a message. Notices carried only text and a level, there
+was no retry, voice rendered notices as agent bubbles, and a new chat kept a
+message queued for the old one.
+
+**Fix.** A notice carries a `code` and `actions` (`retry`, `new_chat`) from one
+vocabulary. The REPL shows them as `/retry` and `/new`, the app as buttons on
+the notice row in the chat, the tinker pane and voice. Retry is a turn that
+sends nothing (`run_turn(retry=True)`, the `retry` frame). The composer takes a
+lone "/new" or "/retry" as the action. A contract test pins the app's action
+ids to the daemon's.
+
+---
+
+## R-UI-12 — The agent did not know its MCP connectors
+
+**Severity** P1 · **Wave** W9 (field report) · **Status** **Fixed** (5d5429f9, 74de0f81, daec3332)
+
+**Evidence.** No prompt named the configured MCP servers or their state; a
+failed server was a daemon log line. Asked about its connectors, the agent
+read Claude Desktop's MCP configuration.
+
+**Fix.** The MCP manager records each server's state (connected with its tool
+count, failed with its cause). The masters' prompts list their connectors,
+where they are configured, and not to read another app's config. The same
+records serve `GET /v1/mcp/status`, the ready line and the reload line.
+
+---
+
 ## Found and fixed during W7
 
 - **An objective card lost its phase bar** after a note was dragged over it or it was ticked: the `border` shorthand changed and reset the 3px `borderLeft` (41ad4985).
