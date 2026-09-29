@@ -31,7 +31,7 @@ from collections import deque
 from collections.abc import Callable
 from typing import Any
 
-from yuyutsava.cli.render.notices import warning_line
+from yuyutsava.cli.render.notices import warning_rows
 
 #: Lines of transcript kept for scrollback.
 DEFAULT_SCROLLBACK = 5_000
@@ -217,7 +217,8 @@ class StdioCapture:
         own shape instead of two lines of absolute path at column zero.
         """
         with contextlib.suppress(Exception):
-            self.buffer.write(warning_line(message, category, filename, lineno) + "\n")
+            for row in warning_rows(message, category, filename, lineno):
+                self.buffer.write(row + "\n")
 
     def restore(self) -> None:
         if self._saved_showwarning is not None:

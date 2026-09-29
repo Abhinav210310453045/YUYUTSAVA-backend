@@ -19,7 +19,13 @@ import unittest
 from pathlib import Path
 
 from yuyutsava.cli.render import prose_frame as pf
-from yuyutsava.cli.render.ansi_wrap import HANG, char_width, row_count, wrap_ansi
+from yuyutsava.cli.render.ansi_wrap import (
+    HANG,
+    char_width,
+    row_count,
+    visible_width,
+    wrap_ansi,
+)
 from yuyutsava.cli.render.console import make_console
 from yuyutsava.cli.render.renderer import RichChatRenderer
 from yuyutsava.cli.render.scroll_view import ScrollView
@@ -238,8 +244,6 @@ class AWrappedLineContinuesUnderItself(unittest.TestCase):
             self.assertTrue(row.startswith(" " * HANG))
 
     def test_no_row_overflows_because_of_the_indent(self) -> None:
-        from yuyutsava.cli.render.ansi_wrap import visible_width
-
         for width in (20, 37, 60, 90):
             with self.subTest(width=width):
                 for row in wrap_ansi("word " * 40, width, hang=HANG):
@@ -250,6 +254,32 @@ class AWrappedLineContinuesUnderItself(unittest.TestCase):
         fragments, and the reader needs the text more than the alignment."""
         rows = wrap_ansi("z" * 40, 10, hang=HANG)
         self.assertFalse(rows[1].startswith(" "))
+
+    def test_a_break_prefers_a_space_over_the_middle_of_a_word(self) -> None:
+        """Splitting "quota" into "qu" and "ota" reads as a rendering fault."""
+        rows = wrap_ansi("the quick brown fox jumps over the lazy dog " * 3, 40, hang=HANG)
+        for row in rows[:-1]:
+            self.assertTrue(row.endswith(" "), f"broke mid-word: {row!r}")
+
+    def test_a_token_longer_than_the_pane_still_breaks(self) -> None:
+        """Otherwise a base64 blob would sit on one row and paint past it."""
+        rows = wrap_ansi("x" * 90, 30, hang=HANG)
+        self.assertGreater(len(rows), 1)
+        for row in rows:
+            self.assertLessEqual(visible_width(row), 30)
+
+    def test_a_space_too_early_in_the_row_is_not_taken(self) -> None:
+        """Breaking there wastes most of a row and still breaks the word."""
+        rows = wrap_ansi("ab " + "y" * 60, 20, hang=HANG)
+        self.assertGreater(visible_width(rows[0]), 10)
+
+    def test_no_text_is_lost_at_any_width(self) -> None:
+        source = "the quick brown fox jumps over the lazy dog and keeps on going"
+        for width in range(6, 60):
+            with self.subTest(width=width):
+                rows = wrap_ansi(source, width, hang=HANG)
+                rejoined = "".join(r.strip() if i else r for i, r in enumerate(rows))
+                self.assertEqual(rejoined.replace(" ", ""), source.replace(" ", ""))
 
     def test_colour_still_survives_the_break(self) -> None:
         rows = wrap_ansi("\x1b[31m" + ("red " * 40), 60, hang=HANG)

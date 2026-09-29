@@ -191,7 +191,7 @@ class RichChatRenderer:
         if not names:
             return
         self._close_prose()
-        head = f"  {gl.SKILLS} skills  "
+        head = f"  {gl.SKILLS} skills:  "
         shown, rest = tf.fit_names(names, max(8, (self._console.width or 80) - len(head)))
         line = Text(head, style="chrome")
         line.append(shown, style="chrome")

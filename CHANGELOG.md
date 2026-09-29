@@ -51,7 +51,12 @@ While the version stays `0.x`, minor bumps may contain breaking changes.
   colours: one screen, one way of saying "this name, that number". Its status
   row carries the same working mark as the transcript, and a notice too long
   for the column continues under itself.
-- **A wrapped line continues under itself.** Rich wraps its own output to the
+- **A warning is two lines on the transcript's ladder.** Its label and origin
+  on one row, the message on the next at the body indent, so the message wraps
+  under itself instead of under the label — where its continuation read as a
+  second warning. Every label in the transcript is punctuated the same way now:
+  `❯ you:`, `◇ yuyutsava:`, `✳ skills:`, `⚠ UserWarning:`.
+- **A wrapped line continues under itself,** and breaks at a space. Rich wraps its own output to the
   pane, so the lines that reach the wrapper are the ones nothing formatted — a
   `print`, a log record, a warning — and their second row began at column zero,
   reading as a new statement rather than the rest of the one above. Rows after

@@ -24,8 +24,9 @@ from pathlib import Path
 from yuyutsava import ansi
 from yuyutsava.cli.render import glyphs as gl
 from yuyutsava.cli.render import startup
+from yuyutsava.cli.render.ansi_wrap import HANG, wrap_ansi
 from yuyutsava.cli.render.console import make_console
-from yuyutsava.cli.render.notices import warning_line
+from yuyutsava.cli.render.notices import warning_rows
 from yuyutsava.cli.render.plain import ChatRenderer
 from yuyutsava.cli.render.renderer import RichChatRenderer
 from yuyutsava.cli.render.stdio_capture import StdioCapture, TranscriptBuffer
@@ -123,28 +124,48 @@ class TheBannerUsesItsOwnColours(unittest.TestCase):
         self.assertNotIn(ansi.KEY, row)
 
 
-class AWarningIsOneThemedRow(unittest.TestCase):
+class AWarningSitsOnTheLadder(unittest.TestCase):
+    """Two lines: what warned, then what it said at the body indent.
+
+    On one line the message is longer than the pane and its continuation lands
+    under the label, reading as a second warning. Given a line of its own the
+    message wraps under itself, on the same ladder as every other block.
+    """
+
+    def _rows(self, message: object = _ADC) -> list[str]:
+        return [_plain(r) for r in warning_rows(message, UserWarning, _SITE_PACKAGES, 114)]
+
+    def test_the_label_names_the_category_and_is_punctuated(self) -> None:
+        self.assertIn("⚠ UserWarning:", self._rows()[0])
+
     def test_the_absolute_path_is_reduced_to_the_module(self) -> None:
-        line = _plain(warning_line(_ADC, UserWarning, _SITE_PACKAGES, 114))
-        self.assertNotIn("site-packages", line)
-        self.assertIn("_default:114", line)
-        self.assertIn("UserWarning", line)
+        head = self._rows()[0]
+        self.assertNotIn("site-packages", head)
+        self.assertIn("_default:114", head)
 
-    def test_the_message_survives_whole(self) -> None:
-        line = _plain(warning_line(_ADC, UserWarning, _SITE_PACKAGES, 114))
-        self.assertIn("without a quota project", line, "nothing is suppressed")
+    def test_the_message_is_a_line_of_its_own_at_the_body_indent(self) -> None:
+        head, body = self._rows()
+        self.assertNotIn("without a quota project", head)
+        self.assertIn("without a quota project", body, "nothing is suppressed")
+        self.assertTrue(body.startswith("    "))
 
-    def test_it_is_one_line_and_indented(self) -> None:
-        line = warning_line(_ADC, UserWarning, _SITE_PACKAGES, 114)
-        self.assertNotIn("\n", line)
-        self.assertTrue(_plain(line).startswith("  "), "column zero is the defect")
+    def test_the_label_is_at_the_marker_indent(self) -> None:
+        self.assertTrue(self._rows()[0].startswith("  ⚠"), "column zero is the defect")
 
-    def test_a_multi_line_message_is_flattened(self) -> None:
-        line = warning_line("first\n  second\n\nthird", UserWarning, _SITE_PACKAGES, 9)
-        self.assertNotIn("\n", line)
-        self.assertIn("first second third", _plain(line))
+    def test_a_multi_line_message_is_flattened_onto_the_one_row(self) -> None:
+        rows = self._rows("first\n  second\n\nthird")
+        self.assertEqual(len(rows), 2)
+        self.assertIn("first second third", rows[1])
 
-    def test_the_capture_writes_that_row_and_no_other(self) -> None:
+    def test_the_message_wraps_under_itself(self) -> None:
+        """The whole point: every row of it starts in the same column."""
+        _head, body = warning_rows(_ADC, UserWarning, _SITE_PACKAGES, 114)
+        rows = wrap_ansi(body, 70, hang=HANG)
+        self.assertGreater(len(rows), 1)
+        starts = {len(_plain(r)) - len(_plain(r).lstrip()) for r in rows}
+        self.assertEqual(starts, {4})
+
+    def test_the_capture_writes_those_rows_and_no_others(self) -> None:
         buffer = TranscriptBuffer()
         capture = StdioCapture(buffer)
         try:
@@ -153,9 +174,10 @@ class AWarningIsOneThemedRow(unittest.TestCase):
         finally:
             capture.restore()
         rows = [ln for ln in buffer.lines() if ln.strip()]
-        self.assertEqual(len(rows), 1, f"expected one row, got {rows}")
+        self.assertEqual(len(rows), 2, f"expected two rows, got {rows}")
         self.assertIn("⚠", _plain(rows[0]))
         self.assertNotIn("site-packages", _plain(rows[0]))
+        self.assertNotIn("warnings.warn(", "\n".join(_plain(r) for r in rows))
 
 
 class RecalledSkillsAreDrawnByTheRenderer(unittest.TestCase):

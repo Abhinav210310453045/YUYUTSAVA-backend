@@ -86,7 +86,7 @@ class ChatRenderer:
         shown, rest = tf.fit_names(names, _SKILLS_WIDTH)
         tail = f"  +{rest} more" if rest else ""
         _err("")
-        _err(f"  {CHROME}{gl.SKILLS} skills  {shown}{tail}{RESET}")
+        _err(f"  {CHROME}{gl.SKILLS} skills:  {shown}{tail}{RESET}")
 
     def begin_turn(self) -> None:
         """Turn-start hook. The rich subclass starts its spinner here."""

@@ -109,78 +109,132 @@ def _hang_for(hang: int, width: int) -> int:
     return hang if 0 < hang * 4 <= width else 0
 
 
+class _Row:
+    """One row under construction, and the break it would rather take.
+
+    A state machine rather than a run of locals in :func:`wrap_ansi`: the
+    escape bookkeeping, the indent and the pending word all have to move
+    together at a break, and keeping them apart is how a break re-opened the
+    colour but lost the word, or indented a row and then measured it as if it
+    had not been.
+    """
+
+    def __init__(self, width: int, hang: int) -> None:
+        self.width = width
+        self.hang = hang
+        self.rows: list[str] = []
+        self._active: list[str] = []  # SGR sequences still in effect
+        self._parts: list[str] = []  # pieces of the row so far
+        self._col = 0
+        #: Where the last space sits in ``_parts``, and the column it ended at.
+        #: A break there keeps a word whole; ``None`` means there is nowhere
+        #: better than the hard edge.
+        self._space: tuple[int, int] | None = None
+
+    # -- escapes ------------------------------------------------------------
+
+    def escape(self, chunk: str) -> None:
+        self._parts.append(chunk)
+        if chunk in _SGR_RESET:
+            self._active.clear()
+        elif chunk.endswith("m"):
+            self._active.append(chunk)
+
+    # -- text ---------------------------------------------------------------
+
+    def char(self, ch: str, cells: int) -> None:
+        if self._col + cells > self.width and self._col > self.hang:
+            self.wrap()
+        if ch == " ":
+            self._space = (len(self._parts), self._col + cells)
+        self._parts.append(ch)
+        self._col += cells
+
+    def ellipsis(self) -> None:
+        """A glyph wider than the whole pane becomes one visible elision.
+
+        Emitting it whole would overflow by a cell, which is the bleed this
+        module exists to prevent, and dropping it would lose a character
+        silently.
+        """
+        if self._col + 1 > self.width and self._col > 0:
+            self.wrap()
+        self._parts.append("…")
+        self._col += 1
+
+    # -- breaking -----------------------------------------------------------
+
+    def wrap(self) -> None:
+        """Close this row and start the next, carrying any part-word over."""
+        carry: list[str] = []
+        if self._breakable():
+            at, _end = self._space
+            carry = self._parts[at + 1 :]
+            del self._parts[at + 1 :]
+        self._emit("".join(self._parts))
+        self._parts = [*self._active, " " * self.hang, *carry]
+        self._col = self.hang + sum(char_width(c) for c in "".join(carry) if c not in _SGR_RESET)
+        self._space = None
+
+    def _breakable(self) -> bool:
+        """Whether the last space is a better break than the hard edge.
+
+        Only when it leaves most of the row used: a space near the start means
+        the word that follows is longer than the pane, and moving it down only
+        to break it there wastes a row and still breaks the word.
+        """
+        if self._space is None:
+            return False
+        _at, end = self._space
+        return end * 2 >= self.width
+
+    def _emit(self, text: str) -> None:
+        self.rows.append(text + _RESET if self._active else text)
+
+    def finish(self) -> list[str]:
+        tail = "".join(self._parts)
+        # A trailing row of nothing but re-opened escapes carries no text.
+        if strip_ansi(tail).strip():
+            self._emit(tail)
+        elif not self.rows:
+            self.rows.append(tail)
+        return self.rows
+
+
 def wrap_ansi(line: str, width: int, *, hang: int = 0) -> list[str]:
     """Wrap one logical line to *width* cells, preserving colour across breaks.
 
     Returns at least one element (``[""]`` for an empty line) so a blank line
-    in the transcript stays a blank row. Hard-wraps: a pane is not the place to
-    keep a 4,000-character base64 blob on one row, and word-wrapping a log line
-    full of paths reads worse than a clean break.
+    in the transcript stays a blank row.
 
-    A character wider than the entire pane becomes ``…`` — one cell, and
-    visibly an elision. Emitting it whole would overflow by a cell, and the
-    no-overflow guarantee has to hold at every width or it is not a guarantee.
+    Breaks at a space when one is far enough along the row to be worth taking,
+    and at the hard edge otherwise — a pane is not the place to keep a
+    4,000-character base64 blob on one row, and a token longer than the pane
+    has to break somewhere.
+
+    A character wider than the entire pane becomes ``…``. Emitting it whole
+    would overflow by a cell, and the no-overflow guarantee has to hold at
+    every width or it is not a guarantee.
 
     *hang* indents every row after the first, so a wrapped line reads as one
     statement instead of starting again at column zero; :func:`_hang_for`
     decides whether the pane can afford it.
     """
-    if width <= 0:
-        return [line]
-    if visible_width(line) <= width:
+    if width <= 0 or visible_width(line) <= width:
         return [line]
 
-    hang = _hang_for(hang, width)
-    lines: list[str] = []
-    active: list[str] = []  # SGR sequences still in effect
-    current: list[str] = []  # pieces of the row being built
-    col = 0
-
-    def flush() -> None:
-        nonlocal col
-        text = "".join(current)
-        lines.append(text + _RESET if active else text)
-        current.clear()
-        # Re-open the colours that were in effect at the break, then the
-        # indent. Unconditionally: an empty indent costs one empty string and
-        # keeps the break with one shape rather than two.
-        current.extend(active)
-        current.append(" " * hang)
-        col = hang
-
+    row = _Row(width, _hang_for(hang, width))
     for is_escape, chunk in _tokens(line):
         if is_escape:
-            current.append(chunk)
-            if chunk in _SGR_RESET:
-                active.clear()
-            elif chunk.endswith("m"):
-                active.append(chunk)
+            row.escape(chunk)
             continue
         for ch in chunk:
-            w = char_width(ch)
-            if w > width:
-                # A glyph wider than the whole pane (a 2-cell character in a
-                # 1-cell column). Emitting it would overflow by a cell, which
-                # is the bleed this module exists to prevent, so substitute an
-                # ellipsis: one cell, and visibly an elision rather than a
-                # silently dropped character.
-                if col + 1 > width and col > 0:
-                    flush()
-                current.append("…")
-                col += 1
-                continue
-            if col + w > width and col > 0:
-                flush()
-            current.append(ch)
-            col += w
-
-    tail = "".join(current)
-    # A trailing row that is only re-opened escapes carries no text; drop it.
-    if strip_ansi(tail):
-        lines.append(tail + _RESET if active else tail)
-    elif not lines:
-        lines.append(tail)
-    return lines
+            cells = char_width(ch)
+            if cells > width:
+                row.ellipsis()
+            else:
+                row.char(ch, cells)
+    return row.finish()
 
 
 def wrap_lines(lines: list[str], width: int, *, hang: int = 0) -> list[str]:
