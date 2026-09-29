@@ -54,6 +54,23 @@ uv run yuyutsava "list every Python file in this repo and count the lines"
 `.env.example` is the configuration reference — 16 numbered sections, each
 stating its own defaults. **Everything in it is optional except one API key.**
 
+### Installing the CLI
+
+`uv run yuyutsava …` from the checkout — and the desktop app, which starts the
+daemon that way — runs on the locked dependencies (`uv.lock`). To have a
+`yuyutsava` command on your PATH that does the same, install it with:
+
+```bash
+python scripts/install_cli.py --extra vertex   # the extras you use; repeatable
+```
+
+It installs the checkout editable, constrained to `uv.lock`. Do not use
+`pipx install -e .` or a bare `uv tool install -e .`: they resolve the newest
+versions the ranges allow, which the tests and contracts never ran (an
+unlocked install once took every MCP server down). If you have one, run
+`pipx uninstall yuyutsava` first. The daemon logs its dependency versions at
+start-up and warns when they are not the locked ones.
+
 ### Choosing a model provider
 
 Set `LLM_PROVIDER` to any of:
