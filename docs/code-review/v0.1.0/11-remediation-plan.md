@@ -56,6 +56,7 @@ W0 safety net ─► W1 guardrails ─► W2 __init__ + imports ─► W3 layeri
 | W7 | Electron app | Done — see the outcome under W7 |
 | W8 | Close-out | Done — see the outcome under W8 |
 | W9 | Field fixes from the owner's sessions | Done — see the outcome under W9 |
+| W10 | LangGraph upgrade: langgraph-api out of end of life | Done — see the outcome under W10 |
 
 ---
 
@@ -976,6 +977,41 @@ negative controls for every guard, the full gates and a live check per commit
 **For the owner.** Rows the test suite deleted before `R-BUG-22` are gone. The
 daemon on the PATH is still the unlocked pipx install; to replace it:
 `pipx uninstall yuyutsava`, then `python scripts/install_cli.py --extra vertex`.
+
+## W10 — LangGraph upgrade (2026-10-02)
+
+The chat REPL reported langgraph-api 0.9.0 as end of life (six minors behind;
+support ends at two). The same rules as W9: one concern per commit, a test shown
+red first, a negative control for every guard, the full gates and a live check.
+No billable call was made.
+
+| Workstream | Commits |
+|---|---|
+| A. Tripwire: `run_server` and SDK keywords (`AsyncSubagentHost.server_kwargs`) | 397473aa |
+| B. langgraph-api 0.9.0 → 0.15.1 with its family; Starlette 0.52 → 1.7 | 42b108e9 |
+| C. The notice sends you to the lock, not to `pip install -U` | f41b58a8 |
+
+**Before the bump**, a static diff of the new wheels against every surface the
+code calls found no break: `run_server`'s parameters, graph loading, `/ok` and
+the serde error mask unchanged; the SDK methods the watchers call kept their
+signatures; langgraph core's changes additive; Starlette 1.0's removals
+(`on_startup`/`on_shutdown`/`on_event`) unused here and handled by FastAPI
+0.135.1. Upgrading langgraph-api alone stops the lock at 0.10.3 — still end of
+life — so the family moves together (`CONTRIBUTING.md`).
+
+**Outcome.**
+- **Contracts** 13 (11 at W9): the new two green on 0.9.0 before the bump and
+  on 0.15.1 after; the negative control names a keyword renamed behind
+  `**kwargs` on the real `run_server`.
+- **Suite** 2,511 passed; `verify_imports` 488 modules, 0 failed; ruff and the
+  lint ratchet unchanged; `async_subagents_e2e.py` 15/15.
+- **Live**, no model turn: the REPL banner reads `langgraph-api 0.15.1` with no
+  notice and no server log lines; a scratch daemon (:7699, own home) started
+  the subagent host with four graphs and served HTTP, SSE and `/ws/converse`,
+  with bearer auth still 401 off loopback; it shut down cleanly.
+- **Found on the way:** Starlette 1.x deprecates `httpx` under its
+  `TestClient` (a test-only warning; carried). The owner's `yuyutsava` tool
+  install still holds the old lock until `scripts/install_cli.py` is re-run.
 
 ---
 

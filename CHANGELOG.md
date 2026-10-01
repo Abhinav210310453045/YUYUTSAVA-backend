@@ -96,8 +96,20 @@ While the version stays `0.x`, minor bumps may contain breaking changes.
   offending source line — went into the pane verbatim. It is now the module
   name, the category and the message on one indented row. Nothing is filtered:
   a real warning still arrives.
+- **langgraph-api 0.9.0 → 0.15.1, out of end of life.** The in-process server
+  background subagents run on was six minors behind, where support ends at
+  two. It moves with its family — langgraph-runtime-inmem 0.35.1, langgraph-cli
+  0.4.32, langgraph 1.2.12, langgraph-sdk 0.4.5 — and with Starlette 0.52 → 1.7,
+  which langgraph-api 0.15 requires. deepagents, langchain and langchain-core
+  are unchanged. langgraph-api and langgraph-sdk are imported directly and now
+  declared directly. A new framework contract checks every keyword the host
+  passes `run_server` (which takes `**kwargs`, so a renamed one would be
+  ignored, not rejected) and every keyword the watchers pass the SDK.
 
 ### Fixed
+- **The langgraph-api notice no longer says `pip install -U`.** That moves one
+  package off `uv.lock` and cannot reach a supported minor on its own. It now
+  says to upgrade through the lock; CONTRIBUTING.md has the commands.
 - **Nothing could be copied out of the split view.** A full-screen application
   that reports mouse events receives every click and drag itself, so the
   terminal never saw a drag to turn into a selection — the transcript was
