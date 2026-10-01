@@ -206,26 +206,16 @@ class AsyncSubagentHost:
 
         # Stash compiled graphs in the importable module before the langgraph
         # loader tries to resolve them.
-        graphs_param: dict[str, str] = {}
         for graph_id, graph in self._graphs.items():
-            attr = _lg_graphs.register(graph_id, graph)
-            graphs_param[graph_id] = f"yuyutsava.async_subagents._lg_graphs:{attr}"
+            _lg_graphs.register(graph_id, graph)
+        server_kwargs = self.server_kwargs()
 
         def _serve() -> None:
             try:
                 # Its import calls logging.basicConfig.
                 from langgraph_api.cli import run_server  # noqa: PLC0415
 
-                run_server(
-                    host=self._host,
-                    port=self._port,
-                    graphs=graphs_param,
-                    runtime_edition="inmem",
-                    reload=False,
-                    open_browser=False,
-                    server_level=self._server_log_level,
-                    allow_blocking=self._allow_blocking,
-                )
+                run_server(**server_kwargs)
             except Exception:  # pragma: no cover  # uvicorn exit / shutdown
                 logger.exception("AsyncSubagentHost: server thread exited with error")
 
@@ -253,6 +243,28 @@ class AsyncSubagentHost:
         self._started = False
         # Don't join — daemon thread; uvicorn ignores external signals.
         # Process exit will reap it.
+
+    def server_kwargs(self) -> dict[str, object]:
+        """The keywords :meth:`start` passes to ``langgraph_api.cli.run_server``.
+
+        Public for ``test/framework_contract``: ``run_server`` takes
+        ``**kwargs``, so a keyword it renamed would be swallowed rather than
+        rejected, and the server would start ignoring it. Each graph points at
+        the ``_lg_graphs`` attribute :meth:`start` registers it under.
+        """
+        return {
+            "host": self._host,
+            "port": self._port,
+            "graphs": {
+                graph_id: f"{_lg_graphs.__name__}:{_lg_graphs.attr_name_for_graph_id(graph_id)}"
+                for graph_id in self._graphs
+            },
+            "runtime_edition": "inmem",
+            "reload": False,
+            "open_browser": False,
+            "server_level": self._server_log_level,
+            "allow_blocking": self._allow_blocking,
+        }
 
     # ------------------------------------------------------------------
     # Internals

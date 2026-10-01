@@ -24,7 +24,9 @@ Covers:
   6. the Gemini chat classes still take the reply-bounding kwargs (silent failure)
   7. the empty-turn retry's node still leads to the model
   8. the MCP SDK still names its fields one of the ways the adapter reads (silent failure)
-  9. declared dependency ranges still admit what is installed, and every
+  9. langgraph-api's run_server still declares every keyword the host passes (silent failure)
+ 10. langgraph-sdk still declares every keyword the watchers pass
+ 11. declared dependency ranges still admit what is installed, and every
      coupled dependency has a ceiling
 """
 
@@ -98,6 +100,9 @@ def main() -> int:
         test_gemini_output_contract as gemini,
     )
     from test.framework_contract import (  # noqa: PLC0415 — `test` joins sys.path at run time, above
+        test_langgraph_api_contract as langgraph_api,
+    )
+    from test.framework_contract import (  # noqa: PLC0415 — `test` joins sys.path at run time, above
         test_mcp_sdk_contract as mcp_sdk,
     )
     from test.framework_contract import (  # noqa: PLC0415 — `test` joins sys.path at run time, above
@@ -133,6 +138,14 @@ def main() -> int:
         (
             "the MCP SDK's field names are ones the adapter reads (silent-failure seam)",
             mcp_sdk.test_the_mcp_models_declare_a_spelling_the_adapter_reads,
+        ),
+        (
+            "langgraph-api's run_server takes the host's keywords (silent-failure seam)",
+            langgraph_api.test_run_server_declares_every_keyword_the_host_passes,
+        ),
+        (
+            "langgraph-sdk takes the watchers' keywords",
+            langgraph_api.test_the_sdk_declares_every_keyword_the_watchers_pass,
         ),
         ("declared dependency ranges are sane", _check_declared_ranges),
     ]
