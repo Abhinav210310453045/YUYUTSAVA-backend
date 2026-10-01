@@ -145,6 +145,19 @@ Do not relax a ceiling without running `scripts/verify_framework_contract.py`
 against the new version. That run is the acceptance criterion, and a PR raising
 a ceiling should say in its body that it passed.
 
+**Upgrading langgraph-api** — the chat REPL says when it is end of life (two
+minors behind; it ships a minor every few weeks). Upgrade it through the lock,
+with its family, never with `pip install -U`, which moves one package off
+`uv.lock` and on its own stops at an older minor:
+
+```bash
+uv lock --upgrade-package langgraph-api --upgrade-package langgraph-runtime-inmem \
+        --upgrade-package langgraph-cli --upgrade-package langgraph --upgrade-package langgraph-sdk
+uv sync --inexact --all-extras
+.venv/bin/python scripts/verify_framework_contract.py
+uv run python scripts/async_subagents_e2e.py   # the in-process server, end to end; no model calls
+```
+
 ---
 
 ## Code conventions

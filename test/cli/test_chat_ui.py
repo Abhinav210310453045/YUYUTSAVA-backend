@@ -15,10 +15,12 @@ Run:  .venv/bin/python -m pytest test/cli/test_chat_ui.py
 from __future__ import annotations
 
 import io
+import json
 import re
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 from yuyutsava import ansi
 from yuyutsava.cli.render import glyphs as gl
@@ -133,6 +135,30 @@ class TheVersionNoticeIsAStringNotAPrint(unittest.TestCase):
     def test_it_returns_empty_when_the_check_cannot_run(self) -> None:
         self.assertEqual(startup.version_notice.__annotations__["return"], "str")
         self.assertFalse(hasattr(startup, "print_version_notice"))
+
+
+class TheVersionNoticeKeepsTheInstallOnTheLock(unittest.TestCase):
+    """``pip install -U langgraph-api`` moves one package off ``uv.lock`` — the
+    drift ``R-BUG-25`` and ``R-BUG-28`` were about — and cannot reach a supported
+    minor on its own: langgraph-sdk and langgraph have to move with it."""
+
+    def _notice(self, installed: str, latest: str) -> str:
+        payload = {"info": {"version": latest}, "releases": {installed: [{}], latest: [{}]}}
+        reply = io.BytesIO(json.dumps(payload).encode())
+        with (
+            mock.patch.object(startup.importlib.metadata, "version", return_value=installed),
+            mock.patch.object(startup.urllib.request, "urlopen", return_value=reply),
+        ):
+            return startup.version_notice()
+
+    def test_an_end_of_life_install_is_sent_to_the_lock_not_pip(self) -> None:
+        notice = self._notice("0.9.0", "0.15.1")
+        self.assertIn("0.9.0 is end of life", notice)
+        self.assertNotIn("pip install", notice)
+        self.assertIn("uv.lock", notice)
+
+    def test_an_up_to_date_install_gets_no_notice(self) -> None:
+        self.assertEqual(self._notice("0.15.1", "0.15.1"), "")
 
 
 class BothRenderersAttributeTheUser(unittest.IsolatedAsyncioTestCase):

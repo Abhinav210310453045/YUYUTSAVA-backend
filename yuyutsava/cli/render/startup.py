@@ -100,7 +100,9 @@ def version_notice(*, full: bool = False) -> str:
         parts[0] = f"{LANGGRAPH_API} {current} → {latest} available"
     if langgraph_api_is_eol(current, latest, releases):
         parts.append(f"{current} is end of life")
-    parts.append(f"pip install -U {LANGGRAPH_API}")
+    # Not `pip install -U`: that moves one package off the lock, and a newer
+    # langgraph-api needs langgraph-sdk and langgraph to move with it.
+    parts.append("upgrade through uv.lock, see CONTRIBUTING.md")
     return " · ".join(parts)
 
 
