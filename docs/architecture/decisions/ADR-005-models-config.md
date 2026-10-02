@@ -147,6 +147,11 @@ build an invalid host for `location="global"`, and keep a token fetched once at 
 expires. Rejected in favour of `ChatOpenAI` against Vertex's OpenAI-compatible endpoint, with a
 refreshing token.
 
+**Keep `ChatVertexAI` for Gemini on Vertex.** It is deprecated in langchain-google-vertexai 3.2.0
+and removed in 4.0, misses a 429/503 that surfaces on a stream's first read, and lacks the Gemini 3
+thought-signature patch. Rejected for `ChatGoogleGenerativeAI(vertexai=True)`, which was verified
+against all three locally. Every Gemini fix we carry is kept on the new path and re-validated there.
+
 **Rebuild the agent graph on every model switch.** This costs a full build per switch and loses the
 per-thread choice in the daemon, where one bundle serves many threads. Rejected for a per-call model
 override.

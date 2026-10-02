@@ -221,6 +221,31 @@ L5 cli/commands/models.py + cli/setup_wizard/ + /model in chat_repl · daemon/we
     whether to exclude it (our compaction already covers it) or hand it the `compaction` task model.
     Either way, no call ever reaches a provider the user has removed.
 
+13. **Vertex Gemini is built with `ChatGoogleGenerativeAI(vertexai=True)`.** `ChatVertexAI` is
+    deprecated in langchain-google-vertexai 3.2.0 and removed in 4.0, and we don't build on an
+    end-of-life class (owner, 2026-10-02). These were verified locally against the installed SDKs,
+    with no requests sent:
+    - genai reaches Vertex with `project`, `location` and `credentials`
+      (`…/v1beta1/projects/p/locations/…/publishers/google/models/…:streamGenerateContent`).
+    - It retries a 429 or 503 that arrives when a stream opens, and stops at `max_retries`. This was
+      mock-transport tested on both backends; `ChatVertexAI`'s gRPC path misses that case.
+    - It converts MCP type-list schemas, though it narrows `["string","null"]` to `STRING` and drops
+      nullability.
+    - It already applies the Gemini 3 dummy thought signature.
+
+    **Every Gemini fix carries over** and is re-validated against genai with a parity test. Each is
+    kept as a defence even where the SDK now covers the case, because the same failures can come
+    back through it:
+    - `gemini_parts` (zero-part messages);
+    - `loop_affinity`;
+    - `gemini_budget` (thinking on top of the answer);
+    - `first_chunk_retry` (owns the retry policy, the wall-clock budget and the CLI's "provider busy,
+      retrying" notices; the SDK's own retries are capped so the ladders don't nest);
+    - the `vertex_tool_schema` rewrite, generalised to `gemini_tool_schema` so nullability survives;
+    - `classify_provider_busy`, extended to genai's `ClientError`/`ServerError`.
+
+    Claude on Vertex keeps `ChatAnthropicVertex`, which is not deprecated.
+
 ### 2a. Cross-provider history: verified, not assumed (2026-10-02)
 
 **Method.** Each producer's own SDK response parser built a realistic assistant tool-call turn and a
@@ -273,8 +298,8 @@ The harness is [test/framework_contract/test_cross_provider_history_contract.py]
 - `ChatVertexAI` 3.2.4 does **not** patch the Gemini 3 "function call needs a thought signature"
   rule. langchain-google-genai does: `DUMMY_THOUGHT_SIGNATURE` on the first function call of the
   active loop (`langchain_google_genai/chat_models.py:864-904`). The owner runs Vertex
-  `gemini-3.5-flash`, so a portable or legacy function call in the active loop would get a 400. M4
-  ports the same patch into `quirks/gemini_parts.py` for Vertex.
+  `gemini-3.5-flash`, so on `ChatVertexAI` a portable or legacy function call in the active loop
+  would get a 400. This is one of the reasons the Vertex Gemini family moves to genai (rule 13).
 - Producer tags are unreliable. Vertex, Bedrock and OpenAI's parse path set no `model_provider`, and
   `"openai"` can't distinguish Groq, OpenRouter, OpenAI or Vertex MaaS. Hence our own stamp.
 - Custom `response_metadata` strings **concatenate across stream chunks** (measured:
@@ -477,7 +502,9 @@ and commits use the repo-local IITJ identity; it is pushed only when asked. This
   - `ChatBedrockConverse`'s `base_model`, and that it never writes `os.environ`;
   - the ModelProfile lookup keys;
   - the §2a cross-provider history matrix (raw fails where measured, portable is clean on all 45
-    pairs, Vertex has no Gemini 3 dummy-signature patch).
+    pairs);
+  - genai on Vertex: retry on stream open, the dummy signature, type-list conversion, and
+    `ChatVertexAI`'s deprecation (so a 4.0 upgrade is noticed).
 - **Spikes:**
   - Vertex MaaS through `ChatOpenAI` with an async token;
   - the summarizer decision (rule 12);
@@ -509,6 +536,8 @@ and commits use the repo-local IITJ identity; it is pushed only when asked. This
 **M2 — Kinds and catalog behind the existing seam.**
 
 - Port the 11 provider types to `llm/kinds/`, with Connection plus auth objects.
+- Vertex `gemini` moves to `ChatGoogleGenerativeAI(vertexai=True)` with every Gemini quirk carried
+  over (rule 13).
 - Add the Vertex `anthropic` and `maas` families and Bedrock auth methods (profile, keys,
   bedrock_api_key, `base_model` for application inference profiles).
 - `discover()`/`verify()` and `live_price()` move onto each kind (**R-PLC-10**: no more `base_url`
@@ -550,7 +579,7 @@ and commits use the repo-local IITJ identity; it is pushed only when asked. This
   `storage/pg/migrations.py`, a field on `storage/models.py:Session`);
 - a subagent override map per thread;
 - `history_portable`, plus the first-chunk `yuyutsava_model` stamp in every build wrapper;
-- the Vertex Gemini 3 dummy-signature patch in `quirks/gemini_parts.py`;
+- a parity test proving every Gemini quirk still applies on `ChatGoogleGenerativeAI(vertexai=True)`;
 - `cache_control`.
 - **Exit:**
   - one deliberate fingerprint update, justified in the commit;
