@@ -28,6 +28,8 @@ Covers:
  10. langgraph-sdk still declares every keyword the watchers pass
  11. declared dependency ranges still admit what is installed, and every
      coupled dependency has a ceiling
+ 12. every chat SDK still accepts portable history written by any other   (silent failure)
+ 13. a first-chunk selection stamp still survives stream merging          (silent failure)
 """
 
 from __future__ import annotations
@@ -95,6 +97,9 @@ def _check_declared_ranges() -> None:
 
 
 def main() -> int:
+    from test.framework_contract import (  # noqa: PLC0415 — `test` joins sys.path at run time, above
+        test_cross_provider_history_contract as cross_provider,
+    )
     from test.framework_contract import test_deepagents_contract as contract
     from test.framework_contract import (  # noqa: PLC0415 — `test` joins sys.path at run time, above
         test_gemini_output_contract as gemini,
@@ -146,6 +151,14 @@ def main() -> int:
         (
             "langgraph-sdk takes the watchers' keywords",
             langgraph_api.test_the_sdk_declares_every_keyword_the_watchers_pass,
+        ),
+        (
+            "portable history crosses every chat SDK (silent-failure seam)",
+            cross_provider.test_portable_history_is_accepted_by_every_builder,
+        ),
+        (
+            "a first-chunk selection stamp survives stream merging (silent-failure seam)",
+            cross_provider.test_a_first_chunk_stamp_survives_stream_merging,
         ),
         ("declared dependency ranges are sane", _check_declared_ranges),
     ]
