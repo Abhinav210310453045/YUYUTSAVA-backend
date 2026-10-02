@@ -35,6 +35,7 @@ Covers:
  15. a per-call model swap is the model that answers, gets the tools, and is
      what deepagents' prompt caching sees                                 (silent failure)
  16. Bedrock clients we build sign with the login we give them, and nothing else
+ 17. the model profiles the catalog reads still report each family's window (silent failure)
 """
 
 from __future__ import annotations
@@ -122,6 +123,9 @@ def main() -> int:
         test_mcp_sdk_contract as mcp_sdk,
     )
     from test.framework_contract import (  # noqa: PLC0415 — `test` joins sys.path at run time, above
+        test_model_profile_contract as profiles,
+    )
+    from test.framework_contract import (  # noqa: PLC0415 — `test` joins sys.path at run time, above
         test_model_switch_contract as model_switch,
     )
     from test.framework_contract import (  # noqa: PLC0415 — `test` joins sys.path at run time, above
@@ -206,6 +210,10 @@ def main() -> int:
         (
             "a Bedrock application inference profile needs no control-plane call",
             bedrock.test_an_application_inference_profile_needs_no_control_plane_call,
+        ),
+        (
+            "model profiles report each family's window (silent-failure seam)",
+            profiles.test_the_profiled_families_report_their_window,
         ),
         ("declared dependency ranges are sane", _check_declared_ranges),
     ]
