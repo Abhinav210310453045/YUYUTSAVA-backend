@@ -354,6 +354,22 @@ loop. Thinking from earlier turns is optional for both.
 accepted. Tool-call ID formats crossing providers (Gemini UUIDs, `toolu_`, `call_`, Bedrock
 `tooluse_`) built cleanly everywhere, and Mistral rewrites its own IDs.
 
+### 2b. User presence: spike notes (2026-10-02)
+
+The gate confirms that **the owner is at the machine** before a secret is shown or changed through
+a YUYUTSAVA surface. It is not encryption at rest: the owner can always open `secrets.toml` in an
+editor.
+
+| OS | Mechanism | State |
+|---|---|---|
+| macOS | `LocalAuthentication`, policy `DeviceOwnerAuthentication` (Touch ID, Apple Watch or the login password) | **Checked on the owner's Mac:** the framework loads through pyobjc-core (already present via `pyobjc-framework-cocoa`), both policies can be evaluated, and `biometryType` is Touch ID. The prompt itself takes an Objective-C reply block, which needs `pyobjc-framework-localauthentication` (darwin only) for its metadata, added in M8. One live prompt with the owner present is still to do. |
+| Windows | Windows Hello `UserConsentVerifier` (WinRT), falling back to a credential prompt (`CredUIPromptForWindowsCredentials`) verified with `LogonUser` | Not verifiable on this machine. CI can only check backend selection, because a Windows runner cannot answer a prompt. A manual check on a Windows machine is needed before M8 closes. |
+| Linux | A polkit agent (`pkexec` of a no-op) when a desktop session has one; otherwise a terminal password checked through PAM (CLI only) | Not verifiable here. `pkexec` asks for *admin* authentication by default, which is stronger than "the owner is present". A headless daemon has no agent, so the gate is offered only where a mechanism is found, and the settings page says which. |
+
+Each backend reports the mechanism it used, like `platform/elevation.py`, so the audit trail names
+it. Dependencies are declared in the wave that first uses them (STD-KIS-3): `pydantic` and
+`tomlkit` in M1, the presence packages in M8.
+
 **Tasks registry (closed, one source — DRY-3).**
 
 | Task | Label shown to users |
@@ -492,8 +508,8 @@ on.
 
 | Wave | State |
 |---|---|
-| M0 | In progress |
-| M1 | Not started |
+| M0 | Done 2026-10-02: 9 SDK contracts with negative controls (27 checks in `verify_framework_contract.py`), ADR-005, decisions on rules 12–14. Open: one live Touch ID prompt with the owner present (§2b). |
+| M1 | Next |
 | M2 | Not started |
 | M3 | Not started |
 | M4 | Not started |
@@ -548,7 +564,8 @@ and commits use the repo-local IITJ identity; it is pushed only when asked. This
   - user presence on macOS (pyobjc LocalAuthentication), Windows (UserConsentVerifier, falling back to
     CredUI) and Linux (polkit `pkcheck`, falling back to PAM password). Each spike writes down its
     honest limits: the gate guards YUYUTSAVA's own surfaces, not the owner's file.
-- **Dependencies:** declare `pydantic` and `tomlkit`, plus platform-marked presence deps.
+- **Dependencies:** declared in the wave that first uses each one: `pydantic` and `tomlkit` in
+  M1, the presence packages in M8 (§2b).
 - **ADR-005** covers the models config, its layers (global now, workspace later), the secrets model
   and RBAC as future work.
 - **Exit:** contracts are green and each has been seen failing (negative control); the spike notes

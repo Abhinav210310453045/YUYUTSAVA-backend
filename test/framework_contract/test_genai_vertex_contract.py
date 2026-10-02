@@ -61,8 +61,7 @@ def _vertex_model(handler: object, *, model: str = "gemini-2.5-flash", max_retri
         location="us-central1",
         credentials=_StaticToken(),
         max_retries=max_retries,
-        client_args=transport,
-        async_client_args=transport,
+        client_args=transport,  # genai builds its sync and async clients from these
     )
 
 

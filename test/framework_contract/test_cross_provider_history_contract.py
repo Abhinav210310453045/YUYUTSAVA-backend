@@ -20,6 +20,11 @@ How the pairs are built:
 - **Payloads:** each target uses its own SDK's request builder, so the payload is
   the one that would be sent.
 
+Producers include ``ChatVertexAI``, because existing checkpoints were written by it. Gemini on
+Vertex is now *built* with ``ChatGoogleGenerativeAI(vertexai=True)`` (the ``genai_vertex``
+target), so the pair that matters most for that move — old Vertex history into the new
+builder — is one of the pairs checked.
+
 Nothing is sent. A pair whose SDK is not installed is skipped.
 
 The selection stamp rides on ``response_metadata``. When a stream is merged,
@@ -221,15 +226,19 @@ def _to_anthropic_vertex(messages: list[BaseMessage]) -> object:
     return model._format_params(messages=messages)
 
 
-def _to_vertex_gemini(messages: list[BaseMessage]) -> object:
+def _to_genai_vertex(messages: list[BaseMessage]) -> object:
+    """Gemini on Vertex as we build it: ``ChatGoogleGenerativeAI(vertexai=True)``."""
     from google.auth.credentials import AnonymousCredentials
-    from langchain_google_vertexai import ChatVertexAI
+    from langchain_google_genai import ChatGoogleGenerativeAI
 
-    model = ChatVertexAI(
-        model="gemini-2.5-flash", project="p", location="us-central1",
+    model = ChatGoogleGenerativeAI(
+        model="gemini-3-flash",
+        vertexai=True,
+        project="p",
+        location="us-central1",
         credentials=AnonymousCredentials(),
-    )  # fmt: skip
-    return model._prepare_request_gemini(messages)
+    )
+    return model._prepare_request(messages)
 
 
 def _to_genai_gemini(messages: list[BaseMessage]) -> object:
@@ -265,7 +274,7 @@ TARGETS: dict[str, Callable[[list[BaseMessage]], object]] = {
     "anthropic": _to_anthropic,
     "anthropic+thinking": _to_anthropic_thinking,
     "anthropic_vertex": _to_anthropic_vertex,
-    "vertex_gemini": _to_vertex_gemini,
+    "genai_vertex": _to_genai_vertex,
     "genai_gemini": _to_genai_gemini,
     "bedrock": _to_bedrock,
     "mistral": _to_mistral,
