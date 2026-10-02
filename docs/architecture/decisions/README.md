@@ -16,9 +16,10 @@ of every finding they address is in the
 | [002](ADR-002-storage-mapper-layer.md) | Store twins collapsed behind a dialect adapter | Accepted; 18 of 19 domains; schema centralization and `usage` carried |
 | [003](ADR-003-composition-root-modules.md) | `ports/` and a composition root split into subsystem builders | Accepted and implemented |
 | [004](ADR-004-framework-boundary.md) | A boundary between YUYUTSAVA policy and the agent framework | Accepted 2026-08-10 and executed; the constructing half of `F-T03` remains by design |
+| [005](ADR-005-models-config.md) | One models config file; a model chosen per task and per conversation | Accepted 2026-10-02; executing in waves M0–M9 |
 
 ADR-001 and ADR-002 were independent; ADR-003 built on both, and ADR-004 on
-ADR-001 and ADR-003.
+ADR-001 and ADR-003. ADR-005 builds on ADR-003 and ADR-004.
 
 A new decision gets the next number, the same sections, and a status line that
 is kept current.
