@@ -503,8 +503,7 @@ and commits use the repo-local IITJ identity; it is pushed only when asked. This
   - the ModelProfile lookup keys;
   - the §2a cross-provider history matrix (raw fails where measured, portable is clean on all 45
     pairs);
-  - genai on Vertex: retry on stream open, the dummy signature, type-list conversion, and
-    `ChatVertexAI`'s deprecation (so a 4.0 upgrade is noticed).
+  - genai on Vertex: retry on stream open, the Gemini 3 dummy signature, type-list conversion.
 - **Spikes:**
   - Vertex MaaS through `ChatOpenAI` with an async token;
   - the summarizer decision (rule 12);

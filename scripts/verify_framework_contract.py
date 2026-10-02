@@ -30,6 +30,8 @@ Covers:
      coupled dependency has a ceiling
  12. every chat SDK still accepts portable history written by any other   (silent failure)
  13. a first-chunk selection stamp still survives stream merging          (silent failure)
+ 14. Gemini on Vertex via genai retries a busy stream open, signs Gemini 3
+     function calls and converts JSON Schema type lists
 """
 
 from __future__ import annotations
@@ -105,6 +107,9 @@ def main() -> int:
         test_gemini_output_contract as gemini,
     )
     from test.framework_contract import (  # noqa: PLC0415 — `test` joins sys.path at run time, above
+        test_genai_vertex_contract as genai_vertex,
+    )
+    from test.framework_contract import (  # noqa: PLC0415 — `test` joins sys.path at run time, above
         test_langgraph_api_contract as langgraph_api,
     )
     from test.framework_contract import (  # noqa: PLC0415 — `test` joins sys.path at run time, above
@@ -159,6 +164,18 @@ def main() -> int:
         (
             "a first-chunk selection stamp survives stream merging (silent-failure seam)",
             cross_provider.test_a_first_chunk_stamp_survives_stream_merging,
+        ),
+        (
+            "Gemini on Vertex (genai) retries a busy stream open",
+            genai_vertex.test_a_stream_that_opens_busy_is_retried_on_vertex,
+        ),
+        (
+            "Gemini 3 function calls get a thought signature on Vertex (genai)",
+            genai_vertex.test_gemini_3_function_calls_without_a_signature_get_one,
+        ),
+        (
+            "genai converts a JSON Schema type list",
+            genai_vertex.test_a_json_schema_type_list_converts,
         ),
         ("declared dependency ranges are sane", _check_declared_ranges),
     ]
