@@ -36,6 +36,8 @@ Covers:
      what deepagents' prompt caching sees                                 (silent failure)
  16. Bedrock clients we build sign with the login we give them, and nothing else
  17. the model profiles the catalog reads still report each family's window (silent failure)
+ 18. Model Garden on Vertex: MaaS fetches a token per request off the event loop, and
+     Claude reaches the global endpoint with our credentials
 """
 
 from __future__ import annotations
@@ -131,6 +133,9 @@ def main() -> int:
     from test.framework_contract import (  # noqa: PLC0415 — `test` joins sys.path at run time, above
         test_retry_node_contract as retry_node,
     )
+    from test.framework_contract import (  # noqa: PLC0415 — `test` joins sys.path at run time, above
+        test_vertex_model_garden_contract as model_garden,
+    )
     from test.policy import test_filesystem_prompt_override as fs
 
     checks = [
@@ -214,6 +219,14 @@ def main() -> int:
         (
             "model profiles report each family's window (silent-failure seam)",
             profiles.test_the_profiled_families_report_their_window,
+        ),
+        (
+            "Vertex MaaS fetches a token per request, off the event loop",
+            model_garden.test_maas_calls_fetch_a_token_per_request_off_the_event_loop,
+        ),
+        (
+            "Claude on Vertex reaches the global endpoint with our credentials",
+            model_garden.test_claude_on_vertex_reaches_the_global_endpoint_with_our_credentials,
         ),
         ("declared dependency ranges are sane", _check_declared_ranges),
     ]

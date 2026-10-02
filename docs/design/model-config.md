@@ -201,8 +201,11 @@ L5 cli/commands/models.py + cli/setup_wizard/ + /model in chat_repl · daemon/we
      and `os.environ` is untouched (`test/framework_contract/test_bedrock_contract.py`). The
      `os.environ` write at `langchain_aws/utils.py:365` is on the Nova Sonic path only, and we never
      call it.
-   - Vertex MaaS: our own `ChatOpenAI` on `…/endpoints/openapi`, with an async `api_key` callable that
-     refreshes the Google token through `to_thread`. The langchain MaaS classes hard-code their model
+   - Vertex MaaS: our own `ChatOpenAI` on `…/endpoints/openapi`. Its `api_key` is a **sync** token
+     function (`credentials.refresh` only when the token is invalid). `ChatOpenAI` calls it on every
+     request, and for async calls it runs it in an executor thread, so the blocking refresh never
+     runs on the event loop. This was verified with a mock transport; an async function would run on
+     the loop (`test/framework_contract/test_vertex_model_garden_contract.py`). The langchain MaaS classes hard-code their model
      list, break with `location="global"` and bake in a token that expires.
 7. **History portability. Verified locally; see §2a.** An assistant message goes to the
    **exact model that wrote it** unchanged, so signatures and thinking survive. To any other model
