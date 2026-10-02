@@ -1,6 +1,6 @@
 """A conversation can switch model per call without rebuilding the agent graph.
 
-``policy/model_switch`` replaces ``request.model`` in ``wrap_model_call``
+``policy/model_switch`` replaces ``request.model`` in ``awrap_model_call``
 (docs/architecture/decisions/ADR-005-models-config.md §5; design §2 rules 3
 and 8). That relies on three framework behaviours, each pinned here with real
 graphs and fake models (nothing is sent):
@@ -19,6 +19,7 @@ graphs and fake models (nothing is sent):
 
 from __future__ import annotations
 
+import asyncio
 import unittest
 from unittest import mock
 
@@ -50,8 +51,8 @@ class _SwapTo(AgentMiddleware):
         super().__init__()
         self.model = model
 
-    def wrap_model_call(self, request, handler):
-        return handler(request.override(model=self.model))
+    async def awrap_model_call(self, request, handler):
+        return await handler(request.override(model=self.model))
 
 
 @tool
@@ -64,12 +65,17 @@ def _scripted(text: str) -> _Recording:
     return _Recording(responses=[AIMessage(content=text)])
 
 
+def _final_answer(runnable) -> str:
+    """Drive *runnable* the way production does — asynchronously — and return its reply."""
+    result = asyncio.run(runnable.ainvoke({"messages": [HumanMessage("hi")]}))
+    return result["messages"][-1].content
+
+
 def switched_agent_answer() -> tuple[str, list[list[str]], list[list[str]]]:
     """``(final answer, tools bound to the built model, tools bound to the swapped one)``."""
     built, swapped = _scripted("from the built model"), _scripted("from the swapped model")
     agent = create_agent(built, tools=[ping], middleware=[_SwapTo(swapped)])
-    answer = agent.invoke({"messages": [HumanMessage("hi")]})["messages"][-1].content
-    return answer, built.bound, swapped.bound
+    return _final_answer(agent), built.bound, swapped.bound
 
 
 def test_a_swapped_model_answers_and_gets_the_tools() -> None:
@@ -94,9 +100,7 @@ def model_seen_by_prompt_caching(middleware: list[AgentMiddleware]) -> str:
     with mock.patch.object(
         anthropic_mw.AnthropicPromptCachingMiddleware, "_should_apply_caching", record
     ):
-        create_deep_agent(model=built, tools=[ping], middleware=middleware).invoke(
-            {"messages": [HumanMessage("hi")]}
-        )
+        _final_answer(create_deep_agent(model=built, tools=[ping], middleware=middleware))
     if not seen:
         raise AssertionError("deepagents no longer runs AnthropicPromptCachingMiddleware")
     return seen[0]
@@ -115,7 +119,12 @@ def caching_applied(model) -> bool:
     captured: list[ModelRequest] = []
     middleware = anthropic_mw.AnthropicPromptCachingMiddleware(unsupported_model_behavior="ignore")
     request = ModelRequest(model=model, messages=[HumanMessage("hi")])
-    middleware.wrap_model_call(request, lambda r: captured.append(r) or AIMessage(content=""))
+
+    async def handler(r: ModelRequest) -> AIMessage:
+        captured.append(r)
+        return AIMessage(content="")
+
+    asyncio.run(middleware.awrap_model_call(request, handler))
     return "cache_control" in captured[0].model_settings
 
 
@@ -150,9 +159,7 @@ class TheChecksFail(unittest.TestCase):
 
     def test_without_a_swap_the_built_model_answers(self) -> None:
         built = _scripted("from the built model")
-        agent = create_agent(built, tools=[ping])
-        answer = agent.invoke({"messages": [HumanMessage("hi")]})["messages"][-1].content
-        self.assertEqual(answer, "from the built model")
+        self.assertEqual(_final_answer(create_agent(built, tools=[ping])), "from the built model")
 
     def test_without_a_swap_caching_sees_the_built_model(self) -> None:
         self.assertEqual(model_seen_by_prompt_caching([]), "built")
