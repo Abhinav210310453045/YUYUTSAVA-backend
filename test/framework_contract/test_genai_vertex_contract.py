@@ -2,7 +2,7 @@
 
 Gemini on Vertex is built with ``ChatGoogleGenerativeAI(vertexai=True)`` because
 ``ChatVertexAI`` is deprecated and does not do the following three things
-(docs/architecture/decisions/ADR-005-models-config.md; design §2 rule 13):
+(docs/architecture/decisions/ADR-005-models-config.md; design §2 rule 14):
 
 - **Retry on stream open.** A 429 or 503 that arrives when a stream opens is
   retried, up to ``max_retries`` attempts. Over gRPC, ``ChatVertexAI`` saw that

@@ -228,12 +228,38 @@ L5 cli/commands/models.py + cli/setup_wizard/ + /model in chat_repl · daemon/we
     `secrets.toml`. The agent's resume value is only `{"stored": "secret:<name>"}`. Interrupt
     payloads are persisted (`storage/events/ask_wire.py:39`, `storage/interrupts.py:34`), so the
     value must never go through them.
-12. **Summarizer and harness.** deepagents' built-in `SummarizationMiddleware` keeps the model it was
-    built with (`deepagents/middleware/summarization.py:347,986,1227`). M0 decides, with evidence,
-    whether to exclude it (our compaction already covers it) or hand it the `compaction` task model.
-    Either way, no call ever reaches a provider the user has removed.
+12. **Our compaction owns summarisation. deepagents' summarizer is excluded** (owner, 2026-10-02;
+    revisitable).
+    - **The evidence.** deepagents wraps every call in its own `SummarizationMiddleware`
+      (`deepagents/middleware/summarization.py:212,908`). Its trigger (0.85 of the window) and its
+      `ContextOverflowError` fallback both come from the **build-time** model.
+    - **What goes wrong after a switch.** It can summarise too early, once the conversation moves to
+      a bigger-window model. Its fallback summary also calls the original model, which may be a
+      provider the user has removed.
+    - **Ours already runs first.** `YuyutsavaCompactionMiddleware` fires at 0.7 of the window, so in
+      practice the deepagents copy only supplied the overflow fallback.
+    - **Nothing else catches overflow.** No yuyutsava code handles `ContextOverflowError`, and only
+      the genai, Anthropic and OpenAI SDKs raise it.
 
-13. **Vertex Gemini is built with `ChatGoogleGenerativeAI(vertexai=True)`.** `ChatVertexAI` is
+    So, in M4:
+    - **Exclusion.** The summarizer is excluded through a harness-profile `excluded_middleware` entry
+      registered at the composition root for every provider type we build. A contract test fails if a
+      type is missing.
+    - **Overflow fallback.** `YuyutsavaCompactionMiddleware` gains the fallback: on overflow it
+      compacts with the `compaction` task model and retries once.
+    - **Overflow detection.** Overflow is recognised from `ContextOverflowError` *and* from the
+      Bedrock, Mistral and Claude-on-Vertex "too long" errors, through `classify_provider_busy`'s
+      sibling in `llm/`.
+    - **What is lost.** deepagents' `/conversation_history` offload file (the DB transcript and
+      `ctx_history*` already cover evicted turns) and its `write_file`/`edit_file` argument clipping.
+
+13. **Harness prompt tuning follows the active model.** deepagents picks a model-specific
+    `system_prompt_suffix` once, from the build-time model. Built-in profiles exist for
+    `claude-sonnet-4-6`, `claude-opus-4-7`, `claude-haiku-4-5` and the GPT Codex models
+    (`deepagents/profiles/harness/`). After a switch, `policy/model_switch` removes the build model's
+    suffix and applies the target model's, pinned by a contract test in M4.
+
+14. **Vertex Gemini is built with `ChatGoogleGenerativeAI(vertexai=True)`.** `ChatVertexAI` is
     deprecated in langchain-google-vertexai 3.2.0 and removed in 4.0, and we don't build on an
     end-of-life class (owner, 2026-10-02). These were verified locally against the installed SDKs,
     with no requests sent:
@@ -311,7 +337,7 @@ The harness is [test/framework_contract/test_cross_provider_history_contract.py]
   rule. langchain-google-genai does: `DUMMY_THOUGHT_SIGNATURE` on the first function call of the
   active loop (`langchain_google_genai/chat_models.py:864-904`). The owner runs Vertex
   `gemini-3.5-flash`, so on `ChatVertexAI` a portable or legacy function call in the active loop
-  would get a 400. This is one of the reasons the Vertex Gemini family moves to genai (rule 13).
+  would get a 400. This is one of the reasons the Vertex Gemini family moves to genai (rule 14).
 - Producer tags are unreliable. Vertex, Bedrock and OpenAI's parse path set no `model_provider`, and
   `"openai"` can't distinguish Groq, OpenRouter, OpenAI or Vertex MaaS. Hence our own stamp.
 - Custom `response_metadata` strings **concatenate across stream chunks** (measured:
@@ -518,7 +544,7 @@ and commits use the repo-local IITJ identity; it is pushed only when asked. This
   - genai on Vertex: retry on stream open, the Gemini 3 dummy signature, type-list conversion.
 - **Spikes:**
   - Vertex MaaS through `ChatOpenAI` with an async token;
-  - the summarizer decision (rule 12);
+  - the summarizer decision (rule 12): **decided 2026-10-02**, ours owns it;
   - user presence on macOS (pyobjc LocalAuthentication), Windows (UserConsentVerifier, falling back to
     CredUI) and Linux (polkit `pkcheck`, falling back to PAM password). Each spike writes down its
     honest limits: the gate guards YUYUTSAVA's own surfaces, not the owner's file.
@@ -548,7 +574,7 @@ and commits use the repo-local IITJ identity; it is pushed only when asked. This
 
 - Port the 11 provider types to `llm/kinds/`, with Connection plus auth objects.
 - Vertex `gemini` moves to `ChatGoogleGenerativeAI(vertexai=True)` with every Gemini quirk carried
-  over (rule 13).
+  over (rule 14).
 - Add the Vertex `anthropic` and `maas` families and Bedrock auth methods (profile, keys,
   bedrock_api_key, `base_model` for application inference profiles).
 - `discover()`/`verify()` and `live_price()` move onto each kind (**R-PLC-10**: no more `base_url`
@@ -591,7 +617,10 @@ and commits use the repo-local IITJ identity; it is pushed only when asked. This
 - a subagent override map per thread;
 - `history_portable`, plus the first-chunk `yuyutsava_model` stamp in every build wrapper;
 - a parity test proving every Gemini quirk still applies on `ChatGoogleGenerativeAI(vertexai=True)`;
-- `cache_control`.
+- `cache_control`;
+- deepagents' summarizer is excluded for every provider type we build, and the overflow fallback
+  moves into `YuyutsavaCompactionMiddleware` (rule 12);
+- the harness `system_prompt_suffix` follows the active model (rule 13).
 - **Exit:**
   - one deliberate fingerprint update, justified in the commit;
   - hermetic replay fixtures for Gemini↔Anthropic↔OpenAI-compatible histories, including tool loops

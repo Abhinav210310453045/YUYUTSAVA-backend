@@ -183,6 +183,10 @@ behind the same `secret:` reference later without changing any file.
 - `pydantic` and `tomlkit` become declared dependencies. The presence gate adds platform-marked ones.
 - A switched conversation loses the previous model's private reasoning from earlier turns. Only text
   and tool calls carry over. This is inherent: no provider accepts another's reasoning.
+- deepagents' own summarizer is excluded, because it is bound to the model a graph was built with.
+  Our compaction takes over its `ContextOverflowError` fallback. deepagents' `/conversation_history`
+  file offload and its `write_file` argument clipping are given up. The owner marked this
+  revisitable (design §2 rule 12).
 - The daemon and CLI must be able to start with no configuration, which adds a "setup required" state
   to both.
 - Discovery and login checks call external endpoints, which are free but still network calls. A test

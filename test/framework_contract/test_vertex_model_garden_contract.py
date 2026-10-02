@@ -2,7 +2,7 @@
 
 The ``vertex`` provider type serves three families
 (docs/architecture/decisions/ADR-005-models-config.md §3; design §2 rules 6
-and 13):
+and 14):
 
 - **Gemini** goes through ``ChatGoogleGenerativeAI``. See
   ``test_genai_vertex_contract``.
