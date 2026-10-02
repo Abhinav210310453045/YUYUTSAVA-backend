@@ -32,6 +32,9 @@ Covers:
  13. a first-chunk selection stamp still survives stream merging          (silent failure)
  14. Gemini on Vertex via genai retries a busy stream open, signs Gemini 3
      function calls and converts JSON Schema type lists
+ 15. a per-call model swap is the model that answers, gets the tools, and is
+     what deepagents' prompt caching sees                                 (silent failure)
+ 16. Bedrock clients we build sign with the login we give them, and nothing else
 """
 
 from __future__ import annotations
@@ -100,6 +103,9 @@ def _check_declared_ranges() -> None:
 
 def main() -> int:
     from test.framework_contract import (  # noqa: PLC0415 — `test` joins sys.path at run time, above
+        test_bedrock_contract as bedrock,
+    )
+    from test.framework_contract import (  # noqa: PLC0415 — `test` joins sys.path at run time, above
         test_cross_provider_history_contract as cross_provider,
     )
     from test.framework_contract import test_deepagents_contract as contract
@@ -114,6 +120,9 @@ def main() -> int:
     )
     from test.framework_contract import (  # noqa: PLC0415 — `test` joins sys.path at run time, above
         test_mcp_sdk_contract as mcp_sdk,
+    )
+    from test.framework_contract import (  # noqa: PLC0415 — `test` joins sys.path at run time, above
+        test_model_switch_contract as model_switch,
     )
     from test.framework_contract import (  # noqa: PLC0415 — `test` joins sys.path at run time, above
         test_retry_node_contract as retry_node,
@@ -176,6 +185,27 @@ def main() -> int:
         (
             "genai converts a JSON Schema type list",
             genai_vertex.test_a_json_schema_type_list_converts,
+        ),
+        (
+            "a swapped model answers and gets the tools (silent-failure seam)",
+            model_switch.test_a_swapped_model_answers_and_gets_the_tools,
+        ),
+        (
+            "prompt caching sees the swapped model (silent-failure seam)",
+            model_switch.test_prompt_caching_sees_the_swapped_model,
+        ),
+        (
+            "the caching gate is the ChatAnthropic type",
+            model_switch.test_the_caching_gate_is_the_chat_anthropic_type,
+        ),
+        (
+            "a Bedrock API key signs as Bearer, isolated from ~/.aws",
+            bedrock.test_an_api_key_signs_as_bearer_without_reading_aws_config,
+        ),
+        ("Bedrock access keys sign with SigV4", bedrock.test_access_keys_sign_with_sigv4),
+        (
+            "a Bedrock application inference profile needs no control-plane call",
+            bedrock.test_an_application_inference_profile_needs_no_control_plane_call,
         ),
         ("declared dependency ranges are sane", _check_declared_ranges),
     ]

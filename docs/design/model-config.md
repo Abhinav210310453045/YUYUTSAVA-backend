@@ -189,9 +189,18 @@ L5 cli/commands/models.py + cli/setup_wizard/ + /model in chat_repl · daemon/we
    current "own instance per host factory" rule (`bootstrap.py:1113-1118`).
 6. **Credentials are passed as objects, never through `os.environ`.**
    - Google: a `Credentials` object (SA or ADC).
-   - Bedrock: client arguments. `ChatBedrockConverse` keeps the API key per session in
-     `create_aws_client`; a contract test pins this, because `utils.py:365` *does* leak it on the
-     Nova Sonic path.
+   - Bedrock: **we build the boto3 clients** and pass `client=`/`bedrock_client=`. Given `api_key=`,
+     `ChatBedrockConverse` still builds its session from the machine's default AWS profile. On the
+     owner's machine that profile uses `login_session`, which needs `botocore[crt]`, so a Bedrock
+     API key failed because of unrelated `~/.aws` contents (measured 2026-10-02). Our session:
+     - never reads `~/.aws`;
+     - has an empty credential resolver, so no environment, container or metadata-endpoint lookup;
+     - takes a Bedrock API key through botocore's public `register_component("token_provider", …)`.
+
+     Verified at the `before-send` hook: the API key sends `Bearer`, access keys sign with SigV4,
+     and `os.environ` is untouched (`test/framework_contract/test_bedrock_contract.py`). The
+     `os.environ` write at `langchain_aws/utils.py:365` is on the Nova Sonic path only, and we never
+     call it.
    - Vertex MaaS: our own `ChatOpenAI` on `…/endpoints/openapi`, with an async `api_key` callable that
      refreshes the Google token through `to_thread`. The langchain MaaS classes hard-code their model
      list, break with `location="global"` and bake in a token that expires.
