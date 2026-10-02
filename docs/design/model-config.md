@@ -284,6 +284,36 @@ L5 cli/commands/models.py + cli/setup_wizard/ + /model in chat_repl · daemon/we
 
     Claude on Vertex keeps `ChatAnthropicVertex`, which is not deprecated.
 
+15. **A quota of zero is not "busy".**
+
+    **What was measured live on the owner's project:**
+
+    | Model | Where | Answer |
+    |---|---|---|
+    | Claude Haiku 4.5 and Sonnet 4.5 | `global` | 429 `RESOURCE_EXHAUSTED`: "Quota exceeded for `global_online_prediction_requests_per_base_model` … submit a quota increase request" |
+    | Claude | `us-east5`, `europe-west1` | 404 |
+
+    **Why it matters:**
+
+    - `first_chunk_retry.is_transient` treats **every** `RESOURCE_EXHAUSTED` as transient, and the
+      SDKs retry 429 too.
+    - So a model the account cannot use would show "provider busy, retrying" for minutes and then fail.
+    - A zero quota and a per-minute limit return the same status. Only the quota *value* separates
+      them.
+
+    **What the design does about it:**
+
+    - **Discovery and verify (M2, M6)** report availability per model:
+      - ✓ available;
+      - 🔒 *needs a quota increase*, with the console link, when the quota is zero or the free probe
+        comes back 429 per-base-model;
+      - ⌖ *not enabled in this region*, on a 404, with the regions that do serve it.
+
+      The quota value is read through the Cloud Quotas API (free; to be verified in M2).
+    - **At runtime,** a per-base-model 429 that survives the retry ladder is reported as "quota
+      exhausted for `<model>` on `<provider>` — request an increase: `<link>`", not as "provider
+      busy". The picker then marks the model 🔒.
+
 ### 2a. Cross-provider history: verified, not assumed (2026-10-02)
 
 **Method.** Each producer's own SDK response parser built a realistic assistant tool-call turn and a
@@ -349,10 +379,23 @@ always written by the model that continues it, so it stays raw. Gemini 3 needs s
 active loop. Anthropic needs a thinking block only on the last assistant turn of an in-progress tool
 loop. Thinking from earlier turns is optional for both.
 
-**Still to confirm live (M9, with owner approval).** The server must accept the portable payloads
-(Groq, OpenRouter, Anthropic, Vertex Claude, Vertex Gemini 3). The Vertex dummy signature must also be
-accepted. Tool-call ID formats crossing providers (Gemini UUIDs, `toolu_`, `call_`, Bedrock
-`tooluse_`) built cleanly everywhere, and Mistral rewrites its own IDs.
+**Live on the owner's Vertex project (2026-10-02, owner-approved, under $0.01):**
+
+- Vertex Gemini 3 continued a **foreign, unsigned tool loop**: a Claude-written portable tool call
+  sat in its active loop. So the server accepts genai's placeholder signature.
+- Portable Gemini history was accepted by an open model through our MaaS route
+  (`openai/gpt-oss-120b-maas`, `global`).
+- Gemini 3.5 Flash through `ChatGoogleGenerativeAI(vertexai=True)` in `asia-south1` answered, and
+  completed a streamed tool loop, with a credentials object from the owner's authorized-user file.
+
+**Still to confirm live:**
+
+- Claude on Vertex: the owner's project has no usable quota for it (rule 15).
+- Anthropic, Groq and OpenRouter: no keys on this machine yet.
+- Bedrock: no account yet.
+
+Tool-call IDs crossing providers built cleanly everywhere. The Vertex Gemini and MaaS servers accepted
+Gemini UUIDs and `toolu_` IDs.
 
 ### 2b. User presence: spike notes (2026-10-02)
 
@@ -362,7 +405,7 @@ editor.
 
 | OS | Mechanism | State |
 |---|---|---|
-| macOS | `LocalAuthentication`, policy `DeviceOwnerAuthentication` (Touch ID, Apple Watch or the login password) | **Checked on the owner's Mac:** the framework loads through pyobjc-core (already present via `pyobjc-framework-cocoa`), both policies can be evaluated, and `biometryType` is Touch ID. The prompt itself takes an Objective-C reply block, which needs `pyobjc-framework-localauthentication` (darwin only) for its metadata, added in M8. One live prompt with the owner present is still to do. |
+| macOS | `LocalAuthentication`, policy `DeviceOwnerAuthentication` (Touch ID, Apple Watch or the login password) | **Checked on the owner's Mac:** the framework loads through pyobjc-core (already present via `pyobjc-framework-cocoa`), both policies can be evaluated, and `biometryType` is Touch ID. The prompt itself takes an Objective-C reply block, which needs `pyobjc-framework-localauthentication` (darwin only) for its metadata, added in M8. **Live prompt verified 2026-10-02:** approved in 1.8 s. The waiting thread must keep its run loop running (`NSRunLoop.runUntilDate_` in a loop). A blocking wait got no reply in 90 s. |
 | Windows | Windows Hello `UserConsentVerifier` (WinRT), falling back to a credential prompt (`CredUIPromptForWindowsCredentials`) verified with `LogonUser` | Not verifiable on this machine. CI can only check backend selection, because a Windows runner cannot answer a prompt. A manual check on a Windows machine is needed before M8 closes. |
 | Linux | A polkit agent (`pkexec` of a no-op) when a desktop session has one; otherwise a terminal password checked through PAM (CLI only) | Not verifiable here. `pkexec` asks for *admin* authentication by default, which is stronger than "the owner is present". A headless daemon has no agent, so the gate is offered only where a mechanism is found, and the settings page says which. |
 
@@ -508,7 +551,7 @@ on.
 
 | Wave | State |
 |---|---|
-| M0 | Done 2026-10-02: 9 SDK contracts with negative controls (27 checks in `verify_framework_contract.py`), ADR-005, decisions on rules 12–14. Open: one live Touch ID prompt with the owner present (§2b). |
+| M0 | Done 2026-10-02: 9 SDK contracts with negative controls (27 checks in `verify_framework_contract.py`), ADR-005, decisions on rules 12–15. Live on Vertex: Gemini 3 via genai, a foreign unsigned tool loop, and MaaS all pass; Claude has no quota (rule 15). Touch ID prompt verified. |
 | M1 | Next |
 | M2 | Not started |
 | M3 | Not started |
