@@ -34,7 +34,8 @@ from yuyutsava.config.env import env_flag
 from yuyutsava.context.tools import make_context_tools
 from yuyutsava.core.engine import context_middleware
 from yuyutsava.llm.factory import chat_model
-from yuyutsava.llm.settings import LlmSettings, llm_settings_from_env
+from yuyutsava.llm.settings import llm_settings_from_env
+from yuyutsava.llm.target import ModelTarget
 
 
 @dataclass(frozen=True)
@@ -113,7 +114,7 @@ class Background:
 
 
 async def start_background(
-    settings: LlmSettings,
+    settings: ModelTarget,
     checkpointer: Any,
     subagents: list[Any],
     stores: BackgroundStores,

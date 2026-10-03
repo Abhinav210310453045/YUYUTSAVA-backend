@@ -347,12 +347,12 @@ def _allowed_methods(provider_type: str | None) -> tuple[str, ...]:
 
 # ─── pass 2: references ───────────────────────────────────────────────────
 
-#: Settings of a model that only mean something on one provider type.
-_ONLY_ON: tuple[tuple[str, str], ...] = (
-    ("family", "vertex"),
-    ("location", "vertex"),
-    ("region", "bedrock"),
-    ("base_model", "bedrock"),
+#: Settings of a model that only mean something on some provider types.
+_ONLY_ON: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("family", ("vertex",)),
+    ("location", ("vertex",)),
+    ("region", ("bedrock",)),
+    ("base_model", ("bedrock", "azure")),
 )
 
 
@@ -439,12 +439,12 @@ def _model_entry_issues(alias: str, entry: ModelEntry, config: ModelsConfig) -> 
     return [
         ConfigIssue(
             f"models.{_quoted(alias)}.{setting}",
-            f"{setting} applies only to {type_label(only)} models, and {alias!r} is on "
-            f"{type_label(kind)}",
+            f"{setting} applies only to {_either([type_label(t) for t in only])} models, "
+            f"and {alias!r} is on {type_label(kind)}",
             f"remove {setting} from [models.{_quoted(alias)}]",
         )
         for setting, only in _ONLY_ON
-        if getattr(entry, setting) is not None and kind != only
+        if getattr(entry, setting) is not None and kind not in only
     ]
 
 

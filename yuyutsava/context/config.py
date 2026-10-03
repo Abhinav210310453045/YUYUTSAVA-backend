@@ -13,25 +13,21 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from yuyutsava.config.env import env, env_flag, env_float, env_int
-from yuyutsava.llm.settings import SETTINGS_BY_PROVIDER
+from yuyutsava.llm.catalog import FALLBACK_CONTEXT_WINDOW, default_context_window
+from yuyutsava.llm.settings import provider_type_of
 
-# The budget the compactor steers under is the provider's real input window,
-# declared by each provider's settings class (``max_input_tokens``) and found
-# through the same alias table ``LLM_PROVIDER`` resolves by — so ``google`` and
-# ``gemini`` cannot disagree. Erring low is not free: compaction is the one
-# step that drops messages from state, so an under-set budget summarizes away
-# history the model could still have held verbatim; ``compact_fraction``
-# provides the headroom instead. An unknown provider name gets the common
-# window.
-_DEFAULT_MAX_INPUT_TOKENS = 128_000
+# The budget the compactor steers under is the provider's real input window
+# (``llm.catalog``), found through the same alias table ``LLM_PROVIDER`` resolves
+# by — so ``google`` and ``gemini`` cannot disagree. Erring low is not free:
+# compaction is the one step that drops messages from state, so an under-set
+# budget summarizes away history the model could still have held verbatim;
+# ``compact_fraction`` provides the headroom instead. An unknown provider name
+# gets the common window.
 
 
 def default_max_input_tokens(provider: str) -> int:
     """The input-context budget for an ``LLM_PROVIDER`` name (any accepted alias)."""
-    settings_cls = SETTINGS_BY_PROVIDER.get(provider.strip().lower())
-    if settings_cls is None:
-        return _DEFAULT_MAX_INPUT_TOKENS
-    return settings_cls.max_input_tokens
+    return default_context_window(provider_type_of(provider) or "")
 
 
 @dataclass(frozen=True)
@@ -39,7 +35,7 @@ class ContextSettings:
     """Compaction + offload thresholds for one agent role."""
 
     # Input-context budget the compactor steers under.
-    max_input_tokens: int = _DEFAULT_MAX_INPUT_TOKENS
+    max_input_tokens: int = FALLBACK_CONTEXT_WINDOW
 
     # Compact when estimated tokens exceed this fraction of the budget.
     compact_fraction: float = 0.7

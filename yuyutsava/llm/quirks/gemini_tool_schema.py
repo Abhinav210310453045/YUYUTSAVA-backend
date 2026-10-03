@@ -121,7 +121,7 @@ class _ToolSchemaSafeMixin:
 
 @lru_cache(maxsize=None)
 def tool_schema_safe(base: type, check: ToolCheck | None = None) -> type:
-    """``base`` re-based so every bound tool schema is one Vertex can convert.
+    """``base`` re-based so every bound tool schema is one Gemini can convert.
 
     Cached for the same reason as ``gemini_parts.parts_safe``: one class per base
     (and check) keeps ``isinstance``, pickling and identity stable. *check* is passed

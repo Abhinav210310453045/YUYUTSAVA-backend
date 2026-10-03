@@ -15,7 +15,7 @@ from typing import Literal
 
 from yuyutsava.config.execution import DockerSettings, ExecutionSettings, LocalSettings
 from yuyutsava.config.search import SearchConfig
-from yuyutsava.llm.settings import LlmSettings
+from yuyutsava.llm.target import ModelTarget
 
 
 @dataclass(frozen=True)
@@ -28,7 +28,7 @@ class ChatOptions:
     """
 
     workspace: Path
-    settings: LlmSettings
+    settings: ModelTarget
     execution_mode: Literal["local", "docker"]
     docker_settings: DockerSettings
     local_settings: LocalSettings

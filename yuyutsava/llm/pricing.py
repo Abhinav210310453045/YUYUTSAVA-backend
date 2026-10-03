@@ -9,18 +9,11 @@ and the context meter. Extend it through the JSON file::
     {"my-model-prefix": [0.50, 1.50]}
 
 **The live lookup.** A model the table doesn't know (e.g. a freshly switched
-OpenRouter model) silently costs ``$0``. Given the active provider
-:class:`~yuyutsava.llm.settings.LlmSettings`, :func:`refresh_price_cache` fetches
-the exact input/output price for ``settings.model`` *from the provider selected
-in env* and caches it into ``model_prices.json``, so the table picks it up
-unchanged. A model/provider swap is reflected automatically on the next refresh.
-
-Provider support:
-  * **OpenRouter** — ``GET {base_url}/models`` exposes ``pricing.prompt`` /
-    ``pricing.completion`` (USD **per token**) per model id. Exact and live.
-  * **Ollama** — local inference, ``(0.0, 0.0)``.
-  * **Anthropic / Groq** — no public per-model pricing API, so we leave the
-    static table / user override as the source (returns ``None`` here).
+OpenRouter model) silently costs ``$0``. :func:`refresh_price_cache` asks the
+model's own provider for its current price
+(:meth:`yuyutsava.llm.base.Provider.live_price` — OpenRouter publishes every
+model's price, a local Ollama costs nothing, the rest have no price API) and
+caches it into ``model_prices.json``, so the table picks it up unchanged.
 
 Everything here is best-effort and never raises: a failed fetch just leaves the
 last cached (or static) price in place.
@@ -31,11 +24,14 @@ from __future__ import annotations
 import json
 import logging
 import time
+from collections.abc import Callable
 from pathlib import Path
-
-import httpx
+from typing import TYPE_CHECKING
 
 from yuyutsava.storage.paths import state_dir
+
+if TYPE_CHECKING:
+    from yuyutsava.llm.target import ModelTarget
 
 logger = logging.getLogger("yuyutsava.llm.pricing")
 
@@ -46,74 +42,11 @@ PRICE_FILE = "model_prices.json"
 _META_FILE = ".model_prices_cache.json"
 
 _DEFAULT_TTL_SEC = 24 * 3600
-_HTTP_TIMEOUT_SEC = 6.0
-_PER_MILLION = 1_000_000
 
 Price = tuple[float, float]  # (input_usd_per_1M, output_usd_per_1M)
 
-
-# --------------------------------------------------------------------------- #
-# Provider detection (by base_url — keeps this decoupled from config classes)  #
-# --------------------------------------------------------------------------- #
-
-
-def _is_openrouter(base_url: str) -> bool:
-    return "openrouter.ai" in (base_url or "")
-
-
-def _is_ollama(base_url: str) -> bool:
-    b = (base_url or "").lower()
-    return "11434" in b or "ollama" in b
-
-
-# --------------------------------------------------------------------------- #
-# Fetch                                                                        #
-# --------------------------------------------------------------------------- #
-
-
-def _fetch_openrouter_price(base_url: str, api_key: str, model: str) -> Price | None:
-    """Exact ``(in, out)`` per-1M price for ``model`` from OpenRouter, or None."""
-    url = base_url.rstrip("/") + "/models"
-    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
-    try:
-        resp = httpx.get(url, headers=headers, timeout=_HTTP_TIMEOUT_SEC)
-        resp.raise_for_status()
-        data = resp.json().get("data") or []
-    except Exception:
-        logger.warning("pricing: OpenRouter /models fetch failed", exc_info=True)
-        return None
-    for entry in data:
-        if entry.get("id") != model:
-            continue
-        pricing = entry.get("pricing") or {}
-        try:
-            # OpenRouter reports USD *per token* as strings; scale to per-1M.
-            prompt = float(pricing.get("prompt"))
-            completion = float(pricing.get("completion"))
-        except (TypeError, ValueError):
-            logger.info("pricing: unparseable OpenRouter pricing for %r", model)
-            return None
-        return (prompt * _PER_MILLION, completion * _PER_MILLION)
-    logger.info("pricing: model %r not found in OpenRouter catalog", model)
-    return None
-
-
-def resolve_model_price(settings: object) -> Price | None:
-    """Live ``(in, out)`` per-1M price for ``settings.model`` from its provider.
-
-    Returns None when the provider has no queryable price API (Anthropic/Groq)
-    or the model is unknown — callers then fall back to the static table.
-    """
-    base_url = str(getattr(settings, "base_url", "") or "")
-    model = str(getattr(settings, "model", "") or "")
-    api_key = str(getattr(settings, "api_key", "") or "")
-    if not model:
-        return None
-    if _is_openrouter(base_url):
-        return _fetch_openrouter_price(base_url, api_key, model)
-    if _is_ollama(base_url):
-        return (0.0, 0.0)  # local inference is free
-    return None
+#: Asks a model's provider for its current price; ``None`` when it publishes none.
+LivePrice = Callable[["ModelTarget"], Price | None]
 
 
 # --------------------------------------------------------------------------- #
@@ -151,12 +84,15 @@ def _write_json_atomic(path: Path, obj: dict) -> None:
 
 
 def refresh_price_cache(
-    settings: object,
+    target: ModelTarget,
     *,
+    live_price: LivePrice,
     ttl_sec: int = _DEFAULT_TTL_SEC,
     dir_path: Path | None = None,
 ) -> Price | None:
-    """Ensure ``model_prices.json`` holds a live price for ``settings.model``.
+    """Ensure ``model_prices.json`` holds a live price for *target*'s model.
+
+    *live_price* is the provider's own lookup — ``provider_for(target).live_price``.
 
     Skips the network when a fresh (< ``ttl_sec``) price for this exact model is
     already cached *and* present in the price file. Merges into the file rather
@@ -166,7 +102,7 @@ def refresh_price_cache(
     effect, or None.
     """
     try:
-        model = str(getattr(settings, "model", "") or "")
+        model = target.model
         if not model:
             return None
         base = dir_path or state_dir()
@@ -199,7 +135,7 @@ def refresh_price_cache(
             pair = prices[model]
             return (float(pair[0]), float(pair[1]))
 
-        price = resolve_model_price(settings)
+        price = live_price(target)
         if price is None:
             # No live price — defer to whatever the file/static table already has.
             if model in prices:

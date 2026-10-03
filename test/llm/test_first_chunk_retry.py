@@ -331,16 +331,41 @@ class QuirkOwnsTheLadderTests(unittest.TestCase):
             _collect(m)
         self.assertEqual(len(ns.delays), 1)
 
-    def test_provider_pins_the_sdk_ladder_low(self):
-        # Guards the pairing: if this line moves back to settings.max_retries
-        # the two ladders multiply again (6x6 = minutes per call).
-        import inspect
+    def test_every_gemini_route_pins_the_sdk_ladder_low(self):
+        # Guards the pairing: if a Gemini model's own retries went back up to the
+        # quirk's, the two ladders multiply again (6x6 = minutes per call).
+        from test.support.targets import gemini_targets
+        from yuyutsava.llm.factory import chat_model
+        from yuyutsava.llm.providers.gemini import SDK_RETRIES
 
-        from yuyutsava.llm.providers import vertex
-
-        src = inspect.getsource(vertex.VertexProvider.build)
-        self.assertIn("min(2, settings.max_retries)", src)
+        self.assertLessEqual(SDK_RETRIES, 2)
+        for target in gemini_targets():
+            with self.subTest(provider=target.type):
+                self.assertEqual(chat_model(target).max_retries, SDK_RETRIES)
 
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GenaiErrorsAreRecognised(unittest.TestCase):
+    """Gemini on Vertex and AI Studio raise google-genai errors, which carry an HTTP code."""
+
+    def _error(self, code: int):
+        from google.genai import errors
+
+        cls = errors.ClientError if code < 500 else errors.ServerError
+        return cls(code, {"error": {"code": code, "message": "m", "status": "S"}})
+
+    def test_busy_codes_are_transient(self):
+        from yuyutsava.llm.quirks.first_chunk_retry import is_transient
+
+        for code in (429, 503, 504):
+            with self.subTest(code=code):
+                self.assertTrue(is_transient(self._error(code)))
+
+    def test_a_request_error_is_not(self):
+        from yuyutsava.llm.quirks.first_chunk_retry import classify_provider_busy, is_transient
+
+        self.assertFalse(is_transient(self._error(400)))
+        self.assertEqual(classify_provider_busy(self._error(429)), "429")

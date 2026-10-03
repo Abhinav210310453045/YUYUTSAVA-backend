@@ -63,7 +63,7 @@ from yuyutsava.discovery.tool_registry import ToolRegistry
 from yuyutsava.docker_sandbox.backend import DockerSandboxBackend
 from yuyutsava.events.tools import make_recall_tool
 from yuyutsava.llm.factory import chat_model, model_name_of
-from yuyutsava.llm.settings import LlmSettings
+from yuyutsava.llm.target import ModelTarget
 from yuyutsava.memory.agent_memory import AgentMemoryStore
 from yuyutsava.memory.agent_memory_tools import make_agent_memory_tools
 from yuyutsava.memory.tools import make_memory_tools
@@ -992,7 +992,7 @@ def _cli_sandbox(
 
 def build_cli_deepagent(
     workspace_root: Path,
-    settings: LlmSettings,
+    settings: ModelTarget,
     *,
     deps: MasterDeps | None = None,
     execution_mode: Literal["local", "docker"] = "local",
@@ -1369,7 +1369,7 @@ def build_orchestrator(
 def build_tinker_agent(
     card_id: str,
     card_workspace: Path,
-    settings: LlmSettings,
+    settings: ModelTarget,
     *,
     deps: MasterDeps | None = None,
     skill_registry: Any | None = None,

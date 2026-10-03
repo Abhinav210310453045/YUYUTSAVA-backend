@@ -31,7 +31,7 @@ from yuyutsava.core.async_host import (
 from yuyutsava.core.deps import MasterDeps, StackWiring
 from yuyutsava.core.engine import AgentBundle, build_tinker_agent
 from yuyutsava.core.stores import build_master_stores, standalone_board
-from yuyutsava.llm.settings import LlmSettings
+from yuyutsava.llm.target import ModelTarget
 from yuyutsava.skills.registry import SkillRegistry
 from yuyutsava.storage.paths import WorkspaceLayout
 
@@ -40,7 +40,7 @@ logger = logging.getLogger("yuyutsava.agents.tinker")
 
 async def build_tinker_stack(
     workspace: Path,
-    settings: LlmSettings,
+    settings: ModelTarget,
     *,
     card_id: str,
     card_workspace: Path,

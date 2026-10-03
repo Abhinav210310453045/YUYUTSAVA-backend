@@ -1,80 +1,134 @@
 """Every OpenAI-compatible host — ``ChatOpenAI`` pointed at a ``base_url``.
 
-The fallback provider, chosen by exclusion rather than by settings type, because
-one shape serves many hosts: Groq, OpenRouter, Ollama, OpenAI itself, and the
-generic ``openai_compatible`` escape hatch (xAI, DeepSeek, Together, Fireworks,
-Perplexity, …). They differ only in ``base_url``/``api_key``/``model``, which the
-Settings classes already carry, so there is nothing per-host to encode here.
+One shape serves five provider types: Groq, OpenRouter, Ollama, OpenAI itself,
+and ``openai_compatible`` for any other server that speaks OpenAI's chat API
+(xAI, DeepSeek, Together, Fireworks, a proxy, …). They differ in where they live
+and how they log in, which the connection carries.
 
-This is also the only provider with a reasoning toggle, which is why
-``disable_reasoning`` lives here rather than being a generic knob that every other
-provider had to document as a no-op.
+This is also the only provider with a reasoning toggle, and the one that can ask
+OpenRouter for a model's live price.
 """
 
 from __future__ import annotations
 
+import logging
+from typing import ClassVar
+
+import httpx
 from langchain_core.language_models import BaseChatModel
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 
-from yuyutsava.llm.base import ANSWER_TOKENS, Provider
+from yuyutsava.llm.base import ANSWER_TOKENS, BuildOptions, Provider
 from yuyutsava.llm.handle import Capability
-from yuyutsava.llm.settings import (
-    GroqSettings,
-    LlmSettings,
-    OllamaSettings,
-    OpenAISettings,
-    OpenRouterSettings,
-)
+from yuyutsava.llm.pricing import Price
+from yuyutsava.llm.target import ModelTarget
 
-# Which host a settings type means, for the handle's ``provider`` field. Keys
-# match the ``LLM_PROVIDER`` values that select them; anything not listed is the
-# generic escape hatch and reports the provider's own key.
-_HOSTS: tuple[tuple[type, str], ...] = (
-    (GroqSettings, "groq"),
-    (OpenRouterSettings, "openrouter"),
-    (OllamaSettings, "ollama"),
-    (OpenAISettings, "openai"),
-)
+logger = logging.getLogger(__name__)
+
+#: ``ChatOpenAI`` requires a non-empty key; a server with no login gets this.
+_NO_KEY = "ollama"
+
+_PRICE_TIMEOUT_SECONDS = 6.0
+_PER_MILLION = 1_000_000
+
+
+def base_url_of(target: ModelTarget) -> str:
+    """The OpenAI-compatible base URL for *target*, ``/v1`` included for Ollama."""
+    base = target.connection.base_url.rstrip("/")
+    if target.type == "ollama" and not base.endswith("/v1"):
+        return base + "/v1"
+    return base
+
+
+def api_key_of(target: ModelTarget) -> str:
+    """The key ``ChatOpenAI`` sends as ``Authorization: Bearer``."""
+    auth = target.connection.auth
+    if auth.method == "api_key":
+        return target.secret(auth.key)
+    if auth.method == "bearer_token":
+        return target.secret(auth.token)
+    return _NO_KEY
+
+
+def _openrouter_headers(target: ModelTarget) -> dict[str, str]:
+    connection = target.connection
+    if target.type != "openrouter":
+        return {}
+    headers: dict[str, str] = {}
+    if connection.http_referer:
+        headers["HTTP-Referer"] = connection.http_referer
+    if connection.app_title:
+        headers["X-OpenRouter-Title"] = connection.app_title
+    return headers
 
 
 class OpenAICompatibleProvider(Provider):
-    settings_type = None  # the fallback — see providers/__init__.provider_for
-    key = "openai_compatible"
+    types: ClassVar[tuple[str, ...]] = (
+        "groq",
+        "openrouter",
+        "ollama",
+        "openai",
+        "openai_compatible",
+    )
     #: The only provider with a reasoning toggle — see ``build`` below.
     capabilities = frozenset({Capability.REASONING_TOGGLE})
 
-    def provider_name(self, settings: LlmSettings) -> str:
-        """The host, not the implementation.
-
-        Five hosts share this one provider. Recording ``openai_compatible`` on a
-        usage row would make a Groq call and an Ollama call indistinguishable,
-        which is the one thing the field is for.
-        """
-        for settings_type, host in _HOSTS:
-            if isinstance(settings, settings_type):
-                return host
-        return self.key
-
-    def build(
-        self, settings: LlmSettings, *, temperature: float, disable_reasoning: bool
-    ) -> BaseChatModel:
-        headers = getattr(settings, "default_headers", None)
+    def build(self, target: ModelTarget, options: BuildOptions) -> BaseChatModel:
+        headers = _openrouter_headers(target)
         # OpenRouter's unified reasoning control; ``enabled: false`` disables a
         # thinking model's reasoning so the full token budget goes to the answer.
         # Thinking models such as ``google/gemini-2.5-flash`` otherwise spend it on
         # reasoning tokens, truncating small structured outputs (e.g. the triage
         # decision JSON).
-        extra_body = {"reasoning": {"enabled": False}} if disable_reasoning else None
+        extra_body = {"reasoning": {"enabled": False}} if options.disable_reasoning else None
         return ChatOpenAI(
-            api_key=SecretStr(settings.api_key),
-            base_url=settings.base_url,
-            model=settings.model,
-            temperature=temperature,
+            api_key=SecretStr(api_key_of(target)),
+            base_url=base_url_of(target),
+            model=target.model,
+            temperature=options.temperature,
             max_completion_tokens=ANSWER_TOKENS,
             **({"default_headers": headers} if headers else {}),
             **({"extra_body": extra_body} if extra_body else {}),
         )
 
+    def live_price(self, target: ModelTarget) -> Price | None:
+        """OpenRouter publishes every model's price; a local Ollama costs nothing."""
+        if target.type == "ollama":
+            return (0.0, 0.0)
+        if target.type != "openrouter":
+            return None
+        return _openrouter_price(base_url_of(target), api_key_of(target), target.model)
 
-__all__ = ["OpenAICompatibleProvider"]
+
+def _openrouter_price(base_url: str, api_key: str, model: str) -> Price | None:
+    """``(in, out)`` per million tokens for *model* from OpenRouter's ``/models``, or None."""
+    try:
+        response = httpx.get(
+            f"{base_url}/models",
+            headers={"Authorization": f"Bearer {api_key}"} if api_key else {},
+            timeout=_PRICE_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        listing = response.json().get("data") or []
+    except (httpx.HTTPError, ValueError):
+        logger.warning("pricing: OpenRouter /models fetch failed", exc_info=True)
+        return None
+    for entry in listing:
+        if entry.get("id") != model:
+            continue
+        pricing = entry.get("pricing") or {}
+        try:
+            # OpenRouter reports US dollars *per token* as strings.
+            return (
+                float(pricing.get("prompt")) * _PER_MILLION,
+                float(pricing.get("completion")) * _PER_MILLION,
+            )
+        except (TypeError, ValueError):
+            logger.info("pricing: unparseable OpenRouter pricing for %r", model)
+            return None
+    logger.info("pricing: model %r not found in OpenRouter's catalog", model)
+    return None
+
+
+__all__ = ["OpenAICompatibleProvider", "api_key_of", "base_url_of"]

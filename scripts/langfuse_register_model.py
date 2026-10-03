@@ -5,7 +5,7 @@ Langfuse computes per-generation cost by matching the generation's model name
 against its own model-definitions table. A model it doesn't know (e.g. a freshly
 switched OpenRouter model) shows tokens but **no cost**. This script closes that
 gap using the *same* dynamic price source as the internal ledger
-(:func:`yuyutsava.llm.pricing.resolve_model_price`) — nothing is hardcoded.
+(:meth:`yuyutsava.llm.base.Provider.live_price`) — nothing is hardcoded.
 
 It resolves the active provider/model from env (``LLM_PROVIDER`` + the provider's
 ``*_MODEL``), fetches that model's exact input/output price from the provider,
@@ -33,7 +33,7 @@ try:
 except ImportError:  # pragma: no cover
     load_dotenv = None
 
-from yuyutsava.llm.pricing import resolve_model_price
+from yuyutsava.llm.providers.registry import provider_for
 from yuyutsava.llm.settings import llm_settings_from_env
 
 _PER_MILLION = 1_000_000
@@ -54,12 +54,12 @@ def main() -> None:
     if not (host and pk and sk):
         _die("LANGFUSE_HOST / LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY must be set")
 
-    settings = llm_settings_from_env()
-    model = str(getattr(settings, "model", "") or "")
+    target = llm_settings_from_env()
+    model = target.model
     if not model:
         _die("could not determine the configured model from env")
 
-    price = resolve_model_price(settings)
+    price = provider_for(target).live_price(target)
     if price is None:
         _die(
             f"no live price available for {model!r} from its provider "

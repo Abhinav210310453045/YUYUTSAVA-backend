@@ -36,6 +36,16 @@ from yuyutsava.llm.config.secrets import NAME_PATTERN, SecretRefError, parse_sec
 #: A name the file defines and refers to: a provider, a model alias or a secret.
 Name = Annotated[str, StringConstraints(pattern=NAME_PATTERN)]
 
+#: Where each OpenAI-compatible provider type lives unless its connection says otherwise.
+GROQ_BASE_URL = "https://api.groq.com/openai/v1"
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+OPENAI_BASE_URL = "https://api.openai.com/v1"
+OLLAMA_BASE_URL = "http://localhost:11434"
+
+#: Thinking tokens a thinking model may spend before it answers, unless its alias
+#: sets ``thinking.budget``; on top of the answer's own share.
+DEFAULT_THINKING_BUDGET = 8192
+
 
 def _reference_only(value: str) -> str:
     try:
@@ -189,7 +199,7 @@ class OpenAIConnection(_Table):
 
     type: Literal["openai"]
     auth: ApiKeyLogin
-    base_url: str | None = None
+    base_url: str = OPENAI_BASE_URL
 
 
 class OpenRouterConnection(_Table):
@@ -197,6 +207,7 @@ class OpenRouterConnection(_Table):
 
     type: Literal["openrouter"]
     auth: ApiKeyLogin
+    base_url: str = OPENROUTER_BASE_URL
     #: Attribution OpenRouter shows on its leaderboards; both optional.
     http_referer: str | None = None
     app_title: str | None = None
@@ -207,6 +218,7 @@ class GroqConnection(_Table):
 
     type: Literal["groq"]
     auth: ApiKeyLogin
+    base_url: str = GROQ_BASE_URL
 
 
 class MistralConnection(_Table):
@@ -244,7 +256,7 @@ class OllamaConnection(_Table):
     """An Ollama server, local by default."""
 
     type: Literal["ollama"]
-    base_url: str = "http://localhost:11434"
+    base_url: str = OLLAMA_BASE_URL
     auth: OllamaLogin = NoLogin(method="none")
 
 
@@ -312,7 +324,9 @@ class ModelEntry(_Table):
     location: str | None = None
     #: Bedrock only: a region for this model instead of the provider's.
     region: str | None = None
-    #: Bedrock only: the model behind an application inference profile ARN.
+    #: Bedrock and Azure only: the model behind ``id`` when ``id`` names an
+    #: application inference profile (Bedrock) or a deployment (Azure) — what
+    #: prices and limits are looked up by.
     base_model: str | None = None
     context_window: PositiveInt | None = None
     max_output: PositiveInt | None = None

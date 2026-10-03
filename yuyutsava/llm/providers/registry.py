@@ -1,9 +1,10 @@
-"""Which provider builds the chat model for a given settings object.
+"""Which provider builds the chat model for a given target.
 
-Dispatch is by settings type: each provider declares the settings class it handles,
-and anything else — Groq, OpenRouter, Ollama, OpenAI and other OpenAI-compatible
-hosts — falls back to the OpenAI-compatible provider. Settings classes are unrelated
-dataclasses, so the order of ``_PROVIDERS`` carries no meaning.
+Dispatch is by the target's connection ``type``: each provider declares the
+types it serves (:attr:`~yuyutsava.llm.base.Provider.types`), and this table is
+built from those declarations, so adding a provider is one entry in
+``_PROVIDERS``. ``test/llm/test_model_handle.py`` checks that every type the
+config schema accepts has exactly one provider.
 """
 
 from __future__ import annotations
@@ -17,32 +18,33 @@ from yuyutsava.llm.providers.google import GoogleProvider
 from yuyutsava.llm.providers.mistral import MistralProvider
 from yuyutsava.llm.providers.openai_compat import OpenAICompatibleProvider
 from yuyutsava.llm.providers.vertex import VertexProvider
-from yuyutsava.llm.settings import LlmSettings
+from yuyutsava.llm.target import ModelTarget
 
-# Providers selected by settings type. Instantiated once — they are stateless.
+# Instantiated once — providers are stateless.
 _PROVIDERS: tuple[Provider, ...] = (
-    AnthropicProvider(),
-    GoogleProvider(),
     VertexProvider(),
+    GoogleProvider(),
     BedrockProvider(),
-    AzureOpenAIProvider(),
+    AnthropicProvider(),
+    OpenAICompatibleProvider(),
     MistralProvider(),
     CohereProvider(),
+    AzureOpenAIProvider(),
 )
 
-# Serves every OpenAI-compatible host (Groq, OpenRouter, Ollama, OpenAI, …),
-# which is why it is matched by exclusion rather than by type.
-_FALLBACK: Provider = OpenAICompatibleProvider()
+_BY_TYPE: dict[str, Provider] = {
+    kind: provider for provider in _PROVIDERS for kind in provider.types
+}
 
 
-def provider_for(settings: LlmSettings) -> Provider:
-    """The provider that builds *settings*' chat model."""
-    for provider in _PROVIDERS:
-        if provider.settings_type is not None and isinstance(settings, provider.settings_type):
-            return provider
-    return _FALLBACK
+def provider_for(target: ModelTarget) -> Provider:
+    """The provider that builds *target*'s chat model."""
+    return _BY_TYPE[target.type]
 
 
 def all_providers() -> tuple[Provider, ...]:
-    """Every provider, the fallback last — for checks that must cover each one."""
-    return (*_PROVIDERS, _FALLBACK)
+    """Every provider — for checks that must cover each one."""
+    return _PROVIDERS
+
+
+__all__ = ["all_providers", "provider_for"]

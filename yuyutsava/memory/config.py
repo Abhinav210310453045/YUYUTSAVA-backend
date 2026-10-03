@@ -17,7 +17,7 @@ import os
 from dataclasses import dataclass
 
 from yuyutsava.config.env import env, env_flag, env_float, env_int
-from yuyutsava.llm.settings import OLLAMA_BASE_URL
+from yuyutsava.llm.config.schema import OLLAMA_BASE_URL
 
 # Must match the vector(768) column in storage/pg/migrations.py.
 EMBEDDING_DIM = 768
@@ -26,7 +26,7 @@ EMBEDDING_DIM = 768
 @dataclass(frozen=True)
 class MemorySettings:
     enabled: bool = False
-    embed_base_url: str = OLLAMA_BASE_URL
+    embed_base_url: str = f"{OLLAMA_BASE_URL}/v1"
     embed_api_key: str = "ollama"
     embed_model: str = "nomic-embed-text"
     top_k: int = 5

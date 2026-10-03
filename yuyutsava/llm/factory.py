@@ -22,9 +22,10 @@ from typing import NamedTuple
 
 from langchain_core.language_models import BaseChatModel
 
+from yuyutsava.llm.base import BuildOptions
 from yuyutsava.llm.handle import Capability, ModelHandle
 from yuyutsava.llm.providers.registry import provider_for
-from yuyutsava.llm.settings import LlmSettings
+from yuyutsava.llm.target import ModelTarget
 
 
 class _Identity(NamedTuple):
@@ -109,7 +110,7 @@ def model_name_of(model: BaseChatModel | object) -> str:
 
 
 def model_handle(
-    settings: LlmSettings,
+    target: ModelTarget,
     *,
     temperature: float = 0.1,
     disable_reasoning: bool = False,
@@ -120,11 +121,12 @@ def model_handle(
     provider's capabilities instead of leaving callers to interrogate the SDK
     object. :func:`chat_model` is this function with the metadata discarded.
     """
-    provider = provider_for(settings)
-    model = provider.build(settings, temperature=temperature, disable_reasoning=disable_reasoning)
+    provider = provider_for(target)
+    options = BuildOptions(temperature=temperature, disable_reasoning=disable_reasoning)
+    model = provider.build(target, options)
     identity = _Identity(
-        name=provider.model_name(settings),
-        provider=provider.provider_name(settings),
+        name=provider.model_name(target),
+        provider=provider.provider_name(target),
         capabilities=provider.capabilities,
     )
     _remember(model, identity)
@@ -137,21 +139,19 @@ def model_handle(
 
 
 def chat_model(
-    settings: LlmSettings,
+    target: ModelTarget,
     *,
     temperature: float = 0.1,
     disable_reasoning: bool = False,
 ) -> BaseChatModel:
-    """Return a chat model for tool calling, built by *settings*' provider.
+    """Return a chat model for tool calling, built by *target*'s provider.
 
     ``disable_reasoning`` turns off a thinking model's internal reasoning; only
     the OpenAI-compatible provider implements it (see
     ``providers/openai_compat.py``), the rest ignore it — ask
     :attr:`Capability.REASONING_TOGGLE` on the handle if that matters.
     """
-    return model_handle(
-        settings, temperature=temperature, disable_reasoning=disable_reasoning
-    ).model
+    return model_handle(target, temperature=temperature, disable_reasoning=disable_reasoning).model
 
 
 def supports(model: BaseChatModel | object, capability: Capability) -> bool:

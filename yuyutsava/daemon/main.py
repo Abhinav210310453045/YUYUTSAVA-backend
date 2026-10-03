@@ -246,12 +246,10 @@ def _log_ready_banner(subs: DaemonSubsystems) -> None:
         "  heartbeat : %ss",
         subs.daemon_cfg.heartbeat_sec if subs.daemon_cfg.heartbeat_sec > 0 else "disabled",
     )
-    logger.info(
-        "  triage    : %s / %s", subs.triage_settings.__class__.__name__, subs.triage_settings.model
-    )
+    logger.info("  triage    : %s / %s", subs.triage_settings.type, subs.triage_settings.model)
     logger.info(
         "  orch      : %s / %s",
-        subs.orchestrator_settings.__class__.__name__,
+        subs.orchestrator_settings.type,
         subs.orchestrator_settings.model,
     )
     logger.info("  subagents : %s", ", ".join(subs.subagent_names))

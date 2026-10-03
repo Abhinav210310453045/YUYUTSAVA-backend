@@ -32,12 +32,12 @@ import yuyutsava.core.engine as engine
 import yuyutsava.llm.factory as llm_factory
 from test.support.paths import REPO
 from test.support.stores import fake_board, scratch_visual_store
+from test.support.targets import anthropic_target
 from yuyutsava.agents.general_purpose.agent import GeneralPurposeAgent
 from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
 from yuyutsava.config.execution import LocalSettings
 from yuyutsava.config.search import SearchConfig
 from yuyutsava.core.deps import MasterDeps
-from yuyutsava.llm.settings import AnthropicSettings
 from yuyutsava.mcp.naming import server_of
 from yuyutsava.mcp.status import CONNECTED, ServerStatus, connectors_block
 from yuyutsava.mcp.tool_adapter import adapt
@@ -81,7 +81,7 @@ def _render_prompt(mcp_tools: list | None = None, mcp_connectors: str = "") -> d
     try:
         workspace = (REPO / "workspace").resolve()
         workspace.mkdir(parents=True, exist_ok=True)
-        settings = AnthropicSettings(api_key="sk-fake", model="claude-haiku-4-5-20251001")
+        settings = anthropic_target()
         search_config = SearchConfig(tavily_api_key="dummy", exa_api_key="dummy")
         skill_registry = SkillRegistry(workspace_dir=workspace)
         task_runner = TaskRunnerAgent(

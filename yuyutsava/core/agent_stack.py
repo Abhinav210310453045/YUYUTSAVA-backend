@@ -36,7 +36,8 @@ from yuyutsava.core.deps import MasterDeps, StackWiring
 from yuyutsava.core.engine import AgentBundle, build_cli_deepagent
 from yuyutsava.core.stores import build_master_stores, standalone_board
 from yuyutsava.llm.pricing import refresh_price_cache
-from yuyutsava.llm.settings import LlmSettings
+from yuyutsava.llm.providers.registry import provider_for
+from yuyutsava.llm.target import ModelTarget
 from yuyutsava.mcp.loader import start_manager_for_workspace
 from yuyutsava.skills.registry import SkillRegistry
 from yuyutsava.storage.paths import WorkspaceLayout
@@ -44,14 +45,15 @@ from yuyutsava.storage.paths import WorkspaceLayout
 logger = logging.getLogger("yuyutsava.core.agent_stack")
 
 
-async def _refresh_prices(settings: LlmSettings) -> None:
+async def _refresh_prices(settings: ModelTarget) -> None:
     """Cache the active model's live price so the cost ledger is not $0.
 
     Fetched from the provider into ``~/.yuyutsava/model_prices.json`` (and so
     Langfuse prices it too). Off the loop, TTL-cached, never fatal.
     """
     try:
-        await asyncio.to_thread(refresh_price_cache, settings)
+        live_price = provider_for(settings).live_price
+        await asyncio.to_thread(refresh_price_cache, settings, live_price=live_price)
     except Exception:  # noqa: BLE001 — pricing must never block a stack build
         # refresh_price_cache handles its own failures; reaching here is a bug.
         logger.warning("price cache refresh failed; costs may show as unpriced", exc_info=True)
@@ -93,7 +95,7 @@ def _general_purpose_agent(
 
 async def build_agent_stack(
     workspace: Path,
-    settings: LlmSettings,
+    settings: ModelTarget,
     *,
     execution: ExecutionSettings,
     bash_timeout_sec: int,

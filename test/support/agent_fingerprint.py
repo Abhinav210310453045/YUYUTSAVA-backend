@@ -532,12 +532,12 @@ def capture_cli(
     """Build the CLI agent offline: its ``AgentBundle`` and the captured
     ``create_deep_agent`` kwargs. Docker mode needs ``DockerSandboxBackend``
     patched on ``engine`` by the caller — this never starts a container."""
+    from test.support.targets import anthropic_target
     from yuyutsava.agents.general_purpose.agent import GeneralPurposeAgent
     from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
     from yuyutsava.config.execution import LocalSettings
     from yuyutsava.config.search import SearchConfig
     from yuyutsava.core import engine
-    from yuyutsava.llm.settings import AnthropicSettings
     from yuyutsava.skills.registry import SkillRegistry
 
     ws = _workspace()
@@ -562,7 +562,7 @@ def capture_cli(
     with _hermetic(), _fake_chat_model(), _capture_deep_agent_kwargs(kwargs):
         bundle = engine.build_cli_deepagent(
             ws,
-            AnthropicSettings(api_key="sk-fake", model="claude-haiku-4-5-20251001"),
+            anthropic_target(),
             deps=deps,
             execution_mode=execution_mode,
             docker_settings=docker_settings,
@@ -573,9 +573,9 @@ def capture_cli(
 
 
 def fingerprint_tinker(**overrides: Any) -> dict[str, Any]:
+    from test.support.targets import anthropic_target
     from yuyutsava.config.search import SearchConfig
     from yuyutsava.core import engine
-    from yuyutsava.llm.settings import AnthropicSettings
 
     card_ws = _workspace() / "_fingerprint_card"
     card_ws.mkdir(parents=True, exist_ok=True)
@@ -591,7 +591,7 @@ def fingerprint_tinker(**overrides: Any) -> dict[str, Any]:
         engine.build_tinker_agent(
             "card_fingerprint",
             card_ws,
-            AnthropicSettings(api_key="sk-fake", model="claude-haiku-4-5-20251001"),
+            anthropic_target(),
             deps=deps,
             **rest,
         )

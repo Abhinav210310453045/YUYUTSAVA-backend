@@ -13,12 +13,11 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
-from unittest import mock
 
+from test.support.targets import anthropic_target
 from yuyutsava.llm import pricing
 
-SETTINGS = SimpleNamespace(model="some-model")
+TARGET = anthropic_target("some-model")
 
 
 class PriceCache(unittest.TestCase):
@@ -26,15 +25,14 @@ class PriceCache(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.dir = Path(self._tmp.name)
         self.prices = self.dir / pricing.PRICE_FILE
-        self._live = mock.patch.object(pricing, "resolve_model_price", return_value=(1.5, 6.0))
-        self._live.start()
 
     def tearDown(self) -> None:
-        self._live.stop()
         self._tmp.cleanup()
 
     def _refresh(self):
-        return pricing.refresh_price_cache(SETTINGS, dir_path=self.dir)
+        return pricing.refresh_price_cache(
+            TARGET, live_price=lambda target: (1.5, 6.0), dir_path=self.dir
+        )
 
     def test_a_missing_file_is_created(self) -> None:
         self.assertEqual(self._refresh(), (1.5, 6.0))

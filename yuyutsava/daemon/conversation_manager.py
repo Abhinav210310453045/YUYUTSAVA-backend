@@ -43,7 +43,8 @@ from yuyutsava.core.engine import AgentBundle
 from yuyutsava.core.tinker_stack import build_tinker_stack
 from yuyutsava.daemon.submit_tool import make_orch_submit_tool
 from yuyutsava.daemon.turn_registry import TurnRegistry, TurnRun
-from yuyutsava.llm.settings import LlmSettings, llm_settings_from_env
+from yuyutsava.llm.settings import llm_settings_from_env
+from yuyutsava.llm.target import ModelTarget
 from yuyutsava.storage.ids import (
     is_tinker_thread_of,
     mint_tinker_thread_id,
@@ -82,7 +83,7 @@ class ConversationManager:
         *,
         workspace: Path,
         checkpointer: Any,
-        settings: LlmSettings | None = None,
+        settings: ModelTarget | None = None,
         search_config: SearchConfig | None = None,
         recursion_limit: int = 1000,
         store: SessionStore | None = None,
@@ -151,7 +152,7 @@ class ConversationManager:
     def _bundle_key(agent: str, card_id: str | None) -> str:
         return "master" if agent == "master" else f"{agent}:{card_id}"
 
-    def _resolved_settings(self) -> LlmSettings:
+    def _resolved_settings(self) -> ModelTarget:
         return self._settings or llm_settings_from_env("orchestrator")
 
     def _resolved_search(self) -> SearchConfig:

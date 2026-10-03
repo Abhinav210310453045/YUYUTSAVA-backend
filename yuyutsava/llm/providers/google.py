@@ -1,38 +1,26 @@
-"""Google Gemini via the google-genai API — ``ChatGoogleGenerativeAI``."""
+"""Gemini through Google AI Studio — an API key, ``ChatGoogleGenerativeAI``."""
 
 from __future__ import annotations
+
+from typing import ClassVar
 
 from langchain_core.language_models import BaseChatModel
 from pydantic import SecretStr
 
-from yuyutsava.llm.base import Provider, require
+from yuyutsava.llm.base import BuildOptions, Provider
 from yuyutsava.llm.handle import Capability
-from yuyutsava.llm.providers.gemini_budget import gemini_output_kwargs
-from yuyutsava.llm.quirks.gemini_parts import parts_safe
-from yuyutsava.llm.quirks.loop_affinity import loop_pinned
-from yuyutsava.llm.settings import GoogleSettings
+from yuyutsava.llm.providers.gemini import build_gemini
+from yuyutsava.llm.target import ModelTarget
 
 
 class GoogleProvider(Provider):
-    settings_type = GoogleSettings
-    key = "google"
-    # Same loop-bound async client as Vertex — see quirks/loop_affinity.
+    types: ClassVar[tuple[str, ...]] = ("google",)
+    # genai caches an async client on the loop that first drives it — see quirks/loop_affinity.
     capabilities = frozenset({Capability.LOOP_AFFINE})
 
-    def build(
-        self, settings: GoogleSettings, *, temperature: float, disable_reasoning: bool
-    ) -> BaseChatModel:
-        mod = require("langchain_google_genai", provider="google", install="'yuyutsava[google]'")
-        # Same Gemini wire format as Vertex, same zero-parts hazard — one quirk
-        # module, applied by both providers. Same loop-bound async client too —
-        # see quirks/loop_affinity.
-        cls = loop_pinned(parts_safe(mod.ChatGoogleGenerativeAI))
-        return cls(
-            api_key=SecretStr(settings.api_key),
-            model=settings.model,
-            temperature=temperature,
-            **gemini_output_kwargs(settings.model, settings.thinking_budget),
-        )
+    def build(self, target: ModelTarget, options: BuildOptions) -> BaseChatModel:
+        key = target.secret(target.connection.auth.key)
+        return build_gemini(target, options, api_key=SecretStr(key))
 
 
 __all__ = ["GoogleProvider"]

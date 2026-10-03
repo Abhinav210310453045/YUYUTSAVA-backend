@@ -376,13 +376,13 @@ class WiredIntoTheRealBuild(unittest.IsolatedAsyncioTestCase):
             _fake_chat_model,
             _workspace,
         )
+        from test.support.targets import anthropic_target
         from yuyutsava.agents.general_purpose.agent import GeneralPurposeAgent
         from yuyutsava.agents.task_runner.agent import TaskRunnerAgent
         from yuyutsava.config.execution import LocalSettings
         from yuyutsava.config.search import SearchConfig
         from yuyutsava.core import engine
         from yuyutsava.core.deps import MasterDeps
-        from yuyutsava.llm.settings import AnthropicSettings
         from yuyutsava.skills.registry import SkillRegistry
 
         ws = _workspace()
@@ -399,7 +399,7 @@ class WiredIntoTheRealBuild(unittest.IsolatedAsyncioTestCase):
         with _fake_chat_model(), _capture_deep_agent_kwargs(kwargs):
             engine.build_cli_deepagent(
                 ws,
-                AnthropicSettings(api_key="sk-fake", model="claude-haiku-4-5-20251001"),
+                anthropic_target(),
                 deps=MasterDeps(
                     permission_check=True,
                     search_config=search,

@@ -134,6 +134,23 @@ def classify_provider_busy(exc: BaseException) -> str:
     return _BUSY_BY_NAME.get(type(exc).__name__, "503")
 
 
+#: HTTP statuses of a google-genai error that a fresh attempt can clear: quota
+#: (429) and an unavailable or timed-out backend (503, 504) — the HTTP forms of
+#: the gRPC statuses retried below.
+_GENAI_BUSY = frozenset({429, 503, 504})
+
+
+def _is_genai_error(exc: BaseException) -> bool:
+    """An error from google-genai, which Gemini on Vertex and AI Studio both raise.
+
+    Recognised by module rather than imported, so this module keeps no import of
+    an optional SDK; its errors carry the HTTP status as an ``int`` ``code``.
+    """
+    return type(exc).__module__.startswith("google.genai") and isinstance(
+        getattr(exc, "code", None), int
+    )
+
+
 def is_transient(exc: BaseException) -> bool:
     """Google/gRPC errors that a fresh attempt can reasonably clear.
 
@@ -153,6 +170,8 @@ def is_transient(exc: BaseException) -> bool:
 
     # Raw grpc.aio errors carry the status as a ``code()`` method.
     code = getattr(exc, "code", None)
+    if _is_genai_error(exc):
+        return code in _GENAI_BUSY
     if callable(code):
         try:
             import grpc  # noqa: PLC0415 — optional dependency

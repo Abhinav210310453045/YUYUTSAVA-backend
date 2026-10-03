@@ -1,49 +1,38 @@
 """Azure OpenAI — ``AzureChatOpenAI``.
 
+A model's ``id`` is the name of its deployment; ``base_model`` on its alias names
+the model behind it, which is what usage rows record
+(:meth:`~yuyutsava.llm.base.Provider.model_name`). ``AzureChatOpenAI`` is built
+from the deployment alone and leaves its own ``model_name`` at ``None``, which is
+why the name comes from the target, not the built model.
+
 The only native-SDK provider with no ``require()`` guard: ``AzureChatOpenAI``
 ships with ``langchain-openai``, which is already a core dependency.
 """
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from langchain_core.language_models import BaseChatModel
 from langchain_openai import AzureChatOpenAI
 from pydantic import SecretStr
 
-from yuyutsava.llm.base import ANSWER_TOKENS, Provider
-from yuyutsava.llm.settings import AzureOpenAISettings
+from yuyutsava.llm.base import ANSWER_TOKENS, BuildOptions, Provider
+from yuyutsava.llm.target import ModelTarget
 
 
 class AzureOpenAIProvider(Provider):
-    settings_type = AzureOpenAISettings
-    key = "azure"
+    types: ClassVar[tuple[str, ...]] = ("azure",)
 
-    def model_name(self, settings: AzureOpenAISettings) -> str:
-        """Fall back to the deployment, which is what actually served the call.
-
-        Azure is why :class:`~yuyutsava.llm.handle.ModelHandle` takes the name
-        from *settings* rather than from the built model: ``AzureChatOpenAI`` is
-        constructed with ``azure_deployment`` and never given ``model``, so it
-        leaves ``model_name`` at ``None`` and the old attribute probe returned
-        ``""`` for every Azure model — silently blanking the model column on
-        Azure usage rows. Reading settings, which the base implementation
-        already does, is what fixes that.
-
-        This override covers the remaining hole: ``settings.model`` is purely
-        informational here and may be empty, in which case the deployment name
-        is the only true identifier available.
-        """
-        return settings.model or settings.azure_deployment
-
-    def build(
-        self, settings: AzureOpenAISettings, *, temperature: float, disable_reasoning: bool
-    ) -> BaseChatModel:
+    def build(self, target: ModelTarget, options: BuildOptions) -> BaseChatModel:
+        connection = target.connection
         return AzureChatOpenAI(
-            api_key=SecretStr(settings.api_key),
-            azure_endpoint=settings.azure_endpoint,
-            azure_deployment=settings.azure_deployment,
-            api_version=settings.api_version,
-            temperature=temperature,
+            api_key=SecretStr(target.secret(connection.auth.key)),
+            azure_endpoint=connection.endpoint,
+            azure_deployment=target.model,
+            api_version=connection.api_version,
+            temperature=options.temperature,
             max_tokens=ANSWER_TOKENS,
         )
 

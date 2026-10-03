@@ -1,11 +1,11 @@
 """``ModelHandle`` — identity and capabilities come from the provider.
 
-Phase 4 step 4.1, ADR-004 item 2.
+ADR-004 item 2.
 
 Two things are being protected here, and they pull in opposite directions:
 
 **Nothing may change.** ``model_name_of`` feeds every usage row and the task
-registry's ``model`` column. Ten of the eleven provider configurations must
+registry's ``model`` column. Every provider configuration but one must
 return byte-identical names to what the attribute probe returned before this
 change — those values were recorded from the running code first, and are pinned
 below as literals.
@@ -18,9 +18,8 @@ row recorded a blank model and nothing failed.
 it asserts the *old* mechanism still yields nothing, so the fix is demonstrably
 load-bearing rather than incidental.
 
-No API calls: constructing a chat model only builds a client object. Bedrock is
-the one provider that cannot be constructed without live AWS credentials, so it
-is asserted structurally rather than by building it.
+No API calls: constructing a chat model only builds a client object — Bedrock's
+included, now that its clients are built from the login in the config.
 
 Run:  .venv/bin/python -m pytest test/llm/test_model_handle.py
 """
@@ -30,10 +29,13 @@ from __future__ import annotations
 import gc
 import unittest
 
-from yuyutsava.llm import settings as C
+from yuyutsava.llm.config.loader import load_text
+from yuyutsava.llm.config.schema import connection_types
+from yuyutsava.llm.config.secrets import Secret
 from yuyutsava.llm.factory import chat_model, handle_for, model_handle, model_name_of, supports
 from yuyutsava.llm.handle import Capability
-from yuyutsava.llm.providers.registry import provider_for
+from yuyutsava.llm.providers.registry import all_providers, provider_for
+from yuyutsava.llm.target import target_for
 
 # Recorded from the pre-change code. `azure` is deliberately absent — it had no
 # correct value to preserve; see `AzureIdentityWasBroken`.
@@ -47,29 +49,83 @@ BASELINE_NAMES = {
     "vertex": "gemini-2.5-flash",
     "mistral": "mistral-large-latest",
     "cohere": "command-r-plus",
+    "bedrock": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
 }
 
-SETTINGS = {
-    "groq": C.GroqSettings(api_key="k", base_url="https://x", model="llama-3.3-70b-versatile"),
-    "openrouter": C.OpenRouterSettings(
-        api_key="k", base_url="https://x", model="openai/gpt-4o-mini"
-    ),
-    "ollama": C.OllamaSettings(base_url="http://localhost:11434/v1", model="gemma4:e2b"),
-    "openai": C.OpenAISettings(
-        api_key="k", base_url="https://api.openai.com/v1", model="gpt-4o-mini"
-    ),
-    "anthropic": C.AnthropicSettings(api_key="k", model="claude-haiku-4-5-20251001"),
-    "google": C.GoogleSettings(api_key="k", model="gemini-2.5-flash"),
-    "vertex": C.VertexSettings(project="p", location="us-central1", model="gemini-2.5-flash"),
-    "mistral": C.MistralSettings(api_key="k", model="mistral-large-latest"),
-    "cohere": C.CohereSettings(api_key="k", model="command-r-plus"),
-    "azure": C.AzureOpenAISettings(
-        api_key="k",
-        azure_endpoint="https://x",
-        azure_deployment="dep",
-        api_version="2024-10-21",
-        model="gpt-4o",
-    ),
+#: One provider of every type, as a models.toml would set them up. Vertex logs in
+#: with an access token and Bedrock with keys, so nothing needs real credentials.
+CONFIG = load_text(
+    """
+version = 1
+[defaults]
+model = "groq"
+[providers.groq]
+type = "groq"
+auth = { method = "api_key", key = "secret:k" }
+[providers.openrouter]
+type = "openrouter"
+auth = { method = "api_key", key = "secret:k" }
+[providers.ollama]
+type = "ollama"
+[providers.openai]
+type = "openai"
+auth = { method = "api_key", key = "secret:k" }
+[providers.openai_compatible]
+type = "openai_compatible"
+base_url = "https://api.example.com/v1"
+auth = { method = "api_key", key = "secret:k" }
+[providers.anthropic]
+type = "anthropic"
+auth = { method = "api_key", key = "secret:k" }
+[providers.google]
+type = "google"
+auth = { method = "api_key", key = "secret:k" }
+[providers.vertex]
+type = "vertex"
+project = "p"
+location = "us-central1"
+auth = { method = "access_token", token = "secret:k" }
+[providers.bedrock]
+type = "bedrock"
+region = "us-east-1"
+auth = { method = "aws_keys", access_key_id = "secret:k", secret_access_key = "secret:k" }
+[providers.mistral]
+type = "mistral"
+auth = { method = "api_key", key = "secret:k" }
+[providers.cohere]
+type = "cohere"
+auth = { method = "api_key", key = "secret:k" }
+[providers.azure]
+type = "azure"
+endpoint = "https://x.openai.azure.com"
+auth = { method = "api_key", key = "secret:k" }
+[models.groq]
+provider = "groq"
+id = "llama-3.3-70b-versatile"
+[models.azure]
+provider = "azure"
+id = "dep"
+base_model = "gpt-4o"
+"""
+)
+
+
+def target(reference: str):
+    return target_for(CONFIG, reference, secrets={"secret:k": Secret("k")}, unavailable={})
+
+
+TARGETS = {
+    "groq": target("groq"),
+    "openrouter": target("openrouter/openai/gpt-4o-mini"),
+    "ollama": target("ollama/gemma4:e2b"),
+    "openai": target("openai/gpt-4o-mini"),
+    "anthropic": target("anthropic/claude-haiku-4-5-20251001"),
+    "google": target("google/gemini-2.5-flash"),
+    "vertex": target("vertex/gemini-2.5-flash"),
+    "bedrock": target("bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0"),
+    "mistral": target("mistral/mistral-large-latest"),
+    "cohere": target("cohere/command-r-plus"),
+    "azure": target("azure"),
 }
 
 
@@ -80,7 +136,7 @@ class NameIsUnchanged(unittest.TestCase):
         for key, expected in BASELINE_NAMES.items():
             with self.subTest(provider=key):
                 self.assertEqual(
-                    model_name_of(chat_model(SETTINGS[key])),
+                    model_name_of(chat_model(TARGETS[key])),
                     expected,
                     f"{key} reports a different model name than before this "
                     f"change; usage rows and the task registry would shift",
@@ -91,8 +147,8 @@ class NameIsUnchanged(unittest.TestCase):
         covered = set(BASELINE_NAMES) | {"azure"}
         self.assertEqual(
             covered,
-            set(SETTINGS),
-            "a provider is in SETTINGS but pinned by neither the baseline nor the Azure case",
+            set(TARGETS),
+            "a provider is in TARGETS but pinned by neither the baseline nor the Azure case",
         )
 
 
@@ -100,7 +156,7 @@ class AzureIdentityWasBroken(unittest.TestCase):
     """The one deliberate change, plus proof that it was needed."""
 
     def setUp(self) -> None:
-        self.model = chat_model(SETTINGS["azure"])
+        self.model = chat_model(TARGETS["azure"])
 
     def test_the_attribute_probe_really_is_blind_to_azure(self) -> None:
         """Negative control: the mechanism this replaced yields nothing here."""
@@ -114,23 +170,16 @@ class AzureIdentityWasBroken(unittest.TestCase):
             probed,
             "",
             "AzureChatOpenAI now exposes a usable name attribute, so the bug "
-            "this fixes no longer exists — re-check whether the override in "
-            "AzureOpenAIProvider.model_name is still the right answer",
+            "this fixes no longer exists — re-check whether naming the model "
+            "from the target (Provider.model_name) is still needed",
         )
 
     def test_the_handle_names_it_anyway(self) -> None:
         self.assertEqual(model_name_of(self.model), "gpt-4o")
 
     def test_falls_back_to_the_deployment(self) -> None:
-        """``model`` is informational on Azure and may be empty."""
-        settings = C.AzureOpenAISettings(
-            api_key="k",
-            azure_endpoint="https://x",
-            azure_deployment="my-deploy",
-            api_version="2024-10-21",
-            model="",
-        )
-        self.assertEqual(model_name_of(chat_model(settings)), "my-deploy")
+        """Without ``base_model`` the deployment is the only identifier there is."""
+        self.assertEqual(model_name_of(chat_model(target("azure/my-deploy"))), "my-deploy")
 
 
 class HandleCarriesTheProvider(unittest.TestCase):
@@ -138,28 +187,22 @@ class HandleCarriesTheProvider(unittest.TestCase):
         """Five hosts share OpenAICompatibleProvider; the handle must separate them."""
         for key in ("groq", "openrouter", "ollama", "openai"):
             with self.subTest(host=key):
-                self.assertEqual(model_handle(SETTINGS[key]).provider, key)
+                self.assertEqual(model_handle(TARGETS[key]).provider, key)
 
     def test_generic_escape_hatch_reports_the_provider_key(self) -> None:
-        settings = C.OpenAICompatibleSettings(api_key="k", base_url="https://x", model="some/model")
-        self.assertEqual(model_handle(settings).provider, "openai_compatible")
+        self.assertEqual(
+            model_handle(target("openai_compatible/some/model")).provider, "openai_compatible"
+        )
 
     def test_native_providers_report_their_own_key(self) -> None:
-        for key in ("anthropic", "google", "vertex", "mistral", "cohere", "azure"):
+        for key in ("anthropic", "google", "vertex", "bedrock", "mistral", "cohere", "azure"):
             with self.subTest(provider=key):
-                self.assertEqual(model_handle(SETTINGS[key]).provider, key)
+                self.assertEqual(model_handle(TARGETS[key]).provider, key)
 
-    def test_every_provider_declares_a_key(self) -> None:
-        """Ratchet — a new provider with no key would report ``""`` forever."""
-        from yuyutsava.llm.providers.registry import all_providers
-
-        for provider in all_providers():
-            with self.subTest(provider=type(provider).__name__):
-                self.assertTrue(
-                    provider.key,
-                    f"{type(provider).__name__} declares no `key`; every model "
-                    f"it builds would be recorded with an empty provider",
-                )
+    def test_every_provider_type_has_exactly_one_provider(self) -> None:
+        """A type the config accepts but nothing builds would fail only when chosen."""
+        served = [kind for provider in all_providers() for kind in provider.types]
+        self.assertEqual(sorted(served), sorted(connection_types()))
 
 
 class Capabilities(unittest.TestCase):
@@ -169,7 +212,7 @@ class Capabilities(unittest.TestCase):
         for key in ("google", "vertex"):
             with self.subTest(provider=key):
                 self.assertTrue(
-                    supports(chat_model(SETTINGS[key]), Capability.LOOP_AFFINE),
+                    supports(chat_model(TARGETS[key]), Capability.LOOP_AFFINE),
                     f"{key} builds a loop-bound async client but does not "
                     f"declare it; see quirks/loop_affinity.py",
                 )
@@ -177,28 +220,23 @@ class Capabilities(unittest.TestCase):
     def test_others_are_not(self) -> None:
         for key in ("groq", "anthropic", "mistral", "cohere", "azure"):
             with self.subTest(provider=key):
-                self.assertFalse(supports(chat_model(SETTINGS[key]), Capability.LOOP_AFFINE))
+                self.assertFalse(supports(chat_model(TARGETS[key]), Capability.LOOP_AFFINE))
 
     def test_only_openai_compatible_toggles_reasoning(self) -> None:
-        self.assertTrue(supports(chat_model(SETTINGS["groq"]), Capability.REASONING_TOGGLE))
-        for key in ("anthropic", "google", "vertex", "mistral", "cohere", "azure"):
+        self.assertTrue(supports(chat_model(TARGETS["groq"]), Capability.REASONING_TOGGLE))
+        for key in ("anthropic", "google", "vertex", "bedrock", "mistral", "cohere", "azure"):
             with self.subTest(provider=key):
                 self.assertFalse(
-                    supports(chat_model(SETTINGS[key]), Capability.REASONING_TOGGLE),
+                    supports(chat_model(TARGETS[key]), Capability.REASONING_TOGGLE),
                     f"{key} claims a reasoning toggle it does not implement — "
                     f"disable_reasoning is silently ignored there",
                 )
 
-    def test_bedrock_declares_nothing_special(self) -> None:
-        """Structural: Bedrock cannot be built without live AWS credentials."""
-        provider = provider_for(C.BedrockSettings(region="us-east-1", model="m"))
-        self.assertEqual(type(provider).__name__, "BedrockProvider")
-        self.assertEqual(provider.key, "bedrock")
+    def test_bedrock_is_built_for_real(self) -> None:
+        """Its clients are built here now, so it no longer needs live AWS credentials."""
+        provider = provider_for(TARGETS["bedrock"])
         self.assertEqual(provider.capabilities, frozenset())
-        self.assertEqual(
-            provider.model_name(C.BedrockSettings(region="us-east-1", model="m")),
-            "m",
-        )
+        self.assertEqual(type(chat_model(TARGETS["bedrock"])).__name__, "ChatBedrockConverse")
 
 
 class UnknownModels(unittest.TestCase):
@@ -230,7 +268,7 @@ class TheRegistryDoesNotLeak(unittest.TestCase):
 
         gc.collect()
         before = registered_count()
-        models = [chat_model(SETTINGS["groq"]) for _ in range(25)]
+        models = [chat_model(TARGETS["groq"]) for _ in range(25)]
         self.assertEqual(
             registered_count(),
             before + 25,
@@ -246,8 +284,8 @@ class TheRegistryDoesNotLeak(unittest.TestCase):
         )
 
     def test_each_instance_keeps_its_own_identity(self) -> None:
-        a = chat_model(SETTINGS["groq"])
-        b = chat_model(SETTINGS["ollama"])
+        a = chat_model(TARGETS["groq"])
+        b = chat_model(TARGETS["ollama"])
         self.assertEqual(model_name_of(a), BASELINE_NAMES["groq"])
         self.assertEqual(model_name_of(b), BASELINE_NAMES["ollama"])
         self.assertEqual(handle_for(a).provider, "groq")
@@ -255,7 +293,7 @@ class TheRegistryDoesNotLeak(unittest.TestCase):
 
     def test_the_handle_points_at_the_model_it_was_asked_about(self) -> None:
         """``handle_for`` rebuilds the handle; it must rebuild the right one."""
-        a = chat_model(SETTINGS["groq"])
+        a = chat_model(TARGETS["groq"])
         self.assertIs(handle_for(a).model, a)
 
 
@@ -264,15 +302,15 @@ class HandleShape(unittest.TestCase):
         """ADR-004 Alternative C: we do not wrap ``BaseChatModel``."""
         from langchain_core.language_models import BaseChatModel
 
-        self.assertIsInstance(model_handle(SETTINGS["groq"]).model, BaseChatModel)
+        self.assertIsInstance(model_handle(TARGETS["groq"]).model, BaseChatModel)
 
     def test_handle_is_frozen(self) -> None:
-        handle = model_handle(SETTINGS["groq"])
+        handle = model_handle(TARGETS["groq"])
         with self.assertRaises(Exception):
             handle.name = "something-else"  # type: ignore[misc]
 
     def test_str_is_readable(self) -> None:
-        self.assertEqual(str(model_handle(SETTINGS["vertex"])), "vertex:gemini-2.5-flash")
+        self.assertEqual(str(model_handle(TARGETS["vertex"])), "vertex:gemini-2.5-flash")
 
     def test_the_module_imports_no_framework(self) -> None:
         """Domain code must be able to hold a handle without pulling LangChain in."""

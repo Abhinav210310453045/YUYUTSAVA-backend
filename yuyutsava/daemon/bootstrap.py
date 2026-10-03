@@ -72,7 +72,8 @@ from yuyutsava.events.bus import EventBus
 from yuyutsava.events.config import EventsConfig, SourceConfig
 from yuyutsava.events.registry import SourceRegistry
 from yuyutsava.llm.factory import chat_model
-from yuyutsava.llm.settings import LlmSettings, llm_settings_from_env
+from yuyutsava.llm.settings import llm_settings_from_env
+from yuyutsava.llm.target import ModelTarget
 from yuyutsava.llm.tracing import warm_reachability_cache
 from yuyutsava.mcp.config import MCPConfig
 from yuyutsava.mcp.loader import MCPClientManager
@@ -233,8 +234,8 @@ class DaemonSubsystems:
 
     # for logging / future use
     skill_registry: SkillRegistry
-    triage_settings: LlmSettings
-    orchestrator_settings: LlmSettings
+    triage_settings: ModelTarget
+    orchestrator_settings: ModelTarget
     subagent_names: tuple[str, ...]
 
     # Async (background) subagent infrastructure. ``None`` when async is
@@ -1078,7 +1079,7 @@ def _completion_sink(
 async def build_async_subagents(
     *,
     bg_subagent_list: list,
-    subagent_settings: LlmSettings,
+    subagent_settings: ModelTarget,
     checkpointer: object,
     stores: BackgroundStores,
     channels: ChannelRouter,

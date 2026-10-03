@@ -6,8 +6,8 @@ that knew seven names; every other alias fell to 128k. ``google`` compacted at
 Compaction is the one step that drops messages from state, so an under-set
 budget summarizes away history the model could still have held.
 
-Now each provider's settings class declares its window and the budget is found
-through the same alias table ``LLM_PROVIDER`` resolves by.
+Now each provider type has its window (``llm.catalog``), found through the same
+alias table ``LLM_PROVIDER`` resolves by.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from __future__ import annotations
 import unittest
 
 from yuyutsava.context.config import default_max_input_tokens
-from yuyutsava.llm.settings import SETTINGS_BY_PROVIDER
+from yuyutsava.llm.settings import PROVIDER_TYPES, provider_type_of
 
 EXPECTED = {
     "groq": 128_000,
@@ -43,16 +43,17 @@ class EveryAliasHasItsWindow(unittest.TestCase):
             with self.subTest(alias=alias):
                 self.assertEqual(default_max_input_tokens(alias), window)
 
-    def test_every_alias_the_resolver_accepts_is_covered(self) -> None:
-        """A new provider alias must come with a decision about its window."""
-        self.assertEqual(set(EXPECTED), set(SETTINGS_BY_PROVIDER))
+    def test_every_provider_type_is_covered(self) -> None:
+        """A new provider type must come with a decision about its window."""
+        self.assertTrue(set(PROVIDER_TYPES) <= set(EXPECTED))
+        self.assertTrue(all(provider_type_of(alias) for alias in EXPECTED))
 
     def test_aliases_of_one_provider_agree(self) -> None:
-        by_class: dict[type, set[int]] = {}
-        for alias, cls in SETTINGS_BY_PROVIDER.items():
-            by_class.setdefault(cls, set()).add(default_max_input_tokens(alias))
-        for cls, windows in by_class.items():
-            with self.subTest(provider=cls.__name__):
+        by_type: dict[str, set[int]] = {}
+        for alias in EXPECTED:
+            by_type.setdefault(provider_type_of(alias), set()).add(default_max_input_tokens(alias))
+        for provider_type, windows in by_type.items():
+            with self.subTest(provider=provider_type):
                 self.assertEqual(len(windows), 1)
 
     def test_case_and_whitespace_do_not_matter_and_unknown_is_the_common_window(self) -> None:
