@@ -100,7 +100,7 @@ id       = "gemini-3.5-flash"
 
 [models.sonnet]
 provider = "google-work"
-id       = "claude-sonnet-4-5@20250929"
+id       = "claude-sonnet-4-6"            # Vertex publishes 4-6 and later, not 4-5 (2026-10-03)
 location = "global"                    # per-model: Claude isn't served in asia-south1
 
 [models.groq-llama]
@@ -309,7 +309,17 @@ L5 cli/commands/models.py + cli/setup_wizard/ + /model in chat_repl · daemon/we
         comes back 429 per-base-model;
       - ⌖ *not enabled in this region*, on a 404, with the regions that do serve it.
 
-      The quota value is read through the Cloud Quotas API (free; to be verified in M2).
+      The quota value is read through the Cloud Quotas API. **Verified on the owner's project on
+      2026-10-03:** `quotaInfos/…PerBaseModel` lists one entry per `base_model`
+      (e.g. `anthropic-claude-sonnet-4-6`).
+      - An **omitted** `details.value` is **0**: proto3 drops zero. Every Claude model, at `global`
+        and in each region, has `"details": {}`, while other models in the same quota show
+        `"value": "600"`.
+      - `-1` means unlimited.
+      - Raising a quota is a `quotaPreferences` write, which the identity has
+        (`cloudquotas.quotas.update`), but Google approves it.
+      - Whether a model is *enabled* in Model Garden (the Anthropic terms) is not visible to these
+        APIs, so verify keeps the free probe for that.
     - **At runtime,** a per-base-model 429 that survives the retry ladder is reported as "quota
       exhausted for `<model>` on `<provider>` — request an increase: `<link>`", not as "provider
       busy". The picker then marks the model 🔒.
