@@ -11,7 +11,7 @@ edit ``models.toml`` by hand. So every write:
   invalid by a program (:class:`~yuyutsava.llm.config.loader.ModelsConfigError`,
   nothing written);
 * keeps the comments and layout a person wrote (``tomlkit``);
-* replaces the file in one step (:mod:`yuyutsava.platform.files`), and
+* swaps the new file in whole, in one step (:mod:`yuyutsava.platform.files`), and
   ``secrets.toml`` is readable by its owner alone.
 
 Callers that keep a :class:`~yuyutsava.llm.config.watch.ConfigSource` reload it
