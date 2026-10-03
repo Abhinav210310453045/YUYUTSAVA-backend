@@ -113,6 +113,24 @@ def events_config_path() -> Path:
     return Path(raw).expanduser() if raw else state_dir() / "events_config.json"
 
 
+def models_config_path() -> Path:
+    """``models.toml``: every model provider, login, model and task assignment.
+
+    The single place model configuration lives
+    (docs/architecture/decisions/ADR-005-models-config.md). Written by the setup
+    wizards, the app and agent tools through ``llm.config.store``, or by hand.
+    """
+    return state_dir() / "models.toml"
+
+
+def secrets_path() -> Path:
+    """``secrets.toml``: the values ``models.toml`` names as ``secret:<name>``.
+
+    Owner-only on every OS; written through ``llm.config.store``.
+    """
+    return state_dir() / "secrets.toml"
+
+
 def shipped_events_config_path() -> Path:
     """The default ``events_config.json`` that ships next to the events package.
 
