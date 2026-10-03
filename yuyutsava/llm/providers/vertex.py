@@ -22,6 +22,7 @@ through the environment.
 from __future__ import annotations
 
 import threading
+import warnings
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, ClassVar
@@ -34,6 +35,8 @@ from yuyutsava.llm.providers.gemini import build_gemini
 from yuyutsava.llm.target import ModelTarget
 
 _SCOPES = ["https://www.googleapis.com/auth/cloud-platform"]
+#: The start of google-auth's warning for a user login with no quota project.
+_NO_QUOTA_PROJECT = "Your application has authenticated using end user credentials"
 _INSTALL = "'yuyutsava[vertex]'"
 
 
@@ -60,7 +63,13 @@ def google_credentials(target: ModelTarget) -> Any:
     auth = target.connection.auth
     if auth.method == "adc":
         google_auth = require("google.auth", provider="Vertex AI", install=_INSTALL)
-        credentials, _project = google_auth.default(scopes=_SCOPES)
+        with warnings.catch_warnings():
+            # A gcloud user login carries no quota project, and google-auth warns
+            # about it on every lookup — once per model built. Vertex bills the
+            # project in the request URL either way; setting a quota project
+            # would add a serviceusage permission not every Vertex user has.
+            warnings.filterwarnings("ignore", message=_NO_QUOTA_PROJECT, category=UserWarning)
+            credentials, _project = google_auth.default(scopes=_SCOPES)
         return credentials
     if auth.method == "service_account":
         accounts = require("google.oauth2.service_account", provider="Vertex AI", install=_INSTALL)
