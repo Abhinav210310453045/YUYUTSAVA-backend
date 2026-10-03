@@ -133,17 +133,21 @@ def parse_secret_ref(text: str) -> SecretRef:
     return SecretRef(kind, name)
 
 
-def read_secrets_file(path: Path) -> dict[str, str]:
-    """The values in *path*; empty when the file does not exist yet.
+def parse_secrets(text: str) -> dict[str, str]:
+    """The values in the text of a ``secrets.toml``.
 
-    Raises :class:`tomllib.TOMLDecodeError` for a file that is not TOML, so the
+    Raises :class:`tomllib.TOMLDecodeError` for text that is not TOML, so the
     caller can report it rather than treat every secret as missing.
     """
+    return {key: value for key, value in tomllib.loads(text).items() if isinstance(value, str)}
+
+
+def read_secrets_file(path: Path) -> dict[str, str]:
+    """The values in *path*; empty when the file does not exist yet."""
     try:
-        data = tomllib.loads(path.read_text(encoding="utf-8"))
+        return parse_secrets(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return {}
-    return {key: value for key, value in data.items() if isinstance(value, str)}
 
 
 class SecretResolver:
@@ -209,5 +213,6 @@ __all__ = [
     "SecretSource",
     "SecretUnavailable",
     "parse_secret_ref",
+    "parse_secrets",
     "read_secrets_file",
 ]
