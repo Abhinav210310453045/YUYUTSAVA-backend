@@ -279,7 +279,7 @@ L5 cli/commands/models.py + cli/setup_wizard/ + /model in chat_repl · daemon/we
     - `gemini_budget` (thinking on top of the answer);
     - `first_chunk_retry` (owns the retry policy, the wall-clock budget and the CLI's "provider busy,
       retrying" notices; the SDK's own retries are capped so the ladders don't nest);
-    - the `vertex_tool_schema` rewrite, generalised to `gemini_tool_schema` so nullability survives;
+    - the tool-schema rewrite (`quirks/gemini_tool_schema`), so nullability survives;
     - `classify_provider_busy`, extended to genai's `ClientError`/`ServerError`.
 
     Claude on Vertex keeps `ChatAnthropicVertex`, which is not deprecated.

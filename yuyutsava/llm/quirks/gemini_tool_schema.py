@@ -43,7 +43,7 @@ from typing import Any, Callable, Sequence
 
 from langchain_core.utils.function_calling import convert_to_openai_tool
 
-logger = logging.getLogger("yuyutsava.llm.quirks.vertex_tool_schema")
+logger = logging.getLogger("yuyutsava.llm.quirks.gemini_tool_schema")
 
 #: Converts a list of OpenAI-format tools, raising when Vertex cannot express one.
 ToolCheck = Callable[[list[dict[str, Any]]], Any]

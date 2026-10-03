@@ -9,8 +9,8 @@ from yuyutsava.llm.handle import Capability
 from yuyutsava.llm.providers.gemini_budget import gemini_output_kwargs
 from yuyutsava.llm.quirks.first_chunk_retry import first_chunk_retry
 from yuyutsava.llm.quirks.gemini_parts import parts_safe
+from yuyutsava.llm.quirks.gemini_tool_schema import tool_schema_safe
 from yuyutsava.llm.quirks.loop_affinity import loop_pinned
-from yuyutsava.llm.quirks.vertex_tool_schema import tool_schema_safe
 from yuyutsava.llm.settings import VertexSettings
 
 
@@ -35,7 +35,7 @@ class VertexProvider(Provider):
         # The SDK's schema converter rejects a JSON Schema type list, which MCP
         # servers publish, and one such tool failed every turn. The quirk rewrites
         # type lists, and uses the SDK's own converter to leave out any tool Vertex
-        # still cannot express. See quirks/vertex_tool_schema.
+        # still cannot express. See quirks/gemini_tool_schema.
         check = mod.functions_utils._format_to_gapic_tool
         cls = loop_pinned(first_chunk_retry(parts_safe(tool_schema_safe(mod.ChatVertexAI, check))))
         return cls(

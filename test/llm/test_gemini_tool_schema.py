@@ -1,4 +1,4 @@
-"""``vertex_tool_schema``: a JSON Schema type list no longer fails every Vertex turn.
+"""``gemini_tool_schema``: a JSON Schema type list does not fail a Gemini turn.
 
 ``@piotr-agier/google-drive-mcp`` 2.9.0 publishes ``manage_accounts`` with
 ``account_id: {"type": ["string", "null"]}``. The Vertex SDK turned that list into
@@ -6,7 +6,7 @@
 "hi" in the chat failed. These tests run the SDK's real converter on that schema.
 No request is sent: no network, no API calls.
 
-Run:  .venv/bin/python -m pytest test/llm/test_vertex_tool_schema.py
+Run:  .venv/bin/python -m pytest test/llm/test_gemini_tool_schema.py
 """
 
 from __future__ import annotations
@@ -20,8 +20,8 @@ from langchain_core.utils.function_calling import convert_to_openai_tool
 from langchain_google_vertexai import ChatVertexAI
 from langchain_google_vertexai.functions_utils import _format_to_gapic_tool
 
-from yuyutsava.llm.quirks import vertex_tool_schema
-from yuyutsava.llm.quirks.vertex_tool_schema import (
+from yuyutsava.llm.quirks import gemini_tool_schema
+from yuyutsava.llm.quirks.gemini_tool_schema import (
     anyof_for_type_lists,
     bindable_tools,
     tool_schema_safe,
@@ -128,7 +128,7 @@ class RewriteTests(unittest.TestCase):
 
 class BindableToolsTests(unittest.TestCase):
     def setUp(self):
-        vertex_tool_schema._warned.clear()
+        gemini_tool_schema._warned.clear()
 
     def test_the_drive_tool_converts_and_keeps_its_meaning(self):
         (spec,) = bindable_tools([_mcp_tool()], check=_format_to_gapic_tool)
@@ -144,7 +144,7 @@ class BindableToolsTests(unittest.TestCase):
 
     def test_an_unconvertible_tool_is_dropped_and_named_once(self):
         tools = [_mcp_tool("srv__broken", BROKEN), _mcp_tool()]
-        with self.assertLogs("yuyutsava.llm.quirks.vertex_tool_schema", "WARNING") as logs:
+        with self.assertLogs("yuyutsava.llm.quirks.gemini_tool_schema", "WARNING") as logs:
             first = bindable_tools(tools, check=_format_to_gapic_tool)
             second = bindable_tools(tools, check=_format_to_gapic_tool)
         self.assertEqual([s["function"]["name"] for s in first], ["google-drive__manage_accounts"])
@@ -162,7 +162,7 @@ class BindableToolsTests(unittest.TestCase):
 
 class MixinTests(unittest.TestCase):
     def setUp(self):
-        vertex_tool_schema._warned.clear()
+        gemini_tool_schema._warned.clear()
 
     def test_the_class_is_cached_and_named(self):
         class _Base:
