@@ -555,6 +555,7 @@ on.
   of the Vertex dummy signature, which is one live turn per target in M9.
 - **Presence gate on Linux headless and Windows without Hello.** Each falls back to a password, and
   the spike documents it. The gate is a guard on YUYUTSAVA's own surfaces, not encryption at rest.
+- **Claude on Vertex is not verifiable live yet.** The owner's billing account is a free trial (2026-10-03), and every Claude quota is 0 (rule 15). Claude on Vertex is built and contract-tested hermetically (`ChatAnthropicVertex`, the `global` endpoint, prompt caching). The live row in §4 waits for the account upgrade, the Model Garden enable and the quota grant.
 - **Lock change.** The owner's `uv tool` install of `yuyutsava` needs `scripts/install_cli.py`
   re-run after the dependency waves.
 ## 6. Status
@@ -562,8 +563,8 @@ on.
 | Wave | State |
 |---|---|
 | M0 | Done 2026-10-02: 9 SDK contracts with negative controls (27 checks in `verify_framework_contract.py`), ADR-005, decisions on rules 12–15. Live on Vertex: Gemini 3 via genai, a foreign unsigned tool loop, and MaaS all pass; Claude has no quota (rule 15). Touch ID prompt verified. |
-| M1 | Next |
-| M2 | Not started |
+| M1 | Done 2026-10-03: `llm/config` (schema, loader, messages, secrets, store, watch, schema_export), `llm/tasks.py`, `platform/files.py`; 80 new tests. Deviation: `detect.py` moves to M5, the wave of its first caller (STD-KIS-3). |
+| M2 | Next |
 | M3 | Not started |
 | M4 | Not started |
 | M5 | Not started |
@@ -630,8 +631,8 @@ and commits use the repo-local IITJ identity; it is pushed only when asked. This
 - `secrets.py` (0600 on POSIX, a user-only ACL on Windows through `platform/`);
 - `store.py` (FileLock, atomic replace, generation check, comments kept);
 - `watch.py` (thread, last good snapshot);
-- `detect.py`;
-- `schema_export.py`.
+- `schema_export.py`;
+- (`detect.py` moved to M5, where the wizard first calls it.)
 - **Exit:**
   - the config modules import in under 100 ms without LangChain (`scripts/verify_imports.py`);
   - `test_import_layers` is green;
@@ -700,7 +701,10 @@ and commits use the repo-local IITJ identity; it is pushed only when asked. This
 **M5 — CLI.**
 
 - the unconfigured path;
-- `cli/setup_wizard/` on prompt_toolkit, themed;
+- `llm/config/detect.py`: what is already on this machine (gcloud ADC, `~/.aws` profiles, a running
+  Ollama, `.env`, `*_API_KEY` variables), moved here from M1;
+- `cli/setup_wizard/` on prompt_toolkit, themed; confirm the messages' `yuyutsava models secrets set`
+  command matches what is built;
 - `cli/commands/models.py`, registered in `SUBCOMMANDS` (`cli.py:91`);
 - `/model` and the subagent nudge in `chat_repl.py`, following the `/voice` and `/subagents` pattern
   (`:610-728`).
