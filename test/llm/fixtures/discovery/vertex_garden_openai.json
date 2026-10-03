@@ -1,0 +1,150 @@
+{
+ "publisherModels": [
+  {
+   "name": "publishers/openai/models/whisper-large",
+   "versionId": "whisper-large-v3-turbo",
+   "openSourceCategory": "THIRD_PARTY_OWNED_OSS",
+   "supportedActions": {
+    "openNotebook": {
+     "references": {
+      "us-central1": {
+       "uri": "https://colab.research.google.com/github/GoogleCloudPlatform/vertex-ai-samples/blob/main/notebooks/community/model_garden/model_garden_pytorch_whisper_large_v3_deployment.ipynb"
+      }
+     },
+     "title": "Open Notebook"
+    },
+    "deploy": {
+     "modelDisplayName": "Whisper Large V3 Turbo",
+     "containerSpec": {
+      "imageUri": "us-docker.pkg.dev/deeplearning-platform-release/vertex-model-garden/pytorch-inference.cu125.0-4.ubuntu2204.py310:public-image-cfd6adbd0e22",
+      "env": [
+       {
+        "name": "DEPLOY_SOURCE",
+        "value": "UI_NATIVE_MODEL"
+       },
+       {
+        "name": "MODEL_ID",
+        "value": "openai/whisper-large-v3-turbo"
+       },
+       {
+        "name": "TASK",
+        "value": "audio2text"
+       },
+       {
+        "name": "AIP_STORAGE_URI",
+        "value": "openai/whisper-large-v3-turbo"
+       },
+       {
+        "name": "HF_REVISION",
+        "value": "41f01f3fe87f28c78e2fbf8b568835947dd65ed9"
+       },
+       {
+        "name": "REVISION",
+        "value": "41f01f3fe87f28c78e2fbf8b568835947dd65ed9"
+       }
+      ],
+      "ports": [
+       {
+        "containerPort": 7080
+       }
+      ],
+      "predictRoute": "/pred",
+      "healthRoute": "/ping"
+     },
+     "dedicatedResources": {
+      "machineSpec": {
+       "machineType": "g2-standard-12",
+       "acceleratorType": "NVIDIA_L4",
+       "acceleratorCount": 1
+      },
+      "maxReplicaCount": 1
+     },
+     "deployTaskName": "1 NVIDIA_L4 g2-standard-12",
+     "deployMetadata": {}
+    },
+    "openNotebooks": {
+     "notebooks": [
+      {
+       "references": {
+        "us-central1": {
+         "uri": "https://colab.research.google.com/github/GoogleCloudPlatform/vertex-ai-samples/blob/main/notebooks/community/model_garden/model_garden_pytorch_whisper_large_v3_deployment.ipynb"
+        }
+       },
+       "title": "Open Notebook"
+      },
+      {
+       "references": {
+        "us-central1": {
+         "uri": "https://colab.research.google.com/github/GoogleCloudPlatform/vertex-ai-samples/blob/main/notebooks/community/model_garden/model_garden_pytorch_whisper_large_v3_deployment.ipynb"
+        }
+       },
+       "title": "Open Notebook"
+      }
+     ]
+    },
+    "multiDeployVertex": {
+     "multiDeployVertex": [
+      {
+       "modelDisplayName": "Whisper Large V3 Turbo",
+       "containerSpec": {
+        "imageUri": "us-docker.pkg.dev/deeplearning-platform-release/vertex-model-garden/pytorch-inference.cu125.0-4.ubuntu2204.py310:public-image-cfd6adbd0e22",
+        "env": [
+         {
+          "name": "DEPLOY_SOURCE",
+          "value": "UI_NATIVE_MODEL"
+         },
+         {
+          "name": "MODEL_ID",
+          "value": "openai/whisper-large-v3-turbo"
+         },
+         {
+          "name": "TASK",
+          "value": "audio2text"
+         },
+         {
+          "name": "AIP_STORAGE_URI",
+          "value": "openai/whisper-large-v3-turbo"
+         },
+         {
+          "name": "HF_REVISION",
+          "value": "41f01f3fe87f28c78e2fbf8b568835947dd65ed9"
+         },
+         {
+          "name": "REVISION",
+          "value": "41f01f3fe87f28c78e2fbf8b568835947dd65ed9"
+         }
+        ],
+        "ports": [
+         {
+          "containerPort": 7080
+         }
+        ],
+        "predictRoute": "/pred",
+        "healthRoute": "/ping"
+       },
+       "dedicatedResources": {
+        "machineSpec": {
+         "machineType": "g2-standard-12",
+         "acceleratorType": "NVIDIA_L4",
+         "acceleratorCount": 1
+        },
+        "maxReplicaCount": 1
+       },
+       "deployTaskName": "1 NVIDIA_L4 g2-standard-12",
+       "deployMetadata": {}
+      }
+     ]
+    }
+   },
+   "launchStage": "GA"
+  },
+  {
+   "name": "publishers/openai/models/gpt-oss-120b-maas",
+   "versionId": "001",
+   "openSourceCategory": "THIRD_PARTY_OWNED_OSS",
+   "supportedActions": {},
+   "launchStage": "GA",
+   "publisherModelTemplate": "projects/{project}/locations/{location}/publishers/google/models/gpt-oss-120b-maas@001"
+  }
+ ]
+}

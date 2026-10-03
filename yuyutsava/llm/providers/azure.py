@@ -19,7 +19,8 @@ from langchain_openai import AzureChatOpenAI
 from pydantic import SecretStr
 
 from yuyutsava.llm.base import ANSWER_TOKENS, BuildOptions, Provider
-from yuyutsava.llm.target import ModelTarget
+from yuyutsava.llm.discovery import Discovery
+from yuyutsava.llm.target import ModelTarget, ProviderAccess
 
 
 class AzureOpenAIProvider(Provider):
@@ -34,6 +35,16 @@ class AzureOpenAIProvider(Provider):
             api_version=connection.api_version,
             temperature=options.temperature,
             max_tokens=ANSWER_TOKENS,
+        )
+
+    def discover(self, access: ProviderAccess) -> Discovery:
+        """Azure lists deployments in the portal, not to an API key: nothing to list here."""
+        return Discovery(
+            access.provider,
+            note=(
+                "Azure OpenAI deployments are listed in the Azure portal, not to an API key: add "
+                "each under [models] with id = the deployment name, and base_model = the model behind it"
+            ),
         )
 
 

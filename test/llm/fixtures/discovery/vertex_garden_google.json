@@ -1,0 +1,87 @@
+{
+ "publisherModels": [
+  {
+   "name": "publishers/google/models/occupancy-analytics",
+   "versionId": "001",
+   "supportedActions": {
+    "createApplication": {
+     "references": {
+      "us-central1": {
+       "uri": "builtin:occupancy-count"
+      }
+     },
+     "title": "Build Vertex AI Vision App"
+    }
+   },
+   "launchStage": "PUBLIC_PREVIEW"
+  },
+  {
+   "name": "publishers/google/models/gemini-embedding-001",
+   "versionId": "default",
+   "openSourceCategory": "PROPRIETARY",
+   "launchStage": "GA",
+   "publisherModelTemplate": "projects/{project}/locations/{location}/publishers/google/models/gemini-embedding-001@default"
+  },
+  {
+   "name": "publishers/google/models/gemini-2.5-pro",
+   "versionId": "default",
+   "supportedActions": {
+    "openGenerationAiStudio": {
+     "references": {
+      "us-central1": {
+       "uri": "https://console.cloud.google.com/vertex-ai/generative/multimodal/create/text?model=gemini-2.5-pro"
+      }
+     }
+    }
+   },
+   "launchStage": "GA",
+   "publisherModelTemplate": "projects/{project}/locations/{location}/publishers/google/models/gemini-2.5-pro@default"
+  },
+  {
+   "name": "publishers/google/models/gemini-2.5-flash-tts",
+   "versionId": "default",
+   "supportedActions": {
+    "openGenerationAiStudio": {
+     "references": {
+      "us-central1": {
+       "uri": "https://console.cloud.google.com/vertex-ai/studio/media/speech?modelId=gemini-2.5-flash-tts"
+      }
+     }
+    }
+   },
+   "launchStage": "GA",
+   "publisherModelTemplate": "projects/{project}/locations/{location}/publishers/google/models/gemini-2.5-flash-tts@default"
+  },
+  {
+   "name": "publishers/google/models/gemini-3.5-flash",
+   "versionId": "default",
+   "supportedActions": {
+    "openGenerationAiStudio": {
+     "references": {
+      "us-central1": {
+       "uri": "https://console.cloud.google.com/agent-platform/studio/multimodal?mode=prompt&model=gemini-3.5-flash"
+      }
+     }
+    }
+   },
+   "launchStage": "GA",
+   "publisherModelTemplate": "projects/{project}/locations/{location}/publishers/google/models/gemini-3.5-flash@default"
+  },
+  {
+   "name": "publishers/google/models/gemini-3-pro-image",
+   "versionId": "default",
+   "supportedActions": {
+    "openGenerationAiStudio": {
+     "references": {
+      "us-central1": {
+       "uri": "https://console.cloud.google.com/agent-platform/studio/multimodal?model=gemini-3-pro-image"
+      }
+     },
+     "title": "Open Agent Studio"
+    }
+   },
+   "launchStage": "GA",
+   "publisherModelTemplate": "projects/{project}/locations/{location}/publishers/google/models/gemini-3-pro-image@default"
+  }
+ ]
+}

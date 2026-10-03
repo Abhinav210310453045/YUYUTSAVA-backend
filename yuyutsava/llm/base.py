@@ -27,11 +27,12 @@ from typing import TYPE_CHECKING, ClassVar
 
 from langchain_core.language_models import BaseChatModel
 
+from yuyutsava.llm.discovery import Discovery
 from yuyutsava.llm.handle import Capability
 from yuyutsava.llm.pricing import Price
 
 if TYPE_CHECKING:
-    from yuyutsava.llm.target import ModelTarget
+    from yuyutsava.llm.target import ModelTarget, ProviderAccess
 
 #: What every provider lets the model write for one reply — the answer or tool
 #: call itself. A model that thinks gets its thinking budget *on top* of this (see
@@ -96,6 +97,18 @@ class Provider(ABC):
     def provider_name(self, target: ModelTarget) -> str:
         """Which provider this is, for the handle, usage rows and logs: its type."""
         return target.type
+
+    def discover(self, access: ProviderAccess) -> Discovery:
+        """The models *access* can use, and whether each one can be called now.
+
+        Listing needs a working login, so an answer without a problem is also
+        the check that the login works. The default — for a provider with no
+        listing endpoint — lists nothing and says so. Called off the event loop;
+        makes network requests; never raises.
+        """
+        return Discovery(
+            access.provider, note="this provider has no model list; add model ids under [models]"
+        )
 
     def live_price(self, target: ModelTarget) -> Price | None:
         """*target*'s current price from the provider itself, when it publishes one.

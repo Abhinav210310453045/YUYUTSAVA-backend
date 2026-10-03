@@ -32,19 +32,19 @@ class SecretMissing(RuntimeError):
     """A provider needs a secret whose value could not be found."""
 
 
-@dataclass(frozen=True)
-class ModelTarget:
-    """One model, ready to build."""
+@dataclass(frozen=True, kw_only=True)
+class ProviderAccess:
+    """How to reach one provider: its connection and the secrets its login needs.
+
+    What listing a provider's models or checking its login takes; a
+    :class:`ModelTarget` is this plus one model.
+    """
 
     #: The provider's name under ``[providers]``.
     provider: str
     connection: Connection
-    #: The model id as the provider names it.
-    model: str
-    #: The alias's settings, when the model was chosen through ``[models]``.
-    entry: ModelEntry | None = None
     #: Resolved secrets, keyed by the reference as written. Never printed, and not
-    #: part of a target's identity: two targets for the same model are equal.
+    #: part of identity: two targets for the same model are equal.
     secrets: Mapping[str, Secret] = field(
         default_factory=lambda: MappingProxyType({}), repr=False, compare=False
     )
@@ -66,6 +66,32 @@ class ModelTarget:
         issue = self.unavailable.get(reference)
         detail = f"{issue.problem} — {issue.fix}" if issue else f"{reference} was not resolved"
         raise SecretMissing(f"provider {self.provider!r} cannot log in: {detail}")
+
+
+@dataclass(frozen=True, kw_only=True)
+class ModelTarget(ProviderAccess):
+    """One model, ready to build."""
+
+    #: The model id as the provider names it.
+    model: str
+    #: The alias's settings, when the model was chosen through ``[models]``.
+    entry: ModelEntry | None = None
+
+
+def access_for(
+    config: ModelsConfig,
+    provider: str,
+    *,
+    secrets: Mapping[str, Secret],
+    unavailable: Mapping[str, ConfigIssue],
+) -> ProviderAccess:
+    """How to reach the provider named *provider* in *config*."""
+    return ProviderAccess(
+        provider=provider,
+        connection=config.providers[provider],
+        secrets=MappingProxyType(dict(secrets)),
+        unavailable=MappingProxyType(dict(unavailable)),
+    )
 
 
 def target_for(
@@ -96,4 +122,4 @@ def target_for(
     )
 
 
-__all__ = ["ModelTarget", "SecretMissing", "target_for"]
+__all__ = ["ModelTarget", "ProviderAccess", "SecretMissing", "access_for", "target_for"]

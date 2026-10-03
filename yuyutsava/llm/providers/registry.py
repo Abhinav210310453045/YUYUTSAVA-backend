@@ -10,6 +10,7 @@ config schema accepts has exactly one provider.
 from __future__ import annotations
 
 from yuyutsava.llm.base import Provider
+from yuyutsava.llm.discovery import Discovery
 from yuyutsava.llm.providers.anthropic import AnthropicProvider
 from yuyutsava.llm.providers.azure import AzureOpenAIProvider
 from yuyutsava.llm.providers.bedrock import BedrockProvider
@@ -18,7 +19,7 @@ from yuyutsava.llm.providers.google import GoogleProvider
 from yuyutsava.llm.providers.mistral import MistralProvider
 from yuyutsava.llm.providers.openai_compat import OpenAICompatibleProvider
 from yuyutsava.llm.providers.vertex import VertexProvider
-from yuyutsava.llm.target import ModelTarget
+from yuyutsava.llm.target import ModelTarget, ProviderAccess, SecretMissing
 
 # Instantiated once — providers are stateless.
 _PROVIDERS: tuple[Provider, ...] = (
@@ -42,9 +43,17 @@ def provider_for(target: ModelTarget) -> Provider:
     return _BY_TYPE[target.type]
 
 
+def discover(access: ProviderAccess) -> Discovery:
+    """What *access*'s provider lists for this account; a missing secret is a problem, not an error."""
+    try:
+        return _BY_TYPE[access.type].discover(access)
+    except SecretMissing as exc:
+        return Discovery(access.provider, problem=str(exc), fix="store the secret, then list again")
+
+
 def all_providers() -> tuple[Provider, ...]:
     """Every provider — for checks that must cover each one."""
     return _PROVIDERS
 
 
-__all__ = ["all_providers", "provider_for"]
+__all__ = ["all_providers", "discover", "provider_for"]

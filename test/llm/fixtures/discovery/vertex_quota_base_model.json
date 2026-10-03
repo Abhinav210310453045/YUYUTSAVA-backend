@@ -1,0 +1,47 @@
+{
+ "name": "projects/84289406221/locations/global/services/aiplatform.googleapis.com/quotaInfos/GlobalOnlinePredictionRequestsPerMinutePerProjectPerBaseModel",
+ "quotaId": "GlobalOnlinePredictionRequestsPerMinutePerProjectPerBaseModel",
+ "metric": "aiplatform.googleapis.com/global_online_prediction_requests_per_base_model",
+ "service": "aiplatform.googleapis.com",
+ "refreshInterval": "minute",
+ "containerType": "PROJECT",
+ "dimensions": [
+  "base_model"
+ ],
+ "metricDisplayName": "Global online prediction requests per base model",
+ "metricUnit": "1",
+ "quotaIncreaseEligibility": {
+  "isEligible": true
+ },
+ "dimensionsInfos": [
+  {
+   "dimensions": {
+    "base_model": "anthropic-claude-haiku-4-5"
+   },
+   "details": {},
+   "applicableLocations": [
+    "global"
+   ]
+  },
+  {
+   "dimensions": {
+    "base_model": "anthropic-claude-sonnet-4-6"
+   },
+   "details": {},
+   "applicableLocations": [
+    "global"
+   ]
+  },
+  {
+   "dimensions": {
+    "base_model": "google-ai-content-detection"
+   },
+   "details": {
+    "value": "600"
+   },
+   "applicableLocations": [
+    "global"
+   ]
+  }
+ ]
+}
