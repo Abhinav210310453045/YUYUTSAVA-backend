@@ -184,6 +184,9 @@ all-providers = [
 # record and adds markers).
 dev = [
     "pytest>=8.0",
+    # test/llm/config/test_schema_export checks the editor-facing JSON Schema of
+    # models.toml against the loader; only transitive before.
+    "jsonschema>=4.20,<5",
 ]
 
 [project.scripts]
