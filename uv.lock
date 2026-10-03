@@ -4442,6 +4442,15 @@ wheels = [
 ]
 
 [[package]]
+name = "tomlkit"
+version = "0.15.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/94/96/e07752635b98536177fa1f37671c8f3cdde2e724c6bcf6034b2cfb571565/tomlkit-0.15.1.tar.gz", hash = "sha256:e25bbf38843005246210a12982776f27f99cb9be67160e14434d0c0d21ee1e97", size = 180129, upload-time = "2026-07-17T01:48:04.562Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/13/bc/8c13eb66537dce1d2bd3a57132902f38d0e7f5bb46fa9f4daed9fe9d76ee/tomlkit-0.15.1-py3-none-any.whl", hash = "sha256:177a05aece5a8ca5266fd3c448abb47b8d352f09d477d3ca8332db4d89b24304", size = 49449, upload-time = "2026-07-17T01:48:05.728Z" },
+]
+
+[[package]]
 name = "tornado"
 version = "6.5.5"
 source = { registry = "https://pypi.org/simple" }
@@ -5139,6 +5148,7 @@ dependencies = [
     { name = "prompt-toolkit" },
     { name = "psutil" },
     { name = "psycopg", extra = ["binary", "pool"] },
+    { name = "pydantic" },
     { name = "pynput" },
     { name = "pyobjc-framework-cocoa", marker = "sys_platform == 'darwin'" },
     { name = "pyperclip" },
@@ -5150,6 +5160,7 @@ dependencies = [
     { name = "sqlglot" },
     { name = "sse-starlette" },
     { name = "tavily-python" },
+    { name = "tomlkit" },
     { name = "uvicorn", extra = ["standard"] },
     { name = "watchdog" },
 ]
@@ -5260,6 +5271,7 @@ requires-dist = [
     { name = "prompt-toolkit", specifier = ">=3.0" },
     { name = "psutil", specifier = ">=5.9" },
     { name = "psycopg", extras = ["binary", "pool"], specifier = ">=3.2" },
+    { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "pygments", marker = "extra == 'visuals'", specifier = ">=2.17.0" },
     { name = "pynput", specifier = ">=1.8.1" },
     { name = "pyobjc-framework-cocoa", marker = "sys_platform == 'darwin'", specifier = ">=12.1" },
@@ -5279,6 +5291,7 @@ requires-dist = [
     { name = "sse-starlette", specifier = ">=2.0.0" },
     { name = "streamlit", marker = "extra == 'streamlit'", specifier = ">=1.56.0" },
     { name = "tavily-python", specifier = ">=0.5.0,<1" },
+    { name = "tomlkit", specifier = ">=0.13,<1" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32.0" },
     { name = "watchdog", specifier = ">=4.0.0" },
     { name = "webrtcvad-wheels", marker = "extra == 'voice'", specifier = ">=2.0.14" },
