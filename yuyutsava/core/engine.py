@@ -59,7 +59,7 @@ from yuyutsava.core.agent_profiles import (
     ToolFamily,
 )
 from yuyutsava.core.deps import TINKER_BUDGET_TOKENS, MasterDeps
-from yuyutsava.core.harness import exclude_deepagents_summarizer
+from yuyutsava.core.harness import exclude_deepagents_summarizer, retarget_prompt
 from yuyutsava.discovery.tool_registry import ToolRegistry
 from yuyutsava.docker_sandbox.backend import DockerSandboxBackend
 from yuyutsava.events.tools import make_recall_tool
@@ -840,7 +840,13 @@ def _model_switch(
     """The switch for one agent's *task*, or ``None`` when its stack chooses no models."""
     if chooser is None or built is None:
         return None
-    return ModelSwitchMiddleware(chooser, task=task, built=built, temperature=_MASTER_TEMPERATURE)
+    return ModelSwitchMiddleware(
+        chooser,
+        task=task,
+        built=built,
+        temperature=_MASTER_TEMPERATURE,
+        retarget_prompt=retarget_prompt,
+    )
 
 
 def _master_middleware(

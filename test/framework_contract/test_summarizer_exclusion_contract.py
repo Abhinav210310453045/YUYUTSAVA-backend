@@ -1,4 +1,5 @@
-"""deepagents' summarizer is left out of every graph this system builds, for every provider.
+"""deepagents' summarizer is left out of every graph this system builds, for every provider;
+its model-specific prompt suffix follows the model a turn runs on.
 
 ``core/harness.exclude_deepagents_summarizer`` registers a harness profile under
 the provider deepagents finds for a model (design rule 12). That relies on
@@ -12,6 +13,10 @@ deepagents still:
 
 Each stack is captured where deepagents hands it to ``create_agent``; nothing is
 compiled or sent. One real model per provider type and Vertex family.
+
+``core/harness.retarget_prompt`` (design rule 13) reads the suffix through
+deepagents' own profile lookup; the suffix it reads must be the one deepagents
+put into a graph's prompt.
 """
 
 from __future__ import annotations
@@ -26,7 +31,7 @@ import pytest
 from test.support.targets import every_provider_type, every_type_target
 from yuyutsava.context.compaction import YuyutsavaCompactionMiddleware
 from yuyutsava.context.config import ContextSettings
-from yuyutsava.core.harness import exclude_deepagents_summarizer
+from yuyutsava.core.harness import exclude_deepagents_summarizer, prompt_suffix, retarget_prompt
 from yuyutsava.llm.factory import chat_model
 
 deepagents_graph = pytest.importorskip("deepagents.graph")
@@ -47,16 +52,24 @@ def _models() -> dict[str, Any]:
         return {name: chat_model(target) for name, target in targets.items()}
 
 
-def stacks_built_on(model: Any, *, exclude: bool) -> list[list[str]]:
-    """The middleware names of every stack ``create_deep_agent`` builds on *model*."""
+def stacks_built_on(model: Any, *, exclude: bool, prompts: list | None = None) -> list[list[str]]:
+    """The middleware names of every stack ``create_deep_agent`` builds on *model*.
+
+    *prompts*, when given, collects each stack's system prompt.
+    """
     from deepagents import create_deep_agent
 
     stacks: list[list[str]] = []
 
-    def capture(*_args: Any, middleware=(), **_kwargs: Any) -> Any:
+    def capture(*_args: Any, middleware=(), **kwargs: Any) -> Any:
         stacks.append([m.name for m in middleware])
+        if prompts is not None:
+            prompts.append(kwargs.get("system_prompt"))
         return mock.MagicMock()
 
+    # deepagents loads its built-in profiles on first use and never again; load
+    # them now, so the registry restored below still holds them.
+    harness_profiles._ensure_harness_profiles_loaded()
     compactor = YuyutsavaCompactionMiddleware(model=model, settings=ContextSettings())
     declared = {"name": "helper", "description": "helps", "system_prompt": "help"}
     with (
@@ -93,6 +106,38 @@ def test_this_systems_compactor_survives_the_exclusion() -> None:
     model = _models()["vertex"]
     master = stacks_built_on(model, exclude=True)[-1]
     assert "YuyutsavaCompactionMiddleware" in master, master
+
+
+def claude_suffix_in_its_master_prompt() -> tuple[str, str]:
+    """``(suffix read for Claude Sonnet 4.6, the master prompt deepagents built for it)``."""
+    model = chat_model(every_type_target("anthropic/claude-sonnet-4-6"))
+    prompts: list = []
+    stacks_built_on(model, exclude=True, prompts=prompts)
+    return prompt_suffix(model), str(prompts[-1])
+
+
+def test_the_suffix_read_is_the_one_deepagents_applied() -> None:
+    suffix, prompt = claude_suffix_in_its_master_prompt()
+    assert suffix, (
+        "deepagents no longer ships a suffix for claude-sonnet-4-6; retarget_prompt is moot"
+    )
+    assert f"\n\n{suffix}" in prompt, "the suffix deepagents applied is not the one we read"
+
+
+def test_a_switched_turn_carries_the_new_models_suffix_only() -> None:
+    from langchain_core.messages import SystemMessage
+
+    claude = chat_model(every_type_target("anthropic/claude-sonnet-4-6"))
+    gemini = _models()["vertex"]
+    suffix = prompt_suffix(claude)
+    built_for_claude = SystemMessage(f"OURS\n\nBASE\n\n{suffix}\n\nMEMORY")
+
+    to_gemini = retarget_prompt(built_for_claude, claude, gemini).text
+    assert suffix not in to_gemini and "OURS" in to_gemini and "MEMORY" in to_gemini, to_gemini
+    to_claude = retarget_prompt(SystemMessage("OURS\n\nBASE"), gemini, claude).text
+    assert to_claude.endswith(suffix), to_claude
+    unchanged = SystemMessage("OURS")
+    assert retarget_prompt(unchanged, gemini, gemini) is unchanged
 
 
 class TheCheckFails(unittest.TestCase):

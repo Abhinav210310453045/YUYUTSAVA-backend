@@ -239,6 +239,10 @@ def main() -> int:
             summarizer.test_this_systems_compactor_survives_the_exclusion,
         ),
         (
+            "the harness prompt suffix we swap is the one deepagents applied (silent-failure seam)",
+            summarizer.test_the_suffix_read_is_the_one_deepagents_applied,
+        ),
+        (
             "Claude on Vertex takes Anthropic's cache_control setting (silent-failure seam)",
             prompt_cache.test_vertex_claude_marks_the_last_block,
         ),

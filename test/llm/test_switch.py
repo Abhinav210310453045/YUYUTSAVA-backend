@@ -117,12 +117,15 @@ class _Sessions:
         )
 
 
-def _agent(built_model, models: _Models, *, task="chat", sessions=None, tools=(), saver=None):
+def _agent(
+    built_model, models: _Models, *, task="chat", sessions=None, tools=(), saver=None, retarget=None
+):
     switch = ModelSwitchMiddleware(
         ModelChooser(models, sessions),
         task=task,
         built=_target("local/a"),
         temperature=0.1,
+        retarget_prompt=retarget,
     )
     agent = create_agent(
         built_model, tools=list(tools), middleware=[switch], checkpointer=saver or InMemorySaver()
@@ -227,6 +230,23 @@ class ASwitchedConversation(unittest.TestCase):
 def _look() -> str:
     """Look around."""
     return "seen"
+
+
+class ThePrompt(unittest.TestCase):
+    def test_is_rewritten_for_the_model_a_switched_turn_runs_on(self) -> None:
+        calls: list = []
+
+        def retarget(system_message, built, model):
+            calls.append((built.responses[0].content, model.responses[0].content))
+            return system_message
+
+        models = _Models(b=_says("b"))
+        agent, _ = _agent(_says("built"), models, retarget=retarget)
+        _ask(agent, "one")
+        self.assertEqual(calls, [])  # the graph's own model: nothing to rewrite
+        models.edit("chat", "local/b")
+        _ask(agent, "two")
+        self.assertEqual(calls, [("built", "b")])
 
 
 class ASessionsChoice(unittest.TestCase):

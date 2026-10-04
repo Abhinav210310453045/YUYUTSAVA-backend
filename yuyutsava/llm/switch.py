@@ -91,7 +91,9 @@ class ModelSwitchMiddleware(AgentMiddleware):  # type: ignore[misc]
     *built* is the target the graph's model was built from. While a turn's pin
     is that target and ``models.toml`` has not been reloaded since, the call
     keeps the graph's own model; otherwise it runs on the pinned target's model,
-    built once per event loop by :class:`~yuyutsava.llm.selection.TaskModels`.
+    built once per event loop by :class:`~yuyutsava.llm.selection.TaskModels`,
+    and *retarget_prompt* rewrites the system prompt's model-specific parts from
+    the graph's model to it (``core/harness.retarget_prompt``).
     """
 
     name = "ModelSwitch"
@@ -104,9 +106,11 @@ class ModelSwitchMiddleware(AgentMiddleware):  # type: ignore[misc]
         built: Any,
         temperature: float,
         disable_reasoning: bool = False,
+        retarget_prompt: Callable[[Any, Any, Any], Any] | None = None,
     ) -> None:
         super().__init__()
         self._chooser = chooser
+        self._retarget_prompt = retarget_prompt
         self._task = task
         self._built = built
         self._built_generation = chooser.models.generation
@@ -133,11 +137,15 @@ class ModelSwitchMiddleware(AgentMiddleware):  # type: ignore[misc]
         # No pin: the turn started before this process did (an approval resumed
         # after a restart). Choose now; the turn keeps it from here.
         pin = self._pins.get(thread_id) or await self._begin(thread_id)
-        model = request.model if pin.handle is None else pin.handle.model
         reference = pin.target.reference
-        response = await handler(
-            request.override(model=model, messages=for_reader(request.messages, reference))
-        )
+        changes: dict[str, Any] = {"messages": for_reader(request.messages, reference)}
+        if pin.handle is not None:
+            changes["model"] = pin.handle.model
+            if self._retarget_prompt is not None:
+                changes["system_message"] = self._retarget_prompt(
+                    request.system_message, request.model, pin.handle.model
+                )
+        response = await handler(request.override(**changes))
         return _stamp(response, reference)
 
     async def _begin(self, thread_id: str) -> _Pin:
