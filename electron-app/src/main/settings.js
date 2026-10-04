@@ -33,7 +33,25 @@ function readSettings() {
   return result
 }
 
-function writeSettings(updates) {
+// Model settings live in models.toml now, changed through the daemon's /models
+// API (Settings → Models). A model key written here would be read only by a
+// daemon without models.toml, and silently ignored by every other — so they are
+// refused rather than written.
+const MODEL_KEY =
+  /^(?:TIER_[A-Z]+_)?(?:LLM_PROVIDER|GROQ_API_KEY|GROQ_MODEL|OPENROUTER_API_KEY|OPENROUTER_MODEL|ANTHROPIC_API_KEY|ANTHROPIC_MODEL|OLLAMA_MODEL|OLLAMA_HOST)$/
+
+function isModelKey(key) {
+  return MODEL_KEY.test(key)
+}
+
+function writeSettings(requested) {
+  const refused = Object.keys(requested).filter(isModelKey)
+  if (refused.length) {
+    console.warn(
+      `[settings] not writing ${refused.join(', ')} — models are set up in Settings → Models`,
+    )
+  }
+  const updates = Object.fromEntries(Object.entries(requested).filter(([key]) => !isModelKey(key)))
   const filePath = getEnvFilePath()
   ensureEnvFileExists(filePath)
 
@@ -62,4 +80,4 @@ function writeSettings(updates) {
   fs.renameSync(tmp, filePath)
 }
 
-module.exports = { readSettings, writeSettings, getEnvFilePath }
+module.exports = { readSettings, writeSettings, getEnvFilePath, isModelKey }

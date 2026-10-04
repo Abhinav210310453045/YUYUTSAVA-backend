@@ -71,6 +71,13 @@ export default [
     rules: shared,
   },
 
+  // Main-process tests run under vitest, which is ES modules only; the code they
+  // test stays CommonJS (they load it with createRequire).
+  {
+    files: ['src/main/**/*.test.js'],
+    languageOptions: { ecmaVersion: 'latest', sourceType: 'module', globals: globals.node },
+  },
+
   // Tests may run long; the size limit is for the code under test.
   { files: ['**/*.test.{js,jsx}'], rules: { 'max-lines': 'off' } },
   { files: maxLines.files, rules: { 'max-lines': 'off' } },

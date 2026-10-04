@@ -53,11 +53,8 @@ class ConfigGroup:
     vars: list[ConfigVar]
 
 
-def _provider_dep(value: str) -> dict:
-    return {"depends_key": "LLM_PROVIDER", "depends_value": value}
-
-
-# Ordered groups. Keep the order user-friendly: most-touched first.
+# Ordered groups. Keep the order user-friendly: most-touched first. Models are not
+# here: they live in models.toml, changed through /models (Settings → Models).
 _GROUPS: list[ConfigGroup] = [
     ConfigGroup(
         "Daemon",
@@ -114,77 +111,6 @@ _GROUPS: list[ConfigGroup] = [
                 help="Optional bearer token; required for non-loopback binds.",
             ),
             ConfigVar("YUYUTSAVA_OUTPUT_DIR", "Output directory"),
-        ],
-    ),
-    ConfigGroup(
-        "LLM Provider",
-        [
-            ConfigVar(
-                "LLM_PROVIDER",
-                "Provider",
-                "select",
-                default="groq",
-                options=["groq", "openrouter", "anthropic", "ollama"],
-            ),
-            ConfigVar(
-                "GROQ_API_KEY",
-                "Groq API key",
-                "password",
-                secret=True,
-                placeholder="gsk_...",
-                **_provider_dep("groq"),
-            ),
-            ConfigVar(
-                "GROQ_MODEL",
-                "Groq model",
-                default="llama-3.3-70b-versatile",
-                placeholder="llama-3.3-70b-versatile",
-                **_provider_dep("groq"),
-            ),
-            ConfigVar(
-                "OPENROUTER_API_KEY",
-                "OpenRouter API key",
-                "password",
-                secret=True,
-                placeholder="sk-or-...",
-                **_provider_dep("openrouter"),
-            ),
-            ConfigVar(
-                "OPENROUTER_MODEL",
-                "OpenRouter model",
-                default="openai/gpt-4o-mini",
-                placeholder="openai/gpt-4o-mini",
-                **_provider_dep("openrouter"),
-            ),
-            ConfigVar(
-                "ANTHROPIC_API_KEY",
-                "Anthropic API key",
-                "password",
-                secret=True,
-                placeholder="sk-ant-...",
-                **_provider_dep("anthropic"),
-            ),
-            ConfigVar(
-                "ANTHROPIC_MODEL",
-                "Anthropic model",
-                default="claude-haiku-4-5-20251001",
-                placeholder="claude-haiku-4-5-20251001",
-                **_provider_dep("anthropic"),
-            ),
-            ConfigVar(
-                "OLLAMA_HOST",
-                "Ollama host",
-                default="http://localhost:11434/v1",
-                placeholder="http://localhost:11434/v1",
-                **_provider_dep("ollama"),
-            ),
-            ConfigVar(
-                "OLLAMA_MODEL",
-                "Ollama model",
-                default="llama3.2:3b",
-                placeholder="llama3.2:3b",
-                **_provider_dep("ollama"),
-            ),
         ],
     ),
     ConfigGroup(
@@ -339,15 +265,6 @@ _GROUPS: list[ConfigGroup] = [
                 "YUYUTSAVA_ROUTING_THRESHOLDS",
                 "Routing thresholds",
                 placeholder="comma-separated complexity cut points",
-            ),
-            ConfigVar(
-                "TIER_LIGHT_LLM_PROVIDER",
-                "Light-tier provider",
-                "select",
-                options=["", "groq", "openrouter", "anthropic", "ollama"],
-            ),
-            ConfigVar(
-                "TIER_LIGHT_OLLAMA_MODEL", "Light-tier Ollama model", placeholder="llama3.2:3b"
             ),
         ],
     ),
