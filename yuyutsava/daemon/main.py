@@ -45,6 +45,7 @@ from yuyutsava.daemon.bootstrap import DaemonOptions, DaemonSubsystems, build_da
 from yuyutsava.daemon.lifecycle import install_reload_handler, install_signal_handlers
 from yuyutsava.daemon.options import build_parser
 from yuyutsava.daemon.orchestrator_loop import resume_interrupted_tasks
+from yuyutsava.daemon.setup_mode import models_problem, run_setup_mode
 from yuyutsava.daemon.singleton import (
     acquire_daemon_lock,
     read_daemon_discovery,
@@ -483,6 +484,12 @@ async def _async_main(argv: list[str] | None = None) -> int:
     lock_fd = _acquire_singleton()
     if lock_fd is None:
         return 0
+
+    # No model it can use (a fresh install, a login that stopped working): wait
+    # to be set up instead of failing to boot, then come back as the full daemon.
+    problem = await asyncio.to_thread(models_problem)
+    if problem is not None:
+        return _REEXEC_RETCODE if await run_setup_mode(problem, lock_fd=lock_fd) else 0
 
     opts = DaemonOptions(
         workspace=args.workspace,
