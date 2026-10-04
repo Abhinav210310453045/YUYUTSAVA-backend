@@ -26,6 +26,7 @@ to ``<NAME>``::
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 from pydantic import TypeAdapter
@@ -82,12 +83,24 @@ def provider_type_of(name: str) -> str | None:
     return _ALIASES.get(name)
 
 
-def llm_settings_from_env(role: str | None = None) -> ModelTarget:
-    """The model ``<ROLE>_LLM_PROVIDER`` (falls back to ``LLM_PROVIDER``) selects.
+@dataclass(frozen=True)
+class EnvSetup:
+    """What the environment describes, before it is a target: ready to write into ``models.toml``."""
 
-    ``role`` may be ``None`` or ``"main"`` (no prefix — the CLI), or a role name.
-    Raises :class:`RuntimeError` naming the variable to set when a required one
-    is missing, or the accepted values when ``LLM_PROVIDER`` names no provider.
+    #: The provider type ``LLM_PROVIDER`` selects.
+    type: str
+    #: The ``[providers.<name>]`` table; keys are ``env:`` references, never values.
+    connection: dict[str, Any]
+    #: The model id.
+    model: str
+    #: Settings for a ``[models.<alias>]`` entry (a thinking budget), or ``None``.
+    model_settings: dict[str, Any] | None
+
+
+def env_setup(role: str | None = None) -> EnvSetup:
+    """The setup ``<ROLE>_LLM_PROVIDER`` (falls back to ``LLM_PROVIDER``) describes.
+
+    Raises like :func:`llm_settings_from_env`; that function is this one, built.
     """
     effective = None if role in (None, "main") else role
     requested = env("LLM_PROVIDER", effective, "groq").lower()
@@ -97,7 +110,18 @@ def llm_settings_from_env(role: str | None = None) -> ModelTarget:
             f"Unknown LLM_PROVIDER={requested!r}; use one of: {', '.join(PROVIDER_TYPES)}."
         )
     connection, model, entry = _READERS[provider_type](effective)
-    return _target(provider_type, connection, model, entry)
+    return EnvSetup(provider_type, connection, model, entry)
+
+
+def llm_settings_from_env(role: str | None = None) -> ModelTarget:
+    """The model ``<ROLE>_LLM_PROVIDER`` (falls back to ``LLM_PROVIDER``) selects.
+
+    ``role`` may be ``None`` or ``"main"`` (no prefix — the CLI), or a role name.
+    Raises :class:`RuntimeError` naming the variable to set when a required one
+    is missing, or the accepted values when ``LLM_PROVIDER`` names no provider.
+    """
+    setup = env_setup(role)
+    return _target(setup.type, setup.connection, setup.model, setup.model_settings)
 
 
 def _target(
@@ -333,4 +357,4 @@ _READERS: dict[str, Callable[[str | None], _Described]] = {
 }
 
 
-__all__ = ["PROVIDER_TYPES", "llm_settings_from_env", "provider_type_of"]
+__all__ = ["PROVIDER_TYPES", "EnvSetup", "env_setup", "llm_settings_from_env", "provider_type_of"]
