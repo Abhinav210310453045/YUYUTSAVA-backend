@@ -165,11 +165,13 @@ class ModelSwitchMiddleware(AgentMiddleware):  # type: ignore[misc]
         pin = self._pins[thread_id] = _Pin(target, handle)
         if handle is not None:
             logger.info(
-                "%s turn on %s runs on %s (built on %s)",
+                "%s turn on %s runs on %s (%s)",
                 self._task,
                 thread_id,
                 target.reference,
-                self._built.reference,
+                "rebuilt: models.toml reloaded"
+                if target == self._built
+                else f"switched from {self._built.reference}",
             )
         self._pins.move_to_end(thread_id)
         while len(self._pins) > _PINS_KEPT:
