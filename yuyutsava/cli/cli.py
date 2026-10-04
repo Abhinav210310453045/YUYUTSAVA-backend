@@ -9,7 +9,9 @@ handler in ``cli/commands/*``. All the actual work lives in those handlers
 from __future__ import annotations
 
 import argparse
+import contextlib
 import dataclasses
+import io
 import os
 import sys
 from dataclasses import dataclass
@@ -30,6 +32,7 @@ from yuyutsava.cli.commands.options import ChatOptions
 from yuyutsava.cli.commands.prefs import run_prefs
 from yuyutsava.cli.commands.scenarios import format_scenario_list, get_scenario
 from yuyutsava.cli.commands.sessions import delete_session, print_sessions_table
+from yuyutsava.cli.first_run import offer_setup
 from yuyutsava.cli.tooling import (
     builtin_tools_reference_json,
     export_agent_state_graph_png,
@@ -81,12 +84,34 @@ def _run_daemon(argv: list[str]) -> int:
 
 
 def _run_chat(argv: list[str]) -> int:
+    _offer_setup_before(argv)
     return aio_run(_async_main(argv, force_chat=True))
 
 
 def _run_task(argv: list[str]) -> int:
     """No subcommand: argv is a task, or flags for the one-shot/REPL path."""
+    _offer_setup_before(argv)
     return aio_run(_async_main(argv))
+
+
+def _offer_setup_before(argv: list[str]) -> None:
+    """On a first run, offer the setup wizard — before the event loop, which its prompts need.
+
+    Only when *argv* is about to talk to a model: not for help, listings or
+    session housekeeping. A malformed argv is left for the real parse to report.
+    """
+    if any(flag in argv for flag in ("-h", "--help")):
+        return
+    try:
+        with contextlib.redirect_stderr(io.StringIO()):
+            args, _ = _build_parser().parse_known_args(argv)
+    except SystemExit:
+        return
+    if args.list_scenarios or args.print_tools or args.list_sessions or args.delete_session:
+        return
+    if load_dotenv:
+        load_dotenv()  # what the wizard finds includes a .env setup
+    offer_setup()
 
 
 #: Every subcommand, once. Nothing else may name one.
