@@ -1,0 +1,393 @@
+"""The setup wizard: from "nothing configured" to a working ``models.toml``, one question at a time.
+
+In order (design §3):
+
+1. **What is already here.** Logins and keys this machine has
+   (:mod:`yuyutsava.llm.config.detect`) — the current ``.env`` setup first,
+   picked to begin with.
+2. **A provider by hand**, when nothing was found or more is wanted: the type,
+   then only what that type needs, then how to log in — only the methods it
+   accepts, each said in plain words.
+3. **Check the login.** Free: the provider's model list
+   (:func:`~yuyutsava.llm.providers.registry.discover`). A failure is said
+   with its fix, and the provider can be fixed, kept anyway or dropped.
+4. **The default model**, picked from what the providers list as ready.
+5. **Tasks** — every task follows the default, unless some should not.
+6. **Write** ``models.toml`` once, at the end, through the store — nothing is
+   half-written if the wizard is left early. Secrets typed along the way are
+   kept in ``secrets.toml`` as they are typed.
+
+The flow asks through a :class:`~.prompter.Prompter`, so tests drive it with a
+script of answers.
+"""
+
+from __future__ import annotations
+
+import os
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
+from typing import Any, get_args
+
+from yuyutsava.cli.setup_wizard.prompter import Option, Prompter
+from yuyutsava.llm.config.detect import Finding
+from yuyutsava.llm.config.edits import (
+    ConfigEditError,
+    Edit,
+    add_provider,
+    combine,
+    keep_keys_in_secrets,
+    use,
+)
+from yuyutsava.llm.config.loader import ModelsConfigError
+from yuyutsava.llm.config.messages import type_label
+from yuyutsava.llm.config.schema import CONNECTIONS, connection_type, login_methods
+from yuyutsava.llm.config.secrets import read_secrets_file
+from yuyutsava.llm.config.store import ABSENT, ConfigStore, StaleWrite
+from yuyutsava.llm.config.watch import snapshot_of
+from yuyutsava.llm.discovery import Availability, Discovery
+from yuyutsava.llm.target import ProviderAccess, access_for
+from yuyutsava.llm.tasks import TASKS
+
+#: How each provider type is introduced: what it is, and what it takes.
+INTRODUCTIONS: dict[str, str] = {
+    "vertex": "Gemini, Claude and open models in your Google Cloud project — needs a project",
+    "google": "Gemini with a Google AI Studio key — the quickest Google start",
+    "bedrock": "every model AWS Bedrock serves — needs an AWS login",
+    "anthropic": "Claude with an Anthropic API key",
+    "openai": "GPT models with an OpenAI API key",
+    "openrouter": "hundreds of models behind one OpenRouter key",
+    "groq": "fast open models with a Groq key (free tier)",
+    "mistral": "Mistral models with a Mistral key",
+    "cohere": "Command models with a Cohere key",
+    "azure": "OpenAI models deployed in your Azure resource",
+    "openai_compatible": "any server that speaks OpenAI's API (xAI, DeepSeek, a proxy, …)",
+    "ollama": "models running on this machine — free, private, no key",
+}
+
+#: How each login method is offered, and what to do before choosing it.
+LOGINS: dict[str, str] = {
+    "adc": "my gcloud login — run `gcloud auth application-default login` first",
+    "service_account": "a service-account key file (JSON)",
+    "access_token": "an access token I paste (expires in about an hour)",
+    "api_key": "an API key",
+    "bearer_token": "a token sent as a bearer token",
+    "none": "no login",
+    "aws_default_chain": "whatever AWS finds by itself (environment, ~/.aws, an instance role)",
+    "aws_profile": "a profile from ~/.aws/config",
+    "aws_keys": "an access key pair",
+    "bedrock_api_key": "a Bedrock API key",
+}
+
+#: How a provider's own settings are asked for, and what they start as.
+SETTINGS: dict[str, tuple[str, str]] = {
+    "project": ("Google Cloud project id", ""),
+    "location": ("location (global serves the most models)", "global"),
+    "region": ("AWS region", "us-east-1"),
+    "endpoint": ("Azure endpoint (https://<resource>.openai.azure.com)", ""),
+    "base_url": ("server address", ""),
+    "key_file": ("path to the key file", ""),
+    "profile": ("profile name", "default"),
+}
+
+#: Models a provider lists that are offered for the default, at most.
+_OFFERED = 12
+
+
+@dataclass
+class Services:
+    """What the wizard works with — the real ones at a terminal, doubles in a test."""
+
+    store: ConfigStore
+    detect: Callable[[], list[Finding]]
+    discover: Callable[[ProviderAccess], Discovery]
+    environ: Mapping[str, str] = field(default_factory=lambda: os.environ)
+
+
+@dataclass
+class _Provider:
+    name: str
+    connection: dict[str, Any]
+    #: A model to suggest, from a finding.
+    model: str | None = None
+
+
+class SetupWizard:
+    """One run of the wizard: providers gathered, checked, then written once."""
+
+    def __init__(self, ui: Prompter, services: Services) -> None:
+        self.ui = ui
+        self.s = services
+        self._providers: list[_Provider] = []
+        self._listed: dict[str, Discovery] = {}
+
+    # ─── the two ways in ─────────────────────────────────────────────────
+
+    def setup(self) -> bool:
+        """The whole setup: what is here, more by hand, the default, the tasks, written."""
+        revision = self.s.store.read()
+        self.ui.say("Welcome to YUYUTSAVA — let's connect a model.", tone="title")
+        if revision.digest != ABSENT:
+            self.ui.say(
+                "models.toml exists already; what you set up here is added to it.", tone="dim"
+            )
+        self._from_this_machine()
+        if not self._providers or self.ui.confirm(
+            "Set up a provider yourself as well?", default=False
+        ):
+            self._by_hand()
+        while self.ui.confirm("Add another provider?", default=False):
+            self._by_hand()
+        return self._finish(revision.digest, choose_default=True)
+
+    def add(self) -> bool:
+        """One more provider, and the choice to make one of its models the default."""
+        revision = self.s.store.read()
+        if revision.digest == ABSENT:
+            return self.setup()
+        self._by_hand()
+        return self._finish(
+            revision.digest,
+            choose_default=self.ui.confirm("Make one of its models the default?", default=False),
+        )
+
+    # ─── providers ───────────────────────────────────────────────────────
+
+    def _from_this_machine(self) -> None:
+        found = self.s.detect()
+        if not found:
+            self.ui.say("Nothing set up on this machine yet — that's fine.", tone="dim")
+            return
+        picked = self.ui.choose_many(
+            "Found on this machine — use which?",
+            [Option(f, f"{type_label(f.type)}", f.origin) for f in found],
+            chosen=[found[0]],
+        )
+        for finding in picked:
+            connection = dict(finding.connection)
+            if _env_keys(connection) and self.ui.confirm(
+                f"Keep the {type_label(finding.type)} key in secrets.toml, so the app and "
+                "the daemon find it too?",
+                default=True,
+            ):
+                connection = keep_keys_in_secrets(
+                    connection,
+                    provider=self._free_name(finding.name),
+                    store_secret=self.s.store.store_secret,
+                    environ=self.s.environ,
+                )
+            self._checked(_Provider(self._free_name(finding.name), connection, finding.model))
+
+    def _by_hand(self) -> None:
+        kind = self.ui.choose(
+            "Which provider?",
+            [
+                Option(
+                    connection_type(c),
+                    type_label(connection_type(c)),
+                    INTRODUCTIONS.get(connection_type(c), ""),
+                )
+                for c in CONNECTIONS
+            ],
+        )
+        name = self._free_name(self.ui.ask("Name it", default=kind))
+        connection = self._settings_for(kind, name)
+        self._checked(_Provider(name, connection))
+
+    def _settings_for(self, kind: str, name: str) -> dict[str, Any]:
+        cls = next(c for c in CONNECTIONS if connection_type(c) == kind)
+        connection: dict[str, Any] = {"type": kind}
+        for field_name, info in cls.model_fields.items():
+            if field_name in ("type", "auth") or not info.is_required():
+                continue
+            question, default = SETTINGS.get(field_name, (field_name, ""))
+            connection[field_name] = self._required(question, default)
+        methods = login_methods(cls)
+        method = (
+            methods[0]
+            if len(methods) == 1
+            else self.ui.choose(
+                "How do you log in?", [Option(m, LOGINS.get(m, m)) for m in methods]
+            )
+        )
+        connection["auth"] = self._login(cls, method, name)
+        return connection
+
+    def _login(self, cls: type, method: str, name: str) -> dict[str, Any]:
+        annotation = cls.model_fields["auth"].annotation
+        login_cls = next(
+            variant
+            for variant in get_args(annotation) or (annotation,)
+            if get_args(variant.model_fields["method"].annotation)[0] == method
+        )
+        auth: dict[str, Any] = {"method": method}
+        for field_name, info in login_cls.model_fields.items():
+            if field_name == "method":
+                continue
+            if field_name in login_cls.secret_fields:
+                if not info.is_required():
+                    continue  # an optional secret (a session token) is not asked for
+                secret = (
+                    name
+                    if field_name in ("key", "token")
+                    else f"{name}-{field_name.replace('_', '-')}"
+                )
+                value = self.ui.secret(f"{field_name.replace('_', ' ')} for {name}")
+                if value:
+                    self.s.store.store_secret(secret, value)
+                auth[field_name] = f"secret:{secret}"
+            else:
+                question, default = SETTINGS.get(field_name, (field_name, ""))
+                auth[field_name] = self._required(question, default)
+        return auth
+
+    def _required(self, question: str, default: str) -> str:
+        while True:
+            answer = self.ui.ask(question, default=default)
+            if answer:
+                return answer
+            self.ui.say("  this one is needed", tone="warn")
+
+    def _free_name(self, wanted: str) -> str:
+        taken = {p.name for p in self._providers} | self._existing_providers()
+        name, n = wanted, 2
+        while name in taken:
+            name, n = f"{wanted}-{n}", n + 1
+        return name
+
+    def _existing_providers(self) -> set[str]:
+        try:
+            return set(self.s.store.preview(lambda document: None).providers)
+        except (ModelsConfigError, ValueError):
+            return set()
+
+    # ─── checking a login ────────────────────────────────────────────────
+
+    def _checked(self, provider: _Provider) -> None:
+        """Log in to *provider* (free) and keep it, fixed, as it is, or not at all."""
+        while True:
+            self.ui.say(f"Checking {provider.name} …", tone="dim")
+            listed = self._discover(provider)
+            if listed.ok:
+                ready = sum(m.availability is Availability.AVAILABLE for m in listed.models)
+                self.ui.say(
+                    f"✓ {provider.name}: logged in — {len(listed.models)} models, {ready} ready",
+                    tone="ok",
+                )
+                self._listed[provider.name] = listed
+                self._providers.append(provider)
+                return
+            self.ui.say(f"✗ {provider.name}: {listed.problem}", tone="warn")
+            if listed.fix:
+                self.ui.say(f"  {listed.fix}", tone="dim")
+            what = self.ui.choose(
+                "What now?",
+                [
+                    Option("retry", "try again", "after fixing it outside"),
+                    Option("redo", "change the settings"),
+                    Option("keep", "keep it anyway", "and fix it later"),
+                    Option("drop", "leave it out"),
+                ],
+            )
+            if what == "keep":
+                self._providers.append(provider)
+                return
+            if what == "drop":
+                return
+            if what == "redo":
+                provider = _Provider(
+                    provider.name,
+                    self._settings_for(provider.connection["type"], provider.name),
+                    provider.model,
+                )
+
+    def _discover(self, provider: _Provider) -> Discovery:
+        edit = combine(add_provider(provider.name, provider.connection), use(f"{provider.name}/-"))
+        try:
+            config = self.s.store.preview(edit)
+        except (ModelsConfigError, ConfigEditError) as exc:
+            return Discovery(provider.name, problem=str(exc))
+        snapshot = snapshot_of(config, read_secrets_file(self.s.store.secrets_path))
+        access = access_for(
+            config, provider.name, secrets=snapshot.secrets, unavailable=snapshot.unavailable
+        )
+        return self.s.discover(access)
+
+    # ─── models and writing ──────────────────────────────────────────────
+
+    def _finish(self, expected: str, *, choose_default: bool) -> bool:
+        if not self._providers:
+            self.ui.say("Nothing to write — no provider was kept.", tone="warn")
+            return False
+        edits: list[Edit] = [add_provider(p.name, p.connection) for p in self._providers]
+        if choose_default:
+            default = self._choose_model("Which model should YUYUTSAVA use by default?")
+            edits.append(use(default))
+            edits.extend(self._task_edits(default))
+        try:
+            self.s.store.apply(combine(*edits), expected=expected)
+        except (ConfigEditError, ModelsConfigError, StaleWrite) as exc:
+            self.ui.say(f"✗ nothing was written: {exc}", tone="warn")
+            return False
+        self.ui.say(f"✓ written to {self.s.store.models_path}", tone="ok")
+        self.ui.say(
+            "Change it any time: `yuyutsava models use <model>`, /model in a chat, or edit the "
+            "file — a running YUYUTSAVA picks it up.",
+            tone="dim",
+        )
+        return True
+
+    def _choose_model(self, question: str) -> str:
+        options = self._model_options()
+        options.append(Option("", "type a model id myself"))
+        chosen = self.ui.choose(question, options)
+        if chosen:
+            return chosen
+        names = [p.name for p in self._providers]
+        provider = (
+            names[0]
+            if len(names) == 1
+            else self.ui.choose("On which provider?", [Option(n, n) for n in names])
+        )
+        return f"{provider}/{self._required('model id', '')}"
+
+    def _model_options(self) -> list[Option]:
+        seen: set[str] = set()
+        options: list[Option] = []
+        for provider in self._providers:
+            if provider.model:
+                reference = f"{provider.name}/{provider.model}"
+                seen.add(reference)
+                options.append(Option(reference, reference, "what this machine uses now"))
+            listed = self._listed.get(provider.name)
+            ready = [
+                m
+                for m in (listed.models if listed else ())
+                if m.availability is Availability.AVAILABLE
+            ]
+            for model in ready[:_OFFERED]:
+                reference = f"{provider.name}/{model.id}"
+                if reference not in seen:
+                    seen.add(reference)
+                    window = f"{model.context_window // 1000}k" if model.context_window else ""
+                    options.append(Option(reference, reference, window))
+        return options
+
+    def _task_edits(self, default: str) -> list[Edit]:
+        if self.ui.confirm(f"Use {default} for every task?", default=True):
+            return []
+        tasks = self.ui.choose_many(
+            "Which tasks should use another model?",
+            [Option(t.name, t.name, t.label) for t in TASKS],
+        )
+        if not tasks:
+            return []
+        other = self._choose_model(f"Which model for {', '.join(tasks)}?")
+        return [use(other, tasks=tasks)]
+
+
+def _env_keys(connection: Mapping[str, Any]) -> bool:
+    auth = connection.get("auth", {})
+    return any(isinstance(v, str) and v.startswith("env:") for v in auth.values())
+
+
+__all__ = ["INTRODUCTIONS", "LOGINS", "Services", "SetupWizard"]

@@ -30,6 +30,7 @@ import tomlkit
 from tomlkit import TOMLDocument
 
 from yuyutsava.llm.config.loader import load_text
+from yuyutsava.llm.config.schema import ModelsConfig
 from yuyutsava.llm.config.secrets import NAME_PATTERN, SecretRef, SecretSource
 from yuyutsava.platform import FileLock
 from yuyutsava.platform.files import replace_private_text, replace_text
@@ -69,6 +70,16 @@ class ConfigStore:
         self._secrets = secrets_path
         self._lock_path = models_path.with_name("models.lock")
 
+    @property
+    def models_path(self) -> Path:
+        """The ``models.toml`` this store writes."""
+        return self._models
+
+    @property
+    def secrets_path(self) -> Path:
+        """The ``secrets.toml`` beside it."""
+        return self._secrets
+
     def read(self) -> Revision:
         """``models.toml`` as it is now."""
         try:
@@ -98,6 +109,17 @@ class ConfigStore:
             load_text(text, source=str(self._models))
             replace_text(self._models, text)
         return Revision(text, _digest(text))
+
+    def preview(self, edit: Callable[[TOMLDocument], None]) -> ModelsConfig:
+        """``models.toml`` as *edit* would leave it, validated, without writing anything.
+
+        For a caller that must check a change before making it — the setup wizard
+        logs in to a provider before the file names it. Raises
+        ``ModelsConfigError`` as :meth:`apply` would.
+        """
+        document = tomlkit.parse(self.read().text)
+        edit(document)
+        return load_text(tomlkit.dumps(document), source=str(self._models))
 
     def store_secret(self, name: str, value: str) -> SecretRef:
         """Keep *value* under *name* in ``secrets.toml``; the reference to write is returned."""

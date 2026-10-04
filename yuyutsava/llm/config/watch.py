@@ -143,7 +143,7 @@ class ConfigSource:
             logger.warning("models config not applied; the previous one stays in use:\n%s", exc)
             return ConfigState(previous, exc)
         generation = previous.generation + 1 if previous else 1
-        return ConfigState(_snapshot(config, secrets, generation, digest))
+        return ConfigState(snapshot_of(config, secrets, generation, digest))
 
     def _secrets_from(self, text: str) -> dict[str, str]:
         try:
@@ -164,9 +164,14 @@ class ConfigSource:
                 logger.exception("a models config listener failed")
 
 
-def _snapshot(
-    config: ModelsConfig, secrets: Mapping[str, str], generation: int, digest: str
+def snapshot_of(
+    config: ModelsConfig, secrets: Mapping[str, str], generation: int = 0, digest: str = ""
 ) -> ConfigSnapshot:
+    """*config* with each secret it refers to resolved from *secrets*, the environment or a file.
+
+    What :meth:`ConfigSource.reload` publishes; also for a config not yet
+    written — the setup wizard checks a login before it saves one.
+    """
     resolver = SecretResolver(secrets)
     found: dict[str, Secret] = {}
     missing: dict[str, ConfigIssue] = {}
@@ -247,4 +252,11 @@ class ConfigWatcher:
             observer.join(timeout=2.0)
 
 
-__all__ = ["ConfigSnapshot", "ConfigSource", "ConfigState", "ConfigWatcher", "SETTLE_SECONDS"]
+__all__ = [
+    "SETTLE_SECONDS",
+    "ConfigSnapshot",
+    "ConfigSource",
+    "ConfigState",
+    "ConfigWatcher",
+    "snapshot_of",
+]

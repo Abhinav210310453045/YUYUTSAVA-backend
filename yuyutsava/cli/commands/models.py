@@ -81,6 +81,8 @@ def _parser() -> argparse.ArgumentParser:
         p.set_defaults(run=run)
         return p
 
+    command("setup", "connect a provider and choose models, step by step", _setup)
+    command("add", "add another provider, step by step", _add)
     command("list", "providers, models, the default and each task's model", _list)
     command("doctor", "check models.toml and its secrets without calling anyone", _doctor)
     p = command("discover", "list the models each provider offers this account", _discover)
@@ -429,6 +431,18 @@ def _secrets(args: argparse.Namespace) -> int:
         return 1
     _say(f"  {OK}✓{RESET} stored — refer to it as {VALUE}{reference}{RESET} in models.toml")
     return 0
+
+
+def _setup(args: argparse.Namespace) -> int:
+    from yuyutsava.cli.setup_wizard import run_setup  # noqa: PLC0415 — loads provider SDKs
+
+    return run_setup()
+
+
+def _add(args: argparse.Namespace) -> int:
+    from yuyutsava.cli.setup_wizard import run_add  # noqa: PLC0415 — as above
+
+    return run_add()
 
 
 def _say(text: str = "", *, err: bool = False) -> None:
