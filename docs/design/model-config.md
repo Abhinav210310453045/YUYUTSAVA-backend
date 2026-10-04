@@ -565,8 +565,8 @@ on.
 | M0 | Done 2026-10-02: 9 SDK contracts with negative controls (27 checks in `verify_framework_contract.py`), ADR-005, decisions on rules 12–15. Live on Vertex: Gemini 3 via genai, a foreign unsigned tool loop, and MaaS all pass; Claude has no quota (rule 15). Touch ID prompt verified. |
 | M1 | Done 2026-10-03: `llm/config` (schema, loader, messages, secrets, store, watch, schema_export), `llm/tasks.py`, `platform/files.py`; 80 new tests. Deviation: `detect.py` moves to M5, the wave of its first caller (STD-KIS-3). |
 | M2 | Done 2026-10-03: every model built from a `ModelTarget`; settings classes gone (R-SOL-03); live price and discovery on the providers (R-PLC-10); Gemini on genai for both routes with every fix; Bedrock builds its own clients; the fingerprint is byte-identical. Live: CLI tool turn, daemon chat, the three Vertex families, and Vertex discovery (43 models, Claude marked as needing quota). Deviations: the package stays `llm/providers/` (not `kinds/`); per-model windows move to M3 with the context budget; `verify()` is folded into `discover()`, because a listing needs a login. |
-| M3 | Next |
-| M4 | Not started |
+| M3 | Done 2026-10-04: `TaskModels` (llm/selection.py) chooses each task's model from `models.toml`, or from the environment without one; a per-loop pool rebuilds on config or key change; the window follows the model; the daemon watcher reloads live (triage and router per call); the CLI reads at start. Live: CLI, daemon, and the Electron app chat on `models.toml` (usage = the file's model); a live edit applied, a broken edit rejected with the last good config kept. Found live: a missing `TaskModels.window`, and Gemini region availability (discovery now probes with free `countTokens`). Moved to M4: provider on usage rows (it needs migrations), and per-turn switching of the chat and orchestrator agents. |
+| M4 | Next |
 | M5 | Not started |
 | M6 | Not started |
 | M7 | Not started |
