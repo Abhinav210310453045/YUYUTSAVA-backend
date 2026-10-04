@@ -18,6 +18,7 @@ from yuyutsava.core.agent_stack import build_agent_stack
 from yuyutsava.core.app_context import open_events_store
 from yuyutsava.core.deps import StackWiring
 from yuyutsava.docker_sandbox.backend import pull_virtual_paths_to_host
+from yuyutsava.llm.failures import describe_model_failure
 from yuyutsava.storage.paths import WorkspaceLayout
 from yuyutsava.storage.prefs import PrefsStore
 from yuyutsava.storage.sessions import (
@@ -94,6 +95,15 @@ async def run_chat(
             except ResumeFailed as exc:
                 print(f"Error: {exc}", file=sys.stderr)
                 return 2
+            except Exception as exc:
+                # A quota, a busy provider or an overlong conversation is said in
+                # one line the reader can act on; anything else is a bug and
+                # keeps its traceback.
+                said = describe_model_failure(exc)
+                if said is None:
+                    raise
+                print(f"Error: {said}", file=sys.stderr)
+                return 1
 
             pulls = _parse_pull_paths(docker_pull_paths)
             if pulls:
