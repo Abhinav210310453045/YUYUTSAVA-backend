@@ -19,7 +19,7 @@ from unittest import mock
 from yuyutsava.cli import cli
 
 #: Every command a user can type. Pinned so removing one is a deliberate act.
-EXPECTED = {"chat", "daemon", "attach", "prefs"}
+EXPECTED = {"chat", "daemon", "attach", "prefs", "models"}
 
 
 class TheSubcommandSurface(unittest.TestCase):

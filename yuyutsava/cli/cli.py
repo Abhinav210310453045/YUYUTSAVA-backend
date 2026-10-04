@@ -25,6 +25,7 @@ from yuyutsava.aio import run as aio_run
 from yuyutsava.cli.commands import daemon_ctl
 from yuyutsava.cli.commands.attach import run_attach
 from yuyutsava.cli.commands.chat import run_chat
+from yuyutsava.cli.commands.models import run_models
 from yuyutsava.cli.commands.options import ChatOptions
 from yuyutsava.cli.commands.prefs import run_prefs
 from yuyutsava.cli.commands.scenarios import format_scenario_list, get_scenario
@@ -99,6 +100,7 @@ SUBCOMMANDS: tuple[Subcommand, ...] = (
     Subcommand("daemon", "run the always-on daemon", _run_daemon),
     Subcommand("attach", "answer a running daemon's approvals from this terminal", run_attach),
     Subcommand("prefs", "read or write stored preferences", run_prefs),
+    Subcommand("models", "see, check and change which models are used (models.toml)", run_models),
 )
 
 

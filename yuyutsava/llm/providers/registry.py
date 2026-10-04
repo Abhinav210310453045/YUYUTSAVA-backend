@@ -48,7 +48,8 @@ def discover(access: ProviderAccess) -> Discovery:
     try:
         return _BY_TYPE[access.type].discover(access)
     except SecretMissing as exc:
-        return Discovery(access.provider, problem=str(exc), fix="store the secret, then list again")
+        # The message already says which secret, and how to store it.
+        return Discovery(access.provider, problem=str(exc))
 
 
 def all_providers() -> tuple[Provider, ...]:
