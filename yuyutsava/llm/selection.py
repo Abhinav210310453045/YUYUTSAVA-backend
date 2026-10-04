@@ -129,6 +129,17 @@ class TaskModels:
         )
 
     @property
+    def config(self) -> ModelsConfig | None:
+        """``models.toml`` as last loaded; ``None`` on the environment route or before it loads."""
+        snapshot = self._state().snapshot
+        return snapshot.config if snapshot is not None else None
+
+    def reload(self) -> None:
+        """Read ``models.toml`` again now — for a process that changed it and keeps no watcher."""
+        if self._source is not None:
+            self._source.reload()
+
+    @property
     def generation(self) -> int:
         """Which load of ``models.toml`` is in use; ``0`` on the environment route."""
         return self._generation()

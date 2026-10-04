@@ -36,6 +36,7 @@ EXPECTED = {
     "/reply",
     "/voice",
     "/subagents",
+    "/model",
     "/usage",
     "/context",
     "/skills",

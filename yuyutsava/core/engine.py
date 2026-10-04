@@ -140,6 +140,9 @@ class AgentBundle:
     async_host_url: str | None = None
     async_host_attachment: Any | None = None  # HostAttachment
     async_task_mirror: Any | None = None  # AsyncTaskMirror
+    #: The subagents the master delegates to inside its own turn — the ones a
+    #: conversation's model choice reaches (``/model subagents``).
+    subagent_names: tuple[str, ...] = ()
     pg_pool: Any | None = None  # PgPool owned by the CLI (closed in aclose)
     embedder: Any | None = None  # memory.Embedder owned by the CLI
     mcp_manager: Any | None = None  # MCPClientManager owned by the CLI (stopped in aclose)
@@ -1132,6 +1135,7 @@ def build_cli_deepagent(
         async_host_url=deps.async_host_url,
         async_host_attachment=deps.async_host_attachment,
         async_task_mirror=deps.async_task_mirror,
+        subagent_names=_sync_names(subagent_specs),
     )
 
 
@@ -1146,6 +1150,11 @@ def _deep_agent(**kwargs: Any) -> CompiledStateGraph:
         if not isinstance(model, str):
             exclude_deepagents_summarizer(model)
     return create_deep_agent(**kwargs)
+
+
+def _sync_names(specs: "Sequence[dict]") -> tuple[str, ...]:
+    """The names of the subagents in *specs* that run inside the master's turn."""
+    return tuple(spec["name"] for spec in specs if "graph_id" not in spec)
 
 
 # NOTE: the ``build_agent`` back-compat alias was removed once its two real
@@ -1552,6 +1561,7 @@ def build_tinker_agent(
         async_host_url=deps.async_host_url,
         async_host_attachment=deps.async_host_attachment,
         async_task_mirror=deps.async_task_mirror,
+        subagent_names=_sync_names(subagent_specs),
     )
 
 

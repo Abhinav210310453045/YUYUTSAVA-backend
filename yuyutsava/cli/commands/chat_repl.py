@@ -42,6 +42,7 @@ from yuyutsava.ansi import BOLD, CHROME, CLEAR_SCREEN, DIM, RED, RESET, YELLOW, 
 from yuyutsava.cli.background_approvals import BackgroundApprovals
 from yuyutsava.cli.commands.options import ChatOptions
 from yuyutsava.cli.line_reader import read_line
+from yuyutsava.cli.model_command import ModelCommand
 from yuyutsava.cli.render import panels, reports, startup
 from yuyutsava.cli.render.console import make_console, rich_capable
 from yuyutsava.cli.render.dashboard import (
@@ -63,11 +64,12 @@ from yuyutsava.conversation import ConversationService
 from yuyutsava.core.agent_stack import build_agent_stack
 from yuyutsava.core.app_context import open_events_store
 from yuyutsava.core.deps import StackWiring
+from yuyutsava.llm.config.store import ConfigStore
 from yuyutsava.llm.failures import describe_model_failure
 from yuyutsava.llm.quirks.first_chunk_retry import add_retry_listener
 from yuyutsava.prefs.runtime import UNDISABLEABLE, RuntimeSettings
 from yuyutsava.skills.injector import add_recall_listener
-from yuyutsava.storage.paths import state_dir
+from yuyutsava.storage.paths import models_config_path, secrets_path, state_dir
 from yuyutsava.storage.prefs import PrefsStore
 from yuyutsava.storage.sessions import (
     SessionsSettings,
@@ -116,6 +118,9 @@ def quieten_chat_loggers(*, debug_plumbing: bool, verbose: bool) -> None:
             # the transcript pane without passing through one, so they landed
             # unindented and uncoloured in the middle of a turn.
             "yuyutsava.skills.injector",
+            # /model says what a switch did, in this chat's words; the switch's
+            # own line (with the thread id) is for the daemon's log.
+            "yuyutsava.llm.switch",
         ):
             logging.getLogger(_name).setLevel(logging.WARNING)
 
@@ -392,6 +397,7 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
     SlashCommand("/reply", "answer a background question by id", usage="<id> <text>", group=1),
     SlashCommand("/voice", "voice mode: /voice on|off, /voice wake off, /voice tts off", group=2),
     SlashCommand("/subagents", "dedicated subagents: /subagents off face-watcher", group=2),
+    SlashCommand("/model", "this chat's model: /model to list, /model <n|name> to switch", group=2),
     SlashCommand("/usage", "tokens and estimated cost for this session", group=2),
     SlashCommand("/context", "what is in the context window right now, by segment", group=2),
     SlashCommand("/skills", "skills recalled this turn, and all available ones", group=2),
@@ -698,6 +704,8 @@ class ReplCommands:
     remote: Any | None = None
     #: The split-screen dashboard, when the chat runs in one.
     dashboard: Any | None = None
+    #: ``/model``; absent where the chat has no session store to keep a choice in.
+    model_command: ModelCommand | None = None
 
     @property
     def banner_width(self) -> int | None:
@@ -725,6 +733,15 @@ class ReplCommands:
             # surface reads too. Reached only for these two so a normal message
             # never opens the prefs store.
             await _handle_settings_command(cmd, await self.runtime_toggles.get())
+            return Outcome.HANDLED
+        if head == "/model":
+            lines = (
+                await self.model_command.run(self.session.id, list(cmd.args))
+                if self.model_command is not None
+                else [f"  {DIM}switching model needs a session store{RESET}"]
+            )
+            for line in lines:
+                print(line, file=sys.stderr)
             return Outcome.HANDLED
         if head == "/usage":
             await reports.print_usage_summary(
@@ -1166,6 +1183,12 @@ async def run_chat_repl(
                 session=convo.session,
                 remote=approvals.remote,
                 dashboard=dashboard,
+                model_command=ModelCommand(
+                    models=opts.models,
+                    sessions=store,
+                    store=ConfigStore(models_config_path(), secrets_path()),
+                    subagents=bundle.subagent_names,
+                ),
             )
             await ReplLoop(
                 commands=commands,
