@@ -74,6 +74,15 @@ class Capability(str, Enum):
     #: deciding whether to construct its own model can ask instead of knowing.
     LOOP_AFFINE = "loop_affine"
 
+    #: The model takes LangChain's ``cache_control`` call setting — Anthropic's
+    #: prompt caching — without being a ``ChatAnthropic``, whose caching
+    #: deepagents already turns on (its gate is that type). Claude on Vertex
+    #: (``ChatAnthropicVertex``) and Claude on Bedrock (``ChatBedrockConverse``,
+    #: which turns the setting into cache points); ``llm/prompt_cache`` asks this.
+    #: Declared per model, not per provider: Vertex's Gemini and Bedrock's other
+    #: models reject it.
+    CACHE_CONTROL_KWARG = "cache_control_kwarg"
+
 
 @dataclass(frozen=True)
 class ModelHandle:

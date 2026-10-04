@@ -131,6 +131,9 @@ def main() -> int:
         test_model_switch_contract as model_switch,
     )
     from test.framework_contract import (  # noqa: PLC0415 — `test` joins sys.path at run time, above
+        test_prompt_cache_contract as prompt_cache,
+    )
+    from test.framework_contract import (  # noqa: PLC0415 — `test` joins sys.path at run time, above
         test_retry_node_contract as retry_node,
     )
     from test.framework_contract import (  # noqa: PLC0415 — `test` joins sys.path at run time, above
@@ -234,6 +237,14 @@ def main() -> int:
         (
             "our compactor survives the summarizer exclusion",
             summarizer.test_this_systems_compactor_survives_the_exclusion,
+        ),
+        (
+            "Claude on Vertex takes Anthropic's cache_control setting (silent-failure seam)",
+            prompt_cache.test_vertex_claude_marks_the_last_block,
+        ),
+        (
+            "Claude on Bedrock turns cache_control into cache points (silent-failure seam)",
+            prompt_cache.test_bedrock_claude_adds_cache_points,
         ),
         ("declared dependency ranges are sane", _check_declared_ranges),
     ]

@@ -140,7 +140,7 @@ def model_handle(
     identity = _Identity(
         name=provider.model_name(target),
         provider=provider.provider_name(target),
-        capabilities=provider.capabilities,
+        capabilities=provider.capabilities_for(target),
         context_window=context_window(target, getattr(model, "profile", None)),
     )
     _remember(model, identity)

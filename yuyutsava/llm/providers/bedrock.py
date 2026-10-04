@@ -28,6 +28,7 @@ from langchain_core.language_models import BaseChatModel
 
 from yuyutsava.llm.base import ANSWER_TOKENS, BuildOptions, Provider, require
 from yuyutsava.llm.discovery import Availability, DiscoveredModel, Discovery
+from yuyutsava.llm.handle import Capability
 from yuyutsava.llm.target import ModelTarget, ProviderAccess
 
 _INSTALL = "'yuyutsava[bedrock]'"
@@ -106,6 +107,17 @@ def aws_clients(target: ProviderAccess) -> tuple[Any, Any]:
 
 class BedrockProvider(Provider):
     types: ClassVar[tuple[str, ...]] = ("bedrock",)
+
+    def capabilities_for(self, target: ModelTarget) -> frozenset[Capability]:
+        """Claude takes Anthropic's prompt-caching setting as Bedrock cache points.
+
+        By the model behind an inference profile when the alias names one. Other
+        Bedrock models are left alone: a cache point on a model without caching is
+        a validation error.
+        """
+        if "anthropic.claude" in self.model_name(target):
+            return self.capabilities | {Capability.CACHE_CONTROL_KWARG}
+        return self.capabilities
 
     def build(self, target: ModelTarget, options: BuildOptions) -> BaseChatModel:
         mod = require("langchain_aws", provider="Bedrock", install=_INSTALL)

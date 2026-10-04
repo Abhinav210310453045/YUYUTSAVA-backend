@@ -80,6 +80,11 @@ class Provider(ABC):
     #: default rather than an abstract member.
     capabilities: ClassVar[frozenset[Capability]] = frozenset()
 
+    def capabilities_for(self, target: ModelTarget) -> frozenset[Capability]:
+        """What callers may rely on for *target*'s model: :attr:`capabilities`, unless
+        the provider serves models that differ (Vertex's families, Bedrock's)."""
+        return self.capabilities
+
     @abstractmethod
     def build(self, target: ModelTarget, options: BuildOptions) -> BaseChatModel:
         """Construct the chat model for *target*, with this provider's quirks applied."""

@@ -64,6 +64,7 @@ from yuyutsava.discovery.tool_registry import ToolRegistry
 from yuyutsava.docker_sandbox.backend import DockerSandboxBackend
 from yuyutsava.events.tools import make_recall_tool
 from yuyutsava.llm.factory import chat_model, model_name_of, provider_of
+from yuyutsava.llm.prompt_cache import PromptCacheMiddleware
 from yuyutsava.llm.switch import ModelSwitchMiddleware
 from yuyutsava.llm.target import ModelTarget
 from yuyutsava.memory.agent_memory import AgentMemoryStore
@@ -817,10 +818,11 @@ def sync_subagent_specs(
             meter_window=False,
             active=switch.active if switch else None,
         )
+        model_layer = [switch, PromptCacheMiddleware()] if switch else [PromptCacheMiddleware()]
         specs.append(
             subagent_spec(
                 sa,
-                context_middleware=[switch, *context] if switch else context,
+                context_middleware=[*model_layer, *context],
                 artifact_store=deps.artifact_store,
             )
         )
@@ -878,7 +880,8 @@ def _master_middleware(
     # misleads the model and wastes cache-prefix tokens. The subagent gate is a
     # pre-policy too; a tinker bundle is cached per card and can outlive a
     # toggle change, so without it a disabled subagent would stay reachable.
-    middleware: list = [switch] if switch else []
+    # The switch chooses the model; prompt caching then asks about that one.
+    middleware: list = [switch, PromptCacheMiddleware()] if switch else [PromptCacheMiddleware()]
     middleware.extend(
         _policy_middleware(
             profile,
@@ -1269,9 +1272,10 @@ def _orchestrator_subagents(
     specs: list[dict] = [
         subagent_spec(
             sa,
-            context_middleware=_orchestrator_context_mw(
-                deps, deps.subagent_model, sa.name, meter_window=False
-            ),
+            context_middleware=[
+                PromptCacheMiddleware(),
+                *_orchestrator_context_mw(deps, deps.subagent_model, sa.name, meter_window=False),
+            ],
             extra_middleware=[
                 LangChainPolicyAdapter(
                     [BudgetPolicy(max_input_tokens=deps.subagent_token_budget, role=sa.name)]
@@ -1371,6 +1375,7 @@ def build_orchestrator(
     # the roster already omits disabled subagents, but a task that outlives a
     # toggle still gets a clean refusal instead of a silent retry.
     master_middleware: list = [
+        PromptCacheMiddleware(),
         *_policy_middleware(
             ORCHESTRATOR_PROFILE,
             "pre",

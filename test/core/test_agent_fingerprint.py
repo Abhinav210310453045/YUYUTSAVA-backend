@@ -33,10 +33,12 @@ SNAPSHOT = Path(__file__).resolve().parent / "agent_fingerprint_snapshot.json"
 
 
 #: Model-call entries that never read the tool list, so they may run ahead of the
-#: tool filter: the model switch chooses the model, and compaction's overflow
-#: retry rewrites only the messages before handing the call on — through the
-#: filter again.
-_BLIND_TO_TOOLS = frozenset({"ModelSwitchMiddleware", "YuyutsavaCompactionMiddleware"})
+#: tool filter: the model switch chooses the model, prompt caching adds a call
+#: setting for it, and compaction's overflow retry rewrites only the messages
+#: before handing the call on — through the filter again.
+_BLIND_TO_TOOLS = frozenset(
+    {"ModelSwitchMiddleware", "PromptCacheMiddleware", "YuyutsavaCompactionMiddleware"}
+)
 
 
 # Ordering rules, each scoped to the hook CHAIN it is about.

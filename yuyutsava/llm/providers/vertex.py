@@ -140,6 +140,12 @@ class VertexProvider(Provider):
     # one-instance-per-loop for one rule — see quirks/loop_affinity.
     capabilities = frozenset({Capability.LOOP_AFFINE})
 
+    def capabilities_for(self, target: ModelTarget) -> frozenset[Capability]:
+        """Claude here takes Anthropic's prompt-caching setting; Gemini and open models do not."""
+        if target.family == "anthropic":
+            return self.capabilities | {Capability.CACHE_CONTROL_KWARG}
+        return self.capabilities
+
     def build(self, target: ModelTarget, options: BuildOptions) -> BaseChatModel:
         family = target.family
         if family == "anthropic":
