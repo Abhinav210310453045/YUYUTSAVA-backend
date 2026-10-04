@@ -21,7 +21,9 @@ from __future__ import annotations
 
 import asyncio
 import sys
+import tempfile
 import threading
+from pathlib import Path
 
 PASS = 0
 FAIL = 0
@@ -146,11 +148,9 @@ def main() -> int:
 
     # ── 6. TaskModels pool ──────────────────────────────────────────────
     print("TaskModels pool")
-    import tempfile
-    from pathlib import Path
-
-    from yuyutsava.llm.config.watch import ConfigSource
-    from yuyutsava.llm.selection import TaskModels
+    # Imported here, like every section's subject: the checks above run without LangChain.
+    from yuyutsava.llm.config.watch import ConfigSource  # noqa: PLC0415  section-local, see above
+    from yuyutsava.llm.selection import TaskModels  # noqa: PLC0415  section-local, see above
 
     with tempfile.TemporaryDirectory() as tmp:
         models_file, secrets_file = Path(tmp) / "models.toml", Path(tmp) / "secrets.toml"
