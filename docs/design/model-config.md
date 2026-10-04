@@ -155,8 +155,10 @@ L1 llm/catalog.py   ModelCard: window, max output, tools, vision, reasoning, pri
                     precedence: models.toml override > discovery cache > langchain ModelProfile > kind default
 L1 llm/tasks.py     closed TASKS registry + resolve(task, thread override) → ModelRef
 L1 llm/quirks/      + history_portable.py (cross-provider history), keep the existing four
-L3 policy/model_switch.py   framework middleware: per-call request.override(model=…) from the pinned turn choice
-L3 policy/cache_control.py  cache_control kwarg for Claude on Vertex/Bedrock (prompt caching parity)
+L1 llm/switch.py           framework middleware: per-call request.override(model=…) from the pinned turn choice
+L1 llm/prompt_cache.py     cache_control setting for Claude on Vertex/Bedrock (prompt caching parity)
+L4 core/model_choice.py    the session's choice, else the task's model (ModelChooser)
+L4 core/harness.py         deepagents' summarizer excluded; its prompt suffix follows the model
 L4 core/            ModelPool built in the composition root (injected, no module global — DEP-1)
 L5 cli/commands/models.py + cli/setup_wizard/ + /model in chat_repl · daemon/web/{routers,schemas,services}/models
    electron-app: SetupWizard, Settings→Models, composer ModelChip
@@ -173,8 +175,8 @@ L5 cli/commands/models.py + cli/setup_wizard/ + /model in chat_repl · daemon/we
 2. **The selection is pinned per turn.** It is resolved once when the human message arrives and
    stored for that turn. A `/model` switch or a hot reload applies from the **next** turn. Switching
    mid tool loop breaks Anthropic's thinking-block rule.
-3. **The switch works per call; the graph is never rebuilt.** `policy/model_switch.py` sits at
-   index 0 of yuyutsava's middleware (`core/engine.py:843 _master_middleware`). It replaces
+3. **The switch works per call; the graph is never rebuilt.** `llm/switch.py` (ADR-004 keeps
+   `policy/` to one `AgentMiddleware`) sits at index 0 of yuyutsava's middleware (`core/engine.py:843 _master_middleware`). It replaces
    `request.model` (`ModelRequest.override`, `langchain/agents/middleware/types.py:202`). Tools are
    re-bound to it on every call (`langchain/agents/factory.py:1162-1289`). It is also added to
    **each subagent graph**, keyed by (thread, subagent name) (D7).
@@ -211,11 +213,11 @@ L5 cli/commands/models.py + cli/setup_wizard/ + /model in chat_repl · daemon/we
    **exact model that wrote it** unchanged, so signatures and thinking survive. To any other model
    it goes as **portable history: text plus `tool_calls`, nothing else**. `quirks/history_portable.py`
    applies this rule; it changes only what is sent, and checkpoints stay untouched. The writer is
-   identified by our own `response_metadata["yuyutsava_model"]` stamp, set by the build wrapper on
-   the **first** stream chunk only. Untagged legacy messages are treated as foreign.
+   identified by our own `response_metadata["yuyutsava_model"]` stamp, set by the switch on each
+   finished answer it hands back (so stream merging never touches it). Untagged legacy messages are treated as foreign.
 8. **Prompt caching parity.** deepagents' caching only fires for `isinstance(model, ChatAnthropic)`
    (`langchain_anthropic/middleware/prompt_caching.py:101`). Claude on Vertex or Bedrock gets
-   `Capability.CACHE_CONTROL_KWARG` plus `policy/cache_control.py`. Without it, moving Claude would
+   `Capability.CACHE_CONTROL_KWARG` plus `llm/prompt_cache.py`. Without it, moving Claude would
    silently cost more.
 9. **The app boots unconfigured.** With no usable config, the daemon starts with only the settings and
    `/models` routes. Chat returns `409 setup_required` and Electron opens the wizard. The CLI runs the
@@ -256,7 +258,7 @@ L5 cli/commands/models.py + cli/setup_wizard/ + /model in chat_repl · daemon/we
 13. **Harness prompt tuning follows the active model.** deepagents picks a model-specific
     `system_prompt_suffix` once, from the build-time model. Built-in profiles exist for
     `claude-sonnet-4-6`, `claude-opus-4-7`, `claude-haiku-4-5` and the GPT Codex models
-    (`deepagents/profiles/harness/`). After a switch, `policy/model_switch` removes the build model's
+    (`deepagents/profiles/harness/`). After a switch, `core/harness.retarget_prompt` (called by `llm/switch`) removes the build model's
     suffix and applies the target model's, pinned by a contract test in M4.
 
 14. **Vertex Gemini is built with `ChatGoogleGenerativeAI(vertexai=True)`.** `ChatVertexAI` is
@@ -566,8 +568,8 @@ on.
 | M1 | Done 2026-10-03: `llm/config` (schema, loader, messages, secrets, store, watch, schema_export), `llm/tasks.py`, `platform/files.py`; 80 new tests. Deviation: `detect.py` moves to M5, the wave of its first caller (STD-KIS-3). |
 | M2 | Done 2026-10-03: every model built from a `ModelTarget`; settings classes gone (R-SOL-03); live price and discovery on the providers (R-PLC-10); Gemini on genai for both routes with every fix; Bedrock builds its own clients; the fingerprint is byte-identical. Live: CLI tool turn, daemon chat, the three Vertex families, and Vertex discovery (43 models, Claude marked as needing quota). Deviations: the package stays `llm/providers/` (not `kinds/`); per-model windows move to M3 with the context budget; `verify()` is folded into `discover()`, because a listing needs a login. |
 | M3 | Done 2026-10-04: `TaskModels` (llm/selection.py) chooses each task's model from `models.toml`, or from the environment without one; a per-loop pool rebuilds on config or key change; the window follows the model; the daemon watcher reloads live (triage and router per call); the CLI reads at start. Live: CLI, daemon, and the Electron app chat on `models.toml` (usage = the file's model); a live edit applied, a broken edit rejected with the last good config kept. Found live: a missing `TaskModels.window`, and Gemini region availability (discovery now probes with free `countTokens`). Moved to M4: provider on usage rows (it needs migrations), and per-turn switching of the chat and orchestrator agents. |
-| M4 | Next |
-| M5 | Not started |
+| M4 | Done 2026-10-04: each turn of chat, tinker and their subagents runs on the model its conversation uses now (`llm/switch`), chosen at the turn's start — the session's choice (`Session.models`: SQLite v4 / PG v22), else the task's — and kept through tool loops, approval pauses and reloads; usage rows record the provider; history crosses models as text plus tool calls (`history_portable`, writer stamp); compaction, meter and usage follow the turn's model and window; prompt caching for Claude on Vertex and Bedrock (`llm/prompt_cache`); deepagents' summarizer excluded for every provider, overflow retried once summarized (`core/harness`, `llm/overflow`); the harness prompt suffix follows the model; a zero quota says so (`llm/failures`). Fingerprint: ModelSwitch, PromptCache and compaction's model-call hook, each justified. Live: CLI turns Gemini → gpt-oss (session choice) → Gemini with tools, zero-quota Claude message; Electron app: a `models.toml` edit moved an open chat flash → flash-lite on its next turn, a session choice moved it back. Found live: open models on Vertex (`global`) at times hold a request 2–4 minutes before answering, reproduced without the daemon — Google's endpoint, not this code; a first-response timeout is the candidate fix, not built. Deviations: the switch lives in `llm/`, the chooser in `core/`; daemon chat now runs on the `chat` task (was `orchestrator`); the orchestrator (a fresh graph per task) takes no switch. |
+| M5 | Next |
 | M6 | Not started |
 | M7 | Not started |
 | M8 | Not started |
@@ -681,12 +683,12 @@ and commits use the repo-local IITJ identity; it is pushed only when asked. This
 
 **M4 — Runtime switch.**
 
-- `policy/model_switch.py` (unique `.name`, so `collapse_policy_adapters` keeps it);
+- `llm/switch.py` (unique `.name`, so `collapse_policy_adapters` keeps it);
 - turn pinning;
 - a session `model_ref` column (SQLite v4 in `storage/sessions/sqlite_impl.py`, PG migration 22 in
   `storage/pg/migrations.py`, a field on `storage/models.py:Session`);
 - a subagent override map per thread;
-- `history_portable`, plus the first-chunk `yuyutsava_model` stamp in every build wrapper;
+- `history_portable`, plus the `yuyutsava_model` stamp the switch puts on each answer;
 - a parity test proving every Gemini quirk still applies on `ChatGoogleGenerativeAI(vertexai=True)`;
 - `cache_control`;
 - deepagents' summarizer is excluded for every provider type we build, and the overflow fallback
