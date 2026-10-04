@@ -27,7 +27,7 @@ import os
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Any, get_args
+from typing import Any
 
 from yuyutsava.cli.setup_wizard.prompter import Option, Prompter
 from yuyutsava.llm.config.detect import Finding
@@ -40,56 +40,15 @@ from yuyutsava.llm.config.edits import (
     keep_keys_in_secrets,
     use,
 )
+from yuyutsava.llm.config.guide import provider_form, provider_forms, secret_name
 from yuyutsava.llm.config.loader import ModelsConfigError
 from yuyutsava.llm.config.messages import type_label
-from yuyutsava.llm.config.schema import CONNECTIONS, connection_type, login_methods
 from yuyutsava.llm.config.secrets import read_secrets_file
 from yuyutsava.llm.config.store import ABSENT, ConfigStore, StaleWrite
 from yuyutsava.llm.config.watch import snapshot_of
 from yuyutsava.llm.discovery import Availability, Discovery
 from yuyutsava.llm.target import ProviderAccess, access_for
 from yuyutsava.llm.tasks import TASKS
-
-#: How each provider type is introduced: what it is, and what it takes.
-INTRODUCTIONS: dict[str, str] = {
-    "vertex": "Gemini, Claude and open models in your Google Cloud project — needs a project",
-    "google": "Gemini with a Google AI Studio key — the quickest Google start",
-    "bedrock": "every model AWS Bedrock serves — needs an AWS login",
-    "anthropic": "Claude with an Anthropic API key",
-    "openai": "GPT models with an OpenAI API key",
-    "openrouter": "hundreds of models behind one OpenRouter key",
-    "groq": "fast open models with a Groq key (free tier)",
-    "mistral": "Mistral models with a Mistral key",
-    "cohere": "Command models with a Cohere key",
-    "azure": "OpenAI models deployed in your Azure resource",
-    "openai_compatible": "any server that speaks OpenAI's API (xAI, DeepSeek, a proxy, …)",
-    "ollama": "models running on this machine — free, private, no key",
-}
-
-#: How each login method is offered, and what to do before choosing it.
-LOGINS: dict[str, str] = {
-    "adc": "my gcloud login — run `gcloud auth application-default login` first",
-    "service_account": "a service-account key file (JSON)",
-    "access_token": "an access token I paste (expires in about an hour)",
-    "api_key": "an API key",
-    "bearer_token": "a token sent as a bearer token",
-    "none": "no login",
-    "aws_default_chain": "whatever AWS finds by itself (environment, ~/.aws, an instance role)",
-    "aws_profile": "a profile from ~/.aws/config",
-    "aws_keys": "an access key pair",
-    "bedrock_api_key": "a Bedrock API key",
-}
-
-#: How a provider's own settings are asked for, and what they start as.
-SETTINGS: dict[str, tuple[str, str]] = {
-    "project": ("Google Cloud project id", ""),
-    "location": ("location (global serves the most models)", "global"),
-    "region": ("AWS region", "us-east-1"),
-    "endpoint": ("Azure endpoint (https://<resource>.openai.azure.com)", ""),
-    "base_url": ("server address", ""),
-    "key_file": ("path to the key file", ""),
-    "profile": ("profile name", "default"),
-}
 
 #: Models a provider lists that are offered for the default, at most.
 _OFFERED = 12
@@ -200,65 +159,37 @@ class SetupWizard:
     def _by_hand(self) -> None:
         kind = self.ui.choose(
             "Which provider?",
-            [
-                Option(
-                    connection_type(c),
-                    type_label(connection_type(c)),
-                    INTRODUCTIONS.get(connection_type(c), ""),
-                )
-                for c in CONNECTIONS
-            ],
+            [Option(f.type, f.label, f.introduction) for f in provider_forms()],
         )
         name = self._free_name(self.ui.ask("Name it", default=kind))
         connection = self._settings_for(kind, name)
         self._checked(_Provider(name, connection))
 
     def _settings_for(self, kind: str, name: str) -> dict[str, Any]:
-        cls = next(c for c in CONNECTIONS if connection_type(c) == kind)
+        form = provider_form(kind)
         connection: dict[str, Any] = {"type": kind}
-        for field_name, info in cls.model_fields.items():
-            if field_name in ("type", "auth") or not info.is_required():
-                continue
-            question, default = SETTINGS.get(field_name, (field_name, ""))
-            connection[field_name] = self._required(question, default)
-        methods = login_methods(cls)
+        for field in form.settings:
+            connection[field.name] = self._required(field.question, field.default)
         method = (
-            methods[0]
-            if len(methods) == 1
+            form.logins[0].method
+            if len(form.logins) == 1
             else self.ui.choose(
-                "How do you log in?", [Option(m, LOGINS.get(m, m)) for m in methods]
+                "How do you log in?", [Option(f.method, f.label) for f in form.logins]
             )
         )
-        connection["auth"] = self._login(cls, method, name)
-        return connection
-
-    def _login(self, cls: type, method: str, name: str) -> dict[str, Any]:
-        annotation = cls.model_fields["auth"].annotation
-        login_cls = next(
-            variant
-            for variant in get_args(annotation) or (annotation,)
-            if get_args(variant.model_fields["method"].annotation)[0] == method
-        )
-        auth: dict[str, Any] = {"method": method}
-        for field_name, info in login_cls.model_fields.items():
-            if field_name == "method":
-                continue
-            if field_name in login_cls.secret_fields:
-                if not info.is_required():
-                    continue  # an optional secret (a session token) is not asked for
-                secret = (
-                    name
-                    if field_name in ("key", "token")
-                    else f"{name}-{field_name.replace('_', '-')}"
-                )
-                value = self.ui.secret(f"{field_name.replace('_', ' ')} for {name}")
+        login = next(f for f in form.logins if f.method == method)
+        auth: dict[str, Any] = {"method": login.method}
+        for field in login.fields:
+            if field.secret:
+                secret = secret_name(name, field.name)
+                value = self.ui.secret(f"{field.question} for {name}")
                 if value:
                     self.s.store.store_secret(secret, value)
-                auth[field_name] = f"secret:{secret}"
+                auth[field.name] = f"secret:{secret}"
             else:
-                question, default = SETTINGS.get(field_name, (field_name, ""))
-                auth[field_name] = self._required(question, default)
-        return auth
+                auth[field.name] = self._required(field.question, field.default)
+        connection["auth"] = auth
+        return connection
 
     def _required(self, question: str, default: str) -> str:
         while True:
@@ -425,4 +356,4 @@ def _env_keys(connection: Mapping[str, Any]) -> bool:
     return any(isinstance(v, str) and v.startswith("env:") for v in auth.values())
 
 
-__all__ = ["INTRODUCTIONS", "LOGINS", "Services", "SetupWizard"]
+__all__ = ["Services", "SetupWizard"]
