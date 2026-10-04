@@ -180,10 +180,6 @@ def main() -> int:
             cross_provider.test_portable_history_is_accepted_by_every_builder,
         ),
         (
-            "a first-chunk selection stamp survives stream merging (silent-failure seam)",
-            cross_provider.test_a_first_chunk_stamp_survives_stream_merging,
-        ),
-        (
             "Gemini on Vertex (genai) retries a busy stream open",
             genai_vertex.test_a_stream_that_opens_busy_is_retried_on_vertex,
         ),

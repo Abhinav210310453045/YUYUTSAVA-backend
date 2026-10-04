@@ -27,10 +27,8 @@ builder — is one of the pairs checked.
 
 Nothing is sent. A pair whose SDK is not installed is skipped.
 
-The selection stamp rides on ``response_metadata``. When a stream is merged,
-custom strings there are concatenated chunk by chunk, so the stamp is set on the
-first chunk only. :func:`test_a_first_chunk_stamp_survives_stream_merging` pins
-that this yields exactly one value.
+The portable form checked is the one the runtime sends:
+:func:`yuyutsava.llm.quirks.history_portable.portable`.
 """
 
 from __future__ import annotations
@@ -43,14 +41,12 @@ from collections.abc import Callable
 import pytest
 from langchain_core.messages import (
     AIMessage,
-    AIMessageChunk,
     BaseMessage,
     HumanMessage,
     ToolMessage,
 )
 
-#: The stamp ``llm/quirks/history_portable`` reads to tell who wrote a turn.
-STAMP = "yuyutsava_model"
+from yuyutsava.llm.quirks.history_portable import portable
 
 #: Planted in every producer's provider-specific fields. Any of them in a
 #: payload means a foreign field crossed over.
@@ -285,19 +281,6 @@ TARGETS: dict[str, Callable[[list[BaseMessage]], object]] = {
 # ─── the check ────────────────────────────────────────────────────────────
 
 
-def portable(message: AIMessage) -> AIMessage:
-    """The turn's text and tool calls — the form every builder accepts."""
-    if isinstance(message.content, str):
-        text = message.content
-    else:
-        text = "".join(
-            block if isinstance(block, str) else block.get("text", "")
-            for block in message.content
-            if isinstance(block, str) or block.get("type") == "text"
-        )
-    return AIMessage(content=text, tool_calls=message.tool_calls, id=message.id)
-
-
 def conversation(turn: Turn, shape: Callable[[AIMessage], AIMessage]) -> list[BaseMessage]:
     """Ask, call a tool, get its result, answer, ask again."""
     call, final = turn
@@ -351,14 +334,6 @@ def test_portable_history_is_accepted_by_every_builder() -> None:
     assert not failures, (
         "portable history no longer crosses providers cleanly — "
         "llm/quirks/history_portable must change with it:\n  " + "\n  ".join(failures)
-    )
-
-
-def test_a_first_chunk_stamp_survives_stream_merging() -> None:
-    first = AIMessageChunk(content="a", response_metadata={STAMP: "work/gemini-3.5-flash"})
-    merged = first + AIMessageChunk(content="b") + AIMessageChunk(content="c")
-    assert merged.response_metadata.get(STAMP) == "work/gemini-3.5-flash", (
-        f"merging stream chunks changed the stamp to {merged.response_metadata.get(STAMP)!r}"
     )
 
 

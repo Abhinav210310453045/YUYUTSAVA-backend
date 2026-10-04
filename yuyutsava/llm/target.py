@@ -78,6 +78,11 @@ class ModelTarget(ProviderAccess):
     entry: ModelEntry | None = None
 
     @property
+    def reference(self) -> str:
+        """``<provider>/<model id>`` — how ``models.toml`` names this model without an alias."""
+        return f"{self.provider}/{self.model}"
+
+    @property
     def family(self) -> str:
         """Which family serves the model on Vertex: ``gemini``, ``anthropic`` or ``maas``.
 
