@@ -24,6 +24,7 @@ script of answers.
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, get_args
@@ -33,6 +34,7 @@ from yuyutsava.llm.config.detect import Finding
 from yuyutsava.llm.config.edits import (
     ConfigEditError,
     Edit,
+    add_model,
     add_provider,
     combine,
     keep_keys_in_secrets,
@@ -109,6 +111,17 @@ class _Provider:
     connection: dict[str, Any]
     #: A model to suggest, from a finding.
     model: str | None = None
+    #: Settings that model runs with today (a thinking budget). Kept by giving
+    #: it an alias that carries them — dropped, the import would quietly change
+    #: how the model runs.
+    model_settings: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def suggestion(self) -> str | None:
+        """The reference to offer for :attr:`model`: its alias when it has settings."""
+        if not self.model:
+            return None
+        return _alias_for(self.model) if self.model_settings else f"{self.name}/{self.model}"
 
 
 class SetupWizard:
@@ -175,7 +188,14 @@ class SetupWizard:
                     store_secret=self.s.store.store_secret,
                     environ=self.s.environ,
                 )
-            self._checked(_Provider(self._free_name(finding.name), connection, finding.model))
+            self._checked(
+                _Provider(
+                    self._free_name(finding.name),
+                    connection,
+                    finding.model,
+                    dict(finding.model_settings),
+                )
+            )
 
     def _by_hand(self) -> None:
         kind = self.ui.choose(
@@ -319,6 +339,11 @@ class SetupWizard:
             self.ui.say("Nothing to write — no provider was kept.", tone="warn")
             return False
         edits: list[Edit] = [add_provider(p.name, p.connection) for p in self._providers]
+        edits += [
+            add_model(_alias_for(p.model), provider=p.name, model_id=p.model, **p.model_settings)
+            for p in self._providers
+            if p.model and p.model_settings
+        ]
         if choose_default:
             default = self._choose_model("Which model should YUYUTSAVA use by default?")
             edits.append(use(default))
@@ -354,10 +379,14 @@ class SetupWizard:
         seen: set[str] = set()
         options: list[Option] = []
         for provider in self._providers:
-            if provider.model:
-                reference = f"{provider.name}/{provider.model}"
+            if provider.suggestion:
+                reference = provider.suggestion
                 seen.add(reference)
-                options.append(Option(reference, reference, "what this machine uses now"))
+                seen.add(f"{provider.name}/{provider.model}")
+                hint = "what this machine uses now" + (
+                    f" — {provider.model} with its settings" if provider.model_settings else ""
+                )
+                options.append(Option(reference, reference, hint))
             listed = self._listed.get(provider.name)
             ready = [
                 m
@@ -383,6 +412,12 @@ class SetupWizard:
             return []
         other = self._choose_model(f"Which model for {', '.join(tasks)}?")
         return [use(other, tasks=tasks)]
+
+
+def _alias_for(model_id: str) -> str:
+    """A ``[models]`` name for *model_id*: the id itself, with what a name cannot hold replaced."""
+    name = re.sub(r"[^A-Za-z0-9_.-]", "-", model_id).strip("-._") or "model"
+    return name if name[0].isalnum() else f"m-{name}"
 
 
 def _env_keys(connection: Mapping[str, Any]) -> bool:

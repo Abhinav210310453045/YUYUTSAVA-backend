@@ -23,6 +23,10 @@ from yuyutsava.llm.config.store import ConfigStore
 from yuyutsava.llm.discovery import Availability, DiscoveredModel, Discovery
 
 
+def FIRST_OPTION(options):  # noqa: N802 — reads as the script step it is
+    return options[0].value
+
+
 class Script:
     """A :class:`Prompter` that answers from a list, in order, and records what it was told.
 
@@ -146,6 +150,28 @@ class AFirstRunWithASetupFound(_Wizard):
         self.assertIn('groq = "gsk-1"', self.secrets())
         self.assertEqual(config.tasks, {})
         self.assertTrue(any("2 ready" in line for line in script.said))
+
+
+class SettingsTheModelRunsWithToday(_Wizard):
+    def test_are_kept_on_an_alias_offered_as_the_default(self) -> None:
+        found = Finding(
+            name="vertex",
+            type="vertex",
+            origin="your current setup (LLM_PROVIDER=vertex)",
+            connection={
+                "type": "vertex",
+                "project": "p",
+                "location": "global",
+                "auth": {"method": "adc"},
+            },
+            model="gemini-3.5-flash",
+            model_settings={"thinking": {"budget": 1024}},
+        )
+        script = Script(lambda options: [options[0].value], False, False, FIRST_OPTION, True)
+        self.assertTrue(self.wizard(script, found=[found]).setup())
+        config = self.config()
+        self.assertEqual(config.defaults.model, "gemini-3.5-flash")
+        self.assertEqual(config.models["gemini-3.5-flash"].thinking.budget, 1024)
 
 
 class AProviderByHand(_Wizard):
