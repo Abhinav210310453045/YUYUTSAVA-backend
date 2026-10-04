@@ -13,6 +13,9 @@ here (design rule 15):
   later can work.
 * **Too long even summarized.** Compaction retried once and the prompt still
   did not fit; this model's window is too small for the conversation.
+* **No such model here.** The provider does not serve the model where it was
+  asked for it — on Vertex, usually a model served at ``global`` but not in the
+  provider's own location.
 
 Anything else is ``None``: the caller shows the error itself.
 """
@@ -31,6 +34,13 @@ _QUOTA = re.compile(r"per_base_model|submit a quota increase request", re.IGNORE
 #: quota's own name ("..._per_base_model with ...") says "base_model" too.
 _BASE_MODEL = re.compile(r"base model:\s*([A-Za-z0-9._@\-]*[A-Za-z0-9])", re.IGNORECASE)
 _PROJECT = re.compile(r"projects/([a-z][a-z0-9\-]{4,61}[a-z0-9])")
+#: A provider saying it has no such model (Vertex/genai, OpenAI-compatible, Anthropic, Bedrock).
+_NOT_FOUND = re.compile(
+    r"NOT_FOUND|model_not_found|was not found|does not exist|not_found_error"
+    r"|ResourceNotFoundException|model .* not found",
+    re.IGNORECASE,
+)
+_MODEL_NAMED = re.compile(r"models?/([A-Za-z0-9._@:\-]+)|model '([^']+)'")
 
 
 @dataclass(frozen=True)
@@ -79,6 +89,16 @@ def describe_model_failure(exc: BaseException) -> str | None:
             f"provider busy ({classify_provider_busy(exc)}) — retries gave up; resend to try "
             "again (VERTEX_RETRY_BUDGET_SEC, default 90, and VERTEX_MAX_RETRIES control how "
             "long it keeps trying)"
+        )
+    text = str(exc)
+    if _NOT_FOUND.search(text) and "model" in text.lower() and not is_provider_busy(exc):
+        named = _MODEL_NAMED.search(text)
+        model = next((g for g in named.groups() if g), "") if named else ""
+        return (
+            f"the provider does not serve {model or 'this model'} where it was asked for — "
+            "`yuyutsava models discover` shows what is served and where; on Vertex, give it an "
+            "alias with the location that serves it: "
+            "`yuyutsava models alias <name> <provider>/<model> --location global`"
         )
     if is_context_overflow(exc):
         return (

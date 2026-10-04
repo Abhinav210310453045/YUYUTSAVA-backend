@@ -28,6 +28,7 @@ from yuyutsava.cli.render.ansi_wrap import strip_ansi
 from yuyutsava.llm.config.edits import (
     ConfigEditError,
     Edit,
+    add_model,
     follow_default,
     remove_model,
     remove_provider,
@@ -101,6 +102,12 @@ def _parser() -> argparse.ArgumentParser:
     p = command("use", "make a model the default, or give it to some tasks", _use)
     p.add_argument("reference", help="an alias or <provider>/<model id>")
     p.add_argument("--task", action="append", default=[], help="a task (repeatable)")
+    p = command("alias", "name a model, with where it runs or how big it is", _alias)
+    p.add_argument("name", help="the short name to use, e.g. flash-lite")
+    p.add_argument("reference", help="<provider>/<model id>")
+    p.add_argument("--location", help="Vertex: a location for this model (e.g. global)")
+    p.add_argument("--region", help="Bedrock: a region for this model")
+    p.add_argument("--context-window", type=int, help="the input window, in tokens")
     p = command("follow", "put tasks back on the default model", _follow)
     p.add_argument("tasks", nargs="+")
     p = command("remove", "remove a provider or a model alias", _remove)
@@ -361,6 +368,22 @@ def _use(args: argparse.Namespace) -> int:
         else f"the default model is now {args.reference}"
     )
     return _write(edit, done)
+
+
+def _alias(args: argparse.Namespace) -> int:
+    provider, slash, model_id = args.reference.partition("/")
+    if not slash or not model_id:
+        _say_error("the model is <provider>/<model id>, e.g. vertex/gemini-3.5-flash-lite")
+        return 2
+    edit = add_model(
+        args.name,
+        provider=provider,
+        model_id=model_id,
+        location=args.location,
+        region=args.region,
+        context_window=args.context_window,
+    )
+    return _write(edit, f"{args.name} is {args.reference} — use it as {args.name}")
 
 
 def _follow(args: argparse.Namespace) -> int:

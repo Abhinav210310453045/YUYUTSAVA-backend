@@ -121,6 +121,19 @@ class Changing(_Home):
         self.assertEqual(self.run_models("follow", "triage")[0], 0)
         self.assertNotIn("triage", self.text())
 
+    def test_alias_names_a_model_with_where_it_runs(self) -> None:
+        code, out, _ = self.run_models(
+            "alias", "lite", "local/qwen3:8b", "--context-window", "32768"
+        )
+        self.assertEqual(code, 0)
+        self.assertIn("use it as lite", out)
+        self.assertIn("[models.lite]", self.text())
+        self.assertIn("context_window = 32768", self.text())
+        self.assertEqual(self.run_models("use", "lite")[0], 0)
+
+    def test_alias_wants_a_provider_and_a_model(self) -> None:
+        self.assertEqual(self.run_models("alias", "lite", "qwen3")[0], 2)
+
     def test_a_reference_to_nothing_is_refused_and_nothing_written(self) -> None:
         before = self.text()
         code, _, err = self.run_models("use", "nowhere/x")

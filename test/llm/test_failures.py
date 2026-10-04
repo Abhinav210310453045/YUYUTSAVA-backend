@@ -59,6 +59,20 @@ class TheOthers(unittest.TestCase):
     def test_too_long_even_summarized(self) -> None:
         self.assertIn("window", describe_model_failure(ContextOverflowError("too long")))
 
+    def test_a_model_the_provider_does_not_serve_there(self) -> None:
+        said = describe_model_failure(
+            RuntimeError(
+                "Error calling model 'gemini-3.5-flash-lite' (NOT_FOUND): 404 NOT_FOUND. "
+                "Publisher Model projects/p/locations/asia-south1/publishers/google/models/"
+                "gemini-3.5-flash-lite was not found"
+            )
+        )
+        self.assertIn("does not serve gemini-3.5-flash-lite", said)
+        self.assertIn("yuyutsava models alias", said)
+
+    def test_something_else_that_does_not_exist_is_not_a_model(self) -> None:
+        self.assertIsNone(describe_model_failure(RuntimeError("table todos does not exist")))
+
     def test_anything_else_is_left_to_the_caller(self) -> None:
         self.assertIsNone(describe_model_failure(ValueError("tool schema is invalid")))
 
