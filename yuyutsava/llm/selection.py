@@ -107,11 +107,39 @@ class TaskModels:
             raise state.problem
         return llm_settings_from_env(env_role(task))
 
+    def resolve(self, reference: str) -> ModelTarget:
+        """The model *reference* names in ``models.toml`` — an alias or ``<provider>/<model id>``.
+
+        For a model chosen outside ``[tasks]``, such as one conversation's own.
+        Raises :class:`KeyError` when ``models.toml`` has no such model or
+        provider, and the config's problem when there is no usable
+        ``models.toml`` to look in.
+        """
+        state = self._state()
+        if state.snapshot is None:
+            if state.problem is not None:
+                raise state.problem
+            raise KeyError(f"{reference!r} names a model in models.toml, and there is none")
+        snapshot = state.snapshot
+        return target_for(
+            snapshot.config,
+            reference,
+            secrets=snapshot.secrets,
+            unavailable=snapshot.unavailable,
+        )
+
+    @property
+    def generation(self) -> int:
+        """Which load of ``models.toml`` is in use; ``0`` on the environment route."""
+        return self._generation()
+
     def handle(
         self, task: str, *, temperature: float, disable_reasoning: bool = False
     ) -> ModelHandle:
         """*task*'s model for the running event loop, built on first use. Needs a running loop."""
-        return self._pooled(self.target(task), temperature, disable_reasoning)
+        return self.pooled(
+            self.target(task), temperature=temperature, disable_reasoning=disable_reasoning
+        )
 
     def window(self, target: ModelTarget) -> int:
         """The input window for *target*'s model: its alias, its profile, its family.
@@ -123,11 +151,12 @@ class TaskModels:
             asyncio.get_running_loop()
         except RuntimeError:
             return model_handle(target).context_window
-        return self._pooled(target, _WINDOW_TEMPERATURE, False).context_window
+        return self.pooled(target, temperature=_WINDOW_TEMPERATURE).context_window
 
-    def _pooled(
-        self, target: ModelTarget, temperature: float, disable_reasoning: bool
+    def pooled(
+        self, target: ModelTarget, *, temperature: float, disable_reasoning: bool = False
     ) -> ModelHandle:
+        """*target*'s model for the running event loop, built on first use. Needs a running loop."""
         key = _BuildKey(self._generation(), target, temperature, disable_reasoning)
         built = self._pool.get()
         handle = built.get(key)

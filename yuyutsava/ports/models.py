@@ -30,3 +30,16 @@ class TaskModelSource(Protocol):
     def build(self, task: str, *, temperature: float, disable_reasoning: bool = False) -> Any:
         """A new model for *task*, for code that builds before any loop runs it."""
         ...
+
+    def resolve(self, reference: str) -> Any:
+        """The target a ``models.toml`` reference names; ``KeyError`` when there is none."""
+        ...
+
+    def pooled(self, target: Any, *, temperature: float, disable_reasoning: bool = False) -> Any:
+        """*target*'s model for the running event loop (a ``ModelHandle``)."""
+        ...
+
+    @property
+    def generation(self) -> int:
+        """Which load of ``models.toml`` is in use; ``0`` on the environment route."""
+        ...
