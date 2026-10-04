@@ -34,6 +34,7 @@ from yuyutsava.core.async_host import (
 )
 from yuyutsava.core.deps import MasterDeps, StackWiring
 from yuyutsava.core.engine import AgentBundle, build_cli_deepagent
+from yuyutsava.core.model_choice import ModelChooser
 from yuyutsava.core.stores import build_master_stores, standalone_board
 from yuyutsava.llm.pricing import refresh_price_cache
 from yuyutsava.llm.providers.registry import provider_for
@@ -243,6 +244,7 @@ async def build_agent_stack(
             transcript_store=stores.context.transcripts,
             context_settings=stores.context_settings,
             compaction_model=stores.compaction_model,
+            model_chooser=ModelChooser(models, wiring.sessions),
             skill_store=skill_store,
             # Per-conversation transcript recall (Postgres only); None on the
             # SQLite fallback, which the middleware treats as a no-op.

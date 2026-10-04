@@ -1666,7 +1666,6 @@ async def build_web(
     conversation_manager = ConversationManager(
         workspace=boot.workspace,
         checkpointer=boot.retention.checkpointer,
-        settings=boot.models.orchestrator_settings,
         search_config=boot.search_config,
         store=st.session_store,
         turns=loops.turns,
@@ -1675,6 +1674,7 @@ async def build_web(
         task_submission=loops.task_submission,
         wiring=StackWiring(
             models=boot.models.task_models,
+            sessions=st.session_store,
             usage_store=st.usage_store,
             mcp_manager=boot.mcp_manager,
             prefs_store=pol.prefs_store,

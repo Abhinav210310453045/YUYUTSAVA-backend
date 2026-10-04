@@ -28,6 +28,7 @@ models don't reliably ship.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from typing import Any
 
 from langchain.agents.middleware import SummarizationMiddleware
@@ -163,6 +164,7 @@ class YuyutsavaCompactionMiddleware(SummarizationMiddleware):
         memory_sink: Any | None = None,  # duck-typed MemoryStore (async .add)
         role: str = "agent",
         history_readback: bool = False,
+        active: Callable[[str], Any | None] | None = None,
     ) -> None:
         super().__init__(
             model,
@@ -182,6 +184,10 @@ class YuyutsavaCompactionMiddleware(SummarizationMiddleware):
         # path is conditional on it — a promise we cannot keep is worse than
         # no promise, because the model stops preserving detail in summaries.
         self._history_readback = history_readback
+        # The model a thread's turn runs on when a conversation switched away
+        # from the one this agent was built with (llm/switch); its
+        # window, not the build-time one, is what the trigger steers under.
+        self._active = active
 
     # ------------------------------------------------------------------
     # Compaction (async path — the whole runtime streams via astream)
@@ -200,7 +206,7 @@ class YuyutsavaCompactionMiddleware(SummarizationMiddleware):
             _FORCE_COMPACT.discard(thread_id)
 
         total_tokens = self.token_counter(messages)
-        if not forced and not self._should_summarize(messages, total_tokens):
+        if not forced and not self._past_trigger(messages, total_tokens, thread_id):
             return None
 
         pinned = self._pinned_head(messages)
@@ -254,7 +260,7 @@ class YuyutsavaCompactionMiddleware(SummarizationMiddleware):
         messages: list[AnyMessage] = state["messages"]
         self._ensure_message_ids(messages)
         total_tokens = self.token_counter(messages)
-        if not self._should_summarize(messages, total_tokens):
+        if not self._past_trigger(messages, total_tokens, thread_id_from_runtime(default="")):
             return None
         pinned = self._pinned_head(messages)
         rest = messages[len(pinned) :]
@@ -322,6 +328,20 @@ class YuyutsavaCompactionMiddleware(SummarizationMiddleware):
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    def _past_trigger(self, messages: list[AnyMessage], total_tokens: int, thread_id: str) -> bool:
+        """Whether *messages* fill enough of the window the turn's model has to compact.
+
+        The base class's ``("tokens", N)`` test, with *N* from the model in use:
+        a conversation switched to a smaller window must compact before it
+        overflows, and one switched to a larger window must not lose history the
+        model could still hold.
+        """
+        active = self._active(thread_id) if self._active is not None else None
+        threshold = self._settings.trigger_for(getattr(active, "context_window", None))
+        return total_tokens >= threshold or self._should_summarize_based_on_reported_tokens(
+            messages, threshold
+        )
 
     def _with_readback(self, summary: str) -> str:
         """Summary text plus the read-back footer, when there is one to offer."""

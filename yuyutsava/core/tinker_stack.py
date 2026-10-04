@@ -30,6 +30,7 @@ from yuyutsava.core.async_host import (
 )
 from yuyutsava.core.deps import MasterDeps, StackWiring
 from yuyutsava.core.engine import AgentBundle, build_tinker_agent
+from yuyutsava.core.model_choice import ModelChooser
 from yuyutsava.core.stores import build_master_stores, standalone_board
 from yuyutsava.llm.selection import TaskModels
 from yuyutsava.llm.target import ModelTarget
@@ -147,6 +148,7 @@ async def build_tinker_stack(
             transcript_store=stores.context.transcripts,
             context_settings=stores.context_settings,
             compaction_model=stores.compaction_model,
+            model_chooser=ModelChooser(models, wiring.sessions),
             skill_store=skill_store,
             transcript_index=stores.context.transcript_index,
             usage_store=wiring.usage_store,

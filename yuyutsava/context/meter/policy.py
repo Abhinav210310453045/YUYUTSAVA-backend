@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import replace
 from typing import Any
 
@@ -76,12 +77,16 @@ class ContextMeterPolicy(Policy):
         model: Any | None = None,
         model_name: str = "",
         window: bool = True,
+        active: Callable[[str], Any | None] | None = None,
     ) -> None:
         super().__init__()
         self._settings = settings
         self._role = role
         self._model = model
         self._model_name = model_name
+        #: The model a thread's turn runs on when its conversation switched away
+        #: from the one this agent was built with (``llm/switch``).
+        self._active = active
         #: Whether this agent's message list IS the conversation's window.
         #: False for subagents: they run inside the master's turn on their own
         #: message list, so publishing their segments would make the panel jump
@@ -111,6 +116,7 @@ class ContextMeterPolicy(Policy):
             return
         try:
             state = self._state(snap.thread_id)
+            model, _, _ = self._in_use(snap.thread_id)
 
             tools_chars = catalog_chars(self._role) + tool_schema_chars(self._role, call.tool_names)
             # The system prompt is segmented HERE, not from turn.messages.
@@ -137,10 +143,10 @@ class ContextMeterPolicy(Policy):
             # what gets kept — and the whole prompt is only accounted for here,
             # tool schemas included.
             raw = {
-                "system": approx_tokens_chars(system_chars["system"], model=self._model),
-                "tools": approx_tokens_chars(tools_chars, model=self._model),
-                "memory": approx_tokens_chars(system_chars["memory"], model=self._model),
-                "skills": approx_tokens_chars(system_chars["skills"], model=self._model),
+                "system": approx_tokens_chars(system_chars["system"], model=model),
+                "tools": approx_tokens_chars(tools_chars, model=model),
+                "memory": approx_tokens_chars(system_chars["memory"], model=model),
+                "skills": approx_tokens_chars(system_chars["skills"], model=model),
                 # ``before_model`` leaves its raw message estimate here.
                 "messages": snap.messages_tokens,
             }
@@ -178,14 +184,25 @@ class ContextMeterPolicy(Policy):
     # -- internals ----------------------------------------------------------
 
     def _state(self, thread_id: str) -> ThreadState:
-        return state_for(thread_id, self._model_name)
+        return state_for(thread_id, self._in_use(thread_id)[1])
+
+    def _in_use(self, thread_id: str) -> tuple[Any, str, int | None]:
+        """``(model, name, window)`` of the model *thread_id*'s turn runs on.
+
+        The window is ``None`` for the model this agent was built with, whose
+        budget the settings already hold.
+        """
+        active = self._active(thread_id) if self._active is not None else None
+        if active is None:
+            return self._model, self._model_name, None
+        return active.model, active.name, active.context_window
 
     def _price_table(self) -> dict[str, tuple[float, float]]:
         if self._prices is None:
             self._prices = load_price_table()
         return self._prices
 
-    def _fit(self, state: ThreadState, usage: Any) -> None:
+    def _fit(self, state: ThreadState, usage: Any, model_name: str) -> None:
         """Learn the two corrections from a completed call, then re-anchor.
 
         A near-pure-prefix call measures the prefix directly. Once that factor
@@ -237,8 +254,8 @@ class ContextMeterPolicy(Policy):
             state.calibrated = True
         state.anchor_tokens = measured
         state.anchor_raw = raw_total
-        if state.calibrated and self._model_name:
-            model_factors[self._model_name] = (
+        if state.calibrated and model_name:
+            model_factors[model_name] = (
                 state.static_factor,
                 state.messages_factor,
             )
@@ -254,6 +271,7 @@ class ContextMeterPolicy(Policy):
         attributed twice.
         """
         state = self._state(turn.thread_id)
+        model, model_name, window = self._in_use(turn.thread_id)
 
         convo: list[Any] = []
         offloaded = 0
@@ -268,19 +286,31 @@ class ContextMeterPolicy(Policy):
         return ContextSnapshot(
             role=self._role,
             thread_id=turn.thread_id,
-            model=self._model_name,
-            max_input_tokens=int(getattr(self._settings, "max_input_tokens", 0) or 0),
-            compact_trigger_tokens=int(getattr(self._settings, "compact_trigger_tokens", 0) or 0),
+            model=model_name,
+            max_input_tokens=self._budget(window),
+            compact_trigger_tokens=self._trigger(window),
             # Raw and uncorrected: ``revise_model_call`` is the hook that can
             # see the whole prompt, so it does the correcting and the
             # reconciling once, in one place.
-            messages_tokens=approx_tokens(convo, model=self._model),
+            messages_tokens=approx_tokens(convo, model=model),
             message_count=len(turn.messages),
             offloaded_digests=offloaded,
             calibrated=state.calibrated,
             anchored=state.anchor_tokens > 0,
             **self._carry(turn.thread_id),
         )
+
+    def _budget(self, window: int | None) -> int:
+        budget_for = getattr(self._settings, "budget_for", None)
+        if budget_for is not None:
+            return int(budget_for(window))
+        return int(getattr(self._settings, "max_input_tokens", 0) or 0)
+
+    def _trigger(self, window: int | None) -> int:
+        trigger_for = getattr(self._settings, "trigger_for", None)
+        if trigger_for is not None:
+            return int(trigger_for(window))
+        return int(getattr(self._settings, "compact_trigger_tokens", 0) or 0)
 
     @staticmethod
     def _segment_for_prefix(prefix: str) -> str:
@@ -314,7 +344,7 @@ class ContextMeterPolicy(Policy):
 
     def _record_call(self, thread_id: str, usage: Any) -> None:
         state = self._state(thread_id)
-        model = self._model_name or getattr(usage, "model", "") or ""
+        model = self._in_use(thread_id)[1] or getattr(usage, "model", "") or ""
         prices = self._price_table()
         cost = estimate_cost_usd(model, usage.input_tokens, usage.output_tokens, prices)
 
@@ -332,7 +362,7 @@ class ContextMeterPolicy(Policy):
         # reaching it would divide the master's estimate by its own, much
         # smaller, token count and permanently skew the panel's scale.
         if self._window:
-            self._fit(state, usage)
+            self._fit(state, usage, model)
 
         # Keep the window rows from the last measurement: this call changed what
         # was spent, not what is in the prompt. For a subagent (window=False)

@@ -485,6 +485,15 @@ def wired_stores(tmp: Path) -> dict[str, Any]:
     }
 
 
+def _model_chooser() -> Any:
+    """What a stack passes so its agents switch model per turn — on the environment
+    route, so building it reads no file."""
+    from yuyutsava.core.model_choice import ModelChooser
+    from yuyutsava.llm.selection import TaskModels
+
+    return ModelChooser(TaskModels())
+
+
 def _board() -> Any:
     """A TODO board over an in-memory store — every master declares the todo_*
     family, and the builders now require the board it writes to."""
@@ -753,6 +762,11 @@ def all_fingerprints() -> dict[str, dict[str, Any]]:
     # board-wide note recall makes no sense for a master that is not pinned to
     # a card — so it cannot live in the shared wired_stores() dict.
     profile_extras: dict[str, dict[str, Any]] = {"tinker": {"note_index": _Opaque()}}
+    # A stack that chooses models gives each master and sync subagent a model
+    # switch. The orchestrator builds a fresh graph per task on the model of the
+    # moment, so it takes none.
+    for role in ("cli", "tinker"):
+        profile_extras.setdefault(role, {})["model_chooser"] = _model_chooser()
 
     # All three masters delegate to subagents for any task — sync or async,
     # local or on a peer daemon. Tinker was the exception until 2026-08-08; it

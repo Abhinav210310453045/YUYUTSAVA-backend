@@ -152,8 +152,11 @@ class ConversationManager:
     def _bundle_key(agent: str, card_id: str | None) -> str:
         return "master" if agent == "master" else f"{agent}:{card_id}"
 
-    def _resolved_settings(self) -> ModelTarget:
-        return self._settings or (self._wiring.models or TaskModels()).target("orchestrator")
+    def _resolved_settings(self, task: str) -> ModelTarget:
+        """The model a bundle for *task* is built on: the master chats (``chat``), a
+        tinker works a card (``orchestrator``). Each turn may still switch
+        (``llm/switch``); this is where it starts."""
+        return self._settings or (self._wiring.models or TaskModels()).target(task)
 
     def _resolved_search(self) -> SearchConfig:
         return self._search_config or SearchConfig.from_env()
@@ -208,7 +211,7 @@ class ConversationManager:
         logger.info("conversation: building shared master bundle (lazy, first use)")
         return await build_agent_stack(
             self._workspace,
-            self._resolved_settings(),
+            self._resolved_settings("chat"),
             execution=ExecutionSettings(
                 mode="local", docker=DockerSettings.from_env(), local=LocalSettings.from_env()
             ),
@@ -231,7 +234,7 @@ class ConversationManager:
         )
         return await build_tinker_stack(
             self._workspace,
-            self._resolved_settings(),
+            self._resolved_settings("orchestrator"),
             card_id=card_id,
             card_workspace=card_ws,
             bash_timeout_sec=_bash_timeout_sec(),
@@ -250,6 +253,7 @@ class ConversationManager:
                 board=self._wiring.board,
                 visual_store=self._wiring.visual_store,
                 models=self._wiring.models,
+                sessions=self._wiring.sessions,
             ),
         )
 

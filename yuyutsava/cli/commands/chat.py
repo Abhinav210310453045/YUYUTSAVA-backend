@@ -60,7 +60,7 @@ async def run_chat(
             settings,
             # The per-turn USER PREFERENCES block, from the configured
             # backend's preferences — the ones the daemon and the app read.
-            wiring=StackWiring(prefs_store=PrefsStore(events), models=opts.models),
+            wiring=StackWiring(prefs_store=PrefsStore(events), models=opts.models, sessions=store),
             execution=opts.execution,
             bash_timeout_sec=bash_timeout_sec,
             permission_check=permission_check,

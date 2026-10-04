@@ -112,6 +112,16 @@ def model_name_of(model: BaseChatModel | object) -> str:
     return ""
 
 
+def provider_of(model: BaseChatModel | object) -> str:
+    """The type of the provider that built *model* (``vertex``, ``groq``, …), for usage rows.
+
+    ``""`` for a model this system did not build: a fake, or anything made
+    outside :func:`model_handle`, has no provider anyone can vouch for.
+    """
+    identity = _IDENTITIES.get(id(model))
+    return identity.provider if identity is not None else ""
+
+
 def model_handle(
     target: ModelTarget,
     *,
@@ -174,6 +184,7 @@ __all__ = [
     "handle_for",
     "model_handle",
     "model_name_of",
+    "provider_of",
     "supports",
 ]
 

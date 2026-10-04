@@ -22,6 +22,7 @@ import ast
 import pathlib
 import unittest
 
+from yuyutsava.core.deps import MasterDeps
 from yuyutsava.core.engine import subagent_spec, sync_subagent_specs
 
 ENGINE = pathlib.Path(__file__).resolve().parent.parent.parent / "yuyutsava" / "core" / "engine.py"
@@ -96,29 +97,13 @@ class TheCliAndTinkerPathAddsNoBudget(unittest.TestCase):
     ceiling there would be a number nobody chose."""
 
     def test_no_budget_policy_in_a_sync_spec(self) -> None:
-        specs = sync_subagent_specs(
-            [_Sub("a")],
-            model=None,
-            artifact_store=None,
-            context_settings=None,
-            summary_store=None,
-            memory_store=None,
-            compaction_model=None,
-        )
+        specs = sync_subagent_specs([_Sub("a")], model=None, deps=MasterDeps())
         self.assertEqual(len(specs), 1)
         flat = " ".join(_names(specs[0]["middleware"]))
         self.assertNotIn("Budget", flat)
 
     def test_one_spec_per_subagent(self) -> None:
-        specs = sync_subagent_specs(
-            [_Sub("a"), _Sub("b")],
-            model=None,
-            artifact_store=None,
-            context_settings=None,
-            summary_store=None,
-            memory_store=None,
-            compaction_model=None,
-        )
+        specs = sync_subagent_specs([_Sub("a"), _Sub("b")], model=None, deps=MasterDeps())
         self.assertEqual([s["name"] for s in specs], ["a", "b"])
 
 

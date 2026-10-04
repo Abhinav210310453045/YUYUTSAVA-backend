@@ -20,11 +20,12 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command, interrupt
 from pydantic import Field
 
+from yuyutsava.core.model_choice import ModelChooser
 from yuyutsava.llm.config.loader import load_text
 from yuyutsava.llm.handle import ModelHandle
 from yuyutsava.llm.quirks.history_portable import STAMP, writer_of
+from yuyutsava.llm.switch import ModelSwitchMiddleware
 from yuyutsava.llm.target import target_for
-from yuyutsava.policy.model_switch import ModelChooser, ModelSwitchMiddleware
 from yuyutsava.storage.models import ALL_SUBAGENTS, ModelChoice, Session
 from yuyutsava.storage.sessions.store import SessionNotFound
 
@@ -244,7 +245,7 @@ class ASessionsChoice(unittest.TestCase):
     def test_a_model_models_toml_no_longer_has_falls_back_and_says_so(self) -> None:
         sessions = _Sessions({"t1": ModelChoice(model="gone")})
         agent, _ = _agent(_says("built"), _Models(), sessions=sessions)
-        with self.assertLogs("yuyutsava.policy.model_switch", logging.WARNING) as logs:
+        with self.assertLogs("yuyutsava.core.model_choice", logging.WARNING) as logs:
             self.assertEqual(_ask(agent, "hi")[-1].content, "built")
         self.assertIn("'gone'", logs.output[0])
 
@@ -261,7 +262,7 @@ class Stamping(unittest.TestCase):
     def test_reaches_an_extended_response(self) -> None:
         from langchain.agents.middleware.types import ExtendedModelResponse, ModelResponse
 
-        from yuyutsava.policy import model_switch
+        from yuyutsava.llm import switch as model_switch
 
         response = ExtendedModelResponse(model_response=ModelResponse(result=[AIMessage("x")]))
         stamped: Any = model_switch._stamp(response, "local/a")

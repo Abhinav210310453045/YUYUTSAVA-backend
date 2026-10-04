@@ -77,6 +77,12 @@ class MasterDeps:
     usage_store: Any | None = None
     prefs_store: Any | None = None
 
+    # -- models ------------------------------------------------------------
+    #: Chooses each turn's model — the conversation's own choice, else its
+    #: task's (``core.model_choice.ModelChooser``). Absent, every turn runs on
+    #: the model the graph was built with.
+    model_chooser: Any | None = None
+
     # -- context and cost --------------------------------------------------
     context_settings: Any | None = None
     compaction_model: BaseChatModel | None = None
@@ -150,6 +156,9 @@ class StackWiring:
     #: ``TaskModels``, following ``models.toml``. Absent: models from the
     #: environment (``LLM_PROVIDER``), as a test builds them.
     models: TaskModelSource | None = None
+    #: The session store whose rows carry each conversation's own model choice
+    #: (``Session.models``). Absent: conversations follow ``models.toml`` alone.
+    sessions: Any | None = None
 
 
 #: The tinker agent's own budget. It works a single TODO card, so its context is

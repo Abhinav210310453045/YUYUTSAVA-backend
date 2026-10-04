@@ -86,6 +86,21 @@ class MiddlewareOrderingRule(unittest.TestCase):
                         f"{later} — {why}.\nActual: {seq}",
                     )
 
+    def test_the_model_switch_leads_the_model_call_chain(self) -> None:
+        """Every later hook must see the model the turn runs on, not the built one.
+
+        Prompt caching, the meter and usage all ask which model a call is going
+        to; the switch is what decides it (``llm/switch``).
+        """
+        for key, fp in all_fingerprints().items():
+            chain = fp["chains"]["model_call"]
+            if "ModelSwitchMiddleware" not in chain:
+                continue  # a stack that chooses no models
+            with self.subTest(profile=key):
+                self.assertEqual(
+                    chain[0], "ModelSwitchMiddleware", f"{key}: the switch must lead; got {chain}"
+                )
+
     def test_tool_filter_leads_the_model_call_chain(self) -> None:
         """Nothing may observe tools the filter is supposed to have removed.
 
@@ -93,11 +108,12 @@ class MiddlewareOrderingRule(unittest.TestCase):
         Entries in other chains cannot see the tool list at all, so their
         position relative to the filter carries no meaning — and asserting
         against the whole list is what would break when the per-policy adapters
-        are collapsed, for no behavioural reason.
+        are collapsed, for no behavioural reason. The model switch alone may run
+        first: it chooses the model and never reads the tool list.
         """
         for key, fp in all_fingerprints().items():
             with self.subTest(profile=key):
-                chain = fp["chains"]["model_call"]
+                chain = [c for c in fp["chains"]["model_call"] if c != "ModelSwitchMiddleware"]
                 self.assertTrue(chain, f"{key}: no model-call policies at all")
                 self.assertEqual(
                     chain[0],

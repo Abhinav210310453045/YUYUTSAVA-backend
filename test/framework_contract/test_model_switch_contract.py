@@ -1,6 +1,6 @@
 """A conversation can switch model per call without rebuilding the agent graph.
 
-``policy/model_switch`` replaces ``request.model`` in ``awrap_model_call``
+``llm/switch`` replaces ``request.model`` in ``awrap_model_call``
 (docs/architecture/decisions/ADR-005-models-config.md §5; design §2 rules 3
 and 8). That relies on three framework behaviours, each pinned here with real
 graphs and fake models (nothing is sent):
@@ -110,7 +110,7 @@ def test_prompt_caching_sees_the_swapped_model() -> None:
     seen = model_seen_by_prompt_caching([_SwapTo(_scripted("swapped"))])
     assert seen == "swapped", (
         "deepagents' prompt caching now runs outside the caller's middleware and sees the "
-        f"model the graph was built with ({seen!r}); policy/model_switch must move."
+        f"model the graph was built with ({seen!r}); llm/switch must move."
     )
 
 

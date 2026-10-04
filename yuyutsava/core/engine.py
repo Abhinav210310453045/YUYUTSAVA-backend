@@ -62,7 +62,8 @@ from yuyutsava.core.deps import TINKER_BUDGET_TOKENS, MasterDeps
 from yuyutsava.discovery.tool_registry import ToolRegistry
 from yuyutsava.docker_sandbox.backend import DockerSandboxBackend
 from yuyutsava.events.tools import make_recall_tool
-from yuyutsava.llm.factory import chat_model, model_name_of
+from yuyutsava.llm.factory import chat_model, model_name_of, provider_of
+from yuyutsava.llm.switch import ModelSwitchMiddleware
 from yuyutsava.llm.target import ModelTarget
 from yuyutsava.memory.agent_memory import AgentMemoryStore
 from yuyutsava.memory.agent_memory_tools import make_agent_memory_tools
@@ -343,6 +344,7 @@ def _policy_middleware(
     workspace_root: Path | None = None,
     permission_check: bool = False,
     usage_ids: tuple[str | None, str | None] = (None, None),
+    active: Any | None = None,
 ) -> list:
     """Build one phase of a master's policy middleware, from its profile.
 
@@ -402,6 +404,8 @@ def _policy_middleware(
                             usage_store,
                             role=role,
                             model_name=model_name_of(model),
+                            provider=provider_of(model),
+                            active=active,
                             **extra,
                         )
                     ]
@@ -429,8 +433,13 @@ def _context_middleware(
     compaction_model: BaseChatModel | None = None,
     role: str = "agent",
     meter_window: bool = True,
+    active: Any | None = None,
 ) -> list:
     """Build the context-controller middleware for one agent.
+
+    *active* names the model a thread's turn runs on when its conversation
+    switched away from *model* (``ModelSwitchMiddleware.active``); compaction and
+    the meter then steer under that model's window.
 
     Order matters downstream: offload must run on the tool path before the
     compactor ever counts tokens, and both sit before BudgetPolicy (the
@@ -458,6 +467,7 @@ def _context_middleware(
                 # the summary may tell the model the evicted turns are still
                 # readable. Without one, promising that would be false.
                 history_readback=transcript_store is not None,
+                active=active,
             )
         )
     if transcript_store is not None:
@@ -488,6 +498,7 @@ def _context_middleware(
                 # A subagent's message list is its own, not the conversation's
                 # window; it reports spend but must not redraw the panel.
                 window=meter_window,
+                active=active,
             )
         )
     out.append(LangChainPolicyAdapter(observers))
@@ -772,11 +783,8 @@ def sync_subagent_specs(
     subagents: "Sequence[Any]",
     *,
     model: BaseChatModel,
-    artifact_store: Any | None,
-    context_settings: Any | None,
-    summary_store: Any | None,
-    memory_store: Any | None,
-    compaction_model: BaseChatModel | None,
+    deps: MasterDeps,
+    built: ModelTarget | None = None,
 ) -> list[dict]:
     """Sync-delegation specs with the orchestrator's context treatment.
 
@@ -787,25 +795,49 @@ def sync_subagent_specs(
     builds have no subagent token-budget config. transcript_store stays
     None — sync subagent runs live inside the master's turn; transcripts
     serve interactive resume.
+
+    The context stores come from the master's *deps*. With its
+    ``model_chooser``, each subagent runs its turns on its own task's model
+    (``subagent.<name>``), or the conversation's choice for it, rather than on
+    the master's *model* it was built with (*built*).
     """
-    return [
-        subagent_spec(
-            sa,
-            context_middleware=_context_middleware(
-                model=model,
-                artifact_store=artifact_store,
-                context_settings=context_settings,
-                summary_store=summary_store,
-                memory_store=memory_store,
-                transcript_store=None,
-                compaction_model=compaction_model,
-                role=sa.name,
-                meter_window=False,
-            ),
-            artifact_store=artifact_store,
+    specs = []
+    for sa in subagents:
+        switch = _model_switch(deps.model_chooser, task=f"subagent.{sa.name}", built=built)
+        context = _context_middleware(
+            model=model,
+            artifact_store=deps.artifact_store,
+            context_settings=deps.context_settings,
+            summary_store=deps.summary_store,
+            memory_store=deps.memory_store,
+            transcript_store=None,
+            compaction_model=deps.compaction_model,
+            role=sa.name,
+            meter_window=False,
+            active=switch.active if switch else None,
         )
-        for sa in subagents
-    ]
+        specs.append(
+            subagent_spec(
+                sa,
+                context_middleware=[switch, *context] if switch else context,
+                artifact_store=deps.artifact_store,
+            )
+        )
+    return specs
+
+
+#: The temperature every master's model is built at (``chat_model``'s default);
+#: a switched model is built at the same.
+_MASTER_TEMPERATURE = 0.1
+
+
+def _model_switch(
+    chooser: Any | None, *, task: str, built: ModelTarget | None
+) -> ModelSwitchMiddleware | None:
+    """The switch for one agent's *task*, or ``None`` when its stack chooses no models."""
+    if chooser is None or built is None:
+        return None
+    return ModelSwitchMiddleware(chooser, task=task, built=built, temperature=_MASTER_TEMPERATURE)
 
 
 def _master_middleware(
@@ -816,8 +848,12 @@ def _master_middleware(
     *,
     usage_ids: tuple[str | None, str | None] = (None, None),
     note_index: Any | None = None,
+    switch: ModelSwitchMiddleware | None = None,
 ) -> list:
     """A master's middleware in run order, before any background wiring.
+
+    First, *switch*, when the stack chooses models: it runs each turn on the
+    model its conversation uses now instead of *model* (:func:`_model_switch`).
 
     Pre-policies, then the context layer, then budget and usage — after
     compaction, so they see post-compaction counts (the ordering itself lives in
@@ -834,17 +870,21 @@ def _master_middleware(
     across all cards; only the tinker agent has one.
     """
     role = profile.role
+    active = switch.active if switch else None
     # FilesystemPromptPolicy (a pre-policy) strips the deepagents "## Filesystem
     # Tools" block: those built-in tools are filtered out by ToolFilterPolicy
     # and our own prompt routes filesystem ops through tr_*, so the block only
     # misleads the model and wastes cache-prefix tokens. The subagent gate is a
     # pre-policy too; a tinker bundle is cached per card and can outlive a
     # toggle change, so without it a disabled subagent would stay reachable.
-    middleware = _policy_middleware(
-        profile,
-        "pre",
-        role=role,
-        runtime_settings=deps.runtime_settings,
+    middleware: list = [switch] if switch else []
+    middleware.extend(
+        _policy_middleware(
+            profile,
+            "pre",
+            role=role,
+            runtime_settings=deps.runtime_settings,
+        )
     )
     middleware.extend(
         _context_middleware(
@@ -857,6 +897,7 @@ def _master_middleware(
             transcript_index=deps.transcript_index,
             compaction_model=deps.compaction_model,
             role=role,
+            active=active,
         )
     )
     middleware.extend(
@@ -870,6 +911,7 @@ def _master_middleware(
             workspace_root=workspace_root,
             permission_check=deps.permission_check,
             usage_ids=usage_ids,
+            active=active,
         )
     )
     middleware.extend(
@@ -885,7 +927,9 @@ def _master_middleware(
     return middleware
 
 
-def _master_subagents(deps: MasterDeps, model: BaseChatModel, role: str) -> tuple[list, list]:
+def _master_subagents(
+    deps: MasterDeps, model: BaseChatModel, role: str, built: ModelTarget | None = None
+) -> tuple[list, list]:
     """A master's subagent specs, and the middleware background ones need.
 
     Every master delegates freely: any task, sync or async, local or on a peer
@@ -894,17 +938,7 @@ def _master_subagents(deps: MasterDeps, model: BaseChatModel, role: str) -> tupl
     """
     specs: list[dict] = []
     if deps.subagents:
-        specs.extend(
-            sync_subagent_specs(
-                deps.subagents,
-                model=model,
-                artifact_store=deps.artifact_store,
-                context_settings=deps.context_settings,
-                summary_store=deps.summary_store,
-                memory_store=deps.memory_store,
-                compaction_model=deps.compaction_model,
-            )
-        )
+        specs.extend(sync_subagent_specs(deps.subagents, model=model, deps=deps, built=built))
     async_specs, async_mw = _async_subagent_wiring(
         role=role,
         async_subagents=deps.async_subagents,
@@ -1014,7 +1048,13 @@ def build_cli_deepagent(
     deps = deps or MasterDeps()
     model = chat_model(settings)
     checkpointer = deps.checkpointer or MemorySaver()
-    middleware = _master_middleware(CLI_PROFILE, deps, model, workspace_root)
+    middleware = _master_middleware(
+        CLI_PROFILE,
+        deps,
+        model,
+        workspace_root,
+        switch=_model_switch(deps.model_chooser, task="chat", built=settings),
+    )
 
     loc = local_settings or LocalSettings()
     layout = WorkspaceLayout.for_workspace(
@@ -1037,7 +1077,7 @@ def build_cli_deepagent(
     )
     skill_registry = SkillRegistry(workspace_dir=layout.skills)
 
-    subagent_specs, async_mw = _master_subagents(deps, model, "build_cli_deepagent")
+    subagent_specs, async_mw = _master_subagents(deps, model, "build_cli_deepagent", built=settings)
     middleware.extend(async_mw)
 
     sandbox = _cli_sandbox(
@@ -1204,6 +1244,7 @@ def _orchestrator_subagents(
                         usage_store,
                         role=role,
                         model_name=model_name_of(deps.subagent_model),
+                        provider=provider_of(deps.subagent_model),
                         task_id=getattr(usage_context, "task_id", ""),
                         thread_id=getattr(usage_context, "thread_id", ""),
                     )
@@ -1419,6 +1460,7 @@ def build_tinker_agent(
         ws,
         usage_ids=(f"tinker:{card_id}", f"todo:{card_id}"),
         note_index=note_index,
+        switch=_model_switch(deps.model_chooser, task="orchestrator", built=settings),
     )
 
     # todo_author="tinker": the board's full editing set, with notes attributed
@@ -1437,7 +1479,7 @@ def build_tinker_agent(
     )
     skill_registry = skill_registry or SkillRegistry()
 
-    subagent_specs, async_mw = _master_subagents(deps, model, "build_tinker_agent")
+    subagent_specs, async_mw = _master_subagents(deps, model, "build_tinker_agent", built=settings)
     middleware.extend(async_mw)
 
     backend = _scratch_root_backend(_local_shell_backend(ws, deps.bash_timeout_sec), _SCRATCH_ROOT)

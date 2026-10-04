@@ -23,6 +23,11 @@ class ContextSettings:
     # Input-context budget the compactor steers under.
     max_input_tokens: int = FALLBACK_CONTEXT_WINDOW
 
+    # Whether max_input_tokens was set by hand (YUYUTSAVA_CONTEXT_MAX_INPUT_TOKENS)
+    # rather than read off the model — a hand-set budget holds whatever model a
+    # conversation switches to.
+    fixed_window: bool = False
+
     # Compact when estimated tokens exceed this fraction of the budget.
     compact_fraction: float = 0.7
 
@@ -70,6 +75,7 @@ class ContextSettings:
 
         return cls(
             max_input_tokens=env_int("YUYUTSAVA_CONTEXT_MAX_INPUT_TOKENS", role, window),
+            fixed_window=bool(env("YUYUTSAVA_CONTEXT_MAX_INPUT_TOKENS", role)),
             compact_fraction=env_float("YUYUTSAVA_CONTEXT_COMPACT_FRACTION", role, 0.7),
             keep_messages=env_int("YUYUTSAVA_CONTEXT_KEEP_MESSAGES", role, 20),
             offload_threshold_chars=env_int(
@@ -89,3 +95,15 @@ class ContextSettings:
     def compact_trigger_tokens(self) -> int:
         """Absolute token threshold at which compaction fires."""
         return max(1, int(self.max_input_tokens * self.compact_fraction))
+
+    def budget_for(self, window: int | None) -> int:
+        """The budget for a call on a model with input *window* — that window, unless fixed.
+
+        ``None`` (or ``0``) is the model the agent was built with, whose window is
+        :attr:`max_input_tokens` already.
+        """
+        return self.max_input_tokens if self.fixed_window or not window else window
+
+    def trigger_for(self, window: int | None) -> int:
+        """:attr:`compact_trigger_tokens` for a call on a model with input *window*."""
+        return max(1, int(self.budget_for(window) * self.compact_fraction))
