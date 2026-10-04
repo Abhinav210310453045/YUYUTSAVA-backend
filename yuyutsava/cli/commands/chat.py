@@ -28,6 +28,23 @@ from yuyutsava.storage.sessions import (
 )
 
 
+def _failed(exc: Exception) -> int:
+    """The exit status for a run that raised *exc*, after saying why — or *exc* again.
+
+    A session that cannot be resumed, a quota, a busy provider or an overlong
+    conversation is said in one line the reader can act on; anything else is a
+    bug and keeps its traceback.
+    """
+    if isinstance(exc, ResumeFailed):
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
+    said = describe_model_failure(exc)
+    if said is None:
+        raise exc
+    print(f"Error: {said}", file=sys.stderr)
+    return 1
+
+
 def _parse_pull_paths(s: str) -> list[str]:
     return [p.strip() for p in s.split(",") if p.strip()]
 
@@ -92,18 +109,8 @@ async def run_chat(
                     recursion_limit=recursion_limit,
                     agent_path="cli",
                 )
-            except ResumeFailed as exc:
-                print(f"Error: {exc}", file=sys.stderr)
-                return 2
-            except Exception as exc:
-                # A quota, a busy provider or an overlong conversation is said in
-                # one line the reader can act on; anything else is a bug and
-                # keeps its traceback.
-                said = describe_model_failure(exc)
-                if said is None:
-                    raise
-                print(f"Error: {said}", file=sys.stderr)
-                return 1
+            except Exception as exc:  # noqa: BLE001 — _failed explains it or raises it again
+                return _failed(exc)
 
             pulls = _parse_pull_paths(docker_pull_paths)
             if pulls:

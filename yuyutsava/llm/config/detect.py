@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import configparser
 import json
+import logging
 import os
 import urllib.request
 from collections.abc import Callable, Mapping
@@ -30,6 +31,8 @@ from pathlib import Path
 from typing import Any
 
 from yuyutsava.llm.settings import env_setup
+
+logger = logging.getLogger("yuyutsava.llm.config.detect")
 
 #: The variable each API-key provider reads, and the provider type it belongs to.
 API_KEY_VARIABLES: tuple[tuple[str, str], ...] = (
@@ -184,6 +187,7 @@ def ollama(environ: Mapping[str, str], probe: Probe) -> list[Finding]:
     try:
         tags = probe(f"{host.rstrip('/')}/api/tags")
     except Exception:  # noqa: BLE001 — nothing answering is the usual, unremarkable case
+        logger.debug("no Ollama at %s", host, exc_info=True)
         return []
     # Embedding models are listed beside chat models and cannot hold a conversation.
     models = [
@@ -249,6 +253,7 @@ def _gcloud_project() -> str | None:
     try:
         return _cloud_sdk.get_project_id()
     except Exception:  # noqa: BLE001 — no gcloud, or no project set: nothing to suggest
+        logger.debug("no gcloud project to suggest", exc_info=True)
         return None
 
 

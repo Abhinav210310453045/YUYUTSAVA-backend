@@ -734,25 +734,14 @@ class ReplCommands:
             # never opens the prefs store.
             await _handle_settings_command(cmd, await self.runtime_toggles.get())
             return Outcome.HANDLED
-        if head == "/model":
-            lines = (
-                await self.model_command.run(self.session.id, list(cmd.args))
-                if self.model_command is not None
-                else [f"  {DIM}switching model needs a session store{RESET}"]
-            )
-            for line in lines:
-                print(line, file=sys.stderr)
-            return Outcome.HANDLED
-        if head == "/usage":
-            await reports.print_usage_summary(
-                self.bundle.usage_store, self.session.thread_id, self.session.created_at
-            )
-            return Outcome.HANDLED
-        if head == "/context":
-            reports.print_context(self.session.thread_id, self.console)
-            return Outcome.HANDLED
-        if head == "/skills":
-            reports.print_skills(self.bundle.layout)
+        report = {
+            "/model": self._model,
+            "/usage": self._usage,
+            "/context": self._context,
+            "/skills": self._skills,
+        }.get(head)
+        if report is not None:
+            await report(cmd)
             return Outcome.HANDLED
         if head == "/new":
             await self._rotate_session()
@@ -770,6 +759,26 @@ class ReplCommands:
             width=self.banner_width,
         )
         return Outcome.QUIT if result is _SLASH_QUIT else Outcome.HANDLED
+
+    async def _model(self, cmd: CommandLine) -> None:
+        lines = (
+            await self.model_command.run(self.session.id, list(cmd.args))
+            if self.model_command is not None
+            else [f"  {DIM}switching model needs a session store{RESET}"]
+        )
+        for line in lines:
+            print(line, file=sys.stderr)
+
+    async def _usage(self, cmd: CommandLine) -> None:
+        await reports.print_usage_summary(
+            self.bundle.usage_store, self.session.thread_id, self.session.created_at
+        )
+
+    async def _context(self, cmd: CommandLine) -> None:
+        reports.print_context(self.session.thread_id, self.console)
+
+    async def _skills(self, cmd: CommandLine) -> None:
+        reports.print_skills(self.bundle.layout)
 
     async def _answered_a_pending_ask(self, line: str) -> bool:
         """A bare decision word answers the oldest pending approval.
