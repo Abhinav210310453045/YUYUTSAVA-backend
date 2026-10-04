@@ -1032,6 +1032,27 @@ MIGRATIONS: list[tuple[int, str]] = [
             ON llm_usage (thread_id, ts DESC);
         """,
     ),
+    (
+        22,
+        """
+        -- Models chosen per conversation, and who served each call.
+        --
+        -- A conversation can run on a model other than models.toml's task
+        -- default (/model, the app's model picker). model_ref is its own model,
+        -- subagent_models its subagents' (a JSON object: subagent name, or "*"
+        -- for all, to a model reference); '' follows models.toml. Mirrors
+        -- SqliteSessionStore v4.
+        ALTER TABLE sessions
+            ADD COLUMN IF NOT EXISTS model_ref       TEXT NOT NULL DEFAULT '',
+            ADD COLUMN IF NOT EXISTS subagent_models TEXT NOT NULL DEFAULT '';
+
+        -- The provider type that served a call. A model id alone does not say
+        -- who billed it: the same Claude runs on Anthropic, Vertex and Bedrock.
+        -- Pre-v22 rows keep ''.
+        ALTER TABLE llm_usage
+            ADD COLUMN IF NOT EXISTS provider TEXT NOT NULL DEFAULT '';
+        """,
+    ),
 ]
 
 

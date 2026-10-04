@@ -67,6 +67,9 @@ class UsageRow:
     #: so nothing may infer "caching is off" from a zero.
     cache_read_tokens: int = 0
     cache_creation_tokens: int = 0
+    #: The provider's type (``vertex``, ``groq``, …) — a model id alone does not
+    #: say who served and billed it. ``""`` on rows written before it was kept.
+    provider: str = ""
 
     def as_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
@@ -162,7 +165,7 @@ class UsageStore(ABC):
 _SELECT_COLS = (
     "id, ts, thread_id, task_id, role, model, "
     "input_tokens, output_tokens, est_cost_usd, "
-    "cache_read_tokens, cache_creation_tokens"
+    "cache_read_tokens, cache_creation_tokens, provider"
 )
 
 #: Postgres read list. ``ts`` became TIMESTAMPTZ in migration v20, so it is
@@ -172,7 +175,7 @@ _SELECT_COLS = (
 _PG_SELECT_COLS = (
     "id, extract(epoch FROM ts)::float8 AS ts, thread_id, task_id, role, model, "
     "input_tokens, output_tokens, est_cost_usd, "
-    "cache_read_tokens, cache_creation_tokens"
+    "cache_read_tokens, cache_creation_tokens, provider"
 )
 
 
@@ -193,6 +196,7 @@ def _row_to_record(row: Any) -> UsageRow:
         est_cost_usd=vals[8],
         cache_read_tokens=vals[9] or 0,
         cache_creation_tokens=vals[10] or 0,
+        provider=vals[11] or "",
     )
 
 
@@ -219,7 +223,7 @@ def _agg_rows(rows: list[Any]) -> list[UsageAggregate]:
 class SqliteUsageStore(BaseSqliteStore, UsageStore):
     """``llm_usage`` table inside ``state.db`` (zero-config fallback)."""
 
-    _SCHEMA_VERSION = 2
+    _SCHEMA_VERSION = 3
     _META_TABLE = "llm_usage_meta"
     _SCHEMA_SQL = """
         CREATE TABLE IF NOT EXISTS llm_usage_meta (
@@ -237,7 +241,8 @@ class SqliteUsageStore(BaseSqliteStore, UsageStore):
             output_tokens         INTEGER NOT NULL DEFAULT 0,
             est_cost_usd          REAL NOT NULL DEFAULT 0,
             cache_read_tokens     INTEGER NOT NULL DEFAULT 0,
-            cache_creation_tokens INTEGER NOT NULL DEFAULT 0
+            cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+            provider              TEXT NOT NULL DEFAULT ''
         );
         CREATE INDEX IF NOT EXISTS llm_usage_ts_idx ON llm_usage (ts);
         CREATE INDEX IF NOT EXISTS llm_usage_task_idx ON llm_usage (task_id);
@@ -246,11 +251,12 @@ class SqliteUsageStore(BaseSqliteStore, UsageStore):
     """
 
     async def _migrate(self, conn) -> None:
-        """v1 -> v2: the two cache-token columns and the per-thread index.
+        """v1 -> v2: the two cache-token columns and the per-thread index; v3: ``provider``.
 
         Additive, so an existing table is upgraded in place rather than
         rebuilt: pre-v2 rows keep 0, which reads as "the provider reported no
-        cache detail" — the same thing a genuine miss reads as.
+        cache detail" — the same thing a genuine miss reads as. Pre-v3 rows keep
+        an empty provider.
         """
         cur = await conn.execute("PRAGMA table_info(llm_usage)")
         cols = {r[1] for r in await cur.fetchall()}
@@ -260,6 +266,8 @@ class SqliteUsageStore(BaseSqliteStore, UsageStore):
                 await conn.execute(
                     f"ALTER TABLE llm_usage ADD COLUMN {col} INTEGER NOT NULL DEFAULT 0"
                 )
+        if "provider" not in cols:
+            await conn.execute("ALTER TABLE llm_usage ADD COLUMN provider TEXT NOT NULL DEFAULT ''")
         await conn.execute(
             "CREATE INDEX IF NOT EXISTS llm_usage_thread_ts_idx ON llm_usage (thread_id, ts DESC)"
         )
@@ -274,8 +282,8 @@ class SqliteUsageStore(BaseSqliteStore, UsageStore):
             await conn.execute(
                 "INSERT INTO llm_usage (id, ts, thread_id, task_id, role, "
                 "model, input_tokens, output_tokens, est_cost_usd, "
-                "cache_read_tokens, cache_creation_tokens) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "cache_read_tokens, cache_creation_tokens, provider) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     row.id,
                     row.ts,
@@ -288,6 +296,7 @@ class SqliteUsageStore(BaseSqliteStore, UsageStore):
                     row.est_cost_usd,
                     row.cache_read_tokens,
                     row.cache_creation_tokens,
+                    row.provider,
                 ),
             )
 
@@ -373,11 +382,11 @@ class PgUsageStore(UsageStore):
             await conn.execute(
                 "INSERT INTO llm_usage (id, ts, thread_id, task_id, role, "
                 "model, input_tokens, output_tokens, est_cost_usd, "
-                "cache_read_tokens, cache_creation_tokens) "
+                "cache_read_tokens, cache_creation_tokens, provider) "
                 # ts is TIMESTAMPTZ since migration v20.
                 "VALUES (%s, to_timestamp(%s), %s, "
                 "(SELECT task_id FROM tasks WHERE task_id = %s), "
-                "%s, %s, %s, %s, %s, %s, %s)",
+                "%s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     row.id,
                     row.ts,
@@ -390,6 +399,7 @@ class PgUsageStore(UsageStore):
                     row.est_cost_usd,
                     row.cache_read_tokens,
                     row.cache_creation_tokens,
+                    row.provider,
                 ),
             )
 

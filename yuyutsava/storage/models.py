@@ -25,6 +25,30 @@ from ulid import ULID
 
 SESSION_STATUSES = ("running", "idle", "crashed", "done")
 
+#: In :attr:`ModelChoice.subagents`, the entry every subagent without its own follows.
+ALL_SUBAGENTS = "*"
+
+
+@dataclass(frozen=True)
+class ModelChoice:
+    """The models one conversation chose instead of the task defaults in ``models.toml``.
+
+    Each value is a model reference as ``models.toml`` writes one — an alias or
+    ``<provider>/<model id>``. Empty means "follow the task": the conversation
+    runs on whatever ``[tasks]`` and ``[defaults]`` say at the time.
+    """
+
+    #: The conversation's own model; ``""`` follows the ``chat`` task.
+    model: str = ""
+    #: ``(subagent name, reference)`` pairs, sorted; :data:`ALL_SUBAGENTS` covers
+    #: every subagent without its own. A tuple, so a session stays hashable.
+    subagents: tuple[tuple[str, str], ...] = ()
+
+    def for_subagent(self, name: str) -> str:
+        """The reference subagent *name* runs on, or ``""`` to follow its task."""
+        chosen = dict(self.subagents)
+        return chosen.get(name) or chosen.get(ALL_SUBAGENTS, "")
+
 
 @dataclass(frozen=True)
 class Session:
@@ -49,6 +73,9 @@ class Session:
     # user message, never overwritten (unlike task_preview, which tracks the
     # latest turn).
     title: str = ""
+    # The models this conversation chose, set by /model and the app's model
+    # picker; empty follows models.toml.
+    models: ModelChoice = ModelChoice()
 
 
 # ---------------------------------------------------------------------------

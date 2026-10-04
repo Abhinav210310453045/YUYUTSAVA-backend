@@ -30,10 +30,14 @@ import psycopg
 from yuyutsava.storage.backend import StorageSettings
 from yuyutsava.storage.dialect import ensure_thread
 from yuyutsava.storage.ids import mint_thread_id
-from yuyutsava.storage.models import SESSION_STATUSES, Session
+from yuyutsava.storage.models import SESSION_STATUSES, ModelChoice, Session
 from yuyutsava.storage.pg import migrations as pg_migrations
 from yuyutsava.storage.pg.pool import PgPool, PostgresUnavailable
-from yuyutsava.storage.sessions.store import SessionNotFound
+from yuyutsava.storage.sessions.store import (
+    SessionNotFound,
+    model_choice_columns,
+    model_choice_from_columns,
+)
 
 logger = logging.getLogger("yuyutsava.storage.sessions.pg")
 
@@ -59,7 +63,7 @@ _SELECT_COLS = (
     "extract(epoch FROM created_at)::float8 AS created_at, "
     "extract(epoch FROM updated_at)::float8 AS updated_at, "
     "message_count, memory_files_count, db_row_bytes, task_preview, "
-    "schema_version, origin, title"
+    "schema_version, origin, title, model_ref, subagent_models"
 )
 
 
@@ -160,6 +164,17 @@ class PgSessionStore:
                 "UPDATE sessions SET title = %s WHERE id = %s AND (title IS NULL OR title = '')",
                 (t, session_id),
             )
+
+    async def set_model_choice(self, session_id: str, choice: ModelChoice) -> None:
+        model_ref, subagent_models = model_choice_columns(choice)
+        await self._ensure_ready()
+        async with self._conn() as conn:
+            cur = await conn.execute(
+                "UPDATE sessions SET model_ref = %s, subagent_models = %s WHERE id = %s",
+                (model_ref, subagent_models, session_id),
+            )
+            if not cur.rowcount:
+                raise SessionNotFound(session_id)
 
     async def touch(
         self,
@@ -310,6 +325,8 @@ def _row_to_session(row: Any) -> Session:
         ver,
         origin,
         title,
+        model_ref,
+        subagent_models,
     ) = tuple(row)
     return Session(
         id=sid,
@@ -325,4 +342,5 @@ def _row_to_session(row: Any) -> Session:
         schema_version=int(ver),
         origin=origin,
         title=title or "",
+        models=model_choice_from_columns(model_ref or "", subagent_models or ""),
     )

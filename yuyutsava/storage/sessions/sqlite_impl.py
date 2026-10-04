@@ -24,8 +24,12 @@ import aiosqlite
 
 from yuyutsava.storage.base import BaseSqliteStore
 from yuyutsava.storage.ids import mint_thread_id
-from yuyutsava.storage.models import SESSION_STATUSES, Session
-from yuyutsava.storage.sessions.store import SessionNotFound
+from yuyutsava.storage.models import SESSION_STATUSES, ModelChoice, Session
+from yuyutsava.storage.sessions.store import (
+    SessionNotFound,
+    model_choice_columns,
+    model_choice_from_columns,
+)
 
 _TASK_PREVIEW_MAX = 200
 _TITLE_MAX = 80
@@ -38,7 +42,9 @@ class SqliteSessionStore(BaseSqliteStore):
     # voice vs CLI conversations off a DB column rather than a UI heuristic.
     # v3: added the `title` column — set once from the session's first user
     # message so conversation lists can show a human name instead of the id.
-    _SCHEMA_VERSION: ClassVar[int] = 3
+    # v4: `model_ref` and `subagent_models` — the models the conversation chose
+    # over models.toml's task defaults (/model, the app's model picker).
+    _SCHEMA_VERSION: ClassVar[int] = 4
     _META_TABLE: ClassVar[str] = "sessions_meta"
     _SCHEMA_SQL: ClassVar[str] = """
     CREATE TABLE IF NOT EXISTS sessions_meta (
@@ -59,7 +65,9 @@ class SqliteSessionStore(BaseSqliteStore):
         task_preview       TEXT NOT NULL DEFAULT '',
         schema_version     INTEGER NOT NULL DEFAULT 1,
         origin             TEXT NOT NULL DEFAULT 'cli',
-        title              TEXT NOT NULL DEFAULT ''
+        title              TEXT NOT NULL DEFAULT '',
+        model_ref          TEXT NOT NULL DEFAULT '',
+        subagent_models    TEXT NOT NULL DEFAULT ''
     );
 
     CREATE INDEX IF NOT EXISTS idx_sessions_workspace_updated
@@ -101,6 +109,15 @@ class SqliteSessionStore(BaseSqliteStore):
             except sqlite3.OperationalError as exc:
                 if "duplicate column" not in str(exc).lower():
                     raise
+        if current < 4:
+            for column in ("model_ref", "subagent_models"):
+                try:
+                    await conn.execute(
+                        f"ALTER TABLE sessions ADD COLUMN {column} TEXT NOT NULL DEFAULT ''"
+                    )
+                except sqlite3.OperationalError as exc:
+                    if "duplicate column" not in str(exc).lower():
+                        raise
         await conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_sessions_origin_updated "
             "ON sessions(origin, updated_at DESC)"
@@ -183,6 +200,21 @@ class SqliteSessionStore(BaseSqliteStore):
 
         await self._run_write(_do)
 
+    async def set_model_choice(self, session_id: str, choice: ModelChoice) -> None:
+        model_ref, subagent_models = model_choice_columns(choice)
+
+        async def _do(conn: aiosqlite.Connection) -> int:
+            cur = await conn.execute(
+                "UPDATE sessions SET model_ref=?, subagent_models=? WHERE id=?",
+                (model_ref, subagent_models, session_id),
+            )
+            changed = cur.rowcount
+            await cur.close()
+            return changed
+
+        if not await self._run_write(_do):
+            raise SessionNotFound(session_id)
+
     async def touch(
         self,
         session_id: str,
@@ -257,7 +289,7 @@ class SqliteSessionStore(BaseSqliteStore):
             cur = await conn.execute(
                 "SELECT id, thread_id, workspace, status, created_at, updated_at, "
                 "message_count, memory_files_count, db_row_bytes, task_preview, "
-                "schema_version, origin, title FROM sessions WHERE id=?",
+                "schema_version, origin, title, model_ref, subagent_models FROM sessions WHERE id=?",
                 (session_id,),
             )
             row = await cur.fetchone()
@@ -281,7 +313,7 @@ class SqliteSessionStore(BaseSqliteStore):
         sql = (
             "SELECT id, thread_id, workspace, status, created_at, updated_at, "
             "message_count, memory_files_count, db_row_bytes, task_preview, "
-            "schema_version, origin, title FROM sessions"
+            "schema_version, origin, title, model_ref, subagent_models FROM sessions"
         )
         clauses: list[str] = []
         params: tuple[Any, ...] = ()
@@ -316,7 +348,7 @@ class SqliteSessionStore(BaseSqliteStore):
             cur = await conn.execute(
                 "SELECT id, thread_id, workspace, status, created_at, updated_at, "
                 "message_count, memory_files_count, db_row_bytes, task_preview, "
-                "schema_version, origin, title FROM sessions "
+                "schema_version, origin, title, model_ref, subagent_models FROM sessions "
                 "WHERE id=? OR substr(id, 1, ?)=? "
                 "ORDER BY updated_at DESC LIMIT ?",
                 (base, len(prefix), prefix, int(limit)),
@@ -346,6 +378,8 @@ def _row_to_session(row: Any) -> Session:
         ver,
         origin,
         title,
+        model_ref,
+        subagent_models,
     ) = row
     return Session(
         id=sid,
@@ -361,4 +395,5 @@ def _row_to_session(row: Any) -> Session:
         schema_version=ver,
         origin=origin,
         title=title,
+        models=model_choice_from_columns(model_ref, subagent_models),
     )
