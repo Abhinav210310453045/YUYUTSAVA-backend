@@ -185,6 +185,13 @@ def is_transient(exc: BaseException) -> bool:
     return False
 
 
+def is_provider_busy(exc: BaseException) -> bool:
+    """Whether *exc* is a capacity error: one :func:`is_transient` retries, or, for an
+    error carrying no status at all, one named exactly as the SDKs name them
+    (the same last resort :func:`classify_provider_busy` takes)."""
+    return is_transient(exc) or type(exc).__name__ in _BUSY_BY_NAME
+
+
 def _max_retries(model: object) -> int:
     """How many times *this* quirk retries — not what the SDK is set to.
 

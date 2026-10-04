@@ -33,6 +33,8 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
+from yuyutsava.llm.failures import describe_model_failure
+
 logger = logging.getLogger("yuyutsava.daemon.turn_registry")
 
 
@@ -360,9 +362,11 @@ class TurnRegistry:
             raise
         except Exception as exc:  # noqa: BLE001 — surfaced to every viewer
             run.status = "error"
-            run.error = str(exc)
+            # A quota, a busy provider or an overlong conversation is said in
+            # terms the reader can act on; anything else as raised.
+            run.error = describe_model_failure(exc) or str(exc)
             logger.warning("turn %s failed on %s", run.run_id, run.thread_id, exc_info=True)
-            run.emit({"type": "error", "message": str(exc)})
+            run.emit({"type": "error", "message": run.error})
         finally:
             run.ended_at = time.time()
             fut, run.pending_ask, run.pending_ask_id = run.pending_ask, None, None

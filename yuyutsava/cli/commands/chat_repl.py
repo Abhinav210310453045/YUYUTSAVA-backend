@@ -63,7 +63,8 @@ from yuyutsava.conversation import ConversationService
 from yuyutsava.core.agent_stack import build_agent_stack
 from yuyutsava.core.app_context import open_events_store
 from yuyutsava.core.deps import StackWiring
-from yuyutsava.llm.quirks.first_chunk_retry import add_retry_listener, classify_provider_busy
+from yuyutsava.llm.failures import describe_model_failure
+from yuyutsava.llm.quirks.first_chunk_retry import add_retry_listener
 from yuyutsava.prefs.runtime import UNDISABLEABLE, RuntimeSettings
 from yuyutsava.skills.injector import add_recall_listener
 from yuyutsava.storage.paths import state_dir
@@ -193,18 +194,12 @@ async def run_one_turn(
 
 def _report_turn_failure(exc: BaseException) -> None:
     """Say what went wrong in the terms the reader can act on."""
-    if type(exc).__name__ in ("ResourceExhausted", "ServiceUnavailable"):
-        # Provider capacity is not a bug in this program, and its traceback is
-        # 30 frames of SDK internals that say nothing the user can act on. One
-        # line, and the session stays open so the message can simply be resent.
-        code = classify_provider_busy(exc)
-        print(
-            f"{RED}provider busy ({code}){RESET} — retries gave up. "
-            f"{DIM}Resend to try again; VERTEX_RETRY_BUDGET_SEC (default 90) "
-            f"and VERTEX_MAX_RETRIES control how long it keeps trying. "
-            f"Session still open.{RESET}",
-            file=sys.stderr,
-        )
+    said = describe_model_failure(exc)
+    if said is not None:
+        # A provider's capacity or quota is not a bug in this program, and its
+        # traceback is 30 frames of SDK internals that say nothing the user can
+        # act on. One line, and the session stays open.
+        print(f"{RED}{said}{RESET} {DIM}Session still open.{RESET}", file=sys.stderr)
         return
     # Otherwise name the exception type and keep the traceback: a bare str(exc)
     # turns a library-internal failure ("list index out of range") into an

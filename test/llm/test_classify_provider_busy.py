@@ -138,7 +138,8 @@ class NoSurfaceGuessesFromTheName(unittest.TestCase):
         for rel in (
             "cli/render/renderer.py",
             "cli/render/dashboard.py",
-            "cli/commands/chat_repl.py",
+            # The REPL's "retries gave up" line, and the app's, come from here.
+            "llm/failures.py",
         ):
             with self.subTest(surface=rel):
                 source = (ROOT / rel).read_text()
