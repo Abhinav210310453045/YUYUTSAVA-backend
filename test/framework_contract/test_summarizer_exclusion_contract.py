@@ -27,6 +27,7 @@ from typing import Any
 from unittest import mock
 
 import pytest
+from langchain_core.messages import SystemMessage
 
 from test.support.targets import every_provider_type, every_type_target
 from yuyutsava.context.compaction import YuyutsavaCompactionMiddleware
@@ -52,6 +53,16 @@ def _models() -> dict[str, Any]:
         return {name: chat_model(target) for name, target in targets.items()}
 
 
+def _isolated_registry() -> Any:
+    """deepagents' profile registry as it ships, restored afterwards: registering is global.
+
+    Its built-in profiles load on first use and never again, so they are loaded
+    before the snapshot is taken.
+    """
+    harness_profiles._ensure_harness_profiles_loaded()
+    return mock.patch.dict(harness_profiles._HARNESS_PROFILES)
+
+
 def stacks_built_on(model: Any, *, exclude: bool, prompts: list | None = None) -> list[list[str]]:
     """The middleware names of every stack ``create_deep_agent`` builds on *model*.
 
@@ -67,13 +78,10 @@ def stacks_built_on(model: Any, *, exclude: bool, prompts: list | None = None) -
             prompts.append(kwargs.get("system_prompt"))
         return mock.MagicMock()
 
-    # deepagents loads its built-in profiles on first use and never again; load
-    # them now, so the registry restored below still holds them.
-    harness_profiles._ensure_harness_profiles_loaded()
     compactor = YuyutsavaCompactionMiddleware(model=model, settings=ContextSettings())
     declared = {"name": "helper", "description": "helps", "system_prompt": "help"}
     with (
-        mock.patch.dict(harness_profiles._HARNESS_PROFILES),
+        _isolated_registry(),
         mock.patch.object(deepagents_graph, "create_agent", capture),
         mock.patch.object(subagents_module, "create_agent", capture),
     ):
@@ -113,7 +121,8 @@ def claude_suffix_in_its_master_prompt() -> tuple[str, str]:
     model = chat_model(every_type_target("anthropic/claude-sonnet-4-6"))
     prompts: list = []
     stacks_built_on(model, exclude=True, prompts=prompts)
-    return prompt_suffix(model), str(prompts[-1])
+    with _isolated_registry():
+        return prompt_suffix(model), str(prompts[-1])
 
 
 def test_the_suffix_read_is_the_one_deepagents_applied() -> None:
@@ -125,10 +134,13 @@ def test_the_suffix_read_is_the_one_deepagents_applied() -> None:
 
 
 def test_a_switched_turn_carries_the_new_models_suffix_only() -> None:
-    from langchain_core.messages import SystemMessage
-
     claude = chat_model(every_type_target("anthropic/claude-sonnet-4-6"))
     gemini = _models()["vertex"]
+    with _isolated_registry():
+        _check_retargeting(claude, gemini)
+
+
+def _check_retargeting(claude: Any, gemini: Any) -> None:
     suffix = prompt_suffix(claude)
     built_for_claude = SystemMessage(f"OURS\n\nBASE\n\n{suffix}\n\nMEMORY")
 

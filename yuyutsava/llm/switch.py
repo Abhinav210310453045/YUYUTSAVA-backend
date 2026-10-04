@@ -43,6 +43,7 @@ system's middleware, so every later hook sees the chosen model.
 
 from __future__ import annotations
 
+import logging
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -55,6 +56,8 @@ from yuyutsava.llm.handle import ModelHandle
 from yuyutsava.llm.quirks.history_portable import for_reader, stamped
 from yuyutsava.ports.models import TaskModelSource
 from yuyutsava.run_context import thread_id_from_runtime
+
+logger = logging.getLogger("yuyutsava.llm.switch")
 
 
 class Chooser(Protocol):
@@ -160,6 +163,14 @@ class ModelSwitchMiddleware(AgentMiddleware):  # type: ignore[misc]
             )
         )
         pin = self._pins[thread_id] = _Pin(target, handle)
+        if handle is not None:
+            logger.info(
+                "%s turn on %s runs on %s (built on %s)",
+                self._task,
+                thread_id,
+                target.reference,
+                self._built.reference,
+            )
         self._pins.move_to_end(thread_id)
         while len(self._pins) > _PINS_KEPT:
             self._pins.popitem(last=False)

@@ -78,7 +78,13 @@ def exclude_deepagents_summarizer(model: Any) -> None:
 
 
 def prompt_suffix(model: Any) -> str:
-    """The ``system_prompt_suffix`` deepagents adds to prompts for *model*; ``""`` for none."""
+    """The ``system_prompt_suffix`` deepagents adds to prompts for *model*; ``""`` for none.
+
+    *model*'s provider is registered first, as for a graph build: once any
+    profile is registered, deepagents warns on every lookup that matches none,
+    and a model a turn switched to has had no build to register it.
+    """
+    exclude_deepagents_summarizer(model)
     return _harness_profile_for_model(model, None).system_prompt_suffix or ""
 
 
