@@ -182,6 +182,23 @@ class StreamSettingsItem:
         return {"type": self.type, "settings": self.settings, "ts": self.ts}
 
 
+@dataclass(frozen=True)
+class StreamModelsItem:
+    """Broadcast when ``models.toml`` or ``secrets.toml`` changes — in the app, the CLI or by hand.
+
+    Carries the whole status ``GET /models`` returns (with its new revision), so
+    the model chip, Settings → Models and a wizard left open all show the file
+    as it is now, and a form opened before the change knows it is stale.
+    """
+
+    models: dict[str, Any] = field(default_factory=dict)
+    ts: float | None = None
+    type: Literal["models"] = "models"
+
+    def to_wire_dict(self) -> dict[str, Any]:
+        return {"type": self.type, "models": self.models, "ts": self.ts}
+
+
 StreamItem = (
     StreamEventItem
     | StreamProposalItem
@@ -190,6 +207,7 @@ StreamItem = (
     | StreamProposalResolvedItem
     | StreamWakeItem
     | StreamSettingsItem
+    | StreamModelsItem
 )
 
 

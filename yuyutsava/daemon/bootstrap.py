@@ -67,11 +67,18 @@ from yuyutsava.daemon.web.app import create_app
 from yuyutsava.daemon.web.app_deps import AppDeps
 from yuyutsava.daemon.web.auth import AuthSettings
 from yuyutsava.daemon.web.services.decision_service import DecisionService
+from yuyutsava.daemon.web.services.models_service import (
+    ModelsService,
+    broadcast_model_changes,
+)
 from yuyutsava.daemon.web.services.stream_service import WebChannel, WebHub
 from yuyutsava.events.bus import EventBus
 from yuyutsava.events.config import EventsConfig, SourceConfig
 from yuyutsava.events.registry import SourceRegistry
+from yuyutsava.llm.config.detect import detect
+from yuyutsava.llm.config.store import ConfigStore
 from yuyutsava.llm.config.watch import ConfigSource, ConfigWatcher
+from yuyutsava.llm.providers.registry import discover as discover_models
 from yuyutsava.llm.selection import TaskModels
 from yuyutsava.llm.target import ModelTarget
 from yuyutsava.llm.tracing import warm_reachability_cache
@@ -857,6 +864,8 @@ class ModelsSubsystem:
     task_models: TaskModels
     #: Follows ``models.toml`` and ``secrets.toml``; stopped at teardown.
     config_watcher: ConfigWatcher
+    #: What the watcher reloads — read by ``/models``.
+    config_source: ConfigSource
     model_router: ModelRouter
     triage_settings: Any
     orchestrator_settings: Any
@@ -912,6 +921,7 @@ async def build_models() -> ModelsSubsystem:
     return ModelsSubsystem(
         task_models=models,
         config_watcher=watcher,
+        config_source=source,
         model_router=model_router,
         triage_settings=triage_settings,
         orchestrator_settings=orchestrator_settings,
@@ -1701,6 +1711,13 @@ async def build_web(
     )
     plugins.decision_service.set_ask_resume(ask_resume)
 
+    models_service = ModelsService(
+        ConfigStore(models_config_path(), secrets_path()),
+        boot.models.config_source,
+        discover=discover_models,
+        detect=detect,
+    )
+    broadcast_model_changes(boot.models.config_source, models_service, web_hub)
     app = create_app(
         web_hub,
         host=cfg.web_host,
@@ -1733,6 +1750,8 @@ async def build_web(
             runtime_settings=pol.runtime_settings,
             subagent_roster=boot.subagents.sync,
             mcp_manager=boot.mcp_manager,
+            models_service=models_service,
+            task_models=boot.models.task_models,
         ),
     )
     uvicorn_level = logging.getLevelName(logging.getLogger("yuyutsava").getEffectiveLevel()).lower()

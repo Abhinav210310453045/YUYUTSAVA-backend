@@ -60,6 +60,10 @@ class AppDeps:
     subagent_roster: dict | None = None  # {name: BaseSubAgent}
     #: The MCP servers' manager, for ``GET /mcp/status``; absent, it lists none.
     mcp_manager: Any | None = None
+    #: ``models.toml`` for the app (``/models``); absent, those routes answer 503.
+    models_service: Any | None = None
+    #: Which model each task uses (``TaskModels``), for ``/models/sessions`` and ``/models/test``.
+    task_models: Any | None = None
 
     # -- stores ------------------------------------------------------------
     #: The TODO board (``TodoExchange``); without it the board routes answer 503.
