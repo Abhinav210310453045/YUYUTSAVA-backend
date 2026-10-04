@@ -121,6 +121,19 @@ class Vertex(unittest.TestCase):
         ids = [m.id for m in vertex.vertex_gemini_models(recorded("vertex_garden_google.json"))]
         self.assertEqual(sorted(ids), ["gemini-2.5-pro", "gemini-3.5-flash"])
 
+    def test_a_model_the_location_does_not_serve_says_where_it_is(self) -> None:
+        served = {"gemini-3.5-flash": (True, None), "gemini-2.5-pro": (False, True)}
+        body = recorded("vertex_garden_google.json")
+        models = {m.id: m for m in vertex.vertex_gemini_models(body, served, "asia-south1")}
+        self.assertEqual(models["gemini-3.5-flash"].availability, Availability.AVAILABLE)
+        pro = models["gemini-2.5-pro"]
+        self.assertEqual(pro.availability, Availability.NOT_IN_REGION)
+        self.assertIn('set location = "global" on its alias', pro.note)
+
+    def test_unprobed_gemini_is_unknown(self) -> None:
+        models = vertex.vertex_gemini_models(recorded("vertex_garden_google.json"))
+        self.assertTrue(all(m.availability is Availability.UNKNOWN for m in models))
+
     def test_a_zero_quota_reads_as_needing_a_quota_increase(self) -> None:
         quotas = vertex.quota_values(recorded("vertex_quota_base_model.json"))
         self.assertEqual(quotas["anthropic-claude-sonnet-4-6"], 0)  # recorded as "details": {}

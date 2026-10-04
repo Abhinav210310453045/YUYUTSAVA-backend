@@ -29,13 +29,14 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, ClassVar
 
+import httpx
 from langchain_core.language_models import BaseChatModel
 
 from yuyutsava.llm.base import ANSWER_TOKENS, BuildOptions, Provider, require
 from yuyutsava.llm.discovery import Availability, DiscoveredModel, Discovery
 from yuyutsava.llm.handle import Capability
 from yuyutsava.llm.providers.gemini import build_gemini
-from yuyutsava.llm.providers.listing import Listing, get_json
+from yuyutsava.llm.providers.listing import LISTING_TIMEOUT_SECONDS, Listing, get_json
 from yuyutsava.llm.target import ModelTarget, ProviderAccess
 
 _SCOPES = ["https://www.googleapis.com/auth/cloud-platform"]
@@ -71,6 +72,11 @@ _QUOTA_URL = (
     "aiplatform.googleapis.com/quotaInfos/GlobalOnlinePredictionRequestsPerMinutePerProjectPerBaseModel"
 )
 _LOGIN_FIX = "run `gcloud auth application-default login`, or check the service-account key file"
+#: Asks whether a location serves a Gemini model. ``countTokens`` costs nothing,
+#: and answers 404 exactly where a call would (measured: ``gemini-3.5-flash-lite``
+#: is served at ``global`` but not in ``asia-south1``, 2026-10-04).
+_COUNT_URL = "https://{host}/v1/projects/{project}/locations/{location}/publishers/google/models/{model}:countTokens"
+_PROBE = {"contents": [{"role": "user", "parts": [{"text": "hi"}]}]}
 #: Model Garden is listed one publisher at a time; these run at once.
 _LISTING_WORKERS = 6
 _INSTALL = "'yuyutsava[vertex]'"
@@ -205,7 +211,10 @@ class VertexProvider(Provider):
             return Discovery(
                 access.provider, problem=listings["google"].problem, fix=listings["google"].fix
             )
-        models = [*vertex_gemini_models(listings["google"].body)]
+        location = access.connection.location
+        names = gemini_names(listings["google"].body)
+        served = _served(headers, project, location, names)
+        models = [*vertex_gemini_models(listings["google"].body, served, location)]
         if not listings["anthropic"].problem:
             models += vertex_claude_models(listings["anthropic"].body, quotas.result())
         for publisher in MAAS_PUBLISHERS:
@@ -263,13 +272,86 @@ def _model_names(body: dict[str, Any]) -> list[tuple[str, str]]:
     ]
 
 
-def vertex_gemini_models(body: dict[str, Any]) -> list[DiscoveredModel]:
+def gemini_names(body: dict[str, Any]) -> list[str]:
     """The Gemini chat models in Model Garden's ``google`` listing."""
     return [
-        DiscoveredModel(id=name, availability=Availability.AVAILABLE)
+        name
         for name, _version in _model_names(body)
         if name.startswith("gemini-") and not any(word in name for word in _NOT_CHAT)
     ]
+
+
+#: Whether a model is served ``(at the provider's location, at global)``; ``None``
+#: where it could not be told. Global is only asked about a model missing locally.
+Served = tuple[bool | None, bool | None]
+
+
+def vertex_gemini_models(
+    body: dict[str, Any], served: dict[str, Served] | None = None, location: str = ""
+) -> list[DiscoveredModel]:
+    """Gemini models, each judged by whether *location* serves it.
+
+    Model Garden lists models without saying where they are served; *served*
+    comes from asking each location (:func:`_served`).
+    """
+    models = []
+    for name in gemini_names(body):
+        state, note = _gemini_availability((served or {}).get(name), location)
+        models.append(DiscoveredModel(id=name, availability=state, note=note))
+    return models
+
+
+def _gemini_availability(served: Served | None, location: str) -> tuple[Availability, str]:
+    if served is None or served[0] is None:
+        return Availability.UNKNOWN, ""
+    here, at_global = served
+    if here:
+        return Availability.AVAILABLE, ""
+    if at_global:
+        return Availability.NOT_IN_REGION, (
+            f'not served in {location}; it is at global — set location = "global" on its alias'
+        )
+    return Availability.NOT_IN_REGION, f"not served in {location}" + (
+        "" if location == "global" else " or at global"
+    )
+
+
+def _serves(headers: dict[str, str], project: str, location: str, model: str) -> bool | None:
+    """Whether *location* serves *model*: a free ``countTokens`` call, 200 or 404."""
+    host = (
+        "aiplatform.googleapis.com"
+        if location == "global"
+        else f"{location}-aiplatform.googleapis.com"
+    )
+    url = _COUNT_URL.format(host=host, project=project, location=location, model=model)
+    try:
+        response = httpx.post(url, headers=headers, json=_PROBE, timeout=LISTING_TIMEOUT_SECONDS)
+    except httpx.HTTPError:
+        return None
+    return {200: True, 404: False}.get(response.status_code)
+
+
+def _served(
+    headers: dict[str, str], project: str, location: str, names: list[str]
+) -> dict[str, Served]:
+    """Where each of *names* is served: at *location*, and at global for the ones it lacks."""
+    with ThreadPoolExecutor(max_workers=_LISTING_WORKERS) as pool:
+        here = dict(
+            zip(
+                names,
+                pool.map(lambda n: _serves(headers, project, location, n), names),
+                strict=True,
+            )
+        )
+        missing = [n for n, ok in here.items() if ok is False and location != "global"]
+        at_global = dict(
+            zip(
+                missing,
+                pool.map(lambda n: _serves(headers, project, "global", n), missing),
+                strict=True,
+            )
+        )
+    return {name: (here[name], at_global.get(name)) for name in names}
 
 
 def vertex_claude_models(
@@ -322,6 +404,7 @@ __all__ = [
     "maas_endpoint",
     "quota_values",
     "vertex_claude_models",
+    "gemini_names",
     "vertex_gemini_models",
     "vertex_open_models",
 ]
