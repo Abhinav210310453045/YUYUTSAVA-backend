@@ -20,6 +20,7 @@ from langchain_core.language_models import BaseChatModel
 from langgraph.checkpoint.base import BaseCheckpointSaver
 
 from yuyutsava.config.search import SearchConfig
+from yuyutsava.ports.models import TaskModelSource
 
 
 @dataclass(frozen=True)
@@ -145,6 +146,10 @@ class StackWiring:
     #: The daemon's visual store (routed on Postgres), so a chart made in a chat
     #: shows in the app. Absent: the stack's own factory store.
     visual_store: Any | None = None
+    #: Which model each task uses — the daemon's or the CLI's own
+    #: ``TaskModels``, following ``models.toml``. Absent: models from the
+    #: environment (``LLM_PROVIDER``), as a test builds them.
+    models: TaskModelSource | None = None
 
 
 #: The tinker agent's own budget. It works a single TODO card, so its context is

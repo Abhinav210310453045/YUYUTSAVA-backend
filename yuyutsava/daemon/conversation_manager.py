@@ -43,7 +43,7 @@ from yuyutsava.core.engine import AgentBundle
 from yuyutsava.core.tinker_stack import build_tinker_stack
 from yuyutsava.daemon.submit_tool import make_orch_submit_tool
 from yuyutsava.daemon.turn_registry import TurnRegistry, TurnRun
-from yuyutsava.llm.settings import llm_settings_from_env
+from yuyutsava.llm.selection import TaskModels
 from yuyutsava.llm.target import ModelTarget
 from yuyutsava.storage.ids import (
     is_tinker_thread_of,
@@ -153,7 +153,7 @@ class ConversationManager:
         return "master" if agent == "master" else f"{agent}:{card_id}"
 
     def _resolved_settings(self) -> ModelTarget:
-        return self._settings or llm_settings_from_env("orchestrator")
+        return self._settings or (self._wiring.models or TaskModels()).target("orchestrator")
 
     def _resolved_search(self) -> SearchConfig:
         return self._search_config or SearchConfig.from_env()
@@ -249,6 +249,7 @@ class ConversationManager:
                 consent=self._wiring.consent,
                 board=self._wiring.board,
                 visual_store=self._wiring.visual_store,
+                models=self._wiring.models,
             ),
         )
 

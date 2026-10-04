@@ -1,13 +1,24 @@
-"""What is known about a model before it is called: for now, its context window.
+"""What is known about a model before it is called: its context window.
 
 The window is what the context budget steers under — when compaction triggers,
-what the context meter shows. Today it is known per provider *type*: the window
-of the family that type usually serves. Per-model windows (from the models
-config, discovery and LangChain's model profiles) take its place when the context
-budget follows the active model (design §7, M3).
+what the context meter shows. For one model it is, first to last:
+
+1. the alias's ``context_window`` in ``models.toml`` — the owner's word;
+2. the model's own profile, as its SDK publishes it (LangChain's model profiles);
+3. the usual window of its family — Claude's whether on Anthropic, Bedrock or
+   Vertex, Gemini's, an open model's.
+
+:func:`default_context_window` answers for a provider type alone, for the
+environment route that names no model family (``LLM_PROVIDER``).
 """
 
 from __future__ import annotations
+
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from yuyutsava.llm.target import ModelTarget
 
 #: The window to assume for a provider type that is not listed.
 FALLBACK_CONTEXT_WINDOW = 128_000
@@ -34,9 +45,29 @@ _CONTEXT_WINDOWS: dict[str, int] = {
 }
 
 
+#: The usual window of each family Vertex serves, where it differs from the type's.
+_VERTEX_FAMILY_WINDOWS: dict[str, int] = {
+    "gemini": 1_000_000,
+    "anthropic": 200_000,
+    "maas": 128_000,
+}
+
+
 def default_context_window(provider_type: str) -> int:
     """The input window to steer under for a model of *provider_type*."""
     return _CONTEXT_WINDOWS.get(provider_type, FALLBACK_CONTEXT_WINDOW)
 
 
-__all__ = ["FALLBACK_CONTEXT_WINDOW", "default_context_window"]
+def context_window(target: ModelTarget, profile: Mapping[str, Any] | None = None) -> int:
+    """The input window for *target*'s model; *profile* is the built model's ``.profile``."""
+    if target.entry is not None and target.entry.context_window:
+        return target.entry.context_window
+    window = (profile or {}).get("max_input_tokens")
+    if isinstance(window, int) and window > 0:
+        return window
+    if target.type == "vertex":
+        return _VERTEX_FAMILY_WINDOWS[target.family]
+    return default_context_window(target.type)
+
+
+__all__ = ["FALLBACK_CONTEXT_WINDOW", "context_window", "default_context_window"]

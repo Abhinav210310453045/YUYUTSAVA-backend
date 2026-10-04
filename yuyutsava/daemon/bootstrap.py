@@ -41,7 +41,7 @@ from yuyutsava.async_subagents.watcher import AsyncTaskHealthWatcher
 from yuyutsava.channels.config import ChannelsConfig
 from yuyutsava.channels.plugin import InboundSink
 from yuyutsava.channels.registry import ChannelPluginRegistry
-from yuyutsava.config.env import env, env_flag
+from yuyutsava.config.env import env_flag
 from yuyutsava.config.search import SearchConfig
 from yuyutsava.consent import ConsentRegistry
 from yuyutsava.context.config import ContextSettings
@@ -71,8 +71,8 @@ from yuyutsava.daemon.web.services.stream_service import WebChannel, WebHub
 from yuyutsava.events.bus import EventBus
 from yuyutsava.events.config import EventsConfig, SourceConfig
 from yuyutsava.events.registry import SourceRegistry
-from yuyutsava.llm.factory import chat_model
-from yuyutsava.llm.settings import llm_settings_from_env
+from yuyutsava.llm.config.watch import ConfigSource, ConfigWatcher
+from yuyutsava.llm.selection import TaskModels
 from yuyutsava.llm.target import ModelTarget
 from yuyutsava.llm.tracing import warm_reachability_cache
 from yuyutsava.mcp.config import MCPConfig
@@ -83,6 +83,7 @@ from yuyutsava.memory.store import MemoryStore
 from yuyutsava.policy.builtin.tool_permissions import PermissionsPolicy, StorePolicyCapEnforcer
 from yuyutsava.ports import CapEnforcer
 from yuyutsava.ports.channels import ChannelEvent, TimelinePayload
+from yuyutsava.ports.models import TaskModelSource
 from yuyutsava.prefs.injector import PrefsInjector
 from yuyutsava.prefs.runtime import RuntimeSettings
 from yuyutsava.skills.registry import SkillRegistry
@@ -93,6 +94,8 @@ from yuyutsava.storage.paths import (
     WorkspaceLayout,
     blobs_dir,
     checkpoints_db_path,
+    models_config_path,
+    secrets_path,
     state_dir,
 )
 from yuyutsava.storage.pg import migrations as pg_migrations
@@ -225,6 +228,8 @@ class DaemonSubsystems:
     # down above (pg_pool / per-call sqlite), so no teardown of its own.
     usage_store: UsageStore
     model_router: ModelRouter
+    #: Follows models.toml; stopped at teardown.
+    config_watcher: ConfigWatcher
 
     # resource governor. The monitor is a loop main.py schedules
     # alongside triage/orchestrator (joins on stop_event — no teardown hook);
@@ -352,7 +357,6 @@ class StorageSubsystem:
     usage_store: UsageStore
     task_registry: TaskRegistry
     events: Store
-    model_router: object
     #: The one TODO board: the routed todo store and, with Postgres and an
     #: embedder, its note index. Everything that touches the board gets this.
     board: TodoExchange
@@ -438,9 +442,6 @@ async def build_storage(opts: DaemonOptions) -> StorageSubsystem:
 
     task_registry = TaskRegistry(stores.tasks())
     usage_store: UsageStore = stores.usage()
-    model_router = ModelRouter.from_env()
-    if model_router.enabled:
-        logger.info("  routing   : complexity-based model routing enabled")
     # Semantic memory, default-on when Postgres is live. The orchestrator
     # recalls it per turn (RetrievalInjectionPolicy), not at build time.
     memory_store: MemoryStore | None = stores.memory(mem_settings)
@@ -486,7 +487,6 @@ async def build_storage(opts: DaemonOptions) -> StorageSubsystem:
         usage_store=usage_store,
         task_registry=task_registry,
         events=store,
-        model_router=model_router,
         board=board,
         session_store=session_store,
         visual_store=visual_store,
@@ -851,11 +851,17 @@ async def build_mcp(workspace: Path) -> MCPClientManager:
 
 @dataclass
 class ModelsSubsystem:
-    """The chat models the daemon runs on, and the settings behind them."""
+    """The chat models the daemon runs on, and where each task's model comes from."""
 
+    #: Which model each task uses — ``models.toml``, or the environment without one.
+    task_models: TaskModels
+    #: Follows ``models.toml`` and ``secrets.toml``; stopped at teardown.
+    config_watcher: ConfigWatcher
+    model_router: ModelRouter
     triage_settings: Any
     orchestrator_settings: Any
     subagent_settings: Any
+    #: Returns the model triage classifies with, asked per event so an edit applies.
     triage: Any
     orchestrator: Any
     subagent: Any
@@ -864,30 +870,39 @@ class ModelsSubsystem:
 
 
 async def build_models() -> ModelsSubsystem:
-    """Resolve each role's model from the environment.
+    """Each task's model, from ``models.toml`` when it exists, the environment until then.
 
-    Roles are separate so a cheap or local model can own the cheap work:
-    ``compaction`` falls back to the main provider settings when unset.
+    Tasks are separate so a cheap or local model can own the cheap work: any task
+    without a model of its own uses the default one.
     """
-    triage_settings = llm_settings_from_env("triage")
-    orchestrator_settings = llm_settings_from_env("orchestrator")
-    subagent_settings = llm_settings_from_env("subagent")
-    # Triage is a single-shot classifier — reasoning is wasteful here and (on
-    # thinking models like gemini-2.5-flash) eats the token budget, truncating
-    # the decision JSON. Disable it so the structured output always completes.
-    triage = chat_model(triage_settings, temperature=0.0, disable_reasoning=True)
-    orchestrator = chat_model(orchestrator_settings, temperature=0.0)
-    subagent = chat_model(subagent_settings, temperature=0.1)
+    source = ConfigSource(models_config_path(), secrets_path())
+    watcher = ConfigWatcher(source)
+    await asyncio.to_thread(watcher.start)  # reads the files: off the loop
+    models = TaskModels(source)
+    logger.info("  models    : from %s", models.origin)
+    triage_settings = models.target("triage")
+    orchestrator_settings = models.target("orchestrator")
+    subagent_settings = models.target("subagent")
+    orchestrator = models.build("orchestrator", temperature=0.0)
+    subagent = models.build("subagent", temperature=0.1)
+
+    def triage() -> Any:
+        # Triage is a single-shot classifier — reasoning is wasteful here and (on
+        # thinking models like gemini-2.5-flash) eats the token budget, truncating
+        # the decision JSON. Disable it so the structured output always completes.
+        return models.model("triage", temperature=0.0, disable_reasoning=True)
 
     # Warm the Langfuse reachability probe now — before the async host installs
     # blockbuster — so the runtime path never does urllib on the event loop.
     await asyncio.to_thread(warm_reachability_cache)
 
-    compaction = chat_model(llm_settings_from_env("compaction"), temperature=0.0)
+    compaction = models.build("compaction", temperature=0.0)
     context_settings = ContextSettings.from_env(
-        "orchestrator",
-        provider=env("LLM_PROVIDER", "orchestrator", "groq"),
+        "orchestrator", window=models.window(orchestrator_settings)
     )
+    model_router = ModelRouter.from_env(models)
+    if model_router.enabled:
+        logger.info("  routing   : complexity-based model routing enabled")
     logger.info(
         "  context   : compact >%d tokens, keep %d msgs, offload >%d chars",
         context_settings.compact_trigger_tokens,
@@ -895,6 +910,9 @@ async def build_models() -> ModelsSubsystem:
         context_settings.offload_threshold_chars,
     )
     return ModelsSubsystem(
+        task_models=models,
+        config_watcher=watcher,
+        model_router=model_router,
         triage_settings=triage_settings,
         orchestrator_settings=orchestrator_settings,
         subagent_settings=subagent_settings,
@@ -1079,7 +1097,7 @@ def _completion_sink(
 async def build_async_subagents(
     *,
     bg_subagent_list: list,
-    subagent_settings: ModelTarget,
+    models: TaskModelSource,
     checkpointer: object,
     stores: BackgroundStores,
     channels: ChannelRouter,
@@ -1119,7 +1137,8 @@ async def build_async_subagents(
         # first loop that uses it (llm/quirks/loop_affinity).
         return build_async_host(
             bg_subagent_list,
-            model=chat_model(subagent_settings, temperature=0.1),
+            model=models.build("subagent", temperature=0.1),
+            compaction_model=models.build("compaction", temperature=0.0),
             checkpointer=checkpointer,
             allow_blocking=allow_blocking,
             stores=stores,
@@ -1424,7 +1443,7 @@ async def build_boot_state(opts: DaemonOptions) -> BootState:
     # Opt-in via YUYUTSAVA_ASYNC_SUBAGENTS=1; see build_async_subagents.
     async_subs = await build_async_subagents(
         bg_subagent_list=subs.background,
-        subagent_settings=models.subagent_settings,
+        models=models.task_models,
         checkpointer=ret.checkpointer,
         stores=BackgroundStores(
             artifact_store=st.artifact_store,
@@ -1496,7 +1515,7 @@ def build_loops(boot: BootState) -> LoopSubsystem:
     # Direct submissions skip triage, so a light-tier call scores their
     # complexity — only when routing is on (a score nobody routes on is wasted
     # spend). The scorer resolves its model lazily and never raises.
-    model_router = st.model_router
+    model_router = models.model_router
     complexity_scorer = (
         ComplexityScorer(lambda: model_router.tier_model("light")) if model_router.enabled else None
     )
@@ -1655,6 +1674,7 @@ async def build_web(
         launch_index=boot.launch_index,
         task_submission=loops.task_submission,
         wiring=StackWiring(
+            models=boot.models.task_models,
             usage_store=st.usage_store,
             mcp_manager=boot.mcp_manager,
             prefs_store=pol.prefs_store,
@@ -1703,7 +1723,7 @@ async def build_web(
             usage_store=st.usage_store,
             resource_monitor=boot.resources.monitor,
             admission_controller=boot.resources.admission,
-            model_router=st.model_router,
+            model_router=boot.models.model_router,
             memory_store=st.memory_store,
             conversation_manager=conversation_manager,
             voice_store=st.voice_store,
@@ -1791,7 +1811,8 @@ async def build_daemon(opts: DaemonOptions) -> DaemonSubsystems:
         decision_service=plugins.decision_service,
         channel_plugins=plugins.channel_plugins,
         usage_store=st.usage_store,
-        model_router=st.model_router,
+        model_router=boot.models.model_router,
+        config_watcher=boot.models.config_watcher,
         resource_monitor=boot.resources.monitor,
         admission=boot.resources.admission,
         skill_registry=boot.retrieval.skill_registry,

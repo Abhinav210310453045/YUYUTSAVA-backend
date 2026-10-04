@@ -1,11 +1,12 @@
 """ModelRouter: tier mapping, threshold parsing, flag-off passthrough,
-lazy build + cache, misconfigured-tier fallback, price table, scorer.
+lazy build reused per loop, misconfigured-tier fallback, price table, scorer.
 
 Run:  .venv/bin/python -m pytest test/core/test_model_router.py
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import tempfile
 import unittest
@@ -21,6 +22,7 @@ from yuyutsava.core.model_router import (
     RoutingSettings,
 )
 from yuyutsava.llm.pricing import estimate_cost_usd, load_price_table
+from yuyutsava.llm.selection import TaskModels
 
 
 class RoutingSettingsTests(unittest.TestCase):
@@ -47,7 +49,7 @@ class RoutingSettingsTests(unittest.TestCase):
 
 class TierMappingTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.router = ModelRouter(RoutingSettings(enabled=True))
+        self.router = ModelRouter(TaskModels(), RoutingSettings(enabled=True))
 
     def test_default_thresholds(self) -> None:
         self.assertEqual(self.router.tier_for(1), "light")
@@ -64,30 +66,38 @@ class TierMappingTests(unittest.TestCase):
 
 class ModelForTests(unittest.TestCase):
     def test_flag_off_returns_fallback_identity(self) -> None:
-        router = ModelRouter(RoutingSettings(enabled=False))
+        router = ModelRouter(TaskModels(), RoutingSettings(enabled=False))
         fallback = object()
         for c in (1, 3, 5, None):
             self.assertIs(router.model_for(c, fallback=fallback), fallback)
 
-    def test_flag_on_builds_tier_model_lazily_and_caches(self) -> None:
+    def test_flag_on_builds_tier_model_lazily_and_reuses_it_on_the_loop(self) -> None:
         # Ollama needs no API key, so the tier model builds without
-        # secrets or network (ChatOpenAI construction is offline).
+        # secrets or network (ChatOpenAI construction is offline). Tier models
+        # are per event loop, as the orchestrator asks for them.
         env = {"TIER_LIGHT_LLM_PROVIDER": "ollama", "TIER_LIGHT_OLLAMA_MODEL": "tiny:1b"}
-        router = ModelRouter(RoutingSettings(enabled=True))
+        router = ModelRouter(TaskModels(), RoutingSettings(enabled=True))
+
+        async def twice():
+            return router.model_for(1, fallback=object()), router.model_for(2, fallback=object())
+
         with mock.patch.dict("os.environ", env, clear=True):
-            m1 = router.model_for(1, fallback=object())
-            m2 = router.model_for(2, fallback=object())
-        self.assertIs(m1, m2)  # cached per tier
+            m1, m2 = asyncio.run(twice())
+        self.assertIs(m1, m2)  # the same instance for the same tier on one loop
         self.assertEqual(m1.model_name, "tiny:1b")
 
     def test_misconfigured_tier_falls_back(self) -> None:
         # anthropic without ANTHROPIC_API_KEY raises inside tier_model;
         # model_for must catch and return the fallback.
         env = {"TIER_HEAVY_LLM_PROVIDER": "anthropic"}
-        router = ModelRouter(RoutingSettings(enabled=True))
+        router = ModelRouter(TaskModels(), RoutingSettings(enabled=True))
         fallback = object()
+
+        async def heavy():
+            return router.model_for(5, fallback=fallback)
+
         with mock.patch.dict("os.environ", env, clear=True):
-            self.assertIs(router.model_for(5, fallback=fallback), fallback)
+            self.assertIs(asyncio.run(heavy()), fallback)
 
 
 class PriceTableTests(unittest.TestCase):

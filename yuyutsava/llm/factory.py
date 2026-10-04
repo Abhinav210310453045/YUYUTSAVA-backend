@@ -23,6 +23,7 @@ from typing import NamedTuple
 from langchain_core.language_models import BaseChatModel
 
 from yuyutsava.llm.base import BuildOptions
+from yuyutsava.llm.catalog import context_window
 from yuyutsava.llm.handle import Capability, ModelHandle
 from yuyutsava.llm.providers.registry import provider_for
 from yuyutsava.llm.target import ModelTarget
@@ -42,6 +43,7 @@ class _Identity(NamedTuple):
     name: str
     provider: str
     capabilities: frozenset[Capability]
+    context_window: int
 
 
 # What the provider knew about each model this system built, keyed by object
@@ -80,6 +82,7 @@ def handle_for(model: BaseChatModel | object) -> ModelHandle | None:
         name=identity.name,
         provider=identity.provider,
         capabilities=identity.capabilities,
+        context_window=identity.context_window,
     )
 
 
@@ -128,6 +131,7 @@ def model_handle(
         name=provider.model_name(target),
         provider=provider.provider_name(target),
         capabilities=provider.capabilities,
+        context_window=context_window(target, getattr(model, "profile", None)),
     )
     _remember(model, identity)
     return ModelHandle(
@@ -135,6 +139,7 @@ def model_handle(
         name=identity.name,
         provider=identity.provider,
         capabilities=identity.capabilities,
+        context_window=identity.context_window,
     )
 
 

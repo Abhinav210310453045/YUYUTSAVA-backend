@@ -2,15 +2,16 @@
 
 Tasks carry a complexity score 1–5 (triage self-scores organic events; a
 cheap light-tier call scores direct API submissions). The router maps the
-score to one of three tiers and lazily builds/caches a chat model per tier
-via the existing role-env mechanism::
+score to one of three tiers. Each tier is a task with its own model — in
+``models.toml``::
 
-    TIER_LIGHT_LLM_PROVIDER=ollama    TIER_LIGHT_OLLAMA_MODEL=llama3.2:3b
-    TIER_STANDARD_LLM_PROVIDER=groq   TIER_STANDARD_GROQ_MODEL=...
-    TIER_HEAVY_LLM_PROVIDER=anthropic TIER_HEAVY_ANTHROPIC_MODEL=...
+    [tasks]
+    tier_light    = "local/llama3.2:3b"
+    tier_standard = "groq/llama-3.3-70b-versatile"
+    tier_heavy    = "sonnet"
 
-(``llm_settings_from_env("tier_light")`` resolves the prefixed env vars —
-zero new config machinery.)
+or, without ``models.toml``, through the tier's environment role
+(``TIER_LIGHT_LLM_PROVIDER=ollama``, ``TIER_HEAVY_ANTHROPIC_MODEL=…``).
 
 Feature flag ``YUYUTSAVA_MODEL_ROUTING=1``; when OFF (default),
 ``model_for`` returns the caller-supplied fallback model, i.e. the
@@ -32,8 +33,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
 
 from yuyutsava.config.env import env, env_flag
-from yuyutsava.llm.factory import chat_model
-from yuyutsava.llm.settings import llm_settings_from_env
+from yuyutsava.ports.models import TaskModelSource
 
 logger = logging.getLogger("yuyutsava.core.model_router")
 
@@ -78,19 +78,19 @@ class RoutingSettings:
 class ModelRouter:
     """Maps task complexity to a tier-appropriate chat model.
 
-    Tier models are built lazily on first use (via ``chat_model(
-    llm_settings_from_env("tier_<tier>"))``) and cached for the router's
-    lifetime — the orchestrator builds a fresh graph per task, so one
-    router instance serves the whole daemon.
+    Each tier is a task (``tier_light``, ``tier_standard``, ``tier_heavy``) whose
+    model comes from *models* on every call — built once per event loop there,
+    and rebuilt after ``models.toml`` changes — so one router serves the whole
+    daemon and an edit applies to the next routed task.
     """
 
-    def __init__(self, settings: RoutingSettings | None = None) -> None:
+    def __init__(self, models: TaskModelSource, settings: RoutingSettings | None = None) -> None:
+        self._models = models
         self._settings = settings or RoutingSettings.from_env()
-        self._cache: dict[ModelTier, BaseChatModel] = {}
 
     @classmethod
-    def from_env(cls) -> ModelRouter:
-        return cls(RoutingSettings.from_env())
+    def from_env(cls, models: TaskModelSource) -> ModelRouter:
+        return cls(models, RoutingSettings.from_env())
 
     @property
     def enabled(self) -> bool:
@@ -106,17 +106,12 @@ class ModelRouter:
         return "heavy"
 
     def tier_model(self, tier: ModelTier) -> BaseChatModel:
-        """Build (or return the cached) chat model for one tier.
+        """The chat model for one tier, for the running event loop.
 
-        Raises when the tier's provider env is misconfigured (e.g. missing
-        API key) — :meth:`model_for` catches and falls back.
+        Raises when the tier's model cannot be built (e.g. a missing API key) —
+        :meth:`model_for` catches and falls back.
         """
-        cached = self._cache.get(tier)
-        if cached is not None:
-            return cached
-        model = chat_model(llm_settings_from_env(f"tier_{tier}"), temperature=0.0)
-        self._cache[tier] = model
-        return model
+        return self._models.model(f"tier_{tier}", temperature=0.0)
 
     def model_for(self, complexity: int | None, *, fallback: BaseChatModel) -> BaseChatModel:
         """The model a task of this complexity should run on.

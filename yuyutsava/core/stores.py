@@ -41,17 +41,15 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from yuyutsava.config.env import env
 from yuyutsava.context.artifacts_unified import pg_artifact_store, sqlite_artifact_store
 from yuyutsava.context.config import ContextSettings
 from yuyutsava.context.summary_store_unified import pg_summary_store, sqlite_summary_store
 from yuyutsava.context.transcript_index import PgTranscriptIndex
 from yuyutsava.context.transcript_store_unified import pg_transcript_store, sqlite_transcript_store
-from yuyutsava.llm.factory import chat_model
-from yuyutsava.llm.settings import llm_settings_from_env
 from yuyutsava.memory.config import MemorySettings
 from yuyutsava.memory.embedder import Embedder
 from yuyutsava.memory.store_unified import pg_memory_store, sqlite_memory_store
+from yuyutsava.ports.models import TaskModelSource
 from yuyutsava.skills.store import SkillIndexer
 from yuyutsava.skills.store_unified import pg_skill_store, sqlite_skill_store
 from yuyutsava.storage.backend import StorageSettings
@@ -71,6 +69,7 @@ from yuyutsava.todoboard.store_unified import pg_todo_store, sqlite_todo_store
 from yuyutsava.visuals.store_unified import pg_visual_store, sqlite_visual_store
 
 if TYPE_CHECKING:
+    from yuyutsava.llm.target import ModelTarget
     from yuyutsava.skills.registry import SkillRegistry
 
 logger = logging.getLogger("yuyutsava.core.stores")
@@ -389,7 +388,9 @@ class MasterStores:
     context: ContextStores
 
 
-async def build_master_stores(role: str, skill_registry: SkillRegistry) -> MasterStores:
+async def build_master_stores(
+    role: str, skill_registry: SkillRegistry, *, models: TaskModelSource, chat: ModelTarget
+) -> MasterStores:
     """Context settings, the compaction model, and every store a master uses.
 
     Retrieval (memory + skills) gets *semantic* recall via pgvector when
@@ -399,8 +400,9 @@ async def build_master_stores(role: str, skill_registry: SkillRegistry) -> Maste
     drift; see :meth:`StoreFactory.context_stores` for why they stay
     PG-primary / SQLite-fallback rather than RoutedStore.
     """
-    context_settings = ContextSettings.from_env(role, provider=env("LLM_PROVIDER", None, "groq"))
-    compaction_model = chat_model(llm_settings_from_env("compaction"), temperature=0.0)
+    # The budget steers under the window of the model this master talks on.
+    context_settings = ContextSettings.from_env(role, window=models.window(chat))
+    compaction_model = models.build("compaction", temperature=0.0)
     memory_store, skill_store, pg_pool, embedder = await build_retrieval_stores(skill_registry)
     factory = StoreFactory(StorageSettings.from_env(), pg_pool=pg_pool, embedder=embedder)
     return MasterStores(

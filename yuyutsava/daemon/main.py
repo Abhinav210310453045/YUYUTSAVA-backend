@@ -445,6 +445,8 @@ async def _teardown(
         logger.exception("channel_plugins.stop_all failed")
     await subs.channels.shutdown()
     await subs.mcp_manager.stop()
+    # The models config watcher's thread; joining it blocks briefly, so off the loop.
+    await asyncio.to_thread(subs.config_watcher.stop)
     # Sweeper task is joined by the drain (it is one of the loops); closing
     # the saver here releases the checkpoints.db lock.
     await subs.checkpointer_saver.stop()

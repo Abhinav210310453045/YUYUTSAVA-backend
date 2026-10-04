@@ -10,6 +10,7 @@ The decision is ADR-003.
   answer arrives
 - :mod:`~yuyutsava.ports.channels` — the event payloads, ``AskPrompt``, ``UserChannel``
   and ``AskRouter``: what the daemon sends to the user and how
+- :mod:`~yuyutsava.ports.models` — ``TaskModelSource``, which model each task uses
 - :mod:`~yuyutsava.ports.policy` — ``CapEnforcer``, ``RuntimeToggles``, ``ContextTuning``,
   ``TaskMirror``, ``RemoteSubagentSpec``
 - :mod:`~yuyutsava.ports.retrieval` — ``ConversationIndex``

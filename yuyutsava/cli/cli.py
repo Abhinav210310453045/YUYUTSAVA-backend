@@ -39,9 +39,10 @@ from yuyutsava.config.logs import quiet_grpc_fork_logs
 from yuyutsava.config.search import SearchConfig
 from yuyutsava.core.deps import MasterDeps
 from yuyutsava.core.engine import build_cli_deepagent
-from yuyutsava.llm.settings import llm_settings_from_env
+from yuyutsava.llm.config.watch import ConfigSource
+from yuyutsava.llm.selection import TaskModels
 from yuyutsava.storage.backend import StorageSettings
-from yuyutsava.storage.paths import ensure_state_dirs
+from yuyutsava.storage.paths import ensure_state_dirs, models_config_path, secrets_path
 from yuyutsava.storage.pg.pool import PostgresUnavailable
 
 # After the imports and before any model is built — see the function, which
@@ -397,6 +398,13 @@ def _build_parser() -> argparse.ArgumentParser:
     return p
 
 
+def _task_models() -> TaskModels:
+    """Which model each task uses: ``models.toml`` as it is now, or the environment."""
+    source = ConfigSource(models_config_path(), secrets_path())
+    source.reload()
+    return TaskModels(source)
+
+
 def _chat_options(args) -> ChatOptions:
     """Read the invocation's decisions off the parsed arguments, once.
 
@@ -408,9 +416,11 @@ def _chat_options(args) -> ChatOptions:
     `--docker-pull-paths` (which copies files out *after the run*, and a session
     has no such moment), and the REPL's display flags.
     """
+    models = _task_models()
     return ChatOptions(
         workspace=args.workspace.resolve(),
-        settings=llm_settings_from_env(),
+        settings=models.target("chat"),
+        models=models,
         execution_mode=_resolved_execution_mode(args),
         docker_settings=_docker_settings_from_args(args),
         local_settings=_local_settings_from_args(args),
@@ -498,7 +508,7 @@ async def _async_main(argv: list[str] | None = None, *, force_chat: bool = False
                 file=sys.stderr,
             )
             return 2
-        settings = llm_settings_from_env()
+        settings = _task_models().target("chat")
         workspace = args.workspace.resolve()
         graph_bundle = build_cli_deepagent(
             workspace,

@@ -13,21 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from yuyutsava.config.env import env, env_flag, env_float, env_int
-from yuyutsava.llm.catalog import FALLBACK_CONTEXT_WINDOW, default_context_window
-from yuyutsava.llm.settings import provider_type_of
-
-# The budget the compactor steers under is the provider's real input window
-# (``llm.catalog``), found through the same alias table ``LLM_PROVIDER`` resolves
-# by — so ``google`` and ``gemini`` cannot disagree. Erring low is not free:
-# compaction is the one step that drops messages from state, so an under-set
-# budget summarizes away history the model could still have held verbatim;
-# ``compact_fraction`` provides the headroom instead. An unknown provider name
-# gets the common window.
-
-
-def default_max_input_tokens(provider: str) -> int:
-    """The input-context budget for an ``LLM_PROVIDER`` name (any accepted alias)."""
-    return default_context_window(provider_type_of(provider) or "")
+from yuyutsava.llm.catalog import FALLBACK_CONTEXT_WINDOW
 
 
 @dataclass(frozen=True)
@@ -63,7 +49,18 @@ class ContextSettings:
     summarizer_input_tokens: int = 12_000
 
     @classmethod
-    def from_env(cls, role: str | None = None, *, provider: str = "") -> ContextSettings:
+    def from_env(
+        cls, role: str | None = None, *, window: int = FALLBACK_CONTEXT_WINDOW
+    ) -> ContextSettings:
+        """The thresholds for *role*, steering under *window* — the model's real input window.
+
+        *window* comes from the model the role runs on (``TaskModels.window``):
+        erring low is not free, because compaction is the one step that drops
+        messages from state, and an under-set budget summarizes away history the
+        model could still have held verbatim. ``compact_fraction`` provides the
+        headroom instead. ``YUYUTSAVA_CONTEXT_MAX_INPUT_TOKENS`` still overrides it.
+        """
+
         def _csv(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
             raw = env(name, role)
             if not raw:
@@ -72,9 +69,7 @@ class ContextSettings:
             return parts or default
 
         return cls(
-            max_input_tokens=env_int(
-                "YUYUTSAVA_CONTEXT_MAX_INPUT_TOKENS", role, default_max_input_tokens(provider)
-            ),
+            max_input_tokens=env_int("YUYUTSAVA_CONTEXT_MAX_INPUT_TOKENS", role, window),
             compact_fraction=env_float("YUYUTSAVA_CONTEXT_COMPACT_FRACTION", role, 0.7),
             keep_messages=env_int("YUYUTSAVA_CONTEXT_KEEP_MESSAGES", role, 20),
             offload_threshold_chars=env_int(

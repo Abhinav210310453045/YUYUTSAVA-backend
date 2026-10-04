@@ -46,7 +46,7 @@ class DisabledPath(unittest.IsolatedAsyncioTestCase):
 
         return await build_async_subagents(
             bg_subagent_list=[],
-            subagent_settings=None,  # never touched on the disabled path
+            models=None,  # never touched on the disabled path
             checkpointer=None,
             stores=None,
             channels=None,

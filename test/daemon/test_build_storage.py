@@ -45,7 +45,6 @@ REQUIRED_FIELDS = (
     "usage_store",
     "task_registry",
     "events",
-    "model_router",
     "fallback_reason",
 )
 

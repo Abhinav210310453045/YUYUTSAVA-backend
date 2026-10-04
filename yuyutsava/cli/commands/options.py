@@ -16,6 +16,7 @@ from typing import Literal
 from yuyutsava.config.execution import DockerSettings, ExecutionSettings, LocalSettings
 from yuyutsava.config.search import SearchConfig
 from yuyutsava.llm.target import ModelTarget
+from yuyutsava.ports.models import TaskModelSource
 
 
 @dataclass(frozen=True)
@@ -29,6 +30,8 @@ class ChatOptions:
 
     workspace: Path
     settings: ModelTarget
+    #: Which model each task uses: ``models.toml``, or the environment without one.
+    models: TaskModelSource
     execution_mode: Literal["local", "docker"]
     docker_settings: DockerSettings
     local_settings: LocalSettings

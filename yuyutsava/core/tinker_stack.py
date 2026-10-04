@@ -31,6 +31,7 @@ from yuyutsava.core.async_host import (
 from yuyutsava.core.deps import MasterDeps, StackWiring
 from yuyutsava.core.engine import AgentBundle, build_tinker_agent
 from yuyutsava.core.stores import build_master_stores, standalone_board
+from yuyutsava.llm.selection import TaskModels
 from yuyutsava.llm.target import ModelTarget
 from yuyutsava.skills.registry import SkillRegistry
 from yuyutsava.storage.paths import WorkspaceLayout
@@ -64,7 +65,8 @@ async def build_tinker_stack(
     # Same wiring as the conversational stack (the retrieval sync also indexes
     # the bundled tinker skills, agent-tagged by their bundled/tinker/ dir).
     # The bundle owns the pool/embedder and closes them in aclose.
-    stores = await build_master_stores("tinker", skill_registry)
+    models = wiring.models or TaskModels()
+    stores = await build_master_stores("tinker", skill_registry, models=models, chat=settings)
     memory_store, skill_store = stores.memory_store, stores.skill_store
 
     # The general-purpose subagent works inside the SAME card workspace, so a
@@ -106,6 +108,7 @@ async def build_tinker_stack(
                 summary_store=stores.context.summaries,
                 memory_store=memory_store,
             ),
+            models,
         )
         logger.info(
             "tinker[%s]: async host %s @ %s",

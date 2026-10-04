@@ -5,7 +5,7 @@ Not a deepagents subagent (no nested tool loop, no parent). It's a peer
 loop the daemon runs that consumes from the bus and produces ``Proposal``s
 into the orchestrator's task queue.
 
-Uses ``llm_settings_from_env("triage")`` so the user can run a small/cheap
+Runs on the ``triage`` task's model so the user can run a small/cheap
 model (Ollama, Groq llama-3.1-8b) here while the orchestrator uses
 something stronger.
 """
@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from typing import Literal
 
 from langchain_core.language_models import BaseChatModel
@@ -68,9 +69,10 @@ class TriageAgent:
     instead.
     """
 
-    def __init__(self, model: BaseChatModel) -> None:
-        # ``with_structured_output`` produces a runnable that returns a TriageDecision.
-        self._runnable = model.with_structured_output(TriageDecision)
+    def __init__(self, model: Callable[[], BaseChatModel]) -> None:
+        """*model* returns the model to classify with; asked on every event, so a
+        change to which model triage uses applies to the next event."""
+        self._model = model
 
     async def classify(
         self,
@@ -104,7 +106,9 @@ class TriageAgent:
         last_exc: Exception | None = None
         for attempt in range(2):
             try:
-                decision: TriageDecision = await self._runnable.ainvoke(
+                # ``with_structured_output`` makes a runnable that returns a TriageDecision.
+                runnable = self._model().with_structured_output(TriageDecision)
+                decision: TriageDecision = await runnable.ainvoke(
                     messages,
                     config=_invoke_cfg,
                 )  # type: ignore[assignment]

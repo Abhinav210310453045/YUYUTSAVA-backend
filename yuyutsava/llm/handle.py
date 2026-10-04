@@ -96,6 +96,11 @@ class ModelHandle:
 
     capabilities: frozenset[Capability] = field(default_factory=frozenset)
 
+    #: The input window the context budget steers under for this model
+    #: (:func:`yuyutsava.llm.catalog.context_window`); ``0`` for a handle made
+    #: outside :func:`~yuyutsava.llm.factory.model_handle`.
+    context_window: int = 0
+
     def has(self, capability: Capability) -> bool:
         """Whether this model's provider supports *capability*."""
         return capability in self.capabilities

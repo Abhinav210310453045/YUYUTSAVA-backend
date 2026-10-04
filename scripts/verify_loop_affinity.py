@@ -11,6 +11,8 @@ from Architecture.md "Event-loop ownership":
   4. MCP tool_adapter marshals a foreign-loop call onto the session's home loop.
   5. PgPool (only if local Postgres answers): open() on loop A, SELECT 1 from
      loop B via a lazily-opened secondary pool; connection() before open() raises.
+  6. TaskModels: a loop-bound (Gemini) task model is one instance per loop,
+     stable within a loop — the pool never hands one loop's model to another.
 
 Run:  .venv/bin/python scripts/verify_loop_affinity.py
 """
@@ -141,6 +143,33 @@ def main() -> int:
     check("stable client per loop", a.run(_client()) is ca)
     a.run(emb.aclose())
     check("aclose closes only current loop's client", ca.is_closed and not cb.is_closed)
+
+    # ── 6. TaskModels pool ──────────────────────────────────────────────
+    print("TaskModels pool")
+    import tempfile
+    from pathlib import Path
+
+    from yuyutsava.llm.config.watch import ConfigSource
+    from yuyutsava.llm.selection import TaskModels
+
+    with tempfile.TemporaryDirectory() as tmp:
+        models_file, secrets_file = Path(tmp) / "models.toml", Path(tmp) / "secrets.toml"
+        models_file.write_text(
+            'version = 1\n[defaults]\nmodel = "g/gemini-3.5-flash"\n[providers.g]\n'
+            'type = "google"\nauth = { method = "api_key", key = "secret:g" }\n',
+            encoding="utf-8",
+        )
+        secrets_file.write_text('g = "fake"\n', encoding="utf-8")
+        source = ConfigSource(models_file, secrets_file)
+        source.reload()
+        task_models = TaskModels(source)
+
+        async def _chat_model():
+            return task_models.model("chat", temperature=0.1)
+
+        ma, mb = a.run(_chat_model()), b.run(_chat_model())
+        check("distinct task model per loop", ma is not mb)
+        check("stable task model within a loop", a.run(_chat_model()) is ma)
 
     # ── 4. MCP marshaling ───────────────────────────────────────────────
     print("MCP tool_adapter")

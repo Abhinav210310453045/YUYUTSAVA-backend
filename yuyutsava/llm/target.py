@@ -77,6 +77,25 @@ class ModelTarget(ProviderAccess):
     #: The alias's settings, when the model was chosen through ``[models]``.
     entry: ModelEntry | None = None
 
+    @property
+    def family(self) -> str:
+        """Which family serves the model on Vertex: ``gemini``, ``anthropic`` or ``maas``.
+
+        The alias's ``family`` when it sets one; otherwise read from the id —
+        ``claude-…`` is Claude, ``<publisher>/<name>-maas`` an open model served
+        as a service, anything else Gemini. Only Vertex serves several families;
+        for every other provider type this is its one family, the type itself.
+        """
+        if self.type != "vertex":
+            return self.type
+        if self.entry is not None and self.entry.family:
+            return self.entry.family
+        if self.model.startswith("claude"):
+            return "anthropic"
+        if "/" in self.model and self.model.endswith("-maas"):
+            return "maas"
+        return "gemini"
+
 
 def access_for(
     config: ModelsConfig,

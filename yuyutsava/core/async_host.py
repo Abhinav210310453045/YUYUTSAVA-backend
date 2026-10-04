@@ -34,8 +34,8 @@ from yuyutsava.config.env import env_flag
 from yuyutsava.context.tools import make_context_tools
 from yuyutsava.core.engine import context_middleware
 from yuyutsava.llm.factory import chat_model
-from yuyutsava.llm.settings import llm_settings_from_env
 from yuyutsava.llm.target import ModelTarget
+from yuyutsava.ports.models import TaskModelSource
 
 
 @dataclass(frozen=True)
@@ -56,6 +56,7 @@ def build_async_host(
     subagents: Any,
     *,
     model: BaseChatModel,
+    compaction_model: BaseChatModel,
     checkpointer: Any,
     allow_blocking: bool,
     stores: BackgroundStores,
@@ -65,8 +66,6 @@ def build_async_host(
     Background runs are the longest-lived agents in the system and were the
     only ones without tool-result offload, compaction and ``ctx_*`` readback.
     """
-    host_compaction_model = chat_model(llm_settings_from_env("compaction"), temperature=0.0)
-
     return AsyncSubagentHost.from_subagents(
         subagents,
         model=model,
@@ -81,7 +80,7 @@ def build_async_host(
             # Background thread ids are host-minted; transcripts serve
             # interactive resume, so there is nothing to record against.
             transcript_store=None,
-            compaction_model=host_compaction_model,
+            compaction_model=compaction_model,
             role=f"{sa.name}-bg",
             meter_window=False,
         ),
@@ -118,6 +117,7 @@ async def start_background(
     checkpointer: Any,
     subagents: list[Any],
     stores: BackgroundStores,
+    models: TaskModelSource,
 ) -> Background:
     """Own or attach to the shared background-subagent host.
 
@@ -133,6 +133,8 @@ async def start_background(
         return build_async_host(
             subagents,
             model=model,
+            # The host's own instance: its graphs run on another loop.
+            compaction_model=models.build("compaction", temperature=0.0),
             checkpointer=checkpointer,
             allow_blocking=allow_blocking,
             stores=stores,

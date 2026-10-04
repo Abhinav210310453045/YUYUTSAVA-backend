@@ -6,16 +6,46 @@ that knew seven names; every other alias fell to 128k. ``google`` compacted at
 Compaction is the one step that drops messages from state, so an under-set
 budget summarizes away history the model could still have held.
 
-Now each provider type has its window (``llm.catalog``), found through the same
-alias table ``LLM_PROVIDER`` resolves by.
+Now the window comes from the model a task actually runs on (``llm.catalog``);
+on the environment route, that model's provider type is found through the same
+alias table ``LLM_PROVIDER`` resolves by, so ``google`` and ``gemini`` cannot
+disagree. These pin the window each alias's default model gets *before* its
+SDK profile is consulted, which is what the catalog falls back to.
 """
 
 from __future__ import annotations
 
+import os
 import unittest
+from unittest import mock
 
-from yuyutsava.context.config import default_max_input_tokens
-from yuyutsava.llm.settings import PROVIDER_TYPES, provider_type_of
+from yuyutsava.llm.catalog import context_window
+from yuyutsava.llm.settings import PROVIDER_TYPES, llm_settings_from_env, provider_type_of
+
+#: Enough of each provider's variables for it to be chosen; the values are fakes.
+_KEYS = {
+    "GROQ_API_KEY": "k",
+    "OPENROUTER_API_KEY": "k",
+    "OPENAI_API_KEY": "k",
+    "OPENAI_COMPATIBLE_BASE_URL": "https://api.example.com/v1",
+    "OPENAI_COMPATIBLE_API_KEY": "k",
+    "OPENAI_COMPATIBLE_MODEL": "some/model",
+    "ANTHROPIC_API_KEY": "k",
+    "GOOGLE_API_KEY": "k",
+    "VERTEX_PROJECT": "p",
+    "AZURE_OPENAI_API_KEY": "k",
+    "AZURE_OPENAI_ENDPOINT": "https://r.openai.azure.com",
+    "AZURE_OPENAI_DEPLOYMENT": "dep",
+    "MISTRAL_API_KEY": "k",
+    "COHERE_API_KEY": "k",
+}
+
+
+def default_max_input_tokens(alias: str) -> int:
+    """The window the environment route's model for *alias* gets, before its profile."""
+    with mock.patch.dict(os.environ, {**_KEYS, "LLM_PROVIDER": alias}, clear=True):
+        return context_window(llm_settings_from_env())
+
 
 EXPECTED = {
     "groq": 128_000,
@@ -56,9 +86,8 @@ class EveryAliasHasItsWindow(unittest.TestCase):
             with self.subTest(provider=provider_type):
                 self.assertEqual(len(windows), 1)
 
-    def test_case_and_whitespace_do_not_matter_and_unknown_is_the_common_window(self) -> None:
-        self.assertEqual(default_max_input_tokens("  Google "), 1_000_000)
-        self.assertEqual(default_max_input_tokens("someday-provider"), 128_000)
+    def test_case_does_not_matter(self) -> None:
+        self.assertEqual(default_max_input_tokens("Google"), 1_000_000)
 
 
 if __name__ == "__main__":

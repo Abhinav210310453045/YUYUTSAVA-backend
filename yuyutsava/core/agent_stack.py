@@ -37,6 +37,7 @@ from yuyutsava.core.engine import AgentBundle, build_cli_deepagent
 from yuyutsava.core.stores import build_master_stores, standalone_board
 from yuyutsava.llm.pricing import refresh_price_cache
 from yuyutsava.llm.providers.registry import provider_for
+from yuyutsava.llm.selection import TaskModels
 from yuyutsava.llm.target import ModelTarget
 from yuyutsava.mcp.loader import start_manager_for_workspace
 from yuyutsava.skills.registry import SkillRegistry
@@ -135,7 +136,8 @@ async def build_agent_stack(
     # CLI chat threads are the longest-lived in the system, so offload and
     # compaction are always on and memory defaults ON (YUYUTSAVA_MEMORY_ENABLED=0
     # still disables it).
-    stores = await build_master_stores("cli", skill_registry)
+    models = wiring.models or TaskModels()
+    stores = await build_master_stores("cli", skill_registry, models=models, chat=settings)
     memory_store, skill_store = stores.memory_store, stores.skill_store
     pg_pool, embedder = stores.pg_pool, stores.embedder
 
@@ -210,6 +212,7 @@ async def build_agent_stack(
                 summary_store=stores.context.summaries,
                 memory_store=memory_store,
             ),
+            models,
         )
         if background.host is not None:
             logger.info(

@@ -1,6 +1,7 @@
 """Google Vertex AI — Gemini, Claude and open models in one Google Cloud project.
 
-Which family serves a model is the alias's ``family``, or inferred from its id:
+Which family serves a model is :attr:`ModelTarget.family` — the alias's
+``family``, or read from the id:
 
 * ``claude-…`` — **Claude**, through ``ChatAnthropicVertex``;
 * ``<publisher>/<name>-maas`` — an **open model** (Model as a Service), through
@@ -75,17 +76,6 @@ _LISTING_WORKERS = 6
 _INSTALL = "'yuyutsava[vertex]'"
 
 
-def family_of(target: ModelTarget) -> str:
-    """``gemini``, ``anthropic`` or ``maas``: which family serves *target* on Vertex."""
-    if target.entry is not None and target.entry.family:
-        return target.entry.family
-    if target.model.startswith("claude"):
-        return "anthropic"
-    if "/" in target.model and target.model.endswith("-maas"):
-        return "maas"
-    return "gemini"
-
-
 def location_of(target: ModelTarget) -> str:
     """The model's own location when its alias sets one, else the provider's."""
     if target.entry is not None and target.entry.location:
@@ -145,7 +135,7 @@ class VertexProvider(Provider):
     capabilities = frozenset({Capability.LOOP_AFFINE})
 
     def build(self, target: ModelTarget, options: BuildOptions) -> BaseChatModel:
-        family = family_of(target)
+        family = target.family
         if family == "anthropic":
             return self._claude(target, options)
         if family == "maas":
@@ -327,7 +317,6 @@ def vertex_open_models(publisher: str, body: dict[str, Any]) -> list[DiscoveredM
 __all__ = [
     "MAAS_PUBLISHERS",
     "VertexProvider",
-    "family_of",
     "google_credentials",
     "location_of",
     "maas_endpoint",

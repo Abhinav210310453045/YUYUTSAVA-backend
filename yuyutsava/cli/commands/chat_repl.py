@@ -1130,7 +1130,7 @@ async def run_chat_repl(
         builder = build_agent_stack(
             workspace,
             opts.settings,
-            wiring=StackWiring(prefs_store=prefs),
+            wiring=StackWiring(prefs_store=prefs, models=opts.models),
             execution=opts.execution,
             bash_timeout_sec=opts.bash_timeout_sec,
             permission_check=opts.permission_check,
