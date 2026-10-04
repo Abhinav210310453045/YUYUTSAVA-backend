@@ -36,6 +36,7 @@ describe('the stream', () => {
       onAsk: on('ask'),
       onAskResolved: on('ask_resolved'),
       onSettings: on('settings'),
+      onModels: on('models'),
       onConnected: () => got.push(['hello']),
     }).connect()
     expect(es.url).toMatch(/\/stream$/)
@@ -44,6 +45,7 @@ describe('the stream', () => {
     frame('ask', '{"ask_id":"a"}')
     frame('ask_resolved', '{"ask_id":"a"}')
     frame('settings', '{"voice":{}}')
+    frame('models', '{"models":{"configured":true}}')
     frame('wake', '{}') // no handler registered: ignored
     expect(got).toEqual([
       ['hello'],
@@ -51,6 +53,7 @@ describe('the stream', () => {
       ['ask', { ask_id: 'a' }],
       ['ask_resolved', { ask_id: 'a' }],
       ['settings', { voice: {} }],
+      ['models', { models: { configured: true } }],
     ])
   })
 

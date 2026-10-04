@@ -13,6 +13,8 @@ import ResizeHandle from './components/common/ResizeHandle'
 import { clamp, startResize } from './lib/resize'
 import { useSSE, getLogsEnabled, setLogsEnabled } from './hooks/useSSE.jsx'
 import { useRuntimeSettings } from './hooks/useRuntimeSettings'
+import { useModels } from './hooks/useModels'
+import SetupWizard from './components/models/SetupWizard'
 import { NotificationsProvider } from './hooks/useNotifications.jsx'
 import { NavProvider, useNav } from './nav/NavProvider'
 import { getLogLevel, setLogLevel } from './api/client'
@@ -265,7 +267,17 @@ function AppShell() {
         </div>
 
         <InWindowToast />
+        <SetupGate />
       </div>
     </NotificationsProvider>
   )
+}
+
+// A daemon with no model it can use waits to be set up (setup mode). Until it is,
+// nothing else here works — so the setup wizard opens over everything, and goes
+// once the daemon comes back as itself.
+function SetupGate() {
+  const { status, refresh } = useModels()
+  if (!status?.setup_mode) return null
+  return <SetupWizard status={status} mode="setup" onDone={refresh} />
 }

@@ -14,6 +14,9 @@ const FRAMES = {
   // A runtime toggle changed (voice mode, dedicated subagents). Broadcast so
   // every surface — this window, the overlay, mobile — agrees without polling.
   settings: 'onSettings',
+  // models.toml changed — in this window, another, the CLI or by hand. Carries
+  // the whole GET /models status, new revision included.
+  models: 'onModels',
 }
 
 export class SSEClient {

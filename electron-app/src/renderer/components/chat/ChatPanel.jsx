@@ -258,8 +258,8 @@ export default function ChatPanel({
           onRemoveChip={onRemoveChip}
           onClearChips={onClearChips}
         />
-
         <ChatComposer
+          sessionId={hello?.session_id || null}
           draft={draft}
           setDraft={setDraft}
           onKeyDown={onKeyDown}

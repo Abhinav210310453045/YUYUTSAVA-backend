@@ -3,6 +3,7 @@ import SettingsSection from './SettingsSection'
 import WatchedDirsEditor from './WatchedDirsEditor'
 import { VoiceModeSettings, SubagentSettings } from './RuntimeToggles'
 import UsageSettings from './UsageSettings'
+import ModelsSettings from '../models/ModelsSettings'
 import { DaemonStatusBar, ReloadPrompt } from './DaemonControls'
 import { FALLBACK_SCHEMA } from './fallbackSchema'
 import { renderField } from './schemaField'
@@ -241,6 +242,10 @@ export default function SettingsPanel() {
       />
 
       {/* Hot toggles — applied immediately, no Save, no restart. */}
+      <SettingsSection title="Models" defaultOpen={true}>
+        <ModelsSettings />
+      </SettingsSection>
+
       <SettingsSection title="Voice Mode" defaultOpen={true}>
         <VoiceModeSettings />
       </SettingsSection>

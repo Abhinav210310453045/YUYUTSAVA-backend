@@ -1,4 +1,5 @@
 import React from 'react'
+import ModelChip from '../models/ModelChip'
 
 // The bottom of a chat: the queued-message banner, the composer (draft, mic,
 // send/stop) and the voice status line.
@@ -18,6 +19,7 @@ export default function ChatComposer({
   startVoice,
   stopVoice,
   interrupt,
+  sessionId = null,
 }) {
   return (
     <>
@@ -84,6 +86,13 @@ export default function ChatComposer({
           >
             ✕
           </button>
+        </div>
+      )}
+
+      {/* This chat's model: switching applies from the next message. */}
+      {sessionId && (
+        <div style={{ padding: '8px 24px 0', position: 'relative', zIndex: 2, flexShrink: 0 }}>
+          <ModelChip sessionId={sessionId} />
         </div>
       )}
 
