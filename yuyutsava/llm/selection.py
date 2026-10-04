@@ -23,6 +23,7 @@ and a call that asks again gets the same instance.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import threading
 from dataclasses import dataclass
@@ -110,12 +111,29 @@ class TaskModels:
         self, task: str, *, temperature: float, disable_reasoning: bool = False
     ) -> ModelHandle:
         """*task*'s model for the running event loop, built on first use. Needs a running loop."""
-        key = _BuildKey(self._generation(), self.target(task), temperature, disable_reasoning)
+        return self._pooled(self.target(task), temperature, disable_reasoning)
+
+    def window(self, target: ModelTarget) -> int:
+        """The input window for *target*'s model: its alias, its profile, its family.
+
+        Read off a built model's profile — the pooled one on a running loop, a
+        new one where no loop runs yet.
+        """
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return model_handle(target).context_window
+        return self._pooled(target, _WINDOW_TEMPERATURE, False).context_window
+
+    def _pooled(
+        self, target: ModelTarget, temperature: float, disable_reasoning: bool
+    ) -> ModelHandle:
+        key = _BuildKey(self._generation(), target, temperature, disable_reasoning)
         built = self._pool.get()
         handle = built.get(key)
         if handle is None:
             handle = model_handle(
-                key.target, temperature=temperature, disable_reasoning=disable_reasoning
+                target, temperature=temperature, disable_reasoning=disable_reasoning
             )
             built[key] = handle
         return handle

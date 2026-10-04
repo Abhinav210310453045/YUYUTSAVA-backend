@@ -144,6 +144,29 @@ class FromTheEnvironment(unittest.TestCase):
         self.assertEqual(env_role("subagent.researcher"), "subagent")
 
 
+class WindowFromTheService(unittest.TestCase):
+    """``TaskModels.window`` reads the built model's profile, on a loop or before one runs."""
+
+    ENV = {
+        "LLM_PROVIDER": "anthropic",
+        "ANTHROPIC_API_KEY": "k",
+        "ANTHROPIC_MODEL": "claude-haiku-4-5-20251001",
+    }
+
+    def test_without_a_running_loop(self) -> None:
+        with mock.patch.dict(os.environ, self.ENV, clear=True):
+            models = TaskModels()
+            self.assertEqual(models.window(models.target("chat")), 200_000)
+
+    def test_on_a_running_loop(self) -> None:
+        async def window():
+            return models.window(models.target("chat"))
+
+        with mock.patch.dict(os.environ, self.ENV, clear=True):
+            models = TaskModels()
+            self.assertEqual(asyncio.run(window()), 200_000)
+
+
 class TheWindow(unittest.TestCase):
     CONFIG = load_text(
         "version = 1\n"
