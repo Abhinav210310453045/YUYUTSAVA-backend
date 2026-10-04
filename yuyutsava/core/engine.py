@@ -59,6 +59,7 @@ from yuyutsava.core.agent_profiles import (
     ToolFamily,
 )
 from yuyutsava.core.deps import TINKER_BUDGET_TOKENS, MasterDeps
+from yuyutsava.core.harness import exclude_deepagents_summarizer
 from yuyutsava.discovery.tool_registry import ToolRegistry
 from yuyutsava.docker_sandbox.backend import DockerSandboxBackend
 from yuyutsava.events.tools import make_recall_tool
@@ -1102,7 +1103,7 @@ def build_cli_deepagent(
         _prompt = local_system_prompt(layout, catalog, front=front)
     if agent_memory_block:
         _prompt = f"{_prompt}\n\n{agent_memory_block}"
-    graph = create_deep_agent(
+    graph = _deep_agent(
         model=model,
         tools=startup_tools,
         backend=sandbox.backend,
@@ -1123,6 +1124,19 @@ def build_cli_deepagent(
         async_host_attachment=deps.async_host_attachment,
         async_task_mirror=deps.async_task_mirror,
     )
+
+
+def _deep_agent(**kwargs: Any) -> CompiledStateGraph:
+    """``create_deep_agent`` without deepagents' summarizer, on every model it builds with.
+
+    The master's model and any subagent's own; see :mod:`yuyutsava.core.harness`.
+    """
+    models = [kwargs["model"]]
+    models += [spec["model"] for spec in kwargs.get("subagents") or () if "model" in spec]
+    for model in models:
+        if not isinstance(model, str):
+            exclude_deepagents_summarizer(model)
+    return create_deep_agent(**kwargs)
 
 
 # NOTE: the ``build_agent`` back-compat alias was removed once its two real
@@ -1396,7 +1410,7 @@ def build_orchestrator(
     )
     master_middleware.extend(async_mw)
 
-    return create_deep_agent(
+    return _deep_agent(
         model=model,
         tools=master_tools,
         backend=_orchestrator_backend(deps),
@@ -1501,7 +1515,7 @@ def build_tinker_agent(
     skills_index = (
         "" if deps.skill_store is not None else skill_registry.index_block(agent="tinker")
     )
-    graph = create_deep_agent(
+    graph = _deep_agent(
         model=model,
         tools=startup_tools,
         backend=backend,

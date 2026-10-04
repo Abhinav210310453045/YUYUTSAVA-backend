@@ -19,6 +19,7 @@
       ],
       "model_call": [
         "ModelSwitchMiddleware",
+        "YuyutsavaCompactionMiddleware",
         "ToolFilterPolicy",
         "FilesystemPromptPolicy",
         "VoiceStylePolicy",
@@ -326,6 +327,7 @@
       ],
       "model_call": [
         "ModelSwitchMiddleware",
+        "YuyutsavaCompactionMiddleware",
         "ToolFilterPolicy",
         "FilesystemPromptPolicy",
         "VoiceStylePolicy",
@@ -491,6 +493,7 @@
         "ContextMeterPolicy"
       ],
       "model_call": [
+        "YuyutsavaCompactionMiddleware",
         "ToolFilterPolicy",
         "FilesystemPromptPolicy",
         "VoiceStylePolicy",
@@ -674,6 +677,7 @@
         "ContextMeterPolicy"
       ],
       "model_call": [
+        "YuyutsavaCompactionMiddleware",
         "ToolFilterPolicy",
         "FilesystemPromptPolicy",
         "VoiceStylePolicy",
@@ -772,6 +776,7 @@
       ],
       "model_call": [
         "ModelSwitchMiddleware",
+        "YuyutsavaCompactionMiddleware",
         "ToolFilterPolicy",
         "FilesystemPromptPolicy",
         "VoiceStylePolicy",
@@ -1023,6 +1028,7 @@
       ],
       "model_call": [
         "ModelSwitchMiddleware",
+        "YuyutsavaCompactionMiddleware",
         "ToolFilterPolicy",
         "FilesystemPromptPolicy",
         "VoiceStylePolicy",

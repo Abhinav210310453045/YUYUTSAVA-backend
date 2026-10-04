@@ -32,6 +32,13 @@ from yuyutsava.core.agent_profiles import PROFILES_BY_ROLE, PolicyKind, ToolFami
 SNAPSHOT = Path(__file__).resolve().parent / "agent_fingerprint_snapshot.json"
 
 
+#: Model-call entries that never read the tool list, so they may run ahead of the
+#: tool filter: the model switch chooses the model, and compaction's overflow
+#: retry rewrites only the messages before handing the call on — through the
+#: filter again.
+_BLIND_TO_TOOLS = frozenset({"ModelSwitchMiddleware", "YuyutsavaCompactionMiddleware"})
+
+
 # Ordering rules, each scoped to the hook CHAIN it is about.
 #
 # Order within a chain is decided by list position. Order *between* chains is
@@ -108,12 +115,12 @@ class MiddlewareOrderingRule(unittest.TestCase):
         Entries in other chains cannot see the tool list at all, so their
         position relative to the filter carries no meaning — and asserting
         against the whole list is what would break when the per-policy adapters
-        are collapsed, for no behavioural reason. The model switch alone may run
-        first: it chooses the model and never reads the tool list.
+        are collapsed, for no behavioural reason. Entries that never read the tool
+        list may run first (:data:`_BLIND_TO_TOOLS`).
         """
         for key, fp in all_fingerprints().items():
             with self.subTest(profile=key):
-                chain = [c for c in fp["chains"]["model_call"] if c != "ModelSwitchMiddleware"]
+                chain = [c for c in fp["chains"]["model_call"] if c not in _BLIND_TO_TOOLS]
                 self.assertTrue(chain, f"{key}: no model-call policies at all")
                 self.assertEqual(
                     chain[0],

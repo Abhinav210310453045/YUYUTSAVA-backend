@@ -263,5 +263,65 @@ class ThreeCycleContinuityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(row.version, 3)
 
 
+class OverflowFallback(unittest.IsolatedAsyncioTestCase):
+    """A call refused as too long is summarized and retried once; the state compacts next."""
+
+    def _request(self, messages: list):
+        from langchain.agents.middleware import ModelRequest
+
+        return ModelRequest(model=FakeListChatModel(responses=["x"]), messages=messages)
+
+    def _history(self) -> list:
+        messages = [TASK]
+        for i in range(8):
+            messages.extend(_turn(i))
+        return messages
+
+    async def test_retries_once_with_older_messages_summarized(self) -> None:
+        from langchain_core.exceptions import ContextOverflowError
+
+        mw = _mw(ContextSettings(max_input_tokens=1_000_000, keep_messages=4))
+        sent: list[list] = []
+
+        async def handler(request):
+            sent.append(request.messages)
+            if len(sent) == 1:
+                raise ContextOverflowError("prompt is too long")
+            return "answered"
+
+        history = self._history()
+        with patch("yuyutsava.context.compaction.thread_id_from_runtime", return_value="t-over"):
+            self.assertEqual(await mw.awrap_model_call(self._request(history), handler), "answered")
+            # The thread's own state compacts before its next call, under the trigger or not.
+            update = await mw.abefore_model({"messages": history}, None)
+
+        self.assertEqual(len(sent), 2)
+        self.assertLess(len(sent[1]), len(history))
+        self.assertIs(sent[1][0], TASK)
+        self.assertTrue(any("## SESSION INTENT" in str(m.content) for m in sent[1]))
+        _assert_tool_pairs_intact(self, sent[1])
+        self.assertIsNotNone(update)
+
+    async def test_any_other_error_is_not_its_business(self) -> None:
+        mw = _mw(ContextSettings(keep_messages=4))
+
+        async def handler(request):
+            raise ValueError("tool schema is invalid")
+
+        with self.assertRaises(ValueError):
+            await mw.awrap_model_call(self._request(self._history()), handler)
+
+    async def test_nothing_to_cut_lets_the_overflow_stand(self) -> None:
+        from langchain_core.exceptions import ContextOverflowError
+
+        mw = _mw(ContextSettings(keep_messages=20))
+
+        async def handler(request):
+            raise ContextOverflowError("prompt is too long")
+
+        with self.assertRaises(ContextOverflowError):
+            await mw.awrap_model_call(self._request([TASK, *_turn(0)]), handler)
+
+
 if __name__ == "__main__":
     unittest.main()

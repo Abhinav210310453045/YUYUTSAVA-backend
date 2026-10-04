@@ -18,6 +18,11 @@ What this subclass adds:
   daemon crashed between sweep and resume).
 - **Structured summary prompt** — five fixed sections so a third compaction
   cycle still carries intent, decisions, and the next step.
+- **Overflow fallback** — a call the provider refuses as too long for the
+  window is summarized and retried once, and the thread compacts before its
+  next call. This was deepagents' summarizer's job, which this system excludes
+  so that one compactor, steering under the model the turn actually runs on,
+  owns summarization (design rule 12).
 
 Absolute-token trigger (``("tokens", N)`` with N from
 :class:`ContextSettings`) is used instead of ``("fraction", …)`` because the
@@ -28,7 +33,7 @@ models don't reliably ship.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from langchain.agents.middleware import SummarizationMiddleware
@@ -44,6 +49,7 @@ from langgraph.graph.message import REMOVE_ALL_MESSAGES
 from yuyutsava.context.config import ContextSettings
 from yuyutsava.context.meter import note_compaction
 from yuyutsava.context.summary_store import ThreadSummaryStore
+from yuyutsava.llm.overflow import is_context_overflow
 from yuyutsava.run_context import thread_id_from_runtime
 
 logger = logging.getLogger("yuyutsava.context.compaction")
@@ -280,6 +286,58 @@ class YuyutsavaCompactionMiddleware(SummarizationMiddleware):
                 *self._stub_bulky_args(preserved),
             ]
         }
+
+    # ------------------------------------------------------------------
+    # Overflow fallback
+    # ------------------------------------------------------------------
+
+    async def awrap_model_call(self, request: Any, handler: Callable[[Any], Awaitable[Any]]) -> Any:
+        """Retry once, summarized, when the provider refuses the prompt as too long.
+
+        The trigger steers under the window, but a token estimate can be wrong,
+        and a turn's tool results can outgrow the window between two checks. The
+        retry sends the summary and the recent tail in place of the older
+        messages; the thread's own state compacts before its next call
+        (:func:`request_compaction`), so the next call fits too. Only this call
+        is summarized here, so the summary is not persisted — the compaction that
+        follows writes the one that is.
+        """
+        try:
+            return await handler(request)
+        except Exception as exc:
+            if not is_context_overflow(exc):
+                raise
+            overflow = exc
+        retry = await self._summarized(list(request.messages))
+        if retry is None:
+            raise overflow
+        thread_id = thread_id_from_runtime(default="")
+        logger.warning(
+            "%s: the provider refused the prompt as too long for the window (%s); "
+            "retrying once with older messages summarized",
+            self._role,
+            overflow,
+        )
+        request_compaction(thread_id)
+        return await handler(request.override(messages=retry))
+
+    async def _summarized(self, messages: list[AnyMessage]) -> list[AnyMessage] | None:
+        """*messages* with everything but the pinned head and recent tail summarized.
+
+        ``None`` when nothing can be cut without splitting a tool call from its
+        result — the overflow then stands.
+        """
+        pinned = self._pinned_head(messages)
+        rest = messages[len(pinned) :]
+        cutoff = self._find_safe_cutoff(rest, int(self.keep[1]))
+        if cutoff <= 0:
+            return None
+        summary = await self._acreate_summary([*pinned, *rest[:cutoff]])
+        return [
+            *pinned,
+            *self._build_new_messages(self._with_readback(summary)),
+            *self._stub_bulky_args(rest[cutoff:]),
+        ]
 
     # ------------------------------------------------------------------
     # Resume injection

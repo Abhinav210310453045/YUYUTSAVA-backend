@@ -29,13 +29,12 @@ from __future__ import annotations
 import gc
 import unittest
 
-from yuyutsava.llm.config.loader import load_text
+from test.support.targets import every_provider_type
+from test.support.targets import every_type_target as target
 from yuyutsava.llm.config.schema import connection_types
-from yuyutsava.llm.config.secrets import Secret
 from yuyutsava.llm.factory import chat_model, handle_for, model_handle, model_name_of, supports
 from yuyutsava.llm.handle import Capability
 from yuyutsava.llm.providers.registry import all_providers, provider_for
-from yuyutsava.llm.target import target_for
 
 # Recorded from the pre-change code. `azure` is deliberately absent — it had no
 # correct value to preserve; see `AzureIdentityWasBroken`.
@@ -52,81 +51,7 @@ BASELINE_NAMES = {
     "bedrock": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
 }
 
-#: One provider of every type, as a models.toml would set them up. Vertex logs in
-#: with an access token and Bedrock with keys, so nothing needs real credentials.
-CONFIG = load_text(
-    """
-version = 1
-[defaults]
-model = "groq"
-[providers.groq]
-type = "groq"
-auth = { method = "api_key", key = "secret:k" }
-[providers.openrouter]
-type = "openrouter"
-auth = { method = "api_key", key = "secret:k" }
-[providers.ollama]
-type = "ollama"
-[providers.openai]
-type = "openai"
-auth = { method = "api_key", key = "secret:k" }
-[providers.openai_compatible]
-type = "openai_compatible"
-base_url = "https://api.example.com/v1"
-auth = { method = "api_key", key = "secret:k" }
-[providers.anthropic]
-type = "anthropic"
-auth = { method = "api_key", key = "secret:k" }
-[providers.google]
-type = "google"
-auth = { method = "api_key", key = "secret:k" }
-[providers.vertex]
-type = "vertex"
-project = "p"
-location = "us-central1"
-auth = { method = "access_token", token = "secret:k" }
-[providers.bedrock]
-type = "bedrock"
-region = "us-east-1"
-auth = { method = "aws_keys", access_key_id = "secret:k", secret_access_key = "secret:k" }
-[providers.mistral]
-type = "mistral"
-auth = { method = "api_key", key = "secret:k" }
-[providers.cohere]
-type = "cohere"
-auth = { method = "api_key", key = "secret:k" }
-[providers.azure]
-type = "azure"
-endpoint = "https://x.openai.azure.com"
-auth = { method = "api_key", key = "secret:k" }
-[models.groq]
-provider = "groq"
-id = "llama-3.3-70b-versatile"
-[models.azure]
-provider = "azure"
-id = "dep"
-base_model = "gpt-4o"
-"""
-)
-
-
-def target(reference: str):
-    return target_for(CONFIG, reference, secrets={"secret:k": Secret("k")}, unavailable={})
-
-
-TARGETS = {
-    "groq": target("groq"),
-    "openrouter": target("openrouter/openai/gpt-4o-mini"),
-    "ollama": target("ollama/gemma4:e2b"),
-    "openai": target("openai/gpt-4o-mini"),
-    "anthropic": target("anthropic/claude-haiku-4-5-20251001"),
-    "google": target("google/gemini-2.5-flash"),
-    "vertex": target("vertex/gemini-2.5-flash"),
-    "bedrock": target("bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0"),
-    "mistral": target("mistral/mistral-large-latest"),
-    "cohere": target("cohere/command-r-plus"),
-    "azure": target("azure"),
-}
+TARGETS = every_provider_type()
 
 
 class NameIsUnchanged(unittest.TestCase):

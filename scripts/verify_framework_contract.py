@@ -134,6 +134,9 @@ def main() -> int:
         test_retry_node_contract as retry_node,
     )
     from test.framework_contract import (  # noqa: PLC0415 — `test` joins sys.path at run time, above
+        test_summarizer_exclusion_contract as summarizer,
+    )
+    from test.framework_contract import (  # noqa: PLC0415 — `test` joins sys.path at run time, above
         test_vertex_model_garden_contract as model_garden,
     )
     from test.policy import test_filesystem_prompt_override as fs
@@ -223,6 +226,14 @@ def main() -> int:
         (
             "Claude on Vertex reaches the global endpoint with our credentials",
             model_garden.test_claude_on_vertex_reaches_the_global_endpoint_with_our_credentials,
+        ),
+        (
+            "deepagents' summarizer is excluded for every provider (silent-failure seam)",
+            summarizer.test_every_provider_builds_without_deepagents_summarizer,
+        ),
+        (
+            "our compactor survives the summarizer exclusion",
+            summarizer.test_this_systems_compactor_survives_the_exclusion,
         ),
         ("declared dependency ranges are sane", _check_declared_ranges),
     ]
