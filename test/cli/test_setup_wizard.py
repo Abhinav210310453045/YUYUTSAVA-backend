@@ -18,6 +18,7 @@ from unittest import mock
 from yuyutsava.cli.setup_wizard.flow import Services, SetupWizard
 from yuyutsava.cli.setup_wizard.prompter import Option, TerminalPrompter
 from yuyutsava.llm.config.detect import Finding
+from yuyutsava.llm.config.leftovers import Leftover
 from yuyutsava.llm.config.loader import load_text
 from yuyutsava.llm.config.store import ConfigStore
 from yuyutsava.llm.discovery import Availability, DiscoveredModel, Discovery
@@ -99,7 +100,10 @@ class _Wizard(unittest.TestCase):
     def tearDown(self) -> None:
         self._tmp.cleanup()
 
-    def wizard(self, script, *, found=(), discover=_lists("m1"), environ=None) -> SetupWizard:
+    def wizard(
+        self, script, *, found=(), discover=_lists("m1"), environ=None, leftovers=()
+    ) -> SetupWizard:
+        self.removed: list[str] = []
         return SetupWizard(
             script,
             Services(
@@ -107,6 +111,10 @@ class _Wizard(unittest.TestCase):
                 detect=lambda: list(found),
                 discover=discover,
                 environ=environ or {},
+                leftovers=lambda: list(leftovers),
+                remove_leftovers=lambda items: (
+                    self.removed.extend(i.name for i in items) or [self.dir / ".env"]
+                ),
             ),
         )
 
@@ -150,6 +158,43 @@ class AFirstRunWithASetupFound(_Wizard):
         self.assertIn('groq = "gsk-1"', self.secrets())
         self.assertEqual(config.tasks, {})
         self.assertTrue(any("2 ready" in line for line in script.said))
+
+
+class TidyingTheEnvironment(_Wizard):
+    LEFTOVERS = (
+        Leftover("LLM_PROVIDER", "setting", (Path("/p/.env"),)),
+        Leftover("GROQ_MODEL", "setting", ()),  # the shell's: not offered
+    )
+
+    def set_up(self, remove: bool) -> Script:
+        script = Script(
+            lambda options: [options[0].value],  # use what was found
+            True,  # keep the key in secrets.toml
+            False,  # no provider by hand
+            False,  # no other provider
+            "groq/llama-3.3-70b-versatile",  # the default
+            True,  # for every task
+            remove,  # remove the leftovers?
+        )
+        written = self.wizard(
+            script,
+            found=[GROQ_FOUND],
+            discover=_lists("llama-3.3-70b-versatile"),
+            environ={"GROQ_API_KEY": "gsk-1"},
+            leftovers=self.LEFTOVERS,
+        ).setup()
+        self.assertTrue(written)
+        return script
+
+    def test_offers_what_models_toml_replaced_once_it_is_written(self) -> None:
+        script = self.set_up(True)
+        self.assertEqual(self.removed, ["LLM_PROVIDER"])
+        self.assertTrue(any("LLM_PROVIDER (in /p/.env)" in line for line in script.said))
+        self.assertFalse(any("GROQ_MODEL" in line for line in script.said))
+
+    def test_leaves_them_when_told_to(self) -> None:
+        self.set_up(False)
+        self.assertEqual(self.removed, [])
 
 
 class SettingsTheModelRunsWithToday(_Wizard):

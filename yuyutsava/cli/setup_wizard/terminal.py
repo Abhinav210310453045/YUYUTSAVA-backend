@@ -11,6 +11,7 @@ from __future__ import annotations
 from yuyutsava.cli.setup_wizard.flow import Services, SetupWizard
 from yuyutsava.cli.setup_wizard.prompter import TerminalPrompter
 from yuyutsava.llm.config.detect import detect
+from yuyutsava.llm.config.leftovers import leftovers_on_disk
 from yuyutsava.llm.config.store import ConfigStore
 from yuyutsava.llm.providers.registry import discover
 from yuyutsava.storage.paths import models_config_path, secrets_path
@@ -23,6 +24,7 @@ def _wizard() -> SetupWizard:
             store=ConfigStore(models_config_path(), secrets_path()),
             detect=detect,
             discover=discover,
+            leftovers=lambda: leftovers_on_disk(models_config_path(), secrets_path()),
         ),
     )
 

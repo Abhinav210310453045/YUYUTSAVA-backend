@@ -6,6 +6,9 @@ from a script — no terminal to answer from — is never stopped to ask. Saying
 asked once; ``yuyutsava models setup`` is there whenever they change their mind.
 
 Runs before the chat's event loop starts: the wizard's prompts run their own.
+
+With ``models.toml``, the chat's start instead names the environment's model
+variables still set: the file decides, so they are not read (:func:`warn_leftovers`).
 """
 
 from __future__ import annotations
@@ -14,9 +17,11 @@ import sys
 from collections.abc import Callable
 from typing import TextIO
 
-from yuyutsava.ansi import DIM, KEY, RESET
+from yuyutsava.ansi import DIM, KEY, RESET, WARN
+from yuyutsava.cli.render.ansi_wrap import strip_ansi
 from yuyutsava.config.env import env_flag
-from yuyutsava.storage.paths import models_config_path
+from yuyutsava.llm.config.leftovers import leftovers_on_disk, say_leftovers
+from yuyutsava.storage.paths import models_config_path, secrets_path
 
 #: Beside ``models.toml``: the owner chose the environment over a setup.
 DECLINED = ".models-setup-declined"
@@ -56,6 +61,19 @@ def offer_setup(
         print(f"{DIM}ok — run `yuyutsava models setup` any time.{RESET}", file=sys.stderr)
 
 
+def warn_leftovers(*, stderr: TextIO | None = None) -> None:
+    """Name the environment's model variables ``models.toml`` made unnecessary, if any are set."""
+    found = leftovers_on_disk(models_config_path(), secrets_path())
+    if not found:
+        return
+    stream = stderr or sys.stderr
+    line = (
+        f"{WARN}!{RESET} {say_leftovers(found)} "
+        f"{DIM}· `yuyutsava models clean-env` removes them{RESET}"
+    )
+    print(line if stream.isatty() else strip_ansi(line), file=stream)
+
+
 def _ask() -> str:
     from yuyutsava.cli.setup_wizard.prompter import (  # noqa: PLC0415 — first run only
         Option,
@@ -84,4 +102,4 @@ def _run_setup() -> int:
     return run_setup()
 
 
-__all__ = ["DECLINED", "offer_setup", "setup_declined_path"]
+__all__ = ["DECLINED", "offer_setup", "setup_declined_path", "warn_leftovers"]

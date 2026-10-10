@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from yuyutsava.cli.first_run import offer_setup, setup_declined_path
+from yuyutsava.cli.first_run import offer_setup, setup_declined_path, warn_leftovers
 
 
 class _Tty(io.StringIO):
@@ -74,3 +74,40 @@ class TheOffer(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheLeftoverWarning(unittest.TestCase):
+    """Once models.toml exists, a chat's start names the model variables still set."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.home = Path(self._tmp.name)
+        (self.home / "models.toml").write_text(
+            'version = 1\n[defaults]\nmodel = "local/qwen3:8b"\n[providers.local]\ntype = "ollama"\n'
+        )
+        for patch in (
+            mock.patch.dict(os.environ, {"YUYUTSAVA_HOME": str(self.home)}, clear=True),
+            mock.patch("yuyutsava.llm.config.leftovers.find_dotenv", return_value=""),
+        ):
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def warning(self) -> str:
+        out = io.StringIO()
+        warn_leftovers(stderr=out)
+        return out.getvalue()
+
+    def test_names_them_and_the_file_they_are_in(self) -> None:
+        (self.home / ".env").write_text("LLM_PROVIDER=vertex\nTAVILY_API_KEY=t\n")
+        said = self.warning()
+        self.assertIn("LLM_PROVIDER", said)
+        self.assertIn(str(self.home / ".env"), said)
+        self.assertNotIn("TAVILY", said)
+        self.assertIn("yuyutsava models clean-env", said)
+        self.assertNotIn("\x1b", said)  # not a terminal: no colour codes
+
+    def test_says_nothing_when_none_is_set(self) -> None:
+        self.assertEqual(self.warning(), "")

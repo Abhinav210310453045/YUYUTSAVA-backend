@@ -16,6 +16,9 @@ In order (design §3):
 6. **Write** ``models.toml`` once, at the end, through the store — nothing is
    half-written if the wizard is left early. Secrets typed along the way are
    kept in ``secrets.toml`` as they are typed.
+7. **Tidy the environment**: the model variables a ``.env`` still sets, which
+   ``models.toml`` now replaces, are named and offered for removal
+   (:mod:`yuyutsava.llm.config.leftovers`).
 
 The flow asks through a :class:`~.prompter.Prompter`, so tests drive it with a
 script of answers.
@@ -25,8 +28,9 @@ from __future__ import annotations
 
 import os
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from yuyutsava.cli.setup_wizard.prompter import Option, Prompter
@@ -41,6 +45,7 @@ from yuyutsava.llm.config.edits import (
     use,
 )
 from yuyutsava.llm.config.guide import provider_form, provider_forms, secret_name
+from yuyutsava.llm.config.leftovers import Leftover, remove_leftovers
 from yuyutsava.llm.config.loader import ModelsConfigError
 from yuyutsava.llm.config.messages import type_label
 from yuyutsava.llm.config.secrets import read_secrets_file
@@ -54,6 +59,10 @@ from yuyutsava.llm.tasks import TASKS
 _OFFERED = 12
 
 
+def _no_leftovers() -> Sequence[Leftover]:
+    return ()
+
+
 @dataclass
 class Services:
     """What the wizard works with — the real ones at a terminal, doubles in a test."""
@@ -62,6 +71,11 @@ class Services:
     detect: Callable[[], list[Finding]]
     discover: Callable[[ProviderAccess], Discovery]
     environ: Mapping[str, str] = field(default_factory=lambda: os.environ)
+    #: The environment's model variables ``models.toml`` makes unnecessary, read
+    #: once it is written (:func:`~yuyutsava.llm.config.leftovers.leftovers_on_disk`).
+    leftovers: Callable[[], Sequence[Leftover]] = _no_leftovers
+    #: Removes leftovers from their ``.env`` files; the files changed.
+    remove_leftovers: Callable[[Sequence[Leftover]], list[Path]] = remove_leftovers
 
 
 @dataclass
@@ -290,7 +304,21 @@ class SetupWizard:
             "file — a running YUYUTSAVA picks it up.",
             tone="dim",
         )
+        self._offer_to_tidy_the_environment()
         return True
+
+    def _offer_to_tidy_the_environment(self) -> None:
+        removable = [leftover for leftover in self.s.leftovers() if leftover.files]
+        if not removable:
+            return
+        names = ", ".join(leftover.name for leftover in removable)
+        files = ", ".join(sorted({str(path) for item in removable for path in item.files}))
+        self.ui.say(
+            f"Not read any more, now that models.toml decides: {names} (in {files}).", tone="dim"
+        )
+        if self.ui.confirm("Remove them from there?", default=False):
+            for path in self.s.remove_leftovers(removable):
+                self.ui.say(f"✓ removed from {path}", tone="ok")
 
     def _choose_model(self, question: str) -> str:
         options = self._model_options()

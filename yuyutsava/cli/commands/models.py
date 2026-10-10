@@ -25,6 +25,7 @@ from typing import Any
 
 from yuyutsava.ansi import CHROME, DIM, ERR, KEY, OK, RESET, VALUE, WARN
 from yuyutsava.cli.render.ansi_wrap import strip_ansi
+from yuyutsava.cli.setup_wizard.prompter import TerminalPrompter
 from yuyutsava.llm.config.edits import (
     ConfigEditError,
     Edit,
@@ -34,6 +35,7 @@ from yuyutsava.llm.config.edits import (
     remove_provider,
     use,
 )
+from yuyutsava.llm.config.leftovers import Leftover, leftovers_on_disk, remove_leftovers
 from yuyutsava.llm.config.loader import ModelsConfigError
 from yuyutsava.llm.config.schema_export import models_config_json_schema
 from yuyutsava.llm.config.secrets import read_secrets_file
@@ -113,6 +115,10 @@ def _parser() -> argparse.ArgumentParser:
     p = command("remove", "remove a provider or a model alias", _remove)
     p.add_argument("name")
     command("edit", "open models.toml in $VISUAL / $EDITOR, then check it", _edit)
+    p = command(
+        "clean-env", "remove the model variables models.toml made unnecessary from .env", _clean_env
+    )
+    p.add_argument("--yes", action="store_true", help="remove them without asking")
     command("path", "where models.toml and secrets.toml are", _path)
     command("schema", "the JSON Schema of models.toml", _schema)
     p = command("secrets", "set, remove or list secrets (secret:<name>)", _secrets)
@@ -227,6 +233,11 @@ def _doctor(args: argparse.Namespace) -> int:
             _say_error(f"task {task.name}: {exc}")
             continue
         _say(f"  {OK}✓{RESET} {task.name:<14} {CHROME}→{RESET} {target.reference}")
+    leftovers = leftovers_on_disk(path, secrets_path())
+    if leftovers:
+        _say(f"\n{WARN}!{RESET} set, but not read now that models.toml decides:")
+        _say_leftovers(leftovers)
+        _say(f"  {DIM}`yuyutsava models clean-env` removes them{RESET}")
     if problems:
         _say(f"\n{ERR}{problems} problem{'s' if problems != 1 else ''}{RESET}")
         return 1
@@ -414,6 +425,44 @@ def _edit(args: argparse.Namespace) -> int:
         return 1
     subprocess.run([*shlex.split(editor), str(path)], check=False)  # noqa: S603 — the user's editor
     return _doctor(args)
+
+
+def _clean_env(args: argparse.Namespace) -> int:
+    if _loaded() is None:
+        return 1
+    leftovers = leftovers_on_disk(models_config_path(), secrets_path())
+    if not leftovers:
+        _say(f"{DIM}nothing to remove — the environment sets no model variable{RESET}")
+        return 0
+    _say("Set, but not read now that models.toml decides:")
+    _say_leftovers(leftovers)
+    removable = [leftover for leftover in leftovers if leftover.files]
+    if not removable:
+        return 0
+    if not args.yes:
+        if not sys.stdin.isatty():
+            _say_error("not at a terminal to ask — run with --yes to remove them")
+            return 2
+        try:
+            remove = TerminalPrompter().confirm("Remove them from those files?", default=False)
+        except (KeyboardInterrupt, EOFError):
+            remove = False
+        if not remove:
+            _say(f"{DIM}left as they are{RESET}")
+            return 0
+    for path in remove_leftovers(removable):
+        _say(f"  {OK}✓{RESET} removed from {path}")
+    return 0
+
+
+def _say_leftovers(leftovers: Sequence[Leftover]) -> None:
+    for leftover in leftovers:
+        where = (
+            ", ".join(str(path) for path in leftover.files)
+            if leftover.files
+            else "set outside any .env (your shell?) — unset it there"
+        )
+        _say(f"  {VALUE}{leftover.name:<26}{RESET} {leftover.why} {DIM}· {where}{RESET}")
 
 
 def _path(args: argparse.Namespace) -> int:

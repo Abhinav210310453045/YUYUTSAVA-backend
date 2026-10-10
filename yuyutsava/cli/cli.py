@@ -32,7 +32,7 @@ from yuyutsava.cli.commands.options import ChatOptions
 from yuyutsava.cli.commands.prefs import run_prefs
 from yuyutsava.cli.commands.scenarios import format_scenario_list, get_scenario
 from yuyutsava.cli.commands.sessions import delete_session, print_sessions_table
-from yuyutsava.cli.first_run import offer_setup
+from yuyutsava.cli.first_run import offer_setup, warn_leftovers
 from yuyutsava.cli.tooling import (
     builtin_tools_reference_json,
     export_agent_state_graph_png,
@@ -112,6 +112,7 @@ def _offer_setup_before(argv: list[str]) -> None:
     if load_dotenv:
         load_dotenv()  # what the wizard finds includes a .env setup
     offer_setup()
+    warn_leftovers()
 
 
 #: Every subcommand, once. Nothing else may name one.
@@ -410,8 +411,8 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="yuyutsava",
         description=(
             "YUYUTSAVA: AI agent for natural language tasks. Runs tools on the "
-            "host or in a Docker sandbox. Set LLM_PROVIDER and the matching API "
-            "key in .env — see .env.example for the supported providers."
+            "host or in a Docker sandbox. Choose its models with "
+            "`yuyutsava models setup` (~/.yuyutsava/models.toml)."
         ),
         epilog=_subcommand_help(),
         formatter_class=argparse.RawDescriptionHelpFormatter,

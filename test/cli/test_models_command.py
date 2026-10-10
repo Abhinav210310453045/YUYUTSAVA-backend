@@ -40,9 +40,13 @@ class _Home(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
         self.home = Path(self._tmp.name)
-        patch = mock.patch.dict(os.environ, {"YUYUTSAVA_HOME": str(self.home)})
-        patch.start()
-        self.addCleanup(patch.stop)
+        for patch in (
+            mock.patch.dict(os.environ, {"YUYUTSAVA_HOME": str(self.home)}),
+            # Only this home's .env: never the checkout's own.
+            mock.patch("yuyutsava.llm.config.leftovers.find_dotenv", return_value=""),
+        ):
+            patch.start()
+            self.addCleanup(patch.stop)
 
     def tearDown(self) -> None:
         self._tmp.cleanup()
@@ -156,6 +160,36 @@ class Changing(_Home):
         self.assertEqual(self.run_models("secrets", "list")[1].strip(), "groq")
         self.assertEqual(self.run_models("secrets", "rm", "groq")[0], 0)
         self.assertIn("no secrets stored", self.run_models("secrets", "list")[1])
+
+
+class CleaningTheEnvironment(_Home):
+    ENV = "# mine\nLLM_PROVIDER=vertex\nVERTEX_MODEL=gemini-3.5-flash\nTAVILY_API_KEY=t\n"
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.write()
+        (self.home / ".env").write_text(self.ENV, encoding="utf-8")
+
+    def test_doctor_names_what_is_left_over_without_failing(self) -> None:
+        (self.home / "secrets.toml").write_text('groq = "gsk-1"\n', encoding="utf-8")
+        code, out, _ = self.run_models("doctor")
+        self.assertEqual(code, 0)
+        self.assertIn("LLM_PROVIDER", out)
+        self.assertIn("models clean-env", out)
+
+    def test_clean_env_removes_them_and_keeps_the_rest(self) -> None:
+        code, out, _ = self.run_models("clean-env", "--yes")
+        self.assertEqual(code, 0)
+        self.assertIn("removed from", out)
+        self.assertEqual(
+            (self.home / ".env").read_text(encoding="utf-8"), "# mine\nTAVILY_API_KEY=t\n"
+        )
+
+    def test_clean_env_asks_first_and_never_without_a_terminal(self) -> None:
+        code, _, err = self.run_models("clean-env")
+        self.assertEqual(code, 2)
+        self.assertIn("--yes", err)
+        self.assertEqual((self.home / ".env").read_text(encoding="utf-8"), self.ENV)
 
 
 class TalkingToProviders(_Home):
