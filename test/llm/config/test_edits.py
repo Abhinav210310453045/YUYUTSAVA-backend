@@ -93,6 +93,23 @@ class AHandWrittenFile(_Store):
         self.apply(follow_default(["triage"]))
         self.assertEqual(self.config().tasks, {})
 
+    def test_a_table_its_last_entry_left_goes_too(self) -> None:
+        self.apply(
+            add_model("small", provider="local", model_id="gemma3:4b"),
+            use("small", tasks=["triage"]),
+        )
+        self.apply(follow_default(["triage"]), remove_model("small"))
+        text = self.store.read().text
+        self.assertNotIn("[tasks]", text)
+        self.assertNotIn("[models", text)
+        self.assertIn("# the small one", text)
+
+    def test_a_table_with_a_comment_written_in_it_stays(self) -> None:
+        path = self.dir / "models.toml"
+        path.write_text(HAND_WRITTEN + '\n[tasks]\n# triage = "fast"\nchat = "local/x"\n')
+        self.apply(follow_default(["chat"]))
+        self.assertIn('[tasks]\n# triage = "fast"', self.store.read().text)
+
     def test_an_unknown_task_is_refused_before_anything_is_read(self) -> None:
         with self.assertRaises(ConfigEditError):
             use("local/x", tasks=["triag"])

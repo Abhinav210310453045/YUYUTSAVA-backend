@@ -21,7 +21,7 @@ from typing import Any
 
 import tomlkit
 from tomlkit import TOMLDocument
-from tomlkit.items import Table
+from tomlkit.items import Null, Table, Whitespace
 
 from yuyutsava.llm.config.schema import parse_model_ref
 from yuyutsava.llm.config.secrets import NAME_PATTERN
@@ -92,6 +92,7 @@ def remove_provider(name: str) -> Edit:
                 "point those at another model first (`yuyutsava models use …`)",
             )
         del providers[name]
+        _drop_if_empty(document, "providers")
 
     return edit
 
@@ -132,6 +133,7 @@ def remove_model(alias: str) -> Edit:
                 "point those at another model first (`yuyutsava models use …`)",
             )
         del models[alias]
+        _drop_if_empty(document, "models")
 
     return edit
 
@@ -167,6 +169,7 @@ def follow_default(tasks: Iterable[str]) -> Edit:
             return
         for task in tasks:
             assigned.pop(task, None)
+        _drop_if_empty(document, "tasks")
 
     return edit
 
@@ -227,6 +230,15 @@ def _table(document: TOMLDocument, key: str) -> Table:
     if key not in document:
         document[key] = tomlkit.table(is_super_table=key in ("providers", "models"))
     return document[key]
+
+
+def _drop_if_empty(document: TOMLDocument, key: str) -> None:
+    """``[key]`` removed once its last entry is — a comment written in it keeps it."""
+    table = document.get(key)
+    if table is not None and all(
+        isinstance(item, (Null, Whitespace)) for _, item in table.value.body
+    ):
+        del document[key]
 
 
 def _provider_table(connection: Mapping[str, Any]) -> Table:
