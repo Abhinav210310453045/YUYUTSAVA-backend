@@ -154,3 +154,36 @@ export function TestMessage({ choices }) {
     </>
   )
 }
+
+// The environment's model variables still set, which models.toml now replaces —
+// changing them does nothing, so they're named, and removed from their .env
+// files on request. One set elsewhere (the shell) is named for its owner to unset.
+export function Leftovers({ leftovers, onRemove }) {
+  if (!leftovers?.length) return null
+  const removable = leftovers.filter((l) => l.files.length)
+  const files = [...new Set(removable.flatMap((l) => l.files))]
+  return (
+    <Panel style={{ borderColor: 'rgba(var(--accent-rgb), 0.35)' }}>
+      <div style={{ fontSize: 12, color: 'var(--text-primary)', marginBottom: 6 }}>
+        Set, but not read now that models.toml decides
+      </div>
+      {leftovers.map((l) => (
+        <Muted key={l.name} style={{ marginBottom: 2 }}>
+          <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
+            {l.name}
+          </span>{' '}
+          — {l.why}
+          {l.files.length ? '' : ' · set outside any .env (your shell?) — unset it there'}
+        </Muted>
+      ))}
+      {removable.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
+          <Button small onClick={() => onRemove(removable.map((l) => l.name))}>
+            remove from .env
+          </Button>
+          <Muted>{files.join(', ')}</Muted>
+        </div>
+      )}
+    </Panel>
+  )
+}

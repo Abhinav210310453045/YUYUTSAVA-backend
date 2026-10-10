@@ -3,13 +3,21 @@ import {
   addAlias,
   modelChoices,
   removeAlias,
+  removeLeftovers,
   removeProvider,
   setDefault,
   setTasks,
 } from '../../api/models'
 import { useModels } from '../../hooks/useModels'
 import SetupWizard from './SetupWizard'
-import { NewAlias, ProviderRow, TestMessage, select, subhead } from './ModelsSettingsParts'
+import {
+  Leftovers,
+  NewAlias,
+  ProviderRow,
+  TestMessage,
+  select,
+  subhead,
+} from './ModelsSettingsParts'
 import { Button, Muted, Panel, Problem } from './ui'
 
 // Settings → Models: everything models.toml says, changeable in place. Every
@@ -86,6 +94,18 @@ export default function ModelsSettings() {
           {s.reference}: {s.problem} — {s.fix}
         </Problem>
       ))}
+      <Leftovers
+        leftovers={status.leftovers}
+        onRemove={(names) =>
+          change(
+            async () => {
+              await removeLeftovers(names)
+              await refresh()
+            },
+            `${names.join(', ')} removed from .env`,
+          )
+        }
+      />
 
       <Row label="Default model">
         <Choice

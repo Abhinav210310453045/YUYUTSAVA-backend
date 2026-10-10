@@ -43,6 +43,7 @@ from yuyutsava.daemon.web.schemas.models import (
     ModelsStatusOut,
     NewAliasIn,
     ProviderFormOut,
+    RemoveLeftoversIn,
     SessionModelsIn,
     SessionModelsOut,
     SetupIn,
@@ -126,6 +127,17 @@ async def provider_models(
         return DiscoveryOut(**await asyncio.to_thread(service.provider_models, name))
     except KeyError as exc:
         raise NotFoundError(f"no provider named {name!r}") from exc
+
+
+@router.post(
+    "/leftovers/remove",
+    response_model=ModelsStatusOut,
+    summary="Remove model variables models.toml replaced from .env",
+)
+async def models_remove_leftovers(
+    body: RemoveLeftoversIn, service: ModelsService = Depends(get_models_service)
+) -> ModelsStatusOut:
+    return ModelsStatusOut(**await asyncio.to_thread(service.remove_leftovers, body.names))
 
 
 @router.post("/setup", response_model=ModelsStatusOut, summary="Write a whole setup at once")

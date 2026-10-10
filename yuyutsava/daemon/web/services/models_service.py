@@ -17,13 +17,14 @@ import asyncio
 import dataclasses
 import logging
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 from yuyutsava.daemon.web.services.stream_service import StreamModelsItem
 from yuyutsava.llm.config.detect import Finding
 from yuyutsava.llm.config.edits import Edit, add_model, add_provider, combine, use
 from yuyutsava.llm.config.guide import provider_forms, secret_name
+from yuyutsava.llm.config.leftovers import Leftover, leftovers_on_disk, remove_leftovers
 from yuyutsava.llm.config.messages import type_label
 from yuyutsava.llm.config.secrets import read_secrets_file
 from yuyutsava.llm.config.store import ABSENT, ConfigStore
@@ -45,12 +46,16 @@ class ModelsService:
         discover: Callable[[ProviderAccess], Discovery],
         detect: Callable[[], list[Finding]],
         setup_mode: bool = False,
+        leftovers: Callable[[], Sequence[Leftover]] | None = None,
     ) -> None:
         self.store = store
         self.source = source
         self._discover = discover
         self._detect = detect
         self.setup_mode = setup_mode
+        self._leftovers = leftovers or (
+            lambda: leftovers_on_disk(store.models_path, store.secrets_path)
+        )
 
     # ─── reading ─────────────────────────────────────────────────────────
 
@@ -132,7 +137,26 @@ class ModelsService:
             {"reference": ref, "problem": issue.problem, "fix": issue.fix}
             for ref, issue in snapshot.unavailable.items()
         ]
+        base["leftovers"] = [
+            {
+                "name": leftover.name,
+                "kind": leftover.kind,
+                "why": leftover.why,
+                "files": [str(path) for path in leftover.files],
+            }
+            for leftover in self._leftovers()
+        ]
         return base
+
+    def remove_leftovers(self, names: Sequence[str]) -> dict[str, Any]:
+        """The leftovers named removed from their ``.env`` files and this process; the status.
+
+        Only ones still left over: a name that is not — read again, never was —
+        is ignored rather than removed.
+        """
+        wanted = set(names)
+        remove_leftovers([item for item in self._leftovers() if item.name in wanted])
+        return self.status()
 
     @staticmethod
     def catalog() -> list[dict[str, Any]]:

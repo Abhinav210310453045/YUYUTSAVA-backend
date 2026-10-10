@@ -47,6 +47,16 @@ class MissingSecretOut(BaseModel):
     fix: str
 
 
+class LeftoverOut(BaseModel):
+    #: The variable, as set: ``LLM_PROVIDER``, ``TRIAGE_GROQ_MODEL``.
+    name: str
+    #: ``setting`` or ``key``.
+    kind: str
+    why: str
+    #: The ``.env`` files that set it; empty when it is set elsewhere (the shell).
+    files: list[str] = Field(default_factory=list)
+
+
 class ModelsStatusOut(BaseModel):
     #: ``models.toml`` loads; without it, models come from the environment.
     configured: bool
@@ -62,6 +72,8 @@ class ModelsStatusOut(BaseModel):
     providers: list[ProviderOut] = Field(default_factory=list)
     models: list[AliasOut] = Field(default_factory=list)
     secrets_missing: list[MissingSecretOut] = Field(default_factory=list)
+    #: The environment's model variables still set, which models.toml replaced.
+    leftovers: list[LeftoverOut] = Field(default_factory=list)
 
 
 class FieldOut(BaseModel):
@@ -191,3 +203,8 @@ class TestMessageOut(BaseModel):
     reply: str = ""
     seconds: float = 0.0
     problem: str = ""
+
+
+class RemoveLeftoversIn(BaseModel):
+    #: Which leftovers to remove from their ``.env`` files.
+    names: list[str]

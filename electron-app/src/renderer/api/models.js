@@ -45,6 +45,8 @@ export const removeProvider = (revision, name) =>
 export const getSessionModels = (sessionId) => call('GET', `/models/sessions/${enc(sessionId)}`)
 export const setSessionModels = (sessionId, model, subagents = {}) =>
   call('PUT', `/models/sessions/${enc(sessionId)}`, { model, subagents })
+// Takes the model variables models.toml replaced out of the .env files they are in.
+export const removeLeftovers = (names) => call('POST', '/models/leftovers/remove', { names })
 // Billable: one short message. Only ever sent from an explicit click.
 export const testModel = (reference) => call('POST', '/models/test', { reference })
 

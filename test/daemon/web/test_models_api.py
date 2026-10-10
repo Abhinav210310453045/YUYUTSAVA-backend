@@ -9,9 +9,11 @@ Run:  .venv/bin/python -m pytest test/daemon/web/test_models_api.py
 from __future__ import annotations
 
 import asyncio
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import httpx
 
@@ -61,6 +63,14 @@ class _Api(unittest.IsolatedAsyncioTestCase):
     write_file = True
 
     async def asyncSetUp(self) -> None:
+        # The environment the daemon sees: none of the developer's, and only this
+        # folder's .env, never the checkout's own.
+        for patch in (
+            mock.patch.dict(os.environ, {}, clear=True),
+            mock.patch("yuyutsava.llm.config.leftovers.find_dotenv", return_value=""),
+        ):
+            patch.start()
+            self.addCleanup(patch.stop)
         self._tmp = tempfile.TemporaryDirectory()
         self.dir = Path(self._tmp.name)
         if self.write_file:
@@ -220,6 +230,26 @@ class Changing(_Api):
         r = await self.client.delete(f"/models/providers/work?revision={revision}")
         self.assertEqual(r.status_code, 422)
         self.assertIn("models.flash", r.text)
+
+
+class LeftoverVariables(_Api):
+    async def asyncSetUp(self) -> None:
+        await super().asyncSetUp()
+        (self.dir / ".env").write_text("LLM_PROVIDER=vertex\nVERTEX_MODEL=x\nKEEP=1\n")
+
+    async def test_are_named_with_the_file_they_are_in(self) -> None:
+        leftovers = (await self.status())["leftovers"]
+        self.assertEqual([item["name"] for item in leftovers], ["LLM_PROVIDER", "VERTEX_MODEL"])
+        self.assertEqual(leftovers[1]["files"], [str(self.dir / ".env")])
+        self.assertIn("models.toml", leftovers[1]["why"])
+
+    async def test_only_those_named_are_removed(self) -> None:
+        r = await self.client.post(
+            "/models/leftovers/remove", json={"names": ["VERTEX_MODEL", "KEEP"]}
+        )
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual([item["name"] for item in r.json()["leftovers"]], ["LLM_PROVIDER"])
+        self.assertEqual((self.dir / ".env").read_text(), "LLM_PROVIDER=vertex\nKEEP=1\n")
 
 
 class AConversationsModels(_Api):

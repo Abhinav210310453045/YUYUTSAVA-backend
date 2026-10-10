@@ -76,6 +76,7 @@ from yuyutsava.events.bus import EventBus
 from yuyutsava.events.config import EventsConfig, SourceConfig
 from yuyutsava.events.registry import SourceRegistry
 from yuyutsava.llm.config.detect import detect
+from yuyutsava.llm.config.leftovers import leftovers_on_disk, say_leftovers
 from yuyutsava.llm.config.store import ConfigStore
 from yuyutsava.llm.config.watch import ConfigSource, ConfigWatcher
 from yuyutsava.llm.providers.registry import discover as discover_models
@@ -889,6 +890,9 @@ async def build_models() -> ModelsSubsystem:
     await asyncio.to_thread(watcher.start)  # reads the files: off the loop
     models = TaskModels(source)
     logger.info("  models    : from %s", models.origin)
+    leftovers = await asyncio.to_thread(leftovers_on_disk, models_config_path(), secrets_path())
+    if leftovers:
+        logger.warning("models: %s", say_leftovers(leftovers))
     triage_settings = models.target("triage")
     orchestrator_settings = models.target("orchestrator")
     subagent_settings = models.target("subagent")
