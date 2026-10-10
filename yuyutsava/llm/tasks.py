@@ -53,4 +53,15 @@ def task_names() -> tuple[str, ...]:
     return tuple(task.name for task in TASKS)
 
 
-__all__ = ["SUBAGENT_PREFIX", "TASKS", "Task", "is_task", "task_names"]
+#: Tasks whose environment variables carry no ``<ROLE>_`` prefix.
+_ENV_ROLES: dict[str, str | None] = {"chat": None}
+
+
+def env_role(task: str) -> str | None:
+    """The ``<ROLE>_`` prefix *task* reads its model from in the environment."""
+    if task.startswith(SUBAGENT_PREFIX):
+        return "subagent"
+    return _ENV_ROLES.get(task, task)
+
+
+__all__ = ["SUBAGENT_PREFIX", "TASKS", "Task", "env_role", "is_task", "task_names"]

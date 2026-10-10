@@ -19,8 +19,9 @@ from unittest import mock
 from yuyutsava.llm.catalog import context_window
 from yuyutsava.llm.config.loader import ModelsConfigError, load_text
 from yuyutsava.llm.config.watch import ConfigSource
-from yuyutsava.llm.selection import TaskModels, env_role
+from yuyutsava.llm.selection import TaskModels
 from yuyutsava.llm.target import target_for
+from yuyutsava.llm.tasks import env_role
 
 MODELS = """\
 version = 1

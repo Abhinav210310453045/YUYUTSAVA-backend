@@ -36,7 +36,7 @@ from yuyutsava.llm.factory import model_handle
 from yuyutsava.llm.handle import ModelHandle
 from yuyutsava.llm.settings import llm_settings_from_env
 from yuyutsava.llm.target import ModelTarget, target_for
-from yuyutsava.llm.tasks import SUBAGENT_PREFIX, is_task
+from yuyutsava.llm.tasks import SUBAGENT_PREFIX, env_role, is_task
 
 if TYPE_CHECKING:
     from langchain_core.language_models import BaseChatModel
@@ -46,16 +46,6 @@ logger = logging.getLogger(__name__)
 #: The temperature a model is built at only to read its window — any value would do;
 #: this is the chat default, so the instance is the one a chat would get.
 _WINDOW_TEMPERATURE = 0.1
-
-#: The environment role each task reads on the route without ``models.toml``.
-_ENV_ROLES: dict[str, str | None] = {"chat": None}
-
-
-def env_role(task: str) -> str | None:
-    """The ``<ROLE>_`` prefix *task* reads its model from in the environment."""
-    if task.startswith(SUBAGENT_PREFIX):
-        return "subagent"
-    return _ENV_ROLES.get(task, task)
 
 
 def reference_for(config: ModelsConfig, task: str) -> str:
@@ -208,4 +198,4 @@ class TaskModels:
         logger.info("models config changed (now from %s); models rebuild on next use", self.origin)
 
 
-__all__ = ["TaskModels", "env_role", "reference_for"]
+__all__ = ["TaskModels", "reference_for"]
