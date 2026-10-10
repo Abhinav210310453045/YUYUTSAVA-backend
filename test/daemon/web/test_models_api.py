@@ -226,7 +226,8 @@ class AConversationsModels(_Api):
     async def test_are_its_own_and_checked(self) -> None:
         session = await self.sessions.create(workspace=self.dir, task="t")
         r = await self.client.get(f"/models/sessions/{session.id}")
-        self.assertEqual(r.json()["effective"], "work/gemini-3.5-flash")
+        # As models.toml names it, so the app's chooser can mark it current.
+        self.assertEqual(r.json()["effective"], "flash")
         r = await self.client.put(
             f"/models/sessions/{session.id}",
             json={"model": "work/gemini-3.5-flash-lite", "subagents": {"*": "flash"}},

@@ -64,6 +64,7 @@ from yuyutsava.llm.config.loader import ModelsConfigError
 from yuyutsava.llm.config.store import StaleWrite
 from yuyutsava.llm.factory import chat_model
 from yuyutsava.llm.failures import describe_model_failure
+from yuyutsava.llm.selection import reference_for
 from yuyutsava.storage.models import ModelChoice
 from yuyutsava.storage.sessions.store import SessionNotFound
 
@@ -191,9 +192,10 @@ async def _session_models(request: Request, session_id: str) -> SessionModelsOut
     except SessionNotFound as exc:
         raise NotFoundError(f"no conversation {session_id!r}") from exc
     task_models = getattr(request.app.state, "task_models", None)
-    effective = choice.model
-    if not effective and task_models is not None and task_models.config is not None:
-        effective = task_models.target("chat").reference
+    config = task_models.config if task_models is not None else None
+    # As models.toml names it — an alias or <provider>/<model id> — like the
+    # choices the app offers, so its chooser can mark the one in use.
+    effective = choice.model or (reference_for(config, "chat") if config is not None else "")
     return SessionModelsOut(
         session_id=session_id,
         model=choice.model,
