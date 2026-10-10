@@ -35,6 +35,10 @@ function AppShell() {
   // restoring all of that after an in-run reload — lives in NavProvider.
   // Hide/minimize keeps the renderer alive, so those need nothing at all.
   const { activePanel, switchTab, topRouteOf } = useNav()
+  // Chat and voice are not mounted while the daemon waits to be set up: there is
+  // nothing to talk to yet, and they would only collect connection errors.
+  const { status: models, refresh: refreshModels } = useModels()
+  const waiting = !!models?.setup_mode
   // Thread to resume rides the tab's route params: opening a row in Sessions
   // pins it, and it survives navigating away and back.
   const chatResumeId = topRouteOf('chat').params.resumeId || null
@@ -214,7 +218,7 @@ function AppShell() {
                 {activePanel === 'settings' && <SettingsPanel />}
               </div>
             )}
-            {visited.chat && (
+            {visited.chat && !waiting && (
               <div
                 style={{
                   flex: 1,
@@ -229,7 +233,7 @@ function AppShell() {
                 <ChatPanel resumeId={chatResumeId} active={activePanel === 'chat'} showContext />
               </div>
             )}
-            {visited.voice && (
+            {visited.voice && !waiting && (
               <div
                 style={{
                   flex: 1,
@@ -267,17 +271,10 @@ function AppShell() {
         </div>
 
         <InWindowToast />
-        <SetupGate />
+        {/* A daemon with no model it can use waits to be set up; until it comes back
+            as itself only the wizard can work, so it covers everything. */}
+        {waiting && <SetupWizard status={models} mode="setup" onDone={refreshModels} />}
       </div>
     </NotificationsProvider>
   )
-}
-
-// A daemon with no model it can use waits to be set up (setup mode). Until it is,
-// nothing else here works — so the setup wizard opens over everything, and goes
-// once the daemon comes back as itself.
-function SetupGate() {
-  const { status, refresh } = useModels()
-  if (!status?.setup_mode) return null
-  return <SetupWizard status={status} mode="setup" onDone={refresh} />
 }
