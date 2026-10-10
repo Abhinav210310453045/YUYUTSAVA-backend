@@ -1,11 +1,12 @@
 """The models config as the environment describes it.
 
 ``~/.yuyutsava/models.toml`` is where model configuration lives
-(docs/architecture/decisions/ADR-005-models-config.md). Until the environment
-cutover (design §7, M7), processes still choose their model from ``LLM_PROVIDER``
-and the variables of that provider, and this module turns those into a
+(docs/architecture/decisions/ADR-005-models-config.md). Until it exists,
+processes choose their model from ``LLM_PROVIDER`` and the variables of that
+provider, and this module turns those into a
 :class:`~yuyutsava.llm.target.ModelTarget` — so every model is built by the same
-providers, whichever way it was configured.
+providers, whichever way it was configured. Once it exists nothing here is read;
+the variables still set are named by :mod:`yuyutsava.llm.config.leftovers`.
 
 Each provider type's variables, their defaults and the message for a missing
 one are exactly those it has always had. A key is never copied out of the
@@ -66,6 +67,58 @@ _ALIASES = {
     "aws": "bedrock",
     "azure_openai": "azure",
 }
+
+#: What the readers below read to choose a model, keys apart. Once ``models.toml``
+#: exists none of them is read (:mod:`yuyutsava.llm.config.leftovers`).
+SETTING_VARIABLES: frozenset[str] = frozenset(
+    {
+        "LLM_PROVIDER",
+        "GROQ_BASE_URL",
+        "GROQ_MODEL",
+        "OPENROUTER_BASE_URL",
+        "OPENROUTER_HTTP_REFERER",
+        "OPENROUTER_APP_TITLE",
+        "OPENROUTER_MODEL",
+        "ANTHROPIC_MODEL",
+        "OLLAMA_MODEL",
+        "OPENAI_BASE_URL",
+        "OPENAI_MODEL",
+        "OPENAI_COMPATIBLE_BASE_URL",
+        "OPENAI_COMPATIBLE_MODEL",
+        "GOOGLE_MODEL",
+        "GOOGLE_THINKING_BUDGET",
+        "VERTEX_PROJECT",
+        "VERTEX_LOCATION",
+        "VERTEX_MODEL",
+        "VERTEX_THINKING_BUDGET",
+        "BEDROCK_REGION",
+        "BEDROCK_MODEL",
+        "AZURE_OPENAI_ENDPOINT",
+        "AZURE_OPENAI_DEPLOYMENT",
+        "AZURE_OPENAI_API_VERSION",
+        "AZURE_OPENAI_MODEL",
+        "MISTRAL_MODEL",
+        "COHERE_MODEL",
+    }
+)
+#: The keys the readers below read.
+KEY_VARIABLES: frozenset[str] = frozenset(
+    {
+        "GROQ_API_KEY",
+        "OPENROUTER_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "OPENAI_API_KEY",
+        "OPENAI_COMPATIBLE_API_KEY",
+        "GOOGLE_API_KEY",
+        "GEMINI_API_KEY",
+        "AZURE_OPENAI_API_KEY",
+        "MISTRAL_API_KEY",
+        "COHERE_API_KEY",
+    }
+)
+#: Read below too, but other programs read them as well (gcloud, the AWS SDKs,
+#: ``ollama``): never ours to call left over.
+SHARED_VARIABLES: frozenset[str] = frozenset({"GOOGLE_CLOUD_PROJECT", "AWS_REGION", "OLLAMA_HOST"})
 
 _OLLAMA_ENV_DEFAULT = "http://localhost:11434/v1"
 
@@ -357,4 +410,13 @@ _READERS: dict[str, Callable[[str | None], _Described]] = {
 }
 
 
-__all__ = ["PROVIDER_TYPES", "EnvSetup", "env_setup", "llm_settings_from_env", "provider_type_of"]
+__all__ = [
+    "KEY_VARIABLES",
+    "PROVIDER_TYPES",
+    "SETTING_VARIABLES",
+    "SHARED_VARIABLES",
+    "EnvSetup",
+    "env_setup",
+    "llm_settings_from_env",
+    "provider_type_of",
+]
