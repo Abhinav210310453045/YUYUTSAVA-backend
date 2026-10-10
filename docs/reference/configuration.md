@@ -1,11 +1,14 @@
 # Configuration Reference
 
-YUYUTSAVA reads three JSON config files from its state directory
-(`~/.yuyutsava/` by default, override with `YUYUTSAVA_HOME`). All three are
-optional — the system boots with sensible defaults if none exist.
+YUYUTSAVA reads its config files from its state directory (`~/.yuyutsava/`
+by default, override with `YUYUTSAVA_HOME`). All are optional — the system
+boots with sensible defaults if none exist, and without a model it waits for
+one to be set up.
 
 | File | Controls |
 |---|---|
+| `models.toml` | Every model provider, login and model; the default and each task's — see [Models](#models-modelstoml) |
+| `secrets.toml` | The keys `models.toml` names as `secret:<name>`; readable by its owner alone |
 | `mcp_config.json` | Which MCP servers start, and which agents see their tools |
 | `permissions.json` | Which tool calls skip the permission prompt, and daily caps |
 | `events_config.json` | Which event sources run and how they are tuned |
@@ -21,6 +24,40 @@ state directory itself holds, see
 [What lives in `~/.yuyutsava/`](#what-lives-in-yuyutsava-global-state);
 for how a long conversation stays inside the model's budget without losing
 anything, see [Context management](#context-management-what-the-agent-can-still-reach).
+
+---
+
+## Models (`models.toml`)
+
+One file says which providers YUYUTSAVA logs in to, which models it calls
+and which task uses which. Written by the setup wizards (`yuyutsava models
+setup`, the app), by `yuyutsava models …` and `/model`, or by hand — always
+through one store that keeps your comments, and refuses a change made from a
+stale read. A running CLI or daemon applies an edit from the next turn; an
+edit that does not load is reported and the last good file stays in use.
+
+| Table | What it holds |
+|---|---|
+| `[defaults] model` | The model every task uses unless given its own |
+| `[tasks]` | `chat` · `orchestrator` · `triage` · `subagent` (and `subagent.<name>`) · `compaction` · `tier_light` · `tier_standard` · `tier_heavy` |
+| `[providers.<name>]` | `type`, where it runs (`project`, `location`, `region`, `base_url`, …) and `auth = { method = … }` |
+| `[models.<alias>]` | `provider`, `id`, and overrides: `location`/`region`, `context_window`, `max_output`, `thinking`, `price`, `family`, `base_model` (Bedrock, Azure) |
+
+A model is named by its alias or as `<provider>/<model id>`. Keys are
+references, never values: `secret:<name>` (`secrets.toml`), `env:VARIABLE` or
+`file:<path>`. Every setting, with its allowed values: `yuyutsava models
+schema` (JSON Schema). `yuyutsava models doctor` checks the file and its
+secrets without calling anyone.
+
+**Before `models.toml` exists** the models come from the environment:
+`LLM_PROVIDER` and that provider's variables, with `<ROLE>_` overrides per
+task (`.env.example`, section 1). **Once it exists they are not read.** The
+CLI's start, the daemon's log, `models doctor` and the app's Settings → Models
+name any still set; `yuyutsava models clean-env` (or the app) removes them
+from the `.env` they are in, keeping every other line. A key the file reads
+through `env:` stays, and so does `GROQ_API_KEY`, which voice
+speech-to-text also reads. The embedder's `EMBED_*` variables are not model
+settings and are unaffected.
 
 ---
 
@@ -143,6 +180,7 @@ reads any more.
 | Entry | When it is live |
 |---|---|
 | `mcp_config.json`, `permissions.json`, `events_config.json` | Always — the three config files above. |
+| `models.toml`, `secrets.toml` | Always. The models, and the keys they name ([Models](#models-modelstoml)). |
 | `.env` | Always. App-managed overrides the daemon loads *after* the project `.env`. |
 | `skills/<name>/SKILL.md` | Always. Personal-scope skills (`sk_write_skill` writes here). |
 | `agents/<agent>/memory/` | Always. Per-agent learned behaviour (`um_*`), with `MEMORY.md` as the injected index. |

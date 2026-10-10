@@ -42,7 +42,7 @@ git clone https://github.com/Abhinav210310453045/YUYUTSAVA-backend.git
 cd YUYUTSAVA-backend
 uv sync
 
-cp .env.example .env      # then set ONE provider key, e.g. GROQ_API_KEY
+uv run yuyutsava models setup   # connect a model provider, step by step
 ```
 
 Run a task:
@@ -51,8 +51,11 @@ Run a task:
 uv run yuyutsava "list every Python file in this repo and count the lines"
 ```
 
-`.env.example` is the configuration reference — 16 numbered sections, each
-stating its own defaults. **Everything in it is optional except one API key.**
+The first chat offers the same setup if you skip it. The desktop app has its
+own setup wizard and opens it whenever no model is set up.
+
+`.env.example` is the reference for everything else — 16 numbered sections,
+each stating its own defaults, all of it optional.
 
 ### Installing the CLI
 
@@ -71,29 +74,58 @@ unlocked install once took every MCP server down). If you have one, run
 `pipx uninstall yuyutsava` first. The daemon logs its dependency versions at
 start-up and warns when they are not the locked ones.
 
-### Choosing a model provider
+### Choosing models
 
-Set `LLM_PROVIDER` to any of:
+Which providers, logins and models YUYUTSAVA uses lives in one file,
+`~/.yuyutsava/models.toml`. Fill it with the setup wizard (`yuyutsava models
+setup`, or the desktop app), by hand, or a bit of both — a running YUYUTSAVA
+picks up a change without a restart:
 
-| Kind | Values |
+```toml
+version = 1
+
+[defaults]
+model = "gemini-flash"               # every task without its own model uses this
+
+[tasks]                              # optional: cheap work on a cheap model
+triage = "local/llama3.2:3b"         # <provider>/<model id> needs no alias
+
+[providers.google]
+type     = "vertex"
+project  = "my-project"
+location = "asia-south1"
+auth     = { method = "adc" }        # `gcloud auth application-default login`
+
+[providers.local]
+type = "ollama"
+
+[models.gemini-flash]                # a short name, and settings for one model
+provider = "google"
+id       = "gemini-3.5-flash"
+```
+
+Keys never go in it: write `secret:<name>` (kept in `~/.yuyutsava/secrets.toml`,
+readable by you alone — `yuyutsava models secrets set <name>`), `env:VARIABLE`
+or `file:<path>`.
+
+| Provider types | |
 |---|---|
 | OpenAI-compatible (no extra install) | `groq` · `openrouter` · `ollama` · `openai` · `openai_compatible` |
-| Native SDK (`uv sync --extra <name>`) | `anthropic` · `google` (alias `gemini`) · `vertex` · `bedrock` (alias `aws`) · `azure` · `mistral` · `cohere` |
+| Native SDK (`uv sync --extra <name>`) | `anthropic` · `google` · `vertex` · `bedrock` · `azure` · `mistral` · `cohere` |
 
 `openai_compatible` plus a base URL covers xAI, DeepSeek, Together, Fireworks,
 Perplexity, Cerebras, DeepInfra and anything else speaking that API. `ollama`
 runs fully local with no key.
 
-Any role can override the main provider, so cheap work can go to a cheap model:
+`yuyutsava models` lists, checks and changes it: `list`, `doctor`, `discover`,
+`verify`, `use <model> [--task …]`, `alias`, `edit`, `schema`, and more
+(`yuyutsava models --help`). In a chat, `/model` — or the model chip in the
+app — moves that conversation to another model from its next message.
 
-```bash
-LLM_PROVIDER=anthropic
-TRIAGE_LLM_PROVIDER=ollama
-TRIAGE_OLLAMA_MODEL=llama3.2:3b
-```
-
-Roles: `triage` · `orchestrator` · `subagent` · `compaction` · `tier_light` ·
-`cli` · `embed`.
+**Without `models.toml`**, models still come from the environment, as before:
+`LLM_PROVIDER` and that provider's variables (`.env.example`, section 1). Once
+the file exists those are not read; YUYUTSAVA names any still set, and
+`yuyutsava models clean-env` removes them from the `.env` they are in.
 
 ---
 
@@ -201,10 +233,11 @@ semantic search, behind one dialect layer.
 
 ## Configuration
 
-Three optional JSON files in `~/.yuyutsava/` (override with `YUYUTSAVA_HOME`):
+Optional files in `~/.yuyutsava/` (override with `YUYUTSAVA_HOME`):
 
 | File | Controls |
 |---|---|
+| `models.toml` | Providers, logins, the default model and each task's ([Choosing models](#choosing-models)); its keys in `secrets.toml` |
 | `mcp_config.json` | Which MCP servers start; which agents see their tools. A trusted workspace can add its own in `<workspace>/.yuyutsava/mcp_config.json` |
 | `permissions.json` | Which tool calls skip the prompt; daily caps |
 | `events_config.json` | Which event sources run, and their tuning |
