@@ -19,67 +19,96 @@ const FRAMES = {
   models: 'onModels',
 }
 
+// Every SSEClient in this window shares one EventSource. Chromium keeps at most
+// six HTTP/1.1 connections to a host; a stream per reader held them all open,
+// and every other request to the daemon queued behind them, never answered.
+const stream = { es: null, clients: new Set(), connected: false, retryDelay: 1000, timer: null }
+
+function open() {
+  const es = new EventSource(`${getBase()}/stream`)
+  stream.es = es
+
+  es.addEventListener('hello', () => {
+    stream.retryDelay = 1000
+    stream.connected = true
+    deliver((c) => c.handlers.onConnected?.())
+  })
+
+  for (const [name, handler] of Object.entries(FRAMES)) {
+    es.addEventListener(name, (e) => dispatch(name, handler, e.data))
+  }
+
+  es.onerror = () => {
+    es.close()
+    stream.es = null
+    stream.connected = false
+    deliver((c) => c.handlers.onDisconnected?.())
+    if (stream.clients.size) scheduleReconnect()
+  }
+}
+
+function close() {
+  clearTimeout(stream.timer)
+  stream.timer = null
+  stream.es?.close()
+  stream.es = null
+  stream.connected = false
+  stream.retryDelay = 1000
+}
+
+// Each client gets the frame even when another's handler throws; the first
+// exception is then rethrown, so a handler's bug surfaces rather than
+// disappearing with the frame.
+function deliver(call) {
+  let failure = null
+  for (const client of [...stream.clients]) {
+    try {
+      call(client)
+    } catch (err) {
+      failure ??= err
+    }
+  }
+  if (failure) throw failure
+}
+
+// A frame that isn't JSON is dropped with a warning naming it.
+function dispatch(name, handler, raw) {
+  let data
+  try {
+    data = JSON.parse(raw)
+  } catch (err) {
+    console.warn(`sse: dropped a malformed '${name}' frame`, err)
+    return
+  }
+  deliver((c) => c.handlers[handler]?.(data))
+}
+
+function scheduleReconnect() {
+  stream.timer = setTimeout(() => {
+    stream.timer = null
+    if (stream.clients.size && !stream.es) open()
+  }, stream.retryDelay)
+  stream.retryDelay = Math.min(stream.retryDelay * 2, 10000)
+}
+
 export class SSEClient {
   constructor(handlers) {
     this.handlers = handlers
-    this._es = null
-    this._retryDelay = 1000
-    this._stopped = false
   }
 
   connect() {
-    if (this._es) return
-    this._stopped = false
-    this._open()
+    if (stream.clients.has(this)) return
+    stream.clients.add(this)
+    if (stream.connected) {
+      // The stream said hello before this client joined: greet it on its own.
+      queueMicrotask(() => stream.clients.has(this) && this.handlers.onConnected?.())
+    } else if (!stream.es && !stream.timer) {
+      open()
+    }
   }
 
   disconnect() {
-    this._stopped = true
-    if (this._es) {
-      this._es.close()
-      this._es = null
-    }
-  }
-
-  _open() {
-    const url = `${getBase()}/stream`
-    this._es = new EventSource(url)
-
-    this._es.addEventListener('hello', () => {
-      this._retryDelay = 1000
-      this.handlers.onConnected?.()
-    })
-
-    for (const [name, handler] of Object.entries(FRAMES)) {
-      this._es.addEventListener(name, (e) => this._dispatch(name, handler, e.data))
-    }
-
-    this._es.onerror = () => {
-      this._es?.close()
-      this._es = null
-      this.handlers.onDisconnected?.()
-      if (!this._stopped) this._scheduleReconnect()
-    }
-  }
-
-  // A frame that isn't JSON is dropped with a warning naming it. A handler's
-  // own exception is not caught here: it surfaces as an uncaught error rather
-  // than disappearing with the frame.
-  _dispatch(name, handler, raw) {
-    let data
-    try {
-      data = JSON.parse(raw)
-    } catch (err) {
-      console.warn(`sse: dropped a malformed '${name}' frame`, err)
-      return
-    }
-    this.handlers[handler]?.(data)
-  }
-
-  _scheduleReconnect() {
-    setTimeout(() => {
-      if (!this._stopped) this._open()
-    }, this._retryDelay)
-    this._retryDelay = Math.min(this._retryDelay * 2, 10000)
+    stream.clients.delete(this)
+    if (!stream.clients.size) close()
   }
 }
