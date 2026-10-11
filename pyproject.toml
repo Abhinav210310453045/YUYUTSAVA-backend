@@ -85,6 +85,9 @@ dependencies = [
     "pyperclip>=1.11.0",
     "pynput>=1.8.1",
     "pyobjc-framework-cocoa>=12.1 ; sys_platform == 'darwin'",
+    # The macOS user-presence check (Touch ID or the login password):
+    # platform/user_presence.py.
+    "pyobjc-framework-localauthentication>=12.1 ; sys_platform == 'darwin'",
     "portalocker>=2.10",
     "langfuse>=4",
     "aiosqlite>=0.20.0",

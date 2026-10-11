@@ -13,6 +13,8 @@ Everything else in the codebase stays OS-invariant by routing through this packa
   admin osascript, pkexec) behind one interface.
 * :mod:`~yuyutsava.platform.files` — replacing a file in one step, optionally
   readable by its owner alone (mode 0600, or an owner-only ACL on Windows).
+* :mod:`~yuyutsava.platform.user_presence` — asking the OS to confirm the owner
+  is at the computer (Touch ID or password, Windows Hello, polkit).
 
 The names below are re-exported because other modules use them from here — some
 through ``from yuyutsava import platform``; import anything else, such as
