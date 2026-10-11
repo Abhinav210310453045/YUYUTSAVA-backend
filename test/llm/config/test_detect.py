@@ -26,13 +26,14 @@ class _Machine(unittest.TestCase):
         self.home = Path(self._tmp.name)
         (self.home / "gcloud").mkdir()
         self.environ = {"CLOUDSDK_CONFIG": str(self.home / "gcloud"), "PATH": ""}
+        self.dotenv_files: list[Path] = []
 
     def tearDown(self) -> None:
         self._tmp.cleanup()
 
     def found(self, probe=_nothing_answers):
         with mock.patch.dict(os.environ, self.environ, clear=True):
-            return detect(home=self.home, probe=probe)
+            return detect(home=self.home, probe=probe, dotenv_files=self.dotenv_files)
 
 
 class AnEmptyMachine(_Machine):
@@ -55,6 +56,19 @@ class TheCurrentSetup(_Machine):
         self.assertEqual(first.connection["auth"]["key"], "env:GROQ_API_KEY")
         self.assertNotIn("gsk-1", json.dumps(dict(first.connection)))
 
+    def test_says_which_file_it_is_set_in_and_its_model(self) -> None:
+        env = self.home / ".env"
+        env.write_text("LLM_PROVIDER=groq\n")
+        self.dotenv_files = [env]
+        self.environ.update({"LLM_PROVIDER": "groq", "GROQ_API_KEY": "gsk-1"})
+        origin = self.found()[0].origin
+        self.assertIn("what YUYUTSAVA uses today: llama-3.3-70b-versatile", origin)
+        self.assertIn(f"set in {env}", origin)
+
+    def test_set_outside_any_file_says_so(self) -> None:
+        self.environ.update({"LLM_PROVIDER": "groq", "GROQ_API_KEY": "gsk-1"})
+        self.assertIn("your terminal's environment", self.found()[0].origin)
+
     def test_an_incomplete_one_is_skipped(self) -> None:
         self.environ["LLM_PROVIDER"] = "vertex"  # no project
         self.assertEqual([f for f in self.found() if "LLM_PROVIDER" in f.origin], [])
@@ -76,6 +90,8 @@ class AGoogleLogin(_Machine):
         vertex = self.found()[0]
         self.assertEqual(vertex.connection["auth"], {"method": "adc"})
         self.assertEqual(vertex.connection["project"], "p-1")
+        self.assertIn("Google account", vertex.origin)
+        self.assertIn("project p-1", vertex.origin)
 
     def test_a_service_account_key(self) -> None:
         key = self._credentials("service_account")
@@ -116,6 +132,13 @@ class ARunningOllama(_Machine):
         ollama = self.found(probe=answers)[0]
         self.assertEqual((ollama.type, ollama.model), ("ollama", "qwen3:8b"))
         self.assertEqual(dict(ollama.connection), {"type": "ollama"})
+        self.assertIn("1 model downloaded (qwen3:8b)", ollama.origin)
+
+    def test_with_only_an_embedding_model_is_not_offered(self) -> None:
+        def answers(url: str):
+            return {"models": [{"name": "nomic-embed-text:latest"}]}
+
+        self.assertEqual(self.found(probe=answers), [])
 
 
 class ApiKeys(_Machine):

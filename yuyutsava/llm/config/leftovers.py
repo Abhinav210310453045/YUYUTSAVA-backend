@@ -63,8 +63,8 @@ class Leftover:
     def why(self) -> str:
         """Why it can go, in a phrase."""
         if self.kind == "key":
-            return "secrets.toml keeps this key now"
-        return "models.toml decides this now"
+            return "not needed any more — secrets.toml keeps this key now"
+        return "not used any more — models.toml sets this now"
 
 
 def env_files(home: Path) -> tuple[Path, ...]:
@@ -148,7 +148,7 @@ def say_leftovers(leftovers: Sequence[Leftover]) -> str:
     names = ", ".join(leftover.name for leftover in leftovers)
     files = sorted({str(path) for leftover in leftovers for path in leftover.files})
     where = f" (in {', '.join(files)})" if files else ""
-    return f"{names}{where} — not read: models.toml decides the models now"
+    return f"{names}{where} — not used any more: your models are set in models.toml now"
 
 
 def remove_leftovers(

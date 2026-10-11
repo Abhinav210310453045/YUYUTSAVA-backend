@@ -8,7 +8,7 @@ someone who already has a working login does not retype it:
 * **a Google login** — gcloud's application-default credentials, or a
   service-account key named by ``GOOGLE_APPLICATION_CREDENTIALS``;
 * **AWS profiles** — ``~/.aws/config`` and ``~/.aws/credentials``;
-* **a running Ollama**;
+* **a running Ollama** with a chat model downloaded;
 * **API keys** — the ``*_API_KEY`` variables each provider reads.
 
 Each :class:`Finding` is a ``[providers.<name>]`` table ready to write. Keys stay
@@ -25,12 +25,16 @@ import json
 import logging
 import os
 import urllib.request
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from dotenv import dotenv_values
+
+from yuyutsava.llm.config.leftovers import env_files
 from yuyutsava.llm.settings import env_setup
+from yuyutsava.storage.paths import models_config_path
 
 logger = logging.getLogger("yuyutsava.llm.config.detect")
 
@@ -58,7 +62,8 @@ class Finding:
     name: str
     #: Its ``type``.
     type: str
-    #: Where it was found, said for a person: "your .env (LLM_PROVIDER=vertex)".
+    #: Where it was found, said for someone new to all of it, with the file it is
+    #: in: "what YUYUTSAVA uses today: gemini-3.5-flash, set in ~/project/.env".
     origin: str
     #: The ``[providers.<name>]`` table. Keys are ``env:`` references.
     connection: Mapping[str, Any]
@@ -72,17 +77,26 @@ Probe = Callable[[str], Any]
 """GET a URL and return its parsed JSON; raise when nothing answers."""
 
 
-def detect(*, home: Path | None = None, probe: Probe | None = None) -> list[Finding]:
+def detect(
+    *,
+    home: Path | None = None,
+    probe: Probe | None = None,
+    dotenv_files: Sequence[Path] | None = None,
+) -> list[Finding]:
     """Everything found, the current setup first; one finding per provider and login.
 
     Reads this process's environment — after ``.env`` is loaded, which is how a
-    ``.env`` setup is found.
+    ``.env`` setup is found. *dotenv_files* are the ``.env`` files YUYUTSAVA
+    loads (default: :func:`~yuyutsava.llm.config.leftovers.env_files`), read
+    only to say which one a setting is in.
     """
     environ = os.environ
     home = Path.home() if home is None else home
+    if dotenv_files is None:
+        dotenv_files = env_files(models_config_path().parent)
     found: list[Finding] = []
     for finding in (
-        *current_setup(environ),
+        *current_setup(environ, dotenv_files),
         *google_login(environ),
         *aws_profiles(environ, home),
         *ollama(environ, probe or _get_json),
@@ -98,7 +112,7 @@ def _same_login(finding: Finding) -> tuple[str, str]:
     return finding.type, json.dumps(finding.connection.get("auth"), sort_keys=True)
 
 
-def current_setup(environ: Mapping[str, str]) -> list[Finding]:
+def current_setup(environ: Mapping[str, str], dotenv_files: Sequence[Path] = ()) -> list[Finding]:
     """What ``LLM_PROVIDER`` describes, when it is set and complete."""
     chosen = environ.get("LLM_PROVIDER", "").strip()
     if not chosen:
@@ -111,7 +125,8 @@ def current_setup(environ: Mapping[str, str]) -> list[Finding]:
         Finding(
             name=setup.type,
             type=setup.type,
-            origin=f"your current setup (LLM_PROVIDER={chosen})",
+            origin=f"what YUYUTSAVA uses today: {setup.model}, "
+            f"{where_set('LLM_PROVIDER', dotenv_files)} (LLM_PROVIDER={chosen})",
             connection=setup.connection,
             model=setup.model,
             model_settings=setup.model_settings or {},
@@ -128,15 +143,15 @@ def google_login(environ: Mapping[str, str]) -> list[Finding]:
     key_file = environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
     if key_file and _credential_type(Path(key_file).expanduser()) == "service_account":
         auth: dict[str, Any] = {"method": "service_account", "key_file": key_file}
-        origin = f"a service-account key ({key_file})"
+        origin = f"a service-account key file, {key_file}"
     elif key_file and _credential_type(Path(key_file).expanduser()) is not None:
         # A user login saved to a file (``authorized_user``): Google's own lookup
         # reads it through this variable, which is what the adc method uses.
         auth = {"method": "adc"}
-        origin = f"your Google login in {key_file} (GOOGLE_APPLICATION_CREDENTIALS)"
+        origin = f"your Google account, signed in through {key_file}"
     elif (adc := _adc_path()) is not None and adc.is_file():
         auth = {"method": "adc"}
-        origin = "your gcloud login (application-default credentials)"
+        origin = "your Google account, signed in with gcloud on this computer"
     else:
         return []
     project = (
@@ -146,6 +161,7 @@ def google_login(environ: Mapping[str, str]) -> list[Finding]:
         return []
     location = environ.get("VERTEX_LOCATION") or "global"
     connection = {"type": "vertex", "project": project, "location": location, "auth": auth}
+    origin = f"{origin} — project {project}"
     return [Finding("vertex", "vertex", origin, connection, model="gemini-3.5-flash")]
 
 
@@ -168,7 +184,8 @@ def aws_profiles(environ: Mapping[str, str], home: Path) -> list[Finding]:
         Finding(
             name="bedrock" if name == "default" else f"bedrock-{name}",
             type="bedrock",
-            origin=f"your AWS profile {name!r}",
+            origin=f"the AWS profile '{name}' in ~/.aws, region "
+            f"{region or environ.get('AWS_REGION') or 'us-east-1'}",
             connection={
                 "type": "bedrock",
                 "region": region or environ.get("AWS_REGION") or "us-east-1",
@@ -195,16 +212,20 @@ def ollama(environ: Mapping[str, str], probe: Probe) -> list[Finding]:
         for m in (tags or {}).get("models", [])
         if (name := m.get("name")) and "embed" not in name
     ]
+    if not models:  # running, but with nothing it could chat with
+        logger.debug("Ollama at %s has no chat model", host)
+        return []
     connection: dict[str, Any] = {"type": "ollama"}
     if host != _OLLAMA_DEFAULT:
         connection["base_url"] = host
+    count = f"{len(models)} models" if len(models) > 1 else "1 model"
     return [
         Finding(
             "ollama",
             "ollama",
-            f"Ollama running at {host}",
+            f"running on this computer, with {count} downloaded ({', '.join(models[:3])})",
             connection,
-            model=models[0] if models else None,
+            model=models[0],
         )
     ]
 
@@ -215,7 +236,7 @@ def api_keys(environ: Mapping[str, str]) -> list[Finding]:
         Finding(
             name=provider_type,
             type=provider_type,
-            origin=f"the {variable} variable",
+            origin=f"the key in your {variable} setting",
             connection={
                 "type": provider_type,
                 "auth": {"method": "api_key", "key": f"env:{variable}"},
@@ -224,6 +245,24 @@ def api_keys(environ: Mapping[str, str]) -> list[Finding]:
         for variable, provider_type in API_KEY_VARIABLES
         if environ.get(variable, "").strip()
     ]
+
+
+def where_set(name: str, dotenv_files: Sequence[Path]) -> str:
+    """Where the setting *name* comes from, for a person: "set in ~/project/.env"."""
+    for path in reversed(dotenv_files):  # the one loaded last wins
+        try:
+            if name in dotenv_values(path):
+                return f"set in {_short(path)}"
+        except OSError:
+            continue
+    return "set in your terminal's environment"
+
+
+def _short(path: Path) -> str:
+    """*path* with the home folder as ``~``."""
+    home = str(Path.home())
+    text = str(path)
+    return "~" + text[len(home) :] if text.startswith(home + os.sep) else text
 
 
 def _credential_type(path: Path) -> str | None:
@@ -262,4 +301,4 @@ def _get_json(url: str) -> Any:
         return json.loads(response.read())
 
 
-__all__ = ["API_KEY_VARIABLES", "Finding", "detect"]
+__all__ = ["API_KEY_VARIABLES", "Finding", "detect", "where_set"]
