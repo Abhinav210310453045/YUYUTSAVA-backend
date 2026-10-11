@@ -67,6 +67,7 @@ export default function SetupWizard({ status, mode = 'setup', onDone, onClose })
       }))
       checked.push({
         name,
+        label: f.label,
         connection: result.connection || f.connection,
         model: f.model,
         model_settings: f.model_settings,
@@ -115,7 +116,7 @@ export default function SetupWizard({ status, mode = 'setup', onDone, onClose })
               flex: 1,
             }}
           >
-            {mode === 'add' ? 'Add a provider' : 'Connect a model'}
+            {mode === 'add' ? 'Connect another provider' : 'Connect YUYUTSAVA to an AI model'}
           </div>
           {onClose && !status?.setup_mode && (
             <Button small onClick={onClose}>

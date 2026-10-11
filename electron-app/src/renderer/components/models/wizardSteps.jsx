@@ -1,6 +1,15 @@
 import React, { useState } from 'react'
 import { aliasFor } from './aliasFor'
-import { Availability, Button, Muted, Panel, Problem, TextInput } from './ui'
+import {
+  Availability,
+  Button,
+  Muted,
+  Panel,
+  Problem,
+  TextInput,
+  contextWindow,
+  found as foundModels,
+} from './ui'
 import { actions, heading, optionRow } from './wizardStyles'
 
 // The setup wizard's steps that choose: what this machine has, the providers
@@ -9,12 +18,12 @@ import { actions, heading, optionRow } from './wizardStyles'
 const OFFERED = 12
 
 export function Found({ found, picked, setPicked, busy, onCheck, onManual }) {
-  if (found === null) return <Muted>Looking at what this machine already has…</Muted>
+  if (found === null) return <Muted>Looking at what this computer already has…</Muted>
   const toggle = (i) =>
     setPicked((cur) => (cur.includes(i) ? cur.filter((x) => x !== i) : [...cur, i]))
   return (
     <>
-      <div style={heading}>Found on this machine</div>
+      <div style={heading}>Found on this computer — which should YUYUTSAVA use?</div>
       {found.map((f, i) => (
         <Panel key={`${f.name}-${i}`} style={{ cursor: 'pointer' }}>
           <label style={{ display: 'flex', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
@@ -25,7 +34,7 @@ export function Found({ found, picked, setPicked, busy, onCheck, onManual }) {
         </Panel>
       ))}
       <div style={actions}>
-        <Button onClick={onManual}>set up a provider myself</Button>
+        <Button onClick={onManual}>connect a different provider</Button>
         <Button primary disabled={busy || !picked.length} onClick={onCheck}>
           {busy ? 'checking…' : 'check and continue'}
         </Button>
@@ -38,7 +47,7 @@ export function Review({ providers, setProviders, onManual, onNext, busy, mode }
   const drop = (name) => setProviders((cur) => cur.filter((p) => p.name !== name))
   return (
     <>
-      <div style={heading}>Providers</div>
+      <div style={heading}>Your providers</div>
       {providers.map((p) => (
         <Panel key={p.name}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -46,28 +55,28 @@ export function Review({ providers, setProviders, onManual, onNext, busy, mode }
               {p.check?.ok ? '✓' : '!'}
             </span>
             <span style={{ color: 'var(--text-primary)', flex: 1 }}>
-              {p.name} <Muted style={{ display: 'inline' }}>· {p.connection.type}</Muted>
+              {p.label || p.connection.type}
+              {p.name !== p.connection.type && (
+                <Muted style={{ display: 'inline' }}> (saved as {p.name})</Muted>
+              )}
             </span>
             <Button small onClick={() => drop(p.name)}>
               leave out
             </Button>
           </div>
           {p.check?.ok ? (
-            <Muted style={{ marginTop: 4 }}>
-              logged in — {p.check.models.length} models,{' '}
-              {p.check.models.filter((m) => m.availability === 'available').length} ready
-            </Muted>
+            <Muted style={{ marginTop: 4 }}>works: {foundModels(p.check.models)}</Muted>
           ) : (
             <div style={{ marginTop: 4 }}>
               <Problem>{p.check?.problem || 'not checked'}</Problem>
               {p.check?.fix && <Muted>{p.check.fix}</Muted>}
-              <Muted>It can be kept and fixed later.</Muted>
+              <Muted>You can keep it and fix the login later.</Muted>
             </div>
           )}
         </Panel>
       ))}
       <div style={actions}>
-        <Button onClick={onManual}>add another provider</Button>
+        <Button onClick={onManual}>connect another provider</Button>
         <Button primary disabled={busy || !providers.length} onClick={onNext}>
           {mode === 'add' ? (busy ? 'saving…' : 'save') : 'continue'}
         </Button>
@@ -79,28 +88,33 @@ export function Review({ providers, setProviders, onManual, onNext, busy, mode }
 export function ChooseDefault({ providers, busy, onBack, onSave }) {
   const options = []
   for (const p of providers) {
+    const listed = p.check?.models || []
     if (p.model) {
       const hasSettings = p.model_settings && Object.keys(p.model_settings).length
       options.push({
         ref: hasSettings ? aliasFor(p.model) : `${p.name}/${p.model}`,
-        hint: 'what this machine uses now',
+        shown: p.model,
+        label: p.label,
+        hint: 'what YUYUTSAVA uses today',
+        model: listed.find((m) => m.id === p.model),
       })
     }
-    for (const m of (p.check?.models || [])
-      .filter((x) => x.availability === 'available')
-      .slice(0, OFFERED)) {
-      const ref = `${p.name}/${m.id}`
-      if (!options.some((o) => o.ref === ref)) options.push({ ref, model: m })
+    for (const m of listed.filter((x) => x.availability === 'available').slice(0, OFFERED)) {
+      // The model in use today is offered once, as itself, above.
+      if (m.id !== p.model)
+        options.push({ ref: `${p.name}/${m.id}`, shown: m.id, label: p.label, model: m })
     }
   }
   const [chosen, setChosen] = useState(options[0]?.ref || '')
   const [typed, setTyped] = useState('')
-  const value = chosen === '__typed' ? typed : chosen
+  // A name typed on its own is taken to be on the first provider.
+  const asTyped = typed.includes('/') || !providers.length ? typed : `${providers[0].name}/${typed}`
+  const value = chosen === '__typed' ? asTyped.trim() && asTyped : chosen
   return (
     <>
-      <div style={heading}>Which model should YUYUTSAVA use by default?</div>
+      <div style={heading}>Which model should YUYUTSAVA use?</div>
       <Muted style={{ marginBottom: 10 }}>
-        Every task uses it unless given its own — change that in Settings → Models.
+        You can change it any time — in a chat with the model chip, or in Settings → Models.
       </Muted>
       <div style={{ maxHeight: 300, overflowY: 'auto', marginBottom: 8 }}>
         {options.map((o) => (
@@ -110,13 +124,12 @@ export function ChooseDefault({ providers, busy, onBack, onSave }) {
             <span
               style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-primary)' }}
             >
-              {o.ref}
+              {o.shown}
             </span>
-            {o.hint && <Muted style={{ display: 'inline' }}>{o.hint}</Muted>}
+            {o.label && <Muted style={{ display: 'inline' }}>· {o.label}</Muted>}
+            {o.hint && <Muted style={{ display: 'inline' }}>— {o.hint}</Muted>}
             {o.model?.context_window && (
-              <Muted style={{ display: 'inline' }}>
-                {Math.round(o.model.context_window / 1000)}k
-              </Muted>
+              <Muted style={{ display: 'inline' }}>— {contextWindow(o.model.context_window)}</Muted>
             )}
           </label>
         ))}
@@ -127,7 +140,7 @@ export function ChooseDefault({ providers, busy, onBack, onSave }) {
             onChange={() => setChosen('__typed')}
           />
           <span style={{ fontSize: 12, color: 'var(--text-secondary)', flexShrink: 0 }}>
-            type one
+            another model:
           </span>
           <TextInput
             value={typed}
@@ -135,7 +148,7 @@ export function ChooseDefault({ providers, busy, onBack, onSave }) {
               setTyped(v)
               setChosen('__typed')
             }}
-            placeholder="provider/model-id"
+            placeholder="its name, e.g. gemini-3.5-flash"
           />
         </label>
       </div>

@@ -165,7 +165,7 @@ export function Leftovers({ leftovers, onRemove }) {
   return (
     <Panel style={{ borderColor: 'rgba(var(--accent-rgb), 0.35)' }}>
       <div style={{ fontSize: 12, color: 'var(--text-primary)', marginBottom: 6 }}>
-        Set, but not read now that models.toml decides
+        These settings aren’t used any more, now that your models are set up here
       </div>
       {leftovers.map((l) => (
         <Muted key={l.name} style={{ marginBottom: 2 }}>

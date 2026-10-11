@@ -1,15 +1,19 @@
 import React, { useState } from 'react'
 import { checkProvider } from '../../api/models'
-import { Button, Labelled, Muted, Panel, Problem, TextInput } from './ui'
+import { Button, Labelled, Muted, Panel, Problem, TextInput, found } from './ui'
 import { actions, card, heading } from './wizardStyles'
 
 // A provider by hand: its type, the settings that type needs, how it logs in —
-// asked from GET /models/catalog, the same forms the CLI wizard asks from.
+// asked from GET /models/catalog, the same forms the CLI wizard asks from. It is
+// named for the person (freeName), never by them: the name only tells two
+// connections of one kind apart.
+
+export const capitalised = (label) => label.charAt(0).toUpperCase() + label.slice(1)
 
 export default function Manual({ catalog, freeName, onAdd, onBack }) {
   const [type, setType] = useState('')
   const form = catalog.find((f) => f.type === type)
-  const [name, setName] = useState('')
+  const [name, setName] = useState('') // set by choose(): freeName(type)
   const [settings, setSettings] = useState({})
   const [method, setMethod] = useState('')
   const [fields, setFields] = useState({})
@@ -57,11 +61,13 @@ export default function Manual({ catalog, freeName, onAdd, onBack }) {
   if (!form) {
     return (
       <>
-        <div style={heading}>Which provider?</div>
+        <div style={heading}>Which provider do you want to connect?</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           {catalog.map((f) => (
             <div key={f.type} onClick={() => choose(f.type)} className="tap-pop" style={card}>
-              <div style={{ color: 'var(--text-primary)', fontSize: 13 }}>{f.label}</div>
+              <div style={{ color: 'var(--text-primary)', fontSize: 13 }}>
+                {capitalised(f.label)}
+              </div>
               <Muted style={{ marginTop: 3 }}>{f.introduction}</Muted>
             </div>
           ))}
@@ -77,11 +83,8 @@ export default function Manual({ catalog, freeName, onAdd, onBack }) {
   return (
     <>
       <div style={heading}>
-        {form.label} <Muted style={{ display: 'inline' }}>— {form.introduction}</Muted>
+        {capitalised(form.label)} <Muted style={{ display: 'inline' }}>— {form.introduction}</Muted>
       </div>
-      <Labelled label="Name" hint="how models.toml and the pickers call it">
-        <TextInput value={name} onChange={setName} />
-      </Labelled>
       {form.settings.map((s) => (
         <Labelled key={s.name} label={s.question}>
           <TextInput
@@ -91,7 +94,7 @@ export default function Manual({ catalog, freeName, onAdd, onBack }) {
         </Labelled>
       ))}
       {form.logins.length > 1 && (
-        <Labelled label="How do you log in?">
+        <Labelled label={`How should YUYUTSAVA log in to ${form.label}?`}>
           {form.logins.map((l) => (
             <label
               key={l.method}
@@ -117,7 +120,7 @@ export default function Manual({ catalog, freeName, onAdd, onBack }) {
         <Labelled
           key={f.name}
           label={f.question}
-          hint={f.secret ? 'kept in secrets.toml, never shown again' : ''}
+          hint={f.secret ? 'stays on this computer, readable only by you' : ''}
         >
           <TextInput
             secret={f.secret}
@@ -130,7 +133,7 @@ export default function Manual({ catalog, freeName, onAdd, onBack }) {
         <Panel>
           {check.ok ? (
             <span style={{ color: 'var(--neon-green)', fontSize: 12 }}>
-              ✓ logged in — {check.models.length} models listed
+              ✓ {capitalised(form.label)} works: {found(check.models)}
             </span>
           ) : (
             <>
@@ -141,17 +144,19 @@ export default function Manual({ catalog, freeName, onAdd, onBack }) {
         </Panel>
       )}
       <div style={actions}>
-        <Button onClick={() => setType('')}>other provider</Button>
+        <Button onClick={() => setType('')}>choose another provider</Button>
         <Button disabled={busy || !name} onClick={runCheck}>
-          {busy ? 'checking…' : 'check login'}
+          {busy ? 'checking…' : 'check the login (free)'}
         </Button>
         <Button
           primary
           disabled={!check}
           title={check?.ok ? '' : 'keep it anyway, and fix the login later'}
-          onClick={() => onAdd({ name, connection: check.connection, check })}
+          onClick={() =>
+            onAdd({ name, label: capitalised(form.label), connection: check.connection, check })
+          }
         >
-          {check?.ok ? 'add' : 'add anyway'}
+          {check && !check.ok ? 'add anyway' : 'add'}
         </Button>
       </div>
     </>

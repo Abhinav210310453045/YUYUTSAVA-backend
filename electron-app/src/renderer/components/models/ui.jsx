@@ -91,6 +91,20 @@ export function Availability({ value }) {
   )
 }
 
+// "45 models found, 2 ready for your account" — a provider's login check, in words.
+export function found(models = []) {
+  const ready = models.filter((m) => m.availability === 'available').length
+  return `${models.length} model${models.length === 1 ? '' : 's'} found, ${ready} ready for your account`
+}
+
+// 1048576 → "1M context", 131072 → "128k context".
+export function contextWindow(tokens) {
+  if (!tokens) return ''
+  const unit = tokens % 1024 === 0 ? 1024 : 1000
+  if (tokens >= unit * unit) return `${Math.floor(tokens / (unit * unit))}M context`
+  return `${Math.floor(tokens / unit)}k context`
+}
+
 export function Panel({ children, style }) {
   return (
     <div
