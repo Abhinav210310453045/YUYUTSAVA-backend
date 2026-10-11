@@ -38,7 +38,7 @@ from yuyutsava.llm.config.edits import (
 )
 from yuyutsava.llm.config.leftovers import Leftover, leftovers_on_disk, remove_leftovers
 from yuyutsava.llm.config.loader import ModelsConfigError
-from yuyutsava.llm.config.schema_export import models_config_json_schema
+from yuyutsava.llm.config.schema_export import models_config_json_schema, models_config_reference
 from yuyutsava.llm.config.secrets import read_secrets_file
 from yuyutsava.llm.config.store import ConfigStore, StaleWrite
 from yuyutsava.llm.config.watch import ConfigSource, ConfigState
@@ -124,7 +124,8 @@ def _parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--yes", action="store_true", help="remove them without asking")
     command("path", "where models.toml and secrets.toml are", _path)
-    command("schema", "the JSON Schema of models.toml", _schema)
+    p = command("schema", "the JSON Schema of models.toml", _schema)
+    p.add_argument("--markdown", action="store_true", help="the reference page, in Markdown")
     p = command(
         "security", "whether changing a key needs Touch ID, Windows Hello or a password", _security
     )
@@ -480,6 +481,9 @@ def _path(args: argparse.Namespace) -> int:
 
 
 def _schema(args: argparse.Namespace) -> int:
+    if args.markdown:
+        sys.stdout.write(models_config_reference())
+        return 0
     _say(json.dumps(models_config_json_schema(), indent=2))
     return 0
 

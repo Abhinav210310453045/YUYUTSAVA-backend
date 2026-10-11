@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import tomllib
 import unittest
+from pathlib import Path
 
 import jsonschema
 
 from yuyutsava.llm.config.loader import ModelsConfigError, load_text
-from yuyutsava.llm.config.schema_export import models_config_json_schema
+from yuyutsava.llm.config.schema_export import models_config_json_schema, models_config_reference
 
 VALID = """\
 version = 1
@@ -62,6 +63,26 @@ class TheSchemaAgreesWithTheLoader(unittest.TestCase):
         schema_text = str(models_config_json_schema())
         for provider_type in ("vertex", "bedrock", "openrouter", "ollama", "openai_compatible"):
             self.assertIn(f"'{provider_type}'", schema_text)
+
+
+class TheReferencePage(unittest.TestCase):
+    """docs/reference/models-config.md is the schema, as generated — never edited apart."""
+
+    PAGE = Path(__file__).resolve().parents[3] / "docs" / "reference" / "models-config.md"
+
+    def test_is_current(self) -> None:
+        self.assertEqual(
+            self.PAGE.read_text(encoding="utf-8"),
+            models_config_reference(),
+            "regenerate it: yuyutsava models schema --markdown > docs/reference/models-config.md",
+        )
+
+    def test_names_every_provider_type_and_its_logins(self) -> None:
+        page = models_config_reference()
+        for kind in ("vertex", "bedrock", "ollama", "openai_compatible", "azure"):
+            self.assertIn(f'### `type = "{kind}"`', page)
+        self.assertIn('`key = "secret:…"`', page)
+        self.assertNotIn("<provider>", page)  # escaped, or Markdown would hide it
 
 
 if __name__ == "__main__":

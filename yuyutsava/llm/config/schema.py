@@ -56,7 +56,14 @@ def _reference_only(value: str) -> str:
 
 
 #: A setting that holds a secret: a reference to it, never the value.
-SecretReference = Annotated[str, AfterValidator(_reference_only)]
+SecretReference = Annotated[
+    str,
+    AfterValidator(_reference_only),
+    Field(
+        description="A reference, never the value: secret:<name> (secrets.toml), "
+        "env:VARIABLE or file:<path>."
+    ),
+]
 
 
 class _Table(BaseModel):
@@ -81,7 +88,7 @@ class ServiceAccountLogin(_Login):
     """A Google service-account key file."""
 
     method: Literal["service_account"]
-    key_file: str = Field(min_length=1)
+    key_file: str = Field(min_length=1, description="Path to the service account's JSON key file.")
 
 
 class AccessTokenLogin(_Login):
@@ -124,7 +131,7 @@ class AwsProfileLogin(_Login):
     """A named profile from ``~/.aws/config`` (SSO, assumed role, keys)."""
 
     method: Literal["aws_profile"]
-    profile: str = Field(min_length=1)
+    profile: str = Field(min_length=1, description="A profile name from ~/.aws/config.")
 
 
 class AwsKeysLogin(_Login):
@@ -133,7 +140,9 @@ class AwsKeysLogin(_Login):
     method: Literal["aws_keys"]
     access_key_id: SecretReference
     secret_access_key: SecretReference
-    session_token: SecretReference | None = None
+    session_token: SecretReference | None = Field(
+        None, description="For temporary credentials only: their session token, as a reference."
+    )
     secret_fields: ClassVar[tuple[str, ...]] = (
         "access_key_id",
         "secret_access_key",
@@ -167,8 +176,12 @@ class VertexConnection(_Table):
     """Google Vertex AI: Gemini, Claude and open models in one Google Cloud project."""
 
     type: Literal["vertex"]
-    project: str = Field(min_length=1)
-    location: str = Field(min_length=1)
+    project: str = Field(min_length=1, description="The Google Cloud project id.")
+    location: str = Field(
+        min_length=1,
+        description="Where requests are served: global (the most models) or a region such as "
+        "us-central1. A model alias may override it.",
+    )
     auth: VertexLogin
 
 
@@ -183,7 +196,9 @@ class BedrockConnection(_Table):
     """AWS Bedrock: every model family Bedrock serves, through the Converse API."""
 
     type: Literal["bedrock"]
-    region: str = Field(min_length=1)
+    region: str = Field(
+        min_length=1, description="The AWS region, e.g. us-east-1. A model alias may override it."
+    )
     auth: BedrockLogin
 
 
@@ -199,7 +214,7 @@ class OpenAIConnection(_Table):
 
     type: Literal["openai"]
     auth: ApiKeyLogin
-    base_url: str = OPENAI_BASE_URL
+    base_url: str = Field(OPENAI_BASE_URL, description="Where the API is served.")
 
 
 class OpenRouterConnection(_Table):
@@ -207,10 +222,13 @@ class OpenRouterConnection(_Table):
 
     type: Literal["openrouter"]
     auth: ApiKeyLogin
-    base_url: str = OPENROUTER_BASE_URL
-    #: Attribution OpenRouter shows on its leaderboards; both optional.
-    http_referer: str | None = None
-    app_title: str | None = None
+    base_url: str = Field(OPENROUTER_BASE_URL, description="Where the API is served.")
+    http_referer: str | None = Field(
+        None, description="Optional: the site OpenRouter credits on its leaderboards."
+    )
+    app_title: str | None = Field(
+        None, description="Optional: the app name OpenRouter shows on its leaderboards."
+    )
 
 
 class GroqConnection(_Table):
@@ -218,7 +236,7 @@ class GroqConnection(_Table):
 
     type: Literal["groq"]
     auth: ApiKeyLogin
-    base_url: str = GROQ_BASE_URL
+    base_url: str = Field(GROQ_BASE_URL, description="Where the API is served.")
 
 
 class MistralConnection(_Table):
@@ -239,8 +257,10 @@ class AzureConnection(_Table):
     """Azure OpenAI: a model's ``id`` is the name of its deployment."""
 
     type: Literal["azure"]
-    endpoint: str = Field(min_length=1)
-    api_version: str = "2024-10-21"
+    endpoint: str = Field(
+        min_length=1, description="The resource's endpoint: https://<resource>.openai.azure.com"
+    )
+    api_version: str = Field("2024-10-21", description="The Azure OpenAI API version.")
     auth: ApiKeyLogin
 
 
@@ -248,7 +268,9 @@ class OpenAICompatibleConnection(_Table):
     """Any server that speaks OpenAI's chat API (xAI, DeepSeek, Together, a proxy, …)."""
 
     type: Literal["openai_compatible"]
-    base_url: str = Field(min_length=1)
+    base_url: str = Field(
+        min_length=1, description="The server's OpenAI API address, e.g. https://api.x.ai/v1"
+    )
     auth: OpenAICompatibleLogin
 
 
@@ -256,7 +278,7 @@ class OllamaConnection(_Table):
     """An Ollama server, local by default."""
 
     type: Literal["ollama"]
-    base_url: str = OLLAMA_BASE_URL
+    base_url: str = Field(OLLAMA_BASE_URL, description="Where the Ollama server listens.")
     auth: OllamaLogin = NoLogin(method="none")
 
 
@@ -303,54 +325,88 @@ def connection_types() -> tuple[str, ...]:
 class Thinking(_Table):
     """How many tokens a thinking model may spend before it answers."""
 
-    budget: NonNegativeInt
+    budget: NonNegativeInt = Field(
+        description="Tokens it may think for, on top of the answer's own; 0 turns thinking off."
+    )
 
 
 class Price(_Table):
     """US dollars per million tokens, when the provider's own price is not known or not wanted."""
 
-    input: NonNegativeFloat
-    output: NonNegativeFloat
+    input: NonNegativeFloat = Field(description="US dollars per million tokens sent to it.")
+    output: NonNegativeFloat = Field(description="US dollars per million tokens it answers with.")
 
 
 class ModelEntry(_Table):
     """A model under a short name, with anything that should differ from the provider's defaults."""
 
-    provider: Name
-    id: str = Field(min_length=1)
-    #: Vertex only: which family serves ``id``. Inferred when left out.
-    family: Literal["gemini", "anthropic", "maas"] | None = None
-    #: Vertex only: a location for this model instead of the provider's.
-    location: str | None = None
-    #: Bedrock only: a region for this model instead of the provider's.
-    region: str | None = None
-    #: Bedrock and Azure only: the model behind ``id`` when ``id`` names an
-    #: application inference profile (Bedrock) or a deployment (Azure) — what
-    #: prices and limits are looked up by.
-    base_model: str | None = None
-    context_window: PositiveInt | None = None
-    max_output: PositiveInt | None = None
-    thinking: Thinking | None = None
-    price: Price | None = None
+    provider: Name = Field(description="The [providers.<name>] that serves it.")
+    id: str = Field(min_length=1, description="The model id, as the provider names it.")
+    family: Literal["gemini", "anthropic", "maas"] | None = Field(
+        None,
+        description="Vertex only: which family serves id. Inferred when left out: claude-* is "
+        "anthropic, <publisher>/<name>-maas is maas, anything else gemini.",
+    )
+    location: str | None = Field(
+        None, description="Vertex only: a location for this model instead of the provider's."
+    )
+    region: str | None = Field(
+        None, description="Bedrock only: a region for this model instead of the provider's."
+    )
+    base_model: str | None = Field(
+        None,
+        description="Bedrock and Azure only: the model behind id when id names an application "
+        "inference profile (Bedrock) or a deployment (Azure) — what prices and limits are "
+        "looked up by.",
+    )
+    context_window: PositiveInt | None = Field(
+        None, description="The input window in tokens, when the known one is wrong or unknown."
+    )
+    max_output: PositiveInt | None = Field(None, description="The most tokens one answer may have.")
+    thinking: Thinking | None = Field(
+        None, description="For a thinking model: how many tokens it may think before answering."
+    )
+    price: Price | None = Field(
+        None, description="Its price, when the provider's own is not known or not wanted."
+    )
 
 
 class Defaults(_Table):
-    model: str = Field(min_length=1)
+    """The model YUYUTSAVA uses unless told otherwise."""
+
+    model: str = Field(
+        min_length=1,
+        description="The model every task uses unless [tasks] gives it one: an alias or "
+        "<provider>/<model id>.",
+    )
 
 
 class Security(_Table):
-    #: Ask the OS to confirm the owner is present before a secret is shown or changed.
-    require_user_presence: bool = False
+    """How YUYUTSAVA guards changes to your keys."""
+
+    require_user_presence: bool = Field(
+        False,
+        description="Have the OS confirm it is you (Touch ID or your password, Windows Hello, "
+        "polkit) before YUYUTSAVA stores or removes a key, or turns this off.",
+    )
 
 
 class ModelsConfig(_Table):
     """``models.toml`` as a whole."""
 
-    version: Literal[1]
+    version: Literal[1] = Field(description="The file's format: 1.")
     defaults: Defaults
-    tasks: dict[str, str] = Field(default_factory=dict)
-    providers: dict[Name, Connection] = Field(min_length=1)
-    models: dict[Name, ModelEntry] = Field(default_factory=dict)
+    tasks: dict[str, str] = Field(
+        default_factory=dict,
+        description="A model per task: chat, orchestrator, triage, subagent, subagent.<name>, "
+        "compaction, tier_light, tier_standard, tier_heavy. A task left out uses the default.",
+    )
+    providers: dict[Name, Connection] = Field(
+        min_length=1, description="Where models are served, and how to log in there."
+    )
+    models: dict[Name, ModelEntry] = Field(
+        default_factory=dict, description="Short names for models, with their own settings."
+    )
     security: Security = Field(default_factory=Security)
 
 
