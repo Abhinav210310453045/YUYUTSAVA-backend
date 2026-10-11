@@ -174,6 +174,21 @@ def follow_default(tasks: Iterable[str]) -> Edit:
     return edit
 
 
+def require_presence(required: bool) -> Edit:
+    """``[security] require_user_presence`` on or off; off leaves no ``[security]`` behind."""
+
+    def edit(document: TOMLDocument) -> None:
+        if required:
+            _table(document, "security")["require_user_presence"] = True
+            return
+        security = document.get("security")
+        if security is not None:
+            security.pop("require_user_presence", None)
+            _drop_if_empty(document, "security")
+
+    return edit
+
+
 def keep_keys_in_secrets(
     connection: Mapping[str, Any],
     *,
