@@ -15,6 +15,7 @@ from pathlib import Path
 from unittest import mock
 
 from yuyutsava.cli.commands.models import run_models
+from yuyutsava.platform.user_presence import PresenceNotConfirmed
 
 MODELS = """\
 # mine
@@ -190,6 +191,51 @@ class CleaningTheEnvironment(_Home):
         self.assertEqual(code, 2)
         self.assertIn("--yes", err)
         self.assertEqual((self.home / ".env").read_text(encoding="utf-8"), self.ENV)
+
+
+class _Gate:
+    def __init__(self, *, confirms: bool, mechanism: str | None = "Touch ID or your password"):
+        self.confirms = confirms
+        self.mechanism = mechanism
+
+    def confirm(self, reason: str):
+        if not self.confirms:
+            raise PresenceNotConfirmed("Touch ID or your password was cancelled or refused")
+
+
+class TheSecurityCheck(_Home):
+    def setUp(self) -> None:
+        super().setUp()
+        self.write()
+
+    def gate(self, **kw):
+        gate = _Gate(**kw)
+        patch = mock.patch("yuyutsava.llm.config.store.presence_gate", return_value=gate)
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def test_says_whether_it_is_on_and_what_would_ask(self) -> None:
+        self.gate(confirms=True)
+        code, out, _ = self.run_models("security")
+        self.assertEqual(code, 0)
+        self.assertIn("off", out)
+        self.assertIn("Touch ID or your password", out)
+
+    def test_once_on_a_refused_key_is_not_stored_and_says_how_out(self) -> None:
+        self.gate(confirms=False)
+        self.assertEqual(self.run_models("security", "on")[0], 0)
+        with mock.patch.dict(os.environ, {"K": "gsk-1"}):
+            code, _, err = self.run_models("secrets", "set", "groq", "--from-env", "K")
+        self.assertEqual(code, 1)
+        self.assertIn("not stored", err)
+        self.assertIn("require_user_presence = false", err)
+        self.assertFalse((self.home / "secrets.toml").exists())
+
+    def test_is_not_turned_on_where_nothing_can_ask(self) -> None:
+        self.gate(confirms=False, mechanism=None)
+        code, _, err = self.run_models("security", "on")
+        self.assertEqual(code, 1)
+        self.assertIn("no way to confirm", err)
 
 
 class TalkingToProviders(_Home):

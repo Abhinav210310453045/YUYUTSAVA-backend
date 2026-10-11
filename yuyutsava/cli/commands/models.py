@@ -33,6 +33,7 @@ from yuyutsava.llm.config.edits import (
     follow_default,
     remove_model,
     remove_provider,
+    require_presence,
     use,
 )
 from yuyutsava.llm.config.leftovers import Leftover, leftovers_on_disk, remove_leftovers
@@ -45,7 +46,10 @@ from yuyutsava.llm.discovery import Availability, Discovery
 from yuyutsava.llm.selection import TaskModels, reference_for
 from yuyutsava.llm.target import access_for
 from yuyutsava.llm.tasks import TASKS
+from yuyutsava.platform.user_presence import PresenceNotConfirmed
 from yuyutsava.storage.paths import models_config_path, secrets_path
+
+_PRESENCE_FIX = "try again, or set [security] require_user_presence = false in models.toml"
 
 #: How each availability is marked — one cell wide, like every mark the CLI draws.
 AVAILABILITY_MARK: dict[Availability, str] = {
@@ -121,6 +125,10 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--yes", action="store_true", help="remove them without asking")
     command("path", "where models.toml and secrets.toml are", _path)
     command("schema", "the JSON Schema of models.toml", _schema)
+    p = command(
+        "security", "whether changing a key needs Touch ID, Windows Hello or a password", _security
+    )
+    p.add_argument("state", nargs="?", choices=("on", "off"), help="turn the check on or off")
     p = command("secrets", "set, remove or list secrets (secret:<name>)", _secrets)
     p.add_argument("action", choices=("set", "rm", "list"))
     p.add_argument("name", nargs="?")
@@ -486,7 +494,12 @@ def _secrets(args: argparse.Namespace) -> int:
         _say_error(f"name the secret: yuyutsava models secrets {args.action} <name>")
         return 2
     if args.action == "rm":
-        if store.forget_secret(args.name):
+        try:
+            removed = store.forget_secret(args.name)
+        except PresenceNotConfirmed as exc:
+            _say_error(f"not removed: {exc} — {_PRESENCE_FIX}")
+            return 1
+        if removed:
             _say(f"  {OK}✓{RESET} secret {args.name} removed")
             return 0
         _say_error(f"no secret named {args.name!r}")
@@ -501,7 +514,37 @@ def _secrets(args: argparse.Namespace) -> int:
     except ValueError as exc:
         _say_error(str(exc))
         return 1
+    except PresenceNotConfirmed as exc:
+        _say_error(f"not stored: {exc} — {_PRESENCE_FIX}")
+        return 1
     _say(f"  {OK}✓{RESET} stored — refer to it as {VALUE}{reference}{RESET} in models.toml")
+    return 0
+
+
+def _security(args: argparse.Namespace) -> int:
+    if _loaded() is None:
+        return 1
+    store = _store()
+    if args.state is None:
+        mechanism = store.presence_mechanism()
+        state = "on" if store.presence_required() else "off"
+        _say(f"{KEY}changing a key needs you present{RESET}  {VALUE}{state}{RESET}")
+        _say(
+            f"{DIM}here that is: {mechanism}{RESET}"
+            if mechanism
+            else f"{DIM}this computer has no way to ask (no Touch ID or password dialog, "
+            f"Windows Hello or polkit agent){RESET}"
+        )
+        return 0
+    try:
+        store.apply(require_presence(args.state == "on"), expected=store.read().digest)
+    except (ConfigEditError, ModelsConfigError, StaleWrite) as exc:
+        _say_error(str(exc))
+        return 1
+    except PresenceNotConfirmed as exc:
+        _say_error(f"left on: {exc}")
+        return 1
+    _say(f"  {OK}✓{RESET} changing a key needs you present: {VALUE}{args.state}{RESET}")
     return 0
 
 

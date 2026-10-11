@@ -54,6 +54,7 @@ from yuyutsava.llm.config.watch import snapshot_of
 from yuyutsava.llm.discovery import Availability, Discovery
 from yuyutsava.llm.target import ProviderAccess, access_for
 from yuyutsava.llm.tasks import TASKS
+from yuyutsava.platform.user_presence import PresenceNotConfirmed
 
 #: Models a provider lists that are offered for the default, at most.
 _OFFERED = 12
@@ -155,12 +156,18 @@ class SetupWizard:
                 "the daemon find it too?",
                 default=True,
             ):
-                connection = keep_keys_in_secrets(
-                    connection,
-                    provider=self._free_name(finding.name),
-                    store_secret=self.s.store.store_secret,
-                    environ=self.s.environ,
-                )
+                try:
+                    connection = keep_keys_in_secrets(
+                        connection,
+                        provider=self._free_name(finding.name),
+                        store_secret=self.s.store.store_secret,
+                        environ=self.s.environ,
+                    )
+                except PresenceNotConfirmed as exc:
+                    self.ui.say(
+                        f"  the key stays in your environment, not secrets.toml: {exc}",
+                        tone="warn",
+                    )
             self._checked(
                 _Provider(
                     self._free_name(finding.name),
@@ -198,7 +205,10 @@ class SetupWizard:
                 secret = secret_name(name, field.name)
                 value = self.ui.secret(f"{field.question} for {name}")
                 if value:
-                    self.s.store.store_secret(secret, value)
+                    try:
+                        self.s.store.store_secret(secret, value)
+                    except PresenceNotConfirmed as exc:
+                        self.ui.say(f"  ✗ the key was not stored: {exc}", tone="warn")
                 auth[field.name] = f"secret:{secret}"
             else:
                 auth[field.name] = self._required(field.question, field.default)

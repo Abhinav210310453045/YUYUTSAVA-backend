@@ -22,6 +22,7 @@ from yuyutsava.llm.config.leftovers import Leftover
 from yuyutsava.llm.config.loader import load_text
 from yuyutsava.llm.config.store import ConfigStore
 from yuyutsava.llm.discovery import Availability, DiscoveredModel, Discovery
+from yuyutsava.platform.user_presence import PresenceNotConfirmed
 
 
 def FIRST_OPTION(options):  # noqa: N802 — reads as the script step it is
@@ -158,6 +159,39 @@ class AFirstRunWithASetupFound(_Wizard):
         self.assertIn('groq = "gsk-1"', self.secrets())
         self.assertEqual(config.tasks, {})
         self.assertTrue(any("2 ready" in line for line in script.said))
+
+
+class WhenAKeyChangeIsRefused(_Wizard):
+    """With the presence check on and refused, the wizard says so and goes on."""
+
+    def test_an_imported_key_stays_in_the_environment(self) -> None:
+        self.store.models_path.write_text(
+            'version = 1\n[defaults]\nmodel = "l/m"\n[providers.l]\ntype = "ollama"\n'
+            "[security]\nrequire_user_presence = true\n"
+        )
+        refused = mock.Mock()
+        refused.confirm.side_effect = PresenceNotConfirmed("Touch ID was cancelled or refused")
+        self.store = ConfigStore(
+            self.dir / "models.toml", self.dir / "secrets.toml", presence=lambda: refused
+        )
+        script = Script(
+            lambda options: [options[0].value],  # use what was found
+            True,  # keep the key in secrets.toml — refused
+            False,  # no provider by hand
+            False,  # no other provider
+            "groq/llama-3.3-70b-versatile",  # the default
+            True,  # for every task
+        )
+        written = self.wizard(
+            script,
+            found=[GROQ_FOUND],
+            discover=_lists("llama-3.3-70b-versatile"),
+            environ={"GROQ_API_KEY": "gsk-1"},
+        ).setup()
+        self.assertTrue(written)
+        self.assertEqual(self.config().providers["groq"].auth.key, "env:GROQ_API_KEY")
+        self.assertEqual(self.secrets(), "")
+        self.assertTrue(any("stays in your environment" in line for line in script.said))
 
 
 class TidyingTheEnvironment(_Wizard):
