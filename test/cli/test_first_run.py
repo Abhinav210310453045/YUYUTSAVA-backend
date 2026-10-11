@@ -9,7 +9,12 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from yuyutsava.cli.first_run import offer_setup, setup_declined_path, warn_leftovers
+from yuyutsava.cli.first_run import (
+    offer_setup,
+    setup_declined_path,
+    setup_offer,
+    warn_leftovers,
+)
 
 
 class _Tty(io.StringIO):
@@ -30,14 +35,14 @@ class TheOffer(unittest.TestCase):
     def tearDown(self) -> None:
         self._tmp.cleanup()
 
-    def offer(self, answer: str = "now", *, tty: bool = True) -> None:
+    def offer(self, answer: str = "now", *, tty: bool = True) -> bool:
         stream = _Tty() if tty else io.StringIO()
 
         def ask() -> str:
             self.asked.append("asked")
             return answer
 
-        offer_setup(
+        return offer_setup(
             ask=ask, run_setup=lambda: self.ran.append("setup") or 0, stdin=stream, stdout=stream
         )
 
@@ -51,8 +56,11 @@ class TheOffer(unittest.TestCase):
 
     def test_never_once_models_toml_exists(self) -> None:
         (self.home / "models.toml").write_text("version = 1\n")
-        self.offer()
+        self.assertFalse(self.offer())  # not offered: the chat's start may warn instead
         self.assertEqual(self.asked, [])
+
+    def test_says_when_it_was_offered_so_the_start_does_not_repeat_it(self) -> None:
+        self.assertTrue(self.offer("later"))
 
     def test_keeping_the_environment_is_remembered(self) -> None:
         self.offer("never")
@@ -111,3 +119,27 @@ class TheLeftoverWarning(unittest.TestCase):
 
     def test_says_nothing_when_none_is_set(self) -> None:
         self.assertEqual(self.warning(), "")
+
+
+class WhatTheOfferSays(unittest.TestCase):
+    """A newcomer is told what is in use now and where it is written, in plain words."""
+
+    def test_names_the_model_in_use_and_the_file_it_is_set_in(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            env = Path(tmp, ".env")
+            env.write_text("LLM_PROVIDER=groq\n")
+            setting = {"LLM_PROVIDER": "groq", "GROQ_API_KEY": "gsk-1"}
+            with mock.patch.dict(os.environ, setting, clear=True):
+                offer = setup_offer(os.environ, [env])
+        said = " ".join(offer.lines)
+        self.assertIn("Groq · llama-3.3-70b-versatile", said)
+        self.assertIn(str(env), said)
+        labels = [label for _, label, _ in offer.choices]
+        self.assertEqual(labels[-1], "No, keep using that .env")
+        self.assertNotIn("environment", " ".join(labels))
+
+    def test_offers_no_keep_choice_when_nothing_is_set(self) -> None:
+        with mock.patch.dict(os.environ, {}, clear=True):
+            offer = setup_offer(os.environ, [])
+        self.assertIn("doesn't know which AI model to use yet", offer.lines[0])
+        self.assertEqual([value for value, _, _ in offer.choices], ["now", "later"])

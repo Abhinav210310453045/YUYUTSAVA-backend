@@ -111,8 +111,8 @@ def _offer_setup_before(argv: list[str]) -> None:
         return
     if load_dotenv:
         load_dotenv()  # what the wizard finds includes a .env setup
-    offer_setup()
-    warn_leftovers()
+    if not offer_setup():  # the wizard has just asked about them itself
+        warn_leftovers()
 
 
 #: Every subcommand, once. Nothing else may name one.

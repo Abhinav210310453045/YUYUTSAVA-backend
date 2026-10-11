@@ -191,7 +191,7 @@ class WhenAKeyChangeIsRefused(_Wizard):
         self.assertTrue(written)
         self.assertEqual(self.config().providers["groq"].auth.key, "env:GROQ_API_KEY")
         self.assertEqual(self.secrets(), "")
-        self.assertTrue(any("stays in your environment" in line for line in script.said))
+        self.assertTrue(any("keeps reading it from GROQ_API_KEY" in line for line in script.said))
 
 
 class TidyingTheEnvironment(_Wizard):
@@ -223,7 +223,7 @@ class TidyingTheEnvironment(_Wizard):
     def test_offers_what_models_toml_replaced_once_it_is_written(self) -> None:
         script = self.set_up(True)
         self.assertEqual(self.removed, ["LLM_PROVIDER"])
-        self.assertTrue(any("LLM_PROVIDER (in /p/.env)" in line for line in script.said))
+        self.assertTrue(any("/p/.env" in line and "LLM_PROVIDER" in line for line in script.said))
         self.assertFalse(any("GROQ_MODEL" in line for line in script.said))
 
     def test_leaves_them_when_told_to(self) -> None:
@@ -256,8 +256,7 @@ class SettingsTheModelRunsWithToday(_Wizard):
 class AProviderByHand(_Wizard):
     def test_asks_only_what_the_type_needs_and_keeps_a_failed_login_on_request(self) -> None:
         script = Script(
-            "Google Vertex AI",  # which provider
-            "work",  # its name
+            "Google Vertex AI",  # which provider — named for you: no name is asked
             "p-1",  # project
             "",  # location: the default
             "adc",  # login
@@ -273,10 +272,13 @@ class AProviderByHand(_Wizard):
         written = self.wizard(script, discover=_lists(problem="no gcloud login")).setup()
         self.assertTrue(written)
         config = self.config()
-        work = config.providers["work"]
-        self.assertEqual((work.project, work.location, work.auth.method), ("p-1", "global", "adc"))
-        self.assertEqual(config.defaults.model, "work/gemini-3.5-flash")
-        self.assertEqual(config.tasks, {"triage": "work/gemini-3.5-flash-lite"})
+        vertex = config.providers["vertex"]
+        self.assertEqual(
+            (vertex.project, vertex.location, vertex.auth.method), ("p-1", "global", "adc")
+        )
+        self.assertEqual(config.defaults.model, "vertex/gemini-3.5-flash")
+        self.assertEqual(config.tasks, {"triage": "vertex/gemini-3.5-flash-lite"})
+        self.assertFalse(any(q.startswith("Name") for q in script.questions))
         self.assertTrue(any("no gcloud login" in line for line in script.said))
 
     def test_a_typed_key_goes_to_secrets_and_the_login_check_can_use_it(self) -> None:
@@ -286,16 +288,17 @@ class AProviderByHand(_Wizard):
             seen["key"] = access.secret("secret:anthropic")
             return _lists("claude-haiku-4-5")(access)
 
-        script = Script("Anthropic", "", "sk-ant-1", False, "anthropic/claude-haiku-4-5", True)
+        script = Script("Anthropic", "sk-ant-1", False, "anthropic/claude-haiku-4-5", True)
         self.assertTrue(self.wizard(script, discover=discover).setup())
         self.assertEqual(seen["key"], "sk-ant-1")
         self.assertEqual(self.config().providers["anthropic"].auth.key, "secret:anthropic")
         self.assertNotIn("sk-ant-1", self.store.read().text)
 
     def test_a_dropped_provider_leaves_nothing_to_write(self) -> None:
-        script = Script("Groq", "", "gsk-x", "drop", False)
+        script = Script("Groq", "gsk-x", "drop", False)
         self.assertFalse(self.wizard(script, discover=_lists(problem="401")).setup())
         self.assertFalse((self.dir / "models.toml").exists())
+        self.assertNotIn("gsk-x", self.secrets())  # its key goes with it
 
 
 class LeavingEarly(_Wizard):
@@ -316,7 +319,7 @@ class AddingToAnExistingFile(_Wizard):
             '[providers.local]\ntype = "ollama"\n',
             encoding="utf-8",
         )
-        script = Script("Groq", "", "gsk-x", False)
+        script = Script("Groq", "gsk-x", False)
         self.assertTrue(self.wizard(script).add())
         config = self.config()
         self.assertEqual(set(config.providers), {"local", "groq"})
@@ -328,9 +331,10 @@ class AddingToAnExistingFile(_Wizard):
             'version = 1\n[defaults]\nmodel = "groq/x"\n[providers.groq]\ntype = "ollama"\n',
             encoding="utf-8",
         )
-        script = Script("Groq", "groq", "gsk-x", False)
+        script = Script("Groq", "gsk-x", False)
         self.assertTrue(self.wizard(script).add())
         self.assertIn("groq-2", self.config().providers)
+        self.assertTrue(any("saved as groq-2" in line for line in script.said))
 
 
 class TheTerminalPrompter(unittest.TestCase):

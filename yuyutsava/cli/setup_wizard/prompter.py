@@ -102,12 +102,13 @@ class TerminalPrompter:
         preset = ",".join(str(i) for i, o in enumerate(options, 1) if o.value in chosen)
         while True:
             answer = self.ask(
-                "numbers, separated by commas (Enter keeps ●, 0 for none)", default=preset
+                "Type the numbers, e.g. 1 or 1,3 — Enter keeps the ones marked ●, 0 for none",
+                default=preset,
             )
             picked = _numbers(answer, len(options))
             if picked is not None:
                 return [options[i - 1].value for i in picked]
-            self.say(f"  use numbers from 1 to {len(options)}", tone="warn")
+            self.say(f"  Please type numbers from 1 to {len(options)}, like 1 or 1,3", tone="warn")
 
     def ask(self, question: str, *, default: str = "") -> str:
 
@@ -118,7 +119,8 @@ class TerminalPrompter:
 
     def secret(self, question: str) -> str:
         return prompt(
-            ANSI(f"{KEY}{question}{RESET} {DIM}(hidden){RESET} {CHROME}❯{RESET} "), is_password=True
+            ANSI(f"{KEY}{question}{RESET} {DIM}(hidden as you type){RESET} {CHROME}❯{RESET} "),
+            is_password=True,
         ).strip()
 
     def confirm(self, question: str, *, default: bool = True) -> bool:

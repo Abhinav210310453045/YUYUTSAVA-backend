@@ -244,7 +244,9 @@ def _doctor(args: argparse.Namespace) -> int:
         _say(f"  {OK}✓{RESET} {task.name:<14} {CHROME}→{RESET} {target.reference}")
     leftovers = leftovers_on_disk(path, secrets_path())
     if leftovers:
-        _say(f"\n{WARN}!{RESET} set, but not read now that models.toml decides:")
+        _say(
+            f"\n{WARN}!{RESET} these settings aren't used any more, now that your models are set up:"
+        )
         _say_leftovers(leftovers)
         _say(f"  {DIM}`yuyutsava models clean-env` removes them{RESET}")
     if problems:
@@ -443,7 +445,7 @@ def _clean_env(args: argparse.Namespace) -> int:
     if not leftovers:
         _say(f"{DIM}nothing to remove — the environment sets no model variable{RESET}")
         return 0
-    _say("Set, but not read now that models.toml decides:")
+    _say("These settings aren't used any more, now that your models are set up:")
     _say_leftovers(leftovers)
     removable = [leftover for leftover in leftovers if leftover.files]
     if not removable:

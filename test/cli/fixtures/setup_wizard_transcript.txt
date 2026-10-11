@@ -1,0 +1,53 @@
+Let's connect YUYUTSAVA to an AI model. It takes a minute; nothing is saved until the end.
+? Found on this computer — which should YUYUTSAVA use?
+    1. Google Vertex AI   — what YUYUTSAVA uses today: gemini-3.5-flash, set in ~/project/.env (LLM_PROVIDER=vertex)
+    2. OpenRouter   — the key in your OPENROUTER_API_KEY setting
+Checking your Google Vertex AI login (free — nothing is sent to a model) …
+✓ Google Vertex AI works: 3 models found, 2 ready for your account
+? Save your OpenRouter key for YUYUTSAVA on this computer, readable only by you? Otherwise it works only while OPENROUTER_API_KEY is set where YUYUTSAVA starts. [yes]
+Checking your OpenRouter login (free — nothing is sent to a model) …
+✓ OpenRouter works: 1 model found, 1 ready for your account
+? Connect another provider too? (You can also add one later: `yuyutsava models add`) [no]
+? Which provider do you want to connect?
+    1. Google Vertex AI   — Gemini, Claude and open models through your Google Cloud project
+    2. Google AI Studio   — Gemini with a free key: the quickest way to start with Google
+    3. AWS Bedrock   — the models on AWS Bedrock, through your AWS account
+    4. Anthropic   — Claude, with an Anthropic API key
+    5. OpenAI   — GPT models, with an OpenAI API key
+    6. OpenRouter   — hundreds of models from many makers, with one OpenRouter key
+    7. Groq   — fast open models, with a Groq key (there is a free tier)
+    8. Mistral   — Mistral's models, with a Mistral key
+    9. Cohere   — Cohere's Command models, with a Cohere key
+    10. Azure OpenAI   — OpenAI models you have deployed in Microsoft Azure
+    11. An OpenAI-compatible server   — any other server that works like OpenAI's API (xAI, DeepSeek, Together, …)
+    12. Ollama   — models that run on your own computer: free, private, no key
+? Your Groq API key — paste it here; it stays on this computer, readable only by you (hidden as you type)
+Checking your Groq login (free — nothing is sent to a model) …
+✓ Groq works: 1 model found, 1 ready for your account
+? Connect one more? [no]
+? Which model should YUYUTSAVA use? (Change it any time with /model in a chat.)
+    1. gemini-3.5-flash · Google Vertex AI   — what YUYUTSAVA uses today
+    2. gemini-3.5-flash-lite · Google Vertex AI   — 1M context
+    3. llama-3.3-70b-versatile · OpenRouter   — 128k context
+    4. llama-3.3-70b-versatile · Groq   — 128k context
+    5. Another model — I'll type its name
+? Use gemini-3.5-flash for everything — chats, background work, summaries? (recommended) [yes]
+? Which jobs should use a different model?
+    1. Chat — the CLI, the app's chat and voice
+    2. Background tasks and Tinker
+    3. Triage of incoming events
+    4. Subagents
+    5. Summaries of long conversations
+    6. Smart routing — light tasks
+    7. Smart routing — standard tasks
+    8. Smart routing — heavy tasks
+? Which model for triage of incoming events?
+    1. gemini-3.5-flash · Google Vertex AI   — what YUYUTSAVA uses today
+    2. gemini-3.5-flash-lite · Google Vertex AI   — 1M context
+    3. llama-3.3-70b-versatile · OpenRouter   — 128k context
+    4. llama-3.3-70b-versatile · Groq   — 128k context
+    5. Another model — I'll type its name
+✓ Saved. Your models are in <home>/models.toml
+Change them any time: /model in a chat, `yuyutsava models`, or edit that file — a running YUYUTSAVA picks the change up.
+These settings in ~/project/.env aren't used any more, now that your models are set up: LLM_PROVIDER, VERTEX_MODEL.
+? Remove them from that file? (Everything else in it stays as it is.) [no]
