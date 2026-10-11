@@ -17,6 +17,7 @@ from __future__ import annotations
 import io
 import json
 import re
+import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -159,6 +160,46 @@ class TheVersionNoticeKeepsTheInstallOnTheLock(unittest.TestCase):
 
     def test_an_up_to_date_install_gets_no_notice(self) -> None:
         self.assertEqual(self._notice("0.15.1", "0.15.1"), "")
+
+
+class TheBannerNeverWaitsForTheVersionCheck(unittest.TestCase):
+    """The start-up reads the last check's answer; a stale one is asked again in the background."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.path = Path(self._tmp.name, "release.json")
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def _cached(self, *, checked_at: float, latest: str = "0.15.1") -> None:
+        record = {"checked_at": checked_at, "latest": latest, "releases": ["0.9.0", latest]}
+        self.path.write_text(json.dumps(record))
+
+    def _notice(self, installed: str = "0.9.0") -> tuple[str, mock.Mock]:
+        with (
+            mock.patch.object(startup.importlib.metadata, "version", return_value=installed),
+            mock.patch.object(startup.threading, "Thread") as thread,
+        ):
+            return startup.cached_version_notice(path=self.path), thread
+
+    def test_a_fresh_answer_is_used_without_asking_again(self) -> None:
+        self._cached(checked_at=startup.time.time())
+        notice, thread = self._notice()
+        self.assertIn("0.9.0 is end of life", notice)
+        thread.assert_not_called()
+
+    def test_a_day_old_answer_is_used_and_asked_again_in_the_background(self) -> None:
+        self._cached(checked_at=startup.time.time() - 2 * 24 * 3600)
+        notice, thread = self._notice()
+        self.assertIn("0.15.1 available", notice)
+        self.assertTrue(thread.call_args.kwargs["daemon"])
+        thread.return_value.start.assert_called_once()
+
+    def test_no_answer_yet_says_nothing_and_asks_in_the_background(self) -> None:
+        notice, thread = self._notice()
+        self.assertEqual(notice, "")
+        thread.return_value.start.assert_called_once()
 
 
 class BothRenderersAttributeTheUser(unittest.IsolatedAsyncioTestCase):

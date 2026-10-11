@@ -1037,9 +1037,8 @@ async def _start_session(
     text and voice chats are others. Returns the service and the status line
     the banner showed, which ``/new`` shows again.
     """
-    # The langgraph-api check makes a network call. Off the critical path and
-    # beside the session lookup, so the first screen is never waiting on PyPI.
-    notice = asyncio.create_task(asyncio.to_thread(startup.version_notice, full=debug_plumbing))
+    # The last check's answer, read from a file: the banner never waits on PyPI.
+    notice = startup.cached_version_notice(full=debug_plumbing)
     convo, resuming = await ConversationService.resolve(
         store=store,
         bundle=bundle,
@@ -1064,7 +1063,7 @@ async def _start_session(
             workspace=opts.workspace,
             resuming=resuming,
             status=status_line,
-            notice=await notice,
+            notice=notice,
         ),
         width=dashboard.left_width if dashboard is not None else None,
     )

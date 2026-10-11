@@ -17,6 +17,8 @@ import logging
 import shutil
 import socket
 import sys
+import threading
+import time
 import urllib.request
 from pathlib import Path
 from typing import Iterable
@@ -26,6 +28,7 @@ from packaging.version import InvalidVersion, Version
 from yuyutsava.ansi import AGENT, BOLD, CHROME, KEY, RESET, VALUE, WARN
 from yuyutsava.llm import tracing as _tracing
 from yuyutsava.storage.backend import StorageSettings
+from yuyutsava.storage.paths import state_dir
 from yuyutsava.storage.sessions.config import SessionsSettings
 
 logger = logging.getLogger("yuyutsava.cli.render.startup")
@@ -85,14 +88,66 @@ def version_notice(*, full: bool = False) -> str:
     """
     try:
         current = Version(importlib.metadata.version(LANGGRAPH_API))
-        url = f"https://pypi.org/pypi/{LANGGRAPH_API}/json"
-        with urllib.request.urlopen(url, timeout=0.5) as resp:
-            payload = json.load(resp)
-        latest = Version(payload["info"]["version"])
-        releases = payload.get("releases") or {}
+        latest, releases = _latest_release(timeout=0.5)
     except Exception:  # noqa: BLE001 — not installed, offline, or an odd reply: no notice
         logger.debug("version check skipped", exc_info=True)
         return ""
+    return _notice(current, latest, releases, full=full)
+
+
+#: How long a version check's answer is used before it is asked again.
+_VERSION_CHECK_EVERY_SECONDS = 24 * 3600
+
+
+def cached_version_notice(*, full: bool = False, path: Path | None = None) -> str:
+    """:func:`version_notice`, from the last check's answer — never from the network.
+
+    The answer is kept in the state directory. When it is missing or more than
+    a day old, it is asked for again on a background thread, for the next start:
+    the banner never waits on PyPI, and a first start after a day shows the
+    notice one start later. Best-effort, like the check itself.
+    """
+    path = path or state_dir() / ".langgraph_api_release.json"
+    try:
+        cached = json.loads(path.read_text(encoding="utf-8"))
+        checked_at = float(cached["checked_at"])
+    except (OSError, ValueError, KeyError, TypeError):
+        cached, checked_at = None, 0.0
+    if time.time() - checked_at > _VERSION_CHECK_EVERY_SECONDS:
+        threading.Thread(
+            target=_remember_latest_release, args=(path,), name="version-check", daemon=True
+        ).start()
+    if cached is None:
+        return ""
+    try:
+        current = Version(importlib.metadata.version(LANGGRAPH_API))
+        latest = Version(cached["latest"])
+    except Exception:  # noqa: BLE001 — not installed, or an odd file: no notice
+        return ""
+    return _notice(current, latest, cached.get("releases") or [], full=full)
+
+
+def _latest_release(*, timeout: float) -> tuple[Version, list[str]]:
+    """langgraph-api's newest release on PyPI, and every release it has published."""
+    url = f"https://pypi.org/pypi/{LANGGRAPH_API}/json"
+    with urllib.request.urlopen(url, timeout=timeout) as resp:
+        payload = json.load(resp)
+    return Version(payload["info"]["version"]), list(payload.get("releases") or {})
+
+
+def _remember_latest_release(path: Path) -> None:
+    try:
+        latest, releases = _latest_release(timeout=5)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps({"checked_at": time.time(), "latest": str(latest), "releases": releases}),
+            encoding="utf-8",
+        )
+    except Exception:  # noqa: BLE001 — offline or an odd reply: asked again next start
+        logger.debug("version check skipped", exc_info=True)
+
+
+def _notice(current: Version, latest: Version, releases: Iterable[str], *, full: bool) -> str:
     if current.is_prerelease or latest <= current:
         return ""
     parts = [f"{LANGGRAPH_API} {latest} available"]
@@ -284,6 +339,7 @@ __all__ = [
     "langgraph_api_is_eol",
     "print_banner",
     "startup_status_line",
+    "cached_version_notice",
     "version_notice",
     "wordmark",
 ]
