@@ -41,6 +41,7 @@ edit that does not load is reported and the last good file stays in use.
 | `[defaults] model` | The model every task uses unless given its own |
 | `[tasks]` | `chat` · `orchestrator` · `triage` · `subagent` (and `subagent.<name>`) · `compaction` · `tier_light` · `tier_standard` · `tier_heavy` |
 | `[providers.<name>]` | `type`, where it runs (`project`, `location`, `region`, `base_url`, …) and `auth = { method = … }` |
+| `[security]` | `require_user_presence`: confirm it is you before a key changes |
 | `[models.<alias>]` | `provider`, `id`, and overrides: `location`/`region`, `context_window`, `max_output`, `thinking`, `price`, `family`, `base_model` (Bedrock, Azure) |
 
 A model is named by its alias or as `<provider>/<model id>`. Keys are
@@ -48,6 +49,16 @@ references, never values: `secret:<name>` (`secrets.toml`), `env:VARIABLE` or
 `file:<path>`. Every setting, with its allowed values: `yuyutsava models
 schema` (JSON Schema). `yuyutsava models doctor` checks the file and its
 secrets without calling anyone.
+
+**Asking for you before a key changes.** With `[security]
+require_user_presence = true` (`yuyutsava models security on`, or Settings →
+Models → Security), YUYUTSAVA has the OS confirm you are at the computer before
+it stores or removes a key, or turns this off: Touch ID or your password on
+macOS, Windows Hello on Windows, a polkit dialog on a Linux desktop. One
+confirmation lasts five minutes. It guards YUYUTSAVA's own ways in — the
+wizards, `yuyutsava models`, the app — not the file: `secrets.toml` stays
+readable by you in an editor. Where none of those dialogs exists, it cannot be
+turned on.
 
 **Before `models.toml` exists** the models come from the environment:
 `LLM_PROVIDER` and that provider's variables, with `<ROLE>_` overrides per

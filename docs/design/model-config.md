@@ -488,7 +488,14 @@ role palette and glyphs from `cli/render`.
   - not now.
 - The status line, the context panel and the app aside show the **active** model and its real window.
 
-**Agent tools.** These are the `mdl_*` family on the chat/CLI deepagent only, because the orchestrator
+**Agent tools — deferred (owner, 2026-10-11).** Not built: everything they would do already works
+through `/model`, the app's model chip, `yuyutsava models …` and Settings → Models, and an agent that
+can change the model setup is a risk the owner chose not to take on now. The design below is kept for
+when it is wanted; building it later changes nothing in the flows that exist (the tools would write
+through the same store, so the presence check and the stale-write refusal would apply to them as to
+every other surface).
+
+They would be the `mdl_*` family on the chat/CLI deepagent only, because the orchestrator
 stays a plain router:
 
 - `mdl_list`
@@ -572,8 +579,8 @@ on.
 | M5 | Done 2026-10-04: `llm/config/detect.py` (the .env setup, a gcloud login or key by its declared type, AWS profiles, a running Ollama, `*_API_KEY`); `llm/config/edits.py` (the edits every surface makes, refusing dangling references); `yuyutsava models` (setup, add, list, doctor, discover, verify [--test-message], use [--task], follow, alias, remove, edit, path, schema, secrets set\|rm\|list); the setup wizard (`cli/setup_wizard/`: what this machine has first, a provider by hand from the schema, a free login check, the default and the tasks, written once at the end); the first chat without `models.toml` offers it, at a terminal only, "keep my environment" remembered; `/model` in the REPL with the subagent nudge. Live in a real pseudo-terminal: first run imported the .env setup (thinking budget kept on an alias), checked the login, wrote `models.toml`, opened the chat; `/model` listed, switched, nudged, moved the subagents, and the next turn ran on the chosen model. Found live: an imported setup dropped its thinking budget (fixed); a model not served in the provider's location gave a traceback (now one line, plus `models alias --location`). Deviations: `/model` is typed (`/model <n\|name>`), not a picker — the split view owns the screen; availability marks are one cell (✓ ⊘ ⌖ ?), not emoji; no new dependencies, so `scripts/install_cli.py` is needed only to pick up the new code. |
 | M6 | Done 2026-10-10: the daemon's `/models` API (status, catalog, detected, a free login check, setup, default, tasks, aliases, providers, a conversation's models, a billable test message; every write carries the revision it read — 409 when the file changed elsewhere — and a `models` stream item publishes each change); a daemon with no usable model waits in setup mode (only `/models` answers, `setup_mode: true`) and re-executes itself as the full daemon once the files describe one (`daemon/setup_mode.py`); the app's setup wizard on the CLI wizard's forms (`llm/config/guide.py`), Settings → Models, and the composer's model chip with the subagent nudge; Settings no longer writes model keys to `.env`, and the LLM group left `config_schema.py` and `fallbackSchema.js`. Live in the Electron app: setup mode → wizard (found the gcloud login, checked it, chose the default) → the daemon restarted as itself in 2 s and answered a chat; the environment route → wizard from Settings → `models.toml`; an alias added and a task changed from Settings, with a hand edit in between (comment kept, no conflict); the chip moved a chat to flash-lite, the nudge moved its subagents, the usage row recorded flash-lite on vertex. Found live: every reader opened its own `/stream`, using up the browser's six connections to the daemon so other requests never returned (now one shared stream per window); the chip's current model was named `<provider>/<id>`, not as `models.toml` names it; chat and voice mounted in setup mode and printed "conversation manager not initialized" (now only the wizard). Fixed after: a table whose last entry is removed (`[tasks]`, `[models]`) leaves the file too, unless a comment is written in it. |
 | M7 | Done 2026-10-10: once `models.toml` exists, the environment's model variables are named wherever they are still set — the CLI chat's start, the daemon's boot log, `models doctor`, Settings → Models — and removed on request from the `.env` they are in (`llm/config/leftovers.py`: `LLM_PROVIDER` and every provider setting, with or without a task's `<ROLE>_` prefix; keys only when `secrets.toml` keeps their value and nothing reads them); `yuyutsava models clean-env [--yes]`, an offer at the end of the CLI wizard, and a button in the app; every other line of the `.env` kept, the file left owner-only; a removed variable leaves the process too. The variable lists sit beside the env readers, and a test fails when a reader reads one not listed. Exit tests: models.toml decides with `LLM_PROVIDER` set; a key kept in `secrets.toml` never reaches `os.environ`. Docs: README (Choosing models), `.env.example` (section 1 for the environment route only, commented out), `docs/reference/configuration.md` (Models). Live, on a copy of the package so the checkout's own `.env` could not be touched: `models doctor` and a chat's start named the variables in both `.env` files; the daemon logged them; Settings → Models listed them and removed them, the rest of each file kept, 0600. Deviations: nothing is imported or ignored that was not already — the env route was reached only without `models.toml` since M3, so M7 is the naming and the removal; `GROQ_API_KEY` is never offered (voice speech-to-text reads it), nor `GOOGLE_CLOUD_PROJECT`, `AWS_REGION`, `OLLAMA_HOST` (other programs read them), nor `EMBED_*` (the embedder is not in `models.toml`); keys a person set in their shell are theirs — only those YUYUTSAVA loaded from a `.env` it removes; `env_role` moved to `llm/tasks.py` so the config layer stays free of LangChain. The app offers the removal in Settings, not at the end of its wizard. |
-| M8 | Next |
-| M9 | Not started |
+| M8 | Done 2026-10-11: with `[security] require_user_presence` on, the OS confirms the owner is at the computer before YUYUTSAVA stores or removes a key or turns the check off — macOS: Touch ID, an Apple Watch or the login password in one system dialog (LocalAuthentication, run as its own process: `platform/presence_macos.py`); Windows: Windows Hello (`UserConsentVerifier` through Windows PowerShell 5.1); Linux: a polkit dialog where a desktop agent runs (`pkexec --disable-internal-agent`). It sits in the one store (`ConfigStore`), so the wizards, `yuyutsava models`, the app and the daemon API all pass through it; one confirmation lasts five minutes per process, so a setup asks once. It is not turned on where nothing can ask; it reads the flag from the TOML itself, so a mistake elsewhere in the file does not switch it off. Refusals stop the change and say how out: the CLI wizard keeps an imported key in the environment, a typed one unstored; the API answers 403. Surfaces: `yuyutsava models security [on\|off]`, Settings → Models → Security, `presence` in `GET /models`, `PUT /models/security`. Dependency: `pyobjc-framework-localauthentication` (darwin). Live: the CLI stored a key after a Touch ID confirmation (owner present), the file 0600; a check that got no answer wrote nothing (refusals are covered by tests, not live). Found live: inside Claude Code's command sandbox, LocalAuthentication shows no dialog and answers nothing — a real terminal or the app is not sandboxed. Not verified: Windows Hello and polkit (no machine here; CI checks the backend choice and its parsing only). The macOS dialog names the process as "Python". Deviations: no reveal surface exists to guard (nothing shows a key's value); Windows has no credential-prompt fallback without Hello, and Linux no terminal-password fallback — the check is offered only where a dialog exists; the `mdl_*` agent tools are deferred. |
+| M9 | Next |
 
 ## 7. Waves
 
@@ -599,7 +606,7 @@ and commits use the repo-local IITJ identity; it is pushed only when asked. This
 | M5 | CLI: unconfigured boot, Setup Wizard, `models` subcommands, `/model` + subagent nudge | — |
 | M6 | Daemon `/models` API + unconfigured boot; Electron wizard, Settings→Models, ModelChip; remove `.env` LLM writes | — |
 | M7 | Env cutover: import, `LLM_*` ignored with warning, config_schema LLM group removed, `.env` key scrub offered | — |
-| M8 | Agent `mdl_*` tools (out-of-band secrets) + user-presence gate on 3 OSes | profile matrix reviewed |
+| M8 | User-presence gate on 3 OSes (agent `mdl_*` tools deferred) | — |
 | M9 | Docs + live verification matrix | — |
 
 **M0 — Contracts and spikes.**
@@ -739,16 +746,14 @@ and commits use the repo-local IITJ identity; it is pushed only when asked. This
   - no provider key is left in `os.environ` after the CLI or daemon starts, when keys come through
     `secret:` references.
 
-**M8 — Agent tools and the presence gate.**
+**M8 — The presence gate.** (The `mdl_*` agent tools were deferred by the owner on 2026-10-11 — see
+§3, Agent tools; their exit checks, no secret in checkpoints, `pending_asks` or interrupts and the
+agent-profile review, go with them.)
 
-- `ToolFamily.MODELS` (`mdl_*`) in `core/agent_profiles.py`, wired in `_shared_master_tools`
-  (`engine.py:539+`), on the chat deepagent only;
-- out-of-band secret entry;
-- `platform/user_presence.py`.
+- `platform/user_presence.py`, used by the one store, so every surface is covered.
 - **Exit:**
-  - tests prove no secret value appears in checkpoints, `pending_asks` or interrupts;
-  - `test_agent_profiles` passes with the unreviewed count at 0;
-  - `test/platform` passes on macOS, Windows and Linux in CI (`.github/workflows/ci.yml:94-114`).
+  - `test/platform` passes on macOS, Windows and Linux in CI (`.github/workflows/ci.yml:94-114`);
+  - a live Touch ID / password confirmation on macOS.
 
 **M9 — Docs and live verification.**
 

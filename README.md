@@ -106,7 +106,8 @@ id       = "gemini-3.5-flash"
 
 Keys never go in it: write `secret:<name>` (kept in `~/.yuyutsava/secrets.toml`,
 readable by you alone — `yuyutsava models secrets set <name>`), `env:VARIABLE`
-or `file:<path>`.
+or `file:<path>`. `yuyutsava models security on` makes changing a key ask for
+Touch ID or your password first (Windows Hello on Windows, polkit on Linux).
 
 | Provider types | |
 |---|---|
