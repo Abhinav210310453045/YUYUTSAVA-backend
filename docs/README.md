@@ -31,6 +31,7 @@ Contracts and APIs — the things you look up rather than read through.
 
 | Document | What it covers |
 |---|---|
+| [reference/models-config.md](reference/models-config.md) | Every `models.toml` setting, generated from its schema. |
 | [reference/api-v1.md](reference/api-v1.md) | The `/v1` daemon HTTP contract. Source of truth for clients. |
 | [reference/visual-tools.md](reference/visual-tools.md) | The `yuyutsava/visuals` rendering library — charts, tables, math, code images, diagrams. |
 
@@ -40,6 +41,7 @@ Task-oriented walkthroughs.
 
 | Document | What it covers |
 |---|---|
+| [guides/models.md](guides/models.md) | Connecting models: the setup wizard, `models.toml`, a block for every provider and login, switching, keys. |
 | [guides/voice.md](guides/voice.md) | The voice interface: what was built, and an end-to-end test checklist. |
 | [guides/async-subagents.md](guides/async-subagents.md) | Runbook for exercising every background-subagent code path (~20 min). |
 | [guides/windows.md](guides/windows.md) | OS-invariance layering and the System Warden; what is platform-specific and where. |

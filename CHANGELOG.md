@@ -9,6 +9,34 @@ While the version stays `0.x`, minor bumps may contain breaking changes.
 ## [Unreleased]
 
 ### Added
+- **Every provider, any model, from one file: `~/.yuyutsava/models.toml`.**
+  Providers (Vertex AI — Gemini, Claude and open models —, AI Studio, Bedrock,
+  Anthropic, OpenAI, Azure, OpenRouter, Groq, Mistral, Cohere, Ollama, any
+  OpenAI-compatible server), how each logs in, short names for models, and a
+  model per task. Keys are references (`secret:`, `env:`, `file:`), kept in an
+  owner-only `secrets.toml`. One store writes the file for every surface,
+  keeping your comments and refusing a change made from a stale read; a
+  running YUYUTSAVA applies an edit from the next message, and keeps the last
+  good file when an edit does not load.
+- **Setup wizards** in the CLI (`yuyutsava models setup`, offered on the first
+  chat) and the desktop app (opened by itself when no model is set up): what
+  the machine already has first, a free login check that marks each model ✓
+  ready, ⊘ needs a quota or access, ⌖ not served there.
+- **Switching mid-conversation**: `/model` in the CLI and a model chip in the
+  app move one conversation from its next message, with an offer to move its
+  subagents too. The history crosses providers in a form each accepts.
+- **`yuyutsava models`**: `list`, `doctor`, `discover`, `verify
+  [--test-message]`, `use [--task]`, `follow`, `alias`, `remove`, `secrets`,
+  `security`, `clean-env`, `edit`, `path`, `schema [--markdown]`. The app's
+  Settings → Models does the same.
+- **Asking for you before a key changes** (opt-in): Touch ID or the password on
+  macOS, Windows Hello, a polkit dialog on Linux.
+- **The daemon waits to be set up** instead of failing at start when no model
+  is usable, and restarts itself once one is.
+- **Docs**: [docs/guides/models.md](docs/guides/models.md), with a block for
+  every provider and login (each tested to load), and a reference page
+  generated from the schema.
+
 - **The chat REPL opens on a proper screen, and says who said what.** A wordmark
   centred in the pane it is drawn in — the split view redirects the banner into
   the left pane, so measuring the whole terminal put the art off to the right —
@@ -41,6 +69,13 @@ While the version stays `0.x`, minor bumps may contain breaking changes.
   being written (`cli/render/prose_frame.py`).
 
 ### Changed
+- **`LLM_PROVIDER` and its provider's variables are read only until
+  `models.toml` exists.** After that, YUYUTSAVA names any still set and
+  `yuyutsava models clean-env` removes them from the `.env` they are in. The
+  app's Settings no longer writes model keys to `.env`.
+- Prompt caching now also applies to Claude on Vertex and Bedrock; usage rows
+  record the provider; a model whose quota is zero says so instead of
+  retrying as "provider busy".
 - **The context column reads in words.** Its rows were the meter's own keys —
   `in`, `out`, `cached`, `calls`, `compacted` — which are a wire format the app
   also reads and say nothing about which direction is which. On screen they are

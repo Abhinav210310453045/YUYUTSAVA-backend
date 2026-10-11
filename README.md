@@ -123,6 +123,10 @@ runs fully local with no key.
 (`yuyutsava models --help`). In a chat, `/model` — or the model chip in the
 app — moves that conversation to another model from its next message.
 
+The whole story — a ready-to-paste block for every provider and every way of
+logging in, switching, keys, and what to do when something is wrong — is in
+**[docs/guides/models.md](docs/guides/models.md)**.
+
 **Without `models.toml`**, models still come from the environment, as before:
 `LLM_PROVIDER` and that provider's variables (`.env.example`, section 1). Once
 the file exists those are not read; YUYUTSAVA names any still set, and

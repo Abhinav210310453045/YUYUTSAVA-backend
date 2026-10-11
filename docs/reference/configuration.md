@@ -44,6 +44,10 @@ edit that does not load is reported and the last good file stays in use.
 | `[security]` | `require_user_presence`: confirm it is you before a key changes |
 | `[models.<alias>]` | `provider`, `id`, and overrides: `location`/`region`, `context_window`, `max_output`, `thinking`, `price`, `family`, `base_model` (Bedrock, Azure) |
 
+Every provider with every login, ready to paste: the
+[models guide](../guides/models.md). Every setting: the
+[`models.toml` reference](models-config.md).
+
 A model is named by its alias or as `<provider>/<model id>`. Keys are
 references, never values: `secret:<name>` (`secrets.toml`), `env:VARIABLE` or
 `file:<path>`. Every setting, with its allowed values: `yuyutsava models
