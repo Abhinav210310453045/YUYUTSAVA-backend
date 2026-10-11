@@ -6,6 +6,7 @@ import {
   removeLeftovers,
   removeProvider,
   setDefault,
+  setSecurity,
   setTasks,
 } from '../../api/models'
 import { useModels } from '../../hooks/useModels'
@@ -13,6 +14,7 @@ import SetupWizard from './SetupWizard'
 import {
   Leftovers,
   NewAlias,
+  PresenceCheck,
   ProviderRow,
   TestMessage,
   select,
@@ -171,6 +173,17 @@ export default function ModelsSettings() {
       <NewAlias
         providers={status.providers}
         onAdd={(alias) => change(() => addAlias(rev, alias), `${alias.name} added`)}
+      />
+
+      <div style={subhead}>Security</div>
+      <PresenceCheck
+        presence={status.presence}
+        onChange={(required) =>
+          change(
+            () => setSecurity(rev, required),
+            required ? 'changing a key now asks first' : 'changing a key no longer asks',
+          )
+        }
       />
 
       <TestMessage choices={choices} />

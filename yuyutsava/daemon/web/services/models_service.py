@@ -80,6 +80,10 @@ class ModelsService:
             "providers": [],
             "models": [],
             "secrets_missing": [],
+            "presence": {
+                "required": self.store.presence_required(),
+                "mechanism": self.store.presence_mechanism(),
+            },
         }
         if state.problem is not None:
             base["problem"] = str(state.problem)

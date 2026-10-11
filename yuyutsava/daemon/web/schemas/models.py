@@ -57,6 +57,13 @@ class LeftoverOut(BaseModel):
     files: list[str] = Field(default_factory=list)
 
 
+class PresenceOut(BaseModel):
+    #: Changing a key needs the owner confirmed present (``[security]``).
+    required: bool = False
+    #: What asks on this machine — "Touch ID or your password" — or None when nothing can.
+    mechanism: str | None = None
+
+
 class ModelsStatusOut(BaseModel):
     #: ``models.toml`` loads; without it, models come from the environment.
     configured: bool
@@ -74,6 +81,7 @@ class ModelsStatusOut(BaseModel):
     secrets_missing: list[MissingSecretOut] = Field(default_factory=list)
     #: The environment's model variables still set, which models.toml replaced.
     leftovers: list[LeftoverOut] = Field(default_factory=list)
+    presence: PresenceOut = Field(default_factory=PresenceOut)
 
 
 class FieldOut(BaseModel):
@@ -163,6 +171,12 @@ class SetupIn(BaseModel):
     default: str | None = None
     #: Task → model reference, for tasks that should not follow the default.
     tasks: dict[str, str] = Field(default_factory=dict)
+
+
+class SecurityIn(BaseModel):
+    revision: str
+    #: Whether changing a key needs the owner confirmed present.
+    require_user_presence: bool
 
 
 class DefaultIn(BaseModel):

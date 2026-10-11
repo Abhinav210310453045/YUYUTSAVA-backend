@@ -187,3 +187,26 @@ export function Leftovers({ leftovers, onRemove }) {
     </Panel>
   )
 }
+
+// Whether changing a key needs the owner at this computer — asked the way they
+// unlock it. Off where nothing can ask; turning it off asks first.
+export function PresenceCheck({ presence, onChange }) {
+  const { required, mechanism } = presence || {}
+  return (
+    <Panel style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px' }}>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 12, color: 'var(--text-primary)' }}>
+          Ask for {mechanism || 'Touch ID, Windows Hello or a password'} before a key changes
+        </div>
+        <Muted>
+          {mechanism
+            ? 'Guards changes made here, in the CLI and in the setup wizards — not the file itself.'
+            : 'This computer has no way to ask (no Touch ID or password dialog, Windows Hello or polkit agent).'}
+        </Muted>
+      </div>
+      <Button small disabled={!mechanism && !required} onClick={() => onChange(!required)}>
+        {required ? 'on — turn off' : 'off — turn on'}
+      </Button>
+    </Panel>
+  )
+}

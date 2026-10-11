@@ -30,6 +30,7 @@ from fastapi import APIRouter, Depends, Request
 from yuyutsava.daemon.web.deps import get_session_store
 from yuyutsava.daemon.web.exceptions import (
     ConflictError,
+    ForbiddenError,
     NotFoundError,
     ServiceUnavailableError,
     ValidationError,
@@ -44,6 +45,7 @@ from yuyutsava.daemon.web.schemas.models import (
     NewAliasIn,
     ProviderFormOut,
     RemoveLeftoversIn,
+    SecurityIn,
     SessionModelsIn,
     SessionModelsOut,
     SetupIn,
@@ -59,6 +61,7 @@ from yuyutsava.llm.config.edits import (
     follow_default,
     remove_model,
     remove_provider,
+    require_presence,
     use,
 )
 from yuyutsava.llm.config.loader import ModelsConfigError
@@ -66,6 +69,7 @@ from yuyutsava.llm.config.store import StaleWrite
 from yuyutsava.llm.factory import chat_model
 from yuyutsava.llm.failures import describe_model_failure
 from yuyutsava.llm.selection import reference_for
+from yuyutsava.platform.user_presence import PresenceNotConfirmed
 from yuyutsava.storage.models import ModelChoice
 from yuyutsava.storage.sessions.store import SessionNotFound
 
@@ -86,6 +90,8 @@ async def _write(service: ModelsService, edit: Edit, revision: str) -> ModelsSta
         raise ConflictError(f"{exc}") from exc
     except (ConfigEditError, ModelsConfigError) as exc:
         raise ValidationError(str(exc)) from exc
+    except PresenceNotConfirmed as exc:
+        raise ForbiddenError(f"not changed: {exc}") from exc
     return ModelsStatusOut(**status)
 
 
@@ -112,6 +118,8 @@ async def models_check(
         result = await asyncio.to_thread(service.check, body.name, body.connection, body.secrets)
     except ValueError as exc:  # a secret that cannot be stored under that name
         raise ValidationError(str(exc)) from exc
+    except PresenceNotConfirmed as exc:
+        raise ForbiddenError(f"the key was not stored: {exc}") from exc
     return CheckProviderOut(**result)
 
 
@@ -138,6 +146,17 @@ async def models_remove_leftovers(
     body: RemoveLeftoversIn, service: ModelsService = Depends(get_models_service)
 ) -> ModelsStatusOut:
     return ModelsStatusOut(**await asyncio.to_thread(service.remove_leftovers, body.names))
+
+
+@router.put(
+    "/security",
+    response_model=ModelsStatusOut,
+    summary="Whether changing a key needs the owner confirmed present",
+)
+async def models_security(
+    body: SecurityIn, service: ModelsService = Depends(get_models_service)
+) -> ModelsStatusOut:
+    return await _write(service, require_presence(body.require_user_presence), body.revision)
 
 
 @router.post("/setup", response_model=ModelsStatusOut, summary="Write a whole setup at once")

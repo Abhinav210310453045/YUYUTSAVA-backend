@@ -26,6 +26,7 @@ from yuyutsava.llm.config.store import ConfigStore
 from yuyutsava.llm.config.watch import ConfigSource
 from yuyutsava.llm.discovery import Availability, DiscoveredModel, Discovery
 from yuyutsava.llm.selection import TaskModels
+from yuyutsava.platform.user_presence import PresenceNotConfirmed
 from yuyutsava.storage.sessions import SqliteSessionStore
 
 MODELS = """\
@@ -59,6 +60,17 @@ def _listing(access) -> Discovery:
     )
 
 
+class _Gate:
+    """The OS's presence check, answering as told."""
+
+    mechanism = "Touch ID or your password"
+    confirms = True
+
+    def confirm(self, reason: str):
+        if not self.confirms:
+            raise PresenceNotConfirmed("Touch ID or your password was cancelled or refused")
+
+
 class _Api(unittest.IsolatedAsyncioTestCase):
     write_file = True
 
@@ -78,8 +90,11 @@ class _Api(unittest.IsolatedAsyncioTestCase):
         self.source = ConfigSource(self.dir / "models.toml", self.dir / "secrets.toml")
         self.source.reload()
         self.sessions = SqliteSessionStore(self.dir / "sessions.db")
+        self.gate = _Gate()
         self.service = ModelsService(
-            ConfigStore(self.dir / "models.toml", self.dir / "secrets.toml"),
+            ConfigStore(
+                self.dir / "models.toml", self.dir / "secrets.toml", presence=lambda: self.gate
+            ),
             self.source,
             discover=_listing,
             detect=lambda: [
@@ -230,6 +245,43 @@ class Changing(_Api):
         r = await self.client.delete(f"/models/providers/work?revision={revision}")
         self.assertEqual(r.status_code, 422)
         self.assertIn("models.flash", r.text)
+
+
+class ThePresenceCheck(_Api):
+    async def turn_on(self) -> None:
+        revision = (await self.status())["revision"]
+        r = await self.client.put(
+            "/models/security", json={"revision": revision, "require_user_presence": True}
+        )
+        self.assertEqual(r.status_code, 200, r.text)
+
+    async def test_status_says_whether_it_is_on_and_what_asks(self) -> None:
+        presence = (await self.status())["presence"]
+        self.assertEqual(presence, {"required": False, "mechanism": "Touch ID or your password"})
+        await self.turn_on()
+        self.assertTrue((await self.status())["presence"]["required"])
+
+    async def test_a_refused_key_is_not_stored_and_says_so(self) -> None:
+        await self.turn_on()
+        self.gate.confirms = False
+        connection = {"type": "groq", "auth": {"method": "api_key"}}
+        r = await self.client.post(
+            "/models/check",
+            json={"name": "groq", "connection": connection, "secrets": {"key": "gsk-1"}},
+        )
+        self.assertEqual(r.status_code, 403, r.text)
+        self.assertIn("not stored", r.json()["message"])
+        self.assertFalse((self.dir / "secrets.toml").exists())
+
+    async def test_turning_it_off_needs_it_passed(self) -> None:
+        await self.turn_on()
+        self.gate.confirms = False
+        revision = (await self.status())["revision"]
+        r = await self.client.put(
+            "/models/security", json={"revision": revision, "require_user_presence": False}
+        )
+        self.assertEqual(r.status_code, 403, r.text)
+        self.assertTrue((await self.status())["presence"]["required"])
 
 
 class LeftoverVariables(_Api):

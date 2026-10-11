@@ -26,6 +26,11 @@ class AppError(Exception):
         self.details = details or {}
 
 
+class ForbiddenError(AppError):
+    status_code = 403
+    code = "forbidden"
+
+
 class NotFoundError(AppError):
     status_code = 404
     code = "not_found"

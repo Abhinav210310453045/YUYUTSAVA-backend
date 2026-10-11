@@ -45,6 +45,10 @@ export const removeProvider = (revision, name) =>
 export const getSessionModels = (sessionId) => call('GET', `/models/sessions/${enc(sessionId)}`)
 export const setSessionModels = (sessionId, model, subagents = {}) =>
   call('PUT', `/models/sessions/${enc(sessionId)}`, { model, subagents })
+// Whether changing a key needs the owner confirmed present (Touch ID, Windows
+// Hello, a password). Turning it off asks the OS first, on the daemon's machine.
+export const setSecurity = (revision, required) =>
+  call('PUT', '/models/security', { revision, require_user_presence: required })
 // Takes the model variables models.toml replaced out of the .env files they are in.
 export const removeLeftovers = (names) => call('POST', '/models/leftovers/remove', { names })
 // Billable: one short message. Only ever sent from an explicit click.
