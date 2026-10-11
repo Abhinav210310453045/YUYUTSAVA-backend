@@ -22,6 +22,8 @@ through the environment.
 
 from __future__ import annotations
 
+import functools
+import os
 import threading
 import warnings
 from collections.abc import Callable
@@ -93,21 +95,48 @@ def google_credentials(target: ProviderAccess) -> Any:
     """A ``google.auth`` credentials object for the provider's login."""
     auth = target.connection.auth
     if auth.method == "adc":
-        google_auth = require("google.auth", provider="Vertex AI", install=_INSTALL)
-        with warnings.catch_warnings():
-            # A gcloud user login carries no quota project, and google-auth warns
-            # about it on every lookup — once per model built. Vertex bills the
-            # project in the request URL either way; setting a quota project
-            # would add a serviceusage permission not every Vertex user has.
-            warnings.filterwarnings("ignore", message=_NO_QUOTA_PROJECT, category=UserWarning)
-            credentials, _project = google_auth.default(scopes=_SCOPES)
-        return credentials
+        return _adc_credentials(_adc_file_version())
     if auth.method == "service_account":
         accounts = require("google.oauth2.service_account", provider="Vertex AI", install=_INSTALL)
         path = Path(auth.key_file).expanduser()
         return accounts.Credentials.from_service_account_file(str(path), scopes=_SCOPES)
     oauth = require("google.oauth2.credentials", provider="Vertex AI", install=_INSTALL)
     return oauth.Credentials(token=target.secret(auth.token))
+
+
+def _adc_file_version() -> tuple[str, float]:
+    """The login file application-default credentials come from, and when it last changed."""
+    path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
+    if not path:
+        config = os.environ.get("CLOUDSDK_CONFIG") or os.path.join(
+            os.path.expanduser("~"), ".config", "gcloud"
+        )
+        path = os.path.join(config, "application_default_credentials.json")
+    try:
+        return path, os.stat(os.path.expanduser(path)).st_mtime
+    except OSError:
+        return path, 0.0
+
+
+@functools.lru_cache(maxsize=4)
+def _adc_credentials(version: tuple[str, float]) -> Any:
+    """Application-default credentials, looked up once per login file version.
+
+    ``google.auth.default()`` runs ``gcloud config get-value project`` as a
+    subprocess on every call with a user login (~0.25 s) — once per model built,
+    three at a chat's start. One object serves every model: it refreshes its
+    own token, and :func:`token_source` serialises refreshes. A new login
+    (``gcloud auth application-default login``) changes the file, and so the key.
+    """
+    google_auth = require("google.auth", provider="Vertex AI", install=_INSTALL)
+    with warnings.catch_warnings():
+        # A gcloud user login carries no quota project, and google-auth warns
+        # about it on every lookup. Vertex bills the project in the request URL
+        # either way; setting a quota project would add a serviceusage
+        # permission not every Vertex user has.
+        warnings.filterwarnings("ignore", message=_NO_QUOTA_PROJECT, category=UserWarning)
+        credentials, _project = google_auth.default(scopes=_SCOPES)
+    return credentials
 
 
 def token_source(credentials: Any) -> Callable[[], str]:
