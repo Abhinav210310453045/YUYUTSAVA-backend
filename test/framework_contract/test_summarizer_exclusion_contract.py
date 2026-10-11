@@ -125,6 +125,20 @@ def claude_suffix_in_its_master_prompt() -> tuple[str, str]:
         return prompt_suffix(model), str(prompts[-1])
 
 
+def test_asking_again_registers_nothing_and_logs_nothing() -> None:
+    """A switched turn asks for its model's profile every call; deepagents logs a re-registration."""
+    model = _models()["vertex"]
+    with _isolated_registry():
+        exclude_deepagents_summarizer(model)
+        with mock.patch.object(harness_profiles.logger, "info") as logged:
+            exclude_deepagents_summarizer(model)
+            prompt_suffix(model)
+        assert not logged.called, logged.call_args_list
+        assert (
+            SUMMARIZER in harness_profiles._get_harness_profile("google_genai").excluded_middleware
+        )
+
+
 def test_the_suffix_read_is_the_one_deepagents_applied() -> None:
     suffix, prompt = claude_suffix_in_its_master_prompt()
     assert suffix, (

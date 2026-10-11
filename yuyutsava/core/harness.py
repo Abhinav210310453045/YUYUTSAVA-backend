@@ -43,7 +43,10 @@ from deepagents import HarnessProfile, register_harness_profile
 # key registered here is the key it looks up, and the suffix read is the one it
 # applied (pinned by test/framework_contract/test_summarizer_exclusion_contract.py).
 from deepagents._models import get_model_provider
-from deepagents.profiles.harness.harness_profiles import _harness_profile_for_model
+from deepagents.profiles.harness.harness_profiles import (
+    _get_harness_profile,
+    _harness_profile_for_model,
+)
 from langchain_core.messages import SystemMessage
 
 #: deepagents' summarizer, by the public name its middleware reports. A name
@@ -61,9 +64,11 @@ def exclude_deepagents_summarizer(model: Any) -> None:
     """Make every deepagents graph built on *model*'s provider leave out its summarizer.
 
     Merged by deepagents into whatever that provider already has, and into any
-    model-level profile it ships (Claude's, for one); registering again changes
-    nothing, so each build simply registers. A model whose provider cannot be told —
-    a test double — keeps the summarizer, and says so.
+    model-level profile it ships (Claude's, for one). Registered once per
+    provider: deepagents logs every re-registration as a merge, and a switched
+    turn asks for its model's profile on every call — that was a log line in the
+    chat each time. A model whose provider cannot be told — a test double —
+    keeps the summarizer, and says so.
     """
     provider = get_model_provider(model)
     if not provider:
@@ -74,6 +79,9 @@ def exclude_deepagents_summarizer(model: Any) -> None:
         )
         return
     with _lock:
+        registered = _get_harness_profile(provider)
+        if registered is not None and _SUMMARIZER in registered.excluded_middleware:
+            return
         register_harness_profile(provider, HarnessProfile(excluded_middleware={_SUMMARIZER}))
 
 
