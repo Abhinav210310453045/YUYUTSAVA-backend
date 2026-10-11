@@ -9,6 +9,14 @@ instances scoped to them.
 
 Failure of one MCP server does not affect others: each server is tracked in an
 ``AsyncExitStack`` so partial shutdown stays clean.
+
+Servers start **together**, each within a time limit
+(``YUYUTSAVA_MCP_START_TIMEOUT_SEC``, default 60): an ``npx -y`` server checks
+the npm registry on every start, and one after another their waits added up
+before a chat could open. The CLI does not wait at all (:meth:`begin`): its
+chat opens at once, each server reports ``starting`` until it is up, and
+listeners (:meth:`subscribe`) hear every change — the CLI rebuilds its agent
+with the new tools between messages, so they work in the same chat.
 """
 
 from __future__ import annotations
@@ -27,8 +35,16 @@ from mcp.client.sse import sse_client
 from mcp.client.stdio import stdio_client
 from mcp.types import PaginatedRequestParams
 
+from yuyutsava.config.env import env_float
 from yuyutsava.mcp.config import MCPConfig, MCPServerSpec, global_mcp_config_path
-from yuyutsava.mcp.status import CONNECTED, FAILED, NOT_RUNNING, ServerStatus, connectors_block
+from yuyutsava.mcp.status import (
+    CONNECTED,
+    FAILED,
+    NOT_RUNNING,
+    STARTING,
+    ServerStatus,
+    connectors_block,
+)
 from yuyutsava.mcp.tool_adapter import adapt, sdk_field
 
 logger = logging.getLogger("yuyutsava.mcp.loader")
@@ -53,26 +69,74 @@ class _ServerEntry:
 class MCPClientManager:
     """Owns every MCP client session; serves tool lists per agent scope."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, start_timeout: float | None = None) -> None:
         self._servers: dict[str, _ServerEntry] = {}
         #: Why each server that failed to start failed, until it next starts.
         self._failures: dict[str, str] = {}
+        #: Servers on their way up, and the runner each is being started in
+        #: (``None`` until :meth:`begin`'s task reaches it).
+        self._starting: dict[str, asyncio.Task[None] | None] = {}
         self._config: MCPConfig = MCPConfig.empty()
         self._lock = asyncio.Lock()
+        #: How long one server may take to start before it is given up on.
+        self._start_timeout = (
+            start_timeout
+            if start_timeout is not None
+            else env_float("YUYUTSAVA_MCP_START_TIMEOUT_SEC", None, 60.0)
+        )
+        #: Bumped whenever a server comes up, fails, or stops.
+        self._generation = 0
+        self._listeners: list[Callable[[], None]] = []
+        self._background: asyncio.Task[None] | None = None
 
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
 
     async def start(self, cfg: MCPConfig) -> None:
-        """Spawn every server in *cfg*. Logs and skips servers that fail to start."""
+        """Start every server in *cfg* together; return once each is up or given up on."""
         async with self._lock:
             self._config = cfg
-            for name, spec in cfg.servers.items():
-                await self._start_one(name, spec)
+            await self._start_all(cfg.servers)
+
+    def begin(self, cfg: MCPConfig) -> None:
+        """Start every server in *cfg* in the background; return at once.
+
+        Each reports ``starting`` until it is up or given up on, and
+        :meth:`subscribe` listeners hear each change. Call on the loop the
+        sessions should live on.
+        """
+        self._config = cfg
+        for name in cfg.servers:
+            self._starting.setdefault(name, None)
+        self._background = asyncio.create_task(self.start(cfg), name="mcp-start")
+
+    @property
+    def generation(self) -> int:
+        """Changes with every server that comes up, fails, or stops."""
+        return self._generation
+
+    def subscribe(self, listener: Callable[[], None]) -> Callable[[], None]:
+        """Call *listener* (on this manager's loop) after every change; returns how to stop."""
+        self._listeners.append(listener)
+        return lambda: self._listeners.remove(listener) if listener in self._listeners else None
+
+    def settled(self) -> bool:
+        """Whether no server is still starting."""
+        return not self._starting
 
     async def stop(self) -> None:
-        """Tear every server session down. Logs per-server progress."""
+        """Tear every server session down. Logs per-server progress.
+
+        A start still running in the background is cancelled first: closing a
+        chat never waits for a slow server to finish starting.
+        """
+        if self._background is not None and not self._background.done():
+            self._background.cancel()
+            for runner in list(self._starting.values()):
+                if runner is not None:
+                    runner.cancel()
+            await asyncio.gather(self._background, return_exceptions=True)
         async with self._lock:
             names = list(self._servers.keys())
             for name in names:
@@ -97,8 +161,7 @@ class MCPClientManager:
 
             for name in removed | changed:
                 await self._stop_one(name)
-            for name in added | changed:
-                await self._start_one(name, new_cfg.servers[name])
+            await self._start_all({name: new_cfg.servers[name] for name in added | changed})
 
     # ------------------------------------------------------------------
     # Queries
@@ -138,6 +201,8 @@ class MCPClientManager:
             entry = self._servers.get(name)
             if entry is not None:
                 out.append(ServerStatus(name, CONNECTED, len(entry.tools), source=spec.source))
+            elif name in self._starting:
+                out.append(ServerStatus(name, STARTING, source=spec.source))
             elif name in self._failures:
                 out.append(
                     ServerStatus(name, FAILED, error=self._failures[name], source=spec.source)
@@ -154,10 +219,15 @@ class MCPClientManager:
     # Internals
     # ------------------------------------------------------------------
 
+    async def _start_all(self, servers: dict[str, MCPServerSpec]) -> None:
+        """Start *servers* at the same time; one slow or failing server delays none of the rest."""
+        await asyncio.gather(*(self._start_one(name, spec) for name, spec in servers.items()))
+
     async def _start_one(self, name: str, spec: MCPServerSpec) -> None:
         """Spawn the per-server runner task and wait until it has either
-        registered itself or failed. The runner owns the transport stack for
-        its entire lifetime so cancel-scope exit happens in the same task.
+        registered itself, failed, or run out of time. The runner owns the
+        transport stack for its entire lifetime so cancel-scope exit happens in
+        the same task.
         """
         if name in self._servers:
             logger.debug("MCP server %r already running; skipping", name)
@@ -170,20 +240,33 @@ class MCPClientManager:
             self._run_server(name, spec, ready, stop_event),
             name=f"mcp-server[{name}]",
         )
+        self._starting[name] = runner
         # Wait for the runner to either register the entry or signal failure.
         ready_wait = asyncio.create_task(ready.wait())
         try:
             await asyncio.wait(
                 {ready_wait, runner},
+                timeout=self._start_timeout,
                 return_when=asyncio.FIRST_COMPLETED,
             )
         finally:
             ready_wait.cancel()
+            self._starting.pop(name, None)
 
-        if not ready.is_set():
-            # Runner exited before signalling — it already logged. Surface
-            # nothing; the manager simply skips this server.
-            return
+        if not ready.is_set() and not runner.done():
+            runner.cancel()
+            self._failures[name] = f"did not start within {self._start_timeout:g} s"
+            logger.warning("MCP server %r did not start within %gs", name, self._start_timeout)
+        # Up, failed (the runner logged why) or given up on: either way, a change.
+        self._changed()
+
+    def _changed(self) -> None:
+        self._generation += 1
+        for listener in list(self._listeners):
+            try:
+                listener()
+            except Exception:  # noqa: BLE001 — one listener's bug must not stop the others
+                logger.exception("MCP change listener failed")
 
     async def _run_server(
         self,
@@ -311,6 +394,7 @@ async def start_manager_for_workspace(
     workspace: Path | None,
     *,
     factory: Callable[[], MCPClientManager] | None = None,
+    wait: bool = True,
 ) -> MCPClientManager | None:
     """Standalone-CLI entry point: load global + workspace config, start a manager.
 
@@ -318,11 +402,16 @@ async def start_manager_for_workspace(
     and callers behave exactly as they did before MCP existed. The file I/O
     runs off the loop; the sessions themselves are created on the caller's
     loop, which is why the caller must also be the one to ``stop()`` it
-    (``AgentBundle.aclose``). *factory* exists for tests.
+    (``AgentBundle.aclose``). With ``wait=False`` the servers start in the
+    background (:meth:`MCPClientManager.begin`) and the manager is returned at
+    once. *factory* exists for tests.
     """
     cfg = await asyncio.to_thread(MCPConfig.load, workspace)
     if not cfg.servers:
         return None
     manager = (factory or MCPClientManager)()
-    await manager.start(cfg)
+    if wait:
+        await manager.start(cfg)
+    else:
+        manager.begin(cfg)
     return manager

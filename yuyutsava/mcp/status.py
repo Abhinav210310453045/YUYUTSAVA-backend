@@ -21,8 +21,9 @@ from yuyutsava.mcp.naming import SEPARATOR
 
 CONNECTED = "connected"
 FAILED = "failed"
-#: Configured, but not running and not known to have failed — starting, or
-#: stopped by a reload.
+#: On its way up: its tools join as soon as it is.
+STARTING = "starting"
+#: Configured, but not running and not known to have failed — stopped by a reload.
 NOT_RUNNING = "not running"
 
 
@@ -70,12 +71,16 @@ def connectors_block(statuses: list[ServerStatus], config_path: Path | str) -> s
     for s in statuses:
         if s.state == CONNECTED:
             lines.append(f"  - {s.name}: connected, {s.tools} tools ({s.name}{SEPARATOR}*)")
+        elif s.state == STARTING:
+            lines.append(f"  - {s.name}: still starting — its tools are on their way")
         else:
             reason = f" — {s.error}" if s.error else ""
             lines.append(f"  - {s.name}: {s.state}{reason}")
     lines += [
         "Load a connector's tools like any other: tool_search('<server>__*') or a keyword.",
-        "If one is not connected, tell the user it failed and why; they fix it in that file.",
+        "If one is still starting, it has not failed: tell the user it is starting and its",
+        "tools will work from their next message.",
+        "If one failed, tell the user it failed and why; they fix it in that file.",
         "These are the only connectors you have. Never read another app's MCP configuration",
         "(Claude Desktop, Cursor, …) to answer a question about yours.",
     ]
