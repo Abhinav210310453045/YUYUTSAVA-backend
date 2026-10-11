@@ -40,15 +40,15 @@ layer between the model and your filesystem.
 ```bash
 git clone https://github.com/Abhinav210310453045/YUYUTSAVA-backend.git
 cd YUYUTSAVA-backend
-uv sync
+python scripts/install.py     # the desktop app and the `yuyutsava` command
 
-uv run yuyutsava models setup   # connect a model provider, step by step
+yuyutsava models setup        # connect a model provider, step by step
 ```
 
 Run a task:
 
 ```bash
-uv run yuyutsava "list every Python file in this repo and count the lines"
+yuyutsava "list every Python file in this repo and count the lines"
 ```
 
 The first chat offers the same setup if you skip it. The desktop app has its
@@ -57,22 +57,27 @@ own setup wizard and opens it whenever no model is set up.
 `.env.example` is the reference for everything else — 16 numbered sections,
 each stating its own defaults, all of it optional.
 
-### Installing the CLI
+### Installing
 
-`uv run yuyutsava …` from the checkout — and the desktop app, which starts the
-daemon that way — runs on the locked dependencies (`uv.lock`). To have a
-`yuyutsava` command on your PATH that does the same, install it with:
+`scripts/install.py` is the one way to install, and to update after a pull:
 
 ```bash
-python scripts/install_cli.py --extra vertex   # the extras you use; repeatable
+python scripts/install.py              # both: the desktop app and the terminal command
+python scripts/install.py --ui         # the desktop app only
+python scripts/install.py --cli        # the `yuyutsava` command only
+python scripts/install.py --extra dev  # plus the test tools
+python scripts/install.py --lean       # without the optional features
 ```
 
-It installs the checkout editable, constrained to `uv.lock`. Do not use
-`pipx install -e .` or a bare `uv tool install -e .`: they resolve the newest
-versions the ranges allow, which the tests and contracts never ran (an
-unlocked install once took every MCP server down). If you have one, run
-`pipx uninstall yuyutsava` first. The daemon logs its dependency versions at
-start-up and warns when they are not the locked ones.
+Both come from `uv.lock`, with every feature by default — all the model
+providers, voice, the webcam source, semantic memory, charts. `--ui` sets up
+the checkout's `.venv`, which the desktop app runs its daemon in, without ever
+removing anything already there. `--cli` installs the `yuyutsava` command on
+your PATH, editable, constrained to the lock. Don't install with `uv sync`
+yourself: a plain `uv sync` is exact, and uninstalls every optional feature it
+isn't told about. Nor with `pipx install -e .` or a bare `uv tool install -e .`:
+they resolve the newest versions the ranges allow, which the tests never ran.
+If you have a pipx install, run `pipx uninstall yuyutsava` first.
 
 ### Choosing models
 
@@ -112,7 +117,7 @@ Touch ID or your password first (Windows Hello on Windows, polkit on Linux).
 | Provider types | |
 |---|---|
 | OpenAI-compatible (no extra install) | `groq` · `openrouter` · `ollama` · `openai` · `openai_compatible` |
-| Native SDK (`uv sync --extra <name>`) | `anthropic` · `google` · `vertex` · `bedrock` · `azure` · `mistral` · `cohere` |
+| Native SDK (installed by default; `--lean --extra <name>` for only some) | `anthropic` · `google` · `vertex` · `bedrock` · `azure` · `mistral` · `cohere` |
 
 `openai_compatible` plus a base URL covers xAI, DeepSeek, Together, Fireworks,
 Perplexity, Cerebras, DeepInfra and anything else speaking that API. `ollama`

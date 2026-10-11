@@ -11,9 +11,9 @@ and small focused pull requests.
 ```bash
 git clone https://github.com/Abhinav210310453045/YUYUTSAVA-backend.git
 cd YUYUTSAVA-backend
-uv sync
+python scripts/install.py --extra dev   # the app, the command, every feature, the test tools
 
-cp .env.example .env      # set ONE provider key
+yuyutsava models setup                  # connect a model provider
 ```
 
 `ollama` needs no API key and costs nothing, which makes it the easiest
@@ -24,9 +24,11 @@ LLM_PROVIDER=ollama
 OLLAMA_MODEL=llama3.2:3b
 ```
 
-Optional extras are installed per feature — `uv sync --extra voice`,
-`--extra visuals`, `--extra memory`, `--extra vertex`, and so on. See
-`[project.optional-dependencies]` in `pyproject.toml`.
+`scripts/install.py` is the only install step, for contributors too: it syncs
+the `.venv` from the lock without removing anything (a plain `uv sync` is exact
+and strips every optional feature it isn't told about), and installs the
+`yuyutsava` command. `--lean` skips the optional features; `--extra` adds one —
+see `[project.optional-dependencies]` in `pyproject.toml`.
 
 For the desktop app:
 
@@ -153,7 +155,7 @@ with its family, never with `pip install -U`, which moves one package off
 ```bash
 uv lock --upgrade-package langgraph-api --upgrade-package langgraph-runtime-inmem \
         --upgrade-package langgraph-cli --upgrade-package langgraph --upgrade-package langgraph-sdk
-uv sync --inexact --all-extras
+python scripts/install.py --extra dev
 .venv/bin/python scripts/verify_framework_contract.py
 uv run python scripts/async_subagents_e2e.py   # the in-process server, end to end; no model calls
 ```

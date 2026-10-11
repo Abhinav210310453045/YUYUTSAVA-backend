@@ -565,7 +565,7 @@ on.
 - **Presence gate on Linux headless and Windows without Hello.** Each falls back to a password, and
   the spike documents it. The gate is a guard on YUYUTSAVA's own surfaces, not encryption at rest.
 - **Claude on Vertex is not verifiable live yet.** The owner's billing account is a free trial (2026-10-03), and every Claude quota is 0 (rule 15). Claude on Vertex is built and contract-tested hermetically (`ChatAnthropicVertex`, the `global` endpoint, prompt caching). The live row in §4 waits for the account upgrade, the Model Garden enable and the quota grant.
-- **Lock change.** The owner's `uv tool` install of `yuyutsava` needs `scripts/install_cli.py`
+- **Lock change.** The owner's `uv tool` install of `yuyutsava` needs `scripts/install.py` (named `install_cli.py` until 2026-10-11)
   re-run after the dependency waves.
 ## 6. Status
 

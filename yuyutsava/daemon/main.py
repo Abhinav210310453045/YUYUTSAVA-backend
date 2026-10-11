@@ -274,7 +274,7 @@ def _log_install_check() -> None:
     if report.drifted:
         logger.warning(
             "this install does not match the project's locked dependencies: %s. "
-            "Reinstall with `python scripts/install_cli.py` (README → Installing the CLI), "
+            "Reinstall with `python scripts/install.py` (README → Installing), "
             "or run the daemon with `uv run yuyutsava daemon` from the checkout.",
             "; ".join(report.out_of_range + report.off_lock),
         )
