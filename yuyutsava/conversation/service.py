@@ -215,6 +215,11 @@ class ConversationService:
         """
         bundle = await self._ensure_bundle()
         self._turns_ran += 1
+        # Tools that arrived since the last turn — an MCP server that came up
+        # after the chat opened — join now, between turns: one turn, one graph.
+        refresh = getattr(bundle, "refresh_agent", None)  # any bundle-shaped object may be given
+        if refresh is not None and (fresh := refresh()) is not None:
+            bundle.agent = fresh
 
         # No turn ever starts from a history the model will not continue from.
         # This is what makes "send now" work everywhere without each front

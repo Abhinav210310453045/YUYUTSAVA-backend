@@ -12,6 +12,7 @@ who is reading its output, and which card the tinker agent is bound to.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from dataclasses import replace as dataclass_replace
 from typing import Any
@@ -159,6 +160,12 @@ class StackWiring:
     #: The session store whose rows carry each conversation's own model choice
     #: (``Session.models``). Absent: conversations follow ``models.toml`` alone.
     sessions: Any | None = None
+    #: An interactive chat: the stack's own MCP servers start in the background,
+    #: and their tools join the conversation, between messages, as each comes up.
+    #: Absent (a one-shot task has no next message): the build waits for them.
+    mcp_in_background: bool = False
+    #: Told, in plain words, what the build is doing now — for a status line.
+    progress: Callable[[str], None] | None = None
 
 
 #: The tinker agent's own budget. It works a single TODO card, so its context is

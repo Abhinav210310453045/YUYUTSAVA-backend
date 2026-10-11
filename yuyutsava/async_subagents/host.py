@@ -33,8 +33,8 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Callable, Iterable
 from contextlib import closing
-from typing import Iterable
 
 from yuyutsava.async_subagents import _lg_graphs
 
@@ -72,6 +72,31 @@ def resolve_allow_blocking(*, default: bool) -> bool:
         default,
     )
     return default
+
+
+class LatestGraph:
+    """A subagent's graph for its MCP servers as they are now.
+
+    Registered with the LangGraph server as a graph *factory*: the server calls
+    it once per run (``langgraph_api`` treats a callable as a factory). It hands
+    back the graph it last compiled, and compiles it again first when the
+    subagent's MCP servers have changed since — so a server that came up after
+    the chat opened has its tools in the next background run, in the same chat.
+    """
+
+    def __init__(self, build: Callable[[], object], generation: Callable[[], int | None]) -> None:
+        self._build = build
+        self._generation = generation
+        self._lock = threading.Lock()
+        self._built_at = generation()
+        self._graph = build()
+
+    def __call__(self) -> object:
+        with self._lock:
+            now = self._generation()
+            if now != self._built_at:
+                self._graph, self._built_at = self._build(), now
+            return self._graph
 
 
 def _pick_free_port() -> int:
@@ -168,7 +193,9 @@ class AsyncSubagentHost:
         """Build a host from a sequence of ``BaseSubAgent`` instances.
 
         Each subagent's ``build_async_graph(model, checkpointer)`` is compiled
-        once and registered under ``subagent.async_graph_id()``.
+        and registered under ``subagent.async_graph_id()`` — once, or, for a
+        subagent with MCP servers, as a :class:`LatestGraph` that compiles it
+        again when a server comes up after the host started.
 
         ``middleware_factory(sa) -> list`` supplies context middleware
         (tool-result offload, compaction) per graph; ``extra_tools_factory()
@@ -180,11 +207,20 @@ class AsyncSubagentHost:
         for sa in subagents:
             if not getattr(sa, "supports_async", False):
                 continue
-            graphs[sa.async_graph_id()] = sa.build_async_graph(
-                model,
-                checkpointer,
-                middleware=middleware_factory(sa) if middleware_factory else None,
-                extra_tools=extra_tools_factory() if extra_tools_factory else None,
+
+            def build(sa=sa) -> object:
+                return sa.build_async_graph(
+                    model,
+                    checkpointer,
+                    middleware=middleware_factory(sa) if middleware_factory else None,
+                    extra_tools=extra_tools_factory() if extra_tools_factory else None,
+                )
+
+            generation = getattr(sa, "mcp_generation", None)
+            graphs[sa.async_graph_id()] = (
+                build()
+                if generation is None
+                else LatestGraph(build, lambda sa=sa: sa.mcp_generation)
             )
         return cls(graphs=graphs, **kwargs)
 

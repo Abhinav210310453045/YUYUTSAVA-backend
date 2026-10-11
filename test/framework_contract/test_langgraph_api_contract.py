@@ -84,6 +84,34 @@ def test_the_sdk_declares_every_keyword_the_watchers_pass() -> None:
     assert not moved, f"langgraph_sdk.client no longer declares {moved}"
 
 
+def test_a_latest_graph_is_called_once_per_run_as_a_factory() -> None:
+    """``LatestGraph`` relies on langgraph-api calling a registered callable per run.
+
+    That is how a subagent's MCP server that came up after the host started
+    reaches its next background run. If the server stopped treating a callable
+    as a factory, every run would get the graph object itself — not a graph.
+    """
+    from langgraph_api._factory_utils import classify_factory, invoke_factory, is_factory
+
+    from yuyutsava.async_subagents.host import LatestGraph
+
+    generation = [0]
+    built: list[object] = []
+
+    def build() -> object:
+        built.append(object())
+        return built[-1]
+
+    latest = LatestGraph(build, lambda: generation[0])
+    classify_factory(latest, "contract-latest-graph")
+    assert is_factory("contract-latest-graph"), "a callable is no longer treated as a factory"
+    first = invoke_factory(latest, "contract-latest-graph", {}, None)
+    assert first is built[0], "the factory's graph is not what a run gets"
+    generation[0] = 1  # a server came up
+    second = invoke_factory(latest, "contract-latest-graph", {}, None)
+    assert second is built[1] and len(built) == 2, "the next run did not get a rebuilt graph"
+
+
 class TheCheckFails(unittest.TestCase):
     """Negative controls: a renamed keyword is named, even behind ``**kwargs``."""
 

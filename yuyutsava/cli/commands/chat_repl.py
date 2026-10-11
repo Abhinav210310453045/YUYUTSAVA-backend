@@ -55,6 +55,7 @@ from yuyutsava.cli.render.dashboard import (
 from yuyutsava.cli.render.plain import ChatRenderer
 from yuyutsava.cli.render.protocol import ChatRendererProtocol
 from yuyutsava.cli.render.renderer import RichChatRenderer
+from yuyutsava.cli.tool_notices import ToolNotices
 from yuyutsava.cli.tooling import cleanup_local_sandbox
 from yuyutsava.cli.usage import format_usage, session_usage
 from yuyutsava.config.env import env_flag
@@ -942,12 +943,16 @@ class ReplLoop:
     read_input: Callable[[], Awaitable[str]]
     #: See ``ChatSurface.echo_input``.
     echo_input: bool = False
+    #: Says when an MCP server that was still starting comes up or gives up.
+    tool_notices: Any = None
 
     async def run(self) -> None:
         while True:
             # Flush any background-task events queued during the previous
             # turn so the user sees them before composing the next message.
             await self.approvals.render_between_turns()
+            if self.tool_notices is not None:
+                self.tool_notices.flush()
             try:
                 user_input = await self.read_input()
             except (EOFError, KeyboardInterrupt):
@@ -972,6 +977,8 @@ class ReplLoop:
 
     async def _turn(self, text: str, *, retry: bool = False) -> None:
         started = time.time()
+        if self.tool_notices is not None:
+            self.tool_notices.flush()  # a server that came up while this was typed
         if not await run_one_turn(
             self.convo,
             text,
@@ -1150,7 +1157,11 @@ async def run_chat_repl(
         builder = build_agent_stack(
             workspace,
             opts.settings,
-            wiring=StackWiring(prefs_store=prefs, models=opts.models, sessions=store),
+            # The chat opens without waiting for its MCP servers; each one's
+            # tools join the conversation, between messages, when it is up.
+            wiring=StackWiring(
+                prefs_store=prefs, models=opts.models, sessions=store, mcp_in_background=True
+            ),
             execution=opts.execution,
             bash_timeout_sec=opts.bash_timeout_sec,
             permission_check=opts.permission_check,
@@ -1175,6 +1186,9 @@ async def run_chat_repl(
 
         approvals = await BackgroundApprovals.open(bundle)
         runtime_toggles = _RuntimeToggles(prefs)
+        tool_notices = (
+            ToolNotices(bundle.mcp_manager, dashboard) if bundle.mcp_manager is not None else None
+        )
 
         try:
             convo, status_line = await _start_session(
@@ -1208,6 +1222,7 @@ async def run_chat_repl(
                 usage_store=bundle.usage_store,
                 read_input=make_input_reader(dashboard, history_path),
                 echo_input=surface.echo_input,
+                tool_notices=tool_notices,
             ).run()
 
             # Loop exited — flush bookkeeping and mark the session done.
@@ -1216,6 +1231,8 @@ async def run_chat_repl(
             except Exception:  # noqa: BLE001 — bookkeeping must not fail the exit
                 logger.debug("marking the session done failed", exc_info=True)
         finally:
+            if tool_notices is not None:
+                tool_notices.stop()
             await _close_chat(
                 dashboard=dashboard,
                 renderer=renderer,

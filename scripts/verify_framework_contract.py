@@ -182,6 +182,10 @@ def main() -> int:
             langgraph_api.test_the_sdk_declares_every_keyword_the_watchers_pass,
         ),
         (
+            "langgraph-api calls a registered graph factory once per run (late MCP tools)",
+            langgraph_api.test_a_latest_graph_is_called_once_per_run_as_a_factory,
+        ),
+        (
             "portable history crosses every chat SDK (silent-failure seam)",
             cross_provider.test_portable_history_is_accepted_by_every_builder,
         ),

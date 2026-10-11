@@ -15,7 +15,7 @@ live in :mod:`yuyutsava.core.streaming`; the CLI system prompts live in
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -150,6 +150,13 @@ class AgentBundle:
     #: ``async drain()``), drained in aclose before the pool closes.
     background_writers: list[Any] = field(default_factory=list)
     usage_store: Any | None = None  # UsageStore the graph writes to — read for /usage
+    #: Where the agent's files and ``execute`` go, kept so a rebuild reuses it
+    #: rather than starting a second sandbox.
+    sandbox: Any | None = None
+    #: Asked at the start of each turn: a rebuilt agent when the tools it was
+    #: built with have changed since — an MCP server came up after the chat
+    #: opened — else ``None``. Swapped in before the turn runs, never during one.
+    refresh_agent: Callable[[], CompiledStateGraph | None] | None = None
 
     async def aclose(self) -> None:
         """Async teardown: stop the CLI-owned MCP manager (its sessions live on
@@ -1046,6 +1053,7 @@ def build_cli_deepagent(
     docker_settings: DockerSettings | None = None,
     local_settings: LocalSettings | None = None,
     front: str = "app",
+    sandbox: _CliSandbox | None = None,
 ) -> AgentBundle:
     """Build the CLI deepagent.
 
@@ -1056,7 +1064,8 @@ def build_cli_deepagent(
 
     ``deps`` carries every optional dependency (see :class:`MasterDeps`); what
     stays a parameter is what only this agent has — where it runs and who reads
-    its output.
+    its output. *sandbox* is a previous build's (``bundle.sandbox``), for a
+    rebuild that must not start a second one.
     """
     deps = deps or MasterDeps()
     model = chat_model(settings)
@@ -1093,7 +1102,7 @@ def build_cli_deepagent(
     subagent_specs, async_mw = _master_subagents(deps, model, "build_cli_deepagent", built=settings)
     middleware.extend(async_mw)
 
-    sandbox = _cli_sandbox(
+    sandbox = sandbox or _cli_sandbox(
         execution_mode, docker_settings, layout, workspace_root, deps.bash_timeout_sec
     )
     startup_tools, _registry = _build_tool_registry_and_tools(
@@ -1136,6 +1145,7 @@ def build_cli_deepagent(
         async_host_attachment=deps.async_host_attachment,
         async_task_mirror=deps.async_task_mirror,
         subagent_names=_sync_names(subagent_specs),
+        sandbox=sandbox,
     )
 
 

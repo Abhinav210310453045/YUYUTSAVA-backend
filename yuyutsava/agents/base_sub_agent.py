@@ -240,6 +240,16 @@ class BaseSubAgent(ABC):
         all_tools = make_search_tools(self._search_config, cap_enforcer=self._cap_enforcer)
         return [t for t in all_tools if any(fnmatch.fnmatchcase(t.name, p) for p in wanted)]
 
+    @property
+    def mcp_generation(self) -> int | None:
+        """Changes whenever one of this subagent's MCP servers comes up, fails or stops.
+
+        ``None`` without an MCP manager. A graph host rebuilds a subagent's graph
+        when it changes, so a server that came up late is reachable from its
+        next run (:class:`yuyutsava.async_subagents.host.LatestGraph`).
+        """
+        return self._mcp_manager.generation if self._mcp_manager is not None else None
+
     def mcp_tools(self) -> list[BaseTool]:
         """Return MCP tools scoped to this subagent's ``name``.
 

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -59,6 +60,35 @@ async def _refresh_prices(settings: ModelTarget) -> None:
     except Exception:  # noqa: BLE001 — pricing must never block a stack build
         # refresh_price_cache handles its own failures; reaching here is a bug.
         logger.warning("price cache refresh failed; costs may show as unpriced", exc_info=True)
+
+
+def _say_nothing(_text: str) -> None:
+    return None
+
+
+async def _abandon(start: asyncio.Task[Any]) -> None:
+    """Cancel an MCP start the stack will not finish, stopping any manager it made."""
+    start.cancel()
+    try:
+        manager = await start
+    except (asyncio.CancelledError, Exception):  # noqa: BLE001 — already failing; cleanup only
+        return
+    if manager is not None:
+        await manager.stop()
+
+
+def refresh_when_tools_change(manager: Any, rebuild: Callable[[], Any]) -> Callable[[], Any]:
+    """``bundle.refresh_agent``: a rebuilt agent once *manager*'s servers have changed, else None."""
+    built_at = manager.generation
+
+    def refresh() -> Any:
+        nonlocal built_at
+        if manager.generation == built_at:
+            return None
+        built_at = manager.generation
+        return rebuild()
+
+    return refresh
 
 
 def stack_consent(wiring: StackWiring) -> Any:
@@ -125,6 +155,23 @@ async def build_agent_stack(
     wiring = wiring or StackWiring()
     mcp_manager = wiring.mcp_manager
     usage_store = wiring.usage_store
+    progress = wiring.progress or _say_nothing
+    # MCP: the daemon passes its manager; standalone, start our own from the
+    # merged global + workspace config (None when nothing is configured), first
+    # and alongside everything else. The bundle owns — and stops — only the one
+    # started here. An interactive chat does not wait for its servers at all.
+    mcp_start = (
+        asyncio.create_task(
+            start_manager_for_workspace(
+                workspace,
+                factory=wiring.mcp_manager_factory,
+                wait=not wiring.mcp_in_background,
+            ),
+            name="mcp-manager",
+        )
+        if mcp_manager is None
+        else None
+    )
     # Every per-workspace path (sandbox, outputs, skills, scratch) comes from
     # the one layout helper; the explicit --sandbox-dir/--output-dir overrides
     # ride through it rather than around it.
@@ -138,7 +185,13 @@ async def build_agent_stack(
     # compaction are always on and memory defaults ON (YUYUTSAVA_MEMORY_ENABLED=0
     # still disables it).
     models = wiring.models or TaskModels()
-    stores = await build_master_stores("cli", skill_registry, models=models, chat=settings)
+    progress("Opening your saved conversations…")
+    try:
+        stores = await build_master_stores("cli", skill_registry, models=models, chat=settings)
+    except BaseException:
+        if mcp_start is not None:
+            await _abandon(mcp_start)
+        raise
     memory_store, skill_store = stores.memory_store, stores.skill_store
     pg_pool, embedder = stores.pg_pool, stores.embedder
 
@@ -176,12 +229,9 @@ async def build_agent_stack(
         task_runner, skill_registry, search_config, memory_store, skill_store, visual_store
     )
 
-    # MCP: the daemon passes its manager; standalone, start our own from the
-    # merged global + workspace config (None when nothing is configured). The
-    # bundle owns — and stops — only the one started here.
     owned_mcp = None
-    if mcp_manager is None:
-        owned_mcp = await start_manager_for_workspace(workspace, factory=wiring.mcp_manager_factory)
+    if mcp_start is not None:
+        owned_mcp = await mcp_start
         mcp_manager = owned_mcp
 
     background = Background()
@@ -203,6 +253,7 @@ async def build_agent_stack(
             board=board,
             visual_store=visual_store,
         )
+        progress("Starting the background helper…")
         background = await start_background(
             settings,
             checkpointer,
@@ -224,48 +275,60 @@ async def build_agent_stack(
         else:
             logger.info("CLI async host: attached to running owner @ %s", background.host_url)
 
-    bundle = build_cli_deepagent(
-        workspace,
-        settings,
-        deps=MasterDeps(
-            bash_timeout_sec=bash_timeout_sec,
-            permission_check=permission_check,
-            search_config=search_config,
-            checkpointer=checkpointer,
-            subagents=[general_purpose, *(wiring.extra_subagents or [])],
-            async_subagents=background.subagents,
-            async_host_url=background.host_url,
-            async_task_mirror=background.mirror,
-            async_host=background.host,
-            async_host_attachment=background.attachment,
-            artifact_store=stores.context.artifacts,
-            summary_store=stores.context.summaries,
-            memory_store=memory_store,
-            transcript_store=stores.context.transcripts,
-            context_settings=stores.context_settings,
-            compaction_model=stores.compaction_model,
-            model_chooser=ModelChooser(models, wiring.sessions),
-            skill_store=skill_store,
-            # Per-conversation transcript recall (Postgres only); None on the
-            # SQLite fallback, which the middleware treats as a no-op.
-            transcript_index=stores.context.transcript_index,
-            mcp_tools=(mcp_manager.tools_for("cli") if mcp_manager is not None else None),
-            mcp_connectors=(mcp_manager.connectors_block("cli") if mcp_manager is not None else ""),
-            cap_enforcer=wiring.cap_enforcer,
-            budget_tokens=wiring.budget_tokens,
-            usage_store=usage_store,
-            prefs_store=wiring.prefs_store,
-            runtime_settings=wiring.runtime_settings,
-            extra_tools=wiring.extra_tools,
-            task_runner=task_runner,
-            board=board,
-            visual_store=visual_store,
-        ),
-        execution_mode=execution.mode,
-        docker_settings=execution.docker,
-        local_settings=execution.local,
-        front=front,
-    )
+    def build(sandbox: Any | None = None) -> AgentBundle:
+        return build_cli_deepagent(
+            workspace,
+            settings,
+            deps=MasterDeps(
+                bash_timeout_sec=bash_timeout_sec,
+                permission_check=permission_check,
+                search_config=search_config,
+                checkpointer=checkpointer,
+                subagents=[general_purpose, *(wiring.extra_subagents or [])],
+                async_subagents=background.subagents,
+                async_host_url=background.host_url,
+                async_task_mirror=background.mirror,
+                async_host=background.host,
+                async_host_attachment=background.attachment,
+                artifact_store=stores.context.artifacts,
+                summary_store=stores.context.summaries,
+                memory_store=memory_store,
+                transcript_store=stores.context.transcripts,
+                context_settings=stores.context_settings,
+                compaction_model=stores.compaction_model,
+                model_chooser=ModelChooser(models, wiring.sessions),
+                skill_store=skill_store,
+                # Per-conversation transcript recall (Postgres only); None on the
+                # SQLite fallback, which the middleware treats as a no-op.
+                transcript_index=stores.context.transcript_index,
+                mcp_tools=(mcp_manager.tools_for("cli") if mcp_manager is not None else None),
+                mcp_connectors=(
+                    mcp_manager.connectors_block("cli") if mcp_manager is not None else ""
+                ),
+                cap_enforcer=wiring.cap_enforcer,
+                budget_tokens=wiring.budget_tokens,
+                usage_store=usage_store,
+                prefs_store=wiring.prefs_store,
+                runtime_settings=wiring.runtime_settings,
+                extra_tools=wiring.extra_tools,
+                task_runner=task_runner,
+                board=board,
+                visual_store=visual_store,
+            ),
+            execution_mode=execution.mode,
+            docker_settings=execution.docker,
+            local_settings=execution.local,
+            front=front,
+            sandbox=sandbox,
+        )
+
+    progress("Getting the agent ready…")
+    bundle = build()
+    if owned_mcp is not None and wiring.mcp_in_background:
+        # A server that comes up after the chat opened: its tools join from the
+        # next message, through every route the agent has to them — the tool
+        # list, tool_search, the connectors block, the in-turn subagents.
+        bundle.refresh_agent = refresh_when_tools_change(owned_mcp, lambda: build(bundle.sandbox).agent)
     # Hand the CLI-owned pool + embedder (+ MCP manager, when this stack started
     # one) to the bundle so teardown closes them.
     bundle.pg_pool = pg_pool
