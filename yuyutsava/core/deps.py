@@ -111,6 +111,9 @@ class MasterDeps:
     #: The visual store behind the vis_* tools; required by a profile that
     #: declares that family.
     visual_store: Any | None = None
+    #: A previous build's sandbox (``AgentBundle.sandbox``): a rebuild — new MCP
+    #: tools joining a chat — reuses it rather than starting a second one.
+    sandbox: Any | None = None
 
     def replace(self, **changes: Any) -> "MasterDeps":
         """A copy with some fields changed — the frozen equivalent of a setter."""

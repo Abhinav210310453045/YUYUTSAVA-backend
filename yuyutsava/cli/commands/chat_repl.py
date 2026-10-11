@@ -55,6 +55,7 @@ from yuyutsava.cli.render.dashboard import (
 from yuyutsava.cli.render.plain import ChatRenderer
 from yuyutsava.cli.render.protocol import ChatRendererProtocol
 from yuyutsava.cli.render.renderer import RichChatRenderer
+from yuyutsava.cli.startup_status import status as startup_status
 from yuyutsava.cli.tool_notices import ToolNotices
 from yuyutsava.cli.tooling import cleanup_local_sandbox
 from yuyutsava.cli.usage import format_usage, session_usage
@@ -135,6 +136,11 @@ def quieten_chat_loggers(*, debug_plumbing: bool, verbose: bool) -> None:
                 "yuyutsava.llm.retry",
             ):
                 logging.getLogger(_name).setLevel(logging.ERROR)
+            # MCP servers start after the chat opens, so their start-up lines —
+            # ours and the MCP SDK's (a failure even with a traceback) — would
+            # land mid-conversation. ToolNotices says the same in words.
+            for _name in ("yuyutsava.mcp", "mcp"):
+                logging.getLogger(_name).setLevel(logging.CRITICAL)
 
 
 async def run_one_turn(
@@ -1057,6 +1063,7 @@ async def _start_session(
         recursion_limit=opts.recursion_limit,
         task="(interactive chat)",
     )
+    startup_status.done()  # ready: the banner takes over from the start-up line
     # The split view must be up BEFORE anything is printed: it takes the
     # alternate screen, which wipes whatever is already on the terminal. Print
     # the banner first and it is erased, leaving `yuyutsava chat` open on a
@@ -1160,7 +1167,11 @@ async def run_chat_repl(
             # The chat opens without waiting for its MCP servers; each one's
             # tools join the conversation, between messages, when it is up.
             wiring=StackWiring(
-                prefs_store=prefs, models=opts.models, sessions=store, mcp_in_background=True
+                prefs_store=prefs,
+                models=opts.models,
+                sessions=store,
+                mcp_in_background=True,
+                progress=startup_status.step,
             ),
             execution=opts.execution,
             bash_timeout_sec=opts.bash_timeout_sec,

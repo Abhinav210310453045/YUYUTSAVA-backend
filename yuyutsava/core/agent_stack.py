@@ -314,12 +314,12 @@ async def build_agent_stack(
                 task_runner=task_runner,
                 board=board,
                 visual_store=visual_store,
+                sandbox=sandbox,
             ),
             execution_mode=execution.mode,
             docker_settings=execution.docker,
             local_settings=execution.local,
             front=front,
-            sandbox=sandbox,
         )
 
     progress("Getting the agent ready…")
@@ -328,7 +328,9 @@ async def build_agent_stack(
         # A server that comes up after the chat opened: its tools join from the
         # next message, through every route the agent has to them — the tool
         # list, tool_search, the connectors block, the in-turn subagents.
-        bundle.refresh_agent = refresh_when_tools_change(owned_mcp, lambda: build(bundle.sandbox).agent)
+        bundle.refresh_agent = refresh_when_tools_change(
+            owned_mcp, lambda: build(bundle.sandbox).agent
+        )
     # Hand the CLI-owned pool + embedder (+ MCP manager, when this stack started
     # one) to the bundle so teardown closes them.
     bundle.pg_pool = pg_pool

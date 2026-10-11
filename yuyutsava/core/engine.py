@@ -1053,7 +1053,6 @@ def build_cli_deepagent(
     docker_settings: DockerSettings | None = None,
     local_settings: LocalSettings | None = None,
     front: str = "app",
-    sandbox: _CliSandbox | None = None,
 ) -> AgentBundle:
     """Build the CLI deepagent.
 
@@ -1064,8 +1063,8 @@ def build_cli_deepagent(
 
     ``deps`` carries every optional dependency (see :class:`MasterDeps`); what
     stays a parameter is what only this agent has — where it runs and who reads
-    its output. *sandbox* is a previous build's (``bundle.sandbox``), for a
-    rebuild that must not start a second one.
+    its output. ``deps.sandbox`` is a previous build's, for a rebuild that
+    must not start a second one.
     """
     deps = deps or MasterDeps()
     model = chat_model(settings)
@@ -1102,7 +1101,7 @@ def build_cli_deepagent(
     subagent_specs, async_mw = _master_subagents(deps, model, "build_cli_deepagent", built=settings)
     middleware.extend(async_mw)
 
-    sandbox = sandbox or _cli_sandbox(
+    sandbox = deps.sandbox or _cli_sandbox(
         execution_mode, docker_settings, layout, workspace_root, deps.bash_timeout_sec
     )
     startup_tools, _registry = _build_tool_registry_and_tools(

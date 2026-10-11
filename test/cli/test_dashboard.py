@@ -131,6 +131,15 @@ class Formatting(unittest.TestCase):
         self.assertEqual(bar(0.0, 10), (0, 10))
 
 
+class NoticesBeforeTheFirstMessage(unittest.TestCase):
+    """Tools that start after the chat opens say so before anything was sent."""
+
+    def test_are_shown_with_no_model_call_yet(self) -> None:
+        text = panel_text(None, 30, notices=["✓ drive is ready"])
+        self.assertIn("no model call yet", text)
+        self.assertIn("drive is ready", text)
+
+
 class PanelGeometry(unittest.TestCase):
     def test_every_line_is_exactly_the_panel_width(self):
         # Anything else and the transcript column beside it shows through.

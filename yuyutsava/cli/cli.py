@@ -33,6 +33,7 @@ from yuyutsava.cli.commands.prefs import run_prefs
 from yuyutsava.cli.commands.scenarios import format_scenario_list, get_scenario
 from yuyutsava.cli.commands.sessions import delete_session, print_sessions_table
 from yuyutsava.cli.first_run import offer_setup, warn_leftovers
+from yuyutsava.cli.startup_status import status as startup_status
 from yuyutsava.cli.tooling import (
     builtin_tools_reference_json,
     export_agent_state_graph_png,
@@ -111,8 +112,12 @@ def _offer_setup_before(argv: list[str]) -> None:
         return
     if load_dotenv:
         load_dotenv()  # what the wizard finds includes a .env setup
-    if not offer_setup():  # the wizard has just asked about them itself
-        warn_leftovers()
+    startup_status.pause()  # the offer asks a question; the warning is a line of its own
+    try:
+        if not offer_setup():  # the wizard has just asked about them itself
+            warn_leftovers()
+    finally:
+        startup_status.resume()
 
 
 #: Every subcommand, once. Nothing else may name one.

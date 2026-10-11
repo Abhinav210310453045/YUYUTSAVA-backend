@@ -267,6 +267,19 @@ def _footer_rows(col: _Column, snap: Any) -> None:
         col.row(_P_FOOTER, line, "class:ctx.dim")
 
 
+def _notice_rows(col: _Column, notices: Sequence[str]) -> None:
+    """Transient notices, newest last.
+
+    The user asked for these here rather than over the transcript; they are
+    also the only place a provider retry, an unpriced model or an MCP server
+    coming up gets said, since the log does not paint on screen.
+    """
+    for text in notices:
+        col.row(_P_NOTICE)
+        for line in _wrap_plain(f" {text}", col.width):
+            col.row(_P_NOTICE, line, "class:ctx.warn")
+
+
 def panel_fragments(
     snap: Any | None,
     *,
@@ -302,6 +315,8 @@ def panel_fragments(
         col.row(_P_ESSENTIAL, " no model call yet", "class:ctx.dim")
         col.row(_P_DETAIL, " numbers appear once", "class:ctx.dim")
         col.row(_P_DETAIL, " the agent runs", "class:ctx.dim")
+        # Before the first message too: tools still starting say so here.
+        _notice_rows(col, notices)
         return _fit(col.rows, height)
 
     measured = _window_rows(col, snap)
@@ -321,14 +336,7 @@ def panel_fragments(
             ],
         )
 
-    # Transient notices, newest last. The user asked for these here rather than
-    # over the transcript; they are also the only place a provider retry or an
-    # unpriced model gets said, since the log does not paint on screen.
-    for text in notices:
-        col.row(_P_NOTICE)
-        for line in _wrap_plain(f" {text}", col.width):
-            col.row(_P_NOTICE, line, "class:ctx.warn")
-
+    _notice_rows(col, notices)
     _footer_rows(col, snap)
     return _fit(col.rows, height)
 

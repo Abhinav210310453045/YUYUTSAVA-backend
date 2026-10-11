@@ -193,7 +193,7 @@ dev = [
 ]
 
 [project.scripts]
-yuyutsava = "yuyutsava.cli.cli:main"
+yuyutsava = "yuyutsava.cli.entry:main"
 
 [build-system]
 # >=1.27 for PEP 639: the SPDX `license` string and the `license-files` array
