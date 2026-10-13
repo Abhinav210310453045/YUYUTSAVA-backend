@@ -311,5 +311,38 @@ Collected during the code audit. Use as an implementation checklist.
 ### Already Windows-safe (guards in place — no change)
 - Electron `daemon.js` (`isPosix` gates detached + signals), `tray.js`, `notifications.js` `win32` branches.
 - `events/sources/appfocus.py` (darwin-gated NSWorkspace), `io/tts.py` `say` (darwin-gated).
-- `sounddevice` / `soundfile` / `onnxruntime` / `openwakeword` / `webrtcvad-wheels` — all ship Windows wheels.
+- `sounddevice` / `soundfile` / `onnxruntime` / `openwakeword` / `webrtcvad-wheels` — all ship Windows wheels. Caveat: `onnxruntime` is pinned `<1.20` (openwakeword's models misbehave above it), and the newest release under that ceiling, 1.19.2, builds only cp311/cp312 wheels — which is why `scripts/install.py` pins both environments to `.python-version` rather than letting uv pick the machine's newest interpreter.
+
+### Installing on a Windows the user already has (the two that bit us)
+
+Both failures below were hit on a real machine, and neither was about this
+project's code. `scripts/install.py` now probes for them before doing any work
+(`--doctor` reports without installing) and translates them if they happen
+anyway.
+
+**The cloud-sync / hardlink trap.** uv installs by hardlinking out of its cache
+rather than copying. A hardlink is not a copy — both paths are one inode. If any
+earlier install hardlinked cache files into a `.venv` under OneDrive (which
+redirects Desktop and Documents by default on consumer Windows), OneDrive
+converts those files into *cloud placeholders*, and the shared cache entry is
+converted with them. Windows then refuses to hardlink them from anywhere:
+
+```
+error: Failed to install: jsonpatch-1.33-py2.py3-none-any.whl (jsonpatch==1.33)
+  Caused by: failed to hardlink file ...: The cloud operation cannot be
+  performed on a file with incompatible hardlinks. (os error 396)
+```
+
+On the machine where this was found, 3,178 of 44,036 cached files were in that
+state, across 62 packages — one synced project's venv poisoning the cache for
+every other project. The installer passes `--link-mode copy` on Windows, which
+sidesteps the link entirely; `diagnose()` recognises the error and offers
+`uv cache clean <package>` for a cache already in that state.
+
+**Long paths.** `LongPathsEnabled` is checked in the preflight, because paths
+inside `.venv` run deep enough to pass 260 characters.
+
+The Windows-specific probes here are the most OS-specific code outside
+`yuyutsava/platform/`, so CI's `platform` job runs `install.py --doctor` on all
+three operating systems.
 - `os.dup/os.dup2/os.devnull`, `tempfile.*`, `Path.home()/state_dir()`, `socket.AF_INET` port-picking.

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { checkProvider, getCatalog, getDetected, saveSetup } from '../../api/models'
 import { aliasFor } from './aliasFor'
 import ManualProvider from './ManualProvider'
+import SetupStatus from '../settings/SetupStatus'
 import { Button, Muted, Problem } from './ui'
 import { ChooseDefault, Found, Review } from './wizardSteps'
 import { overlay, sheet } from './wizardStyles'
@@ -93,7 +94,7 @@ export default function SetupWizard({ status, mode = 'setup', onDone, onClose })
         default: defaultRef || null,
       })
       if (status.setup_mode) setStep('starting')
-      else onDone?.()
+      else setStep('rest')
     } catch (e) {
       setProblem(
         e.status === 409
@@ -175,7 +176,8 @@ export default function SetupWizard({ status, mode = 'setup', onDone, onClose })
             onSave={save}
           />
         )}
-        {step === 'starting' && <Starting status={status} onDone={onDone} />}
+        {step === 'starting' && <Starting status={status} onDone={() => setStep('rest')} />}
+        {step === 'rest' && <TheRest onDone={onDone} />}
       </div>
     </div>
   )
@@ -186,4 +188,38 @@ function Starting({ status, onDone }) {
     if (status && !status.setup_mode) onDone?.()
   }, [status, onDone])
   return <Muted>Saved. Starting YUYUTSAVA with your models…</Muted>
+}
+
+// A model is the first thing YUYUTSAVA needs, not the only one. Storage, web
+// search and the diagram renderer each need a key or a running container, and a
+// setup that stopped here left them unasked — which is how a first run finished
+// successfully and the next chat died on a Postgres that was never started.
+// Nothing here runs on its own; every check and every container is a button.
+function TheRest({ onDone }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <Muted>
+        Your models are set up. These are the rest of the things YUYUTSAVA can use — each one is
+        optional, and you can come back to them in Settings.
+      </Muted>
+      <SetupStatus />
+      <div>
+        <button
+          onClick={() => onDone?.()}
+          style={{
+            padding: '6px 14px',
+            fontSize: 12,
+            fontFamily: 'var(--font-mono)',
+            borderRadius: 'var(--radius-card)',
+            border: '1px solid var(--border-card)',
+            background: 'var(--bg-elevated)',
+            color: 'var(--text-primary)',
+            cursor: 'pointer',
+          }}
+        >
+          Done
+        </button>
+      </div>
+    </div>
+  )
 }

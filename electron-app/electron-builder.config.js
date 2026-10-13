@@ -28,7 +28,22 @@ module.exports = {
     {
       from: '../',
       to: 'backend',
-      filter: ['yuyutsava/**', 'pyproject.toml', 'uv.lock'],
+      // Everything `scripts/install.py` needs to build the backend environment
+      // on the user's machine at first run — the app ships source, not a venv.
+      //   scripts/ + .python-version  the installer, and the interpreter it pins
+      //   README.md, LICENSE, NOTICE  `uv sync` installs the project itself, and
+      //                               hatchling reads `readme` and `license-files`
+      //                               from pyproject.toml; without them it fails.
+      filter: [
+        'yuyutsava/**',
+        'scripts/**',
+        'pyproject.toml',
+        'uv.lock',
+        '.python-version',
+        'README.md',
+        'LICENSE',
+        'NOTICE',
+      ],
     },
   ],
 }

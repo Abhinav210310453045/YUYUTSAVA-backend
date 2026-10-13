@@ -26,7 +26,11 @@ layer between the model and your filesystem.
 
 ## Requirements
 
-- **Python 3.11+**
+- **Python 3.11 or 3.12** — `scripts/install.py` pins both environments to the
+  version in `.python-version`, and uv fetches that interpreter if you haven't
+  got it, so any Python can *run* the installer. 3.13 is not supported yet: the
+  voice extra pins `onnxruntime<1.20` (newer releases silently break wake-word
+  detection) and no release under that ceiling ships a 3.13 wheel.
 - **[uv](https://docs.astral.sh/uv/)** (recommended) or pip
 - **Node 18+** — only for the desktop app
 - **Docker** — only for the sandboxed execution mode
@@ -42,7 +46,7 @@ git clone https://github.com/Abhinav210310453045/YUYUTSAVA-backend.git
 cd YUYUTSAVA-backend
 python scripts/install.py     # the desktop app and the `yuyutsava` command
 
-yuyutsava models setup        # connect a model provider, step by step
+yuyutsava setup               # a model, then the keys and services the rest needs
 ```
 
 Run a task:
@@ -54,8 +58,51 @@ yuyutsava "list every Python file in this repo and count the lines"
 The first chat offers the same setup if you skip it. The desktop app has its
 own setup wizard and opens it whenever no model is set up.
 
-`.env.example` is the reference for everything else — 16 numbered sections,
-each stating its own defaults, all of it optional.
+### Setting up
+
+`yuyutsava setup` walks through everything a working YUYUTSAVA needs, a section
+at a time, and every section can be skipped and run again later:
+
+| Section | What it is for | What it needs |
+|---|---|---|
+| Models | which AI model answers you | a provider login |
+| Web search | the `ws_*` tools; without a key they are not offered to the model at all | a Tavily or Exa key |
+| Diagrams | Mermaid, PlantUML and D2 through `vis_diagram` | the `kroki` container, or a Kroki you already run |
+| Storage | where history and memory are kept | SQLite needs nothing; Postgres needs the `yuyutsava-db` container |
+| Tracing | records model calls so a run can be read back | the Langfuse stack |
+
+It checks each answer rather than taking your word for it, and where something
+needs a container it offers to start it — asking first, every time, and showing
+the exact command. Say no and you get that command and the reason, and setup
+carries on. Nothing is left pointing at something that is not running: decline
+Postgres and it offers SQLite, so the next `yuyutsava chat` works.
+
+Run one part again with `yuyutsava setup --section storage`.
+
+### Where settings are kept
+
+Models live in `~/.yuyutsava/models.toml`. Everything else lives in whichever
+of these you choose:
+
+- **`~/.yuyutsava/settings.toml`** — checked before it is saved, written whole
+  or not at all, and you can keep more than one version of it
+  (`yuyutsava config version save work`).
+- **a `.env` file** — the project's or `~/.yuyutsava/.env`, which is what
+  YUYUTSAVA has always read.
+
+Both are read. A variable set in your shell wins over both; `settings.toml`
+wins over a `.env`. Change your mind at any time with `yuyutsava config move
+--to settings` or `--to env` — it carries the values across.
+
+```bash
+yuyutsava config list                 # every setting, and which file it came from
+yuyutsava config set TAVILY_API_KEY … # change one
+yuyutsava config check                # does it actually work?
+yuyutsava config where                # which file you are editing
+```
+
+`.env.example` is the reference for every variable — 17 numbered sections, each
+stating its own defaults, all of it optional.
 
 ### Installing
 
@@ -67,6 +114,7 @@ python scripts/install.py --ui         # the desktop app only
 python scripts/install.py --cli        # the `yuyutsava` command only
 python scripts/install.py --extra dev  # plus the test tools
 python scripts/install.py --lean       # without the optional features
+python scripts/install.py --doctor     # check this machine, install nothing
 ```
 
 Both come from `uv.lock`, with every feature by default — all the model
@@ -78,6 +126,26 @@ yourself: a plain `uv sync` is exact, and uninstalls every optional feature it
 isn't told about. Nor with `pipx install -e .` or a bare `uv tool install -e .`:
 they resolve the newest versions the ranges allow, which the tests never ran.
 If you have a pipx install, run `pipx uninstall yuyutsava` first.
+
+**If the install fails**, run `python scripts/install.py --doctor`: it reports
+what about this machine would break an install, each as a problem and a fix.
+Most failures here are the machine, not the project, and the installer already
+guards the two that have actually bitten someone:
+
+- **A `.venv` inside OneDrive, Dropbox or Google Drive.** Sync takes ownership
+  of installed files, and because uv hardlinks out of its cache, one synced
+  `.venv` turns that shared cache into cloud placeholders for *every* project on
+  the machine — after which Windows refuses to link them (`os error 396`).
+  Installs here copy instead of linking, so they survive it; keep virtualenvs
+  out of synced folders anyway.
+- **The wrong interpreter.** Both installs are pinned to `.python-version`, so
+  uv never picks the machine's newest Python, which may have no wheel for a
+  pinned dependency.
+
+When something it recognises goes wrong, the installer says so in plain terms
+and offers the exact repair — `--heal=ask` is the default and waits for you;
+`--heal=auto` doesn't ask; `--heal=never` exits 3 and prints the command for
+whatever is driving it (that is how the desktop app asks you in a dialog).
 
 ### Choosing models
 

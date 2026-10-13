@@ -28,10 +28,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // button so the user picks where their copy lands.
   saveFile: (name, data) => ipcRenderer.invoke('dialog:saveFile', { name, data }),
 
-  // Window controls (frameless)
+  // Window controls (frameless). The window has `frame: false`, so on Windows
+  // and Linux nothing draws these — the renderer has to, and `platform` is how
+  // it knows not to on macOS, where the OS still draws its traffic lights.
   minimizeWindow: () => ipcRenderer.send('window:minimize'),
   maximizeWindow: () => ipcRenderer.send('window:maximize'),
   closeWindow: () => ipcRenderer.send('window:close'),
+  platform: process.platform,
+  // Whether the window is maximised, now and whenever it changes. Not inferred
+  // from our own clicks: a double-click on the drag region or a Windows snap
+  // maximises it too, and an icon that only tracked our clicks would be wrong
+  // within seconds.
+  isWindowMaximized: () => ipcRenderer.invoke('window:isMaximized'),
+  onWindowMaximized: (cb) => {
+    ipcRenderer.on('window:maximized', (_event, maximized) => cb(maximized))
+    return () => ipcRenderer.removeAllListeners('window:maximized')
+  },
 
   // Tray badge
   setProposalCount: (n) => ipcRenderer.send('tray:badge', n),

@@ -41,6 +41,7 @@ from yuyutsava.async_subagents.host_lock import release_host_lock
 from yuyutsava.config.dependencies import check_install
 from yuyutsava.config.env import env_flag
 from yuyutsava.config.logs import quiet_grpc_fork_logs, silence_plumbing_loggers
+from yuyutsava.config.settings_file import apply_settings, shell_keys
 from yuyutsava.daemon.bootstrap import DaemonOptions, DaemonSubsystems, build_daemon
 from yuyutsava.daemon.lifecycle import install_reload_handler, install_signal_handlers
 from yuyutsava.daemon.options import build_parser
@@ -281,8 +282,16 @@ def _log_install_check() -> None:
 
 
 def _load_env() -> None:
-    """Load the project ``.env``, then the app-managed one over it."""
+    """Load the project ``.env``, then the app-managed one, then ``settings.toml``.
+
+    The snapshot comes first: ``~/.yuyutsava/.env`` is loaded with
+    ``override=True``, so without it a value from that file would beat both the
+    shell and ``settings.toml``. The order kept is
+    *shell > settings.toml > .env > the default*.
+    """
+    shell = shell_keys()
     if not load_dotenv:
+        apply_settings(protect=shell)
         return
     load_dotenv()  # project-dir .env (developer defaults)
     # ~/.yuyutsava/.env is the app-managed config the Settings UI writes;
@@ -292,6 +301,7 @@ def _load_env() -> None:
     home_env = state_dir() / ".env"
     if home_env.is_file():
         load_dotenv(home_env, override=True)
+    apply_settings(protect=shell)
 
 
 def _acquire_singleton() -> int | None:

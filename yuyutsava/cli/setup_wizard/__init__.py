@@ -6,6 +6,6 @@ puts them together with the real store, detection and provider listing.
 
 from __future__ import annotations
 
-from yuyutsava.cli.setup_wizard.terminal import run_add, run_setup
+from yuyutsava.cli.setup_wizard.terminal import run_add, run_full_setup, run_setup
 
-__all__ = ["run_add", "run_setup"]
+__all__ = ["run_add", "run_full_setup", "run_setup"]

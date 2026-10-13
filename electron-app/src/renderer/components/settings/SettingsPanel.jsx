@@ -4,6 +4,7 @@ import WatchedDirsEditor from './WatchedDirsEditor'
 import { VoiceModeSettings, SubagentSettings } from './RuntimeToggles'
 import UsageSettings from './UsageSettings'
 import ModelsSettings from '../models/ModelsSettings'
+import SetupStatus from './SetupStatus'
 import { DaemonStatusBar, ReloadPrompt } from './DaemonControls'
 import { FALLBACK_SCHEMA } from './fallbackSchema'
 import { renderField } from './schemaField'
@@ -244,6 +245,12 @@ export default function SettingsPanel() {
       {/* Hot toggles — applied immediately, no Save, no restart. */}
       <SettingsSection title="Models" defaultOpen={true}>
         <ModelsSettings />
+      </SettingsSection>
+
+      {/* Whether what is configured below actually works, and the containers
+          that make it so. The form cannot tell you a DSN points at nothing. */}
+      <SettingsSection title="Setup & Services" defaultOpen={true}>
+        <SetupStatus />
       </SettingsSection>
 
       <SettingsSection title="Voice Mode" defaultOpen={true}>

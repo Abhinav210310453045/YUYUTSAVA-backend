@@ -8,6 +8,8 @@ start nothing.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from yuyutsava.cli.setup_wizard.flow import Services, SetupWizard
 from yuyutsava.cli.setup_wizard.prompter import TerminalPrompter
 from yuyutsava.llm.config.detect import detect
@@ -47,4 +49,24 @@ def run_add() -> int:
         return 130
 
 
-__all__ = ["run_add", "run_setup"]
+def run_full_setup(sections: Sequence[str] = ()) -> int:
+    """Models *and* everything else; exit status 0 when something was written.
+
+    ``yuyutsava models setup`` is this wizard's models section on its own, and
+    stays exactly what it was: connecting a provider must not mean sitting
+    through questions about containers.
+    """
+    # Imported here so `yuyutsava config list` pays nothing for the catalog.
+    from yuyutsava.cli.setup_wizard.full import FullSetup  # noqa: PLC0415
+    from yuyutsava.cli.setup_wizard.full import Services as FullServices  # noqa: PLC0415
+
+    setup = FullSetup(TerminalPrompter(), FullServices(models=lambda: _wizard().setup()))
+    try:
+        return 0 if setup.run(sections) else 1
+    except (KeyboardInterrupt, EOFError):
+        print()
+        print("setup left; whatever was saved stays, nothing else changed")
+        return 130
+
+
+__all__ = ["run_add", "run_full_setup", "run_setup"]

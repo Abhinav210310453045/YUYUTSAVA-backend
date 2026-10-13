@@ -3,6 +3,7 @@ import { navIcons, NAV_ITEMS, PanelToggleIcon } from './navIcons.jsx'
 import { useTheme } from '../../hooks/useTheme'
 import BackButton from './BackButton'
 import PlaybackButton from './PlaybackButton'
+import WindowControls from './WindowControls'
 
 const LEVELS = ['DEBUG', 'INFO', 'WARNING']
 
@@ -301,6 +302,10 @@ export default function Titlebar({
         >
           Logs {logsEnabled ? 'ON' : 'OFF'}
         </button>
+
+        {/* The window is frameless, so these are the only close/minimise/
+            maximise on Windows and Linux. Renders nothing on macOS. */}
+        <WindowControls />
       </div>
     </div>
   )

@@ -84,9 +84,22 @@ function register(win) {
       tray.refreshMenu(true)
       return { ok: true, alreadyRunning: true }
     }
-    await daemon.start(process.cwd())
+    // Report what actually happened: a spawn that failed (no uv, no backend
+    // environment) used to come back as `{ ok: true }` and leave the UI waiting
+    // for a daemon that was never going to arrive. The renderer has nowhere to
+    // show that, so say it here, where the startup path says it too.
+    const started = await daemon.start(process.cwd())
+    if (!started.ok) {
+      await dialog.showMessageBox(win, {
+        type: 'error',
+        title: 'YUYUTSAVA Terminal',
+        message: started.problem,
+        detail: [started.fix, started.detail].filter(Boolean).join('\n\n'),
+        buttons: ['OK'],
+      })
+    }
     tray.refreshMenu(await daemon.isAlive())
-    return { ok: true }
+    return started
   })
   ipcMain.handle('daemon:stop', async () => {
     await daemon.stop()
@@ -133,13 +146,23 @@ function register(win) {
     return r.filePath
   })
 
-  // Window controls
+  // Window controls. The window is frameless, so these are the only way to
+  // minimise, maximise or close it on Windows and Linux.
   ipcMain.on('window:minimize', () => win.minimize())
   ipcMain.on('window:maximize', () => {
     if (win.isMaximized()) win.unmaximize()
     else win.maximize()
   })
   ipcMain.on('window:close', () => win.close())
+
+  // The maximised state, asked for on mount and pushed whenever it changes —
+  // including when something other than our own button changes it.
+  ipcMain.handle('window:isMaximized', () => win.isMaximized())
+  for (const event of ['maximize', 'unmaximize']) {
+    win.on(event, () => {
+      if (!win.isDestroyed()) win.webContents.send('window:maximized', win.isMaximized())
+    })
+  }
 
   // Tray badge
   ipcMain.on('tray:badge', (_e, n) => {

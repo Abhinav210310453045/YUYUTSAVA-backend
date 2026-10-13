@@ -156,15 +156,38 @@ function _spawnPath() {
   return [...extra, process.env.PATH].filter(Boolean).join(path.delimiter)
 }
 
+// How long after a successful spawn we keep watching for the child to die.
+// `uv run` with no environment to run in fails in well under this; a daemon
+// that is merely slow to become healthy takes far longer, and is not waited on.
+const EARLY_EXIT_MS = 2500
+
+// What start() says when the spawn never got off the ground. Problem and fix,
+// the same pair the rest of the product reports a failure with — the caller
+// puts them in front of the user instead of dropping them in a log.
+function _startFailure(err) {
+  if (err && err.code === 'ENOENT') {
+    return {
+      ok: false,
+      problem: 'uv is not installed, or is not where this app can find it.',
+      fix: 'Install uv (https://docs.astral.sh/uv/) and start YUYUTSAVA again.',
+    }
+  }
+  return {
+    ok: false,
+    problem: `The daemon could not be started: ${err && err.message}`,
+    fix: 'Run `python scripts/install.py --doctor` in the backend folder to see why.',
+  }
+}
+
 async function start(workspacePath) {
-  if (isRunning()) return
+  if (isRunning()) return { ok: true, alreadyRunning: true }
   // Idempotent: never spawn a duplicate. A daemon launched from the terminal
   // (or a prior session) already holds the singleton lock — a second spawn
   // would just die on it. Detect it via the discovery file / health probe.
   const disco = readDiscovery()
   if ((disco && pidAlive(disco.pid)) || (await ping(getPort()))) {
     _log('[daemon] already running; not spawning a duplicate\n')
-    return
+    return { ok: true, alreadyRunning: true }
   }
   // No live daemon: clear any lock/discovery left by an ungraceful prior exit
   // so it can't block the new daemon's singleton lock or fool the guard above.
@@ -193,8 +216,14 @@ async function start(workspacePath) {
     detached: isPosix,
   })
 
-  _proc.stdout.on('data', (d) => _log(d.toString()))
-  _proc.stderr.on('data', (d) => _log(d.toString()))
+  let tail = ''
+  const keep = (d) => {
+    const text = d.toString()
+    tail = (tail + text).slice(-4000)
+    _log(text)
+  }
+  _proc.stdout.on('data', keep)
+  _proc.stderr.on('data', keep)
   // Without this handler a failed spawn (e.g. `uv` not on PATH → ENOENT) is
   // swallowed and "Start Daemon" silently does nothing.
   _proc.on('error', (err) => {
@@ -205,6 +234,30 @@ async function start(workspacePath) {
     _log(`[daemon] exited with code ${code}`)
     _proc = null
   })
+
+  // Resolve on 'spawn' (the child exists) or 'error' (it never will), then give
+  // it a moment to fall over: `uv run` against a missing or broken environment
+  // exits within that window, and that is the case the user most needs told.
+  const child = _proc
+  const spawned = await new Promise((resolve) => {
+    child.once('spawn', () => resolve(null))
+    child.once('error', (err) => resolve(_startFailure(err)))
+  })
+  if (spawned) return spawned
+  const died = await new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(null), EARLY_EXIT_MS)
+    child.once('exit', (code) => {
+      clearTimeout(timer)
+      resolve(code)
+    })
+  })
+  if (died === null || died === 0) return { ok: true }
+  return {
+    ok: false,
+    problem: 'The daemon stopped immediately after starting.',
+    fix: 'Its backend environment is probably missing or incomplete — run setup again.',
+    detail: tail.trim(),
+  }
 }
 
 // Kill a PID and every descendant. POSIX: SIGTERM/SIGKILL the whole process
@@ -338,6 +391,10 @@ module.exports = {
   start,
   stop,
   restart,
+  // main/setup.js builds the backend environment in the same place, and has to
+  // find uv the same way this does.
+  backendRoot,
+  spawnPath: _spawnPath,
   isRestarting,
   isRunning,
   isAlive,

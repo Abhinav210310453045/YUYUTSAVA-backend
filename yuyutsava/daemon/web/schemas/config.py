@@ -52,6 +52,13 @@ class ConfigVarDTO(BaseModel):
     help: str = ""
     depends_key: str = ""
     depends_value: str = ""
+    # Wizard metadata (yuyutsava.config.catalog): the sentence the setup wizard
+    # asks, whether it asks outright, and the probe and container service this
+    # value needs. The form ignores what it has no use for.
+    question: str = ""
+    required: bool = False
+    check: str = ""
+    service: str = ""
 
 
 class ConfigGroupDTO(BaseModel):

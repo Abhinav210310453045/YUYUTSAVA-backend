@@ -27,6 +27,7 @@ from yuyutsava.aio import run as aio_run
 from yuyutsava.cli.commands import daemon_ctl
 from yuyutsava.cli.commands.attach import run_attach
 from yuyutsava.cli.commands.chat import run_chat
+from yuyutsava.cli.commands.config import run_config
 from yuyutsava.cli.commands.models import run_models
 from yuyutsava.cli.commands.options import ChatOptions
 from yuyutsava.cli.commands.prefs import run_prefs
@@ -42,6 +43,7 @@ from yuyutsava.cli.tooling import (
 from yuyutsava.config.execution import DockerSettings, LocalSettings
 from yuyutsava.config.logs import quiet_grpc_fork_logs
 from yuyutsava.config.search import SearchConfig
+from yuyutsava.config.settings_file import apply_settings, shell_keys
 from yuyutsava.core.deps import MasterDeps
 from yuyutsava.core.engine import build_cli_deepagent
 from yuyutsava.llm.config.watch import ConfigSource
@@ -110,14 +112,39 @@ def _offer_setup_before(argv: list[str]) -> None:
         return
     if args.list_scenarios or args.print_tools or args.list_sessions or args.delete_session:
         return
+    shell = shell_keys()  # before any .env: these are the user's own, and win
     if load_dotenv:
         load_dotenv()  # what the wizard finds includes a .env setup
+    apply_settings(protect=shell)
     startup_status.pause()  # the offer asks a question; the warning is a line of its own
     try:
         if not offer_setup():  # the wizard has just asked about them itself
             warn_leftovers()
     finally:
         startup_status.resume()
+
+
+def _run_setup(argv: list[str]) -> int:
+    """``yuyutsava setup`` — the whole first run, or one section of it again."""
+    # Imported here, not at the top: the wizard pulls in the catalog, the
+    # checks and the provider SDKs, which every other command would otherwise
+    # pay for at start-up.
+    from yuyutsava.cli.setup_wizard import run_full_setup  # noqa: PLC0415
+    from yuyutsava.cli.setup_wizard.full import SECTIONS  # noqa: PLC0415
+
+    parser = argparse.ArgumentParser(
+        prog="yuyutsava setup",
+        description="Set YUYUTSAVA up: a model, then the keys and services the rest needs.",
+    )
+    parser.add_argument(
+        "--section",
+        action="append",
+        default=[],
+        choices=SECTIONS,
+        help="run only this part again (repeatable)",
+    )
+    args = parser.parse_args(argv)
+    return run_full_setup(args.section)
 
 
 #: Every subcommand, once. Nothing else may name one.
@@ -132,6 +159,8 @@ SUBCOMMANDS: tuple[Subcommand, ...] = (
     Subcommand("attach", "answer a running daemon's approvals from this terminal", run_attach),
     Subcommand("prefs", "read or write stored preferences", run_prefs),
     Subcommand("models", "see, check and change which models are used (models.toml)", run_models),
+    Subcommand("setup", "set YUYUTSAVA up: models, keys, storage and the rest", _run_setup),
+    Subcommand("config", "see and change everything that is not a model", run_config),
 )
 
 
@@ -509,8 +538,10 @@ def main(argv: list[str] | None = None) -> int:
 
 
 async def _async_main(argv: list[str] | None = None, *, force_chat: bool = False) -> int:
+    shell = shell_keys()  # before any .env: these are the user's own, and win
     if load_dotenv:
         load_dotenv()
+    apply_settings(protect=shell)
 
     args = _build_parser().parse_args(argv)
     setup_logging(verbose=args.verbose, debug_plumbing=args.debug_plumbing)

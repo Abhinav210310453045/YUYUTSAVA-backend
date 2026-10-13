@@ -37,10 +37,12 @@ same socket; voice just layers STT in / TTS out on top.
 
 ```bash
 cd $REPO
-uv sync                       # installs deps; voice extras = webrtcvad-wheels etc.
-# Optional voice extras if not already present:
-uv sync --extra voice
+python scripts/install.py     # the one way in; voice is on by default
 ```
+
+The installer pins the interpreter to `.python-version`, which the voice extra
+needs: its `onnxruntime<1.20` pin has no 3.13 wheel. A hand-rolled `uv sync
+--extra voice` on the machine's newest Python is how that bites.
 
 Voice providers are **config-driven, not hardcoded** (Settings → "Voice" group):
 

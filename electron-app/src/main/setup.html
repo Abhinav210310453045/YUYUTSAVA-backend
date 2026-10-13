@@ -1,0 +1,81 @@
+<!doctype html>
+<!--
+  The first-run setup window. Deliberately plain, dependency-free HTML living
+  beside the main process rather than in the renderer bundle: this is the one
+  window that must render when the app's own environment is what is missing.
+  main/setup.js drives it through executeJavaScript, so there is no preload and
+  no IPC channel to keep in step.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Setting up YUYUTSAVA</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      body {
+        margin: 0;
+        padding: 20px 22px;
+        background: #0a0a0f;
+        color: #e7e7ef;
+        font: 13px/1.5 -apple-system, "Segoe UI", system-ui, sans-serif;
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        box-sizing: border-box;
+      }
+      h1 {
+        font-size: 15px;
+        font-weight: 600;
+        margin: 0 0 4px;
+      }
+      #step {
+        color: #9aa0b4;
+        margin-bottom: 14px;
+        min-height: 20px;
+      }
+      #log {
+        flex: 1;
+        margin: 0;
+        padding: 12px 14px;
+        overflow-y: auto;
+        background: #06060a;
+        border: 1px solid #1d1d2a;
+        border-radius: 8px;
+        color: #8d93a8;
+        font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+        font-size: 11.5px;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      #log b {
+        color: #e7e7ef;
+        font-weight: 600;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Setting up YUYUTSAVA</h1>
+    <div id="step">Starting...</div>
+    <pre id="log"></pre>
+    <script>
+      const log = document.getElementById('log')
+      const step = document.getElementById('step')
+
+      window.setStep = (text) => {
+        step.textContent = text
+      }
+
+      // The installer marks what it wants a person to read with a leading "!".
+      window.append = (text) => {
+        const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40
+        const line = document.createElement(text.startsWith('!') ? 'b' : 'span')
+        line.textContent = text + '\n'
+        log.appendChild(line)
+        while (log.childNodes.length > 800) log.removeChild(log.firstChild)
+        if (atBottom) log.scrollTop = log.scrollHeight
+      }
+    </script>
+  </body>
+</html>

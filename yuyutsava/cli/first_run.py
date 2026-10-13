@@ -66,7 +66,7 @@ def offer_setup(
         path = setup_declined_path()
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("models come from the environment until `yuyutsava models setup`\n")
-        print(f"{DIM}ok — run `yuyutsava models setup` any time.{RESET}", file=sys.stderr)
+        print(f"{DIM}ok — run `yuyutsava setup` any time.{RESET}", file=sys.stderr)
     return True
 
 
@@ -99,34 +99,37 @@ def setup_offer(environ: Mapping[str, str], dotenv_files: Sequence[Path]) -> Off
     now = (
         "now",
         "Yes, set it up now",
-        "a few questions — what is already on this computer is offered first",
+        "a few questions; what is already on this computer is offered first, and "
+        "every part can be skipped",
     )
     later = ("later", "Not now", "ask me again next time")
     found = current_setup(environ, dotenv_files)
     if not found:
         return Offer(
             ("YUYUTSAVA doesn't know which AI model to use yet.",),
-            "Set one up now? It takes a minute.",
+            "Set YUYUTSAVA up now? A model first, then the keys and services the rest needs.",
             (now, later),
         )
     setup = found[0]
     where = where_set("LLM_PROVIDER", dotenv_files)
-    keep_what = "those settings" if "terminal" in where else "that .env"
+    # Name it: "that .env" is something a person cannot see from here.
+    keep_what = where.replace("set in ", "", 1)
     return Offer(
         (
             "YUYUTSAVA needs to know which AI model to use.",
             f"Right now it uses {type_label(setup.type)} · {setup.model} — {where} "
             f"(LLM_PROVIDER={environ.get('LLM_PROVIDER', '').strip()}).",
         ),
-        "Set up your models now? Then the desktop app and every chat use the same ones, "
-        "and you can switch models in a chat.",
+        "Set YUYUTSAVA up now? A model first, then the keys and services the rest needs. "
+        "The desktop app and every chat then use the same ones, and you can switch models "
+        "in a chat.",
         (
             now,
             later,
             (
                 "never",
                 f"No, keep using {keep_what}",
-                "don't ask again — you can change your mind with `yuyutsava models setup`",
+                "don't ask again — you can change your mind with `yuyutsava setup`",
             ),
         ),
     )
@@ -150,9 +153,15 @@ def _ask() -> str:
 
 
 def _run_setup() -> int:
-    from yuyutsava.cli.setup_wizard import run_setup  # noqa: PLC0415 — first run only
+    """The whole setup, not only the models half.
 
-    return run_setup()
+    A first run that connected a model and stopped there could still end in a
+    chat that would not start, because nothing had asked about storage, keys or
+    the containers any of it needs.
+    """
+    from yuyutsava.cli.setup_wizard import run_full_setup  # noqa: PLC0415 — first run only
+
+    return run_full_setup()
 
 
 __all__ = [

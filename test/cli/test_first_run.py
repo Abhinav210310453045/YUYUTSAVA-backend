@@ -135,7 +135,11 @@ class WhatTheOfferSays(unittest.TestCase):
         self.assertIn("Groq · llama-3.3-70b-versatile", said)
         self.assertIn(str(env), said)
         labels = [label for _, label, _ in offer.choices]
-        self.assertEqual(labels[-1], "No, keep using that .env")
+        # The file by name, not "that .env": a person cannot see what is being
+        # pointed at, and there may be two of them.
+        self.assertTrue(labels[-1].startswith("No, keep using "))
+        self.assertIn(env.name, labels[-1])
+        self.assertNotIn("that .env", labels[-1])
         self.assertNotIn("environment", " ".join(labels))
 
     def test_offers_no_keep_choice_when_nothing_is_set(self) -> None:

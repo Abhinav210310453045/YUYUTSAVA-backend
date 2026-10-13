@@ -7,6 +7,7 @@ const tray = require('./tray')
 const ipcHandlers = require('./ipc-handlers')
 const overlay = require('./overlay')
 const settings = require('./settings')
+const startup = require('./startup')
 const { DEV_SERVER_URL } = require('./config')
 
 // Global hotkey that summons the voice UI. Overridable via VOICE_HOTKEY in the
@@ -169,17 +170,9 @@ async function onReady() {
   const port = daemon.getPort()
   const reachable = await daemon.ping(port)
 
-  if (!reachable && daemon.isManaged()) {
-    const { response } = await dialog.showMessageBox(win, {
-      type: 'question',
-      title: 'YUYUTSAVA Terminal',
-      message: 'The YUYUTSAVA daemon is not running.',
-      detail: `Start the daemon now? It will watch your workspace on port ${port}.`,
-      buttons: ['Start Daemon', 'Connect Later'],
-      defaultId: 0,
-    })
-    if (response === 0) await daemon.start(process.cwd())
-  }
+  // First run builds the backend environment before anything asks the daemon to
+  // start; every failure on the way is reported, not logged into the void.
+  if (!reachable && daemon.isManaged()) await startup.bringUp(win, port)
 
   // Keep the tray menu's daemon status accurate, including daemons started or
   // stopped externally (CLI / a prior session). isAlive() also consults the
